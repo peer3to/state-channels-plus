@@ -3,6 +3,7 @@ import {
     assertCustomRootReadiness,
     assertGeneratedHostSigner,
     assertRejectedCustomRootReadiness,
+    assertRpcHandlerEntersWithoutMutex,
     startRuntimeTransportModesFixture,
     stopRuntimeTransportModesFixture
 } from "@test/fixtures/RuntimeTransportModesFixture";
@@ -38,6 +39,14 @@ describe("E2E: p2pSetup runtime modes", function () {
 
     it("waits for custom root readiness in worker mode", async function () {
         await assertCustomRootReadiness(true);
+    });
+
+    it("enters a custom RPC handler without the state mutex in inline mode", async function () {
+        await assertRpcHandlerEntersWithoutMutex(false);
+    });
+
+    it("enters a custom RPC handler without the state mutex in worker mode", async function () {
+        await assertRpcHandlerEntersWithoutMutex(true);
     });
 
     it("rejects and cleans up failed custom root readiness in inline mode", async function () {

@@ -223,7 +223,7 @@ deliberately does not.
   correlation needs no authenticity check — the only writer to the other end is
   the paired context. This is the **trusted-loopback** property (§7); contrast
   the peer-RPC `requestId` which additionally binds a peer identity
-  ([rpc/README.md](./rpc/README.md) §6.5, [`INV-RPC-2-6DYF4E`](rpc/README.md#inv-rpc-2-6dyf4e)).
+  ([rpc/README.md](./rpc/README.md) §6.5, [`REQ-RPC-2-SZDTTM`](../../../../specification/peer-communication/rpc.md#req-rpc-2-szdttm)).
 - **Message order.** A `MessagePort` delivers messages to its single handler in
   send order (FIFO per port). The protocol relies on this for bus events, which
   are forwarded in emission order through the single bridge tap
@@ -329,6 +329,11 @@ be canonical:
 - **Transferables.** Only two things are transferred (ownership moved, not
   cloned): the runtime port itself at bootstrap, and the **WebRTC bridge port**
   (§4).
+- **Application event names.** The hook-publishing proxy accepts every string
+  property name and emits `{kind: "p2pEventHooks", eventName, args}` before
+  calling the current application hook target. Cloneable application payloads
+  therefore cross the same worker-to-client bridge without adding their names
+  to the SDK's base hook type.
 - **Best-effort clone with silent loss.** Bus-event handler `args` are a
   best-effort clone and arrive **empty when not serializable**
   ([`worker/protocol.ts`](../../../../../../src/evm/p2pRuntime/worker/protocol.ts#L17)
@@ -395,7 +400,7 @@ what:
 **How they relate ([`INV-RUN-1-JM2D9F`](runtime-and-concurrency.md#inv-run-1-jm2d9f)).** Ports move work _between_ contexts in parallel;
 the mutex serializes the one operation that mutates live state _within_ the host.
 Peer-RPC ingest and port requests are the cheap, mergeable, out-of-order regime
-and hold **no** lock ([rpc/README.md](./rpc/README.md) §6.6, [`INV-RPC-5-BCEZVC`](rpc/README.md#inv-rpc-5-bcezvc)); only the
+and hold **no** lock ([rpc/README.md](./rpc/README.md) §6.6, [`REQ-BLOCK-PIPE-5-WJ31RG`](../../../../specification/block-progression/block-processing.md#req-block-pipe-5-wj31rg)); only the
 downstream dequeue-and-execute path takes the mutex. Moving the EVM into a
 dedicated worker does not change this: `executeCall`/`simulateCall` are awaited
 _under_ the host mutex, so total order is preserved across the executor boundary

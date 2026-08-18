@@ -51,6 +51,10 @@ class PingRpcMethods extends ARpcMethods<P2PManager<PingRpc>> {
     }
 
     pong(_nonce: string): void {}
+
+    sum(a: number, b: number): number {
+        return a + b;
+    }
 }
 
 class RelayService extends ARpcService<RelayRpcMethods, P2PManager<PingRpc>> {
@@ -83,6 +87,20 @@ function assertCustomRpcTypes(p2pManager: P2PManager<PingRpc>): void {
     p2pManager.localRpc.pingService.prefix;
     p2pManager.remoteRpc.pingService.ping("ok");
     p2pManager.remoteRpc.relayService.recordPing("ok");
+
+    const fireAndForget = p2pManager.remoteRpc.pingService.ping("ok");
+    fireAndForget.broadcast();
+    fireAndForget.sendOne();
+    fireAndForget.sendMultiple([]);
+
+    const request = p2pManager.remoteRpc.pingService.sum(1, 2);
+    request.request();
+
+    // @ts-expect-error - void methods do not expose request delivery.
+    fireAndForget.request();
+
+    // @ts-expect-error - value methods do not expose fire-and-forget delivery.
+    request.sendOne();
 
     // @ts-expect-error - ping expects a string nonce.
     p2pManager.remoteRpc.pingService.ping(123);

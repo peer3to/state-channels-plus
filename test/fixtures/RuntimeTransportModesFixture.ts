@@ -1,3 +1,4 @@
+// @spec-test-coverage-ignore: Runtime transport fixture exercised by owning E2E declarations.
 import { expect } from "chai";
 import { ethers, NonceManager } from "ethers";
 
@@ -11,12 +12,15 @@ import {
     slotDeployerIndex
 } from "@test/harness/core/slotAccounts";
 import {
+    MathStateMachine,
     MathStateMachine__factory,
     StateChannelManagerProxy__factory
 } from "@typechain-types";
 import { ContractFactory } from "ethers";
 import { startHardhatNode, type NodeHandle } from "@test/utils/nodeInfra";
 import path from "node:path";
+import type { ReadyLifecycleRpc } from "@test/fixtures/customRpc/ReadyLifecycleRpcManifest";
+import type P2pInstance from "@/evm/P2pInstance";
 
 let hardhatNodeUrl = process.env.HARDHAT_NODE_URL;
 const DEFAULT_HARDHAT_MNEMONIC =
@@ -298,6 +302,25 @@ export async function assertCustomRootReadiness(
     });
     try {
         expect(Date.now() - startedAt).to.be.greaterThanOrEqual(100);
+    } finally {
+        await p2pInstance.dispose();
+    }
+}
+
+export async function assertRpcHandlerEntersWithoutMutex(
+    runSdkInThread: boolean
+): Promise<void> {
+    const p2pInstance = (await setupP2pInstance({
+        runSdkInThread,
+        vmDedicatedThread: false,
+        readyOptions: {}
+    })) as unknown as P2pInstance<MathStateMachine, ReadyLifecycleRpc>;
+    try {
+        expect(
+            await p2pInstance.hostRpc.mutexProbe
+                .isLockedAtHandlerEntry()
+                .request()
+        ).to.equal(false);
     } finally {
         await p2pInstance.dispose();
     }

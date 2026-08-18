@@ -43,11 +43,11 @@ boundary's contract is therefore twofold:
 - **What it guarantees.** A frame reaching a handler has passed the frame-size cap, envelope-shape
   verification, service and method existence checks, and the service's guards
   ([`P2PManager.onRpc`](../../../../../../../src/P2PManager.ts#L200),
-  [`ARpcService.runRPC`](../../../../../../../src/rpc/ARpcService.ts#L25)). Request/response replies are
+  [`ARpcService.runRPC`](../../../../../../../src/rpc/ARpcService.ts#L49)). Request/response replies are
   correlated, time-bounded, and only settled by the addressed peer.
 - **What it does not guarantee.** Nothing about the *semantic* validity of parameters. The
   envelope is untrusted JSON; every handler remains responsible for decoding and validating its
-  own payload before any state effect (§4, [`REQ-RPC-2-SZDTTM`](../../../../../specification/peer-communication/rpc.md#req-rpc-2-szdttm)).
+  own payload before any state effect (§4; canonical owners are listed there).
 
 Delivery is best-effort: no ordering across peers, no retries, no delivery receipts for
 fire-and-forget sends, and — currently — no rate limiting beyond the frame-size cap (§9).
@@ -70,23 +70,19 @@ deliberately public, remotely callable methods. The dispatcher instantiates the 
 per incoming frame via `service.createRPCMethods(transport)`, binding `senderTransport` so a
 handler knows which peer called it.
 
-**[`REQ-RPC-1-FF89Z0`](../../../../../specification/peer-communication/rpc.md#req-rpc-1-ff89z0) (normative).** Private helpers and mutable service state MUST NOT be exposed through
+Under the declared-endpoint rule in [`REQ-RPC-6-E60S4J`](../../../../../specification/peer-communication/rpc.md#req-rpc-6-e60s4j), private helpers and mutable service state MUST NOT be exposed through
 an `RpcMethods` class. Only methods whose remote invocation is an intended protocol entry point
 belong there; everything else stays on the service. A method on an RpcMethods class is public to
 every connected peer — putting it there *is* the act of opening a protocol entry point, and it
 then carries the full ingress obligations of §4.
 
-**Open question:** the dispatcher's method-existence check
-([`hasMethod`](../../../../../../../src/utils/ObjectChecks.ts#L14)) uses `prop in obj` plus a `typeof
-"function"` test, which walks the prototype chain. Inherited functions — `Object.prototype`
-members such as `toString`, `hasOwnProperty`, `constructor`, and the `ARpcMethods` base surface —
-are therefore remotely dispatchable: a peer can send `method: "hasOwnProperty"` and have it
-invoked with attacker-chosen parameters (and, for request-style frames, its return value
-serialized back). No concrete exploit is identified, but this contradicts the "only
-deliberately-public methods" rule; the dispatch check should probably be restricted to methods
-declared on the RpcMethods class itself. Engineer decision needed (divergence class: decision
-pending; observed in [`ARpcService.runRPC`](../../../../../../../src/rpc/ARpcService.ts#L25) +
-[`ObjectChecks.ts`](../../../../../../../src/utils/ObjectChecks.ts#L1)).
+[`ARpcService.runRPC`](../../../../../../../src/rpc/ARpcService.ts#L49) resolves endpoints from
+function-valued own properties on the methods instance and function-valued data properties on its
+application prototype chain. It stops before [`ARpcMethods.prototype`](../../../../../../../src/rpc/ARpcMethods.ts#L4),
+or `Object.prototype`, rejects `constructor`, and reads descriptors without executing accessors. Application subclasses
+therefore inherit declared endpoint families, while `remoteRpc`, `toString`, `hasOwnProperty`, and
+other base members are not remotely callable. A function-valued own property is an endpoint too;
+helpers and stored callbacks belong on the service or in JavaScript `#private` fields.
 
 ### 2.2 MainRpcService — the root
 
@@ -95,10 +91,16 @@ instantiates the six built-in services as public properties (`initHandshakeServi
 `webRTCSetupService`, `stateTransitionService`, `spectateService`, `isForkDisputedService`,
 `joinChannelService`); the property name is the wire-visible service name (`rpc.service`).
 Registration is purely structural: [`P2PManager.onRpc`](../../../../../../../src/P2PManager.ts#L200) resolves
-`rpc.service` with [`isInstanceOfRpcService`](../../../../../../../src/utils/ObjectChecks.ts#L24), which
-accepts any root property that is an object exposing a `runRPC` function. There is no explicit
+`rpc.service` with [`hasRpcService`](../../../../../../../src/utils/ObjectChecks.ts#L27), which
+accepts a root property exposing the complete public service operations used by dispatch. There is no explicit
 service registry or allowlist — a property of the root either is a service (dispatchable) or is
 not (frame rejected, sender disconnected).
+
+The same rule applies in [`RemoteRpcProxy`](../../../../../../../src/rpc/RemoteRpcProxy.ts): a
+custom application service can come from a compatible SDK copy in another production chunk.
+Constructor identity is not stable across module graphs, so it is not part of either local proxy
+resolution or incoming dispatch. The structural check only classifies the service; normal RPC
+guards and payload validation still apply.
 
 [`OpenChannelNegotiationService`](../../../../../../../src/rpc/services/openChannelNegotiation/OpenChannelNegotiationService.ts#L44)
 is exported but **not** instantiated by `MainRpcService`; it only becomes reachable when an
@@ -164,7 +166,7 @@ parameter, so custom services get the same typed sending surface as built-ins
 (`RemoteRpcProxyType<TCustomRpc>`), including through `hostRpc` (§3). `customRpcOptions` without a
 `customRpc` constructor is rejected.
 
-**[`REQ-RPC-3-ZM9WR5`](../../../../../specification/peer-communication/rpc.md#req-rpc-3-zm9wr5) (normative).** A custom root MUST follow the same pairing discipline as the built-ins:
+Under the structural wire contract in [`REQ-RPC-1-FF89Z0`](../../../../../specification/peer-communication/rpc.md#req-rpc-1-ff89z0), a custom root MUST follow the same pairing discipline as the built-ins:
 each added entry point lives on an RpcMethods class behind a service, carries applicable guards,
 and validates its own payload (§4). The registry deliberately provides no way to expose a bare
 function — the service/RpcMethods shape is the only extension mechanism.
@@ -208,7 +210,7 @@ them is how ingress bugs happen:
   It does **not** verify parameter arity, parameter types, or semantic validity — `params` is
   spread raw into the handler (`method(...rpc.params)`).
 
-**[`REQ-RPC-2-SZDTTM`](../../../../../specification/peer-communication/rpc.md#req-rpc-2-szdttm) (normative).** Every RPC endpoint is an adversarial ingress point and MUST, before any
+The canonical owners split this boundary deliberately: [`REQ-RPC-1-FF89Z0`](../../../../../specification/peer-communication/rpc.md#req-rpc-1-ff89z0) owns decoding and canonical payloads, [`REQ-RPC-3-ZM9WR5`](../../../../../specification/peer-communication/rpc.md#req-rpc-3-zm9wr5) owns service authorization, and [`REQ-RPC-5-CV1R1Y`](../../../../../specification/peer-communication/rpc.md#req-rpc-5-cv1r1y) owns resource bounds. Every RPC endpoint is an adversarial ingress point and MUST, before any
 state effect: authenticate the caller or rely on an explicit applicable guard; decode its payload
 (encoded protocol structs through [`Codec`](../../../../../../../src/utils/Codec.ts#L175), §6.3) treating decode
 failure as a handled protocol failure, never an escaping exception; validate semantic constraints
@@ -217,7 +219,7 @@ input arriving from another ingress path (chain events, local recovery) must rec
 explicit validation before it affects the internal system
 ([block-confirmation-pipeline.md](../block-confirmation-pipeline.md) §2).
 
-**[`REQ-RPC-4-9VX0B9`](../../../../../specification/peer-communication/rpc.md#req-rpc-4-9vx0b9) (normative).** Bigint-bearing values MUST cross the RPC boundary as canonical
+Under [`REQ-RPC-1-FF89Z0`](../../../../../specification/peer-communication/rpc.md#req-rpc-1-ff89z0), bigint-bearing values MUST cross the RPC boundary as canonical
 `Codec.encode` strings, never raw JSON. [`serializeRpc`](../../../../../../../src/rpc/Rpc.ts#L38) enforces this
 mechanically: `JSON.stringify` throws on a raw `BigInt`, surfacing the offending method instead of
 silently coercing to a lossy number, and the test harness deliberately installs no
@@ -251,7 +253,7 @@ injected callback). Services declare `this.guards = [...]` in their constructors
 declaration order**, short-circuiting on the first failure. Ordering is therefore meaningful and
 part of a service's contract (cheap/structural guards should precede expensive ones).
 
-Placement in the dispatch path ([`ARpcService.runRPC`](../../../../../../../src/rpc/ARpcService.ts#L25)):
+Placement in the dispatch path ([`ARpcService.runRPC`](../../../../../../../src/rpc/ARpcService.ts#L49)):
 guards run **before the method-existence check** — an unauthenticated peer probing a guarded
 service hits the guard consequence even for nonexistent methods, and learns nothing about the
 service's method names.
@@ -296,12 +298,12 @@ fire-and-forget RPCs; whether request-style RPCs should instead be held without 
 (or never queued) is undecided. A secondary wrinkle: in the non-negotiating branch `onFailure`
 disconnects the transport *before* `runRPC` attempts to send that error response on it.
 (Divergence class: decision pending; observed in
-[`ARpcService.runRPC`](../../../../../../../src/rpc/ARpcService.ts#L25) +
+[`ARpcService.runRPC`](../../../../../../../src/rpc/ARpcService.ts#L49) +
 [`HandshakeCompletedGuard`](../../../../../../../src/rpc/guards/HandshakeCompletedGuard.ts#L41).)
 
 ### 5.3 Requirements for future guards
 
-**[`REQ-RPC-5-CV1R1Y`](../../../../../specification/peer-communication/rpc.md#req-rpc-5-cv1r1y) (normative).** The guard mechanism is the designated place for caller-scoped
+Under [`REQ-RPC-7-9CBSHK`](../../../../../specification/peer-communication/rpc.md#req-rpc-7-9cbshk), the guard mechanism is the designated place for caller-scoped
 admission decisions, and new pre-conditions of that kind MUST be expressed as explicit guards
 rather than ad-hoc checks duplicated across endpoints: authorization (is this peer allowed to
 invoke this service — e.g. participant vs. spectator), admission state (channel status, join
@@ -344,7 +346,7 @@ The envelope itself is plain JSON; params and results MUST be JSON-serializable 
 Bigint-bearing ethers structs cross as `Codec.encode`d strings — ABI encoding against the
 canonical ethers type strings ([`Codec`](../../../../../../../src/utils/Codec.ts#L175), `Type` enum covering
 blocks, confirmations, joins, proofs, sync payloads, …) — and are `Codec.decode`d inside the
-receiving endpoint ([`REQ-RPC-2-SZDTTM`](../../../../../specification/peer-communication/rpc.md#req-rpc-2-szdttm)/4). One serialization mechanism (Codec) for all protocol structs;
+receiving endpoint ([`REQ-RPC-1-FF89Z0`](../../../../../specification/peer-communication/rpc.md#req-rpc-1-ff89z0)). One serialization mechanism (Codec) for all protocol structs;
 raw `BigInt` in an envelope throws at the sender (§4). Examples on the wire:
 `encodedSignedJoinChannel` (join), `encodedSyncPayload` (spectate);
 `BlockConfirmationStruct` crosses as a JSON object whose numeric fields are strings/hex by ethers
@@ -355,21 +357,20 @@ struct convention and is authenticated and re-validated in the pipeline.
 [`P2PManager.onRpc(serializedRpc, transport)`](../../../../../../../src/P2PManager.ts#L1) is the single entry
 point for every frame from every transport (network and loopback):
 
-1. **Frame-size cap.** `serializedRpc.length > MAX_RPC_FRAME_BYTES` (16 MiB,
+1. **Frame-size cap.** `Buffer.byteLength(serializedRpc, "utf8") > MAX_RPC_FRAME_BYTES` (16 MiB,
    [`Rpc.ts`](../../../../../../../src/rpc/Rpc.ts#L1)) → log, disconnect, stop — *before* any `JSON.parse`, so
-   an oversized frame cannot force unbounded parse work. (Note: the check counts UTF-16 code
-   units, not bytes; for the ASCII JSON the protocol produces these coincide, but a peer sending
-   multi-byte characters gets up to ~4× the nominal byte budget. Documentation debt — the
-   constant's name overstates precision.)
+   an oversized frame cannot force unbounded parse work. The cap is measured in wire-relevant UTF-8
+   bytes; a frame exactly at the cap is admitted and the first byte over is rejected.
 2. **Response classification.** If the frame decodes as an `RpcResponse` → correlation handling
    (§6.5), stop.
 3. **Envelope verification.** `deserializeRpc` failure → disconnect.
 4. **Service existence.** `rpc.service` must resolve on the local root to an object exposing
-   `runRPC` (`isInstanceOfRpcService`) → else disconnect.
+   complete public service shape (`hasRpcService`) → else disconnect.
 5. **Guards** (inside `runRPC`, skipped for trusted transports): first failure → consequence per
    guard + error response if `requestId` (§5.1); frame consumed.
-6. **Method existence.** `hasMethod` failure → `runRPC` returns `false` → disconnect (see the §2.1
-   open question on prototype-inherited methods).
+6. **Endpoint resolution.** The name must resolve to a function-valued own data property on the
+   methods instance or its application prototype chain before `ARpcMethods.prototype` or
+   `Object.prototype`; otherwise `runRPC` returns `false` → disconnect.
 7. **Invocation.** `createRPCMethods(transport)` binds the sender; the method runs with `params`
    spread raw.
    - **Request path** (`requestId` present): the handler's awaited return value is sent as
@@ -399,13 +400,9 @@ flowchart TD
     H -- fire-and-forget error --> D5[disconnect]
 ```
 
-**Open question:** on the request path, the success and error responses are sent from inside the
-same try/catch — if `sendRpcResponse` itself throws (e.g. the transport closed between handler
-start and reply), the catch block re-attempts a send on the same dead transport and that second
-throw escapes the voided async closure as an unhandled rejection. Whether transports are required
-to swallow sends on closed connections, or the dispatcher should guard the reply send, is
-undecided. (Divergence class: decision pending; observed in
-[`ARpcService.runRPC`](../../../../../../../src/rpc/ARpcService.ts#L25).)
+A handled request makes one response-send attempt. If that send fails, the dispatcher logs the
+transport failure and disconnects it without a second response or an unhandled rejection. This
+resolves [`DEF-8-HWJ10N`](../../../../../audit/open-findings.md#def-8-hwj10n).
 
 ### 6.5 Correlation, timeout, cancellation, disconnect, and error semantics
 
@@ -420,7 +417,7 @@ undecided. (Divergence class: decision pending; observed in
   a descriptive error. There is no cancellation API beyond the timeout — a caller cannot abort an
   in-flight request, and the remote handler is never cancelled (its late response is silently
   dropped, below).
-- **Addressed-peer rule ([`INV-RPC-2-6DYF4E`](README.md#inv-rpc-2-6dyf4e)).** Only the peer the request was sent to may settle it.
+- **Addressed-peer rule ([`REQ-RPC-2-SZDTTM`](../../../../../specification/peer-communication/rpc.md#req-rpc-2-szdttm)).** Only the peer the request was sent to may settle it.
   [`handleRpcResponse`](../../../../../../../src/P2PManager.ts#L167) compares peer *identity*
   ([`ATransport.isSamePeer`](../../../../../../../src/transport/ATransport.ts#L28), checksum-address based) —
   not transport object identity — so a WebRTC upgrade still settles pending requests; a response
@@ -470,7 +467,7 @@ patterns:
   [`IsForkDisputedRpcMethods`](../../../../../../../src/rpc/services/isForkDisputedService/IsForkDisputedRpcMethods.ts#L6)).
 - **Concurrency-limited.** Spectate allows one in-flight sync per peer (`inFlightByPeerAddress`).
 
-**[`REQ-RPC-6-E60S4J`](../../../../../specification/peer-communication/rpc.md#req-rpc-6-e60s4j) (normative).** Every endpoint MUST be explicitly one of: idempotent under re-delivery,
+Under [`REQ-RPC-4-9VX0B9`](../../../../../specification/peer-communication/rpc.md#req-rpc-4-9vx0b9), every endpoint MUST be explicitly one of: idempotent under re-delivery,
 or replay-rejecting with a defined consequence. An endpoint whose replay silently double-applies a
 state effect is a defect.
 
@@ -530,7 +527,7 @@ are behind `HandshakeCompletedGuard`; component-level summary table in
   dispute-acknowledgment round per disputed fork per peer; violations → disconnect + blacklist
   (dispute context: [dispute-pipeline.md](../dispute-pipeline.md)).
 - **`joinChannelService`** ([join-channel.md](./join-channel.md)) — request/response
-  join-signature collection with the full [`REQ-RPC-2-SZDTTM`](../../../../../specification/peer-communication/rpc.md#req-rpc-2-szdttm) validation chain; validation failures are
+  join-signature collection with the full [`REQ-RPC-3-ZM9WR5`](../../../../../specification/peer-communication/rpc.md#req-rpc-3-zm9wr5) authorization chain; validation failures are
   penalty-free request errors.
 - **`webRTCSetupService`** ([webrtc-setup.md](./webrtc-setup.md)) — one-way WebRTC signaling;
   every failure is caught and logged only — silent ignore.
@@ -639,38 +636,37 @@ Open design content within [`OQ-6-4JPNE5`](../../../../../specification/open-que
   assumptions in [../security/open-security-review.md](../../../../../audit/security-assessment.md)).
 - Full-mesh topology: broadcast cost is O(peers); design target is small partitions.
 
-## 11. Invariants
+## 11. Canonical requirement ownership
 
-| ID | Invariant |
-| --- | --- |
-| [`INV-RPC-1-SJS2T6`](../../../../../specification/peer-communication/rpc.md#inv-rpc-1-sjs2t6) | No frame reaches a service handler without passing, in order: frame-size cap, envelope verification, service existence, guards (untrusted transports), method existence. |
-| <a id="inv-rpc-2-6dyf4e"></a>`INV-RPC-2-6DYF4E` | A pending request is settled only by the addressed peer (checksum identity, transport upgrades tolerated); any other responder is disconnected and blacklisted. |
-| <a id="inv-rpc-3-y6pe7s"></a>`INV-RPC-3-Y6PE7S` | Guards are bypassed only for `isTrusted` transports, and the only trusted transport is the in-process loopback (never a network peer). |
-| <a id="inv-rpc-4-rfdnh3"></a>`INV-RPC-4-RFDNH3` | Raw `BigInt` values never cross the wire: serialization throws at the sender; protocol structs cross as canonical Codec encodings. |
-| <a id="inv-rpc-5-bcezvc"></a>`INV-RPC-5-BCEZVC` | RPC dispatch and handlers never hold the `StateManager` mutex; live-state mutation happens only through the pipeline's mutex-acquiring entry points. |
+The neutral [RPC specification](../../../../../specification/peer-communication/rpc.md#requirements-and-invariants)
+is the only owner of canonical RPC requirement and test-plan meanings. This implementation view
+records status and evidence without redefining those IDs.
 
-## 12. Verification
+| Requirement / invariant | Implementation status | Evidence | Gap / divergence |
+| --- | --- | --- | --- |
+| [`INV-RPC-1-SJS2T6`](../../../../../specification/peer-communication/rpc.md#inv-rpc-1-sjs2t6) | Partial | Handshake and service reports prove mutual success, pre-auth rejection, and half-auth isolation. | Forged, stale, and reconnect identity permutations remain exact-evidence gaps where no mapped test exists. |
+| [`REQ-RPC-1-FF89Z0`](../../../../../specification/peer-communication/rpc.md#req-rpc-1-ff89z0) | Partial | `Rpc`, `Codec`, transport, cross-module, and service reports own wire and structural evidence. | Version-mismatch handling is absent. |
+| [`REQ-RPC-2-SZDTTM`](../../../../../specification/peer-communication/rpc.md#req-rpc-2-szdttm) | Partial | `P2PManager` owns response, error, timeout, disconnect, peer binding, cleanup, and disposal; `ARpcService` owns one-attempt response delivery. | No cancellation API exists. |
+| [`REQ-RPC-3-ZM9WR5`](../../../../../specification/peer-communication/rpc.md#req-rpc-3-zm9wr5) | Partial | Service-owned block, sync, join, dispute, and signaling reports. | Join has one complete mapped matrix. Block, sync, dispute, transport-upgrade, and unwired open-channel authorization remain unassigned where no single declaration proves the full family oracle. |
+| [`REQ-RPC-4-9VX0B9`](../../../../../specification/peer-communication/rpc.md#req-rpc-4-9vx0b9) | Partial | Service-owned block merge/order, handshake replay, dispute replay, and sync concurrency evidence. | Block-delivery retry after failure has no exact no-duplicate-effect oracle. |
+| [`REQ-RPC-5-CV1R1Y`](../../../../../specification/peer-communication/rpc.md#req-rpc-5-cv1r1y) | Missing | The fixed frame cap and sync in-flight limit provide narrow local bounds. | No central pending-count, aggregate, per-peer, proof-work, or signaling-work bound; see [`OQ-6-4JPNE5`](../../../../../specification/open-questions.md#oq-6-4jpne5). |
+| [`REQ-RPC-6-E60S4J`](../../../../../specification/peer-communication/rpc.md#req-rpc-6-e60s4j) | Covered | `P2PManager` and `ARpcService` own the ordered ingress and endpoint-resolution stages. | None demonstrated. |
+| [`REQ-RPC-7-9CBSHK`](../../../../../specification/peer-communication/rpc.md#req-rpc-7-9cbshk) | Partial | `runGuards`, `HandshakeCompletedGuard`, `ARpcService`, and loopback/network tests. | Request-style retry is ineffective during negotiation; see [`OQ-34-FY08V2`](../../../../../specification/open-questions.md#oq-34-fy08v2). |
+| [`REQ-RPC-8-44XECF`](../../../../../specification/peer-communication/rpc.md#req-rpc-8-44xecf) | Missing | No compatibility field or handshake negotiation exists. | All compatibility permutations remain unassigned under [`OQ-34-FY08V2`](../../../../../specification/open-questions.md#oq-34-fy08v2). |
 
+## 12. Implementation integration test plan
 
-Concrete test evidence is owned by the downstream verification layer. This section defines implementation-specific obligations only.
-### Implementation test plan
+Canonical permutation meanings stay in the neutral specification. These integration IDs group
+cross-file implementation evidence and link to those canonical owners.
 
-These are concrete component-level tests required by the implementation obligations in this document. Exercise public boundaries with real domain values and collaborators. Every listed permutation is required unless an engineer records why it is not applicable.
+| Integration test ID | Canonical owners | Setup and expected result | Required permutations |
+| --- | --- | --- | --- |
+| <a id="integration-test-rpc-2-pbz4qy"></a>`INTEGRATION-TEST-RPC-2-PBZ4QY` | [`INV-RPC-1-SJS2T6`](../../../../../specification/peer-communication/rpc.md#inv-rpc-1-sjs2t6), [`REQ-RPC-6-E60S4J`](../../../../../specification/peer-communication/rpc.md#req-rpc-6-e60s4j) | Dispatch authenticated and unauthenticated frames through real sessions; failed ingress stays isolated from unrelated sessions. | <a id="integration-test-rpc-2-pbz4qy.p1"></a>`INTEGRATION-TEST-RPC-2-PBZ4QY.P1` authenticated dispatch; <a id="integration-test-rpc-2-pbz4qy.p2"></a>`INTEGRATION-TEST-RPC-2-PBZ4QY.P2` pre-auth rejection; <a id="integration-test-rpc-2-pbz4qy.p3"></a>`INTEGRATION-TEST-RPC-2-PBZ4QY.P3` crafted endpoint isolation; <a id="integration-test-rpc-2-pbz4qy.p4"></a>`INTEGRATION-TEST-RPC-2-PBZ4QY.P4` multibyte oversized offender isolation. |
+| <a id="integration-test-rpc-3-zkfxgt"></a>`INTEGRATION-TEST-RPC-3-ZKFXGT` | [`REQ-RPC-2-SZDTTM`](../../../../../specification/peer-communication/rpc.md#req-rpc-2-szdttm) | Race every implemented settlement outcome and require one winner plus registry/timer cleanup. | <a id="integration-test-rpc-3-zkfxgt.p1"></a>`INTEGRATION-TEST-RPC-3-ZKFXGT.P1` response/error/send cleanup; <a id="integration-test-rpc-3-zkfxgt.p5"></a>`INTEGRATION-TEST-RPC-3-ZKFXGT.P5` disposal cleanup; <a id="integration-test-rpc-3-zkfxgt.p6"></a>`INTEGRATION-TEST-RPC-3-ZKFXGT.P6` response/timeout; <a id="integration-test-rpc-3-zkfxgt.p7"></a>`INTEGRATION-TEST-RPC-3-ZKFXGT.P7` response/disconnect; <a id="integration-test-rpc-3-zkfxgt.p8"></a>`INTEGRATION-TEST-RPC-3-ZKFXGT.P8` replacement/unknown/duplicate response; <a id="integration-test-rpc-3-zkfxgt.p9"></a>`INTEGRATION-TEST-RPC-3-ZKFXGT.P9` remote-error/timeout; <a id="integration-test-rpc-3-zkfxgt.p10"></a>`INTEGRATION-TEST-RPC-3-ZKFXGT.P10` response/remote-error; <a id="integration-test-rpc-3-zkfxgt.p11"></a>`INTEGRATION-TEST-RPC-3-ZKFXGT.P11` remote-error/disconnect; <a id="integration-test-rpc-3-zkfxgt.p12"></a>`INTEGRATION-TEST-RPC-3-ZKFXGT.P12` timeout/disconnect; <a id="integration-test-rpc-3-zkfxgt.p13"></a>`INTEGRATION-TEST-RPC-3-ZKFXGT.P13` foreign responder; <a id="integration-test-rpc-3-zkfxgt.p14"></a>`INTEGRATION-TEST-RPC-3-ZKFXGT.P14` concurrent distinct/duplicate response. |
+| <a id="integration-test-rpc-4-exz35f"></a>`INTEGRATION-TEST-RPC-4-EXZ35F` | [`REQ-RPC-7-9CBSHK`](../../../../../specification/peer-communication/rpc.md#req-rpc-7-9cbshk) | Run guards in order across trusted loopback and untrusted network paths; one failure owns the consequence. | <a id="integration-test-rpc-4-exz35f.p1"></a>`INTEGRATION-TEST-RPC-4-EXZ35F.P1` order and short-circuit; <a id="integration-test-rpc-4-exz35f.p2"></a>`INTEGRATION-TEST-RPC-4-EXZ35F.P2` loopback bypass; <a id="integration-test-rpc-4-exz35f.p3"></a>`INTEGRATION-TEST-RPC-4-EXZ35F.P3` pre-handshake consequence; <a id="integration-test-rpc-4-exz35f.p4"></a>`INTEGRATION-TEST-RPC-4-EXZ35F.P4` unrelated-session isolation. |
+| <a id="integration-test-rpc-5-acp2qt"></a>`INTEGRATION-TEST-RPC-5-ACP2QT` | [`REQ-RPC-1-FF89Z0`](../../../../../specification/peer-communication/rpc.md#req-rpc-1-ff89z0) | Install one structural custom root and deliver through inline and worker hosts. | <a id="integration-test-rpc-5-acp2qt.p1"></a>`INTEGRATION-TEST-RPC-5-ACP2QT.P1` structural recognition; <a id="integration-test-rpc-5-acp2qt.p2"></a>`INTEGRATION-TEST-RPC-5-ACP2QT.P2` inline host; <a id="integration-test-rpc-5-acp2qt.p3"></a>`INTEGRATION-TEST-RPC-5-ACP2QT.P3` worker host; <a id="integration-test-rpc-5-acp2qt.p4"></a>`INTEGRATION-TEST-RPC-5-ACP2QT.P4` request/error delivery. |
+| <a id="integration-test-rpc-6-009egg"></a>`INTEGRATION-TEST-RPC-6-009EGG` | [`REQ-RPC-3-ZM9WR5`](../../../../../specification/peer-communication/rpc.md#req-rpc-3-zm9wr5), [`REQ-RPC-4-9VX0B9`](../../../../../specification/peer-communication/rpc.md#req-rpc-4-9vx0b9) | Reuse service-owned authorization and replay tests; no shared omnibus test duplicates their payload matrices. | <a id="integration-test-rpc-6-009egg.p3"></a>`INTEGRATION-TEST-RPC-6-009EGG.P3` join authorization; <a id="integration-test-rpc-6-009egg.p4"></a>`INTEGRATION-TEST-RPC-6-009EGG.P4` handshake replay; <a id="integration-test-rpc-6-009egg.p5"></a>`INTEGRATION-TEST-RPC-6-009EGG.P5` dispute replay; <a id="integration-test-rpc-6-009egg.p6"></a>`INTEGRATION-TEST-RPC-6-009EGG.P6` block authorization; <a id="integration-test-rpc-6-009egg.p7"></a>`INTEGRATION-TEST-RPC-6-009EGG.P7` sync authorization; <a id="integration-test-rpc-6-009egg.p8"></a>`INTEGRATION-TEST-RPC-6-009EGG.P8` block merge; <a id="integration-test-rpc-6-009egg.p9"></a>`INTEGRATION-TEST-RPC-6-009EGG.P9` sync concurrency. |
 
-| Plan item | Requirement / invariant | Setup and stimulus | Expected result | Required permutations |
-| --- | --- | --- | --- | --- |
-| [`REQ-RPC-1-FF89Z0.T1`](../../../../../specification/peer-communication/rpc.md#req-rpc-1-ff89z0.t1) | [`REQ-RPC-1-FF89Z0`](../../../../../specification/peer-communication/rpc.md#req-rpc-1-ff89z0) | Exercise the real public component or contract boundary, including rejection and failure paths without partial effects. | Only deliberately public endpoint functions are remotely dispatchable; helpers and mutable service state are unreachable. | [`REQ-RPC-1-FF89Z0.T1.P1`](../../../../../specification/peer-communication/rpc.md#req-rpc-1-ff89z0.t1.p1) — Own/prototype/private/helper names<br>[`REQ-RPC-1-FF89Z0.T1.P2`](../../../../../specification/peer-communication/rpc.md#req-rpc-1-ff89z0.t1.p2) — missing/existing service and method<br>[`REQ-RPC-1-FF89Z0.T1.P3`](../../../../../specification/peer-communication/rpc.md#req-rpc-1-ff89z0.t1.p3) — crafted method names<br>[`REQ-RPC-1-FF89Z0.T1.P4`](../../../../../specification/peer-communication/rpc.md#req-rpc-1-ff89z0.t1.p4) — `InitHandshakeService` class<br>[`REQ-RPC-1-FF89Z0.T1.P5`](../../../../../specification/peer-communication/rpc.md#req-rpc-1-ff89z0.t1.p5) — `WebRTCSetupService` class<br>[`REQ-RPC-1-FF89Z0.T1.P6`](../../../../../specification/peer-communication/rpc.md#req-rpc-1-ff89z0.t1.p6) — `StateTransitionService` class<br><a id="req-rpc-1-ff89z0.t1.p7"></a>`REQ-RPC-1-FF89Z0.T1.P7` — `SpectateService` class<br><a id="req-rpc-1-ff89z0.t1.p8"></a>`REQ-RPC-1-FF89Z0.T1.P8` — `IsForkDisputedService` class<br><a id="req-rpc-1-ff89z0.t1.p9"></a>`REQ-RPC-1-FF89Z0.T1.P9` — `JoinChannelService` class. |
-| [`REQ-RPC-2-SZDTTM.T1`](../../../../../specification/peer-communication/rpc.md#req-rpc-2-szdttm.t1) | [`REQ-RPC-2-SZDTTM`](../../../../../specification/peer-communication/rpc.md#req-rpc-2-szdttm) | Exercise the real public component or contract boundary, including rejection and failure paths without partial effects. | Decode and semantic validation complete before the first state or external effect; malformed input follows the documented protocol-failure path. | [`REQ-RPC-2-SZDTTM.T1.P1`](../../../../../specification/peer-communication/rpc.md#req-rpc-2-szdttm.t1.p1) — Valid value<br>[`REQ-RPC-2-SZDTTM.T1.P2`](../../../../../specification/peer-communication/rpc.md#req-rpc-2-szdttm.t1.p2) — wrong type<br>[`REQ-RPC-2-SZDTTM.T1.P3`](../../../../../specification/peer-communication/rpc.md#req-rpc-2-szdttm.t1.p3) — truncated data<br>[`REQ-RPC-2-SZDTTM.T1.P4`](../../../../../specification/peer-communication/rpc.md#req-rpc-2-szdttm.t1.p4) — boundary values<br>[`REQ-RPC-2-SZDTTM.T1.P5`](../../../../../specification/peer-communication/rpc.md#req-rpc-2-szdttm.t1.p5) — adversarial fuzz<br>[`REQ-RPC-2-SZDTTM.T1.P6`](../../../../../specification/peer-communication/rpc.md#req-rpc-2-szdttm.t1.p6) — handler side-effect sentinel<br>[`REQ-RPC-2-SZDTTM.T1.P7`](../../../../../specification/peer-communication/rpc.md#req-rpc-2-szdttm.t1.p7) — wrong tag<br>[`REQ-RPC-2-SZDTTM.T1.P8`](../../../../../specification/peer-communication/rpc.md#req-rpc-2-szdttm.t1.p8) — wrong domain<br>[`REQ-RPC-2-SZDTTM.T1.P9`](../../../../../specification/peer-communication/rpc.md#req-rpc-2-szdttm.t1.p9) — trailing data. |
-| [`REQ-RPC-3-ZM9WR5.T1`](../../../../../specification/peer-communication/rpc.md#req-rpc-3-zm9wr5.t1) | [`REQ-RPC-3-ZM9WR5`](../../../../../specification/peer-communication/rpc.md#req-rpc-3-zm9wr5) | Exercise the real public component or contract boundary, including rejection and failure paths without partial effects. | A custom root is reachable only when manifest resolution and registry construction install its service/RpcMethods pair. | [`REQ-RPC-3-ZM9WR5.T1.P1`](../../../../../specification/peer-communication/rpc.md#req-rpc-3-zm9wr5.t1.p1) — Absent root<br>[`REQ-RPC-3-ZM9WR5.T1.P2`](../../../../../specification/peer-communication/rpc.md#req-rpc-3-zm9wr5.t1.p2) — malformed manifest<br>[`REQ-RPC-3-ZM9WR5.T1.P3`](../../../../../specification/peer-communication/rpc.md#req-rpc-3-zm9wr5.t1.p3) — inline runtime<br>[`REQ-RPC-3-ZM9WR5.T1.P4`](../../../../../specification/peer-communication/rpc.md#req-rpc-3-zm9wr5.t1.p4) — production root<br>[`REQ-RPC-3-ZM9WR5.T1.P5`](../../../../../specification/peer-communication/rpc.md#req-rpc-3-zm9wr5.t1.p5) — present root<br>[`REQ-RPC-3-ZM9WR5.T1.P6`](../../../../../specification/peer-communication/rpc.md#req-rpc-3-zm9wr5.t1.p6) — duplicate root<br><a id="req-rpc-3-zm9wr5.t1.p7"></a>`REQ-RPC-3-ZM9WR5.T1.P7` — worker runtime<br><a id="req-rpc-3-zm9wr5.t1.p8"></a>`REQ-RPC-3-ZM9WR5.T1.P8` — test-harness root. |
-| [`REQ-RPC-4-9VX0B9.T1`](../../../../../specification/peer-communication/rpc.md#req-rpc-4-9vx0b9.t1) | [`REQ-RPC-4-9VX0B9`](../../../../../specification/peer-communication/rpc.md#req-rpc-4-9vx0b9) | Exercise the real public component or contract boundary, including rejection and failure paths without partial effects. | Canonically encoded bigint-bearing values round-trip; a raw `BigInt` fails serialization at the sender. | [`REQ-RPC-4-9VX0B9.T1.P1`](../../../../../specification/peer-communication/rpc.md#req-rpc-4-9vx0b9.t1.p1) — Zero bigint<br>[`REQ-RPC-4-9VX0B9.T1.P2`](../../../../../specification/peer-communication/rpc.md#req-rpc-4-9vx0b9.t1.p2) — nested structs<br>[`REQ-RPC-4-9VX0B9.T1.P3`](../../../../../specification/peer-communication/rpc.md#req-rpc-4-9vx0b9.t1.p3) — Codec string<br>[`REQ-RPC-4-9VX0B9.T1.P4`](../../../../../specification/peer-communication/rpc.md#req-rpc-4-9vx0b9.t1.p4) — raw bigint<br>[`REQ-RPC-4-9VX0B9.T1.P5`](../../../../../specification/peer-communication/rpc.md#req-rpc-4-9vx0b9.t1.p5) — worker port<br>[`REQ-RPC-4-9VX0B9.T1.P6`](../../../../../specification/peer-communication/rpc.md#req-rpc-4-9vx0b9.t1.p6) — max bigint<br>[`REQ-RPC-4-9VX0B9.T1.P7`](../../../../../specification/peer-communication/rpc.md#req-rpc-4-9vx0b9.t1.p7) — safe-limit+1 bigint<br>[`REQ-RPC-4-9VX0B9.T1.P8`](../../../../../specification/peer-communication/rpc.md#req-rpc-4-9vx0b9.t1.p8) — nested arrays<br><a id="req-rpc-4-9vx0b9.t1.p9"></a>`REQ-RPC-4-9VX0B9.T1.P9` — network port. |
-| <a id="inv-rpc-4-rfdnh3.t1"></a>`INV-RPC-4-RFDNH3.T1` | [`INV-RPC-4-RFDNH3`](README.md#inv-rpc-4-rfdnh3) | Exercise the real public component or contract boundary, including rejection and failure paths without partial effects. | No successfully serialized RPC envelope contains a raw bigint or corrupted byte representation. | <a id="inv-rpc-4-rfdnh3.t1.p1"></a>`INV-RPC-4-RFDNH3.T1.P1` — Request envelope<br><a id="inv-rpc-4-rfdnh3.t1.p2"></a>`INV-RPC-4-RFDNH3.T1.P2` — nested arrays<br><a id="inv-rpc-4-rfdnh3.t1.p3"></a>`INV-RPC-4-RFDNH3.T1.P3` — `Uint8Array`<br><a id="inv-rpc-4-rfdnh3.t1.p4"></a>`INV-RPC-4-RFDNH3.T1.P4` — join `encodedSignedJoinChannel` endpoint<br><a id="inv-rpc-4-rfdnh3.t1.p5"></a>`INV-RPC-4-RFDNH3.T1.P5` — response envelope<br><a id="inv-rpc-4-rfdnh3.t1.p6"></a>`INV-RPC-4-RFDNH3.T1.P6` — error envelope<br><a id="inv-rpc-4-rfdnh3.t1.p7"></a>`INV-RPC-4-RFDNH3.T1.P7` — nested objects<br><a id="inv-rpc-4-rfdnh3.t1.p8"></a>`INV-RPC-4-RFDNH3.T1.P8` — spectate `encodedSyncPayload` endpoint. |
-| [`REQ-RPC-5-CV1R1Y.T1`](../../../../../specification/peer-communication/rpc.md#req-rpc-5-cv1r1y.t1) | [`REQ-RPC-5-CV1R1Y`](../../../../../specification/peer-communication/rpc.md#req-rpc-5-cv1r1y) | Exercise the real public component or contract boundary, including rejection and failure paths without partial effects. | Guards run in documented order for untrusted transports; only the loopback bypasses them; rejection has the specified consequence. | [`REQ-RPC-5-CV1R1Y.T1.P1`](../../../../../specification/peer-communication/rpc.md#req-rpc-5-cv1r1y.t1.p1) — `HandshakeCompletedGuard` pass<br>[`REQ-RPC-5-CV1R1Y.T1.P2`](../../../../../specification/peer-communication/rpc.md#req-rpc-5-cv1r1y.t1.p2) — ordering interactions<br>[`REQ-RPC-5-CV1R1Y.T1.P3`](../../../../../specification/peer-communication/rpc.md#req-rpc-5-cv1r1y.t1.p3) — pre-handshake<br>[`REQ-RPC-5-CV1R1Y.T1.P4`](../../../../../specification/peer-communication/rpc.md#req-rpc-5-cv1r1y.t1.p4) — loopback bypass<br>[`REQ-RPC-5-CV1R1Y.T1.P5`](../../../../../specification/peer-communication/rpc.md#req-rpc-5-cv1r1y.t1.p5) — retry queue<br>[`REQ-RPC-5-CV1R1Y.T1.P6`](../../../../../specification/peer-communication/rpc.md#req-rpc-5-cv1r1y.t1.p6) — `HandshakeCompletedGuard` fail<br>[`REQ-RPC-5-CV1R1Y.T1.P7`](../../../../../specification/peer-communication/rpc.md#req-rpc-5-cv1r1y.t1.p7) — post-handshake<br>[`REQ-RPC-5-CV1R1Y.T1.P8`](../../../../../specification/peer-communication/rpc.md#req-rpc-5-cv1r1y.t1.p8) — Holepunch transport<br>[`REQ-RPC-5-CV1R1Y.T1.P9`](../../../../../specification/peer-communication/rpc.md#req-rpc-5-cv1r1y.t1.p9) — WebRTC transport<br>[`REQ-RPC-5-CV1R1Y.T1.P10`](../../../../../specification/peer-communication/rpc.md#req-rpc-5-cv1r1y.t1.p10) — local transport. |
-| [`REQ-RPC-6-E60S4J.T1`](../../../../../specification/peer-communication/rpc.md#req-rpc-6-e60s4j.t1) | [`REQ-RPC-6-E60S4J`](../../../../../specification/peer-communication/rpc.md#req-rpc-6-e60s4j) | Exercise the real public component or contract boundary, including rejection and failure paths without partial effects. | Redelivery either converges to the same result without duplicate effects or is rejected with the documented consequence. | [`REQ-RPC-6-E60S4J.T1.P1`](../../../../../specification/peer-communication/rpc.md#req-rpc-6-e60s4j.t1.p1) — Duplicate of in-flight request<br>[`REQ-RPC-6-E60S4J.T1.P2`](../../../../../specification/peer-communication/rpc.md#req-rpc-6-e60s4j.t1.p2) — late response<br>[`REQ-RPC-6-E60S4J.T1.P3`](../../../../../specification/peer-communication/rpc.md#req-rpc-6-e60s4j.t1.p3) — retry after transport loss<br>[`REQ-RPC-6-E60S4J.T1.P4`](../../../../../specification/peer-communication/rpc.md#req-rpc-6-e60s4j.t1.p4) — reordered concurrent requests<br>[`REQ-RPC-6-E60S4J.T1.P5`](../../../../../specification/peer-communication/rpc.md#req-rpc-6-e60s4j.t1.p5) — `onBlockConfirmation` endpoint<br><a id="req-rpc-6-e60s4j.t1.p6"></a>`REQ-RPC-6-E60S4J.T1.P6` — duplicate of completed request<br><a id="req-rpc-6-e60s4j.t1.p7"></a>`REQ-RPC-6-E60S4J.T1.P7` — `onInitHandshakeAck` endpoint<br><a id="req-rpc-6-e60s4j.t1.p8"></a>`REQ-RPC-6-E60S4J.T1.P8` — `onDisputeAcknowledgmentRequest` endpoint<br><a id="req-rpc-6-e60s4j.t1.p9"></a>`REQ-RPC-6-E60S4J.T1.P9` — spectate sync endpoint. |
-| [`INV-RPC-1-SJS2T6.T1`](../../../../../specification/peer-communication/rpc.md#inv-rpc-1-sjs2t6.t1) | [`INV-RPC-1-SJS2T6`](../../../../../specification/peer-communication/rpc.md#inv-rpc-1-sjs2t6) | Exercise the real public component or contract boundary, including rejection and failure paths without partial effects. | Frame-size, envelope, service, guard, and method checks occur in that order and no failed stage reaches the next stage or handler. | [`INV-RPC-1-SJS2T6.T1.P1`](../../../../../specification/peer-communication/rpc.md#inv-rpc-1-sjs2t6.t1.p1) — Frame-size stage failure<br>[`INV-RPC-1-SJS2T6.T1.P2`](../../../../../specification/peer-communication/rpc.md#inv-rpc-1-sjs2t6.t1.p2) — malformed frame<br>[`INV-RPC-1-SJS2T6.T1.P3`](../../../../../specification/peer-communication/rpc.md#inv-rpc-1-sjs2t6.t1.p3) — absent service<br>[`INV-RPC-1-SJS2T6.T1.P4`](../../../../../specification/peer-communication/rpc.md#inv-rpc-1-sjs2t6.t1.p4) — guard rejection<br>[`INV-RPC-1-SJS2T6.T1.P5`](../../../../../specification/peer-communication/rpc.md#inv-rpc-1-sjs2t6.t1.p5) — envelope stage failure<br>[`INV-RPC-1-SJS2T6.T1.P6`](../../../../../specification/peer-communication/rpc.md#inv-rpc-1-sjs2t6.t1.p6) — service stage failure<br><a id="inv-rpc-1-sjs2t6.t1.p7"></a>`INV-RPC-1-SJS2T6.T1.P7` — guard stage failure<br><a id="inv-rpc-1-sjs2t6.t1.p8"></a>`INV-RPC-1-SJS2T6.T1.P8` — method stage failure<br><a id="inv-rpc-1-sjs2t6.t1.p9"></a>`INV-RPC-1-SJS2T6.T1.P9` — at-cap frame boundary<br><a id="inv-rpc-1-sjs2t6.t1.p10"></a>`INV-RPC-1-SJS2T6.T1.P10` — oversized frame<br><a id="inv-rpc-1-sjs2t6.t1.p11"></a>`INV-RPC-1-SJS2T6.T1.P11` — absent method<br><a id="inv-rpc-1-sjs2t6.t1.p12"></a>`INV-RPC-1-SJS2T6.T1.P12` — guard bypass (trusted). |
-| <a id="inv-rpc-2-6dyf4e.t1"></a>`INV-RPC-2-6DYF4E.T1` | [`INV-RPC-2-6DYF4E`](README.md#inv-rpc-2-6dyf4e) | Exercise the real public component or contract boundary, including rejection and failure paths without partial effects. | Only the handshake-identified addressed peer settles a request; any other responder cannot settle it and is disconnected/blacklisted. | <a id="inv-rpc-2-6dyf4e.t1.p1"></a>`INV-RPC-2-6DYF4E.T1.P1` — Correct peer<br><a id="inv-rpc-2-6dyf4e.t1.p2"></a>`INV-RPC-2-6DYF4E.T1.P2` — transport replacement for same identity<br><a id="inv-rpc-2-6dyf4e.t1.p3"></a>`INV-RPC-2-6DYF4E.T1.P3` — concurrent response<br><a id="inv-rpc-2-6dyf4e.t1.p4"></a>`INV-RPC-2-6DYF4E.T1.P4` — requestId collision<br><a id="inv-rpc-2-6dyf4e.t1.p5"></a>`INV-RPC-2-6DYF4E.T1.P5` — wrong peer<br><a id="inv-rpc-2-6dyf4e.t1.p6"></a>`INV-RPC-2-6DYF4E.T1.P6` — late response<br><a id="inv-rpc-2-6dyf4e.t1.p7"></a>`INV-RPC-2-6DYF4E.T1.P7` — duplicate response. |
-| <a id="inv-rpc-3-y6pe7s.t1"></a>`INV-RPC-3-Y6PE7S.T1` | [`INV-RPC-3-Y6PE7S`](README.md#inv-rpc-3-y6pe7s) | Exercise the real public component or contract boundary, including rejection and failure paths without partial effects. | Guard bypass occurs only for the in-process loopback; no network transport can claim trusted status. | <a id="inv-rpc-3-y6pe7s.t1.p1"></a>`INV-RPC-3-Y6PE7S.T1.P1` — Loopback transport<br><a id="inv-rpc-3-y6pe7s.t1.p2"></a>`INV-RPC-3-Y6PE7S.T1.P2` — forged trust metadata<br><a id="inv-rpc-3-y6pe7s.t1.p3"></a>`INV-RPC-3-Y6PE7S.T1.P3` — transport upgrade/replacement<br><a id="inv-rpc-3-y6pe7s.t1.p4"></a>`INV-RPC-3-Y6PE7S.T1.P4` — pre-handshake request<br><a id="inv-rpc-3-y6pe7s.t1.p5"></a>`INV-RPC-3-Y6PE7S.T1.P5` — Holepunch transport<br><a id="inv-rpc-3-y6pe7s.t1.p6"></a>`INV-RPC-3-Y6PE7S.T1.P6` — WebRTC transport<br><a id="inv-rpc-3-y6pe7s.t1.p7"></a>`INV-RPC-3-Y6PE7S.T1.P7` — local transport. |
-| <a id="inv-rpc-5-bcezvc.t1"></a>`INV-RPC-5-BCEZVC.T1` | [`INV-RPC-5-BCEZVC`](README.md#inv-rpc-5-bcezvc) | Exercise the real public component or contract boundary, including rejection and failure paths without partial effects. | RPC dispatch never owns the state mutex; state mutation enters only through the pipeline's mutex-acquiring public boundary. | <a id="inv-rpc-5-bcezvc.t1.p1"></a>`INV-RPC-5-BCEZVC.T1.P1` — Read-only endpoint<br><a id="inv-rpc-5-bcezvc.t1.p2"></a>`INV-RPC-5-BCEZVC.T1.P2` — concurrent intake<br><a id="inv-rpc-5-bcezvc.t1.p3"></a>`INV-RPC-5-BCEZVC.T1.P3` — handler error<br><a id="inv-rpc-5-bcezvc.t1.p4"></a>`INV-RPC-5-BCEZVC.T1.P4` — retry<br><a id="inv-rpc-5-bcezvc.t1.p5"></a>`INV-RPC-5-BCEZVC.T1.P5` — inline runtime<br><a id="inv-rpc-5-bcezvc.t1.p6"></a>`INV-RPC-5-BCEZVC.T1.P6` — mutating endpoint<br><a id="inv-rpc-5-bcezvc.t1.p7"></a>`INV-RPC-5-BCEZVC.T1.P7` — worker runtime. |
-| [`REQ-RPC-7-9CBSHK.T1`](../../../../../specification/peer-communication/rpc.md#req-rpc-7-9cbshk.t1) | [`REQ-RPC-7-9CBSHK`](../../../../../specification/peer-communication/rpc.md#req-rpc-7-9cbshk) | Exercise the real public component or contract boundary, including rejection and failure paths without partial effects. | The central limiter bounds aggregate peer-driven RPC work without starving required control traffic. | [`REQ-RPC-7-9CBSHK.T1.P1`](../../../../../specification/peer-communication/rpc.md#req-rpc-7-9cbshk.t1.p1) — Per-peer saturation<br>[`REQ-RPC-7-9CBSHK.T1.P2`](../../../../../specification/peer-communication/rpc.md#req-rpc-7-9cbshk.t1.p2) — cheap endpoint<br>[`REQ-RPC-7-9CBSHK.T1.P3`](../../../../../specification/peer-communication/rpc.md#req-rpc-7-9cbshk.t1.p3) — reconnect<br>[`REQ-RPC-7-9CBSHK.T1.P4`](../../../../../specification/peer-communication/rpc.md#req-rpc-7-9cbshk.t1.p4) — burst load<br>[`REQ-RPC-7-9CBSHK.T1.P5`](../../../../../specification/peer-communication/rpc.md#req-rpc-7-9cbshk.t1.p5) — recovery after refill<br><a id="req-rpc-7-9cbshk.t1.p6"></a>`REQ-RPC-7-9CBSHK.T1.P6` — global saturation<br><a id="req-rpc-7-9cbshk.t1.p7"></a>`REQ-RPC-7-9CBSHK.T1.P7` — expensive endpoint<br><a id="req-rpc-7-9cbshk.t1.p8"></a>`REQ-RPC-7-9CBSHK.T1.P8` — identity rotation<br><a id="req-rpc-7-9cbshk.t1.p9"></a>`REQ-RPC-7-9CBSHK.T1.P9` — sustained load. |
 ## Future Work
 
 *Non-normative.*
@@ -678,7 +674,6 @@ These are concrete component-level tests required by the implementation obligati
 - The central RPC rate limiter ([`OQ-6-4JPNE5`](../../../../../specification/open-questions.md#oq-6-4jpne5)) and its prioritization scheme (§9).
 - Protocol-version negotiation at handshake time (§6.9), coordinated with the signature-domain
   decision ([`OQ-29-EFY4NF`](../../../../../specification/open-questions.md#oq-29-efy4nf)).
-- Restrict dispatch to declared own methods of the RpcMethods class (§2.1).
 - A uniform failure-outcome policy (which failure classes are Byzantine evidence vs. tolerable),
   replacing today's per-endpoint choices (§8), including revisiting [`DEF-5-E8TP9N`](../../../../../audit/open-findings.md#def-5-e8tp9n).
 - Guard library growth per §5.3: participant-authorization and admission-state guards, so
@@ -690,17 +685,8 @@ These are concrete component-level tests required by the implementation obligati
 
 ## Implementation traceability
 
-| Requirement / invariant | Statement | Implementation status | Implementation evidence | Gap / divergence |
-| --- | --- | --- | --- | --- |
-| [`REQ-RPC-1-FF89Z0`](../../../../../specification/peer-communication/rpc.md#req-rpc-1-ff89z0) | Only deliberately public methods live on `RpcMethods` classes; private helpers and mutable service state are never exposed through them. | Covered | [src/rpc/ARpcMethods.ts](../../../../../../../src/rpc/ARpcMethods.ts#L1), [src/rpc/services](../../../../../../../src/rpc/services) | None. |
-| [`REQ-RPC-2-SZDTTM`](../../../../../specification/peer-communication/rpc.md#req-rpc-2-szdttm) | Every endpoint decodes and semantically validates its payload before any state effect; decode failure is a handled protocol failure. | Covered | [src/rpc/services](../../../../../../../src/rpc/services) (per-endpoint) | None. |
-| [`REQ-RPC-3-ZM9WR5`](../../../../../specification/peer-communication/rpc.md#req-rpc-3-zm9wr5) | Custom roots extend the boundary only through the service/RpcMethods pattern via manifest + registry. | Covered | [src/rpc/registry.ts](../../../../../../../src/rpc/registry.ts#L2), [src/rpc/resolveCustomRpcManifest.ts](../../../../../../../src/rpc/resolveCustomRpcManifest.ts#L1), [src/P2PManager.ts](../../../../../../../src/P2PManager.ts#L1) | None. |
-| [`REQ-RPC-4-9VX0B9`](../../../../../specification/peer-communication/rpc.md#req-rpc-4-9vx0b9) | Bigints cross the boundary only as canonical Codec encodings; raw `BigInt` throws at the sender. | Covered | [src/rpc/Rpc.ts](../../../../../../../src/rpc/Rpc.ts#L38) (`serializeRpc`), [src/utils/Codec.ts](../../../../../../../src/utils/Codec.ts#L1) | None. |
-| [`INV-RPC-4-RFDNH3`](README.md#inv-rpc-4-rfdnh3) | Same mechanism, stated as an invariant of the wire: no raw `BigInt` ever appears in an envelope. | Covered | [src/rpc/Rpc.ts](../../../../../../../src/rpc/Rpc.ts#L38) | None. |
-| [`REQ-RPC-5-CV1R1Y`](../../../../../specification/peer-communication/rpc.md#req-rpc-5-cv1r1y) | Caller-scoped admission preconditions are expressed as explicit guards with documented ordering, trusted-transport behavior, and rejection consequence. | Covered | [src/rpc/guards](../../../../../../../src/rpc/guards) | None. |
-| [`REQ-RPC-6-E60S4J`](../../../../../specification/peer-communication/rpc.md#req-rpc-6-e60s4j) | Every endpoint is idempotent under re-delivery or replay-rejecting with a defined consequence. | Covered | [src/rpc/services](../../../../../../../src/rpc/services), [src/stateManager/BlockQueueManager.ts](../../../../../../../src/stateManager/BlockQueueManager.ts#L48) | None. |
-| [`INV-RPC-1-SJS2T6`](../../../../../specification/peer-communication/rpc.md#inv-rpc-1-sjs2t6) | Dispatch order: size cap → envelope → service → guards → method, before any handler runs. | Covered | [src/P2PManager.ts](../../../../../../../src/P2PManager.ts#L1) (`onRpc`), [src/rpc/ARpcService.ts](../../../../../../../src/rpc/ARpcService.ts#L7) (`runRPC`) | None. |
-| [`INV-RPC-2-6DYF4E`](README.md#inv-rpc-2-6dyf4e) | Only the addressed peer settles a request; other responders are blacklisted. | Covered | [src/P2PManager.ts](../../../../../../../src/P2PManager.ts#L1) (`handleRpcResponse`) | None. |
-| [`INV-RPC-3-Y6PE7S`](README.md#inv-rpc-3-y6pe7s) | Guard bypass only for the trusted in-process loopback. | Covered | [src/transport/ATransport.ts](../../../../../../../src/transport/ATransport.ts#L23), [src/transport/LoopbackTransport.ts](../../../../../../../src/transport/LoopbackTransport.ts#L6), [src/rpc/ARpcService.ts](../../../../../../../src/rpc/ARpcService.ts#L7) | None. |
-| [`INV-RPC-5-BCEZVC`](README.md#inv-rpc-5-bcezvc) | RPC handlers never hold the state mutex; mutation goes through the pipeline's entry points. | Covered | [src/rpc](../../../../../../../src/rpc), [src/stateManager/StateManager.ts](../../../../../../../src/stateManager/StateManager.ts#L1) | None. |
-| [`REQ-RPC-7-9CBSHK`](../../../../../specification/peer-communication/rpc.md#req-rpc-7-9cbshk) | A single central RPC-level rate limiter (shared across services, possibly per-peer) bounds peer-driven resource use. | Missing | none — not implemented ([`OQ-6-4JPNE5`](../../../../../specification/open-questions.md#oq-6-4jpne5)) | Engineer audit pending; any divergence named in the evidence remains open. |
+The detailed status table in [Canonical requirement ownership](#canonical-requirement-ownership)
+is authoritative for this view. Source-level evidence remains in the linked reports, and exact
+test assignments remain in verification reports. The neutral specification owns all canonical
+test-plan meanings; unsupported cancellation, central rate limiting, compatibility negotiation,
+and open-channel wire authorization stay visible as gaps rather than receiving partial mappings.

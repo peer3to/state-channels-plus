@@ -1,3 +1,4 @@
+// @spec-test-coverage-ignore: RPC fixture support exercised by owning E2E declarations.
 import ARpcMethods from "@/rpc/ARpcMethods";
 import type P2PManager from "@/P2PManager";
 import type ATransport from "@/transport/ATransport";
@@ -465,6 +466,37 @@ export class StubRpcMethods extends ARpcMethods<P2PManager<HarnessControlRpc>> {
 
     public wasSpectateGuardBlocked(): boolean {
         return this.service.spectateGuardBlocked;
+    }
+
+    public async sendSpectateRequestOverCapturedHandshakeTransport(
+        channelId: string,
+        initTime: number
+    ): Promise<string> {
+        const transport = this.service.capturedInitHandshakeTransport;
+        if (!transport) throw new Error("no captured handshake transport");
+        try {
+            await this.p2pManager.sendRpcRequest(
+                {
+                    service: "spectateService",
+                    method: "onSpectateRequest",
+                    params: [{ channelId, initTime }]
+                },
+                transport,
+                { timeoutMs: 2000 }
+            );
+            return "resolved";
+        } catch (error) {
+            return error instanceof Error ? error.message : String(error);
+        }
+    }
+
+    public restoreBlockedHandshake(): boolean {
+        const original = this.service.stubOriginals.get("blockedInitHandshake");
+        if (original === undefined) return false;
+        const service = this.p2pManager.localRpc.initHandshakeService;
+        service.initHandshake = original as typeof service.initHandshake;
+        this.service.stubOriginals.delete("blockedInitHandshake");
+        return true;
     }
 
     /**

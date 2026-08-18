@@ -16,27 +16,35 @@
 
 ## Implementation overview
 
-**Status:** Partial; the detailed implementation reports exist, but their source inventories and unit plans still require consolidation into this subject.
+**Status:** Partial. The detailed [SDK RPC view](./sdk/rpc/README.md) owns the concrete design,
+integration obligations, exact implementation status, and named gaps.
 
 ### Specification adherence
 
-The documented architecture is intended to implement [the neutral subject](../../../specification/peer-communication/rpc.md). Existing design reports cover the major mechanisms and failure paths.
+The current implementation covers the typed wire shape, structural service recognition, the
+implemented request outcomes, service-specific authorization and replay rules, ordered ingress,
+and guard execution.
 
 ### Specification contradiction
 
-No additional contradiction is asserted here. Contradictions demonstrated in the detailed reports or conformance audit remain binding findings.
+The handshake guard settles a request during negotiation before replaying its queued copy, so the
+later response is dead. Response-send failure is now a one-attempt disconnect path, resolving
+[`DEF-8-HWJ10N`](../../../audit/open-findings.md#def-8-hwj10n).
 
 ### Missing
 
-The source-by-source inventory and unit plans are not yet consolidated here. **Required resolution:** audit the linked reports against every [`INV-RPC-1-SJS2T6`](../../../specification/peer-communication/rpc.md#inv-rpc-1-sjs2t6), [`REQ-RPC-1-FF89Z0`](../../../specification/peer-communication/rpc.md#req-rpc-1-ff89z0), [`REQ-RPC-2-SZDTTM`](../../../specification/peer-communication/rpc.md#req-rpc-2-szdttm), [`REQ-RPC-3-ZM9WR5`](../../../specification/peer-communication/rpc.md#req-rpc-3-zm9wr5), [`REQ-RPC-4-9VX0B9`](../../../specification/peer-communication/rpc.md#req-rpc-4-9vx0b9), [`REQ-RPC-5-CV1R1Y`](../../../specification/peer-communication/rpc.md#req-rpc-5-cv1r1y) obligation, move their exact source ownership and unit permutations into this subject, and remove duplicated claims.
+Cancellation, central resource limits, compatibility negotiation, and supported open-channel wire
+authorization are not implemented. The detailed view keeps their canonical permutations
+unassigned and links each gap to its owner.
 
 ## Assumptions and constraints
 
-The implementation depends on the concrete platform, transport, storage, chain, and runtime assumptions recorded in the detailed reports. Those assumptions may narrow deployment support but may not weaken the neutral requirements.
+The detailed reports define concrete platform, transport, storage, chain, and runtime assumptions.
+Those assumptions may narrow deployment support but may not weaken neutral requirements.
 
 ## System design
 
-The following concrete reports explain the current design:
+The following reports own the concrete implementation:
 
 - [architecture/sdk/rpc/README.md](./sdk/rpc/README.md)
 - [architecture/sdk/rpc/handshake.md](./sdk/rpc/handshake.md)
@@ -51,24 +59,23 @@ They are implementation evidence under this subject, not independent specificati
 
 ## System integration test plan
 
-| Integration test ID                                                       | Specification IDs                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    | Specification test IDs                    | Setup and stimulus                                                                           | Expected result                                                                          | Required permutations                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
-| ------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------- | -------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| <a id="integration-test-rpc-1-eb6f07"></a>`INTEGRATION-TEST-RPC-1-EB6F07` | [`INV-RPC-1-SJS2T6`](../../../specification/peer-communication/rpc.md#inv-rpc-1-sjs2t6), [`REQ-RPC-1-FF89Z0`](../../../specification/peer-communication/rpc.md#req-rpc-1-ff89z0), [`REQ-RPC-2-SZDTTM`](../../../specification/peer-communication/rpc.md#req-rpc-2-szdttm), [`REQ-RPC-3-ZM9WR5`](../../../specification/peer-communication/rpc.md#req-rpc-3-zm9wr5), [`REQ-RPC-4-9VX0B9`](../../../specification/peer-communication/rpc.md#req-rpc-4-9vx0b9), [`REQ-RPC-5-CV1R1Y`](../../../specification/peer-communication/rpc.md#req-rpc-5-cv1r1y) | All applicable specification permutations | Exercise the complete concrete subsystem through each documented entry and failure boundary. | The subsystem preserves the neutral behavior and contains failure without partial state. | <a id="integration-test-rpc-1-eb6f07.p1"></a>`INTEGRATION-TEST-RPC-1-EB6F07.P1` — success; <a id="integration-test-rpc-1-eb6f07.p2"></a>`INTEGRATION-TEST-RPC-1-EB6F07.P2` — validation rejection; <a id="integration-test-rpc-1-eb6f07.p3"></a>`INTEGRATION-TEST-RPC-1-EB6F07.P3` — concurrency; <a id="integration-test-rpc-1-eb6f07.p4"></a>`INTEGRATION-TEST-RPC-1-EB6F07.P4` — failure path; <a id="integration-test-rpc-1-eb6f07.p5"></a>`INTEGRATION-TEST-RPC-1-EB6F07.P5` — retry; <a id="integration-test-rpc-1-eb6f07.p6"></a>`INTEGRATION-TEST-RPC-1-EB6F07.P6` — restart; <a id="integration-test-rpc-1-eb6f07.p7"></a>`INTEGRATION-TEST-RPC-1-EB6F07.P7` — boundary integration. |
+Concrete cross-file obligations are defined in the detailed
+[implementation integration test plan](./sdk/rpc/README.md#implementation-integration-test-plan).
 
 ## Source inventory
 
-The detailed reports above currently own the source analysis. This table remains empty until those claims are consolidated and audited; generated source coverage continues to expose missing or duplicate ownership.
-
-| Source file | Specification IDs |
-| ----------- | ----------------- |
+Source ownership is maintained in the detailed SDK view and its file reports.
 
 ## Conformance traceability
 
-| Requirement / invariant                                                                 | Implementation status | Implementation evidence              | Gap / divergence |
-| --------------------------------------------------------------------------------------- | --------------------- | ------------------------------------ | ---------------- |
-| [`INV-RPC-1-SJS2T6`](../../../specification/peer-communication/rpc.md#inv-rpc-1-sjs2t6) | Covered               | Detailed reports under System design | None.            |
-| [`REQ-RPC-1-FF89Z0`](../../../specification/peer-communication/rpc.md#req-rpc-1-ff89z0) | Covered               | Detailed reports under System design | None.            |
-| [`REQ-RPC-2-SZDTTM`](../../../specification/peer-communication/rpc.md#req-rpc-2-szdttm) | Covered               | Detailed reports under System design | None.            |
-| [`REQ-RPC-3-ZM9WR5`](../../../specification/peer-communication/rpc.md#req-rpc-3-zm9wr5) | Covered               | Detailed reports under System design | None.            |
-| [`REQ-RPC-4-9VX0B9`](../../../specification/peer-communication/rpc.md#req-rpc-4-9vx0b9) | Covered               | Detailed reports under System design | None.            |
-| [`REQ-RPC-5-CV1R1Y`](../../../specification/peer-communication/rpc.md#req-rpc-5-cv1r1y) | Covered               | Detailed reports under System design | None.            |
+| Requirement / invariant                                                                 | Implementation status | Gap / divergence                                                                                                                 |
+| --------------------------------------------------------------------------------------- | --------------------- | -------------------------------------------------------------------------------------------------------------------------------- |
+| [`INV-RPC-1-SJS2T6`](../../../specification/peer-communication/rpc.md#inv-rpc-1-sjs2t6) | Partial               | Exact identity permutations remain unassigned where no full service test exists.                                                 |
+| [`REQ-RPC-1-FF89Z0`](../../../specification/peer-communication/rpc.md#req-rpc-1-ff89z0) | Partial               | Version mismatch is absent.                                                                                                      |
+| [`REQ-RPC-2-SZDTTM`](../../../specification/peer-communication/rpc.md#req-rpc-2-szdttm) | Partial               | Cancellation remains absent; implemented response-send failure now disconnects after one attempt.                                |
+| [`REQ-RPC-3-ZM9WR5`](../../../specification/peer-communication/rpc.md#req-rpc-3-zm9wr5) | Partial               | Only join has one declaration covering its full family matrix; the other service-family permutations remain exact-evidence gaps. |
+| [`REQ-RPC-4-9VX0B9`](../../../specification/peer-communication/rpc.md#req-rpc-4-9vx0b9) | Partial               | Block-delivery retry after failure lacks an exact no-duplicate-effect oracle.                                                    |
+| [`REQ-RPC-5-CV1R1Y`](../../../specification/peer-communication/rpc.md#req-rpc-5-cv1r1y) | Missing               | No central resource limiter exists.                                                                                              |
+| [`REQ-RPC-6-E60S4J`](../../../specification/peer-communication/rpc.md#req-rpc-6-e60s4j) | Covered               | None demonstrated.                                                                                                               |
+| [`REQ-RPC-7-9CBSHK`](../../../specification/peer-communication/rpc.md#req-rpc-7-9cbshk) | Partial               | Request retry during handshake negotiation is ineffective.                                                                       |
+| [`REQ-RPC-8-44XECF`](../../../specification/peer-communication/rpc.md#req-rpc-8-44xecf) | Missing               | Compatibility negotiation is absent.                                                                                             |

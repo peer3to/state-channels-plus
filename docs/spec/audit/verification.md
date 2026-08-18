@@ -1,6 +1,6 @@
 # Verification Assessment
 
-> **Agent assessment:** Current as of 2026-08-15, after the runtime-readiness mappings and specification refresh.
+> **Agent assessment:** Current as of 2026-08-17, after the RPC architecture traceability audit.
 > **Engineer disposition:** Pending.
 
 Existing tests are not treated as evidence by filename. Each declaration remains a visible queue item until
@@ -17,14 +17,38 @@ scores are what they are** and which lever moves each one.
 
 ## Current state
 
-Runtime transport tests now cover delayed and rejected custom-root readiness in inline and worker modes. Worker-executor coverage includes delayed precompile readiness before worker return and concurrent success/error response correlation.
+Runtime transport tests cover delayed and rejected custom-root readiness in inline and worker modes. Worker-executor coverage includes delayed precompile readiness before worker return and concurrent success/error response correlation. Eleven direct cases cover complete and incomplete cross-module RPC-service and transport shapes, RPC symbol and `then` behavior, service-cache isolation, non-service rejection, native, compatible, and proxy-wrapped ethers Results, stable normalized output, and ordinary-array rejection. Five worker-hosted `ATransport` cases cover identity boundaries, replacement identity, trust classification, exact request/response serialization, expected and unexpected close behavior, close idempotency, and synchronous failure propagation. Three real-runtime RpcHandler cases plus the custom-RPC typecheck cover every delivery verb and target overload, unresolved fire-and-forget targets, local request rejection, timeout forwarding, compatible transport values, and the compile-time delivery-face split. All 23 EventBus component and runtime declarations map dispatch, subscription lifecycle, contract mirroring, cross-runtime fidelity, clone failures, and StateManager-owned custom-root disposal to exact obligations. The consuming application's production-preview browser test separately proves that a dynamically loaded custom RPC root can complete a real two-peer handshake and reach a playable hand across duplicated bundle graphs.
 
-- Test IDs (planned permutations) evidenced: 521/4262 (12%).
-- Specification IDs with at least one evidenced permutation: 82/241 (34%).
-- Test declarations covering at least one ID: 310/814 (38%); 13 files under `test/scripts/` are
+The ObjectChecks suite now covers every property, method, RPC-service, and Result-shape branch. The
+ARpcService suite drives guard ordering, both delivery paths, every endpoint ownership boundary,
+accessor non-execution, and capture-once invocation through the real runtime. The authenticated-peer
+custom-RPC E2E rejects an Object-base method, disconnects only its sender, and proves a bystander
+session remains usable.
+
+RPC verification now uses the neutral specification as the only canonical `REQ-RPC-*` and
+`INV-RPC-*` owner. Direct wire cases cover request and response decoding, invalid field types,
+raw-bigint rejection, and the exact frame constant. Worker-hosted component cases cover every
+implemented request settlement and race with pending-entry and timer cleanup. Separate guard
+suites cover ordered short-circuiting, handshake queue/replay behavior, and the current
+request-during-negotiation contradiction. Inline and worker runtime cases observe an unlocked
+state mutex at RPC handler entry. Cancellation, aggregate resource limits, and compatibility
+negotiation remain unassigned gaps. Handler and guard response-send failures now have direct
+one-attempt, disconnect, and no-unhandled-rejection evidence.
+
+The codec suite maps all 21 protocol schemas, all 22 fraud-proof schemas, the bigint and canonical-byte
+boundary, EVM primitive/array/tuple decoding, nested Result conversion, and every public failure class.
+The separate cross-module case owns compatible ethers Result normalization.
+
+Seventeen direct EthersResultProxy cases map recursive conversion, direct and static method
+boundaries, synchronous and asynchronous results, arguments, receiver/metadata preservation,
+rejections, all supported listener verbs, repeated listener removal, event logs, query results, and
+ordinary-member passthrough.
+
+- Test IDs (planned permutations) evidenced: 664/4373 (15%).
+- Specification IDs with at least one evidenced permutation: 83/241 (34%).
+- Test declarations covering at least one ID: 419/899 (47%); 13 files under `test/scripts/` are
   excluded as out-of-scope developer tooling via `@spec-test-coverage-ignore`.
-- One test may cover several IDs: 125 of the 310 assigned declarations carry two or more (up to 12).
-  Each ID belongs to exactly one test; compliance is 100%.
+- One test may cover several IDs. Each assigned ID belongs to exactly one test; compliance is 100%.
 
 ## Why coverage is low
 
@@ -33,9 +57,9 @@ exercises the whole defined scenario, including its oracle. Under that rule the 
 distinct causes, and they need different fixes.
 
 **1. Most planned IDs simply have no test yet (the dominant cause on the ID side).**
-Atomization expanded template test plans into 4262 concrete scenarios — per fault class, per
+Atomization expanded template test plans into 4356 concrete scenarios — per fault class, per
 signature violation, per boundary side, per proof type, per host. The suites were never written
-against plans of that grain. 3741 permutations await a test; the
+against plans of that grain. 3709 permutations await a test; the
 "Test IDs not tested" queue is now a literal to-write list, one test per row.
 
 **2. Tests over surfaces that define no IDs at all (the dominant cause on the test side).**
@@ -60,15 +84,20 @@ values (`now − 1` where the comparator rejects at `now`), rejection suites tha
 penalty-free half. Fix: strengthen the assertion, then claim the ID. Each report's Overview names
 its cases.
 
-Approximate weight per test directory (assigned/total declarations): e2e 125/213, unit 42/137,
-storage 52/127, V1 contracts 22/94, utils 15/71, models 4/59, evm 5/46, stateManager 7/29,
-rpc 13/21. Causes 2 dominates models/utils/evm; causes 3–4 dominate unit/storage/V1.
+Approximate weight per test directory (assigned/total declarations): e2e 125/213, unit 54/137,
+storage 52/127, V1 contracts 22/94, utils 82/135, models 4/59, evm 6/46, stateManager 15/29,
+rpc 16/24, transport 5/5. Causes 2 dominates models/utils/evm; causes 3–4 dominate
+unit/storage/V1.
 
 ## What was already fixed
 
 - Bundled permutations ("each class", "valid and invalid") made full coverage impossible for most
   IDs; they were split into atomic one-scenario IDs (pool 1713 → 4218) with definition anchors.
   Evidence rose from 158 to 457 IDs without writing a single new test.
+- The codec audit assigned complete evidence for all protocol/proof schemas, EVM result modes, and
+  public failure paths.
+- The ethers Result proxy audit assigned its full value, method, listener, event-log, query, and
+  passthrough surface and added the missing direct cases.
 - The coverage report previously omitted the 1163 REQ/INV permutations defined in implementation
   views; the queue and scores now cover the full pool.
 - `test/scripts/` (112 declarations of runner tooling) is excluded with in-file ignore markers.

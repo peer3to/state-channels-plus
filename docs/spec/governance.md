@@ -11,7 +11,7 @@ Agents author and maintain all substantive layers, mappings, findings, and propo
 not silently choose unresolved behavior, mark engineer approval, edit `audit/approvals.md`, or invoke
 `tools/approve.js`.
 
-## 2. Stable identities
+## 2. Current identities
 
 - `REQ-<AREA>-<n>-<suffix>` — normative requirement.
 - `INV-<AREA>-<n>-<suffix>` — invariant.
@@ -27,9 +27,11 @@ makes independently allocated IDs overwhelmingly unlikely to collide when branch
 parallel. Allocate a root with `yarn spec:id:new <semantic-sequential-stem>`, for example
 `yarn spec:id:new REQ-X-10`. Never invent or change the suffix by hand.
 
-IDs are never reused. A moved or withdrawn item retains its complete ID and disposition. Child
-test-plan and permutation IDs inherit the collision-resistant root, so they remain simple and
-readable: [`INV-DA-1-TS7HX2.T1`](specification/security/data-availability.md#inv-da-1-ts7hx2.t1)
+Maintained documents contain only current items. Delete withdrawn or replaced definitions
+and update all maintained references in the same change; Git history records the previous state.
+Do not deliberately reuse a deleted root ID. Child test-plan and permutation IDs inherit the
+collision-resistant root, so they remain simple and readable:
+[`INV-DA-1-TS7HX2.T1`](specification/security/data-availability.md#inv-da-1-ts7hx2.t1)
 and [`INV-DA-1-TS7HX2.T1.P1`](specification/security/data-availability.md#inv-da-1-ts7hx2.t1.p1).
 Two branches adding children to the same existing root are editing the same owned table and should
 resolve the normal Git conflict rather than hide it behind independently random child IDs.
@@ -43,8 +45,9 @@ definitions or anchors, unlinked references, and links to the wrong definition.
 Use another test-plan item (`.T2`, `.T3`) only when the requirement needs a materially different
 setup, stimulus, or oracle. Variations of the same obligation are `.P1`…`.PN` under that plan item.
 Do not hide several independently auditable behaviors behind one vague permutation: split them when
-their coverage could differ. Number both levels contiguously and never reuse an ID for a different
-behavior after it has been reviewed.
+their coverage could differ. Append new children after the highest allocated number. An ID is
+immutable until deletion; deleting a child leaves a gap, and surviving IDs are never renumbered or
+reused for another behavior.
 
 ## 3. Layer contracts
 
@@ -81,6 +84,9 @@ path equality.
 Every implementation test-plan row states its obligations, real public entry point and valid domain
 setup, stimulus, oracle and forbidden effects, normal/no-op/boundary/invalid/failure/recovery/interleaving
 variants, and exact test declarations. `Not applicable` always has a concrete rationale.
+Every permutation in one test family stays in that family's single owning row. New permutations are
+added to the existing `Required permutations` cell; split or appended-permutation tables are not
+valid planning structures.
 
 ### Verification
 
@@ -97,6 +103,10 @@ the template and assignment rules.
 
 A listed test ID is an exact mapping claim for that declaration; file and directory links map no
 tests.
+
+Obsolete compatibility permutations do not remain in maintained documents. Delete them, keep only
+the exact current obligations, and update their mappings. Coverage reports count every maintained
+permutation.
 
 ### Audit
 

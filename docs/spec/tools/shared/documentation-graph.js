@@ -781,7 +781,18 @@ function buildDocumentationGraph() {
                         : "\0missing subject inventory owner")
             )
         );
-        dependencies.set(id, new Set());
+        dependencies.set(
+            id,
+            new Set(
+                owners.flatMap(({ raw }) =>
+                    (
+                        raw.match(new RegExp(REQUIREMENT_PATTERN, "g")) || []
+                    ).filter((requirementId) =>
+                        requirements.definitions.has(requirementId)
+                    )
+                )
+            )
+        );
     }
     for (const test of tests) {
         const id = `test:${repoRelative(test.target)}:${test.selector}`;

@@ -1,5 +1,6 @@
-import ARpcService from "@/rpc/ARpcService";
+import type ARpcService from "@/rpc/ARpcService";
 import type MainRpcService from "@/rpc/MainRpcService";
+import { hasRpcService } from "@/utils/ObjectChecks";
 import RpcMethodsProxy, { RpcHandleMethods } from "./RpcHandleProxy";
 
 type RemoteRpcServices<T extends object> = {
@@ -37,11 +38,11 @@ class RemoteRpcProxy {
                     return undefined;
                 }
 
-                const val = Reflect.get(target, prop, receiver);
-
-                if (typeof val != "object" || !(val instanceof ARpcService)) {
+                if (!hasRpcService(target, prop)) {
                     throw new Error("RemoteRpcProxy can only access services");
                 }
+
+                const val = Reflect.get(target, prop, receiver);
 
                 // val is a service
                 const serviceName = prop.toString();

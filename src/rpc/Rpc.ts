@@ -47,7 +47,8 @@ export function deserializeRpc(serializedRpc: string): Rpc | undefined {
             typeof rpc.method !== "string" ||
             // `params` must be an array — the dispatcher spreads it
             // (`method(...rpc.params)`), so a non-array would mis-dispatch.
-            !Array.isArray(rpc.params)
+            !Array.isArray(rpc.params) ||
+            (rpc.requestId !== undefined && typeof rpc.requestId !== "string")
         ) {
             return undefined;
         }
