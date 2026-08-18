@@ -376,10 +376,13 @@ export default class ValidationService {
             }
 
             // Try on-chain query to schedule validation for the previous block.
+            // Its calldata was posted after it was authored, so its own
+            // timestamp anchors the scan window.
             await this.eventSyncService.tryRecoverBlockCalldataAndScheduleValidation(
                 previousBlock.forkId,
                 previousBlock.height,
-                previousBlock.author
+                previousBlock.author,
+                previousBlock.timestamp
             );
 
             const recoveredPreviousCalldata =
@@ -547,7 +550,8 @@ export default class ValidationService {
             await this.eventSyncService.tryRecoverBlockCalldataAndScheduleValidation(
                 block.forkId,
                 block.height,
-                block.author
+                block.author,
+                previousTimestamp
             );
 
             const onChainTimestamp = this.getStoredOnChainTimestamp(block);

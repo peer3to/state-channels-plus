@@ -1676,7 +1676,8 @@ class StateManager<
                 await this.eventSyncService.tryRecoverBlockCalldataAndScheduleValidation(
                     previousBlockOrSnapshot.block.forkId,
                     previousBlockOrSnapshot.block.height,
-                    previousBlockOrSnapshot.block.author
+                    previousBlockOrSnapshot.block.author,
+                    previousBlockOrSnapshot.block.timestamp
                 );
 
             if (recovery.validationScheduled) {
@@ -1740,6 +1741,26 @@ class StateManager<
                     return;
                 }
             }
+
+            if (
+                !matchingPreviousCalldata &&
+                recovery.commitmentFound &&
+                !recovery.blockCalldata
+            ) {
+                // The chain proves the previous producer posted and we hold no
+                // calldata for that slot at all - the event never reached us.
+                // Timing out now would build the timeout with
+                // previousBlockProducerPostedCalldata = false and the wrong
+                // deadline - an invalid timeout we get slashed for. (Recovered
+                // calldata that simply does not match the block is complete
+                // information, so it falls through to the timeout.)
+                return this.deferTimeoutForUnrecoveredCalldata(
+                    forkId,
+                    blockHeight,
+                    participantAddress,
+                    "previousBlockCalldataUnrecovered"
+                );
+            }
         }
         // No race condition on previous block on-chain calldata
 
@@ -1767,7 +1788,8 @@ class StateManager<
             await this.eventSyncService.tryRecoverBlockCalldataAndScheduleValidation(
                 forkId,
                 blockHeight,
-                participantAddress
+                participantAddress,
+                previousRelevantTimestamp
             );
         if (recovery.validationScheduled) {
             this.logger.info(
@@ -1810,6 +1832,18 @@ class StateManager<
                 true
             );
         }
+        if (recovery.commitmentFound && !recovery.blockCalldata) {
+            // The chain proves this slot's calldata was posted and we hold none
+            // of it - the event never reached us. A normal timeout here disputes
+            // a block that exists on-chain, so retry instead of concluding it
+            // was never posted.
+            return this.deferTimeoutForUnrecoveredCalldata(
+                forkId,
+                blockHeight,
+                participantAddress,
+                "currentBlockCalldataUnrecovered"
+            );
+        }
         // block not found on-chain -> normal timeout
         return await this.createTimeOutDispute(
             forkId,
@@ -1817,6 +1851,30 @@ class StateManager<
             participantAddress,
             timeoutMinTimestamp,
             false
+        );
+    }
+
+    // Calldata the chain says exists but we could not recover this attempt:
+    // retry rather than time out on incomplete information.
+    // TODO: this retry has no exit - if the calldata never becomes retrievable
+    // (dead or pruning RPC node) the timeout is blocked forever. Escape hatches,
+    // in order: (1) switch to another RPC provider and retry; (2) once the
+    // provider pool is exhausted, abort the channel and start a forceful exit.
+    private deferTimeoutForUnrecoveredCalldata(
+        forkId: ForkId,
+        blockHeight: BlockHeight,
+        participantAddress: Address,
+        reason: string
+    ): void {
+        this.logger.warn(
+            "tryTimeoutParticipant - calldata committed on-chain but not recovered; retrying",
+            { forkId, blockHeight, participantAddress, reason }
+        );
+        this.scheduleTimeoutParticipantRetry(
+            forkId,
+            blockHeight,
+            participantAddress,
+            reason
         );
     }
 

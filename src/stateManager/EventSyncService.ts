@@ -9,22 +9,35 @@ import {
     Address,
     BlockCalldata,
     BlockHeight,
+    BlockNumber,
     ChannelId,
     ForkId,
-    Hash
+    Hash,
+    Timestamp
 } from "@/types/types";
-import { convertEthersValue, DetachedPromises, hash, Logger } from "@/utils";
+import {
+    convertEthersValue,
+    correctBlockScanStart,
+    DetachedPromises,
+    estimateBlockScanRange,
+    estimateBlocksForSeconds,
+    hash,
+    Logger
+} from "@/utils";
 
 type BlockState = { pending: number; complete: boolean; failed: boolean };
 type OnChainBlockValidationKey = string;
 type EventKey = string;
 type ChannelKey = string;
-type BlockNumber = number;
 type NormalizedDisputeCommitment = string;
 type EventPromise = Promise<void>;
 export type BlockCalldataRecoveryResult = {
     blockCalldata?: BlockCalldata;
     validationScheduled: boolean;
+    // The chain proves a commitment exists for this slot. Without
+    // `blockCalldata` that means "posted, but not recovered yet" - the caller
+    // retries; it is never proof the block was never posted.
+    commitmentFound: boolean;
 };
 type BlockStates = Map<BlockNumber, BlockState>;
 type StateChannelManagerEventName = keyof StateChannelManagerProxy["filters"];
@@ -147,10 +160,14 @@ export default class EventSyncService {
         return promise;
     }
 
+    // `anchorTimestamp` is the block's validity-window anchor (the previous
+    // block's or snapshot's relevant timestamp) - the log scan is bounded around
+    // it instead of around the chain head.
     async tryRecoverBlockCalldataAndScheduleValidation(
         forkId: ForkId,
         blockHeight: BlockHeight,
-        blockAuthor: Address
+        blockAuthor: Address,
+        anchorTimestamp: Timestamp
     ): Promise<BlockCalldataRecoveryResult> {
         const validationKey = `${String(forkId)}:${blockHeight}:${String(blockAuthor).toLowerCase()}`;
         const pending = this.pendingOnChainBlockValidations.get(validationKey);
@@ -162,7 +179,8 @@ export default class EventSyncService {
                     blockHeight,
                     blockAuthor
                 ),
-                validationScheduled: false
+                validationScheduled: false,
+                commitmentFound: true
             };
         }
 
@@ -170,7 +188,8 @@ export default class EventSyncService {
             validationKey,
             forkId,
             blockHeight,
-            blockAuthor
+            blockAuthor,
+            anchorTimestamp
         ).finally(() => {
             this.pendingOnChainBlockValidations.delete(validationKey);
         });
@@ -182,8 +201,12 @@ export default class EventSyncService {
         validationKey: OnChainBlockValidationKey,
         forkId: ForkId,
         blockHeight: BlockHeight,
-        blockAuthor: Address
+        blockAuthor: Address,
+        anchorTimestamp: Timestamp
     ): Promise<BlockCalldataRecoveryResult> {
+        // Survives the catch below: once the chain has proven the commitment, a
+        // later failure must not read back as "never posted".
+        let commitmentFound = false;
         try {
             const commitmentResult =
                 await this.stateChannelManagerContract.getBlockCallDataCommitment(
@@ -193,8 +216,9 @@ export default class EventSyncService {
                     blockAuthor
                 );
             if (!commitmentResult.found) {
-                return { validationScheduled: false };
+                return { validationScheduled: false, commitmentFound: false };
             }
+            commitmentFound = true;
             const commitment = commitmentResult.blockCalldataCommitment;
             const existing = this.storage.blockCalldata.getBlockCalldata(
                 forkId,
@@ -203,19 +227,10 @@ export default class EventSyncService {
             );
             let validationScheduled = false;
             if (!existing) {
-                const latest = await this.getProvider().getBlockNumber();
-                const fallback = this.getBlockFallbackFrom(latest, blockHeight);
-                const cursor = this.storage.eventSync.getLatestProcessedBlock(
-                    this.channelId
-                );
-                const fromBlock = Math.min(cursor ?? fallback, fallback);
-                const logs = await this.stateChannelManagerContract.queryFilter(
-                    this.stateChannelManagerContract.filters.BlockCalldataPosted(
-                        this.channelId,
-                        commitment
-                    ),
-                    fromBlock,
-                    latest
+                const logs = await this.queryBlockCalldataPostedLogs(
+                    commitment,
+                    blockHeight,
+                    anchorTimestamp
                 );
                 const scheduledChannelId = this.channelId;
                 // onBlockCalldataPosted stores before its first await, so the
@@ -234,14 +249,95 @@ export default class EventSyncService {
                 blockHeight,
                 blockAuthor
             );
-            if (!recovered) return { validationScheduled };
+            if (!recovered) return { validationScheduled, commitmentFound };
             this.processedOnChainBlockValidationKeys.add(validationKey);
-            return { blockCalldata: recovered, validationScheduled };
+            return {
+                blockCalldata: recovered,
+                validationScheduled,
+                commitmentFound
+            };
         } catch (error) {
             this.logger.error("Block calldata recovery failed", { error });
-            return { validationScheduled: false };
+            return { validationScheduled: false, commitmentFound };
         }
     }
+
+    /**
+     * Scan the block's own validity window for its `BlockCalldataPosted` event.
+     *
+     * An on-time post lands within one validity window of `anchorTimestamp`, so
+     * the window - not the chain head - is what the range is anchored to: a
+     * head-anchored look-back loses the event as soon as the head moves on,
+     * which is how an on-time commitment ends up looking like it was never
+     * posted. The timestamps map to block heights through the chain's average
+     * block time (one head read, no search), padded on both sides because block
+     * spacing is not uniform, with a single re-read of the estimated start block
+     * to correct an estimate that started too late. A miss after that still
+     * leaves the commitment proven on-chain, so the caller retries.
+     */
+    private async queryBlockCalldataPostedLogs(
+        commitment: Hash,
+        blockHeight: BlockHeight,
+        anchorTimestamp: Timestamp
+    ): Promise<Log[]> {
+        const filter =
+            this.stateChannelManagerContract.filters.BlockCalldataPosted(
+                this.channelId,
+                commitment
+            );
+        const latest = await Clock.getBlockchainTime();
+        const averageBlockTime = Clock.getAverageOnChainBlockTime();
+        const windowSeconds = this.getCalldataWindowSeconds(blockHeight);
+        const bufferBlocks = estimateBlocksForSeconds(
+            windowSeconds,
+            averageBlockTime
+        );
+        const lowTimestamp = anchorTimestamp - windowSeconds;
+        const range = estimateBlockScanRange({
+            latestBlockNumber: latest.blockNumber,
+            latestTimestamp: latest.timestamp,
+            averageBlockTime,
+            lowTimestamp,
+            highTimestamp: anchorTimestamp + windowSeconds,
+            bufferBlocks
+        });
+        const logs = await this.stateChannelManagerContract.queryFilter(
+            filter,
+            range.fromBlock,
+            range.toBlock
+        );
+        if (logs.length > 0 || range.fromBlock === 0) return logs;
+
+        const probedBlock = await this.getProvider().getBlock(range.fromBlock);
+        // The estimated start is already at or before the window - it is not
+        // what lost the event, so there is nothing to correct.
+        if (!probedBlock || probedBlock.timestamp <= lowTimestamp) return logs;
+
+        const correctedFromBlock = correctBlockScanStart({
+            probedBlockNumber: range.fromBlock,
+            probedTimestamp: probedBlock.timestamp,
+            latestBlockNumber: latest.blockNumber,
+            latestTimestamp: latest.timestamp,
+            lowTimestamp,
+            bufferBlocks
+        });
+        if (correctedFromBlock >= range.fromBlock) return logs;
+        this.logger.debug(
+            "Widening block calldata scan range after an estimate miss",
+            {
+                blockHeight,
+                fromBlock: range.fromBlock,
+                correctedFromBlock,
+                toBlock: range.toBlock
+            }
+        );
+        return this.stateChannelManagerContract.queryFilter(
+            filter,
+            correctedFromBlock,
+            range.toBlock
+        );
+    }
+
     /**
      * Whether the chain says this fork is disputed. The local EVM mirror only
      * knows the dispute events we have already processed, so a walk that reads
@@ -299,8 +395,7 @@ export default class EventSyncService {
             0,
             latest.timestamp - Number(windowCreationTimestamp)
         );
-        let span =
-            Math.ceil((average > 0 ? elapsed / average : elapsed) * 1.5) + 2;
+        let span = estimateBlocksForSeconds(elapsed, average);
         for (let attempt = 0; attempt < 3 && missing.length > 0; attempt++) {
             const fallback = Math.max(0, latest.blockNumber - span);
             const cursor =
@@ -529,19 +624,15 @@ export default class EventSyncService {
         return states;
     }
 
-    private getBlockFallbackFrom(
-        latestBlock: BlockNumber,
-        blockHeight: BlockHeight
-    ): BlockNumber {
-        const average = Clock.getAverageOnChainBlockTime();
-        const seconds =
+    // How long a block has to get its calldata posted on-chain: the p2p,
+    // agreement and chain-fallback times, plus the first-block grace.
+    private getCalldataWindowSeconds(blockHeight: BlockHeight): number {
+        return (
             this.timeConfig.p2pTime +
             this.timeConfig.agreementTime +
             this.timeConfig.chainFallbackTime +
-            firstBlockGrace(this.timeConfig, blockHeight);
-        const span =
-            Math.ceil((average > 0 ? seconds / average : seconds) * 1.5) + 2;
-        return Math.max(0, latestBlock - span);
+            firstBlockGrace(this.timeConfig, blockHeight)
+        );
     }
 
     private getProvider() {
