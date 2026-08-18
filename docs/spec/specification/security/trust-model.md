@@ -84,7 +84,7 @@ voids the guarantees that depend on it.
 | A5  | **Economic stake.**                                                                                                       | Slashing deters only participants whose stake at risk exceeds the value of misbehaving.                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
 | A6  | **RPC observation.**                                                                                                      | Each client has at least one available, honest RPC connection to the chain (§5).                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
 | A7  | **Honest peer per channel.**                                                                                            | At least one non-Byzantine participant exists in each channel (§6).                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
-| A8  | **Continuous availability for offline participants.**                                                                     | An offline participant loses contest rights unless a node holding its key stays online on its behalf; a keyless third party can only submit dispute fraud proofs (§7). No watchtower/delegate mechanism exists in version one.                                                                                                                                                                                                                                                                                                                        |
+| A8  | **Watchtower for offline participants.**                                                                                  | An honest participant that may go offline has a continuously available delegate that can monitor and contest on its behalf (§7).                                                                                                                                                                                                                                                                                                                                                                                                                     |
 | A9  | **No on-path adversary during authentication** _(temporary — [`REQ-TRUST-6-Z586T0`](trust-model.md#req-trust-6-z586t0))._ | Until peer authentication binds both identities and the transport session, its guarantees assume no active on-path adversary between two honest peers. A relayed identity proof must not establish identity in a different session ([`OQ-35-E5RRDF`](../../implementation/open-questions.md#oq-35-e5rrdf)). Every peer-authentication and blacklist-attribution guarantee depends on A9.                                                                                                                                                             |
 
 **[`REQ-TRUST-6-Z586T0`](trust-model.md#req-trust-6-z586t0)** _(temporary assumption A9)._ Until the handshake binds both peer identities and
@@ -137,18 +137,39 @@ calldata posts, snapshot updates) and contest invalid ones within the protocol w
 participant that is offline through a contest window cannot do this, and the protocol does not
 pause for it.
 
-**<a id="req-trust-4-kw24nf"></a>`REQ-TRUST-4-KW24NF`.** Version one ships no watchtower. An honest participant that may go
-offline during a contest window MUST keep a node running continuously on its behalf — today that
-means its own replica holding its own key. A keyless third party can only submit dispute fraud
-proofs (`applyDisputeFraudProofs` is permissionless for valid proofs); it cannot open a dispute or
-contest a timeout, which require the participant's own key (`msg.sender == disputer` plus dispute
-eligibility). A delegate that can contest without holding funds-controlling keys does not exist
-and would require protocol changes — tracked as an open question in the register.
+**<a id="req-trust-4-kw24nf"></a>`REQ-TRUST-4-KW24NF`.** Version one REQUIRES a watchtower or equivalent continuously available delegate
+for any honest participant that may go offline during a contest window. The delegate MUST be able
+to monitor the channel, detect an invalid on-chain action, contest it within the required window,
+and invoke the available enforcement or slashing mechanism.
 
-**Required verification:** offline-participant tests (honest participant offline while a
-counterparty submits an invalid dispute/timeout; a standby node holding the participant's key
-contests in time; a keyless third party kills an invalid dispute) and collusion tests (remaining
-participants collude against the offline participant) — required downstream coverage.
+The role carries explicit sub-assumptions, each of which MUST be specified for any concrete
+watchtower design:
+
+- **Data availability:** the delegate has (or can fetch) the channel data needed to construct
+  contests — block history, signatures, state proofs, auditing data.
+- **Privacy:** channel data given to a delegate discloses channel contents; the design must state
+  what the delegate learns.
+- **Availability:** the delegate itself is continuously online through the relevant windows; a
+  delegate outage recreates the original problem.
+- **Authorization:** which actions the delegate may take on the participant's behalf, and with
+  which key material; a delegate that can submit contests but not steal funds is the target shape.
+  Today dispute fraud proofs are permissionless (`applyDisputeFraudProofs` accepts valid proofs
+  from any sender), while opening a dispute or contesting a timeout requires the participant's own
+  key — how a keyless delegate gains contest authority is
+  [`OQ-43-HWRTNF`](../open-questions.md#oq-43-hwrtnf).
+- **Timeouts:** the delegate must act within the same on-chain windows as the participant
+  ([../protocol/disputes.md](../disputes/disputes.md), [../protocol/time.md](../protocol-model/time.md)).
+- **Failure:** what the participant's exposure is if the delegate fails, and how failure is
+  detected.
+
+_Non-normative direction (review note):_ the intended version-one shape is a watchtower running as
+an ordinary peer with spectator-equivalent access — one more peer status and validation strategy —
+indistinguishable from a spectator to other participants, so anyone can run one permissionlessly
+and the same mechanism serves recovery.
+
+**Required verification:** offline-participant tests (honest participant
+offline while a counterparty submits an invalid dispute/timeout; delegate contests in time) and
+collusion tests (remaining participants collude against the offline participant) — required downstream coverage.
 
 ## 8. Topology limits
 
@@ -203,7 +224,7 @@ must identify prevention, detection, recovery, and residual exposure; an unowned
 
 **[`REQ-TRUST-3-3YWEZR`](trust-model.md#req-trust-3-3ywezr).** At least one non-Byzantine participant per channel; all-Byzantine channels have no safety.
 
-**[`REQ-TRUST-4-KW24NF`](trust-model.md#req-trust-4-kw24nf).** Continuous availability required for offline honest participants: a node holding the participant's key stays online; keyless third parties are limited to fraud-proof kills; no delegate mechanism exists in version one.
+**[`REQ-TRUST-4-KW24NF`](trust-model.md#req-trust-4-kw24nf).** Watchtower/delegate required for offline honest participants, with stated data, privacy, availability, authorization, timeout, and failure assumptions.
 
 **[`REQ-TRUST-5-NDVRW8`](trust-model.md#req-trust-5-ndvrw8).** Full-mesh topology; target is many small channels (≤ ~10, commonly 6).
 
@@ -245,17 +266,9 @@ _Non-normative._
   improvement below the light-client bar.
 - **Private, anonymous, randomly sampled watchtowers** among a participant's trusted peers. The
   intended deterrent is attacker uncertainty about whether an offline participant is being
-  monitored. Any proposal must quantify its security assumptions, protect user privacy, and
-  preserve the on-chain safety fallback. Design constraints any concrete watchtower must specify:
-  **data availability** (the delegate has or can fetch the channel data needed to construct
-  contests — block history, signatures, state proofs, auditing data); **privacy** (what the
-  delegate learns of channel contents); **availability** (the delegate stays online through the
-  windows; a delegate outage recreates the original problem); **authorization** (which actions
-  with which key material — contest-capable but not funds-controlling is the target shape, and
-  requires the delegated-contest protocol change tracked in the open-questions register);
-  **timeouts** (the delegate acts within the same on-chain windows,
-  [../protocol/disputes.md](../disputes/disputes.md), [../protocol/time.md](../protocol-model/time.md));
-  **failure** (the participant's exposure if the delegate fails, and how failure is detected).
+  monitored — peers protect each other, and an attacker cannot tell whether a watchtower exists,
+  making an attempt negative expected value. Any proposal must quantify its security assumptions,
+  protect user privacy, and preserve the on-chain safety fallback.
 - **Non-authoritative reputation** to help peers choose cooperative counterparties. Must never
   become slashable evidence or change objective enforcement ([`REQ-TRUST-1-K5PS99`](trust-model.md#req-trust-1-k5ps99)).
 - **Alternative network topologies**, only if target use cases require larger channels; define

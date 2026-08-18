@@ -530,8 +530,8 @@ None.
 - [specification/block-progression/README.md](../specification/block-progression/README.md) — Luka, 2026-08-14
 - [specification/disputes/disputes.md](../specification/disputes/disputes.md) — Luka, 2026-08-14
 - [specification/security/data-availability.md](../specification/security/data-availability.md) — Luke Fishman, 2026-08-17
-- [specification/security/README.md](../specification/security/README.md) — Luke Fishman, 2026-08-17
-- [specification/security/trust-model.md](../specification/security/trust-model.md) — Luke Fishman, 2026-08-17
+- [specification/security/README.md](../specification/security/README.md) — Luke Fishman, 2026-08-18
+- [specification/security/trust-model.md](../specification/security/trust-model.md) — Luke Fishman, 2026-08-18
 - [specification/storage/blocks.md](../specification/storage/blocks.md) — Luke Fishman, 2026-08-17
 - [specification/storage/calldata-and-timeouts.md](../specification/storage/calldata-and-timeouts.md) — Luke Fishman, 2026-08-17
 - [specification/storage/dispute-evidence.md](../specification/storage/dispute-evidence.md) — Luke Fishman, 2026-08-17

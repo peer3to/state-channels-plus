@@ -16,12 +16,12 @@ algorithms.
 - **Public inputs.** Every other system's stated assumptions, security considerations, and
   verification plans.
 - **Public outputs.** The authoritative trust model (`REQ-TRUST-*`), the data-availability cost and
-  griefing model (`REQ-DA-*`, `INV-DA-*`), topology and channel-size limits, continuous-availability
+  griefing model (`REQ-DA-*`, `INV-DA-*`), topology and channel-size limits, watchtower
   requirements, and the accepted-limitation register that downstream audit evaluates.
 - **Calls / called by.** Cross-references only. Mechanism documents refine these constraints without
   weakening them ([../README.md](../README.md), system assumptions).
 - **Trust and availability assumptions.** These documents *define* them: live final chain, at least
-  one honest participant per channel, continuous availability for offline participants, honest RPC observation, unforgeable signatures,
+  one honest participant or watchtower per channel, honest RPC observation, unforgeable signatures,
   deterministic replay, chain-backed data availability.
 - **Ordering and concurrency.** Not applicable; timing-window adequacy is constrained here and
   computed in [../protocol-model/time.md](../protocol-model/time.md).
@@ -40,7 +40,7 @@ algorithms.
 
 | Document | Defines |
 | --- | --- |
-| [trust-model.md](./trust-model.md) | System-wide trust assumptions, honest-peer and continuous-availability requirements, RPC observation, topology limits, reputation non-goals. |
+| [trust-model.md](./trust-model.md) | System-wide trust assumptions, honest-peer and watchtower requirements, RPC observation, topology limits, reputation non-goals. |
 | [data-availability.md](./data-availability.md) | Chain-backed data availability, calldata publication costs, and the version-one griefing exposure. |
 
 ## Interaction contracts
