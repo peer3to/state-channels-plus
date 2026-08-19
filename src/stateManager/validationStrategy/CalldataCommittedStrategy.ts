@@ -69,6 +69,8 @@ export default class CalldataCommittedStrategy extends AValidationStrategy {
     public async goodNewSignaturesOnExistingBlock(
         _block: Block
     ): Promise<BlockValidationResult> {
+        // Unreachable tripwire: the calldata event always carries
+        // signatures: [], so the merge never finds new signatures here.
         throw new Error(
             "CalldataCommittedStrategy - goodNewSignaturesOnExistingBlock should not be relevant/called"
         );

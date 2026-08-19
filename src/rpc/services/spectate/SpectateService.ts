@@ -406,7 +406,9 @@ class SpectateService extends ARpcService<SpectateServiceRpcMethods> {
             for (const bc of blockConfirmations) {
                 try {
                     const isOk =
-                        await stateManager.onBlockConfirmationStruct(bc);
+                        await stateManager.blockIngestService.onBlockConfirmationStruct(
+                            bc
+                        );
                     if (!isOk) return this.abort(peerAddress);
                 } catch (e) {
                     this.logger.error(
@@ -489,7 +491,7 @@ class SpectateService extends ARpcService<SpectateServiceRpcMethods> {
         // entirely for a fork whose events haven't arrived - and serve a proof
         // for a fork that is disputed and already reduced on-chain
         let isDisputed =
-            await stateManager.eventSyncService.isForkDisputedOnChain(
+            await stateManager.stateChannelManagerContract.isForkDisputed(
                 channelId,
                 currentForkId
             );
@@ -535,7 +537,7 @@ class SpectateService extends ARpcService<SpectateServiceRpcMethods> {
             });
             currentForkId = reducedForkId;
             isDisputed =
-                await stateManager.eventSyncService.isForkDisputedOnChain(
+                await stateManager.stateChannelManagerContract.isForkDisputed(
                     channelId,
                     currentForkId
                 );
@@ -871,7 +873,7 @@ class SpectateService extends ARpcService<SpectateServiceRpcMethods> {
                 for (const omb of syncPayload.outboundMessageBlocksOfTheLatestFork)
                     storage.outboundMessages.store(omb);
 
-                await stateManager.unsafeSetLatestState(
+                await stateManager.stateApplicationService.unsafeSetLatestState(
                     latestFinalizedSnapshot,
                     syncPayload.latestFinalizedEncodedState
                 );
@@ -951,9 +953,9 @@ class SpectateService extends ARpcService<SpectateServiceRpcMethods> {
         // If we're not actively participating, treat this as a fatal sync failure.
         this.logger.warn(`Aborting spectate sync with peer ${peerAddress}`, {
             peerAddress,
-            myStatus: Status[this.p2pManager.stateManager.getStatus()]
+            myStatus: Status[this.p2pManager.stateManager.status]
         });
-        const status = this.p2pManager.stateManager.getStatus();
+        const status = this.p2pManager.stateManager.status;
         if (
             status !== Status.PARTICIPATING &&
             status !== Status.PENDING_PARTICIPANT

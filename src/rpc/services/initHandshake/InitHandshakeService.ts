@@ -440,13 +440,12 @@ class InitHandshakeService extends ARpcService<InitHandshakeRpcMethods> {
             );
         }
 
-        const isChannelOpenedStatus =
-            stateManager.getStatus() === Status.OPENED;
+        const isChannelOpenedStatus = stateManager.status === Status.OPENED;
         let isPeerParticipant: boolean;
         try {
             isPeerParticipant =
                 await stateManager.diamondStateMachine.localDiamondContract.canParticipateInDisputes(
-                    stateManager.getChannelId(),
+                    stateManager.channelId,
                     completedPeerAddress
                 );
         } catch (error) {
@@ -467,7 +466,7 @@ class InitHandshakeService extends ARpcService<InitHandshakeRpcMethods> {
                 );
                 this.p2pManager.localRpc.spectateService.sync(
                     completedPeerAddress,
-                    stateManager.getChannelId()
+                    stateManager.channelId
                 );
             } else {
                 this.logger.debug(

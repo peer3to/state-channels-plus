@@ -1,7 +1,7 @@
 import ARpcMethods from "@/rpc/ARpcMethods";
 import type ATransport from "@/transport/ATransport";
 import type { ForkId } from "@/types/types";
-import type { IngestBlockConfirmationOptions } from "@/stateManager/BlockQueueManager";
+import type { IngestBlockConfirmationOptions } from "@/stateManager/ingest/BlockQueueManager";
 import { Block } from "@/models";
 import { Codec, Type } from "@/utils";
 import type { TransitionService } from "./TransitionService";
@@ -54,9 +54,9 @@ export class TransitionRpcMethods extends ARpcMethods {
         forkId: ForkId
     ): Promise<{ encodedSnapshot: string } | null> {
         const struct = (
-            await this.service.sm.snapshotUpdateService.postStateSnapshotWait(
-                forkId
-            )
+            await this.service.sm.snapshotUpdateService[
+                "postStateSnapshotWait"
+            ](forkId)
         )?.toStruct();
         return struct
             ? {
@@ -73,9 +73,9 @@ export class TransitionRpcMethods extends ARpcMethods {
         forkId: ForkId
     ): Promise<SameForkSnapshotUpdate> {
         const data =
-            await this.service.sm.snapshotUpdateService.prepareUpdateSnapshotSameFork(
-                forkId
-            );
+            await this.service.sm.snapshotUpdateService[
+                "prepareUpdateSnapshotSameFork"
+            ](forkId);
         return {
             canPost: data.canPost,
             callData: data.callData,
@@ -95,7 +95,7 @@ export class TransitionRpcMethods extends ARpcMethods {
         encodedBlockConfirmation: string,
         options?: IngestBlockConfirmationOptions
     ): Promise<boolean> {
-        return await this.service.sm.ingestBlockConfirmation(
+        return await this.service.sm.blockQueueManager.ingestBlockConfirmation(
             Codec.decode(encodedBlockConfirmation, Type.BlockConfirmation),
             options
         );

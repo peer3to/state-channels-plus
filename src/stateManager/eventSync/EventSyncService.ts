@@ -4,7 +4,7 @@ import { Filter, Log, hexlify, zeroPadValue } from "ethers";
 import Clock from "@/Clock";
 import { EventHandler } from "@/eventHandlers/EventHandler";
 import Storage from "@/storage";
-import { TimeConfig, firstBlockGrace } from "@/types";
+import { TimeConfig, timeoutWaitTime } from "@/types";
 import {
     Address,
     BlockCalldata,
@@ -177,6 +177,24 @@ export default class EventSyncService {
         this.pendingOnChainBlockValidations.set(validationKey, recovery);
         return recovery;
     }
+    /**
+     * The fork's dispute window as the chain has it, with any commitment whose
+     * event hasn't reached us yet recovered before we return. Single owner for
+     * both the reduce path and spectate requests, so neither reads a window
+     * its local storage can't back.
+     */
+    async loadSynchronizedWindowCommitments(
+        channelId: ChannelId,
+        forkId: ForkId
+    ): Promise<readonly Hash[]> {
+        const commitments =
+            await this.stateChannelManagerContract.getWindowCommitments(
+                channelId,
+                forkId
+            );
+        await this.ensureDisputesProcessed(channelId, forkId, commitments);
+        return commitments;
+    }
 
     private async recoverBlockCalldataAndScheduleValidation(
         validationKey: OnChainBlockValidationKey,
@@ -242,43 +260,8 @@ export default class EventSyncService {
             return { validationScheduled: false };
         }
     }
-    /**
-     * Whether the chain says this fork is disputed. The local EVM mirror only
-     * knows the dispute events we have already processed, so a walk that reads
-     * its window from the chain has to take the disputed flag from the chain
-     * too - otherwise an undelivered event leaves the flag false and the walk
-     * never enters the window it would have recovered.
-     */
-    async isForkDisputedOnChain(
-        channelId: ChannelId,
-        forkId: ForkId
-    ): Promise<boolean> {
-        return this.stateChannelManagerContract.isForkDisputed(
-            channelId,
-            forkId
-        );
-    }
 
-    /**
-     * The fork's dispute window as the chain has it, with any commitment whose
-     * event hasn't reached us yet recovered before we return. Single owner for
-     * both the reduce path and spectate requests, so neither reads a window
-     * its local storage can't back.
-     */
-    async loadSynchronizedWindowCommitments(
-        channelId: ChannelId,
-        forkId: ForkId
-    ): Promise<readonly Hash[]> {
-        const commitments =
-            await this.stateChannelManagerContract.getWindowCommitments(
-                channelId,
-                forkId
-            );
-        await this.ensureDisputesProcessed(channelId, forkId, commitments);
-        return commitments;
-    }
-
-    async ensureDisputesProcessed(
+    private async ensureDisputesProcessed(
         channelId: ChannelId,
         forkId: ForkId,
         commitments: readonly Hash[]
@@ -534,11 +517,7 @@ export default class EventSyncService {
         blockHeight: BlockHeight
     ): BlockNumber {
         const average = Clock.getAverageOnChainBlockTime();
-        const seconds =
-            this.timeConfig.p2pTime +
-            this.timeConfig.agreementTime +
-            this.timeConfig.chainFallbackTime +
-            firstBlockGrace(this.timeConfig, blockHeight);
+        const seconds = timeoutWaitTime(this.timeConfig, blockHeight);
         const span =
             Math.ceil((average > 0 ? seconds / average : seconds) * 1.5) + 2;
         return Math.max(0, latestBlock - span);

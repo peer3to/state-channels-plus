@@ -8,7 +8,7 @@ import AValidationStrategy, {
 import type { QueuedBlockEntry } from "@/storage/QueueStorage";
 import FraudProofService from "../utils/FraudProofService";
 import Storage from "@/storage";
-import DisputeFraudProofService from "../utils/DisputeFraudProofService";
+import DisputeFraudProofService from "../dispute/DisputeFraudProofService";
 import {
     BlockConfirmationStruct,
     MessageBlockStruct

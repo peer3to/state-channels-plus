@@ -94,8 +94,8 @@ class LocalP2pSigner<TCustomRpc extends MainRpcService = MainRpcService>
     ): Promise<TransactionResponse> {
         const _tx: TransactionStruct = {
             header: {
-                channelId: this.p2pManager.stateManager.getChannelId(),
-                participant: this.p2pManager.stateManager.getSignerAddress(),
+                channelId: this.p2pManager.stateManager.channelId,
+                participant: this.p2pManager.stateManager.signerAddress,
                 forkId: this.p2pManager.stateManager.forkId,
                 transactionCnt: BigInt(
                     this.p2pManager.stateManager.storage.blocks.getNextBlockHeight(
@@ -114,7 +114,9 @@ class LocalP2pSigner<TCustomRpc extends MainRpcService = MainRpcService>
             `Sending transaction #${Number(_tx.header.transactionCnt)} timestamp: ${Number(_tx.header.timestamp)}`
         );
         const _blockConfirmation =
-            await this.p2pManager.stateManager.playTransaction(_tx);
+            await this.p2pManager.stateManager.blockProductionService.playTransaction(
+                _tx
+            );
         // NOTE: playTransaction already broadcasts via success() method, no need to broadcast again here
 
         return "There is no TransactionResponse p2p - everything executed locally" as unknown as TransactionResponse; //TODO
@@ -158,7 +160,7 @@ class LocalP2pSigner<TCustomRpc extends MainRpcService = MainRpcService>
         expectedSnapshotHash: Hash,
         expectedForkId: ForkId
     ): Promise<void> {
-        return this.p2pManager.stateManager.joinChannel(
+        return this.p2pManager.stateManager.membershipService.joinChannel(
             confirmation,
             expectedSnapshotHash,
             expectedForkId
@@ -170,7 +172,7 @@ class LocalP2pSigner<TCustomRpc extends MainRpcService = MainRpcService>
         expectedSnapshotHash: Hash,
         expectedForkId: ForkId
     ): Promise<void> {
-        return this.p2pManager.stateManager.topUpBalance(
+        return this.p2pManager.stateManager.membershipService.topUpBalance(
             confirmation,
             expectedSnapshotHash,
             expectedForkId
@@ -189,8 +191,8 @@ class LocalP2pSigner<TCustomRpc extends MainRpcService = MainRpcService>
         this.p2pManager.disconnectAll();
     }
 
-    public getChannelStatus(): Promise<Status> {
-        return this.p2pManager.stateManager.getChannelStatus();
+    public async getChannelStatus(): Promise<Status> {
+        return this.p2pManager.stateManager.status;
     }
 }
 

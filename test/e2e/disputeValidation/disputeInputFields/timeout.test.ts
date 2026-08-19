@@ -291,16 +291,13 @@ describe("E2E: dispute validation / disputeInputFields / timeout", function () {
         const calldataAuthor = await h.query.getNextPeerToWrite();
 
         // Peer 3 cannot confirm height 2, so the author must post it as calldata.
-        await h.execOnHost(h.getPeer(3), (sm) => {
-            sm.ingestBlockConfirmation = async () => false;
-        });
+        await h
+            .control(h.getPeer(3))
+            .stub.stubRejectIngestedConfirmations()
+            .request();
         await Promise.all(
             [0, 1, 2, 3].map((peerIndex) =>
-                h.execOnHost(h.getPeer(peerIndex), (sm) => {
-                    Object.defineProperty(sm, "tryTimeoutParticipant", {
-                        value: async () => undefined
-                    });
-                })
+                h.rpcStub.suppressTimeoutCheck(peerIndex)
             )
         );
         await h.network.disconnectPeer(3);

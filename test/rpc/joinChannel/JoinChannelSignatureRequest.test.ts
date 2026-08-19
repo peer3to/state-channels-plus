@@ -211,7 +211,7 @@ describe("JoinChannel signature requests", function () {
         const refusalState = await h.execOnHost(
             h.getPeer(joiner.index),
             async (sm) => ({
-                status: sm.getStatus(),
+                status: sm.status,
                 joinSubmissionHeight:
                     sm.storage.forceJoin.getJoinSubmissionBlockHeight()
             }),

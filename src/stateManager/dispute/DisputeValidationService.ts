@@ -6,7 +6,7 @@ import Storage from "@/storage";
 import { Codec, isSubset, Logger, tryDecodeCustomError, Type } from "@/utils";
 import { Address, Bytes, Signature } from "@/types/types";
 
-import DisputeFraudProofService from "./utils/DisputeFraudProofService";
+import DisputeFraudProofService from "./DisputeFraudProofService";
 import {
     DisputeAuditingDataStruct,
     DisputeStruct
@@ -17,9 +17,10 @@ import {
 } from "@typechain-types/contracts/V1/types/DataTypes";
 import DisputeManager from "@/disputeManager";
 import AgreementManager from "@/agreementManager";
-import type StateManager from "./StateManager";
-import DisputeValidationStrategy from "./validationStrategy/DisputeValidationStrategy";
+import type StateManager from "../StateManager";
+import DisputeValidationStrategy from "../validationStrategy/DisputeValidationStrategy";
 import { Block, StateSnapshot, StateProof } from "@/models";
+import { timeoutWaitTime } from "@/types";
 import { LoggerUtils } from "@/utils/LoggerUtils";
 
 export default class DisputeValidationService {
@@ -46,7 +47,7 @@ export default class DisputeValidationService {
         );
     }
 
-    async validateDispute(
+    public async validateDispute(
         dispute: DisputeStruct,
         onChainDisputeAuditingData?: DisputeAuditingDataStruct
     ): Promise<boolean> {
@@ -172,6 +173,79 @@ export default class DisputeValidationService {
         return await this.runStateProofBlocksThroughPipeline(dispute);
     }
 
+    public persistDisputeDataWithoutAudit(
+        dispute: DisputeStruct,
+        disputeAuditingData: DisputeAuditingDataStruct | undefined,
+        options: { includeUnfinalizedBlocks: boolean }
+    ): void {
+        if (disputeAuditingData) {
+            if (options.includeUnfinalizedBlocks) {
+                this.storage.stateSnapshots.storeStateSnapshot(
+                    StateSnapshot.from(disputeAuditingData.latestStateSnapshot)
+                );
+            }
+            for (const milestoneSnapshot of disputeAuditingData.milestoneSnapshots) {
+                this.storage.stateSnapshots.storeStateSnapshot(
+                    StateSnapshot.from(milestoneSnapshot)
+                );
+            }
+
+            const latestFinalizedSnapshot =
+                this.agreementManager.getLatestFinalizedSnapshot(
+                    dispute.input.stateProof,
+                    dispute.input.forkId
+                );
+
+            if (
+                disputeAuditingData.latestFinalizedStateStateMachineState !== ""
+            ) {
+                this.storage.stateMachineStates.storeStateMachineState(
+                    disputeAuditingData.latestFinalizedStateStateMachineState,
+                    {
+                        hash: latestFinalizedSnapshot.stateMachineStateHash
+                    }
+                );
+            }
+
+            for (const messageBlock of disputeAuditingData.inboundMessageBlocks) {
+                this.storage.inboundMessages.store(messageBlock, {
+                    justPersist: true
+                });
+            }
+
+            for (const messageBlock of disputeAuditingData.outboundMessageBlocks) {
+                this.storage.outboundMessages.store(messageBlock, {
+                    justPersist: true
+                });
+            }
+        }
+
+        for (const milestone of dispute.input.stateProof.milestones) {
+            const blockConfirmations = options.includeUnfinalizedBlocks
+                ? milestone.blockConfirmations
+                : milestone.blockConfirmations.slice(0, 1);
+            for (const blockConfirmation of blockConfirmations) {
+                const block = Block.tryFromBlockConfirmation(blockConfirmation);
+                if (!block) continue;
+                this.storage.blocks.storeBlock(block, {
+                    hash: block.hash,
+                    coordinates: block.coordinates,
+                    justPersist: true
+                });
+            }
+        }
+        if (!options.includeUnfinalizedBlocks) return;
+        for (const signedBlock of dispute.input.stateProof.signedBlocks) {
+            const block = Block.tryFromSignedBlock(signedBlock);
+            if (!block) continue;
+            this.storage.blocks.storeBlock(block, {
+                hash: block.hash,
+                coordinates: block.coordinates,
+                justPersist: true
+            });
+        }
+    }
+
     private async tryVerifyStateProof(
         dispute: DisputeStruct,
         disputeAuditingData: DisputeAuditingDataStruct
@@ -209,9 +283,13 @@ export default class DisputeValidationService {
                 this.diamondStateMachine.localDiamondContract,
                 this.logger
             );
-            const isOk = await this.stateManager.onBlockConfirmationStruct(bc, {
-                validationStrategy: disputeStrategy
-            });
+            const isOk =
+                await this.stateManager.blockIngestService.onBlockConfirmationStruct(
+                    bc,
+                    {
+                        validationStrategy: disputeStrategy
+                    }
+                );
             if (!isOk) {
                 if (!this.hasStoredDisputeFraudProof(dispute)) {
                     throw new Error(
@@ -454,7 +532,8 @@ export default class DisputeValidationService {
             if (
                 timeoutTimestamp <
                 previousTimestamp +
-                    this.stateManager.getTimeoutWaitTimeSeconds(
+                    timeoutWaitTime(
+                        this.stateManager.timeConfig,
                         Number(dispute.input.timeout.blockHeight)
                     )
             ) {
@@ -847,79 +926,6 @@ export default class DisputeValidationService {
                 }
             );
             return false;
-        }
-    }
-
-    public persistDisputeDataWithoutAudit(
-        dispute: DisputeStruct,
-        disputeAuditingData: DisputeAuditingDataStruct | undefined,
-        options: { includeUnfinalizedBlocks: boolean }
-    ): void {
-        if (disputeAuditingData) {
-            if (options.includeUnfinalizedBlocks) {
-                this.storage.stateSnapshots.storeStateSnapshot(
-                    StateSnapshot.from(disputeAuditingData.latestStateSnapshot)
-                );
-            }
-            for (const milestoneSnapshot of disputeAuditingData.milestoneSnapshots) {
-                this.storage.stateSnapshots.storeStateSnapshot(
-                    StateSnapshot.from(milestoneSnapshot)
-                );
-            }
-
-            const latestFinalizedSnapshot =
-                this.agreementManager.getLatestFinalizedSnapshot(
-                    dispute.input.stateProof,
-                    dispute.input.forkId
-                );
-
-            if (
-                disputeAuditingData.latestFinalizedStateStateMachineState !== ""
-            ) {
-                this.storage.stateMachineStates.storeStateMachineState(
-                    disputeAuditingData.latestFinalizedStateStateMachineState,
-                    {
-                        hash: latestFinalizedSnapshot.stateMachineStateHash
-                    }
-                );
-            }
-
-            for (const messageBlock of disputeAuditingData.inboundMessageBlocks) {
-                this.storage.inboundMessages.store(messageBlock, {
-                    justPersist: true
-                });
-            }
-
-            for (const messageBlock of disputeAuditingData.outboundMessageBlocks) {
-                this.storage.outboundMessages.store(messageBlock, {
-                    justPersist: true
-                });
-            }
-        }
-
-        for (const milestone of dispute.input.stateProof.milestones) {
-            const blockConfirmations = options.includeUnfinalizedBlocks
-                ? milestone.blockConfirmations
-                : milestone.blockConfirmations.slice(0, 1);
-            for (const blockConfirmation of blockConfirmations) {
-                const block = Block.tryFromBlockConfirmation(blockConfirmation);
-                if (!block) continue;
-                this.storage.blocks.storeBlock(block, {
-                    hash: block.hash,
-                    coordinates: block.coordinates,
-                    justPersist: true
-                });
-            }
-        }
-        if (!options.includeUnfinalizedBlocks) return;
-        for (const signedBlock of dispute.input.stateProof.signedBlocks) {
-            const block = Block.tryFromSignedBlock(signedBlock);
-            if (!block) continue;
-            this.storage.blocks.storeBlock(block, {
-                hash: block.hash,
-                coordinates: block.coordinates,
-                justPersist: true
-            });
         }
     }
 

@@ -6,16 +6,25 @@ import Clock from "@/Clock";
 import Storage from "@/storage";
 import type { QueuedBlockEntry } from "@/storage/QueueStorage";
 import { Block, StateSnapshot } from "@/models";
-import { Logger } from "@/utils";
-import { BlockValidationResult, TimeConfig, firstBlockGrace } from "@/types";
+import { Codec, hash, Logger, Type } from "@/utils";
+import type {
+    BlockConfirmationStruct,
+    MessageBlockStruct
+} from "@typechain-types/contracts/V1/types/DataTypes";
+import {
+    BlockValidationResult,
+    TimeConfig,
+    firstBlockGrace,
+    timeoutWaitTime
+} from "@/types";
 import { Address, ChannelId, ForkId, Timestamp } from "@/types/types";
 
-import FraudProofService from "./utils/FraudProofService";
-import AValidationStrategy from "./validationStrategy/AValidationStrategy";
+import FraudProofService from "../utils/FraudProofService";
+import AValidationStrategy from "../validationStrategy/AValidationStrategy";
 import type StateManager from "@/stateManager";
 import { LoggerUtils } from "@/utils/LoggerUtils";
-import BlockValidationStrategy from "./validationStrategy/BlockValidationStrategy";
-import EventSyncService from "./EventSyncService";
+import BlockValidationStrategy from "../validationStrategy/BlockValidationStrategy";
+import EventSyncService from "../eventSync/EventSyncService";
 
 export enum OnChainPostTiming {
     NOT_POSTED,
@@ -42,7 +51,15 @@ export default class ValidationService {
         );
     }
 
-    async validateBlockConfirmation(
+    public async isBlockConfirmationAuthentic(
+        blockConfirmation: BlockConfirmationStruct
+    ): Promise<boolean> {
+        return this.diamondStateMachine.localDiamondContract.isBlockAuthentic(
+            blockConfirmation.signedBlock
+        );
+    }
+
+    public async validateBlockConfirmation(
         entry: QueuedBlockEntry,
         strategy: AValidationStrategy
     ): Promise<BlockValidationResult> {
@@ -180,12 +197,204 @@ export default class ValidationService {
         return timeResult;
     }
 
-    // ────────────────────── INTERNAL ACTION METHODS ─────────────────────
-
     // ────────────────────── VALIDATION METHODS ─────────────────────
 
-    isChannelOpen(forkId: ForkId): boolean {
+    public isChannelOpen(forkId: ForkId): boolean {
         return forkId !== ZeroHash;
+    }
+
+    public async isDisputedFork(
+        forkId: ForkId,
+        channelId: ChannelId
+    ): Promise<boolean> {
+        return (
+            this.storage.disputes.didIDispute(forkId) ||
+            (await this.diamondStateMachine.localDiamondContract.isForkDisputed(
+                channelId,
+                forkId
+            ))
+        );
+    }
+
+    /**
+     * Is `forkId` a fork in our canonical past - one we've moved past and can
+     * safely drop a late block on - rather than an unknown/malicious fork we
+     * should sync-probe? Callers only ask about a NON-current fork.
+     *
+     * O(1), no chain walk: a non-current fork is "known past" if it is disputed
+     * (we are leaving it) OR we already hold its genesis snapshot or any of its
+     * blocks locally (we've seen it in our history). Anything we don't recognize
+     * is treated as unknown → sync (never a silent drop on ambiguity).
+     */
+    public async isKnownStaleFork(forkId: ForkId): Promise<boolean> {
+        const sm = this.stateManager;
+        if (forkId === sm.forkId || forkId === ZeroHash) return false;
+        if (await this.isDisputedFork(forkId, sm.channelId)) return true;
+        return (
+            this.storage.stateSnapshots.getGenesisSnapshotByForkId(forkId) !==
+                undefined ||
+            this.storage.blocks.getLatestBlock(forkId) !== undefined
+        );
+    }
+
+    /**
+     * Did the author invent an inbound message block? A carried inbound block
+     * is legitimate only if we already store it locally or the chain has it.
+     */
+    public async detectForgedInboundMessageBlock(
+        block: Block
+    ): Promise<MessageBlockStruct | undefined> {
+        if (block.messageBlocks.length === 0) {
+            return undefined;
+        }
+
+        for (const inboundBlock of block.messageBlocks) {
+            const inboundBlockHash = hash(
+                Codec.encode(inboundBlock, Type.MessageBlock)
+            );
+
+            const existsLocally =
+                this.storage.inboundMessages.getMessageBlock(inboundBlockHash);
+            if (existsLocally) {
+                continue;
+            }
+
+            const existsOnChain =
+                await this.stateChannelManagerContract.hasInboundMessageBlock(
+                    this.stateManager.channelId,
+                    inboundBlockHash
+                );
+
+            if (existsOnChain) {
+                continue;
+            }
+
+            return inboundBlock;
+        }
+
+        return undefined;
+    }
+
+    public findBrokenInboundMessageChainBlock(
+        previousStateSnapshot: StateSnapshot,
+        inboundMessageBlocks: MessageBlockStruct[]
+    ): MessageBlockStruct | undefined {
+        if (inboundMessageBlocks.length === 0) {
+            return undefined;
+        }
+
+        let expectedPreviousHash =
+            previousStateSnapshot.snapshotData.latestInboundMessageBlockHash ??
+            ZeroHash;
+        let expectedHeight = BigInt(
+            previousStateSnapshot.snapshotData
+                .latestInboundMessageBlockHeight ?? 0n
+        );
+
+        for (const inboundBlock of inboundMessageBlocks) {
+            if (inboundBlock.previousBlockHash !== expectedPreviousHash) {
+                return inboundBlock;
+            }
+            expectedHeight += 1n;
+            if (BigInt(inboundBlock.blockHeight ?? 0n) !== expectedHeight) {
+                return inboundBlock;
+            }
+            expectedPreviousHash = hash(
+                Codec.encode(inboundBlock, Type.MessageBlock)
+            );
+        }
+
+        return undefined;
+    }
+
+    // ────────────────────── Helpers ─────────────────────
+
+    private async isBlockAuthorParticipant(
+        block: Block,
+        channelId: ChannelId
+    ): Promise<boolean> {
+        const previousSnapshot = this.storage.getPreviousStateSnapshot(
+            block.coordinates
+        );
+
+        if (!previousSnapshot) {
+            // No local anchor to bind against - fall back to the on-chain union.
+            const [participantsFromChain, pendingParticipants] =
+                await Promise.all([
+                    this.stateChannelManagerContract.getParticipants(channelId),
+                    this.stateChannelManagerContract.getPendingParticipants(
+                        channelId
+                    )
+                ]);
+            return new Set<Address>([
+                ...participantsFromChain,
+                ...pendingParticipants
+            ]).has(block.author);
+        }
+
+        // The author counts if it is in the previous snapshot, or in the block's
+        // declared resulting snapshot bound to the block's coordinates.
+        const resultingSnapshot =
+            this.storage.stateSnapshots.getStateSnapshotByHash(
+                block.stateSnapshotHash
+            );
+        // No declared snapshot in storage -> an empty snapshot contributes no
+        // participants, so the check degrades to the previous snapshot alone.
+        return await this.diamondStateMachine.localDiamondContract.isBlockAuthorParticipant(
+            block.blockStruct,
+            previousSnapshot.toStruct(),
+            (resultingSnapshot ?? StateSnapshot.empty()).toStruct()
+        );
+    }
+
+    private async getOnChainPostTiming(
+        previousTimestamp: Timestamp,
+        block: Block
+    ): Promise<OnChainPostTiming> {
+        const storedOnChainTimestamp = this.getStoredOnChainTimestamp(block);
+        if (storedOnChainTimestamp !== undefined) {
+            block.onChainTimestamp = storedOnChainTimestamp;
+        }
+
+        // if doesn't have on-chain timestamp try and fetch it
+        if (block.onChainTimestamp === undefined) {
+            await this.eventSyncService.tryRecoverBlockCalldataAndScheduleValidation(
+                block.forkId,
+                block.height,
+                block.author
+            );
+
+            const onChainTimestamp = this.getStoredOnChainTimestamp(block);
+
+            if (onChainTimestamp === undefined) {
+                return OnChainPostTiming.NOT_POSTED;
+            }
+            block.onChainTimestamp = onChainTimestamp;
+            this.storage.blocks.setOnChainTimestamp(
+                block.hash,
+                onChainTimestamp
+            );
+        }
+
+        // => Block has on-chain timestamp
+
+        const maxAllowedTimestamp =
+            previousTimestamp + timeoutWaitTime(this.timeConfig, block.height);
+
+        if (block.onChainTimestamp > maxAllowedTimestamp) {
+            return OnChainPostTiming.TOO_LATE;
+        }
+
+        return OnChainPostTiming.ON_TIME;
+    }
+
+    private getStoredOnChainTimestamp(block: Block): Timestamp | undefined {
+        return (
+            this.storage.blocks.getBlock(block.hash)?.onChainTimestamp ??
+            this.storage.blockCalldata.getMatchingBlockCalldata(block)
+                ?.onChainTimestamp ??
+            block.onChainTimestamp
+        );
     }
 
     private isLinked(block: Block): boolean {
@@ -249,19 +458,6 @@ export default class ValidationService {
         }
 
         return await strategy.conflictingButNotLinkedBlockDetected(entry);
-    }
-
-    public async isDisputedFork(
-        forkId: ForkId,
-        channelId: ChannelId
-    ): Promise<boolean> {
-        return (
-            this.storage.disputes.didIDispute(forkId) ||
-            (await this.diamondStateMachine.localDiamondContract.isForkDisputed(
-                channelId,
-                forkId
-            ))
-        );
     }
 
     /**
@@ -438,11 +634,10 @@ export default class ValidationService {
             logTimeFailure({
                 validationResult: BlockValidationResult.DISPUTE,
                 checkType: "objective",
-                allowedSkewSeconds:
-                    firstBlockGrace(this.timeConfig, block.height) +
-                    this.timeConfig.p2pTime +
-                    this.timeConfig.agreementTime +
-                    this.timeConfig.chainFallbackTime,
+                allowedSkewSeconds: timeoutWaitTime(
+                    this.timeConfig,
+                    block.height
+                ),
                 violatedRule:
                     block.height === 0
                         ? "onChainTimestamp <= previousTimestamp + evidenceTime + p2pTime + agreementTime + chainFallbackTime"
@@ -491,99 +686,5 @@ export default class ValidationService {
         });
 
         return BlockValidationResult.SUCCESS;
-    }
-
-    // ────────────────────── Helpers ─────────────────────
-
-    private async isBlockAuthorParticipant(
-        block: Block,
-        channelId: ChannelId
-    ): Promise<boolean> {
-        const previousSnapshot = this.storage.getPreviousStateSnapshot(
-            block.coordinates
-        );
-
-        if (!previousSnapshot) {
-            // No local anchor to bind against - fall back to the on-chain union.
-            const [participantsFromChain, pendingParticipants] =
-                await Promise.all([
-                    this.stateChannelManagerContract.getParticipants(channelId),
-                    this.stateChannelManagerContract.getPendingParticipants(
-                        channelId
-                    )
-                ]);
-            return new Set<Address>([
-                ...participantsFromChain,
-                ...pendingParticipants
-            ]).has(block.author);
-        }
-
-        // The author counts if it is in the previous snapshot, or in the block's
-        // declared resulting snapshot bound to the block's coordinates.
-        const resultingSnapshot =
-            this.storage.stateSnapshots.getStateSnapshotByHash(
-                block.stateSnapshotHash
-            );
-        // No declared snapshot in storage -> an empty snapshot contributes no
-        // participants, so the check degrades to the previous snapshot alone.
-        return await this.diamondStateMachine.localDiamondContract.isBlockAuthorParticipant(
-            block.blockStruct,
-            previousSnapshot.toStruct(),
-            (resultingSnapshot ?? StateSnapshot.empty()).toStruct()
-        );
-    }
-
-    private async getOnChainPostTiming(
-        previousTimestamp: Timestamp,
-        block: Block
-    ): Promise<OnChainPostTiming> {
-        const storedOnChainTimestamp = this.getStoredOnChainTimestamp(block);
-        if (storedOnChainTimestamp !== undefined) {
-            block.onChainTimestamp = storedOnChainTimestamp;
-        }
-
-        // if doesn't have on-chain timestamp try and fetch it
-        if (block.onChainTimestamp === undefined) {
-            await this.eventSyncService.tryRecoverBlockCalldataAndScheduleValidation(
-                block.forkId,
-                block.height,
-                block.author
-            );
-
-            const onChainTimestamp = this.getStoredOnChainTimestamp(block);
-
-            if (onChainTimestamp === undefined) {
-                return OnChainPostTiming.NOT_POSTED;
-            }
-            block.onChainTimestamp = onChainTimestamp;
-            this.storage.blocks.setOnChainTimestamp(
-                block.hash,
-                onChainTimestamp
-            );
-        }
-
-        // => Block has on-chain timestamp
-
-        const maxAllowedTimestamp =
-            previousTimestamp +
-            this.timeConfig.p2pTime +
-            this.timeConfig.agreementTime +
-            this.timeConfig.chainFallbackTime +
-            firstBlockGrace(this.timeConfig, block.height);
-
-        if (block.onChainTimestamp > maxAllowedTimestamp) {
-            return OnChainPostTiming.TOO_LATE;
-        }
-
-        return OnChainPostTiming.ON_TIME;
-    }
-
-    private getStoredOnChainTimestamp(block: Block): Timestamp | undefined {
-        return (
-            this.storage.blocks.getBlock(block.hash)?.onChainTimestamp ??
-            this.storage.blockCalldata.getMatchingBlockCalldata(block)
-                ?.onChainTimestamp ??
-            block.onChainTimestamp
-        );
     }
 }
