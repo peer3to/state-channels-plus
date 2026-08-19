@@ -61,7 +61,6 @@ import SpectatingValidationStrategy from "./validationStrategy/SpectatingValidat
 import { config } from "@/utils/config";
 import { TimeoutManager } from "@/utils/TimeoutManager";
 import { LoggerUtils } from "@/utils/LoggerUtils";
-import P2pEventHooksUtils from "@/utils/P2pEventHooksUtils";
 import { createBusPublishingHooks, EventBus } from "@/events/EventBus";
 import MainRpcService from "@/rpc/MainRpcService";
 import type { CustomRpcConstructor } from "@/rpc/registry";

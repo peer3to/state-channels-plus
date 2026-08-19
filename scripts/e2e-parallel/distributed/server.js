@@ -54,7 +54,11 @@ function progressElapsedMs(connection, now = Date.now()) {
 }
 
 function shouldTransferAttemptLog(result) {
-    return result.code !== 0 || Boolean(result.infrastructureFailure);
+    return (
+        result.code !== 0 ||
+        Boolean(result.infrastructureFailure) ||
+        (result.reduced?.starveCount || 0) > 0
+    );
 }
 
 function logOrchestratorRequest(message) {

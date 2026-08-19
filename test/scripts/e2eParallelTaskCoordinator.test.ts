@@ -24,6 +24,7 @@ describe("distributed task coordinator", function () {
             startupMs: 11,
             deployMs: 7,
             workerBootMs: 3,
+            runtimeReadyMs: 2,
             maxEventLoopDelayMs: 1200,
             el: { main: 0, sdk: 0, vm: 0, watchdog: 1200 },
             found: true

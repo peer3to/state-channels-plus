@@ -1,3 +1,4 @@
+// @spec-test-coverage-ignore: shared join test setup exercised by owning mapped test declarations
 import { PeerTestHarness } from "@test/fixtures/PeerTestHarness";
 import type { HarnessControlRpc } from "@test/fixtures/customRpc/harnessControl/HarnessControlRpc";
 import { Signer } from "ethers";
@@ -163,7 +164,7 @@ export class JoinActions<
         );
         const thresholdParticipants = await this.harness
             .control(this.harness.getPeer(0))
-            .query.getOnChainParticipantUnion()
+            .query.getOnChainThresholdSet()
             .request();
         const existingParticipantSigners = thresholdParticipants.map(
             (participant) => {

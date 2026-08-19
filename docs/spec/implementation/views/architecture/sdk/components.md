@@ -94,6 +94,11 @@ facade.
 
 ## 7. EventBus
 
+[`src/events/EventBus.ts`](../../../../../../src/events/EventBus.ts#L53) owns one event surface in each
+runtime realm. `createBusPublishingHooks` publishes every string hook name as a `p2pEventHooks` bus event
+before calling the current application hook target, so application packages can extend the hook type without
+changing the SDK declaration. The runtime bridge forwards the name and cloneable argument tuple unchanged.
+
 ## 8. ProfileManager
 
 [`src/ProfileManager.ts`](../../../../../../src/ProfileManager.ts#L1) — peer identity

@@ -119,8 +119,9 @@ Finality arrives by exactly one of three routes:
   ([state-proofs.md §5](../disputes/state-proofs.md)).
 - On-chain (milestones): `_isMilestoneFinalWithExpectedParticipants` requires
   `thresholdCount == expectedParticipants.length`, where the expected set is the union of the
-  previous snapshot's participants, the resulting snapshot's participants, and pending joiners
-  derived from the inbound stream
+  previous snapshot's participants, the resulting snapshot's participants, and joiners derived
+  from the inbound-message interval committed between the two snapshots' inbound hashes — not the
+  chain's live pending set
   (`the corresponding state-proof verification operation`).
 - On-chain (disputes): a threshold-final dispute confirmation requires signatures from
   `getOnChainThresholdSet` = (snapshot participants ∪ pending participants) − on-chain-slashed
@@ -129,6 +130,45 @@ Finality arrives by exactly one of three routes:
   (`DisputeManagerFacet._isDisputeThresholdFinal`).
 
 Sub-unanimous thresholds are not supported anywhere in the protocol definition.
+
+**One agreement threshold; the chain verifies views of it.** The three formulas above are not
+three independent threshold designs. The protocol has exactly one agreement threshold: the
+peer-to-peer union of a block's previous and resulting participant sets. Every honest transition
+is authorized by that union — the existing set admits a joiner and the joiner consents to enter;
+the remaining set agrees to a removal and the leaving participant consents to leave. In an honest
+execution, verifying that one threshold across every transition is sufficient; pending joiners
+become part of the resulting set when their inbound messages are consumed.
+
+The chain is a third-party verifier over a different memory space: it holds a stale snapshot plus
+the inbound messages, slashes, and other facts it has recorded — never the live peer-to-peer
+state. It does not replay the off-chain history or re-establish that every transition followed
+the protocol; it checks the invariants it can verify from a submitted proof and its own records.
+The two on-chain formulas are its acceptance rules for such proofs, not additional agreement
+thresholds:
+
+- **Pending joiners in the milestone set are evidence, not a second threshold.** If the chain has
+  recorded an inbound join that its snapshot does not yet include, a proof advancing the snapshot
+  must show that the joiner was part of the agreement. The verifier therefore derives joiners
+  from the inbound interval committed between the proof's two snapshots; in an honest transition
+  those joiners already appear in the resulting set, and the milestone set reduces to the plain
+  previous∪resulting union. The explicit derivation exists so the chain can reject a proof that
+  consumes a recorded join while omitting the joiner. The same goal drives the same-fork
+  inbound-consumption rule ([cross-layer-messages.md §2](../settlement/cross-layer-messages.md)):
+  a snapshot update must consume the chain's complete inbound head, so a proof cannot advance the
+  chain while leaving a recorded join or deposit behind.
+- **Slash subtraction is a current-eligibility rule, never a historical one.** Subtracting the
+  on-chain slash set is an explicit adjudication decision: after a fraud proof, the chain has
+  decided the slashed participant forfeited the right to block threshold resolution, so the
+  remaining participants may finalize without that signature. The rule applies only to
+  point-in-time chain decisions — dispute participation and threshold-final dispute confirmation
+  — that ask who is eligible _now_ and do not replay a linked history. Historical, replayable
+  evidence (milestones, state proofs) always requires the complete normal threshold: a proof MUST
+  have the same validity before and after any later slash, so later adjudication can never relax
+  or invalidate the signatures a past transition required
+  ([state-proofs.md §4](../disputes/state-proofs.md)). Join admission is likewise a
+  point-in-time chain decision and uses the same slash-excluding eligibility set — a slashed
+  participant cannot veto later admissions
+  ([cross-layer-messages.md §4](../settlement/cross-layer-messages.md)).
 
 **Implicit attestation — exact conditions.** A signature counts as an implicit vote for an earlier
 block if and only if: both blocks are on the same `forkId`; the chain between them is hash-linked

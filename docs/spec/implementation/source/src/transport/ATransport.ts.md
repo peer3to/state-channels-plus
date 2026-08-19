@@ -19,36 +19,44 @@
 
 ## Responsibility and observable boundary
 
-The transport base: `send` (serialize + `_send`), `sendRpcResponse`, `peerAddress` (written only
-by handshake verification), `isSamePeer` (checksum-address comparison — the settlement identity
-rule), and `isTrusted` (false for every network transport).
+The transport base: `send` and `sendRpcResponse` serialization, idempotent close/disconnection
+delivery, the authenticated `peerAddress` used by network transports, `isSamePeer`
+(checksum-address comparison — the settlement identity rule), `isTrusted` (false for every
+network transport), and the module-graph-independent `isTransport` public-shape predicate.
 
 ## Key design decisions
 
 1. **`isSamePeer` compares identities, not objects** — response settlement survives transport upgrades ([`REQ-RPC-2-SZDTTM`](../../../../specification/peer-communication/rpc.md#req-rpc-2-szdttm)).
 2. **`isTrusted` defaults false**; only loopback overrides — the guard-bypass boundary is a transport property, not a call-site decision.
+3. **`isTransport` checks the stable delivery surface.** Compatible transports are identified by `transportType`, `send`, and `sendRpcResponse`, not by one module graph's constructor ([#L89](../../../../../../src/transport/ATransport.ts#L89)).
+4. **Close is first-call-wins.** The first close marks the transport closed, emits an unexpected-disconnection hook when applicable, removes the connection, and invokes concrete cleanup; later closes do nothing ([#L51](../../../../../../src/transport/ATransport.ts#L51)).
 
 ## Inputs, outputs, state, and side effects
 
-| Aspect       | Contents        |
-| ------------ | --------------- |
-| Inputs       | Per role above. |
-| Outputs      | Per role above. |
-| Owned state  | Per role above. |
-| Side effects | Per role above. |
+| Aspect       | Contents                                                                                           |
+| ------------ | -------------------------------------------------------------------------------------------------- |
+| Inputs       | RPC envelopes, RPC responses, expected/unexpected close classification, and transport-like values. |
+| Outputs      | Serialized frames, identity/trust predicates, and structural type-guard results.                   |
+| Owned state  | `isClosed`, `peerAddress`, and the owning `p2pManager` reference.                                  |
+| Side effects | Logging, concrete sends/closes, connection removal, and unexpected-disconnection hooks.            |
 
 ## Linked requirements
 
 A file may contribute to several requirements; this report describes the contribution and never
 claims complete conformance for a requirement that depends on other files.
 
-| Source file                                                    | Specification IDs                                                                                                                                                                      |
-| -------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| [ATransport.ts](../../../../../../src/transport/ATransport.ts) | [`INV-RPC-1-SJS2T6`](../../../../specification/peer-communication/rpc.md#inv-rpc-1-sjs2t6), [`REQ-RPC-2-SZDTTM`](../../../../specification/peer-communication/rpc.md#req-rpc-2-szdttm) |
+| Source file                                                    | Specification IDs                                                                                                                                                                                                                                                                     |
+| -------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| [ATransport.ts](../../../../../../src/transport/ATransport.ts) | [`INV-RPC-1-SJS2T6`](../../../../specification/peer-communication/rpc.md#inv-rpc-1-sjs2t6), [`REQ-RPC-2-SZDTTM`](../../../../specification/peer-communication/rpc.md#req-rpc-2-szdttm), [`REQ-RUNTIME-4-B0N70Y`](../../../../specification/runtime/execution.md#req-runtime-4-b0n70y) |
 
 ## Assumptions, dependencies, trust boundaries, and limits
 
-- Network transports are untrusted byte pipes; identity comes only from the handshake.
+- Network transports are untrusted byte pipes; their remote identity comes from handshake/profile
+  verification. Loopback initializes `peerAddress` from the local signer, and transport replacement
+  copies the already verified profile identity.
+- A compatible transport can arrive through another application module graph; the structural predicate
+  does not grant trust and does not replace handshake identity.
+- Serialization and concrete `_send` failures propagate synchronously to the caller.
 
 ## Specification adherence
 
@@ -68,18 +76,19 @@ Status enum: `Covered` | `Partial` | `Contradicts` | `Missing`. Evidence cells a
 **Here:** / **Other files:** so each row is auditable from its links alone; genuine gaps go in the
 Gap column. Audit state is file-level (Status header), never a row status.
 
-| Requirement / invariant                                                                    | Implementation status | Evidence                                              | Gap / divergence |
-| ------------------------------------------------------------------------------------------ | --------------------- | ----------------------------------------------------- | ---------------- |
-| [`REQ-RPC-2-SZDTTM`](../../../../specification/peer-communication/rpc.md#req-rpc-2-szdttm) | Covered               | **Here:** `isSamePeer` identity comparison.           | None.            |
-| [`INV-RPC-1-SJS2T6`](../../../../specification/peer-communication/rpc.md#inv-rpc-1-sjs2t6) | Covered               | **Here:** peerAddress written only from verification. | None.            |
+| Requirement / invariant                                                                       | Implementation status | Evidence                                                                                                                         | Gap / divergence |
+| --------------------------------------------------------------------------------------------- | --------------------- | -------------------------------------------------------------------------------------------------------------------------------- | ---------------- |
+| [`REQ-RPC-2-SZDTTM`](../../../../specification/peer-communication/rpc.md#req-rpc-2-szdttm)    | Covered               | **Here:** `isSamePeer` identity comparison.                                                                                      | None.            |
+| [`INV-RPC-1-SJS2T6`](../../../../specification/peer-communication/rpc.md#inv-rpc-1-sjs2t6)    | Covered               | **Here:** network dispatch consumes the authenticated `peerAddress`; assignment ownership lives in handshake/profile management. | None.            |
+| [`REQ-RUNTIME-4-B0N70Y`](../../../../specification/runtime/execution.md#req-runtime-4-b0n70y) | Covered               | **Here:** `isTransport` recognizes the stable public delivery surface across module graphs.                                      | None.            |
 
 ## Component test obligations
 
 Exact test evidence is mapped against these IDs in the verification test reports.
 
-| Unit test ID                                                              | Obligation       | Public entry and setup                                                              | Oracle and forbidden effects                                 | Required permutations                                                                                                                                                                                                                                                                                                                                                                                                                              |
-| ------------------------------------------------------------------------- | ---------------- | ----------------------------------------------------------------------------------- | ------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| <a id="unit-test-atransport-1-7dgx9r"></a>`UNIT-TEST-ATRANSPORT-1-7DGX9R` | Identity surface | Compare peers across case variants and transport replacements; check trust defaults | Identity comparison normalized; network transports untrusted | <a id="unit-test-atransport-1-7dgx9r.p1"></a>`UNIT-TEST-ATRANSPORT-1-7DGX9R.P1` — isSamePeer case variants; <a id="unit-test-atransport-1-7dgx9r.p2"></a>`UNIT-TEST-ATRANSPORT-1-7DGX9R.P2` — isTrusted defaults; <a id="unit-test-atransport-1-7dgx9r.p3"></a>`UNIT-TEST-ATRANSPORT-1-7DGX9R.P3` — send/serialize path; <a id="unit-test-atransport-1-7dgx9r.p4"></a>`UNIT-TEST-ATRANSPORT-1-7DGX9R.P4` — isSamePeer across transport replacement |
+| Unit test ID                                                              | Obligation                                       | Public entry and setup                                                                                                                                                                                               | Oracle and forbidden effects                                                                                                                                                                                  | Required permutations                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
+| ------------------------------------------------------------------------- | ------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| <a id="unit-test-atransport-1-7dgx9r"></a>`UNIT-TEST-ATRANSPORT-1-7DGX9R` | Identity, delivery, lifecycle, and runtime shape | Drive a concrete transport inside a real peer runtime; compare authenticated identities and replacement transports; send calls and responses; close expected and unexpected connections; inspect cross-module shapes | Identities normalize without object identity; frames serialize exactly once; close effects occur once with correct event classification; synchronous failures propagate; only complete compatible shapes pass | <a id="unit-test-atransport-1-7dgx9r.p1"></a>`UNIT-TEST-ATRANSPORT-1-7DGX9R.P1` — same reference matches without identity, distinct unknown/partially known transports do not, case variants match, and different addresses do not; <a id="unit-test-atransport-1-7dgx9r.p2"></a>`UNIT-TEST-ATRANSPORT-1-7DGX9R.P2` — base/network transport is untrusted while loopback is trusted; <a id="unit-test-atransport-1-7dgx9r.p3"></a>`UNIT-TEST-ATRANSPORT-1-7DGX9R.P3` — `send` serializes the RPC once before concrete delivery; <a id="unit-test-atransport-1-7dgx9r.p4"></a>`UNIT-TEST-ATRANSPORT-1-7DGX9R.P4` — distinct transport types with the same authenticated address match across replacement; <a id="unit-test-atransport-1-7dgx9r.p5"></a>`UNIT-TEST-ATRANSPORT-1-7DGX9R.P5` — compatible transport public shape from another module graph is accepted; <a id="unit-test-atransport-1-7dgx9r.p6"></a>`UNIT-TEST-ATRANSPORT-1-7DGX9R.P6` — primitives, wrong property types, missing methods, and non-function methods are rejected; <a id="unit-test-atransport-1-7dgx9r.p7"></a>`UNIT-TEST-ATRANSPORT-1-7DGX9R.P7` — `sendRpcResponse` serializes the response once before concrete delivery; <a id="unit-test-atransport-1-7dgx9r.p8"></a>`UNIT-TEST-ATRANSPORT-1-7DGX9R.P8` — unexpected close marks closed, emits one disconnection event, removes once, and closes concretely once; <a id="unit-test-atransport-1-7dgx9r.p9"></a>`UNIT-TEST-ATRANSPORT-1-7DGX9R.P9` — expected close performs removal and concrete cleanup without an unexpected-disconnection event; <a id="unit-test-atransport-1-7dgx9r.p10"></a>`UNIT-TEST-ATRANSPORT-1-7DGX9R.P10` — repeated close has no additional effects; <a id="unit-test-atransport-1-7dgx9r.p11"></a>`UNIT-TEST-ATRANSPORT-1-7DGX9R.P11` — serialization and concrete-send errors propagate synchronously |
 
 ## Related source reports
 

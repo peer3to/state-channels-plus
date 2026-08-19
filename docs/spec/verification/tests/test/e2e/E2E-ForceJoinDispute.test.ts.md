@@ -9,14 +9,13 @@
 
 ## Overview
 
-A single workflow test: a spectator joins a two-peer channel, both members stub pending-inbound
-inclusion so three produced blocks omit the join message, and the third missed turn triggers the
-force-join dispute. The test then resolves the dispute window through reduction and asserts the
-joiner's status flips `PENDING_PARTICIPANT` → `PARTICIPATING` and every peer's on-chain
-participant set equals the three-player fork. Oracles are per-peer status queries, on-chain
-participant sets, and the harness's fork-settlement wait. This demonstrates forced inbound
-inclusion as a dispute input end to end; after the permutation split it covers the
-new-participant scenario of [`REQ-DIS-1-XAJ1VA`](../../../../specification/disputes/disputes.md#req-dis-1-xaj1va) in full, assigned below.
+A single workflow test: a spectator joins a two-peer channel, both members omit the JOIN for three
+produced blocks, and the omission threshold triggers the force-join dispute. Reduction changes the
+joiner's status from `PENDING_PARTICIPANT` to `PARTICIPATING`, and every peer reports the same
+three-player successor participant set. The test then advances one complete authoring cycle and
+checks that the joiner receives a scheduled turn and authors the accepted successor-fork block.
+Oracles are per-peer status and participant queries, the fork-settlement wait, the next-writer
+query, and the stored latest block author.
 
 ## Tests and covered test IDs
 
@@ -25,6 +24,6 @@ test ID may be assigned to at most one test across the whole tree; static analys
 duplicate assignments, and tests with no assigned ID are listed in the verification-coverage
 report but are kept here.
 
-| Test declaration                                                                                                                                                                                            | Covers                                                                                            |
-| ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------- |
-| [`E2E: Force Join Dispute > should trigger force-join dispute after N turns of non-inclusion, then resolve with joiner PARTICIPATING`](../../../../../../test/e2e/E2E-ForceJoinDispute.test.ts#L6) (line 6) | [`REQ-DIS-1-XAJ1VA.T1.P3`](../../../../specification/disputes/disputes.md#req-dis-1-xaj1va.t1.p3) |
+| Test declaration                                                                                                                                                                           | Covers                                                                                                                                                                                                                                                                                                                                  |
+| ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| [`E2E: Force Join Dispute > should force an omitted join into the reduced fork and schedule the joiner as an author`](../../../../../../test/e2e/E2E-ForceJoinDispute.test.ts#L6) (line 6) | [`REQ-DIS-1-XAJ1VA.T1.P3`](../../../../specification/disputes/disputes.md#req-dis-1-xaj1va.t1.p3), [`REQ-MSG-11-VS3ZGC.T2.P2`](../../../../specification/settlement/cross-layer-messages.md#req-msg-11-vs3zgc.t2.p2), [`REQ-MSG-11-VS3ZGC.T2.P3`](../../../../specification/settlement/cross-layer-messages.md#req-msg-11-vs3zgc.t2.p3) |

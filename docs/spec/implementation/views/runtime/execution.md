@@ -50,10 +50,19 @@ They are implementation evidence under this subject, not independent specificati
 
 ## Source inventory
 
-The detailed reports above currently own the source analysis. This table remains empty until those claims are consolidated and audited; generated source coverage continues to expose missing or duplicate ownership.
+The detailed source reports own file-level behavior. These entries record the runtime files changed
+for constructor-independent extension boundaries; they do not replace those reports.
 
-| Source file | Specification IDs |
-| ----------- | ----------------- |
+| Source file                                                                     | Specification IDs                                                                                                                                                                      |
+| ------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| [src/events/EventBus.ts](../../../../../src/events/EventBus.ts)                 | [`REQ-RUNTIME-4-B0N70Y`](../../../specification/runtime/execution.md#req-runtime-4-b0n70y)                                                                                             |
+| [src/P2PManager.ts](../../../../../src/P2PManager.ts)                           | [`REQ-RUNTIME-4-B0N70Y`](../../../specification/runtime/execution.md#req-runtime-4-b0n70y)                                                                                             |
+| [src/rpc/RemoteRpcProxy.ts](../../../../../src/rpc/RemoteRpcProxy.ts)           | [`REQ-RUNTIME-4-B0N70Y`](../../../specification/runtime/execution.md#req-runtime-4-b0n70y)                                                                                             |
+| [src/rpc/RpcHandler.ts](../../../../../src/rpc/RpcHandler.ts)                   | [`REQ-RUNTIME-4-B0N70Y`](../../../specification/runtime/execution.md#req-runtime-4-b0n70y)                                                                                             |
+| [src/transport/ATransport.ts](../../../../../src/transport/ATransport.ts)       | [`REQ-RUNTIME-4-B0N70Y`](../../../specification/runtime/execution.md#req-runtime-4-b0n70y)                                                                                             |
+| [src/utils/Codec.ts](../../../../../src/utils/Codec.ts)                         | [`REQ-RUNTIME-1-RSM6MZ`](../../../specification/runtime/execution.md#req-runtime-1-rsm6mz), [`REQ-RUNTIME-4-B0N70Y`](../../../specification/runtime/execution.md#req-runtime-4-b0n70y) |
+| [src/utils/EthersResultProxy.ts](../../../../../src/utils/EthersResultProxy.ts) | [`REQ-RUNTIME-1-RSM6MZ`](../../../specification/runtime/execution.md#req-runtime-1-rsm6mz), [`REQ-RUNTIME-4-B0N70Y`](../../../specification/runtime/execution.md#req-runtime-4-b0n70y) |
+| [src/utils/ObjectChecks.ts](../../../../../src/utils/ObjectChecks.ts)           | [`REQ-RUNTIME-4-B0N70Y`](../../../specification/runtime/execution.md#req-runtime-4-b0n70y)                                                                                             |
 
 ## Conformance traceability
 

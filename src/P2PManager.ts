@@ -17,7 +17,7 @@ import type { Logger } from "@/utils";
 import { Buffer } from "buffer";
 import { config, isNodeRuntime } from "@/utils/config";
 import { Address } from "./types/types";
-import { isInstanceOfRpcService } from "./utils/ObjectChecks";
+import { hasRpcService } from "./utils/ObjectChecks";
 import type ARpcService from "@/rpc/ARpcService";
 import RemoteRpcProxy, { RemoteRpcProxyType } from "./rpc/RemoteRpcProxy";
 import type { CustomRpcConstructor } from "./rpc/registry";
@@ -201,9 +201,10 @@ class P2PManager<TCustomRpc extends MainRpcService = MainRpcService>
         try {
             // Reject oversized frames before parsing so a peer can't force
             // unbounded JSON.parse/dispatch work.
-            if (serializedRpc.length > MAX_RPC_FRAME_BYTES) {
+            const frameBytes = Buffer.byteLength(serializedRpc, "utf8");
+            if (frameBytes > MAX_RPC_FRAME_BYTES) {
                 this.logger.warn("Oversized RPC frame; disconnecting", {
-                    bytes: serializedRpc.length,
+                    bytes: frameBytes,
                     transportType: TransportType[transport.transportType],
                     peerAddress: transport.peerAddress
                 });
@@ -225,7 +226,7 @@ class P2PManager<TCustomRpc extends MainRpcService = MainRpcService>
                 this.disconnectConnection(transport);
                 return;
             }
-            if (!isInstanceOfRpcService(this.localRpc, rpc.service)) {
+            if (!hasRpcService(this.localRpc, rpc.service)) {
                 this.disconnectConnection(transport);
                 return;
             }
@@ -287,10 +288,13 @@ class P2PManager<TCustomRpc extends MainRpcService = MainRpcService>
         this.openConnections = this.openConnections.filter(
             (t) => t !== transport
         );
-        profile && this.profileManager.removeTransport(transport);
 
         try {
-            transport.close();
+            if (profile) {
+                this.profileManager.removeTransport(transport);
+            } else {
+                transport.close();
+            }
         } catch {
             // ignore
         }

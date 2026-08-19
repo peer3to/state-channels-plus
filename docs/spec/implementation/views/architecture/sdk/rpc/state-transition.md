@@ -60,7 +60,7 @@ All state a frame touches lives downstream and is specified there:
 | Peer profiles, blacklist                                           | [`ProfileManager`](../../../../../../../src/ProfileManager.ts#L7)      | this service's penalty mapping | [./README.md](./README.md) §8                                                   |
 
 Statelessness is load-bearing: the handler runs without the `StateManager` mutex
-([./README.md](./README.md) §6.6, [`INV-RPC-5-BCEZVC`](README.md#inv-rpc-5-bcezvc)) and can be dispatched concurrently for many frames;
+([./README.md](./README.md) §6.6, [`REQ-BLOCK-PIPE-5-WJ31RG`](../../../../../specification/block-progression/block-processing.md#req-block-pipe-5-wj31rg)) and can be dispatched concurrently for many frames;
 all merge atomicity is the queue's responsibility ([`REQ-BCP-3-1GCEH9`](../block-confirmation-pipeline.md#req-bcp-3-1gceh9)).
 
 ## 3. Public method: `onBlockConfirmation(blockConfirmation)`
@@ -254,11 +254,11 @@ Consistency check against the model doc's outcome table ([./README.md](./README.
 
 ## 6. Invariants
 
-| ID                                              | Invariant                                                                                                                                                                                                                                                                                                                 |
-| ----------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| <a id="inv-sts-1-8r3gc1"></a>`INV-STS-1-8R3GC1` | `onBlockConfirmation` never mutates live channel state inline and never takes the `StateManager` mutex; its only state effects are pipeline delegation and the penalty mapping (specializes [`INV-RPC-5-BCEZVC`](README.md#inv-rpc-5-bcezvc) / [`REQ-BCP-3-1GCEH9`](../block-confirmation-pipeline.md#req-bcp-3-1gceh9)). |
-| <a id="inv-sts-2-d88t1s"></a>`INV-STS-2-D88T1S` | Every confirmation entering the pipeline through this service carries the handshake-verified sender address; the peer-RPC path never produces a sourceless entry (sourceless ingest is reserved for replay adapters — [../block-confirmation-pipeline.md](../block-confirmation-pipeline.md) §2 path 4).                  |
-| <a id="inv-sts-3-gmdey8"></a>`INV-STS-3-GMDEY8` | A `false` ingest verdict always maps to disconnect + blacklist by EVM address; a `true` verdict produces no RPC-layer side effect.                                                                                                                                                                                        |
+| ID                                              | Invariant                                                                                                                                                                                                                                                                                                                                                                                        |
+| ----------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| <a id="inv-sts-1-8r3gc1"></a>`INV-STS-1-8R3GC1` | `onBlockConfirmation` never mutates live channel state inline and never takes the `StateManager` mutex; its only state effects are pipeline delegation and the penalty mapping (specializes [`REQ-BLOCK-PIPE-5-WJ31RG`](../../../../../specification/block-progression/block-processing.md#req-block-pipe-5-wj31rg) / [`REQ-BCP-3-1GCEH9`](../block-confirmation-pipeline.md#req-bcp-3-1gceh9)). |
+| <a id="inv-sts-2-d88t1s"></a>`INV-STS-2-D88T1S` | Every confirmation entering the pipeline through this service carries the handshake-verified sender address; the peer-RPC path never produces a sourceless entry (sourceless ingest is reserved for replay adapters — [../block-confirmation-pipeline.md](../block-confirmation-pipeline.md) §2 path 4).                                                                                         |
+| <a id="inv-sts-3-gmdey8"></a>`INV-STS-3-GMDEY8` | A `false` ingest verdict always maps to disconnect + blacklist by EVM address; a `true` verdict produces no RPC-layer side effect.                                                                                                                                                                                                                                                               |
 
 ## 7. Verification
 

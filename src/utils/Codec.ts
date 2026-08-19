@@ -79,6 +79,7 @@ import { DisputeFraudProofType, FraudProofType } from "@/types/sol-enums";
 import { SyncPayloadEthersType } from "@/types";
 import type { SyncPayload } from "@/types";
 import type { ContractExecutionResult } from "@/evm/contractExecutor";
+import { isEthersResult } from "@/utils/ObjectChecks";
 import {
     DisputeInvalidBalanceInvariantStruct,
     DisputeOnChainSlashesNotSubsetStruct,
@@ -94,6 +95,7 @@ import {
     DisputeLastMilestoneNotFinalAndNoAuditingDataStruct,
     InvalidDisputeReasonStruct,
     DisputeStateProofHeaderMismatchStruct,
+    DisputeInboundHashNotInChainStruct,
     DisputeInvalidBlockStructureStruct,
     DisputeBlockAuthorNotParticipantStruct,
     DisputeInboundAnchorBehindLatestStateStruct
@@ -121,6 +123,7 @@ export type DisputeFraudStruct =
     | DisputeLastMilestoneNotFinalAndNoAuditingDataStruct
     | InvalidDisputeReasonStruct
     | DisputeStateProofHeaderMismatchStruct
+    | DisputeInboundHashNotInChainStruct
     | DisputeInvalidBlockStructureStruct
     | DisputeBlockAuthorNotParticipantStruct
     | DisputeInboundAnchorBehindLatestStateStruct;
@@ -355,6 +358,10 @@ export class Codec {
     public static decode(encoded: Bytes, type: Type.Block): BlockStruct;
     public static decode(
         encoded: Bytes,
+        type: Type.BlockCommitment
+    ): { signedBlock: SignedBlockStruct; timestamp: Timestamp };
+    public static decode(
+        encoded: Bytes,
         type: Type.JoinChannel
     ): JoinChannelStruct;
     public static decode(
@@ -422,8 +429,84 @@ export class Codec {
     ): StateProofStruct;
     public static decode(
         encoded: Bytes,
+        type: FraudProofType.BlockDoubleSign
+    ): BlockDoubleSignProofStruct;
+    public static decode(
+        encoded: Bytes,
+        type: FraudProofType.BlockInvalidStateTransition
+    ): BlockInvalidStateTransitionProofStruct;
+    public static decode(
+        encoded: Bytes,
+        type: FraudProofType.InvalidTimestamp
+    ): InvalidTimestampProofStruct;
+    public static decode(
+        encoded: Bytes,
+        type: FraudProofType.WrongGenesis
+    ): WrongGenesisProofStruct;
+    public static decode(
+        encoded: Bytes,
+        type: FraudProofType.ForgedInboundMessageBlock
+    ): ForgedInboundMessageBlockProofStruct;
+    public static decode(
+        encoded: Bytes,
         type: DisputeFraudProofType.DisputeNotLatestState
     ): DisputeNotLatestStateStruct;
+    public static decode(
+        encoded: Bytes,
+        type: DisputeFraudProofType.DisputeInvalidOutputState
+    ): DisputeInvalidOutputStateStruct;
+    public static decode(
+        encoded: Bytes,
+        type: DisputeFraudProofType.DisputeInvalidStateProof
+    ): DisputeInvalidStateProofStruct;
+    public static decode(
+        encoded: Bytes,
+        type: DisputeFraudProofType.DisputeInvalidBalanceInvariant
+    ): DisputeInvalidBalanceInvariantStruct;
+    public static decode(
+        encoded: Bytes,
+        type: DisputeFraudProofType.DisputeOnChainSlashesNotSubset
+    ): DisputeOnChainSlashesNotSubsetStruct;
+    public static decode(
+        encoded: Bytes,
+        type: DisputeFraudProofType.TimeoutThreshold
+    ): TimeoutThresholdStruct;
+    public static decode(
+        encoded: Bytes,
+        type: DisputeFraudProofType.TimeoutCalldataPosted
+    ): TimeoutCalldataPostedStruct;
+    public static decode(
+        encoded: Bytes,
+        type: DisputeFraudProofType.TimeoutNotLinkedToLatestState
+    ): TimeoutNotLinkedToLatestStateStruct;
+    public static decode(
+        encoded: Bytes,
+        type: DisputeFraudProofType.TimeoutParticipantNotNext
+    ): TimeoutParticipantNotNextStruct;
+    public static decode(
+        encoded: Bytes,
+        type: DisputeFraudProofType.TimeoutTooEarly
+    ): TimeoutTooEarlyStruct;
+    public static decode(
+        encoded: Bytes,
+        type: DisputeFraudProofType.DisputeInvalidBlockInStateProofApplyFraudProof
+    ): DisputeInvalidBlockInStateProofApplyFraudProofStruct;
+    public static decode(
+        encoded: Bytes,
+        type: DisputeFraudProofType.DisputeLastMilestoneNotFinalAndNoAuditingData
+    ): DisputeLastMilestoneNotFinalAndNoAuditingDataStruct;
+    public static decode(
+        encoded: Bytes,
+        type: DisputeFraudProofType.InvalidDisputeReason
+    ): InvalidDisputeReasonStruct;
+    public static decode(
+        encoded: Bytes,
+        type: DisputeFraudProofType.DisputeStateProofHeaderMismatch
+    ): DisputeStateProofHeaderMismatchStruct;
+    public static decode(
+        encoded: Bytes,
+        type: DisputeFraudProofType.DisputeInboundHashNotInChain
+    ): DisputeInboundHashNotInChainStruct;
     public static decode(
         encoded: Bytes,
         type: DisputeFraudProofType.DisputeInvalidBlockStructure
@@ -432,6 +515,10 @@ export class Codec {
         encoded: Bytes,
         type: DisputeFraudProofType.DisputeBlockAuthorNotParticipant
     ): DisputeBlockAuthorNotParticipantStruct;
+    public static decode(
+        encoded: Bytes,
+        type: DisputeFraudProofType.DisputeInboundAnchorBehindLatestState
+    ): DisputeInboundAnchorBehindLatestStateStruct;
 
     public static decode<T extends StructType>(
         encoded: Bytes,
@@ -455,10 +542,7 @@ export class Codec {
             obj = result.toArray();
         }
         for (const key in obj) {
-            if (
-                obj[key] instanceof ethers.Result &&
-                Object.getPrototypeOf(obj[key]) === ethers.Result.prototype
-            ) {
+            if (isEthersResult(obj[key])) {
                 obj[key] = this.ethersResultToObjectRecursive(obj[key]);
             }
         }
@@ -481,9 +565,7 @@ export class Codec {
 
         const value = decoded[0];
         const shouldConvert =
-            options.useObjectConversion ||
-            (value instanceof ethers.Result &&
-                Object.getPrototypeOf(value) === ethers.Result.prototype);
+            options.useObjectConversion || isEthersResult(value);
 
         if (shouldConvert) {
             return Codec.ethersResultToObjectRecursive(value) as T;

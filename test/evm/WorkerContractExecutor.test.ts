@@ -58,6 +58,101 @@ describe("WorkerContractExecutor", function () {
         }
     });
 
+    it("should wait for precompile readiness before returning", async function () {
+        const customAddress = Address.fromString(
+            "0x00000000000000000000000000000000000000bd"
+        );
+        let resolved = false;
+        const creating = createContractExecutorFactory({
+            dedicatedThread: true,
+            customPrecompiles: [
+                {
+                    address: customAddress.toString(),
+                    module: path.resolve(
+                        __dirname,
+                        "../fixtures/workerAnswerPrecompile.ts"
+                    ),
+                    options: {
+                        delayMs: 100,
+                        expectedData: "0x1234",
+                        value: "42"
+                    }
+                }
+            ]
+        }).then((executor) => {
+            resolved = true;
+            return executor;
+        });
+
+        await new Promise((resolve) => setTimeout(resolve, 25));
+        expect(resolved).to.equal(false);
+
+        const executor = await creating;
+        try {
+            const result = await executor.simulateCall(
+                "0x1234",
+                customAddress.toString()
+            );
+            const [value] = ethers.AbiCoder.defaultAbiCoder().decode(
+                ["uint256", "bool"],
+                result.returnValue
+            );
+            expect(value).to.equal(42n);
+        } finally {
+            await executor.dispose();
+        }
+    });
+
+    it("should correlate a worker error with a concurrent successful response", async function () {
+        const customAddress = Address.fromString(
+            "0x00000000000000000000000000000000000000be"
+        );
+        const executor = await createContractExecutorFactory({
+            dedicatedThread: true,
+            customPrecompiles: [
+                {
+                    address: customAddress.toString(),
+                    module: path.resolve(
+                        __dirname,
+                        "../fixtures/workerAnswerPrecompile.ts"
+                    ),
+                    options: {
+                        expectedData: "0x1234",
+                        value: "42"
+                    }
+                }
+            ]
+        });
+
+        try {
+            const [failed, succeeded] = await Promise.allSettled([
+                executor.simulateCall("0xabcd", customAddress.toString()),
+                executor.simulateCall("0x1234", customAddress.toString())
+            ]);
+
+            expect(failed.status).to.equal("rejected");
+            if (failed.status !== "rejected") {
+                throw new Error("Expected the invalid worker request to fail");
+            }
+            expect(failed.reason).to.be.instanceOf(Error);
+            expect((failed.reason as Error).message).to.equal(
+                "Unexpected precompile calldata"
+            );
+
+            expect(succeeded.status).to.equal("fulfilled");
+            if (succeeded.status !== "fulfilled") {
+                throw new Error("Expected the valid worker request to succeed");
+            }
+            const [value] = ethers.AbiCoder.defaultAbiCoder().decode(
+                ["uint256", "bool"],
+                succeeded.value.returnValue
+            );
+            expect(value).to.equal(42n);
+        } finally {
+            await executor.dispose();
+        }
+    });
+
     it("should return RPC-style logs from the worker", async function () {
         const executor = await createContractExecutorFactory({
             dedicatedThread: true

@@ -44,6 +44,13 @@ export default class JoinChannelService extends ARpcService<JoinChannelRpcMethod
             );
         }
 
+        const initialChainTime = await Clock.getBlockchainTime();
+        if (
+            Number(joinChannel.deadlineTimestamp) <= initialChainTime.timestamp
+        ) {
+            throw new Error("collectJoinChannelConfirmation: join expired");
+        }
+
         const snapshot = StateSnapshot.from(
             await sm.stateChannelManagerContract.getStateSnapshot(
                 joinChannel.channelId
@@ -52,20 +59,9 @@ export default class JoinChannelService extends ARpcService<JoinChannelRpcMethod
         const expectedSnapshotHash = snapshot.hash;
         const expectedForkId = snapshot.forkID;
         const thresholdParticipants =
-            await sm.membershipService.getOnChainParticipantUnion(
+            await sm.membershipService.getOnChainThresholdSet(
                 String(joinChannel.channelId) as ChannelId
             );
-        const { encoded, signature } = await SignatureUtils.signJoinChannel(
-            joinChannel,
-            sm.signer
-        );
-        const signedJoinChannel: SignedJoinChannelStruct = {
-            encodedJoinChannel: encoded,
-            signature: String(signature)
-        };
-        const encodedSignedJoinChannel = String(
-            Codec.encode(signedJoinChannel, Type.SignedJoinChannel)
-        );
         const localAddress = String(sm.signerAddress);
 
         for (const participant of thresholdParticipants) {
@@ -82,13 +78,25 @@ export default class JoinChannelService extends ARpcService<JoinChannelRpcMethod
         }
 
         const chainTime = await Clock.getBlockchainTime();
+        const remainingSeconds =
+            Number(joinChannel.deadlineTimestamp) - chainTime.timestamp;
+        if (remainingSeconds <= 0) {
+            throw new Error("collectJoinChannelConfirmation: join expired");
+        }
         const timeoutMs = Math.min(
             sm.timeConfig.agreementTime * 1000,
-            Math.max(
-                1,
-                (Number(joinChannel.deadlineTimestamp) - chainTime.timestamp) *
-                    1000
-            )
+            remainingSeconds * 1000
+        );
+        const { encoded, signature } = await SignatureUtils.signJoinChannel(
+            joinChannel,
+            sm.signer
+        );
+        const signedJoinChannel: SignedJoinChannelStruct = {
+            encodedJoinChannel: encoded,
+            signature: String(signature)
+        };
+        const encodedSignedJoinChannel = String(
+            Codec.encode(signedJoinChannel, Type.SignedJoinChannel)
         );
         const signatures = await Promise.all(
             thresholdParticipants.map(async (participant) => {
@@ -179,7 +187,7 @@ export default class JoinChannelService extends ARpcService<JoinChannelRpcMethod
             throw new Error("requestJoinSignature: snapshot mismatch");
         }
         const thresholdParticipants =
-            await sm.membershipService.getOnChainParticipantUnion(
+            await sm.membershipService.getOnChainThresholdSet(
                 String(joinChannel.channelId) as ChannelId
             );
         if (

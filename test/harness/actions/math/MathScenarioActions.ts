@@ -1,3 +1,4 @@
+// @spec-test-coverage-ignore: shared math scenario setup exercised by owning mapped test declarations
 import { Logger, sleep } from "@/utils";
 import { ForkId, Hash } from "@/types/types";
 import { Status, TimeConfig } from "@/types";
@@ -189,6 +190,7 @@ export class MathScenarioActions extends ScenarioActions {
     async stageUnkilledSpamDispute(options?: {
         killerIndex?: number;
         spammerIndex?: number;
+        addSpectatorBeforeDispute?: boolean;
         timeConfig?: {
             p2pTime?: number;
             agreementTime?: number;
@@ -199,12 +201,16 @@ export class MathScenarioActions extends ScenarioActions {
         forkId: ForkId;
         spammer: MathTestPeer;
         killer: MathTestPeer;
+        spectator: TestPeer<HarnessControlRpc> | undefined;
     }> {
         const killerIndex = options?.killerIndex ?? 0;
         const spammerIndex = options?.spammerIndex ?? 1;
         await this.preDisputeSetup({
             timeConfig: { evidenceTime: 12, ...options?.timeConfig }
         });
+        const spectator = options?.addSpectatorBeforeDispute
+            ? await this.harness.join.addSpectatorWait()
+            : undefined;
         const forkId = this.harness.activeForkId!;
 
         const kills = await Promise.all(
@@ -228,7 +234,8 @@ export class MathScenarioActions extends ScenarioActions {
         return {
             forkId,
             spammer: this.harness.getPeer(spammerIndex),
-            killer: this.harness.getPeer(killerIndex)
+            killer: this.harness.getPeer(killerIndex),
+            spectator
         };
     }
 

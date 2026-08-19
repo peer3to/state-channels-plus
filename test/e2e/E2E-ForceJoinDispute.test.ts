@@ -3,7 +3,7 @@ import { expect } from "chai";
 import { Status } from "@/types";
 
 describe("E2E: Force Join Dispute", function () {
-    it("should trigger force-join dispute after N turns of non-inclusion, then resolve with joiner PARTICIPATING", async function () {
+    it("should force an omitted join into the reduced fork and schedule the joiner as an author", async function () {
         const h = TestSession.getHarness();
 
         await h.lifecycle.start(2, 2);
@@ -39,7 +39,7 @@ describe("E2E: Force Join Dispute", function () {
         await restoreInboundInclusion0();
         await restoreInboundInclusion1();
 
-        await h.dispute.resolveDisputeWait({
+        const { newForkId } = await h.dispute.resolveDisputeWait({
             forkId,
             forkSettleTimeoutMs: 15000
         });
@@ -66,5 +66,31 @@ describe("E2E: Force Join Dispute", function () {
                 `Peer ${peer.index} on-chain participants should match 3-player fork after reduction`
             );
         }
+
+        let joinerAuthored = false;
+        for (let i = 0; i < expected.size; i++) {
+            const nextToWrite = await h
+                .control(h.getPeer(0))
+                .query.getNextToWrite()
+                .request();
+            await h.transition.advanceState({ count: 1 });
+            if (nextToWrite.toLowerCase() !== joiner.address.toLowerCase()) {
+                continue;
+            }
+
+            const latestBlock = await h
+                .control(h.getPeer(0))
+                .query.getLatestBlockInfo(newForkId)
+                .request();
+            expect(latestBlock).to.not.equal(null);
+            expect(latestBlock!.author.toLowerCase()).to.equal(
+                joiner.address.toLowerCase()
+            );
+            joinerAuthored = true;
+        }
+        expect(joinerAuthored).to.equal(
+            true,
+            "the reduced joiner must receive and complete an authoring turn"
+        );
     });
 });

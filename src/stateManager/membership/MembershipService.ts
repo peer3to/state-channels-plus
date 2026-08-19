@@ -41,6 +41,16 @@ export default class MembershipService {
         ].map(String) as Address[];
     }
 
+    public async getOnChainThresholdSet(
+        channelId: ChannelId = this.stateManager.channelId
+    ): Promise<Address[]> {
+        return (
+            await this.stateManager.stateChannelManagerContract.getOnChainThresholdSet(
+                channelId
+            )
+        ).map(String) as Address[];
+    }
+
     public async joinChannel(
         confirmation: JoinChannelConfirmationStruct,
         expectedSnapshotHash: Hash,

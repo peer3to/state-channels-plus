@@ -137,7 +137,7 @@ the dispute event handler. Algorithm:
 4. Returns `true` (first occurrence) synchronously; outcomes land asynchronously.
 
 Response authenticity rests entirely on the correlation layer: only the addressed peer can
-settle the request ([`INV-RPC-2-6DYF4E`](README.md#inv-rpc-2-6dyf4e), [./README.md](./README.md) §6.5). The reply payload is untrusted
+settle the request ([`REQ-RPC-2-SZDTTM`](../../../../../specification/peer-communication/rpc.md#req-rpc-2-szdttm), [./README.md](./README.md) §6.5). The reply payload is untrusted
 JSON — the code checks `!acknowledged`, so any truthy junk counts as an ack (accepted residual:
 its only effect is the same record a truthful `true` produces).
 
@@ -242,7 +242,7 @@ is therefore treated as Byzantine. The abuse analysis:
   ("non-disputed fork" case).
 - **Ack forgery** (settling someone else's pending request): impossible below the handler —
   only the addressed peer settles a request; a response from any other peer blacklists the
-  responder ([`INV-RPC-2-6DYF4E`](README.md#inv-rpc-2-6dyf4e), [./README.md](./README.md) §6.5). **Handled.**
+  responder ([`REQ-RPC-2-SZDTTM`](../../../../../specification/peer-communication/rpc.md#req-rpc-2-szdttm), [./README.md](./README.md) §6.5). **Handled.**
 - **Forged ack content**: any truthy reply records an ack — but only _against the responder
   itself_, which is exactly what a truthful ack does. No third-party attribution exists to
   corrupt (§5). **Accepted residual.**

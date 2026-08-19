@@ -1,3 +1,4 @@
+// @spec-test-coverage-ignore: RPC fixture support exercised by owning E2E declarations.
 import ARpcMethods from "@/rpc/ARpcMethods";
 import type P2PManager from "@/P2PManager";
 import type ATransport from "@/transport/ATransport";
@@ -9,6 +10,9 @@ import type SpectateServiceRpcMethods from "@/rpc/services/spectate/SpectateRpcM
 import type { SyncRequest } from "@/rpc/services/spectate/SpectateService";
 import type IsForkDisputedRpcMethods from "@/rpc/services/isForkDisputedService/IsForkDisputedRpcMethods";
 import InitHandshakeRpcMethods from "@/rpc/services/initHandshake/InitHandshakeRpcMethods";
+import type JoinChannelRpcMethods from "@/rpc/services/joinChannel/JoinChannelRpcMethods";
+import type { StateSnapshot } from "@/models";
+import type { MessageBlockStruct } from "@typechain-types/contracts/V1/types/DataTypes";
 import { id } from "ethers";
 import type { ForkId, Hash, Timestamp } from "@/types/types";
 import type { HarnessControlRpc } from "../../HarnessControlRpc";
@@ -481,6 +485,123 @@ export class StubRpcMethods extends ARpcMethods<P2PManager<HarnessControlRpc>> {
         return this.restoreSpectateStaleProof();
     }
 
+    /** Delay join-signature replies while still running the real handler. */
+    public stubDelayJoinSignatureResponses(delayMs: number): boolean {
+        const service = this.p2pManager.localRpc.joinChannelService;
+        if (!this.service.stubOriginals.has("joinSignatureCreateRpcMethods")) {
+            this.service.stubOriginals.set(
+                "joinSignatureCreateRpcMethods",
+                service.createRPCMethods.bind(service)
+            );
+        }
+        const original = this.service.stubOriginals.get(
+            "joinSignatureCreateRpcMethods"
+        ) as typeof service.createRPCMethods;
+        service.createRPCMethods = (transport: ATransport) => {
+            const methods = original(transport);
+            const realRequest = methods.requestJoinSignature.bind(methods);
+            methods.requestJoinSignature = async (...args) => {
+                await sleep(delayMs);
+                return realRequest(...args);
+            };
+            return methods;
+        };
+        return true;
+    }
+
+    /** Make join-signature requests fail at the responder. */
+    public stubFailJoinSignatureRequests(): boolean {
+        const service = this.p2pManager.localRpc.joinChannelService;
+        if (!this.service.stubOriginals.has("joinSignatureCreateRpcMethods")) {
+            this.service.stubOriginals.set(
+                "joinSignatureCreateRpcMethods",
+                service.createRPCMethods.bind(service)
+            );
+        }
+        const original = this.service.stubOriginals.get(
+            "joinSignatureCreateRpcMethods"
+        ) as typeof service.createRPCMethods;
+        service.createRPCMethods = (transport: ATransport) => {
+            const methods = original(transport);
+            methods.requestJoinSignature = async function (
+                this: JoinChannelRpcMethods
+            ) {
+                throw new Error("stubbed join-signature failure");
+            };
+            return methods;
+        };
+        return true;
+    }
+
+    /** Return the joiner's signature instead of the responder's signature. */
+    public stubWrongJoinSignatureSigner(): boolean {
+        const service = this.p2pManager.localRpc.joinChannelService;
+        if (!this.service.stubOriginals.has("joinSignatureCreateRpcMethods")) {
+            this.service.stubOriginals.set(
+                "joinSignatureCreateRpcMethods",
+                service.createRPCMethods.bind(service)
+            );
+        }
+        const original = this.service.stubOriginals.get(
+            "joinSignatureCreateRpcMethods"
+        ) as typeof service.createRPCMethods;
+        service.createRPCMethods = (transport: ATransport) => {
+            const methods = original(transport);
+            methods.requestJoinSignature = async (
+                encodedSignedJoinChannel: string
+            ) => {
+                const signedJoinChannel = Codec.decode(
+                    encodedSignedJoinChannel,
+                    Type.SignedJoinChannel
+                );
+                return { signature: String(signedJoinChannel.signature) };
+            };
+            return methods;
+        };
+        return true;
+    }
+
+    /** Count join-signature requests while still running the real handler. */
+    public stubCountJoinSignatureRequests(): boolean {
+        const service = this.p2pManager.localRpc.joinChannelService;
+        if (!this.service.stubOriginals.has("joinSignatureCreateRpcMethods")) {
+            this.service.stubOriginals.set(
+                "joinSignatureCreateRpcMethods",
+                service.createRPCMethods.bind(service)
+            );
+        }
+        this.service.joinSignatureRequestCount = 0;
+        const original = this.service.stubOriginals.get(
+            "joinSignatureCreateRpcMethods"
+        ) as typeof service.createRPCMethods;
+        const stubService = this.service;
+        service.createRPCMethods = (transport: ATransport) => {
+            const methods = original(transport);
+            const realRequest = methods.requestJoinSignature.bind(methods);
+            methods.requestJoinSignature = (...args) => {
+                stubService.joinSignatureRequestCount++;
+                return realRequest(...args);
+            };
+            return methods;
+        };
+        return true;
+    }
+
+    public getJoinSignatureRequestCount(): number {
+        return this.service.joinSignatureRequestCount;
+    }
+
+    public restoreJoinSignatureRequests(): boolean {
+        const original = this.service.stubOriginals.get(
+            "joinSignatureCreateRpcMethods"
+        );
+        if (original === undefined) return false;
+        const service = this.p2pManager.localRpc.joinChannelService;
+        service.createRPCMethods = original as typeof service.createRPCMethods;
+        this.service.stubOriginals.delete("joinSignatureCreateRpcMethods");
+        return true;
+    }
+
     /**
      * Replace `isForkDisputedService.onDisputeAcknowledgmentRequest` with a
      * no-op that records it was called (queried via `wasDisputeAckRequestCalled`).
@@ -558,6 +679,37 @@ export class StubRpcMethods extends ARpcMethods<P2PManager<HarnessControlRpc>> {
 
     public wasSpectateGuardBlocked(): boolean {
         return this.service.spectateGuardBlocked;
+    }
+
+    public async sendSpectateRequestOverCapturedHandshakeTransport(
+        channelId: string,
+        initTime: number
+    ): Promise<string> {
+        const transport = this.service.capturedInitHandshakeTransport;
+        if (!transport) throw new Error("no captured handshake transport");
+        try {
+            await this.p2pManager.sendRpcRequest(
+                {
+                    service: "spectateService",
+                    method: "onSpectateRequest",
+                    params: [{ channelId, initTime }]
+                },
+                transport,
+                { timeoutMs: 2000 }
+            );
+            return "resolved";
+        } catch (error) {
+            return error instanceof Error ? error.message : String(error);
+        }
+    }
+
+    public restoreBlockedHandshake(): boolean {
+        const original = this.service.stubOriginals.get("blockedInitHandshake");
+        if (original === undefined) return false;
+        const service = this.p2pManager.localRpc.initHandshakeService;
+        service.initHandshake = original as typeof service.initHandshake;
+        this.service.stubOriginals.delete("blockedInitHandshake");
+        return true;
     }
 
     /**

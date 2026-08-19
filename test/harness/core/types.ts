@@ -137,6 +137,8 @@ export type HarnessOptions = {
     stateMachineGasLimit?: number;
     disputeExecutionGasLimit?: number;
     autoConnect?: boolean;
+    /** Maximum SDK peers to boot at once. Defaults to all requested peers. */
+    peerSetupConcurrency?: number;
     configOverrides?: Partial<Config>; // Direct config overrides
     customRpcManifest?: CustomRpcManifest;
     customPrecompiles?: EvmCustomPrecompileManifest[];

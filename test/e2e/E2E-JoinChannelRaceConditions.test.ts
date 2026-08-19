@@ -137,6 +137,41 @@ describe("E2E: Join channel race conditions", function () {
             expect(snapshotAfter).to.deep.equal(snapshotBefore);
         });
 
+        it("consumed pending join lets the same-fork snapshot advance", async function () {
+            const h = TestSession.getHarness();
+            const joiner = await h.scenario.spectatorPromotedViaJoinChannelWait(
+                {
+                    initialPeers: 3
+                }
+            );
+            const snapshotBefore = StateSnapshot.from(
+                await h.channelManager.getStateSnapshot(h.channelId)
+            );
+            const inboundHead = await h
+                .control(h.getPeer(0))
+                .query.getLatestInboundMessageHash()
+                .request();
+
+            const postedSnapshot = await h.transition.postSnapshotWait({
+                peerIndex: 0
+            });
+            expect(postedSnapshot).to.not.equal(undefined);
+            expect(postedSnapshot!.latestInboundMessageBlockHash).to.equal(
+                inboundHead
+            );
+
+            const snapshotAfter = StateSnapshot.from(
+                await h.channelManager.getStateSnapshot(h.channelId)
+            );
+            expect(snapshotAfter.hash).to.equal(postedSnapshot!.hash);
+            expect(snapshotAfter.hash).to.not.equal(snapshotBefore.hash);
+            expect(
+                snapshotAfter.snapshotData.participants.map((address) =>
+                    String(address).toLowerCase()
+                )
+            ).to.include(joiner.address.toLowerCase());
+        });
+
         it("pending inbound lands after preparation → raw same-fork calldata reverts with RaceConditionPendingInboundNotConsumed", async function () {
             const h = TestSession.getHarness();
             const {
@@ -235,35 +270,6 @@ describe("E2E: Join channel race conditions", function () {
                     String(a).toLowerCase()
                 )
             ).to.not.include(joiner.address.toLowerCase());
-        });
-
-        it("forceInboundJoin on disputed fork reverts", async function () {
-            const h = TestSession.getHarness();
-            await h.lifecycle.start(3, 2);
-
-            // Existing peers open a dispute on the latest fork
-            await h.tamper.postTamperedDispute(0, async () => {});
-
-            let revertError: unknown = null;
-            try {
-                await h.join.forceInboundJoinWait({
-                    waitForHonestPeersObserve: false
-                });
-            } catch (e) {
-                revertError = e;
-            }
-
-            if (revertError === null) {
-                expect.fail(
-                    "forceInboundJoin succeeded mid-dispute — expected the fresh-join disputed-fork guard"
-                );
-            }
-
-            const customError = tryDecodeCustomError(revertError);
-            expect(customError).to.not.be.null;
-            expect(customError!.errorDescription.name).to.equal(
-                "RaceConditionForceInboundJoinForkDisputed"
-            );
         });
 
         it("pending joiner participates after dispute reduction", async function () {

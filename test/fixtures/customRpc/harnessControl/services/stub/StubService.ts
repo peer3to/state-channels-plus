@@ -1,3 +1,4 @@
+// @spec-test-coverage-ignore: RPC fixture support exercised by owning E2E declarations.
 import ARpcService from "@/rpc/ARpcService";
 import type P2PManager from "@/P2PManager";
 import type ATransport from "@/transport/ATransport";
@@ -43,6 +44,7 @@ export type StubKey =
     | "pendingInboundInclusion"
     | "selectiveDisconnect"
     | "spectateCreateRpcMethods"
+    | "joinSignatureCreateRpcMethods"
     | "disputeAckCreateRpcMethods"
     | "postStateSnapshot"
     | "unsafeSetLatestState"
@@ -338,6 +340,8 @@ export class StubService extends ARpcService<
     spectateAbortCalled = false;
     /** Incremented by the count-spectate-requests stub per onSpectateRequest. */
     spectateRequestCount = 0;
+    /** Incremented per join-signature request by the recording wrapper. */
+    joinSignatureRequestCount = 0;
     /** `reduction-*` timer tasks captured by the hold-reduction-tasks stub. */
     readonly heldReductionTasks: {
         taskName: string;
