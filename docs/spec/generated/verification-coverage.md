@@ -7,10 +7,10 @@ A permutation counts as tested only when an exact repository test declaration is
 ## Score
 
 - Specification IDs with test evidence: **91/243** (37%)
-- Test IDs (planned permutations) evidenced: **855/4484** (19%)
-- Test files with verification reports: **133/144** (92%)
-- Test declarations covering at least one test ID: **491/1164** (42%)
-- Assigned test IDs with exactly one owning test: **855/855** (100%)
+- Test IDs (planned permutations) evidenced: **861/4488** (19%)
+- Test files with verification reports: **134/145** (92%)
+- Test declarations covering at least one test ID: **497/1170** (42%)
+- Assigned test IDs with exactly one owning test: **861/861** (100%)
 - Test files excluded as out of scope (`@spec-test-coverage-ignore`): 13
 
 ## Contents
@@ -3411,10 +3411,8 @@ Every planned test permutation — specification black-box plans and implementat
 | [`UNIT-TEST-MAIN-RPC-SERVICE-1-AWN39M.P3`](../implementation/source/src/rpc/MainRpcService.ts.md#unit-test-main-rpc-service-1-awn39m.p3) | Implementation | [implementation/source/src/rpc/MainRpcService.ts.md](../implementation/source/src/rpc/MainRpcService.ts.md#unit-test-main-rpc-service-1-awn39m.p3) |
 | [`UNIT-TEST-MAIN-RPC-SERVICE-1-AWN39M.P4`](../implementation/source/src/rpc/MainRpcService.ts.md#unit-test-main-rpc-service-1-awn39m.p4) | Implementation | [implementation/source/src/rpc/MainRpcService.ts.md](../implementation/source/src/rpc/MainRpcService.ts.md#unit-test-main-rpc-service-1-awn39m.p4) |
 | [`UNIT-TEST-MANAGER-PROXY-1-NTYR71.P10`](../implementation/source/contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol.md#unit-test-manager-proxy-1-ntyr71.p10) | Implementation | [implementation/source/contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol.md](../implementation/source/contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol.md#unit-test-manager-proxy-1-ntyr71.p10) |
-| [`UNIT-TEST-MANAGER-PROXY-1-NTYR71.P11`](../implementation/source/contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol.md#unit-test-manager-proxy-1-ntyr71.p11) | Implementation | [implementation/source/contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol.md](../implementation/source/contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol.md#unit-test-manager-proxy-1-ntyr71.p11) |
 | [`UNIT-TEST-MANAGER-PROXY-1-NTYR71.P4`](../implementation/source/contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol.md#unit-test-manager-proxy-1-ntyr71.p4) | Implementation | [implementation/source/contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol.md](../implementation/source/contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol.md#unit-test-manager-proxy-1-ntyr71.p4) |
 | [`UNIT-TEST-MANAGER-PROXY-1-NTYR71.P5`](../implementation/source/contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol.md#unit-test-manager-proxy-1-ntyr71.p5) | Implementation | [implementation/source/contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol.md](../implementation/source/contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol.md#unit-test-manager-proxy-1-ntyr71.p5) |
-| [`UNIT-TEST-MANAGER-PROXY-1-NTYR71.P6`](../implementation/source/contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol.md#unit-test-manager-proxy-1-ntyr71.p6) | Implementation | [implementation/source/contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol.md](../implementation/source/contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol.md#unit-test-manager-proxy-1-ntyr71.p6) |
 | [`UNIT-TEST-MANAGER-PROXY-1-NTYR71.P8`](../implementation/source/contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol.md#unit-test-manager-proxy-1-ntyr71.p8) | Implementation | [implementation/source/contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol.md](../implementation/source/contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol.md#unit-test-manager-proxy-1-ntyr71.p8) |
 | [`UNIT-TEST-MANAGER-PROXY-1-NTYR71.P9`](../implementation/source/contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol.md#unit-test-manager-proxy-1-ntyr71.p9) | Implementation | [implementation/source/contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol.md](../implementation/source/contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol.md#unit-test-manager-proxy-1-ntyr71.p9) |
 | [`UNIT-TEST-MANAGER-PROXY-2-KJRMB8.P1`](../implementation/source/contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol.md#unit-test-manager-proxy-2-kjrmb8.p1) | Implementation | [implementation/source/contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol.md](../implementation/source/contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol.md#unit-test-manager-proxy-2-kjrmb8.p1) |
