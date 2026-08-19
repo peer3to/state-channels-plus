@@ -87,6 +87,20 @@ virtually) signed — proof that both the original set and the joiner authorized
 removal requires the corresponding proof in the other direction (the pre-removal set covers the
 leaving member).
 
+The hop threshold is historical evidence of the one peer-to-peer agreement threshold
+([finality.md §6](../protocol-model/finality.md)), with two consequences:
+
+- **Pending joiners come from the committed inbound interval.** The joiners added to the union
+  are those whose `JOIN` messages lie in the inbound-message interval committed between the hop's
+  two snapshots — not the chain's live pending set. In an honest transition they already appear
+  in the resulting set; the explicit derivation lets the verifier reject a proof that consumes a
+  recorded join while omitting the joiner from its participant snapshot.
+- **On-chain slashes are never subtracted.** The threshold binds the signatures the past
+  transition required, so a proof MUST keep the same validity before and after any later slash.
+  Excluding slashed signers here would make historical proof validity depend on later
+  adjudication; slash-based exclusion exists only for current dispute eligibility
+  ([finality.md §6](../protocol-model/finality.md)).
+
 Milestones entirely below the chain's current snapshot height are skipped by the verifier (they
 are already settled); the last skipped milestone is still checked to link through the current
 on-chain snapshot.

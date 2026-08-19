@@ -40,9 +40,9 @@ classification.
 A file may contribute to several requirements; this report describes the contribution and never
 claims complete conformance for a requirement that depends on other files.
 
-| Source file                                                                         | Specification IDs |
-| ----------------------------------------------------------------------------------- | ----------------- |
-| [Errors.sol](../../../../../../../contracts/V1/StateChannelDiamondProxy/Errors.sol) |                   |
+| Source file                                                                         | Specification IDs                                                                                            |
+| ----------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------ |
+| [Errors.sol](../../../../../../../contracts/V1/StateChannelDiamondProxy/Errors.sol) | [`REQ-ENFADM-2-K6K9SP`](../../../../../specification/enforcement/admission-and-funds.md#req-enfadm-2-k6k9sp) |
 
 ## Assumptions, dependencies, trust boundaries, and limits
 
@@ -52,6 +52,8 @@ claims complete conformance for a requirement that depends on other files.
 ## Specification adherence
 
 - Operation semantics per the owning protocol documents; composition rules per [contracts.md](../../../../../specification/enforcement/contracts.md).
+- `ErrorTopUpBalanceParticipantSlashed(address)` identifies the explicit top-up eligibility
+  rejection required by [`REQ-ENFADM-2-K6K9SP`](../../../../../specification/enforcement/admission-and-funds.md#req-enfadm-2-k6k9sp).
 
 ## Specification contradictions
 
@@ -67,8 +69,9 @@ Status enum: `Covered` | `Partial` | `Contradicts` | `Missing`. Evidence cells a
 **Here:** / **Other files:** so each row is auditable from its links alone; genuine gaps go in the
 Gap column. Audit state is file-level (Status header), never a row status.
 
-| Requirement / invariant | Implementation status | Evidence | Gap / divergence |
-| ----------------------- | --------------------- | -------- | ---------------- |
+| Requirement / invariant                                                                                      | Implementation status | Evidence                                                                                                                                                     | Gap / divergence |
+| ------------------------------------------------------------------------------------------------------------ | --------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------ | ---------------- |
+| [`REQ-ENFADM-2-K6K9SP`](../../../../../specification/enforcement/admission-and-funds.md#req-enfadm-2-k6k9sp) | Covered               | **Here:** dedicated error for an on-chain-slashed top-up submitter. **Other files:** [JoinChannelFacet](./JoinChannelFacet.sol.md) raises it before deposit. | None.            |
 
 ## Component test obligations
 

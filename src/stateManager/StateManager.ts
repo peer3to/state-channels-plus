@@ -427,6 +427,16 @@ class StateManager<
         ].map(String) as Address[];
     }
 
+    public async getOnChainThresholdSet(
+        channelId: ChannelId = this.channelId
+    ): Promise<Address[]> {
+        return (
+            await this.stateChannelManagerContract.getOnChainThresholdSet(
+                channelId
+            )
+        ).map(String) as Address[];
+    }
+
     /**
      * High-level status for SDK consumers.
      *

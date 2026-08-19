@@ -1,6 +1,6 @@
 # Verification Assessment
 
-> **Agent assessment:** Current as of 2026-08-17, after the RPC architecture traceability audit.
+> **Agent assessment:** Current as of 2026-08-19, after the join, snapshot-race, and forced-inclusion coverage audit.
 > **Engineer disposition:** Pending.
 
 Existing tests are not treated as evidence by filename. Each declaration remains a visible queue item until
@@ -44,9 +44,9 @@ boundaries, synchronous and asynchronous results, arguments, receiver/metadata p
 rejections, all supported listener verbs, repeated listener removal, event logs, query results, and
 ordinary-member passthrough.
 
-- Test IDs (planned permutations) evidenced: 664/4373 (15%).
-- Specification IDs with at least one evidenced permutation: 83/241 (34%).
-- Test declarations covering at least one ID: 419/899 (47%); 13 files under `test/scripts/` are
+- Test IDs (planned permutations) evidenced: 924/4464 (21%).
+- Specification IDs with at least one evidenced permutation: 93/241 (39%).
+- Test declarations covering at least one ID: 535/1001 (53%); 13 files under `test/scripts/` are
   excluded as out-of-scope developer tooling via `@spec-test-coverage-ignore`.
 - One test may cover several IDs. Each assigned ID belongs to exactly one test; compliance is 100%.
 
@@ -84,13 +84,20 @@ values (`now − 1` where the comparator rejects at `now`), rejection suites tha
 penalty-free half. Fix: strengthen the assertion, then claim the ID. Each report's Overview names
 its cases.
 
-Approximate weight per test directory (assigned/total declarations): e2e 125/213, unit 54/137,
-storage 52/127, V1 contracts 22/94, utils 82/135, models 4/59, evm 6/46, stateManager 15/29,
-rpc 16/24, transport 5/5. Causes 2 dominates models/utils/evm; causes 3–4 dominate
-unit/storage/V1.
-
 ## What was already fixed
 
+- Snapshot-race coverage now proves both sides of the pending-inbound gate: SDK preparation stands
+  down without a transaction while the JOIN is unconsumed, consumed JOIN state advances on-chain,
+  and calldata prepared before a concurrent inbound arrival reverts on-chain. Forced-inclusion
+  coverage separately proves reduction membership and the joiner's first successor-fork authoring
+  turn. The duplicate `forceInboundJoin` harness case was removed because it called the same
+  `joinChannel` contract entry as the already-mapped test.
+- Join-admission coverage now separates snapshot and fork pin movement, tests both sides of the
+  deadline boundary, assigns pending-participant top-up evidence, and drives an atomic deposit
+  failure through the public join path.
+- Join-authorization coverage now drives every collector failure mode through live peers, proves
+  an expired collector sends no requests, checks real snapshot movement, exercises every responder
+  validation branch and deadline boundary, and proves refusal keeps the session usable for retry.
 - Bundled permutations ("each class", "valid and invalid") made full coverage impossible for most
   IDs; they were split into atomic one-scenario IDs (pool 1713 → 4218) with definition anchors.
   Evidence rose from 158 to 457 IDs without writing a single new test.

@@ -4,7 +4,7 @@
 
 ## Score
 
-- Specification IDs fully implemented (only `Covered` claims): **198/241** (82%)
+- Specification IDs fully implemented (only `Covered` claims): **199/241** (83%)
 - Source files with a file report: **241/243** (99%)
 
 ## Contents
@@ -35,7 +35,6 @@ the claiming conformance rows; an ID absent from every conformance table has no 
 | [`REQ-CONTRACT-ARCH-5-QT17P1`](../specification/enforcement/contracts.md#req-contract-arch-5-qt17p1) | Not implemented (no conformance claim) | [specification/enforcement/contracts.md](../specification/enforcement/contracts.md#req-contract-arch-5-qt17p1) (definition) |
 | [`REQ-DIS-10-SAHJBN`](../specification/disputes/disputes.md#req-dis-10-sahjbn) | Partial | [implementation/source/src/stateManager/StateManager.ts.md](../implementation/source/src/stateManager/StateManager.ts.md#conformance-traceability) |
 | [`REQ-DISPUTE-PIPE-5-RZZB48`](../specification/disputes/dispute-processing.md#req-dispute-pipe-5-rzzb48) | Partial | [implementation/source/src/disputeManager/DisputeManager.ts.md](../implementation/source/src/disputeManager/DisputeManager.ts.md#conformance-traceability) |
-| [`REQ-ENFADM-1-V926CA`](../specification/enforcement/admission-and-funds.md#req-enfadm-1-v926ca) | Partial | [implementation/source/contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol.md](../implementation/source/contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol.md#conformance-traceability) |
 | [`REQ-GOSSIP-2-9PMMNH`](../specification/peer-communication/block-gossip.md#req-gossip-2-9pmmnh) | Partial | [implementation/source/src/rpc/services/stateTransition/StateTransitionRpcMethods.ts.md](../implementation/source/src/rpc/services/stateTransition/StateTransitionRpcMethods.ts.md#conformance-traceability) |
 | [`REQ-MIRROR-2-E9F3TM`](../specification/enforcement/local-mirror.md#req-mirror-2-e9f3tm) | Partial | [implementation/source/contracts/V1/StateChannelDiamondProxy/LocalDiamond.sol.md](../implementation/source/contracts/V1/StateChannelDiamondProxy/LocalDiamond.sol.md#conformance-traceability)<br>[implementation/source/src/evm/EvmDiamondStateMachine.ts.md](../implementation/source/src/evm/EvmDiamondStateMachine.ts.md#conformance-traceability) |
 | [`REQ-MSGSTORE-1-6ME9D7`](../specification/storage/message-blocks.md#req-msgstore-1-6me9d7) | Contradicts | [implementation/source/src/storage/MessageBlockStorage.ts.md](../implementation/source/src/storage/MessageBlockStorage.ts.md#conformance-traceability) |

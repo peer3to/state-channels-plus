@@ -1,3 +1,4 @@
+// @spec-test-coverage-ignore: test-harness query support exercised by owning mapped test declarations
 import { ethers } from "ethers";
 
 import ARpcMethods from "@/rpc/ARpcMethods";
@@ -102,6 +103,10 @@ export class QueryRpcMethods extends ARpcMethods {
 
     public async getOnChainParticipantUnion(): Promise<string[]> {
         return (await this.service.sm.getOnChainParticipantUnion()).map(String);
+    }
+
+    public async getOnChainThresholdSet(): Promise<string[]> {
+        return (await this.service.sm.getOnChainThresholdSet()).map(String);
     }
 
     /** Participants slashed on-chain for this channel. */

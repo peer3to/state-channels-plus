@@ -26,6 +26,7 @@ error ErrorJoinChannelInvalidSignature();
 error ErrorJoinChannelInvalidSubmitter(address expectedParticipant, address actualSubmitter);
 error ErrorJoinChannelParticipantAlreadyExists();
 error ErrorTopUpBalanceParticipantNotFound();
+error ErrorTopUpBalanceParticipantSlashed(address participant);
 error ErrorNoJoinChannelProvided();
 error ErrorNoSuccessfulJoinChannel();
 error ErrorJoinChannelAtomicFailure();
@@ -60,6 +61,7 @@ error ErrorDisputeStateMachineInboundProcessingFailed();
 // an enum on purpose: `scripts/generate-enums.ts` numbers the generated TS
 // enums by discovery order, so adding an enum here would silently renumber
 // FraudProofType and DisputeFraudProofType.
+
 uint8 constant INBOUND_FAILURE_HASH_LINK = 0;
 uint8 constant INBOUND_FAILURE_HEIGHT_SEQUENCE = 1;
 uint8 constant INBOUND_FAILURE_FINAL_TARGET = 2;

@@ -59,8 +59,8 @@ no admission ledger. Both methods derive everything they need from their argumen
 of chain/state-manager state at call time:
 
 - **Reads:** `stateManager.signer` / `signerAddress`, `getChannelId()`,
-  `getOnChainParticipantUnion(channelId)` (snapshot ∪ pending participants, minus none — see the
-  note below), `stateChannelManagerContract.getStateSnapshot(channelId)`,
+  `getOnChainThresholdSet(channelId)` ((snapshot ∪ pending) − on-chain-slashed, delegated to the
+  manager contract), `stateChannelManagerContract.getStateSnapshot(channelId)`,
   `Clock.getBlockchainTime()`, and `profileManager.getTransportByEvmAddress(...)` for transport
   resolution.
 - **Writes:** none to service or state-manager storage. The only side effect is producing
@@ -72,18 +72,15 @@ Lifetime/cleanup: nothing to clean up. The service is a long-lived singleton con
 `P2PManager` ([./README.md](./README.md) §6.8); each dispatch instantiates a fresh stateless
 `JoinChannelRpcMethods` bound to `senderTransport`.
 
-**Note (participant union).** `getOnChainParticipantUnion` returns snapshot ∪ pending participants
-but does **not** subtract on-chain-slashed addresses, while the contract's threshold set in
-`_processJoinChannel` uses `concatAddressArraysNoDuplicates(snapshotParticipants, pending)`
-([`JoinChannelFacet`](../../../../../../../contracts/V1/StateChannelDiamondProxy/JoinChannelFacet.sol#L8)).
-The protocol doc describes the threshold as "minus on-chain-slashed"
-([../../protocol/cross-layer-messages.md](../../../../../specification/settlement/cross-layer-messages.md) §4). **Open
-question:** whether the SDK-side union and the contract-side threshold must be made identical
-(including slashed-set handling) so the collector never gathers a signature set the contract then
-rejects, or a missing signature it could have collected. (Divergence class: documentation debt —
-verify the two derivations agree; observed in
-[`StateManager.getOnChainParticipantUnion`](../../../../../../../src/stateManager/StateManager.ts#L418) vs.
-`JoinChannelFacet._processJoinChannel`.)
+**Note (threshold ownership).** `StateManager.getOnChainThresholdSet` delegates directly to the
+manager contract's `getOnChainThresholdSet` instead of reconstructing eligibility in TypeScript
+([`StateManager`](../../../../../../../src/stateManager/StateManager.ts#L417)). The contract formula
+is (snapshot participants ∪ pending participants) − on-chain-slashed. `JoinChannelFacet` uses the
+same helper for countersignature verification while retaining the full snapshot ∪ pending union
+for the separate existing-participant check
+([`JoinChannelFacet`](../../../../../../../contracts/V1/StateChannelDiamondProxy/JoinChannelFacet.sol#L52)).
+The collector, responder, and on-chain verifier therefore use one slash-excluding eligibility
+source, and a slashed participant cannot veto a later join.
 
 ## 3. Algorithm per method
 
@@ -97,28 +94,31 @@ Runs on the joiner. Not an RPC endpoint; invoked through the signer facade
 
 1. **Self-authorization guard.** `joinChannel.participant` must equal the local signer address;
    else throw. The collector only ever collects for the local node's own join.
-2. **Pin the target.** Read the current on-chain snapshot (`getStateSnapshot`); record
+2. **Initial deadline guard.** Read protocol time and require `deadlineTimestamp` to be strictly
+   later. A collector with no positive request window throws `join expired` before pinning,
+   signing, or sending requests.
+3. **Pin the target.** Read the current on-chain snapshot (`getStateSnapshot`); record
    `expectedSnapshotHash = snapshot.hash` and `expectedForkId = snapshot.forkID`. These pin the
    admission to a specific chain state — the same values the contract re-checks at submit
    (`RaceConditionSnapshotForkMismatch` / `RaceConditionJoinChannelSnapshotMismatch`).
-3. **Derive the threshold set.** `getOnChainParticipantUnion(channelId)` (§2 note).
-4. **Self-sign the join.** `SignatureUtils.signJoinChannel(joinChannel, signer)` produces the
-   `encoded` join and the joiner's `signature`; package as `SignedJoinChannel` and Codec-encode it
-   (`encodedSignedJoinChannel`) — the wire form sent to peers (bigint-safe per [`REQ-RPC-4-9VX0B9`](../../../../../specification/peer-communication/rpc.md#req-rpc-4-9vx0b9)).
+4. **Derive the threshold set.** `getOnChainThresholdSet(channelId)` (§2 note).
 5. **Transport preflight.** For every threshold participant that is not the local address, require
    a resolvable transport (`getTransportByEvmAddress`); else throw
    `no transport for threshold participant`. Fail-fast so a missing peer aborts before any request
    is sent.
-6. **Compute per-request timeout.**
-   `min(agreementTime, max(1, (deadlineTimestamp − chainTime) )) × 1000` ms — never wait past the
-   join deadline, never below 1 s.
-7. **Fan out and verify.** For each threshold participant, in parallel: the local address self-signs
+6. **Recheck the deadline and compute the timeout.** Read protocol time again after the chain and
+   reachability reads. If no positive time remains, throw `join expired`. Otherwise use
+   `min(agreementTime, deadlineTimestamp − chainTime) × 1000` ms.
+7. **Self-sign the join.** `SignatureUtils.signJoinChannel(joinChannel, signer)` produces the
+   `encoded` join and the joiner's `signature`; package as `SignedJoinChannel` and Codec-encode it
+   (`encodedSignedJoinChannel`), the wire form sent to peers (bigint-safe per [`REQ-RPC-4-9VX0B9`](../../../../../specification/peer-communication/rpc.md#req-rpc-4-9vx0b9)).
+8. **Fan out and verify.** For each threshold participant, in parallel: the local address self-signs
    directly (`signMsg(encoded, signer)`); a remote participant is asked via
    `remoteRpc.joinChannelService.requestJoinSignature(encodedSignedJoinChannel,
 expectedSnapshotHash, expectedForkId).request(participant, { timeoutMs })`. Each returned
    signature is recovered (`getSignerAddress(encoded, response.signature)`) and must equal the
    addressed participant; else throw `invalid signature from <participant>`.
-8. **Assemble.** Return `{ confirmation: { signedJoinChannel, signatures }, expectedSnapshotHash,
+9. **Assemble.** Return `{ confirmation: { signedJoinChannel, signatures }, expectedSnapshotHash,
 expectedForkId }`.
 
 Any single peer's failure (timeout, error, wrong signer) rejects the whole `Promise.all` and the
@@ -151,7 +151,7 @@ joinChannel.participant`. This binds three identities: the ECDSA signer, the dec
    Stages 6–7 ensure the signer only authorizes a join pinned to the same chain state it currently
    observes.
 8. **Local-signer-in-threshold.** The local signer must be a member of
-   `getOnChainParticipantUnion(channelId)`; else throw `local signer not in threshold`. A node that
+   `getOnChainThresholdSet(channelId)`; else throw `local signer not in threshold`. A node that
    is not part of the threshold has no authority to countersign.
 9. **Sign (the auto-sign step).** `signMsg(encodedJoinChannel, signer)` and return `{ signature }`.
    A code TODO here marks the missing admission filter:
@@ -261,7 +261,7 @@ is penalty-free while an unprovable spectate request is an immediate permanent b
 race a stale snapshot and legitimately get `snapshot mismatch` — but the intended per-class policy
 is unstated. **Classified: [`OQ-34-FY08V2`](../../../../../specification/open-questions.md#oq-34-fy08v2), decision pending.** Mitigation depends on the future central rate
 limiter ([`OQ-6-4JPNE5`](../../../../../specification/open-questions.md#oq-6-4jpne5)): unbounded invalid requests each run chain reads (`getStateSnapshot`,
-`getOnChainParticipantUnion`), so this endpoint carries real per-request cost (§4.7).
+`getOnChainThresholdSet`), so this endpoint carries real per-request cost (§4.7).
 
 ### 4.6 Deadline / top-up abuse — accepted residual + open question
 
@@ -274,14 +274,15 @@ limiter ([`OQ-6-4JPNE5`](../../../../../specification/open-questions.md#oq-6-4jp
   `signJoinRequest` responder (the RPC endpoint does not distinguish join vs. top-up — the
   `isTopUp` branch is contract-side). A signature collected "for a join" is equally valid for a
   top-up submit and vice versa, since the signed bytes are identical. The contract enforces the
-  existing-participant precondition for top-up and the not-already-participant precondition for
-  join, so misuse reverts on-chain rather than corrupting state. Accepted residual; noted because
-  the RPC endpoint is shared and unaware of the intent.
+  existing-and-unslashed-participant precondition for top-up and the not-already-participant
+  precondition for join, so misuse reverts on-chain rather than corrupting state. A slashed address
+  remains in the membership union but `topUpBalance` rejects it explicitly. Accepted residual;
+  noted because the RPC endpoint is shared and unaware of the intent.
 
 ### 4.7 Resource cost per request — unhandled ([`OQ-6-4JPNE5`](../../../../../specification/open-questions.md#oq-6-4jpne5))
 
-Each `requestJoinSignature` performs at least two chain/provider reads (`getStateSnapshot`,
-`getOnChainParticipantUnion` = two contract calls) plus a Codec decode and an ECDSA recover, then a
+Each `requestJoinSignature` performs two chain/provider reads (`getStateSnapshot` and
+`getOnChainThresholdSet`) plus a Codec decode and an ECDSA recover, then a
 sign. None is bounded per peer. Combined with §4.5 (penalty-free errors), a peer can drive
 unbounded provider load. **Classified: [`OQ-6-4JPNE5`](../../../../../specification/open-questions.md#oq-6-4jpne5)** — the intended single central RPC-level rate limiter
 ([./README.md](./README.md) §9) is the designated fix; not implemented. (Divergence class: missing.)
@@ -353,8 +354,6 @@ _Non-normative._
 - Concurrent-join coordination: collect safe extra signatures before submission (SDK TODO, [`OQ-10-04YNC4`](../../../../../specification/open-questions.md#oq-10-04ync4)).
 - Reconcile the join-signature failure outcome with a uniform failure-outcome policy ([`OQ-34-FY08V2`](../../../../../specification/open-questions.md#oq-34-fy08v2)) and the
   central RPC rate limiter ([`OQ-6-4JPNE5`](../../../../../specification/open-questions.md#oq-6-4jpne5)), given the per-request chain-read cost.
-- Verify SDK participant-union derivation matches the contract threshold set including slashed-set
-  handling (§2).
 
 ## Implementation traceability
 

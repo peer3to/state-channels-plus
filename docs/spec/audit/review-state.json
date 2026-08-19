@@ -190,9 +190,9 @@
         "date": "2026-08-18"
     },
     "verification/tests/test/rpc/joinChannel/JoinChannelSignatureRequest.test.ts.md": {
-        "hash": "79fa0c74af9bc1eb",
+        "hash": "df70cc7964ac599e",
         "reviewer": "Luka",
-        "date": "2026-08-18"
+        "date": "2026-08-19"
     },
     "verification/tests/test/stateManager/EventBus.test.ts.md": {
         "hash": "a02841ae21357090",
@@ -223,5 +223,40 @@
         "hash": "1bb76bc39a52e07a",
         "reviewer": "Luka",
         "date": "2026-08-18"
+    },
+    "implementation/source/contracts/V1/StateChannelDiamondProxy/JoinChannelFacet.sol.md": {
+        "hash": "02a765903ac6172b",
+        "reviewer": "Luka",
+        "date": "2026-08-19"
+    },
+    "implementation/source/src/rpc/services/joinChannel/JoinChannelService.ts.md": {
+        "hash": "5b79dd04a4f2fee8",
+        "reviewer": "Luka",
+        "date": "2026-08-19"
+    },
+    "verification/tests/test/V1/StateChannelDiamondProxy/JoinChannelFacet.t.sol.md": {
+        "hash": "9a97ab0a14b4427f",
+        "reviewer": "Luka",
+        "date": "2026-08-19"
+    },
+    "verification/tests/test/V1/StateChannelDiamondProxy/StateChannelManagerProxyDeposit.t.sol.md": {
+        "hash": "3a24dea47b1b60d3",
+        "reviewer": "Luka",
+        "date": "2026-08-19"
+    },
+    "verification/tests/test/e2e/E2E-ForceJoinDispute.test.ts.md": {
+        "hash": "3cadc23d3623a9fa",
+        "reviewer": "Luka",
+        "date": "2026-08-19"
+    },
+    "verification/tests/test/e2e/E2E-JoinChannelRaceConditions.test.ts.md": {
+        "hash": "bba5ac46261cb1a0",
+        "reviewer": "Luka",
+        "date": "2026-08-19"
+    },
+    "verification/tests/test/stateManager/SnapshotUpdateService.test.ts.md": {
+        "hash": "e4c681355e9a5ff4",
+        "reviewer": "Luka",
+        "date": "2026-08-19"
     }
 }

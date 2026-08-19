@@ -4,22 +4,37 @@
 > its content hash with `SPEC_REVIEWER="Name" node docs/spec/tools/review.js <file...>`.
 > Any later edit invalidates the record automatically (the file returns to pending as stale).
 
-- Verified (current): **40/525** (8%)
+- Verified (current): **30/527** (6%)
 - Pending (never reviewed): **480**
-- Stale (edited since review): **5**
+- Stale (edited since review): **17**
 
 ## Stale — edited since engineer review
 
-### implementation (4)
+### specification (1)
+
+- [specification/disputes/disputes.md](../specification/disputes/disputes.md) — Luka, 2026-08-14
+
+### implementation (7)
 
 - [implementation/source/src/evm/contractExecutor/worker/ContractExecutorWorkerHostCore.ts.md](../implementation/source/src/evm/contractExecutor/worker/ContractExecutorWorkerHostCore.ts.md) — Luka, 2026-08-15
 - [implementation/source/src/evm/contractExecutor/worker/protocol.ts.md](../implementation/source/src/evm/contractExecutor/worker/protocol.ts.md) — Luka, 2026-08-15
 - [implementation/source/src/evm/contractExecutor/WorkerContractExecutor.ts.md](../implementation/source/src/evm/contractExecutor/WorkerContractExecutor.ts.md) — Luka, 2026-08-15
+- [implementation/source/src/rpc/guards/HandshakeCompletedGuard.ts.md](../implementation/source/src/rpc/guards/HandshakeCompletedGuard.ts.md) — Luka, 2026-08-18
+- [implementation/source/src/stateManager/StateManager.ts.md](../implementation/source/src/stateManager/StateManager.ts.md) — Luka, 2026-08-18
+- [implementation/source/src/utils/Codec.ts.md](../implementation/source/src/utils/Codec.ts.md) — Luka, 2026-08-18
 - [implementation/views/architecture/sdk/runtime-and-concurrency.md](../implementation/views/architecture/sdk/runtime-and-concurrency.md) — Luka, 2026-08-15
 
-### verification (1)
+### verification (9)
 
+- [verification/tests/test/e2e/E2E-CustomRpcRequestResponse.test.ts.md](../verification/tests/test/e2e/E2E-CustomRpcRequestResponse.test.ts.md) — Luka, 2026-08-18
+- [verification/tests/test/e2e/E2E-RuntimeTransportModes.test.ts.md](../verification/tests/test/e2e/E2E-RuntimeTransportModes.test.ts.md) — Luka, 2026-08-18
 - [verification/tests/test/evm/WorkerContractExecutor.test.ts.md](../verification/tests/test/evm/WorkerContractExecutor.test.ts.md) — Luka, 2026-08-15
+- [verification/tests/test/P2PManager.test.ts.md](../verification/tests/test/P2PManager.test.ts.md) — Luka, 2026-08-18
+- [verification/tests/test/rpc/guards/HandshakeCompletedGuard.test.ts.md](../verification/tests/test/rpc/guards/HandshakeCompletedGuard.test.ts.md) — Luka, 2026-08-18
+- [verification/tests/test/rpc/guards/runGuards.test.ts.md](../verification/tests/test/rpc/guards/runGuards.test.ts.md) — Luka, 2026-08-18
+- [verification/tests/test/rpc/joinChannel/JoinChannelSignatureRequest.test.ts.md](../verification/tests/test/rpc/joinChannel/JoinChannelSignatureRequest.test.ts.md) — Luka, 2026-08-18
+- [verification/tests/test/utils/Codec.test.ts.md](../verification/tests/test/utils/Codec.test.ts.md) — Luka, 2026-08-18
+- [verification/tests/test/utils/CrossModuleValues.test.ts.md](../verification/tests/test/utils/CrossModuleValues.test.ts.md) — Luka, 2026-08-18
 
 ## Pending — never reviewed
 
@@ -76,7 +91,7 @@
 - [specification/storage/README.md](../specification/storage/README.md)
 - [specification/storage/snapshots-and-states.md](../specification/storage/snapshots-and-states.md)
 
-### implementation (317)
+### implementation (315)
 
 - [implementation/open-questions.md](../implementation/open-questions.md)
 - [implementation/README.md](../implementation/README.md)
@@ -100,7 +115,6 @@
 - [implementation/source/contracts/V1/StateChannelDiamondProxy/DisputeVerificationFacet.sol.md](../implementation/source/contracts/V1/StateChannelDiamondProxy/DisputeVerificationFacet.sol.md)
 - [implementation/source/contracts/V1/StateChannelDiamondProxy/Errors.sol.md](../implementation/source/contracts/V1/StateChannelDiamondProxy/Errors.sol.md)
 - [implementation/source/contracts/V1/StateChannelDiamondProxy/FraudProofFacet.sol.md](../implementation/source/contracts/V1/StateChannelDiamondProxy/FraudProofFacet.sol.md)
-- [implementation/source/contracts/V1/StateChannelDiamondProxy/JoinChannelFacet.sol.md](../implementation/source/contracts/V1/StateChannelDiamondProxy/JoinChannelFacet.sol.md)
 - [implementation/source/contracts/V1/StateChannelDiamondProxy/LocalDiamond.sol.md](../implementation/source/contracts/V1/StateChannelDiamondProxy/LocalDiamond.sol.md)
 - [implementation/source/contracts/V1/StateChannelDiamondProxy/README.md](../implementation/source/contracts/V1/StateChannelDiamondProxy/README.md)
 - [implementation/source/contracts/V1/StateChannelDiamondProxy/StateChannelCommon.sol.md](../implementation/source/contracts/V1/StateChannelDiamondProxy/StateChannelCommon.sol.md)
@@ -220,7 +234,6 @@
 - [implementation/source/src/rpc/services/isForkDisputedService/IsForkDisputedService.ts.md](../implementation/source/src/rpc/services/isForkDisputedService/IsForkDisputedService.ts.md)
 - [implementation/source/src/rpc/services/isForkDisputedService/README.md](../implementation/source/src/rpc/services/isForkDisputedService/README.md)
 - [implementation/source/src/rpc/services/joinChannel/JoinChannelRpcMethods.ts.md](../implementation/source/src/rpc/services/joinChannel/JoinChannelRpcMethods.ts.md)
-- [implementation/source/src/rpc/services/joinChannel/JoinChannelService.ts.md](../implementation/source/src/rpc/services/joinChannel/JoinChannelService.ts.md)
 - [implementation/source/src/rpc/services/joinChannel/README.md](../implementation/source/src/rpc/services/joinChannel/README.md)
 - [implementation/source/src/rpc/services/openChannelNegotiation/OpenChannelNegotiationHelpers.ts.md](../implementation/source/src/rpc/services/openChannelNegotiation/OpenChannelNegotiationHelpers.ts.md)
 - [implementation/source/src/rpc/services/openChannelNegotiation/OpenChannelNegotiationRpcMethods.ts.md](../implementation/source/src/rpc/services/openChannelNegotiation/OpenChannelNegotiationRpcMethods.ts.md)
@@ -396,7 +409,7 @@
 - [implementation/views/security/data-availability.md](../implementation/views/security/data-availability.md)
 - [implementation/views/security/trust-model.md](../implementation/views/security/trust-model.md)
 
-### verification (113)
+### verification (115)
 
 - [verification/open-questions.md](../verification/open-questions.md)
 - [verification/README.md](../verification/README.md)
@@ -508,57 +521,49 @@
 - [verification/tests/test/V1/DiamondProxy/UtilityLibrary/SignatureVerification.test.ts.md](../verification/tests/test/V1/DiamondProxy/UtilityLibrary/SignatureVerification.test.ts.md)
 - [verification/tests/test/V1/StateChannelDiamondProxy/DisputeVerificationFacet.t.sol.md](../verification/tests/test/V1/StateChannelDiamondProxy/DisputeVerificationFacet.t.sol.md)
 - [verification/tests/test/V1/StateChannelDiamondProxy/FraudProofFacet.t.sol.md](../verification/tests/test/V1/StateChannelDiamondProxy/FraudProofFacet.t.sol.md)
+- [verification/tests/test/V1/StateChannelDiamondProxy/JoinChannelFacet.t.sol.md](../verification/tests/test/V1/StateChannelDiamondProxy/JoinChannelFacet.t.sol.md)
+- [verification/tests/test/V1/StateChannelDiamondProxy/StateChannelManagerProxyDeposit.t.sol.md](../verification/tests/test/V1/StateChannelDiamondProxy/StateChannelManagerProxyDeposit.t.sol.md)
 - [verification/tests/test/V1/StateChannelDiamondProxy/UtilityFacet.t.sol.md](../verification/tests/test/V1/StateChannelDiamondProxy/UtilityFacet.t.sol.md)
 - [verification/tests/test/V1/StateChannelDiamondProxy/utils/DisputeUtils.t.sol.md](../verification/tests/test/V1/StateChannelDiamondProxy/utils/DisputeUtils.t.sol.md)
 - [verification/tests/test/V1/UniversalDeployment.test.ts.md](../verification/tests/test/V1/UniversalDeployment.test.ts.md)
 
 ## Verified — current
 
-### specification (5)
+### specification (4)
 
 - [specification/block-progression/block-processing.md](../specification/block-progression/block-processing.md) — Luka, 2026-08-18
 - [specification/block-progression/README.md](../specification/block-progression/README.md) — Luka, 2026-08-14
-- [specification/disputes/disputes.md](../specification/disputes/disputes.md) — Luka, 2026-08-14
 - [specification/peer-communication/rpc.md](../specification/peer-communication/rpc.md) — Luka, 2026-08-18
 - [specification/runtime/execution.md](../specification/runtime/execution.md) — Luka, 2026-08-18
 
-### implementation (16)
+### implementation (15)
 
+- [implementation/source/contracts/V1/StateChannelDiamondProxy/JoinChannelFacet.sol.md](../implementation/source/contracts/V1/StateChannelDiamondProxy/JoinChannelFacet.sol.md) — Luka, 2026-08-19
 - [implementation/source/src/events/EventBus.ts.md](../implementation/source/src/events/EventBus.ts.md) — Luka, 2026-08-18
 - [implementation/source/src/evm/EvmDiamondStateMachine.ts.md](../implementation/source/src/evm/EvmDiamondStateMachine.ts.md) — Luka, 2026-08-15
 - [implementation/source/src/evm/p2pRuntime/P2pRuntimeHost.ts.md](../implementation/source/src/evm/p2pRuntime/P2pRuntimeHost.ts.md) — Luka, 2026-08-15
 - [implementation/source/src/P2PManager.ts.md](../implementation/source/src/P2PManager.ts.md) — Luka, 2026-08-18
 - [implementation/source/src/ProfileManager.ts.md](../implementation/source/src/ProfileManager.ts.md) — Luka, 2026-08-18
 - [implementation/source/src/rpc/ARpcService.ts.md](../implementation/source/src/rpc/ARpcService.ts.md) — Luka, 2026-08-18
-- [implementation/source/src/rpc/guards/HandshakeCompletedGuard.ts.md](../implementation/source/src/rpc/guards/HandshakeCompletedGuard.ts.md) — Luka, 2026-08-18
 - [implementation/source/src/rpc/MainRpcService.ts.md](../implementation/source/src/rpc/MainRpcService.ts.md) — Luka, 2026-08-15
 - [implementation/source/src/rpc/RemoteRpcProxy.ts.md](../implementation/source/src/rpc/RemoteRpcProxy.ts.md) — Luka, 2026-08-18
 - [implementation/source/src/rpc/Rpc.ts.md](../implementation/source/src/rpc/Rpc.ts.md) — Luka, 2026-08-18
 - [implementation/source/src/rpc/RpcHandler.ts.md](../implementation/source/src/rpc/RpcHandler.ts.md) — Luka, 2026-08-18
-- [implementation/source/src/stateManager/StateManager.ts.md](../implementation/source/src/stateManager/StateManager.ts.md) — Luka, 2026-08-18
+- [implementation/source/src/rpc/services/joinChannel/JoinChannelService.ts.md](../implementation/source/src/rpc/services/joinChannel/JoinChannelService.ts.md) — Luka, 2026-08-19
 - [implementation/source/src/transport/ATransport.ts.md](../implementation/source/src/transport/ATransport.ts.md) — Luka, 2026-08-18
-- [implementation/source/src/utils/Codec.ts.md](../implementation/source/src/utils/Codec.ts.md) — Luka, 2026-08-18
 - [implementation/source/src/utils/EthersResultProxy.ts.md](../implementation/source/src/utils/EthersResultProxy.ts.md) — Luka, 2026-08-18
 - [implementation/source/src/utils/ObjectChecks.ts.md](../implementation/source/src/utils/ObjectChecks.ts.md) — Luka, 2026-08-18
 
-### verification (19)
+### verification (11)
 
-- [verification/tests/test/e2e/E2E-CustomRpcRequestResponse.test.ts.md](../verification/tests/test/e2e/E2E-CustomRpcRequestResponse.test.ts.md) — Luka, 2026-08-18
 - [verification/tests/test/e2e/E2E-FraudProofsBlockConfirmation.test.ts.md](../verification/tests/test/e2e/E2E-FraudProofsBlockConfirmation.test.ts.md) — Luka, 2026-08-18
 - [verification/tests/test/e2e/E2E-InitHandshake.test.ts.md](../verification/tests/test/e2e/E2E-InitHandshake.test.ts.md) — Luka, 2026-08-18
 - [verification/tests/test/e2e/E2E-PingService.test.ts.md](../verification/tests/test/e2e/E2E-PingService.test.ts.md) — Luka, 2026-08-18
-- [verification/tests/test/e2e/E2E-RuntimeTransportModes.test.ts.md](../verification/tests/test/e2e/E2E-RuntimeTransportModes.test.ts.md) — Luka, 2026-08-18
 - [verification/tests/test/evm/CustomRpcTypes.test.ts.md](../verification/tests/test/evm/CustomRpcTypes.test.ts.md) — Luka, 2026-08-18
-- [verification/tests/test/P2PManager.test.ts.md](../verification/tests/test/P2PManager.test.ts.md) — Luka, 2026-08-18
 - [verification/tests/test/rpc/ARpcService.test.ts.md](../verification/tests/test/rpc/ARpcService.test.ts.md) — Luka, 2026-08-18
-- [verification/tests/test/rpc/guards/HandshakeCompletedGuard.test.ts.md](../verification/tests/test/rpc/guards/HandshakeCompletedGuard.test.ts.md) — Luka, 2026-08-18
-- [verification/tests/test/rpc/guards/runGuards.test.ts.md](../verification/tests/test/rpc/guards/runGuards.test.ts.md) — Luka, 2026-08-18
-- [verification/tests/test/rpc/joinChannel/JoinChannelSignatureRequest.test.ts.md](../verification/tests/test/rpc/joinChannel/JoinChannelSignatureRequest.test.ts.md) — Luka, 2026-08-18
 - [verification/tests/test/rpc/Rpc.test.ts.md](../verification/tests/test/rpc/Rpc.test.ts.md) — Luka, 2026-08-18
 - [verification/tests/test/rpc/RpcHandler.test.ts.md](../verification/tests/test/rpc/RpcHandler.test.ts.md) — Luka, 2026-08-18
 - [verification/tests/test/stateManager/EventBus.test.ts.md](../verification/tests/test/stateManager/EventBus.test.ts.md) — Luka, 2026-08-18
 - [verification/tests/test/transport/ATransport.test.ts.md](../verification/tests/test/transport/ATransport.test.ts.md) — Luka, 2026-08-18
 - [verification/tests/test/unit/EventBus.test.ts.md](../verification/tests/test/unit/EventBus.test.ts.md) — Luka, 2026-08-18
-- [verification/tests/test/utils/Codec.test.ts.md](../verification/tests/test/utils/Codec.test.ts.md) — Luka, 2026-08-18
-- [verification/tests/test/utils/CrossModuleValues.test.ts.md](../verification/tests/test/utils/CrossModuleValues.test.ts.md) — Luka, 2026-08-18
 - [verification/tests/test/utils/EthersResultProxy.test.ts.md](../verification/tests/test/utils/EthersResultProxy.test.ts.md) — Luka, 2026-08-18
