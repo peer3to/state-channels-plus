@@ -18,16 +18,16 @@ Detailed statements, source evidence, design analysis, and test mappings remain 
 
 ## Readiness
 
-- Requirements/invariants: 241
-- Structurally complete requirement paths: **5/241** (2%)
-- Current engineer-approved paths: **0/241** (0%)
-- Current security-accepted paths: **0/241** (0%)
-- Final ready paths: **0/241** (0%)
+- Requirements/invariants: 242
+- Structurally complete requirement paths: **5/242** (2%)
+- Current engineer-approved paths: **0/242** (0%)
+- Current security-accepted paths: **0/242** (0%)
+- Final ready paths: **0/242** (0%)
 - Source files assigned to implementation subjects: **243/243** (100%)
-- Test declarations mapped or explicitly ignored: **413/922** (45%)
+- Test declarations mapped or explicitly ignored: **433/942** (46%)
 - Open questions: 36
 - Active findings: 14
-- Strict blocking items: 4970
+- Strict blocking items: 4980
 
 ## Requirement paths
 
@@ -192,6 +192,7 @@ Detailed statements, source evidence, design analysis, and test mappings remain 
 | [`REQ-LIF-3-PDRTPY`](../specification/settlement/lifecycle.md#req-lif-3-pdrtpy) | [REQ-LIF-3-PDRTPY · 1 plan](../specification/settlement/lifecycle.md#req-lif-3-pdrtpy) | [Covered](../implementation/views/protocol/lifecycle.md#conformance-traceability) | 0/8 permutations evidenced | 0 | None linked | Gap | Approval pending | Assessment pending | Not ready |
 | [`REQ-LIF-4-SW8GVY`](../specification/settlement/lifecycle.md#req-lif-4-sw8gvy) | [REQ-LIF-4-SW8GVY · 1 plan](../specification/settlement/lifecycle.md#req-lif-4-sw8gvy) | [Covered](../implementation/views/protocol/lifecycle.md#conformance-traceability) | 0/12 permutations evidenced | 0 | None linked | Gap | Approval pending | Assessment pending | Not ready |
 | [`REQ-LIF-6-VG861M`](../specification/settlement/lifecycle.md#req-lif-6-vg861m) | [REQ-LIF-6-VG861M · 1 plan](../specification/settlement/lifecycle.md#req-lif-6-vg861m) | [Covered](../implementation/views/protocol/lifecycle.md#conformance-traceability) | 0/6 permutations evidenced | 0 | None linked | Gap | Approval pending | Assessment pending | Not ready |
+| [`REQ-LIF-7-0XZBDM`](../specification/settlement/lifecycle.md#req-lif-7-0xzbdm) | [REQ-LIF-7-0XZBDM · 1 plan](../specification/settlement/lifecycle.md#req-lif-7-0xzbdm) | [Covered](../implementation/source/src/eventHandlers/EventHandler.ts.md#conformance-traceability) | 0/6 permutations evidenced | 0 | None linked | Gap | Approval pending | Assessment pending | Not ready |
 | [`REQ-MIRROR-1-XCY9CB`](../specification/enforcement/local-mirror.md#req-mirror-1-xcy9cb) | [REQ-MIRROR-1-XCY9CB · 1 plan](../specification/enforcement/local-mirror.md#req-mirror-1-xcy9cb) | [Covered](../implementation/source/src/disputeManager/DisputeManager.ts.md#conformance-traceability) | 0/8 permutations evidenced | 0 | None linked | Gap | Approval pending | Assessment pending | Not ready |
 | [`REQ-MIRROR-2-E9F3TM`](../specification/enforcement/local-mirror.md#req-mirror-2-e9f3tm) | [REQ-MIRROR-2-E9F3TM · 1 plan](../specification/enforcement/local-mirror.md#req-mirror-2-e9f3tm) | [Partial](../implementation/source/contracts/V1/StateChannelDiamondProxy/LocalDiamond.sol.md#conformance-traceability) | 1/3 permutations evidenced | 1 | None linked | Gap | Approval pending | Assessment pending | Not ready |
 | [`REQ-MIRROR-3-THD7K8`](../specification/enforcement/local-mirror.md#req-mirror-3-thd7k8) | [REQ-MIRROR-3-THD7K8 · 1 plan](../specification/enforcement/local-mirror.md#req-mirror-3-thd7k8) | [Covered](../implementation/source/src/stateManager/EventSyncService.ts.md#conformance-traceability) | 0/4 permutations evidenced | 0 | None linked | Gap | Approval pending | Assessment pending | Not ready |
@@ -280,8 +281,8 @@ Detailed statements, source evidence, design analysis, and test mappings remain 
 - 509 test declaration(s) are unaccounted.
 - 36 open question(s) require decisions.
 - 14 active finding(s) remain.
-- 241 requirement path(s) lack current engineer approval.
-- 241 requirement path(s) lack current security-risk acceptance.
+- 242 requirement path(s) lack current engineer approval.
+- 242 requirement path(s) lack current security-risk acceptance.
 
 ## Audit sources
 

@@ -4,7 +4,7 @@
 
 ## Score
 
-- Specification IDs fully implemented (only `Covered` claims): **202/241** (84%)
+- Specification IDs fully implemented (only `Covered` claims): **203/242** (84%)
 - Source files with a file report: **241/243** (99%)
 
 ## Contents
