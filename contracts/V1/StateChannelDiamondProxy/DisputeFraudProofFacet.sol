@@ -86,6 +86,9 @@ contract DisputeFraudProofFacet is StateChannelCommon {
         if (proofType == DisputeFraudProofType.DisputeBlockAuthorNotParticipant) {
             return _handleDisputeBlockAuthorNotParticipant;
         }
+        if (proofType == DisputeFraudProofType.DisputeInboundAnchorBehindLatestState) {
+            return _handleDisputeInboundAnchorBehindLatestState;
+        }
         return _handleInvalidDisputeFraudProofType;
     }
 
@@ -244,6 +247,18 @@ contract DisputeFraudProofFacet is StateChannelCommon {
         if (_hasDisputeReason(dispute.input, proof.latestStateSnapshot)) {
             return _invalid();
         }
+        return _valid(dispute.input.disputer);
+    }
+
+    function _handleDisputeInboundAnchorBehindLatestState(bytes memory encodedFraudProof, Dispute memory dispute)
+        internal
+        pure
+        returns (address)
+    {
+        DisputeInboundAnchorBehindLatestState memory proof =
+            abi.decode(encodedFraudProof, (DisputeInboundAnchorBehindLatestState));
+
+        if (!_isDisputeInboundAnchorBehindLatestState(dispute, proof.latestStateSnapshot)) return _invalid();
         return _valid(dispute.input.disputer);
     }
 

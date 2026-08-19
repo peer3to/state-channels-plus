@@ -36,7 +36,8 @@ import {
     InvalidDisputeReasonStruct,
     DisputeStateProofHeaderMismatchStruct,
     DisputeInvalidBlockStructureStruct,
-    DisputeBlockAuthorNotParticipantStruct
+    DisputeBlockAuthorNotParticipantStruct,
+    DisputeInboundAnchorBehindLatestStateStruct
 } from "@typechain-types/contracts/V1/types/DisputeFraudProofTypes";
 import { BigNumberish, BytesLike } from "ethers";
 // ────────────────────── FRAUD PROOF SERVICE ─────────────────────
@@ -252,6 +253,19 @@ export default class DisputeFraudProofService {
         const proof: { __: boolean } = { __: false };
         return this.storeFraudProof(dispute, {
             type: DisputeFraudProofType.DisputeInboundHashNotInChain,
+            struct: proof
+        });
+    }
+
+    createDisputeInboundAnchorBehindLatestState(
+        dispute: DisputeStruct,
+        latestStateSnapshot: StateSnapshotStruct
+    ): Hash {
+        const proof: DisputeInboundAnchorBehindLatestStateStruct = {
+            latestStateSnapshot
+        };
+        return this.storeFraudProof(dispute, {
+            type: DisputeFraudProofType.DisputeInboundAnchorBehindLatestState,
             struct: proof
         });
     }

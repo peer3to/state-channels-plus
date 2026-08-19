@@ -321,6 +321,13 @@ export default class BlockIngestService {
                     }
                 }
             );
+            // committed -> the carried inbound blocks are canonical. runs
+            // after success because reject rewinds the VM, never storage
+            sm.storage.inboundMessages.storeVerifiedRun(
+                inboundMessageBlocks,
+                previousStateSnapshot.latestInboundMessageBlockHash
+            );
+
             const blockMeta = LoggerUtils.getBlockMetadata(block, sm.storage);
             this.logger.info(
                 `onBlockConfirmation - success - ${blockMeta.blockHeight}`,

@@ -110,6 +110,101 @@ describe("E2E: ReductionManager", function () {
         });
     });
 
+    it("dispute-window recovery defeated → the reduction defers, the peer is not evicted", async function () {
+        const h = TestSession.getHarness();
+        const laggingIndex = 0;
+        const maliciousPeerIndex = 2;
+        const healthyIndices = [1, 3];
+        const { forkId, race, restoreEvents } =
+            await h.scenario.disputeWithSuppressedCommitEvents({
+                observerIndex: laggingIndex,
+                maliciousPeerIndex
+            });
+
+        // a healthy reduction landing while the lagging peer is blinded emits
+        // StateSnapshotUpdated for a fork it cannot resolve, which is a fatal
+        // detached throw of its own - hold them until the queries come back
+        const healthyRaces = [];
+        for (const peerIndex of healthyIndices) {
+            healthyRaces.push(await h.rpcStub.holdReductionRace(peerIndex));
+        }
+
+        const blinded = await h.rpcStub.failChainLogQueries(laggingIndex);
+        // before the kill period expires the attempt exits at the gate and
+        // never reaches the window read
+        await waitFor(
+            async () =>
+                h.execOnHost(
+                    h.getPeer(laggingIndex),
+                    async (sm, a) => {
+                        const { isExpired } =
+                            await sm.reductionManager.isKillPeriodExpiredCached(
+                                a.forkId
+                            );
+                        return isExpired;
+                    },
+                    { forkId }
+                ),
+            25000
+        );
+
+        const commitmentsBefore = (
+            await h.channelManager.getWindowCommitments(h.channelId, forkId)
+        ).length;
+        // no reduction timer is armed while dispute events are held, so the
+        // attempt has to be triggered. startReduction, not awaitReduction: the
+        // shared completion promise stays pending across a deferral
+        await h
+            .control(h.getPeer(laggingIndex))
+            .dispute.startReduction(forkId)
+            .request();
+
+        expect(
+            await TestSession.consumeFirstDetachedError(
+                h.event.protocolEventTimeoutMs()
+            ),
+            "a deferred reduction must not surface an error"
+        ).to.equal(undefined);
+        expect(
+            await h
+                .control(h.getPeer(laggingIndex))
+                .query.getStatus()
+                .request(),
+            "the peer must not be evicted for a window it cannot read"
+        ).to.equal(Status.PARTICIPATING);
+        expect(
+            (await h.channelManager.getWindowCommitments(h.channelId, forkId))
+                .length,
+            "an unreadable window must not be answered with a fresh dispute"
+        ).to.equal(commitmentsBefore);
+
+        // the queries come back before the healthy holds are released, so the
+        // lagging peer recovers the window on its own attempt
+        await blinded.restore();
+        await restoreEvents(false);
+        expect(
+            await h
+                .control(h.getPeer(laggingIndex))
+                .dispute.awaitReduction(forkId)
+                .request(),
+            "the recovered attempt must complete the reduction"
+        ).to.not.equal(null);
+
+        for (const healthy of healthyRaces) {
+            await healthy.release({ replayEvents: true, runHeldTasks: true });
+        }
+        await race.release({
+            replayEvents: true,
+            runHeldTasks: false,
+            keepTasksHeld: true
+        });
+        await h.assert.sync.forkChangedWait({
+            originalForkId: forkId,
+            honestPeerIndices: [laggingIndex, ...healthyIndices],
+            timeoutMs: 30000
+        });
+    });
+
     it("an empty dispute set posts replacement evidence and resumes the same reduction", async function () {
         const h = TestSession.getHarness();
         await h.scenario.preDisputeSetup({

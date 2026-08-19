@@ -82,12 +82,13 @@ export default class ReductionExecutor {
 
     public async getSyncedForkDisputes(
         forkId: ForkId
-    ): Promise<DisputeStruct[]> {
+    ): Promise<DisputeStruct[] | undefined> {
         const commitments =
             await this.stateManager.eventSyncService.loadSynchronizedWindowCommitments(
                 this.stateManager.channelId,
                 forkId
             );
+        if (!commitments) return undefined;
         return this.stateManager.agreementManager.getForkDisputes(commitments);
     }
 
@@ -152,6 +153,20 @@ export default class ReductionExecutor {
         }
 
         const disputes = await this.getSyncedForkDisputes(forkId);
+        if (!disputes) {
+            // the window's disputes are on-chain but not locally readable yet ->
+            // retry, never abort: the peer would lose its turns and be slashed
+            this.logger.warn("Reduction deferred: dispute window unavailable", {
+                forkId
+            });
+            this.stateManager.reductionManager.schedule(
+                forkId,
+                Clock.getTimeInSeconds() +
+                    this.stateManager.timeConfig.chainFallbackTime,
+                true
+            );
+            return;
+        }
         if (forkId !== this.stateManager.forkId) return;
         const freshExpiry =
             await this.stateManager.stateChannelManagerContract.isKillPeriodExpired(
@@ -191,6 +206,20 @@ export default class ReductionExecutor {
             freshObservation.killPeriodEnd,
             disputes
         );
+        if (!candidate) {
+            // our inbound view cannot back the chain's reduced head yet -> retry,
+            // never abort: the peer would lose its turns and be slashed for it
+            this.logger.warn("Reduction deferred: reduce data unavailable", {
+                forkId
+            });
+            this.stateManager.reductionManager.schedule(
+                forkId,
+                Clock.getTimeInSeconds() +
+                    this.stateManager.timeConfig.chainFallbackTime,
+                true
+            );
+            return;
+        }
         const submission = await this.prepareSubmission(candidate);
         const submissionStatus = await this.simulateSubmission(
             forkId,
@@ -228,7 +257,7 @@ export default class ReductionExecutor {
         forkId: ForkId,
         genesisTimestamp: Timestamp,
         disputes: DisputeStruct[]
-    ): Promise<LocalReductionCandidate> {
+    ): Promise<LocalReductionCandidate | undefined> {
         this.logger.debug(
             `Performing local reduction on disputes for fork ${LoggerUtils.formatHash(forkId)}`,
             {
@@ -242,6 +271,7 @@ export default class ReductionExecutor {
                 forkId,
                 disputes
             );
+            if (!computation) return undefined;
             const {
                 reducedSnapshotData,
                 reducedOutboundMessageBlock,

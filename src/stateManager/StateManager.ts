@@ -179,7 +179,11 @@ class StateManager<
             this.eventSyncService,
             logger
         );
-        this.agreementManager = new AgreementManager(this.storage, this.logger);
+        this.agreementManager = new AgreementManager(
+            this.storage,
+            this.eventSyncService,
+            this.logger
+        );
         this.disputeManager = new DisputeManager(
             this.channelId,
             signer,
@@ -189,6 +193,7 @@ class StateManager<
             this.p2pEventHooks,
             this.storage,
             this.diamondStateMachine,
+            this.eventSyncService,
             logger
         );
         this.p2pManager = new P2PManager<TCustomRpc>(

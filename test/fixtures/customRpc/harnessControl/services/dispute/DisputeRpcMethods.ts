@@ -4,7 +4,7 @@ import ARpcMethods from "@/rpc/ARpcMethods";
 import type ATransport from "@/transport/ATransport";
 import Clock from "@/Clock";
 import { Codec, Type } from "@/utils";
-import type { ForkId } from "@/types/types";
+import type { ForkId, Hash } from "@/types/types";
 import type {
     DisputeStruct,
     DisputeConfirmationStruct,
@@ -14,7 +14,11 @@ import {
     DISPUTE_TAMPER_STRATEGIES,
     type DisputeTamperStrategy
 } from "./tamperStrategies";
-import type { DisputeService } from "./DisputeService";
+import type {
+    DisputeService,
+    DisputeValidationRun,
+    PersistDisputeDataProjection
+} from "./DisputeService";
 
 /** Spec for installing a `constructDispute` tamper (named strategy or shipped body). */
 export interface ConstructDisputeStubSpec {
@@ -52,7 +56,7 @@ export class DisputeRpcMethods extends ARpcMethods {
     }
 
     /** Recover missed committed-dispute logs through the production query path. */
-    public recoverCommittedDisputes(forkId: ForkId): Promise<number> {
+    public recoverCommittedDisputes(forkId: ForkId): Promise<number | null> {
         return this.service.recoverCommittedDisputes(forkId);
     }
 
@@ -95,15 +99,52 @@ export class DisputeRpcMethods extends ARpcMethods {
         };
     }
 
-    /** Recompute auditing data for a (tampered) state proof; ABI-encoded. */
-    public getAuditingData(
+    /** Inbound-hash verdicts from this peer's local diamond and its RPC node. */
+    public probeDisputeInboundHashSources(
+        encodedDispute: string
+    ): Promise<{ local: boolean; rpc: boolean }> {
+        return this.service.probeDisputeInboundHashSources(encodedDispute);
+    }
+
+    /** Run the real dispute audit on this peer; verdict + stored-proof projection. */
+    public runDisputeValidation(
+        encodedDispute: string,
+        options?: { encodedAuditingData?: string }
+    ): Promise<DisputeValidationRun> {
+        return this.service.runDisputeValidation(encodedDispute, options);
+    }
+
+    /** Run the real persistDisputeDataWithoutAudit; storage presence projection. */
+    public persistDisputeDataWithoutAudit(
+        encodedDispute: string,
+        options: {
+            encodedAuditingData?: string;
+            includeUnfinalizedBlocks: boolean;
+            /** Post-decode override; "" is not ABI-encodable (see service). */
+            latestFinalizedStateStateMachineStateOverride?: string;
+        }
+    ): PersistDisputeDataProjection {
+        return this.service.persistDisputeDataWithoutAudit(
+            encodedDispute,
+            options
+        );
+    }
+
+    /**
+     * Recompute auditing data for a (tampered) state proof; ABI-encoded.
+     * `disputeLatestInboundMessageBlockHash` is the anchor an auditor bounds
+     * the inbound range with (`DisputeValidationService.continueOtherChecks`).
+     */
+    public async getAuditingData(
         forkId: ForkId,
-        encodedStateProof: string
-    ): { isPartial: boolean; encodedAuditingData: string } {
+        encodedStateProof: string,
+        options?: { disputeLatestInboundMessageBlockHash?: Hash }
+    ): Promise<{ isPartial: boolean; encodedAuditingData: string }> {
         const { isPartial, auditingData } =
-            this.service.disputeManager.getAuditingData(
+            await this.service.disputeManager.getAuditingData(
                 forkId,
-                Codec.decode(encodedStateProof, Type.StateProof)
+                Codec.decode(encodedStateProof, Type.StateProof),
+                options
             );
         return {
             isPartial,

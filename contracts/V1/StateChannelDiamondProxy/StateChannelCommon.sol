@@ -362,21 +362,6 @@ contract StateChannelCommon is StateChannelManagerStorage, StateChannelManagerEv
         return previousBlockHash == upperSnapshot.latestOutboundMessageBlockHash;
     }
 
-    function _isSnapshotLinkedToLatestBlock(Dispute memory dispute, StateSnapshot memory latestStateSnapshot)
-        internal
-        pure
-        returns (bool)
-    {
-        bytes32 snapshotHash = keccak256(abi.encode(latestStateSnapshot));
-
-        (bool hasBlock, Block memory latestBlock) = _getLatestBlock(dispute.input.stateProof);
-        if (hasBlock) {
-            return latestBlock.stateSnapshotHash == snapshotHash;
-        }
-
-        return dispute.input.forkId == keccak256(abi.encode(latestStateSnapshot.snapshotData));
-    }
-
     function _isSnapshotLinkedToBlock(Block memory blockData, StateSnapshot memory stateSnapshot)
         internal
         pure

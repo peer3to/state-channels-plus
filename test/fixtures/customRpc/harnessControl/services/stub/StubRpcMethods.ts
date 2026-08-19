@@ -14,7 +14,6 @@ import type { ForkId, Hash, Timestamp } from "@/types/types";
 import type { HarnessControlRpc } from "../../HarnessControlRpc";
 import type {
     DisputeSubmissionFailureSpec,
-    EventSyncFailureProbe,
     PausedConstructDisputeState,
     PausedConstructDisputeStatus,
     PausedReductionStatus,
@@ -29,6 +28,9 @@ import type {
     BlockValidationProbeOptions,
     BlockProbeOptions,
     BlockIngestProbe,
+    BlockCalldataRecoveryProbe,
+    InboundRunRecoveryProbe,
+    ReductionChallengeProbe,
     IsDisputedForkProbe
 } from "./StubService";
 import type { StubService } from "./StubService";
@@ -728,6 +730,53 @@ export class StubRpcMethods extends ARpcMethods<P2PManager<HarnessControlRpc>> {
         return true;
     }
 
+    /**
+     * Stop applying processed inbound messages to the local diamond -> its
+     * in-memory EVM falls behind the RPC node while storage stays whole.
+     */
+    public stubLocalDiamondInboundMessages(): boolean {
+        const localDiamond =
+            this.service.sm.diamondStateMachine.localDiamondContract;
+        if (!this.service.stubOriginals.has("localDiamondInboundMessages")) {
+            this.service.stubOriginals.set(
+                "localDiamondInboundMessages",
+                localDiamond.onInboundMessagesProcessed
+            );
+        }
+        localDiamond.onInboundMessagesProcessed = (async () =>
+            undefined) as unknown as typeof localDiamond.onInboundMessagesProcessed;
+        return true;
+    }
+
+    public restoreLocalDiamondInboundMessages(): boolean {
+        const original = this.service.stubOriginals.get(
+            "localDiamondInboundMessages"
+        );
+        if (original === undefined) return false;
+        const localDiamond =
+            this.service.sm.diamondStateMachine.localDiamondContract;
+        localDiamond.onInboundMessagesProcessed =
+            original as typeof localDiamond.onInboundMessagesProcessed;
+        this.service.stubOriginals.delete("localDiamondInboundMessages");
+        return true;
+    }
+
+    /** Park the dispute audit at its on-chain-slashes query until released. */
+    public stubHoldOnChainSlashesQuery(): boolean {
+        this.service.installOnChainSlashesQueryHold();
+        return true;
+    }
+
+    /** Release parked audits and restore the real query. */
+    public restoreOnChainSlashesQuery(): boolean {
+        return this.service.releaseOnChainSlashesQueryHold();
+    }
+
+    /** Resolves once a caller is parked at the hold; parked count. */
+    public waitForHeldOnChainSlashesQuery(): Promise<number> {
+        return this.service.waitForHeldOnChainSlashesQuery();
+    }
+
     public getHeldReductionTaskCount(): number {
         return this.service.heldReductionTasks.length;
     }
@@ -742,8 +791,23 @@ export class StubRpcMethods extends ARpcMethods<P2PManager<HarnessControlRpc>> {
         return true;
     }
 
-    public async probeRejectedEventSyncLog(): Promise<EventSyncFailureProbe> {
-        return this.service.probeRejectedEventSyncLog();
+    public async probeDisputeReductionChallenge(
+        reducedForkId: ForkId
+    ): Promise<ReductionChallengeProbe> {
+        return this.service.probeDisputeReductionChallenge(reducedForkId);
+    }
+
+    public async probeInboundRunRecovery(
+        upperBlockHash: Hash,
+        options?: { failChainQueries?: boolean }
+    ): Promise<InboundRunRecoveryProbe> {
+        return this.service.probeInboundRunRecovery(upperBlockHash, options);
+    }
+
+    public async probeBlockCalldataRecovery(options?: {
+        failChainQueries?: boolean;
+    }): Promise<BlockCalldataRecoveryProbe> {
+        return this.service.probeBlockCalldataRecovery(options);
     }
 
     public async probeConcurrentCalldataRecovery(): Promise<ConcurrentCalldataRecoveryProbe> {
@@ -1196,6 +1260,149 @@ export class StubRpcMethods extends ARpcMethods<P2PManager<HarnessControlRpc>> {
         return this.service.heldSnapshotUpdatedArgs.length;
     }
 
+    /** Hold InboundMessagesProcessed events instead of handling them. */
+    public stubHoldInboundMessageEvents(): boolean {
+        const eventHandler = this.service.sm.eventHandler;
+        if (!this.service.stubOriginals.has("inboundMessageEvents")) {
+            this.service.stubOriginals.set(
+                "inboundMessageEvents",
+                eventHandler.onInboundMessagesProcessed.bind(eventHandler)
+            );
+        }
+        eventHandler.onInboundMessagesProcessed = (async (
+            ...args: unknown[]
+        ) => {
+            this.service.heldInboundMessageArgs.push(args);
+        }) as typeof eventHandler.onInboundMessagesProcessed;
+        return true;
+    }
+
+    /** Restore the handler; optionally replay the held events through it. */
+    public restoreInboundMessageEvents(replay: boolean): boolean {
+        const eventHandler = this.service.sm.eventHandler;
+        const original = this.service.stubOriginals.get("inboundMessageEvents");
+        if (original === undefined) return false;
+        const restored =
+            original as typeof eventHandler.onInboundMessagesProcessed;
+        eventHandler.onInboundMessagesProcessed = restored;
+        this.service.stubOriginals.delete("inboundMessageEvents");
+        const held = this.service.heldInboundMessageArgs.splice(0);
+        if (replay) {
+            for (const args of held) {
+                void (restored as (...a: unknown[]) => Promise<void>)(...args);
+            }
+        }
+        return true;
+    }
+
+    public getHeldInboundMessageCount(): number {
+        return this.service.heldInboundMessageArgs.length;
+    }
+
+    /**
+     * Drop subscribed inbound logs before the scheduler records their key.
+     * Unlike `stubHoldInboundMessageEvents`, which replaces the handler, this
+     * only loses the delivery - an explicit query of the same log still reaches
+     * the real scheduler, so recovery can heal it. `dropCount` caps how many
+     * distinct keys are lost (default: all).
+     */
+    public stubDropInboundMessageLogs(dropCount?: number): boolean {
+        const eventSyncService = this.service.sm.eventSyncService;
+        // an omitted arg crosses the port as null -> normalize to "no limit"
+        this.service.inboundMessageLogDropLimit = dropCount ?? undefined;
+        if (!this.service.stubOriginals.has("inboundMessageLogs")) {
+            this.service.stubOriginals.set(
+                "inboundMessageLogs",
+                eventSyncService.scheduleLog.bind(eventSyncService)
+            );
+        }
+        const original = this.service.stubOriginals.get(
+            "inboundMessageLogs"
+        ) as typeof eventSyncService.scheduleLog;
+        eventSyncService.scheduleLog = async (...args) => {
+            const parsed =
+                this.service.sm.stateChannelManagerContract.interface.parseLog({
+                    topics: args[0].topics,
+                    data: args[0].data
+                });
+            if (parsed?.name === "InboundMessagesProcessed") {
+                const eventKey = `${args[0].transactionHash}:${args[0].index}`;
+                const limit = this.service.inboundMessageLogDropLimit;
+                const dropped = this.service.droppedInboundMessageLogKeys;
+                if (
+                    !dropped.has(eventKey) &&
+                    (limit === undefined || dropped.size < limit)
+                ) {
+                    dropped.add(eventKey);
+                    return;
+                }
+            }
+            return original(...args);
+        };
+        return true;
+    }
+
+    /** Restore scheduling. Dropped subscription payloads are recovered by query. */
+    public restoreInboundMessageLogs(): boolean {
+        const eventSyncService = this.service.sm.eventSyncService;
+        const original = this.service.stubOriginals.get("inboundMessageLogs");
+        if (original === undefined) return false;
+        eventSyncService.scheduleLog =
+            original as typeof eventSyncService.scheduleLog;
+        this.service.stubOriginals.delete("inboundMessageLogs");
+        this.service.droppedInboundMessageLogKeys.clear();
+        this.service.inboundMessageLogDropLimit = undefined;
+        return true;
+    }
+
+    public getDroppedInboundMessageLogCount(): number {
+        return this.service.droppedInboundMessageLogKeys.size;
+    }
+
+    /** Make every provider getLogs throw, so no recovery query can succeed. */
+    public stubFailChainLogQueries(): boolean {
+        this.service.failChainLogQueries();
+        return true;
+    }
+
+    /** Record every provider getLogs span and forward it. */
+    public stubCountChainLogQueries(): boolean {
+        this.service.countChainLogQueries();
+        return true;
+    }
+
+    public getChainLogQueryCount(): number {
+        return this.service.chainLogQueries.length;
+    }
+
+    public restoreChainLogQueries(): boolean {
+        return this.service.restoreChainLogQueries();
+    }
+
+    /** Make onDisputeCommitted throw for every dispatched dispute log. */
+    public stubFailDisputeCommittedHandler(): boolean {
+        this.service.failDisputeCommittedHandler();
+        return true;
+    }
+
+    public restoreDisputeCommittedHandler(): boolean {
+        return this.service.restoreDisputeCommittedHandler();
+    }
+
+    public getFailedDisputeCommittedHandlerCallCount(): number {
+        return this.service.failedDisputeCommittedHandlerCalls;
+    }
+
+    /** Make the dispute-window creation timestamp read throw. */
+    public stubFailDisputeWindowTimestampRead(): boolean {
+        this.service.failDisputeWindowTimestampRead();
+        return true;
+    }
+
+    public restoreDisputeWindowTimestampRead(): boolean {
+        return this.service.restoreDisputeWindowTimestampRead();
+    }
+
     /** Drop subscribed dispute logs before the scheduler records their key. */
     public stubHoldDisputeCommittedEvents(passFirst = true): boolean {
         const eventSyncService = this.service.sm.eventSyncService;
@@ -1269,47 +1476,12 @@ export class StubRpcMethods extends ARpcMethods<P2PManager<HarnessControlRpc>> {
 
     /** Hold subscribed calldata logs before the scheduler records their key. */
     public stubHoldCalldataPostedEvents(): boolean {
-        const eventSyncService = this.service.sm.eventSyncService;
-        if (!this.service.stubOriginals.has("calldataPostedEvents")) {
-            this.service.stubOriginals.set(
-                "calldataPostedEvents",
-                eventSyncService.scheduleLog.bind(eventSyncService)
-            );
-        }
-        const original = this.service.stubOriginals.get(
-            "calldataPostedEvents"
-        ) as typeof eventSyncService.scheduleLog;
-        eventSyncService.scheduleLog = async (...args) => {
-            const parsed =
-                this.service.sm.stateChannelManagerContract.interface.parseLog({
-                    topics: args[0].topics,
-                    data: args[0].data
-                });
-            if (parsed?.name === "BlockCalldataPosted") {
-                const eventKey = `${args[0].transactionHash}:${args[0].index}`;
-                if (!this.service.heldCalldataPostedEventKeys.has(eventKey)) {
-                    // Lose the subscribed delivery once. A later explicit
-                    // query of the same log must reach the real scheduler so
-                    // this stub accurately models missed subscription data.
-                    this.service.heldCalldataPostedEventKeys.add(eventKey);
-                    this.service.notifyCalldataPostedEventHeld();
-                    return;
-                }
-            }
-            return original(...args);
-        };
+        this.service.holdCalldataPostedEvents();
         return true;
     }
 
     public restoreCalldataPostedEvents(): boolean {
-        const eventSyncService = this.service.sm.eventSyncService;
-        const original = this.service.stubOriginals.get("calldataPostedEvents");
-        if (original === undefined) return false;
-        eventSyncService.scheduleLog =
-            original as typeof eventSyncService.scheduleLog;
-        this.service.stubOriginals.delete("calldataPostedEvents");
-        this.service.heldCalldataPostedEventKeys.clear();
-        return true;
+        return this.service.restoreCalldataPostedEvents();
     }
 
     /** Resolves once a subscribed calldata log has been held. */

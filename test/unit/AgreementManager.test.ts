@@ -1,6 +1,6 @@
 import { expect } from "chai";
 import { Codec, Type } from "@/utils";
-import type { BlockHeight } from "@/types/types";
+import type { BlockHeight, ForkId } from "@/types/types";
 import { MathTestSession as TestSession } from "@test/harness";
 import { hash as randomHash, randomAddress } from "../factory";
 import { waitFor } from "@test/utils/waitFor";
@@ -877,6 +877,140 @@ describe("Unit: AgreementManager", function () {
             expect(r.bogusDisputeCount).to.equal(0);
         });
 
+        // the reduce applies the chain's inbound run, which a peer whose
+        // InboundMessagesProcessed log never landed cannot walk
+        describe("inbound run the reduce applied", function () {
+            /**
+             * A committed settled-path dispute on a fork whose chain inbound
+             * head sits above `laggingIndex`'s store: the top-up of an existing
+             * participant keeps the head final-by-everyone, so no auditing data
+             * is posted and nothing back-fills the missing block.
+             */
+            const stageCommittedDisputeOverInboundGap = async (
+                h: ReturnType<typeof TestSession.getHarness>,
+                laggingIndex: number
+            ) => {
+                const observers = h.peers
+                    .map((peer) => peer.index)
+                    .filter((index) => index !== laggingIndex);
+                await h.join.forceInboundJoinWait({
+                    participant: h.getPeer(observers[0]).address,
+                    observePeerIndices: observers
+                });
+                const offenderIndex = (await h.query.getNextPeerToWrite())
+                    .index;
+                const disputerIndex = observers.find(
+                    (index) => index !== offenderIndex
+                )!;
+                await h.byzantine.submitInvalidStateTransitionBlock(
+                    offenderIndex
+                );
+                await h.assert.dispute.initiatedAndCommitedWait({
+                    peersIndices: [disputerIndex],
+                    expectedCount: 1,
+                    initiatedWithAuditingData: false
+                });
+                return { forkId: h.activeForkId!, disputerIndex };
+            };
+
+            /** reduce.staticCall over the window, then getReduceData for it. */
+            const readReduceData = (
+                h: ReturnType<typeof TestSession.getHarness>,
+                peerIndex: number,
+                forkId: ForkId
+            ) =>
+                h.execOnHost(
+                    h.getPeer(peerIndex),
+                    async (sm, args) => {
+                        const disputes =
+                            await sm.reductionManager.getSyncedForkDisputes(
+                                args.forkId
+                            );
+                        if (!disputes) {
+                            throw new Error(
+                                "expected a locally readable dispute window"
+                            );
+                        }
+                        const reducedOutput =
+                            await sm.stateChannelManagerContract.reduce.staticCall(
+                                disputes
+                            );
+                        let threw = "";
+                        let blockCount: number | null = null;
+                        try {
+                            const reduceData =
+                                await sm.agreementManager.getReduceData(
+                                    args.forkId,
+                                    reducedOutput
+                                );
+                            blockCount = reduceData
+                                ? reduceData.inboundMessageBlocks.length
+                                : null;
+                        } catch (e) {
+                            threw = e instanceof Error ? e.message : String(e);
+                        }
+                        return {
+                            threw,
+                            blockCount,
+                            disputeCount: disputes.length
+                        };
+                    },
+                    { forkId },
+                    { timeoutMs: 40000 }
+                );
+
+            it("unrecoverable reduce run → undefined, not a throw", async function () {
+                const h = TestSession.getHarness();
+                await h.setup(3);
+                await h.lifecycle.openChannel();
+                await h.transition.advanceState({
+                    count: 2,
+                    waitForFinalization: true
+                });
+                await h.assert.sync.peersInSyncWait();
+                const lagging = 2;
+                const held = await h.rpcStub.holdInboundMessageEvents(lagging);
+                const { forkId } = await stageCommittedDisputeOverInboundGap(
+                    h,
+                    lagging
+                );
+
+                const r = await readReduceData(h, lagging, forkId);
+
+                expect(r.disputeCount).to.be.greaterThan(0);
+                // it used to throw "Block hash ... not found in storage", which
+                // reached abort() through tryReduce -> failCompletion
+                expect(r.threw).to.equal("");
+                expect(r.blockCount).to.equal(null);
+                await held.release({ replay: false });
+            });
+
+            it("recoverable reduce run → the full applied run", async function () {
+                const h = TestSession.getHarness();
+                await h.setup(3);
+                await h.lifecycle.openChannel();
+                await h.transition.advanceState({
+                    count: 2,
+                    waitForFinalization: true
+                });
+                await h.assert.sync.peersInSyncWait();
+                const lagging = 2;
+                const dropped = await h.rpcStub.dropInboundMessageLogs(lagging);
+                const { forkId, disputerIndex } =
+                    await stageCommittedDisputeOverInboundGap(h, lagging);
+                await dropped.waitUntilDropped();
+
+                const lagged = await readReduceData(h, lagging, forkId);
+                const healthy = await readReduceData(h, disputerIndex, forkId);
+
+                expect(lagged.threw).to.equal("");
+                // the same run a peer that never lost the log computes
+                expect(lagged.blockCount).to.be.greaterThan(0);
+                expect(lagged.blockCount).to.equal(healthy.blockCount);
+                await dropped.release();
+            });
+        });
+
         // getReduceData's common branch (reduce keeps a real block -> resolve
         // its stored snapshot) is on the reduce path -> covered by the dispute
         // E2E suite. only the genesis branch below is a scenario that suite
@@ -908,6 +1042,12 @@ describe("Unit: AgreementManager", function () {
                         sm.forkId,
                         reducedOutput
                     );
+                    // the genesis reduce spans no inbound blocks, so the run is
+                    // trivially available - a miss here is a real regression
+                    if (!reduceData)
+                        throw new Error(
+                            "expected reduce data for the genesis reduce"
+                        );
                     const genesis =
                         sm.storage.stateSnapshots.getGenesisSnapshotByForkId(
                             sm.forkId

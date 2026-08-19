@@ -143,25 +143,44 @@ export default class BlockProductionService {
     private getPendingInboundMessageBlocks(
         previousStateSnapshot: StateSnapshot
     ): MessageBlockStruct[] {
-        const latestStoredHash =
-            this.stateManager.storage.inboundMessages.getLatestBlockHash();
-        if (!latestStoredHash) {
-            return [];
-        }
-
         const previousHash =
-            previousStateSnapshot.snapshotData.latestInboundMessageBlockHash;
+            previousStateSnapshot.latestInboundMessageBlockHash;
 
-        if (previousHash && latestStoredHash === previousHash) {
+        // a store still behind the snapshot has nothing pending - walking from
+        // its head would run past previousHash and return the whole chain
+        const head = this.stateManager.storage.inboundMessages.headNotBehind(
+            previousHash,
+            previousStateSnapshot.latestInboundMessageBlockHeight
+        );
+        if (head.hash === previousHash) {
             return [];
         }
 
-        return this.stateManager.storage.inboundMessages.getMessageBlocksInRange(
-            {
-                upperBlockHash: latestStoredHash,
-                lowerBlockHash: previousHash ?? ethers.ZeroHash
-            }
-        );
+        const run =
+            this.stateManager.storage.inboundMessages.tryGetMessageBlocksInRange(
+                {
+                    upperBlockHash: head.hash,
+                    lowerBlockHash: previousHash ?? ethers.ZeroHash
+                }
+            );
+        if (run.missingBlockHash) {
+            // our head sits above an inbound log we never received. a truncated
+            // run is not anchored to the snapshot -> carry none, the next block
+            // picks them up once the log lands
+            this.logger.warn(
+                "Inbound run incomplete; producing without pending inbound messages",
+                {
+                    inboundRun: LoggerUtils.getInboundRunMetadata({
+                        upperBlockHash: head.hash,
+                        lowerBlockHash: previousHash ?? ethers.ZeroHash,
+                        blocks: run.blocks,
+                        missingBlockHash: run.missingBlockHash
+                    })
+                }
+            );
+            return [];
+        }
+        return run.blocks;
     }
 
     private async logPlayTransaction(tx: TransactionStruct): Promise<string> {
