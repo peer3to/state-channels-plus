@@ -1,6 +1,7 @@
 import { expect } from "chai";
 import { ZeroAddress } from "ethers";
 import { Codec, hash, Type } from "@/utils";
+import type { Hash } from "@/types/types";
 import { MathTestSession as TestSession } from "@test/harness";
 
 describe("Unit: DisputeManager", function () {
@@ -130,14 +131,173 @@ describe("Unit: DisputeManager", function () {
             expect(r.inboundHeight).to.equal(r.storedInboundHeight);
         });
 
-        // no test: `createDispute - isPartial auditingData` is unreachable from
-        // constructDispute. a peer's own proof only spans data it stored - a
-        // missing milestone snapshot already throws inside getStateProof
-        // ("Milestone built but corresponding snapshot not found") and the head
-        // snapshot is required by the "missing state snapshot" guard above it.
-        // getAuditingData only goes partial for a proof handed in by someone
-        // else, which is the audit path covered under `getAuditingData`.
-        it.skip("own proof missing referenced data → isPartial auditingData (unreachable)", function () {});
+        it("inbound chain event lagging the pinned snapshot → the anchor comes from the snapshot, not the stale store head", async function () {
+            const h = TestSession.getHarness();
+            await h.setup(3);
+            // held from before the channel opens -> peer 2's inbound store head
+            // never moves while ingest advances its snapshot to inbound block 2
+            const lagging = 2;
+            const held = await h.rpcStub.holdInboundMessageEvents(lagging);
+            await h.lifecycle.openChannel();
+            const forkId = h.activeForkId!;
+
+            await h.join.forceInboundJoinWait({
+                participant: h.getPeer(0).address,
+                observePeerIndices: [0, 1]
+            });
+            // writers are peers 0 and 1 -> the lagging peer only ingests
+            await h.transition.advanceState({
+                count: 2,
+                waitForFinalization: true
+            });
+            await h.assert.sync.peersInSyncWait();
+
+            const r = await h.execOnHost(
+                h.getPeer(lagging),
+                async (sm, args) => {
+                    const { dispute, auditingData } =
+                        await sm.disputeManager.constructDispute(args.forkId);
+                    // real oracle: the honest peer's own dispute must not be
+                    // provably slashable by the proof the auditors run
+                    const slashable =
+                        await sm.diamondStateMachine.localDiamondContract.isDisputeInboundAnchorBehindLatestState.staticCall(
+                            dispute,
+                            auditingData.latestStateSnapshot
+                        );
+                    const snapshotData =
+                        auditingData.latestStateSnapshot.snapshotData;
+                    return {
+                        slashable,
+                        inboundHash:
+                            dispute.input.latestInboundMessageBlockHash,
+                        inboundHeight: Number(
+                            dispute.input.lastInboundMessageBlockHeight
+                        ),
+                        snapshotInboundHash:
+                            snapshotData.latestInboundMessageBlockHash,
+                        snapshotInboundHeight: Number(
+                            snapshotData.latestInboundMessageBlockHeight
+                        ),
+                        storedInboundHash:
+                            sm.storage.inboundMessages.getLatestBlockHash() ??
+                            null
+                    };
+                },
+                { forkId },
+                { timeoutMs: 30000 }
+            );
+
+            // premise - the chain event never landed, so the store head is
+            // behind the snapshot the dispute pins
+            expect(await held.heldCount()).to.be.greaterThan(0);
+            expect(r.storedInboundHash).to.equal(null);
+            expect(r.snapshotInboundHeight).to.equal(2);
+            expect(r.slashable).to.equal(false);
+            // the anchor is copied from the pinned snapshot, not defaulted to
+            // zero by the empty store
+            expect(r.inboundHash).to.equal(r.snapshotInboundHash);
+            expect(r.inboundHeight).to.equal(r.snapshotInboundHeight);
+        });
+
+        it("a fork reduced past a lagging inbound store head → the auditing data still matches what an auditor recomputes", async function () {
+            const h = TestSession.getHarness();
+            const lagging = 3;
+            const attacker = 1;
+            await h.scenario.preDisputeSetup({
+                peerCount: 4,
+                timeConfig: { evidenceTime: 12 }
+            });
+            const forkId = h.activeForkId!;
+
+            // held after the channel-open inbound block landed -> the lagging
+            // peer keeps that block as its store head and learns nothing after it
+            const held = await h.rpcStub.holdInboundMessageEvents(lagging);
+            // no block consumes the join -> only the reduce moves the inbound
+            // head, into a genesis snapshot the lagging peer never ingested.
+            // a pending joiner also keeps the head not-final-by-everyone, so
+            // disputes post auditing data and the lagging peer can still audit
+            await h.join.forceInboundJoinWait({
+                observePeerIndices: [0, 1, 2]
+            });
+
+            // the invalid block carries no inbound run of its own, so the only
+            // inbound movement in this scenario is the reduce's
+            await h.byzantine.submitInvalidStateTransitionBlock(attacker);
+            const { newForkId } = await h.dispute.resolveDisputeWait({
+                forkId,
+                forkSettleTimeoutMs: 20000,
+                // the pending joiner the reduce admits is not one of the peers
+                syntheticOnChainParticipants: 1
+            });
+
+            const disputer = h.control(h.getPeer(lagging));
+            const genesis = Codec.decode(
+                (await disputer.dispute
+                    .getGenesisSnapshotStruct(newForkId)
+                    .request())!.encodedSnapshot,
+                Type.StateSnapshot
+            );
+            const storedHead = await disputer.query
+                .getLatestInboundMessageHash()
+                .request();
+            const storedHeight = await disputer.query
+                .getInboundLatestHeight()
+                .request();
+
+            // premise - a non-empty store head, strictly below the inbound head
+            // the new fork's genesis snapshot sits on. an empty store hides the
+            // divergence: both bounds yield []
+            expect(await held.heldCount()).to.be.greaterThan(0);
+            expect(storedHead).to.not.equal(null);
+            expect(storedHeight).to.equal(1);
+            expect(
+                Number(genesis.snapshotData.latestInboundMessageBlockHeight)
+            ).to.equal(2);
+
+            const { encodedDispute } = await disputer.dispute
+                .constructDispute(newForkId)
+                .request();
+            const dispute = Codec.decode(encodedDispute, Type.Dispute);
+            const encodedStateProof = Codec.encode(
+                dispute.input.stateProof,
+                Type.StateProof
+            ) as string;
+            const statedInboundHash = dispute.input
+                .latestInboundMessageBlockHash as Hash;
+            expect(statedInboundHash).to.equal(
+                genesis.snapshotData.latestInboundMessageBlockHash
+            );
+
+            // a synced auditor recomputes from the hash the dispute states
+            const audited = await h
+                .control(h.getPeer(0))
+                .dispute.getAuditingData(newForkId, encodedStateProof, {
+                    disputeLatestInboundMessageBlockHash: statedInboundHash
+                })
+                .request();
+            expect(audited.isPartial).to.equal(false);
+            expect(hash(audited.encodedAuditingData)).to.equal(
+                dispute.input.disputeAuditingDataHash
+            );
+
+            // unbounded falls back to the raw store head -> different bytes.
+            // the stated hash is what keeps disputer and auditors agreeing
+            const unbounded = await disputer.dispute
+                .getAuditingData(newForkId, encodedStateProof)
+                .request();
+            expect(hash(unbounded.encodedAuditingData)).to.not.equal(
+                dispute.input.disputeAuditingDataHash
+            );
+        });
+
+        // the snapshot causes of `createDispute - isPartial auditingData` stay
+        // unreachable from constructDispute: a missing milestone snapshot
+        // already throws inside getStateProof ("Milestone built but
+        // corresponding snapshot not found") and the head snapshot is required
+        // by the "missing state snapshot" guard above it. the one reachable
+        // cause is an inbound run the peer's own head sits above and recovery
+        // cannot close - covered by the mid-gap case under `getAuditingData`.
+        it.skip("own proof missing a referenced snapshot → isPartial auditingData (unreachable)", function () {});
 
         it("a peer behind the head → constructDispute builds a complete dispute over what it has", async function () {
             const h = TestSession.getHarness();
@@ -306,7 +466,7 @@ describe("Unit: DisputeManager", function () {
                         height
                     );
                     const { isPartial, auditingData } =
-                        sm.disputeManager.getAuditingData(
+                        await sm.disputeManager.getAuditingData(
                             args.forkId,
                             stateProof
                         );
@@ -358,6 +518,168 @@ describe("Unit: DisputeManager", function () {
             expect(synced.isPartial).to.equal(false);
         });
 
+        // the inbound run the dispute names is rebuilt from the auditor's own
+        // store, so an auditor that never received the log has to recover it
+        describe("inbound run", function () {
+            /**
+             * A settled-path dispute from `disputerIndex` whose stated inbound
+             * head the lagging peer does not hold. Returns what an auditor needs
+             * to recompute the run.
+             */
+            const stageStatedInboundHead = async (
+                h: ReturnType<typeof TestSession.getHarness>,
+                laggingIndex: number,
+                disputerIndex: number
+            ) => {
+                await h.join.forceInboundJoinWait({
+                    participant: h.getPeer(disputerIndex).address,
+                    observePeerIndices: h.peers
+                        .map((peer) => peer.index)
+                        .filter((index) => index !== laggingIndex)
+                });
+                const forkId = h.activeForkId!;
+                const { encodedDispute } = await h
+                    .control(h.getPeer(disputerIndex))
+                    .dispute.constructDispute(forkId)
+                    .request();
+                const dispute = Codec.decode(encodedDispute, Type.Dispute);
+                const statedInboundHash = dispute.input
+                    .latestInboundMessageBlockHash as Hash;
+                // premise - the lagging peer cannot walk to the stated head
+                expect(
+                    await h
+                        .control(h.getPeer(laggingIndex))
+                        .query.getInboundMessageBlock(statedInboundHash)
+                        .request()
+                ).to.equal(null);
+                return {
+                    forkId,
+                    dispute,
+                    statedInboundHash,
+                    encodedStateProof: Codec.encode(
+                        dispute.input.stateProof,
+                        Type.StateProof
+                    ) as string
+                };
+            };
+
+            it("recoverable gap → not partial, and the hash still agrees with the disputer's", async function () {
+                const h = TestSession.getHarness();
+                await h.setup(3);
+                await h.lifecycle.openChannel();
+                const lagging = 2;
+                const dropped = await h.rpcStub.dropInboundMessageLogs(lagging);
+                const {
+                    forkId,
+                    dispute,
+                    statedInboundHash,
+                    encodedStateProof
+                } = await stageStatedInboundHead(h, lagging, 0);
+                await dropped.waitUntilDropped();
+
+                const audited = await h
+                    .control(h.getPeer(lagging))
+                    .dispute.getAuditingData(forkId, encodedStateProof, {
+                        disputeLatestInboundMessageBlockHash: statedInboundHash
+                    })
+                    .request();
+
+                expect(audited.isPartial).to.equal(false);
+                // recovery restores the agreement, not just liveness
+                expect(hash(audited.encodedAuditingData)).to.equal(
+                    dispute.input.disputeAuditingDataHash
+                );
+                await dropped.release();
+            });
+
+            it("unrecoverable gap → isPartial true, empty inbound run, no throw", async function () {
+                const h = TestSession.getHarness();
+                await h.setup(3);
+                await h.lifecycle.openChannel();
+                const lagging = 2;
+                // the handler is held, so the recovery's re-dispatch is lost too
+                const held = await h.rpcStub.holdInboundMessageEvents(lagging);
+                const { forkId, statedInboundHash, encodedStateProof } =
+                    await stageStatedInboundHead(h, lagging, 0);
+
+                const audited = await h
+                    .control(h.getPeer(lagging))
+                    .dispute.getAuditingData(forkId, encodedStateProof, {
+                        disputeLatestInboundMessageBlockHash: statedInboundHash
+                    })
+                    .request();
+
+                expect(audited.isPartial).to.equal(true);
+                // it returned instead of throwing "Block hash ... not found"
+                const auditingData = Codec.decode(
+                    audited.encodedAuditingData,
+                    Type.DisputeAuditingData
+                );
+                expect(auditingData.inboundMessageBlocks).to.deep.equal([]);
+                await held.release({ replay: false });
+            });
+
+            it("own head above an unrecoverable mid-gap → PartialAuditingDataError, not a storage throw", async function () {
+                const h = TestSession.getHarness();
+                await h.setup(3);
+                await h.lifecycle.openChannel();
+                const lagging = 2;
+                const forkId = h.activeForkId!;
+                // exactly one log is lost, so the next one lands and moves the
+                // store head above the hole
+                const dropped = await h.rpcStub.dropInboundMessageLogs(
+                    lagging,
+                    {
+                        dropCount: 1
+                    }
+                );
+                for (const participantIndex of [0, 1]) {
+                    await h.join.forceInboundJoinWait({
+                        participant: h.getPeer(participantIndex).address,
+                        observePeerIndices: [0, 1]
+                    });
+                }
+                await dropped.waitUntilDropped();
+
+                const laggingCtl = h.control(h.getPeer(lagging));
+                await laggingCtl.stub.stubFailChainLogQueries().request();
+                const r = await h.execOnHost(
+                    h.getPeer(lagging),
+                    async (sm, args) => {
+                        let threw = "";
+                        let errorName = "";
+                        try {
+                            await sm.disputeManager.constructDispute(
+                                args.forkId
+                            );
+                        } catch (e) {
+                            threw = e instanceof Error ? e.message : String(e);
+                            errorName =
+                                e instanceof Error ? e.constructor.name : "";
+                        }
+                        return {
+                            threw,
+                            errorName,
+                            storedHead:
+                                sm.storage.inboundMessages.getLatestBlockHash() ??
+                                null
+                        };
+                    },
+                    { forkId },
+                    { timeoutMs: 30000 }
+                );
+                await laggingCtl.stub.restoreChainLogQueries().request();
+
+                // premise - the head moved even though a log below it is missing
+                expect(r.storedHead).to.not.equal(null);
+                // the named contract canConstructMoreEvidence catches, and not
+                // the storage walk's throw
+                expect(r.errorName).to.equal("PartialAuditingDataError");
+                expect(r.threw).to.not.contain("not found in storage");
+                await dropped.release();
+            });
+        });
+
         it("an empty state proof → latest state snapshot falls back to genesis, not partial", async function () {
             const h = TestSession.getHarness();
             await h.lifecycle.start(3, 0); // no blocks -> empty proof at height 0
@@ -371,7 +693,7 @@ describe("Unit: DisputeManager", function () {
                         0
                     );
                     const { isPartial, auditingData } =
-                        sm.disputeManager.getAuditingData(
+                        await sm.disputeManager.getAuditingData(
                             args.forkId,
                             stateProof
                         );

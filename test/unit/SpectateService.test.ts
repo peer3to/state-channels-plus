@@ -12,33 +12,18 @@ describe("Unit: SpectateService", function () {
         it("committed dispute missing locally → recovers before generating the payload", async function () {
             const h = TestSession.getHarness();
             const observerIndex = 0;
-            const maliciousPeerIndex = 2;
-
-            await h.lifecycle.start(4, 2);
-            const forkId = h.activeForkId!;
-
-            // hold the observer's own scheduled reduction so it can't
-            // recover the missing dispute in the background before this
-            // test's generateSyncPayload call gets to observe the gap
-            const race = await h.rpcStub.holdReductionRace(observerIndex);
 
             // the observer's own dispute against the fault is created
             // locally (flips isForkDisputed regardless of event delivery),
             // but only the FIRST externally-arriving dispute event is let
             // through - a later honest disputer's commitment stays
             // genuinely missing from local storage
-            const restoreEvents = await h.rpcStub.holdDisputeCommittedEvents(
-                observerIndex,
-                { passFirst: true }
-            );
-
-            await h.byzantine.submitInvalidStateTransitionBlock(
-                maliciousPeerIndex
-            );
-            await h.assert.dispute.initiatedWait();
-            // exclude the observer - its own onDisputeCommitted delivery is
-            // deliberately held back except for the first event
-            await h.assert.dispute.committedWait({ peersIndices: [1, 3] });
+            const { forkId, race, restoreEvents } =
+                await h.scenario.disputeWithSuppressedCommitEvents({
+                    observerIndex,
+                    maliciousPeerIndex: 2,
+                    passFirst: true
+                });
 
             const staged = await h.execOnHost(
                 h.getPeer(observerIndex),
@@ -153,6 +138,70 @@ describe("Unit: SpectateService", function () {
             await restoreEvents(false);
         });
 
+        // no test: "reduce data unavailable -> refuse to serve" needs the local
+        // EVM mirror's inbound head to sit above what TS storage holds, because
+        // computeReductionLocally takes the reduced inbound head from the mirror
+        // (DisputeVerificationFacet.sol:109, channelBalances) while
+        // getReduceData walks TS storage. No flow produces that split:
+        // EventHandler.onInboundMessagesProcessed writes storage first and the
+        // mirror second, so the mirror is never ahead. The one route that could
+        // break the tie is onChannelStorageCleared, which moves the mirror's
+        // inbound head without storing the block - it needs a real on-chain
+        // clear to stage. The undefined outcome itself is pinned by
+        // "Unit: AgreementManager ... unrecoverable reduce run -> undefined".
+        it.skip("reduce data unavailable for a disputed window → payload refused (needs a mirror ahead of storage)", function () {});
+
+        // the sibling gap that IS stageable: the window's own disputes are
+        // on-chain but unreadable locally. we must not serve a proof we could
+        // not build - and must not throw either, which is what the old
+        // "Disputes unavailable after event recovery" did
+        it("dispute window unavailable → payload refused, no throw", async function () {
+            const h = TestSession.getHarness();
+            const observerIndex = 0;
+            const { forkId, race, restoreEvents } =
+                await h.scenario.disputeWithSuppressedCommitEvents({
+                    observerIndex,
+                    maliciousPeerIndex: 2,
+                    passFirst: true
+                });
+
+            // blinded recovery: the missing dispute can never be recovered
+            const blinded = await h.rpcStub.failChainLogQueries(observerIndex);
+            let threw = "";
+            let syncResult: unknown = "unset";
+            try {
+                syncResult = await h
+                    .control(h.getPeer(observerIndex))
+                    .spectate.generateSyncPayload(h.channelId!, forkId, 0)
+                    .request();
+            } catch (e) {
+                threw = e instanceof Error ? e.message : String(e);
+            }
+            await blinded.restore();
+
+            expect(
+                threw,
+                "generateSyncPayload must refuse, not throw"
+            ).to.equal("");
+            expect(
+                syncResult,
+                "a window we cannot read must not be served as a proof"
+            ).to.be.null;
+            expect(
+                await h
+                    .control(h.getPeer(observerIndex))
+                    .query.getDisputeFraudProofTypes()
+                    .request()
+            ).to.deep.equal([]);
+
+            await race.release({
+                replayEvents: false,
+                runHeldTasks: false,
+                keepTasksHeld: true
+            });
+            await restoreEvents(false);
+        });
+
         // the sibling above lets the first dispute event through, so the
         // responder's local EVM flips isForkDisputed on its own. with EVERY
         // dispute event held the local mirror still says "not disputed" while
@@ -162,24 +211,13 @@ describe("Unit: SpectateService", function () {
         it("all dispute events suppressed → still declines the disputed fork instead of proving it", async function () {
             const h = TestSession.getHarness();
             const observerIndex = 0;
-            const maliciousPeerIndex = 2;
-
-            await h.lifecycle.start(4, 2);
-            const forkId = h.activeForkId!;
-
-            const race = await h.rpcStub.holdReductionRace(observerIndex);
 
             // nothing gets through - the observer never learns of any dispute
-            const restoreEvents = await h.rpcStub.holdDisputeCommittedEvents(
-                observerIndex,
-                { passFirst: false }
-            );
-
-            await h.byzantine.submitInvalidStateTransitionBlock(
-                maliciousPeerIndex
-            );
-            await h.assert.dispute.initiatedWait();
-            await h.assert.dispute.committedWait({ peersIndices: [1, 3] });
+            const { forkId, race, restoreEvents } =
+                await h.scenario.disputeWithSuppressedCommitEvents({
+                    observerIndex,
+                    maliciousPeerIndex: 2
+                });
 
             const staged = await h.execOnHost(
                 h.getPeer(observerIndex),

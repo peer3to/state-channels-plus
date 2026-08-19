@@ -507,7 +507,7 @@ describe("E2E: Join channel race conditions", function () {
             const state = await h.execOnHost(
                 participant,
                 async (sm) => ({
-                    status: sm.getStatus(),
+                    status: sm.status,
                     isDisposed: sm.isDisposed,
                     joinSubmissionHeight:
                         sm.storage.forceJoin.getJoinSubmissionBlockHeight()

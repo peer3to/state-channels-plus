@@ -12,6 +12,8 @@ export type ForceInboundJoinOptions = {
     timeoutMs?: number;
     waitForHonestPeersObserve?: boolean;
     participant?: string;
+    /** Peers that must observe the new inbound block; defaults to all honest. */
+    observePeerIndices?: number[];
 };
 
 export type PreparedForceInboundJoin = {
@@ -199,7 +201,7 @@ export class MathJoinActions extends JoinActions {
         forceJoin: PreparedForceInboundJoin,
         options?: Pick<
             ForceInboundJoinOptions,
-            "timeoutMs" | "waitForHonestPeersObserve"
+            "timeoutMs" | "waitForHonestPeersObserve" | "observePeerIndices"
         >
     ): Promise<{ participant: string }> {
         const timeoutMs =
@@ -213,7 +215,8 @@ export class MathJoinActions extends JoinActions {
         if (waitForHonestPeersObserve) {
             await this.harness.assert.storage.honestPeersObserveInboundMessageWait(
                 {
-                    previousLatestHash,
+                    previousLatestHash: previousLatestHash ?? undefined,
+                    peerIndices: options?.observePeerIndices,
                     timeoutMs
                 }
             );

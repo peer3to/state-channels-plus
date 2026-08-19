@@ -1,5 +1,6 @@
 import { Logger } from "@/utils";
 import type { ForkId } from "@/types/types";
+import type { Status } from "@/types";
 import { PeerTestHarness } from "@test/fixtures/PeerTestHarness";
 import type { HarnessControlRpc } from "@test/fixtures/customRpc/harnessControl/HarnessControlRpc";
 import type {
@@ -296,6 +297,124 @@ export class RpcStubActions<
     }
 
     /**
+     * Blind a peer's log recovery: every `provider.getLogs` throws, so no
+     * recovery query can succeed. Subscribed deliveries are unaffected - they
+     * arrive over `eth_subscribe`, never through `getLogs`.
+     */
+    async failChainLogQueries(peerIndex: number): Promise<{
+        restore: () => Promise<void>;
+    }> {
+        const ctl = () =>
+            this.harness.control(this.harness.getPeer(peerIndex)).stub;
+        await ctl().stubFailChainLogQueries().request();
+        this.logger.debug(`Failing chain log queries on peer ${peerIndex}`);
+        return {
+            restore: async () => {
+                await ctl().restoreChainLogQueries().request();
+            }
+        };
+    }
+
+    /**
+     * Make a peer's onDisputeCommitted throw -> every dispute log dispatched
+     * to it fails, a recovery's re-dispatch included.
+     */
+    async failDisputeCommittedHandler(peerIndex: number): Promise<{
+        /** Dispatches that reached the failing handler so far. */
+        handlerCalls: () => Promise<number>;
+        restore: () => Promise<void>;
+    }> {
+        const ctl = () =>
+            this.harness.control(this.harness.getPeer(peerIndex)).stub;
+        await ctl().stubFailDisputeCommittedHandler().request();
+        this.logger.debug(`Failing onDisputeCommitted on peer ${peerIndex}`);
+        return {
+            handlerCalls: async () =>
+                await ctl()
+                    .getFailedDisputeCommittedHandlerCallCount()
+                    .request(),
+            restore: async () => {
+                await ctl().restoreDisputeCommittedHandler().request();
+            }
+        };
+    }
+
+    /**
+     * Hold a peer's InboundMessagesProcessed handler -> its chain view of the
+     * inbound chain stops advancing while block ingest keeps running. Models a
+     * lagging chain event: everything downstream of the handler is unapplied.
+     *
+     * This disables the handler, so on-demand inbound recovery cannot heal it
+     * either - recovery re-dispatches the log into the same held handler. Use
+     * it to stage the abstain; use `dropInboundMessageLogs` to stage recovery.
+     */
+    async holdInboundMessageEvents(peerIndex: number): Promise<{
+        /** Chain events held so far. */
+        heldCount: () => Promise<number>;
+        /** Restore the handler; held events replay unless `replay: false`. */
+        release: (options?: { replay?: boolean }) => Promise<void>;
+    }> {
+        const ctl = () =>
+            this.harness.control(this.harness.getPeer(peerIndex)).stub;
+        await ctl().stubHoldInboundMessageEvents().request();
+        this.logger.debug(
+            `Holding InboundMessagesProcessed on peer ${peerIndex}`
+        );
+        return {
+            heldCount: async () =>
+                await ctl().getHeldInboundMessageCount().request(),
+            release: async (options = {}) => {
+                const { replay = true } = options;
+                await ctl().restoreInboundMessageEvents(replay).request();
+            }
+        };
+    }
+
+    /**
+     * Lose a peer's subscribed InboundMessagesProcessed deliveries before the
+     * event scheduler records them. The handler stays live, so an explicit
+     * query of the same log still applies it - this is the fixture on-demand
+     * inbound recovery can heal, unlike `holdInboundMessageEvents`.
+     *
+     * `dropCount: 1` loses one log and lets the next land, which moves the
+     * store head above the hole (`MessageBlockStorage.store` advances on any
+     * height >= the current one).
+     */
+    async dropInboundMessageLogs(
+        peerIndex: number,
+        options: { dropCount?: number } = {}
+    ): Promise<{
+        /** Distinct logs dropped so far. */
+        droppedCount: () => Promise<number>;
+        /**
+         * Wait until `count` deliveries have been lost. The subscription
+         * delivers to this peer independently of the peers a join waits on, so
+         * a test that needs the gap staged must wait for it.
+         */
+        waitUntilDropped: (count?: number, timeoutMs?: number) => Promise<void>;
+        /** Stop dropping; already-dropped logs stay recoverable by query. */
+        release: () => Promise<void>;
+    }> {
+        const ctl = () =>
+            this.harness.control(this.harness.getPeer(peerIndex)).stub;
+        await ctl().stubDropInboundMessageLogs(options.dropCount).request();
+        this.logger.debug(
+            `Dropping InboundMessagesProcessed logs on peer ${peerIndex}`,
+            { dropCount: options.dropCount }
+        );
+        const droppedCount = async () =>
+            await ctl().getDroppedInboundMessageLogCount().request();
+        return {
+            droppedCount,
+            waitUntilDropped: (count = 1, timeoutMs = 15000) =>
+                waitFor(async () => (await droppedCount()) >= count, timeoutMs),
+            release: async () => {
+                await ctl().restoreInboundMessageLogs().request();
+            }
+        };
+    }
+
+    /**
      * Record what `dispute()` uploads on a peer without sending it. With
      * `hold: true` every recorded send parks until `release`, so a second
      * `dispute()` can be observed queueing behind the dispute mutex.
@@ -508,6 +627,57 @@ export class RpcStubActions<
                 .stub.restoreSpectateSync()
                 .request();
         };
+    }
+
+    /**
+     * Stop a peer running the participant-timeout check, so staging is not cut
+     * short by a real timeout dispute. Returns a teardown.
+     */
+    async suppressTimeoutCheck(
+        peerIndex: number
+    ): Promise<() => Promise<void>> {
+        const peer = this.harness.getPeer(peerIndex);
+        await this.harness
+            .control(peer)
+            .stub.stubSuppressTimeoutCheck()
+            .request();
+        return async () => {
+            await this.harness
+                .control(peer)
+                .stub.restoreSuppressTimeoutCheck()
+                .request();
+        };
+    }
+
+    /**
+     * Record every scheduled task's label and delay on a peer; tasks matching
+     * `suppressPrefix` are recorded without running.
+     */
+    async recordScheduledTasks(
+        peerIndex: number,
+        options: { suppressPrefix?: string } = {}
+    ): Promise<{
+        tasks: () => Promise<{ taskName: string; delayMs: number }[]>;
+        restore: () => Promise<void>;
+    }> {
+        const ctl = () =>
+            this.harness.control(this.harness.getPeer(peerIndex)).stub;
+        await ctl().stubRecordScheduledTasks(options.suppressPrefix).request();
+        return {
+            tasks: async () =>
+                (await ctl().getRecordedScheduledTasks().request()).tasks,
+            restore: async () => {
+                await ctl().restoreRecordScheduledTasks().request();
+            }
+        };
+    }
+
+    /** Staging: force a peer's session status (fault injection). */
+    async setPeerStatus(peerIndex: number, status: Status): Promise<void> {
+        await this.harness
+            .control(this.harness.getPeer(peerIndex))
+            .stub.setPeerStatus(status)
+            .request();
     }
 
     async spectateSyncCallCount(peerIndex: number): Promise<number> {

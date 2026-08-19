@@ -6,7 +6,7 @@ import Storage from "@/storage";
 import { Codec, isSubset, Logger, tryDecodeCustomError, Type } from "@/utils";
 import { Address, Bytes, Signature } from "@/types/types";
 
-import DisputeFraudProofService from "./utils/DisputeFraudProofService";
+import DisputeFraudProofService from "./DisputeFraudProofService";
 import {
     DisputeAuditingDataStruct,
     DisputeStruct
@@ -17,9 +17,10 @@ import {
 } from "@typechain-types/contracts/V1/types/DataTypes";
 import DisputeManager from "@/disputeManager";
 import AgreementManager from "@/agreementManager";
-import type StateManager from "./StateManager";
-import DisputeValidationStrategy from "./validationStrategy/DisputeValidationStrategy";
+import type StateManager from "../StateManager";
+import DisputeValidationStrategy from "../validationStrategy/DisputeValidationStrategy";
 import { Block, StateSnapshot, StateProof } from "@/models";
+import { timeoutWaitTime } from "@/types";
 import { LoggerUtils } from "@/utils/LoggerUtils";
 
 export default class DisputeValidationService {
@@ -46,7 +47,7 @@ export default class DisputeValidationService {
         );
     }
 
-    async validateDispute(
+    public async validateDispute(
         dispute: DisputeStruct,
         onChainDisputeAuditingData?: DisputeAuditingDataStruct
     ): Promise<boolean> {
@@ -66,8 +67,12 @@ export default class DisputeValidationService {
                 dispute: LoggerUtils.getDisputeMetadata(dispute)
             });
             if (!dispute.postedAuditingData) {
+                // an undecodable block is never final by everyone -> the empty
+                // proof is fireable here too
+                if (await this.tryCreateLastMilestoneNotFinalProof(dispute))
+                    return false;
                 this.logger.error(
-                    "Skipping dispute audit: undecodable state proof block with no posted auditing data, no fireable fraud proof",
+                    "Skipping dispute audit: undecodable state proof block with no milestones, no fireable fraud proof",
                     { dispute: LoggerUtils.getDisputeMetadata(dispute) }
                 );
                 return true;
@@ -146,16 +151,8 @@ export default class DisputeValidationService {
                 { includeUnfinalizedBlocks: false }
             );
         } else {
-            const milestoneFinalityResult =
-                await this.stateChannelManagerContract.isLastMilestoneFinalByEveryone.staticCall(
-                    dispute
-                );
-            if (!milestoneFinalityResult) {
-                this.disputeFraudProofService.createDisputeLastMilestoneNotFinalAndNoAuditingData(
-                    dispute
-                );
+            if (await this.tryCreateLastMilestoneNotFinalProof(dispute))
                 return false;
-            }
 
             const isLastMilestoneInStorage =
                 this.isLastMilestoneStoredLocally(dispute);
@@ -170,6 +167,88 @@ export default class DisputeValidationService {
             }
         }
         return await this.runStateProofBlocksThroughPipeline(dispute);
+    }
+
+    public persistDisputeDataWithoutAudit(
+        dispute: DisputeStruct,
+        disputeAuditingData: DisputeAuditingDataStruct | undefined,
+        options: { includeUnfinalizedBlocks: boolean }
+    ): void {
+        if (disputeAuditingData) {
+            if (options.includeUnfinalizedBlocks) {
+                this.storage.stateSnapshots.storeStateSnapshot(
+                    StateSnapshot.from(disputeAuditingData.latestStateSnapshot)
+                );
+            }
+            for (const milestoneSnapshot of disputeAuditingData.milestoneSnapshots) {
+                this.storage.stateSnapshots.storeStateSnapshot(
+                    StateSnapshot.from(milestoneSnapshot)
+                );
+            }
+
+            // disputeAuditingData.latestFinalizedStateStateMachineState is
+            // authored by the disputer and verifyStateProof never binds it to
+            // anything. key it by its own keccak256 -> forged bytes cannot land
+            // under the finalized snapshot's stateMachineStateHash, where every
+            // later read of that snapshot would return them as its state
+            if (
+                disputeAuditingData.latestFinalizedStateStateMachineState !== ""
+            ) {
+                this.storage.stateMachineStates.storeStateMachineState(
+                    disputeAuditingData.latestFinalizedStateStateMachineState
+                );
+            }
+
+            for (const messageBlock of disputeAuditingData.inboundMessageBlocks) {
+                this.storage.inboundMessages.store(messageBlock, {
+                    justPersist: true
+                });
+            }
+
+            for (const messageBlock of disputeAuditingData.outboundMessageBlocks) {
+                this.storage.outboundMessages.store(messageBlock, {
+                    justPersist: true
+                });
+            }
+        }
+
+        for (const milestone of dispute.input.stateProof.milestones) {
+            const blockConfirmations = options.includeUnfinalizedBlocks
+                ? milestone.blockConfirmations
+                : milestone.blockConfirmations.slice(0, 1);
+            for (const blockConfirmation of blockConfirmations) {
+                const block = Block.tryFromBlockConfirmation(blockConfirmation);
+                if (!block) continue;
+                this.storage.blocks.storeBlock(block, {
+                    hash: block.hash,
+                    coordinates: block.coordinates,
+                    justPersist: true
+                });
+            }
+        }
+        if (!options.includeUnfinalizedBlocks) return;
+        for (const signedBlock of dispute.input.stateProof.signedBlocks) {
+            const block = Block.tryFromSignedBlock(signedBlock);
+            if (!block) continue;
+            this.storage.blocks.storeBlock(block, {
+                hash: block.hash,
+                coordinates: block.coordinates,
+                justPersist: true
+            });
+        }
+    }
+    private async tryCreateLastMilestoneNotFinalProof(
+        dispute: DisputeStruct
+    ): Promise<boolean> {
+        const isFinal =
+            await this.stateChannelManagerContract.isLastMilestoneFinalByEveryone.staticCall(
+                dispute
+            );
+        if (isFinal) return false;
+        this.disputeFraudProofService.createDisputeLastMilestoneNotFinalAndNoAuditingData(
+            dispute
+        );
+        return true;
     }
 
     private async tryVerifyStateProof(
@@ -209,9 +288,13 @@ export default class DisputeValidationService {
                 this.diamondStateMachine.localDiamondContract,
                 this.logger
             );
-            const isOk = await this.stateManager.onBlockConfirmationStruct(bc, {
-                validationStrategy: disputeStrategy
-            });
+            const isOk =
+                await this.stateManager.blockIngestService.onBlockConfirmationStruct(
+                    bc,
+                    {
+                        validationStrategy: disputeStrategy
+                    }
+                );
             if (!isOk) {
                 if (!this.hasStoredDisputeFraudProof(dispute)) {
                     throw new Error(
@@ -246,9 +329,8 @@ export default class DisputeValidationService {
     ): Promise<boolean> {
         const isValid = true;
 
-        //TODO - quick hack, but the stuff we need SHOULD actually be available
-        const { auditingData: disputeAuditingData } =
-            this.disputeManager.getAuditingData(
+        const { isPartial, auditingData: disputeAuditingData } =
+            await this.disputeManager.getAuditingData(
                 dispute.input.forkId,
                 dispute.input.stateProof,
                 {
@@ -256,6 +338,21 @@ export default class DisputeValidationService {
                         dispute.input.latestInboundMessageBlockHash
                 }
             );
+        if (isPartial) {
+            // we could not rebuild the data this dispute needs - our own missing
+            // history, not the disputer's fraud. abstain: other auditors still
+            // challenge, and a proof built on substituted data would slash an
+            // honest peer
+            this.logger.warn(
+                "Skipping dispute audit: auditing data could not be rebuilt locally",
+                {
+                    dispute: LoggerUtils.getDisputeMetadata(dispute),
+                    auditingData:
+                        LoggerUtils.getAuditingMetadata(disputeAuditingData)
+                }
+            );
+            return true;
+        }
         // TODO move this check above and into its own fraud proof
         if (!dispute.postedAuditingData) {
             const isCorrectLatestState =
@@ -454,7 +551,8 @@ export default class DisputeValidationService {
             if (
                 timeoutTimestamp <
                 previousTimestamp +
-                    this.stateManager.getTimeoutWaitTimeSeconds(
+                    timeoutWaitTime(
+                        this.stateManager.timeConfig,
                         Number(dispute.input.timeout.blockHeight)
                     )
             ) {
@@ -570,7 +668,35 @@ export default class DisputeValidationService {
         );
 
         if (!isInputLinked) {
-            this.logger.error(
+            const isInboundAnchorBehind =
+                await this.diamondStateMachine.localDiamondContract.isDisputeInboundAnchorBehindLatestState.staticCall(
+                    dispute,
+                    disputeAuditingData.latestStateSnapshot
+                );
+
+            if (isInboundAnchorBehind) {
+                // the forward walk can never reach a
+                // lastInboundMessageBlockHeight below the pinned snapshot's
+                // -> objective fraud
+                this.logger.warn(
+                    "Dispute lastInboundMessageBlockHeight is behind its pinned snapshot's latestInboundMessageBlockHeight",
+                    {
+                        dispute: LoggerUtils.getDisputeMetadata(dispute),
+                        auditingData:
+                            LoggerUtils.getAuditingMetadata(disputeAuditingData)
+                    }
+                );
+                this.disputeFraudProofService.createDisputeInboundAnchorBehindLatestState(
+                    dispute,
+                    disputeAuditingData.latestStateSnapshot
+                );
+                return false;
+            }
+
+            // inboundMessageBlocks don't bridge the gap, or the snapshot isn't
+            // linked to the latest block. no fraud proof matches -> skip the
+            // output check rather than submit an unprovable one
+            this.logger.warn(
                 "Skipping dispute output verification because auditing input is not linked to dispute input",
                 {
                     dispute: LoggerUtils.getDisputeMetadata(dispute),
@@ -578,9 +704,7 @@ export default class DisputeValidationService {
                         LoggerUtils.getAuditingMetadata(disputeAuditingData)
                 }
             );
-            throw new Error(
-                "Verify Dispute Output - sanity check - is data linked - failed"
-            );
+            return true;
         }
 
         // verify dispute output
@@ -847,79 +971,6 @@ export default class DisputeValidationService {
                 }
             );
             return false;
-        }
-    }
-
-    public persistDisputeDataWithoutAudit(
-        dispute: DisputeStruct,
-        disputeAuditingData: DisputeAuditingDataStruct | undefined,
-        options: { includeUnfinalizedBlocks: boolean }
-    ): void {
-        if (disputeAuditingData) {
-            if (options.includeUnfinalizedBlocks) {
-                this.storage.stateSnapshots.storeStateSnapshot(
-                    StateSnapshot.from(disputeAuditingData.latestStateSnapshot)
-                );
-            }
-            for (const milestoneSnapshot of disputeAuditingData.milestoneSnapshots) {
-                this.storage.stateSnapshots.storeStateSnapshot(
-                    StateSnapshot.from(milestoneSnapshot)
-                );
-            }
-
-            const latestFinalizedSnapshot =
-                this.agreementManager.getLatestFinalizedSnapshot(
-                    dispute.input.stateProof,
-                    dispute.input.forkId
-                );
-
-            if (
-                disputeAuditingData.latestFinalizedStateStateMachineState !== ""
-            ) {
-                this.storage.stateMachineStates.storeStateMachineState(
-                    disputeAuditingData.latestFinalizedStateStateMachineState,
-                    {
-                        hash: latestFinalizedSnapshot.stateMachineStateHash
-                    }
-                );
-            }
-
-            for (const messageBlock of disputeAuditingData.inboundMessageBlocks) {
-                this.storage.inboundMessages.store(messageBlock, {
-                    justPersist: true
-                });
-            }
-
-            for (const messageBlock of disputeAuditingData.outboundMessageBlocks) {
-                this.storage.outboundMessages.store(messageBlock, {
-                    justPersist: true
-                });
-            }
-        }
-
-        for (const milestone of dispute.input.stateProof.milestones) {
-            const blockConfirmations = options.includeUnfinalizedBlocks
-                ? milestone.blockConfirmations
-                : milestone.blockConfirmations.slice(0, 1);
-            for (const blockConfirmation of blockConfirmations) {
-                const block = Block.tryFromBlockConfirmation(blockConfirmation);
-                if (!block) continue;
-                this.storage.blocks.storeBlock(block, {
-                    hash: block.hash,
-                    coordinates: block.coordinates,
-                    justPersist: true
-                });
-            }
-        }
-        if (!options.includeUnfinalizedBlocks) return;
-        for (const signedBlock of dispute.input.stateProof.signedBlocks) {
-            const block = Block.tryFromSignedBlock(signedBlock);
-            if (!block) continue;
-            this.storage.blocks.storeBlock(block, {
-                hash: block.hash,
-                coordinates: block.coordinates,
-                justPersist: true
-            });
         }
     }
 

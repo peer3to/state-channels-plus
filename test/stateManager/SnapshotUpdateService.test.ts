@@ -11,7 +11,9 @@ describe("SnapshotUpdateService", function () {
             h.getPeer(0),
             async (sm) => {
                 const prepared =
-                    await sm.snapshotUpdateService.prepareUpdateStateSnapshotFork();
+                    await sm.snapshotUpdateService[
+                        "prepareUpdateStateSnapshotFork"
+                    ]();
                 return {
                     canPost: prepared.canPost,
                     callDataCount: prepared.callData.length
@@ -32,10 +34,9 @@ describe("SnapshotUpdateService", function () {
         const result = await h.execOnHost(
             h.getPeer(0),
             async (sm) => {
-                const posted =
-                    await sm.snapshotUpdateService.postStateSnapshotWait(
-                        sm.forkId
-                    );
+                const posted = await sm.snapshotUpdateService[
+                    "postStateSnapshotWait"
+                ](sm.forkId);
                 return {
                     posted: posted !== undefined
                 };
@@ -62,7 +63,9 @@ describe("SnapshotUpdateService", function () {
                 targetPeer,
                 async (sm) => {
                     const prepared =
-                        await sm.snapshotUpdateService.prepareUpdateStateSnapshotFork();
+                        await sm.snapshotUpdateService[
+                            "prepareUpdateStateSnapshotFork"
+                        ]();
                     const posted =
                         await sm.snapshotUpdateService.postStateSnapshot(
                             sm.forkId
@@ -108,14 +111,12 @@ describe("SnapshotUpdateService", function () {
         const result = await h.execOnHost(
             h.getPeer(0),
             async (sm, args) => {
-                const prepared =
-                    await sm.snapshotUpdateService.prepareUpdateSnapshotSameFork(
-                        args.forkId
-                    );
-                const posted =
-                    await sm.snapshotUpdateService.postStateSnapshotWait(
-                        args.forkId
-                    );
+                const prepared = await sm.snapshotUpdateService[
+                    "prepareUpdateSnapshotSameFork"
+                ](args.forkId);
+                const posted = await sm.snapshotUpdateService[
+                    "postStateSnapshotWait"
+                ](args.forkId);
                 return {
                     canPost: prepared.canPost,
                     callDataCount: prepared.callData.length,
@@ -157,7 +158,9 @@ describe("SnapshotUpdateService", function () {
             h.getPeer(0),
             async (sm) => {
                 const prepared =
-                    await sm.snapshotUpdateService.prepareUpdateStateSnapshotFork();
+                    await sm.snapshotUpdateService[
+                        "prepareUpdateStateSnapshotFork"
+                    ]();
                 const parsed =
                     sm.stateChannelManagerContract.interface.parseTransaction({
                         data: prepared.callData[0]

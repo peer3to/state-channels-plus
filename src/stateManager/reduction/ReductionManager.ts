@@ -63,7 +63,7 @@ export default class ReductionManager {
         );
     }
 
-    public cancelScheduledReductions(): void {
+    private cancelScheduledReductions(): void {
         for (const timeout of this.timeouts.values()) {
             this.stateManager.timeoutManager.cancelTask(timeout.handle);
         }
@@ -155,14 +155,14 @@ export default class ReductionManager {
     public computeReduction(
         forkId: ForkId,
         disputes: DisputeStruct[]
-    ): Promise<ReductionComputation> {
+    ): Promise<ReductionComputation | undefined> {
         return this.reductionComputationService.compute(forkId, disputes);
     }
 
     public computeReductionLocally(
         forkId: ForkId,
         disputes: DisputeStruct[]
-    ): Promise<ReductionComputation> {
+    ): Promise<ReductionComputation | undefined> {
         return this.reductionComputationService.computeLocally(
             forkId,
             disputes
@@ -208,7 +208,7 @@ export default class ReductionManager {
                         return false;
                     }
 
-                    await this.stateManager.unsafeSetGenesisState(
+                    await this.stateManager.stateApplicationService.unsafeSetGenesisState(
                         genesis.snapshotData,
                         genesis.encodedState,
                         reducedForkId,
@@ -244,7 +244,7 @@ export default class ReductionManager {
         return installed;
     }
 
-    public getCompletedReduction(
+    private getCompletedReduction(
         forkId: ForkId
     ): CompletedReduction | undefined {
         return this.completions.get(forkId)?.result;
@@ -254,7 +254,9 @@ export default class ReductionManager {
         return this.completions.has(forkId);
     }
 
-    public getSyncedForkDisputes(forkId: ForkId): Promise<DisputeStruct[]> {
+    public getSyncedForkDisputes(
+        forkId: ForkId
+    ): Promise<DisputeStruct[] | undefined> {
         return this.reductionExecutor.getSyncedForkDisputes(forkId);
     }
 

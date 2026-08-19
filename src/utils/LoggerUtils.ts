@@ -16,7 +16,8 @@ import { isEthersResult } from "./EthersResultProxy";
 import type { CustomEvmError } from "./evmErrorHandler";
 import { hash } from "./hash";
 import { difference } from "./set";
-import { Address, BlockOrSnapshot, Bytes, Hash } from "@/types/types";
+import { Address, BlockOrSnapshot, Bytes, ForkId, Hash } from "@/types/types";
+import type { NormalizedDisputeCommitment } from "@/stateManager/eventSync/EventSyncService";
 import {
     DisputeFraudProofType,
     FraudProofType,
@@ -399,7 +400,7 @@ export class LoggerUtils {
         return {
             peerAddress,
             transportType,
-            channelId: stateManager.getChannelId(),
+            channelId: stateManager.channelId,
             forkId: stateManager.forkId.toString()
         };
     }
@@ -521,6 +522,44 @@ export class LoggerUtils {
                 amount: Number(messageBlock.totalBalance.amount),
                 data: String(messageBlock.totalBalance.data)
             }
+        };
+    }
+
+    /**
+     * An inbound-run request and what storage could prove of it: the bounds the
+     * caller asked for, how much came back, and the first hash we do not hold.
+     */
+    static getInboundRunMetadata(run: {
+        upperBlockHash: Hash;
+        lowerBlockHash: Hash;
+        blocks: MessageBlockStruct[];
+        missingBlockHash?: Hash;
+    }) {
+        return {
+            upperBlockHash: this.formatHash(run.upperBlockHash),
+            lowerBlockHash: this.formatHash(run.lowerBlockHash),
+            blockCount: run.blocks.length,
+            missingBlockHash: run.missingBlockHash
+                ? this.formatHash(run.missingBlockHash)
+                : undefined
+        };
+    }
+
+    /**
+     * A fork's dispute window and what local storage could resolve of it: the
+     * committed set's size and the commitments whose dispute we still lack.
+     */
+    static getDisputeWindowMetadata(window: {
+        forkId: ForkId;
+        commitments: readonly Hash[];
+        missingCommitments: readonly NormalizedDisputeCommitment[];
+    }) {
+        return {
+            forkId: this.formatHash(window.forkId),
+            commitmentCount: window.commitments.length,
+            missingCommitments: window.missingCommitments.map((commitment) =>
+                this.formatHash(commitment)
+            )
         };
     }
 

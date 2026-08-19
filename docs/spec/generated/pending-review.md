@@ -5,8 +5,8 @@
 > Any later edit invalidates the record automatically (the file returns to pending as stale).
 
 - Verified (current): **30/527** (6%)
-- Pending (never reviewed): **480**
-- Stale (edited since review): **17**
+- Pending (never reviewed): **475**
+- Stale (edited since review): **22**
 
 ## Stale — edited since engineer review
 
@@ -14,27 +14,32 @@
 
 - [specification/disputes/disputes.md](../specification/disputes/disputes.md) — Luka, 2026-08-14
 
-### implementation (7)
+### implementation (9)
 
+- [implementation/source/contracts/V1/StateChannelDiamondProxy/JoinChannelFacet.sol.md](../implementation/source/contracts/V1/StateChannelDiamondProxy/JoinChannelFacet.sol.md) — Luka, 2026-08-19
 - [implementation/source/src/evm/contractExecutor/worker/ContractExecutorWorkerHostCore.ts.md](../implementation/source/src/evm/contractExecutor/worker/ContractExecutorWorkerHostCore.ts.md) — Luka, 2026-08-15
 - [implementation/source/src/evm/contractExecutor/worker/protocol.ts.md](../implementation/source/src/evm/contractExecutor/worker/protocol.ts.md) — Luka, 2026-08-15
 - [implementation/source/src/evm/contractExecutor/WorkerContractExecutor.ts.md](../implementation/source/src/evm/contractExecutor/WorkerContractExecutor.ts.md) — Luka, 2026-08-15
 - [implementation/source/src/rpc/guards/HandshakeCompletedGuard.ts.md](../implementation/source/src/rpc/guards/HandshakeCompletedGuard.ts.md) — Luka, 2026-08-18
+- [implementation/source/src/rpc/services/joinChannel/JoinChannelService.ts.md](../implementation/source/src/rpc/services/joinChannel/JoinChannelService.ts.md) — Luka, 2026-08-19
 - [implementation/source/src/stateManager/StateManager.ts.md](../implementation/source/src/stateManager/StateManager.ts.md) — Luka, 2026-08-18
 - [implementation/source/src/utils/Codec.ts.md](../implementation/source/src/utils/Codec.ts.md) — Luka, 2026-08-18
 - [implementation/views/architecture/sdk/runtime-and-concurrency.md](../implementation/views/architecture/sdk/runtime-and-concurrency.md) — Luka, 2026-08-15
 
-### verification (9)
+### verification (12)
 
 - [verification/tests/test/e2e/E2E-CustomRpcRequestResponse.test.ts.md](../verification/tests/test/e2e/E2E-CustomRpcRequestResponse.test.ts.md) — Luka, 2026-08-18
+- [verification/tests/test/e2e/E2E-ForceJoinDispute.test.ts.md](../verification/tests/test/e2e/E2E-ForceJoinDispute.test.ts.md) — Luka, 2026-08-19
+- [verification/tests/test/e2e/E2E-JoinChannelRaceConditions.test.ts.md](../verification/tests/test/e2e/E2E-JoinChannelRaceConditions.test.ts.md) — Luka, 2026-08-19
 - [verification/tests/test/e2e/E2E-RuntimeTransportModes.test.ts.md](../verification/tests/test/e2e/E2E-RuntimeTransportModes.test.ts.md) — Luka, 2026-08-18
 - [verification/tests/test/evm/WorkerContractExecutor.test.ts.md](../verification/tests/test/evm/WorkerContractExecutor.test.ts.md) — Luka, 2026-08-15
 - [verification/tests/test/P2PManager.test.ts.md](../verification/tests/test/P2PManager.test.ts.md) — Luka, 2026-08-18
 - [verification/tests/test/rpc/guards/HandshakeCompletedGuard.test.ts.md](../verification/tests/test/rpc/guards/HandshakeCompletedGuard.test.ts.md) — Luka, 2026-08-18
 - [verification/tests/test/rpc/guards/runGuards.test.ts.md](../verification/tests/test/rpc/guards/runGuards.test.ts.md) — Luka, 2026-08-18
-- [verification/tests/test/rpc/joinChannel/JoinChannelSignatureRequest.test.ts.md](../verification/tests/test/rpc/joinChannel/JoinChannelSignatureRequest.test.ts.md) — Luka, 2026-08-18
 - [verification/tests/test/utils/Codec.test.ts.md](../verification/tests/test/utils/Codec.test.ts.md) — Luka, 2026-08-18
 - [verification/tests/test/utils/CrossModuleValues.test.ts.md](../verification/tests/test/utils/CrossModuleValues.test.ts.md) — Luka, 2026-08-18
+- [verification/tests/test/V1/StateChannelDiamondProxy/JoinChannelFacet.t.sol.md](../verification/tests/test/V1/StateChannelDiamondProxy/JoinChannelFacet.t.sol.md) — Luka, 2026-08-19
+- [verification/tests/test/V1/StateChannelDiamondProxy/StateChannelManagerProxyDeposit.t.sol.md](../verification/tests/test/V1/StateChannelDiamondProxy/StateChannelManagerProxyDeposit.t.sol.md) — Luka, 2026-08-19
 
 ## Pending — never reviewed
 
@@ -409,7 +414,7 @@
 - [implementation/views/security/data-availability.md](../implementation/views/security/data-availability.md)
 - [implementation/views/security/trust-model.md](../implementation/views/security/trust-model.md)
 
-### verification (115)
+### verification (110)
 
 - [verification/open-questions.md](../verification/open-questions.md)
 - [verification/README.md](../verification/README.md)
@@ -449,10 +454,8 @@
 - [verification/tests/test/e2e/E2E-DisputeManager.test.ts.md](../verification/tests/test/e2e/E2E-DisputeManager.test.ts.md)
 - [verification/tests/test/e2e/E2E-FinalDispute.test.ts.md](../verification/tests/test/e2e/E2E-FinalDispute.test.ts.md)
 - [verification/tests/test/e2e/E2E-FirstBlockTimestampGrace.test.ts.md](../verification/tests/test/e2e/E2E-FirstBlockTimestampGrace.test.ts.md)
-- [verification/tests/test/e2e/E2E-ForceJoinDispute.test.ts.md](../verification/tests/test/e2e/E2E-ForceJoinDispute.test.ts.md)
 - [verification/tests/test/e2e/E2E-Fuzz-Dispute-MVP.test.ts.md](../verification/tests/test/e2e/E2E-Fuzz-Dispute-MVP.test.ts.md)
 - [verification/tests/test/e2e/E2E-IsForkDisputed.test.ts.md](../verification/tests/test/e2e/E2E-IsForkDisputed.test.ts.md)
-- [verification/tests/test/e2e/E2E-JoinChannelRaceConditions.test.ts.md](../verification/tests/test/e2e/E2E-JoinChannelRaceConditions.test.ts.md)
 - [verification/tests/test/e2e/E2E-MaliciousUpdateSnapshot.test.ts.md](../verification/tests/test/e2e/E2E-MaliciousUpdateSnapshot.test.ts.md)
 - [verification/tests/test/e2e/E2E-ParticipantLifecycle.test.ts.md](../verification/tests/test/e2e/E2E-ParticipantLifecycle.test.ts.md)
 - [verification/tests/test/e2e/E2E-ReductionManager.test.ts.md](../verification/tests/test/e2e/E2E-ReductionManager.test.ts.md)
@@ -483,7 +486,6 @@
 - [verification/tests/test/stateManager/DisputeValidationStrategy.test.ts.md](../verification/tests/test/stateManager/DisputeValidationStrategy.test.ts.md)
 - [verification/tests/test/stateManager/EventSyncService.test.ts.md](../verification/tests/test/stateManager/EventSyncService.test.ts.md)
 - [verification/tests/test/stateManager/ReductionManager.test.ts.md](../verification/tests/test/stateManager/ReductionManager.test.ts.md)
-- [verification/tests/test/stateManager/SnapshotUpdateService.test.ts.md](../verification/tests/test/stateManager/SnapshotUpdateService.test.ts.md)
 - [verification/tests/test/stateManager/StateManagerAbort.test.ts.md](../verification/tests/test/stateManager/StateManagerAbort.test.ts.md)
 - [verification/tests/test/stateManager/StateManagerTimeout.test.ts.md](../verification/tests/test/stateManager/StateManagerTimeout.test.ts.md)
 - [verification/tests/test/stateManager/ValidationService.test.ts.md](../verification/tests/test/stateManager/ValidationService.test.ts.md)
@@ -521,8 +523,6 @@
 - [verification/tests/test/V1/DiamondProxy/UtilityLibrary/SignatureVerification.test.ts.md](../verification/tests/test/V1/DiamondProxy/UtilityLibrary/SignatureVerification.test.ts.md)
 - [verification/tests/test/V1/StateChannelDiamondProxy/DisputeVerificationFacet.t.sol.md](../verification/tests/test/V1/StateChannelDiamondProxy/DisputeVerificationFacet.t.sol.md)
 - [verification/tests/test/V1/StateChannelDiamondProxy/FraudProofFacet.t.sol.md](../verification/tests/test/V1/StateChannelDiamondProxy/FraudProofFacet.t.sol.md)
-- [verification/tests/test/V1/StateChannelDiamondProxy/JoinChannelFacet.t.sol.md](../verification/tests/test/V1/StateChannelDiamondProxy/JoinChannelFacet.t.sol.md)
-- [verification/tests/test/V1/StateChannelDiamondProxy/StateChannelManagerProxyDeposit.t.sol.md](../verification/tests/test/V1/StateChannelDiamondProxy/StateChannelManagerProxyDeposit.t.sol.md)
 - [verification/tests/test/V1/StateChannelDiamondProxy/UtilityFacet.t.sol.md](../verification/tests/test/V1/StateChannelDiamondProxy/UtilityFacet.t.sol.md)
 - [verification/tests/test/V1/StateChannelDiamondProxy/utils/DisputeUtils.t.sol.md](../verification/tests/test/V1/StateChannelDiamondProxy/utils/DisputeUtils.t.sol.md)
 - [verification/tests/test/V1/UniversalDeployment.test.ts.md](../verification/tests/test/V1/UniversalDeployment.test.ts.md)
@@ -536,9 +536,8 @@
 - [specification/peer-communication/rpc.md](../specification/peer-communication/rpc.md) — Luka, 2026-08-18
 - [specification/runtime/execution.md](../specification/runtime/execution.md) — Luka, 2026-08-18
 
-### implementation (15)
+### implementation (13)
 
-- [implementation/source/contracts/V1/StateChannelDiamondProxy/JoinChannelFacet.sol.md](../implementation/source/contracts/V1/StateChannelDiamondProxy/JoinChannelFacet.sol.md) — Luka, 2026-08-19
 - [implementation/source/src/events/EventBus.ts.md](../implementation/source/src/events/EventBus.ts.md) — Luka, 2026-08-18
 - [implementation/source/src/evm/EvmDiamondStateMachine.ts.md](../implementation/source/src/evm/EvmDiamondStateMachine.ts.md) — Luka, 2026-08-15
 - [implementation/source/src/evm/p2pRuntime/P2pRuntimeHost.ts.md](../implementation/source/src/evm/p2pRuntime/P2pRuntimeHost.ts.md) — Luka, 2026-08-15
@@ -549,21 +548,22 @@
 - [implementation/source/src/rpc/RemoteRpcProxy.ts.md](../implementation/source/src/rpc/RemoteRpcProxy.ts.md) — Luka, 2026-08-18
 - [implementation/source/src/rpc/Rpc.ts.md](../implementation/source/src/rpc/Rpc.ts.md) — Luka, 2026-08-18
 - [implementation/source/src/rpc/RpcHandler.ts.md](../implementation/source/src/rpc/RpcHandler.ts.md) — Luka, 2026-08-18
-- [implementation/source/src/rpc/services/joinChannel/JoinChannelService.ts.md](../implementation/source/src/rpc/services/joinChannel/JoinChannelService.ts.md) — Luka, 2026-08-19
 - [implementation/source/src/transport/ATransport.ts.md](../implementation/source/src/transport/ATransport.ts.md) — Luka, 2026-08-18
 - [implementation/source/src/utils/EthersResultProxy.ts.md](../implementation/source/src/utils/EthersResultProxy.ts.md) — Luka, 2026-08-18
 - [implementation/source/src/utils/ObjectChecks.ts.md](../implementation/source/src/utils/ObjectChecks.ts.md) — Luka, 2026-08-18
 
-### verification (11)
+### verification (13)
 
 - [verification/tests/test/e2e/E2E-FraudProofsBlockConfirmation.test.ts.md](../verification/tests/test/e2e/E2E-FraudProofsBlockConfirmation.test.ts.md) — Luka, 2026-08-18
 - [verification/tests/test/e2e/E2E-InitHandshake.test.ts.md](../verification/tests/test/e2e/E2E-InitHandshake.test.ts.md) — Luka, 2026-08-18
 - [verification/tests/test/e2e/E2E-PingService.test.ts.md](../verification/tests/test/e2e/E2E-PingService.test.ts.md) — Luka, 2026-08-18
 - [verification/tests/test/evm/CustomRpcTypes.test.ts.md](../verification/tests/test/evm/CustomRpcTypes.test.ts.md) — Luka, 2026-08-18
 - [verification/tests/test/rpc/ARpcService.test.ts.md](../verification/tests/test/rpc/ARpcService.test.ts.md) — Luka, 2026-08-18
+- [verification/tests/test/rpc/joinChannel/JoinChannelSignatureRequest.test.ts.md](../verification/tests/test/rpc/joinChannel/JoinChannelSignatureRequest.test.ts.md) — Luka, 2026-08-19
 - [verification/tests/test/rpc/Rpc.test.ts.md](../verification/tests/test/rpc/Rpc.test.ts.md) — Luka, 2026-08-18
 - [verification/tests/test/rpc/RpcHandler.test.ts.md](../verification/tests/test/rpc/RpcHandler.test.ts.md) — Luka, 2026-08-18
 - [verification/tests/test/stateManager/EventBus.test.ts.md](../verification/tests/test/stateManager/EventBus.test.ts.md) — Luka, 2026-08-18
+- [verification/tests/test/stateManager/SnapshotUpdateService.test.ts.md](../verification/tests/test/stateManager/SnapshotUpdateService.test.ts.md) — Luka, 2026-08-19
 - [verification/tests/test/transport/ATransport.test.ts.md](../verification/tests/test/transport/ATransport.test.ts.md) — Luka, 2026-08-18
 - [verification/tests/test/unit/EventBus.test.ts.md](../verification/tests/test/unit/EventBus.test.ts.md) — Luka, 2026-08-18
 - [verification/tests/test/utils/EthersResultProxy.test.ts.md](../verification/tests/test/utils/EthersResultProxy.test.ts.md) — Luka, 2026-08-18

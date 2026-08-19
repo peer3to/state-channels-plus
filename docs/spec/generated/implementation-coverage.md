@@ -4,8 +4,8 @@
 
 ## Score
 
-- Specification IDs fully implemented (only `Covered` claims): **199/241** (83%)
-- Source files with a file report: **241/243** (99%)
+- Specification IDs fully implemented (only `Covered` claims): **200/242** (83%)
+- Source files with a file report: **236/258** (91%)
 
 ## Contents
 
@@ -72,3 +72,23 @@ Every file under `src/` and `contracts/` needs one maintained report at
 | --- |
 | [src/cache/index.ts](../../../src/cache/index.ts) |
 | [src/cache/SignerRecoveryCache.ts](../../../src/cache/SignerRecoveryCache.ts) |
+| [src/stateManager/block/BlockCommitService.ts](../../../src/stateManager/block/BlockCommitService.ts) |
+| [src/stateManager/block/BlockProductionService.ts](../../../src/stateManager/block/BlockProductionService.ts) |
+| [src/stateManager/block/index.ts](../../../src/stateManager/block/index.ts) |
+| [src/stateManager/block/SnapshotAssemblyService.ts](../../../src/stateManager/block/SnapshotAssemblyService.ts) |
+| [src/stateManager/chainFallback/CalldataPostingService.ts](../../../src/stateManager/chainFallback/CalldataPostingService.ts) |
+| [src/stateManager/chainFallback/index.ts](../../../src/stateManager/chainFallback/index.ts) |
+| [src/stateManager/chainFallback/ParticipantTimeoutService.ts](../../../src/stateManager/chainFallback/ParticipantTimeoutService.ts) |
+| [src/stateManager/dispute/DisputeFraudProofService.ts](../../../src/stateManager/dispute/DisputeFraudProofService.ts) |
+| [src/stateManager/dispute/DisputeValidationService.ts](../../../src/stateManager/dispute/DisputeValidationService.ts) |
+| [src/stateManager/dispute/index.ts](../../../src/stateManager/dispute/index.ts) |
+| [src/stateManager/eventSync/EventSyncService.ts](../../../src/stateManager/eventSync/EventSyncService.ts) |
+| [src/stateManager/eventSync/index.ts](../../../src/stateManager/eventSync/index.ts) |
+| [src/stateManager/ingest/BlockIngestService.ts](../../../src/stateManager/ingest/BlockIngestService.ts) |
+| [src/stateManager/ingest/BlockQueueManager.ts](../../../src/stateManager/ingest/BlockQueueManager.ts) |
+| [src/stateManager/ingest/index.ts](../../../src/stateManager/ingest/index.ts) |
+| [src/stateManager/ingest/StoredBlockMergeService.ts](../../../src/stateManager/ingest/StoredBlockMergeService.ts) |
+| [src/stateManager/ingest/ValidationService.ts](../../../src/stateManager/ingest/ValidationService.ts) |
+| [src/stateManager/membership/index.ts](../../../src/stateManager/membership/index.ts) |
+| [src/stateManager/membership/MembershipService.ts](../../../src/stateManager/membership/MembershipService.ts) |
+| [src/stateManager/snapshotUpdate/StateApplicationService.ts](../../../src/stateManager/snapshotUpdate/StateApplicationService.ts) |

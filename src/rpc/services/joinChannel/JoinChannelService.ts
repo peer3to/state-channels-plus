@@ -7,13 +7,7 @@ import type {
     JoinChannelStruct,
     SignedJoinChannelStruct
 } from "@typechain-types/contracts/V1/types/DataTypes";
-import type {
-    Address,
-    ChannelId,
-    ForkId,
-    Hash,
-    Signature
-} from "@/types/types";
+import type { ChannelId, ForkId, Hash, Signature } from "@/types/types";
 import { addressesEqual, Codec, SignatureUtils, Type } from "@/utils";
 import StateSnapshot from "@/models/StateSnapshot";
 import Clock from "@/Clock";
@@ -64,9 +58,10 @@ export default class JoinChannelService extends ARpcService<JoinChannelRpcMethod
         );
         const expectedSnapshotHash = snapshot.hash;
         const expectedForkId = snapshot.forkID;
-        const thresholdParticipants = await sm.getOnChainThresholdSet(
-            String(joinChannel.channelId) as ChannelId
-        );
+        const thresholdParticipants =
+            await sm.membershipService.getOnChainThresholdSet(
+                String(joinChannel.channelId) as ChannelId
+            );
         const localAddress = String(sm.signerAddress);
 
         for (const participant of thresholdParticipants) {
@@ -172,7 +167,7 @@ export default class JoinChannelService extends ARpcService<JoinChannelRpcMethod
         }
 
         const sm = this.p2pManager.stateManager;
-        if (String(joinChannel.channelId) !== String(sm.getChannelId())) {
+        if (joinChannel.channelId !== sm.channelId) {
             throw new Error("requestJoinSignature: channel mismatch");
         }
         const chainTime = await Clock.getBlockchainTime();
@@ -191,9 +186,10 @@ export default class JoinChannelService extends ARpcService<JoinChannelRpcMethod
         if (String(snapshot.hash) !== String(expectedSnapshotHash)) {
             throw new Error("requestJoinSignature: snapshot mismatch");
         }
-        const thresholdParticipants = await sm.getOnChainThresholdSet(
-            String(joinChannel.channelId) as ChannelId
-        );
+        const thresholdParticipants =
+            await sm.membershipService.getOnChainThresholdSet(
+                String(joinChannel.channelId) as ChannelId
+            );
         if (
             !thresholdParticipants.some((participant) =>
                 addressesEqual(participant, sm.signerAddress)

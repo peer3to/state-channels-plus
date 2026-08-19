@@ -72,9 +72,9 @@ Lifetime/cleanup: nothing to clean up. The service is a long-lived singleton con
 `P2PManager` ([./README.md](./README.md) §6.8); each dispatch instantiates a fresh stateless
 `JoinChannelRpcMethods` bound to `senderTransport`.
 
-**Note (threshold ownership).** `StateManager.getOnChainThresholdSet` delegates directly to the
-manager contract's `getOnChainThresholdSet` instead of reconstructing eligibility in TypeScript
-([`StateManager`](../../../../../../../src/stateManager/StateManager.ts#L417)). The contract formula
+**Note (threshold ownership).** `MembershipService.getOnChainThresholdSet` delegates directly to
+the manager contract's `getOnChainThresholdSet` instead of reconstructing eligibility in TypeScript
+([`MembershipService`](../../../../../../../src/stateManager/membership/MembershipService.ts)). The contract formula
 is (snapshot participants ∪ pending participants) − on-chain-slashed. `JoinChannelFacet` uses the
 same helper for countersignature verification while retaining the full snapshot ∪ pending union
 for the separate existing-participant check

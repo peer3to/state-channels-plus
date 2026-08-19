@@ -35,7 +35,7 @@ pins, local-signer-in-threshold authority, then countersign the exact encoded by
    window. Otherwise each request uses the smaller of the agreement window and the remaining time.
 4. **Unconditional countersigning of valid requests** — the admission-policy filter is deliberately absent pending [`OQ-10-04YNC4`](../../../../../../specification/open-questions.md#oq-10-04ync4) (code TODO marks the site).
 5. **One chain-owned eligibility formula.** Collector and responder both call
-   `StateManager.getOnChainThresholdSet`, which delegates to the manager contract instead of
+   `MembershipService.getOnChainThresholdSet`, which delegates to the manager contract instead of
    reimplementing snapshot ∪ pending − slashed in TypeScript.
 
 ## Inputs, outputs, state, and side effects

@@ -15,3 +15,16 @@ export function firstBlockGrace(
 ): Timestamp {
     return blockHeight === 0 ? timeConfig.evidenceTime : 0;
 }
+
+// full window a writer gets before it can be timed out at `blockHeight`
+export function timeoutWaitTime(
+    timeConfig: TimeConfig,
+    blockHeight: BlockHeight
+): Timestamp {
+    return (
+        timeConfig.p2pTime +
+        timeConfig.agreementTime +
+        timeConfig.chainFallbackTime +
+        firstBlockGrace(timeConfig, blockHeight)
+    );
+}

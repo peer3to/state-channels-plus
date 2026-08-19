@@ -259,9 +259,10 @@ describe("E2E: Spectate Service", function () {
                     };
                     try {
                         await sm.mutex.lock();
-                        const queuedBlockPromise = sm.onBlockConfirmationStruct(
-                            args.blockConfirmation
-                        );
+                        const queuedBlockPromise =
+                            sm.blockIngestService.onBlockConfirmationStruct(
+                                args.blockConfirmation
+                            );
                         const decoded =
                             sm.p2pManager.localRpc.spectate.decodeSyncPayload(
                                 args.encodedSyncPayload

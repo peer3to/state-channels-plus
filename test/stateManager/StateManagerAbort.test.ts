@@ -23,7 +23,7 @@ describe("StateManager abort", function () {
                 sm.abort();
                 await new Promise((resolve) => setTimeout(resolve, 200));
                 return {
-                    status: sm.getStatus(),
+                    status: sm.status,
                     taskRan,
                     connectedPeerCount: sm.p2pManager.getConnectedPeers().size
                 };
