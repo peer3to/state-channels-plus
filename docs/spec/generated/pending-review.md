@@ -4,15 +4,18 @@
 > its content hash with `SPEC_REVIEWER="Name" node docs/spec/tools/review.js <file...>`.
 > Any later edit invalidates the record automatically (the file returns to pending as stale).
 
-- Verified (current): **30/527** (6%)
-- Pending (never reviewed): **475**
-- Stale (edited since review): **22**
+- Verified (current): **40/527** (8%)
+- Pending (never reviewed): **462**
+- Stale (edited since review): **25**
 
 ## Stale — edited since engineer review
 
-### specification (1)
+### specification (4)
 
 - [specification/disputes/disputes.md](../specification/disputes/disputes.md) — Luka, 2026-08-14
+- [specification/security/trust-model.md](../specification/security/trust-model.md) — Luke Fishman, 2026-08-18
+- [specification/storage/durability.md](../specification/storage/durability.md) — Luke Fishman, 2026-08-17
+- [specification/storage/README.md](../specification/storage/README.md) — Luke Fishman, 2026-08-17
 
 ### implementation (9)
 
@@ -43,7 +46,7 @@
 
 ## Pending — never reviewed
 
-### specification (50)
+### specification (37)
 
 - [specification/disputes/dispute-processing.md](../specification/disputes/dispute-processing.md)
 - [specification/disputes/fraud-proofs.md](../specification/disputes/fraud-proofs.md)
@@ -79,22 +82,9 @@
 - [specification/runtime/configuration.md](../specification/runtime/configuration.md)
 - [specification/runtime/README.md](../specification/runtime/README.md)
 - [specification/runtime/sdk.md](../specification/runtime/sdk.md)
-- [specification/security/data-availability.md](../specification/security/data-availability.md)
-- [specification/security/README.md](../specification/security/README.md)
-- [specification/security/trust-model.md](../specification/security/trust-model.md)
 - [specification/settlement/cross-layer-messages.md](../specification/settlement/cross-layer-messages.md)
 - [specification/settlement/lifecycle.md](../specification/settlement/lifecycle.md)
 - [specification/settlement/README.md](../specification/settlement/README.md)
-- [specification/storage/blocks.md](../specification/storage/blocks.md)
-- [specification/storage/calldata-and-timeouts.md](../specification/storage/calldata-and-timeouts.md)
-- [specification/storage/dispute-evidence.md](../specification/storage/dispute-evidence.md)
-- [specification/storage/durability.md](../specification/storage/durability.md)
-- [specification/storage/message-blocks.md](../specification/storage/message-blocks.md)
-- [specification/storage/participant-changes.md](../specification/storage/participant-changes.md)
-- [specification/storage/progress-markers.md](../specification/storage/progress-markers.md)
-- [specification/storage/queue.md](../specification/storage/queue.md)
-- [specification/storage/README.md](../specification/storage/README.md)
-- [specification/storage/snapshots-and-states.md](../specification/storage/snapshots-and-states.md)
 
 ### implementation (315)
 
@@ -529,12 +519,22 @@
 
 ## Verified — current
 
-### specification (4)
+### specification (14)
 
 - [specification/block-progression/block-processing.md](../specification/block-progression/block-processing.md) — Luka, 2026-08-18
 - [specification/block-progression/README.md](../specification/block-progression/README.md) — Luka, 2026-08-14
 - [specification/peer-communication/rpc.md](../specification/peer-communication/rpc.md) — Luka, 2026-08-18
 - [specification/runtime/execution.md](../specification/runtime/execution.md) — Luka, 2026-08-18
+- [specification/security/data-availability.md](../specification/security/data-availability.md) — Luke Fishman, 2026-08-17
+- [specification/security/README.md](../specification/security/README.md) — Luke Fishman, 2026-08-18
+- [specification/storage/blocks.md](../specification/storage/blocks.md) — Luke Fishman, 2026-08-17
+- [specification/storage/calldata-and-timeouts.md](../specification/storage/calldata-and-timeouts.md) — Luke Fishman, 2026-08-17
+- [specification/storage/dispute-evidence.md](../specification/storage/dispute-evidence.md) — Luke Fishman, 2026-08-17
+- [specification/storage/message-blocks.md](../specification/storage/message-blocks.md) — Luke Fishman, 2026-08-17
+- [specification/storage/participant-changes.md](../specification/storage/participant-changes.md) — Luke Fishman, 2026-08-17
+- [specification/storage/progress-markers.md](../specification/storage/progress-markers.md) — Luke Fishman, 2026-08-17
+- [specification/storage/queue.md](../specification/storage/queue.md) — Luke Fishman, 2026-08-17
+- [specification/storage/snapshots-and-states.md](../specification/storage/snapshots-and-states.md) — Luke Fishman, 2026-08-17
 
 ### implementation (13)
 
