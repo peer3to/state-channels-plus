@@ -7,13 +7,7 @@ import type {
     JoinChannelStruct,
     SignedJoinChannelStruct
 } from "@typechain-types/contracts/V1/types/DataTypes";
-import type {
-    Address,
-    ChannelId,
-    ForkId,
-    Hash,
-    Signature
-} from "@/types/types";
+import type { ChannelId, ForkId, Hash, Signature } from "@/types/types";
 import { addressesEqual, Codec, SignatureUtils, Type } from "@/utils";
 import StateSnapshot from "@/models/StateSnapshot";
 import Clock from "@/Clock";
@@ -50,6 +44,13 @@ export default class JoinChannelService extends ARpcService<JoinChannelRpcMethod
             );
         }
 
+        const initialChainTime = await Clock.getBlockchainTime();
+        if (
+            Number(joinChannel.deadlineTimestamp) <= initialChainTime.timestamp
+        ) {
+            throw new Error("collectJoinChannelConfirmation: join expired");
+        }
+
         const snapshot = StateSnapshot.from(
             await sm.stateChannelManagerContract.getStateSnapshot(
                 joinChannel.channelId
@@ -57,20 +58,10 @@ export default class JoinChannelService extends ARpcService<JoinChannelRpcMethod
         );
         const expectedSnapshotHash = snapshot.hash;
         const expectedForkId = snapshot.forkID;
-        const thresholdParticipants = await sm.getOnChainParticipantUnion(
-            String(joinChannel.channelId) as ChannelId
-        );
-        const { encoded, signature } = await SignatureUtils.signJoinChannel(
-            joinChannel,
-            sm.signer
-        );
-        const signedJoinChannel: SignedJoinChannelStruct = {
-            encodedJoinChannel: encoded,
-            signature: String(signature)
-        };
-        const encodedSignedJoinChannel = String(
-            Codec.encode(signedJoinChannel, Type.SignedJoinChannel)
-        );
+        const thresholdParticipants =
+            await sm.membershipService.getOnChainThresholdSet(
+                String(joinChannel.channelId) as ChannelId
+            );
         const localAddress = String(sm.signerAddress);
 
         for (const participant of thresholdParticipants) {
@@ -87,13 +78,25 @@ export default class JoinChannelService extends ARpcService<JoinChannelRpcMethod
         }
 
         const chainTime = await Clock.getBlockchainTime();
+        const remainingSeconds =
+            Number(joinChannel.deadlineTimestamp) - chainTime.timestamp;
+        if (remainingSeconds <= 0) {
+            throw new Error("collectJoinChannelConfirmation: join expired");
+        }
         const timeoutMs = Math.min(
             sm.timeConfig.agreementTime * 1000,
-            Math.max(
-                1,
-                (Number(joinChannel.deadlineTimestamp) - chainTime.timestamp) *
-                    1000
-            )
+            remainingSeconds * 1000
+        );
+        const { encoded, signature } = await SignatureUtils.signJoinChannel(
+            joinChannel,
+            sm.signer
+        );
+        const signedJoinChannel: SignedJoinChannelStruct = {
+            encodedJoinChannel: encoded,
+            signature: String(signature)
+        };
+        const encodedSignedJoinChannel = String(
+            Codec.encode(signedJoinChannel, Type.SignedJoinChannel)
         );
         const signatures = await Promise.all(
             thresholdParticipants.map(async (participant) => {
@@ -164,7 +167,7 @@ export default class JoinChannelService extends ARpcService<JoinChannelRpcMethod
         }
 
         const sm = this.p2pManager.stateManager;
-        if (String(joinChannel.channelId) !== String(sm.getChannelId())) {
+        if (joinChannel.channelId !== sm.channelId) {
             throw new Error("requestJoinSignature: channel mismatch");
         }
         const chainTime = await Clock.getBlockchainTime();
@@ -183,9 +186,10 @@ export default class JoinChannelService extends ARpcService<JoinChannelRpcMethod
         if (String(snapshot.hash) !== String(expectedSnapshotHash)) {
             throw new Error("requestJoinSignature: snapshot mismatch");
         }
-        const thresholdParticipants = await sm.getOnChainParticipantUnion(
-            String(joinChannel.channelId) as ChannelId
-        );
+        const thresholdParticipants =
+            await sm.membershipService.getOnChainThresholdSet(
+                String(joinChannel.channelId) as ChannelId
+            );
         if (
             !thresholdParticipants.some((participant) =>
                 addressesEqual(participant, sm.signerAddress)

@@ -1,8 +1,15 @@
+// @spec-test-coverage-ignore: shared custom-RPC support manifest; executable evidence is mapped from its test files
 import ARpcMethods from "@/rpc/ARpcMethods";
 import ARpcService from "@/rpc/ARpcService";
 import type P2PManager from "@/P2PManager";
 import type ATransport from "@/transport/ATransport";
 import { HarnessControlRpc } from "./harnessControl/HarnessControlRpc";
+import { ARpcServiceProbeService } from "./aRpcServiceProbe/ARpcServiceProbeService";
+import { ATransportProbeService } from "./aTransportProbe/ATransportProbeService";
+import { RpcHandlerProbeService } from "./rpcHandlerProbe/RpcHandlerProbeService";
+import { P2PManagerProbeService } from "./p2pManagerProbe/P2PManagerProbeService";
+import { HandshakeCompletedGuardProbeService } from "./handshakeCompletedGuardProbe/HandshakeCompletedGuardProbeService";
+import { LoopbackGuardProbeService } from "./loopbackGuardProbe/LoopbackGuardProbeService";
 
 /**
  * Showcase custom RPC: proves typed peer-to-peer custom RPCs work across the
@@ -24,13 +31,26 @@ export type SumResponse = {
 };
 
 export class PingPongRpc extends HarnessControlRpc {
+    aRpcServiceProbe: ARpcServiceProbeService;
+    aTransportProbe: ATransportProbeService;
     pingService: PingService;
     relayService: RelayService;
+    rpcHandlerProbe: RpcHandlerProbeService;
+    p2pManagerProbe: P2PManagerProbeService;
+    handshakeCompletedGuardProbe: HandshakeCompletedGuardProbeService;
+    loopbackGuardProbe: LoopbackGuardProbeService;
 
     constructor(p2pManager: P2PManager<PingPongRpc>) {
         super(p2pManager as unknown as P2PManager<HarnessControlRpc>);
+        this.aRpcServiceProbe = new ARpcServiceProbeService(p2pManager);
+        this.aTransportProbe = new ATransportProbeService(p2pManager);
         this.pingService = new PingService(p2pManager);
         this.relayService = new RelayService(p2pManager);
+        this.rpcHandlerProbe = new RpcHandlerProbeService(p2pManager);
+        this.p2pManagerProbe = new P2PManagerProbeService(p2pManager);
+        this.handshakeCompletedGuardProbe =
+            new HandshakeCompletedGuardProbeService(p2pManager);
+        this.loopbackGuardProbe = new LoopbackGuardProbeService(p2pManager);
     }
 }
 
@@ -91,6 +111,14 @@ class PingRpcMethods extends ARpcMethods<P2PManager<PingPongRpc>> {
     /** Request/response error: the rejection is propagated back to the caller. */
     public async fail(reason: string): Promise<string> {
         throw new Error(reason);
+    }
+
+    public never(): Promise<string> {
+        return new Promise(() => {});
+    }
+
+    public recordPing(nonce: string): void {
+        this.service.receivedPingNonces.push(nonce);
     }
 
     // ===== State reads (driven over hostRpc, loopback to self) =====

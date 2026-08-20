@@ -79,7 +79,7 @@ Everything else the service reads/writes goes through `stateManager` (storage, l
 `localDiamondContract`, `agreementManager`, `reductionManager`, `eventSyncService`) and the
 on-chain `stateChannelManagerContract`. Persistence of a verified payload
 (`persistSyncPayload`) happens **under the state-manager mutex** and only after all verification
-succeeds (§3.3) — the RPC layer itself holds no mutex ([`INV-RPC-5-BCEZVC`](README.md#inv-rpc-5-bcezvc), [./README.md](./README.md) §6.6).
+succeeds (§3.3) — the RPC layer itself holds no mutex ([`REQ-BLOCK-PIPE-5-WJ31RG`](../../../../../specification/block-progression/block-processing.md#req-block-pipe-5-wj31rg), [./README.md](./README.md) §6.6).
 The service is a long-lived singleton; RpcMethods instances are per-dispatch and stateless.
 
 ## 3. Algorithm per method

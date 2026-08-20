@@ -114,6 +114,21 @@ function promoteAttemptLog(logDir, assignment, worker, code) {
     if (code !== 0) logging.markLogAsError(logDir, assignment.task.logName);
 }
 
+function promoteStarvationAttemptLog(logDir, assignment, worker) {
+    const attemptPath =
+        worker?.attemptPaths.get(assignment.attemptId) ||
+        logging.getAttemptLogPath(
+            logDir,
+            assignment.task.logName,
+            assignment.attemptId
+        );
+    const starvationPath = logging.getStarvationLogPath(
+        logDir,
+        assignment.task.logName
+    );
+    if (fs.existsSync(attemptPath)) fs.renameSync(attemptPath, starvationPath);
+}
+
 function coordinatorResultActions(disposition) {
     const completesTask = disposition === "complete";
     return {
@@ -606,6 +621,11 @@ async function runDistributed(options) {
                 attemptId
             });
             if (completion.disposition === "retry-starvation") {
+                promoteStarvationAttemptLog(
+                    options.logDir,
+                    message.header.assignment,
+                    worker
+                );
                 logging.starvationRetry({
                     seq: message.header.assignment.seq,
                     total: options.tasks.length,
@@ -817,6 +837,7 @@ module.exports = {
     formatWorkerSummary,
     isRoutineDiscoveryFailure,
     promoteAttemptLog,
+    promoteStarvationAttemptLog,
     recordWorkerFailure,
     runDistributed,
     validateWorkerStats,

@@ -1,5 +1,5 @@
 import type P2PManager from "../P2PManager";
-import ATransport from "../transport/ATransport";
+import ATransport, { isTransport } from "../transport/ATransport";
 import { Address } from "../types/types";
 import Rpc from "./Rpc";
 
@@ -58,7 +58,7 @@ class RpcHandler {
     public sendMultiple(targets: ATransport[] | Address[]) {
         if (targets.length === 0) return;
 
-        if (targets[0] instanceof ATransport) {
+        if (isTransport(targets[0])) {
             (targets as ATransport[]).forEach((transport) => {
                 transport.send(this.rpc);
             });
@@ -88,7 +88,7 @@ class RpcHandler {
     ): Promise<TResult> {
         const targetOmitted =
             targetOrOptions === undefined ||
-            (!(targetOrOptions instanceof ATransport) &&
+            (!isTransport(targetOrOptions) &&
                 typeof targetOrOptions === "object");
         const target = targetOmitted
             ? undefined
@@ -122,7 +122,7 @@ class RpcHandler {
         target?: ATransport | Address
     ): ATransport | undefined {
         if (target === undefined) return this.p2pManager.loopbackTransport;
-        if (target instanceof ATransport) return target;
+        if (isTransport(target)) return target;
         return (
             this.p2pManager.profileManager.getTransportByEvmAddress(target) ??
             undefined

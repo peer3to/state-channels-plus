@@ -95,6 +95,45 @@ describe("MessageBlockStorage - outbound behavior", () => {
             expect(latestBlocks[0]).to.deep.equal(newerBlock);
         });
 
+        it("head above a hole → truncates at the gap instead of throwing", () => {
+            storage.store(mockExitBlock);
+            const block1 = {
+                ...mockExitBlock,
+                previousBlockHash: mockBlockHash,
+                blockHeight: 1n
+            };
+            const hash1 = storage.store(block1);
+            // block 2 is never stored, so 3 and 4 sit above a hole
+            const block2 = {
+                ...mockExitBlock,
+                previousBlockHash: hash1,
+                blockHeight: 2n
+            };
+            const hash2 = ethers.keccak256(
+                Codec.encode(block2, Type.MessageBlock)
+            );
+            const block3 = {
+                ...mockExitBlock,
+                previousBlockHash: hash2,
+                blockHeight: 3n
+            };
+            const hash3 = storage.store(block3);
+            const block4 = {
+                ...mockExitBlock,
+                previousBlockHash: hash3,
+                blockHeight: 4n
+            };
+            storage.store(block4);
+
+            // the newest contiguous run, newest first
+            expect(storage.getLatestMessageBlocks()).to.deep.equal([
+                block4,
+                block3
+            ]);
+            // the limit path runs through the same walk
+            expect(storage.getLatestMessageBlocks(1)).to.deep.equal([block4]);
+        });
+
         it("returns blocks sorted from newest to oldest when no limit is provided", () => {
             storage.store(mockExitBlock);
             const followingBlock = {

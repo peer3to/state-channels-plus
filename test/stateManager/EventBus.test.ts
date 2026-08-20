@@ -128,6 +128,47 @@ describe("EventBus (worker + main thread)", function () {
         expect(h.event.getEventCallCount(0, "onTurn")).to.be.greaterThan(0);
     });
 
+    it("forwards an application-defined p2p hook name and payload across the runtime bridge", async function () {
+        const h = TestSession.getHarness();
+        await h.lifecycle.start(2, 0);
+        const peer = h.getPeer(0);
+        const eventName = "onApplicationStateChanged";
+        const payload = { version: 1, values: ["first", "second"] };
+
+        const received = new Promise<{
+            eventName: string;
+            args: unknown[];
+        }>((resolve) => {
+            peer.p2pInstance.events.onKind(
+                "p2pEventHooks",
+                (receivedEventName, args) => {
+                    if (receivedEventName === eventName) {
+                        resolve({ eventName: receivedEventName, args });
+                    }
+                }
+            );
+        });
+
+        await h.execOnHost(
+            peer,
+            (sm, args) => {
+                const hook = Reflect.get(sm.p2pEventHooks, args.eventName);
+                if (typeof hook !== "function") {
+                    throw new Error(
+                        "Application hook publisher is unavailable"
+                    );
+                }
+                hook(args.payload);
+            },
+            { eventName, payload }
+        );
+
+        expect(await received).to.deep.equal({
+            eventName,
+            args: [payload]
+        });
+    });
+
     it("publishes contract events on the worker bus and delivers typed ethers events to a consumer-built worker contract", async function () {
         this.timeout(90000);
         const h = TestSession.getHarness();

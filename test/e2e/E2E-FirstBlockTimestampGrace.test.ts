@@ -1,5 +1,6 @@
 import Clock from "@/Clock";
 import { Block, StateSnapshot } from "@/models";
+import { timeoutWaitTime } from "@/types";
 import { Codec, Type } from "@/utils";
 import {
     MathTestSession as TestSession,
@@ -20,19 +21,49 @@ const FIRST_BLOCK_AUTHORING_TIME = {
 
 describe("E2E: First block timestamp grace", function () {
     it("adds evidenceTime only to the height 0 participant timeout", async function () {
-        const h = TestSession.getHarness();
-        await h.lifecycle.start(2, 0);
-
-        const timeoutWindows = await h.execOnHost(h.peers[0], (sm) => ({
-            heightZero: sm.getTimeoutWaitTimeSeconds(0),
-            heightOne: sm.getTimeoutWaitTimeSeconds(1)
-        }));
+        // the arithmetic half
         const normalWindow =
             TIME.p2pTime + TIME.agreementTime + TIME.chainFallbackTime;
-        expect(timeoutWindows.heightZero).to.equal(
+        expect(timeoutWaitTime(TIME, 0)).to.equal(
             normalWindow + TIME.evidenceTime
         );
-        expect(timeoutWindows.heightOne).to.equal(normalWindow);
+        expect(timeoutWaitTime(TIME, 1)).to.equal(normalWindow);
+
+        // the integration half: the scheduled participant-timeout check for
+        // height 0 really carries the evidenceTime the function computes.
+        // Re-apply the latest state at height 0 and at height 1 with a fixed
+        // snapshot timestamp, so the recorded delays differ only by the grace.
+        const h = TestSession.getHarness();
+        await h.lifecycle.start(2, 0, { timeConfig: TIME });
+        const forkId = h.activeForkId!;
+
+        const recorder = await h.rpcStub.recordScheduledTasks(0, {
+            suppressPrefix: "participantTimeout("
+        });
+        // next height 0 -> grace applies
+        await h.transition.runSetLatestState({
+            peerIndex: 0,
+            forkId,
+            timestampOverride: Clock.getTimeInSeconds()
+        });
+        await h.transition.advanceState({ count: 1 });
+        // next height 1 -> no grace
+        await h.transition.runSetLatestState({
+            peerIndex: 0,
+            forkId,
+            timestampOverride: Clock.getTimeInSeconds()
+        });
+
+        const scheduled = (await recorder.tasks()).filter((t) =>
+            t.taskName.startsWith("participantTimeout(setState)")
+        );
+        await recorder.restore();
+        expect(scheduled.length).to.equal(2);
+        // height 0 window minus height 1 window == evidenceTime (± the clock
+        // seconds the two applies straddled)
+        const graceMs = scheduled[0].delayMs - scheduled[1].delayMs;
+        expect(graceMs).to.be.greaterThan((TIME.evidenceTime - 3) * 1000);
+        expect(graceMs).to.be.lessThan((TIME.evidenceTime + 3) * 1000);
     });
 
     it("authors height 0 after the old participant deadline and every peer finalizes it", async function () {

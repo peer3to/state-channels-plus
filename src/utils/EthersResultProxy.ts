@@ -1,17 +1,12 @@
-import { ethers } from "ethers";
 import { Codec } from "./Codec";
+import { isEthersResult } from "./ObjectChecks";
+
+export { isEthersResult } from "./ObjectChecks";
 
 type Listener = (...args: any[]) => unknown;
 
 function isListener(value: unknown): value is Listener {
     return typeof value === "function";
-}
-
-export function isEthersResult(value: unknown): value is ethers.Result {
-    return (
-        value instanceof ethers.Result &&
-        Object.getPrototypeOf(value) === ethers.Result.prototype
-    );
 }
 
 function isPromiseLike<T = unknown>(value: unknown): value is Promise<T> {
@@ -185,7 +180,6 @@ export function createEthersResultProxy<T>(contract: T): T {
                             const wrapped = listenerMap.get(listener);
                             if (wrapped) {
                                 args[handlerIndex] = wrapped;
-                                listenerMap.delete(listener);
                             }
                         }
                     }

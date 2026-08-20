@@ -13,6 +13,13 @@ type GetRangeOptions = {
     lowerBlockHash?: Hash; // older/lower block (stop of backwards traversal, exclusive)
 };
 
+export type MessageBlockRun = {
+    // the part of the range storage can prove, oldest first
+    blocks: MessageBlockStruct[];
+    // the first hash the walk needed and we do not hold
+    missingBlockHash?: Hash;
+};
+
 export class MessageBlockStorage {
     private blockMap: Map<Hash, MessageBlockStruct>;
     private latestBlockHash?: Hash;
@@ -49,40 +56,58 @@ export class MessageBlockStorage {
         return blockHash;
     }
 
+    // a chain-verified run, ordered ascending. the pointers only move when the
+    // run extends the current head exactly - a merely-held previousBlockHash
+    // can itself sit above a gap, and the strict range read throws walking into one
+    storeVerifiedRun(
+        messageBlocks: MessageBlockStruct[],
+        previousBlockHash: Hash
+    ): void {
+        const extendsHead =
+            this.latestBlockHash === undefined
+                ? previousBlockHash === ZeroHash
+                : previousBlockHash === this.latestBlockHash;
+
+        for (const messageBlock of messageBlocks) {
+            this.store(messageBlock, { justPersist: !extendsHead });
+        }
+    }
+
     // ====================================
     // READ
     // ====================================
+
+    // the local head, or the snapshot's own head while the store still lags it
+    // -> callers never walk from a point below the snapshot they work against
+    headNotBehind(
+        snapshotHash: Hash,
+        snapshotHeight: BlockHeight
+    ): { hash: Hash; height: BlockHeight } {
+        const height = this.latestBlockHeight ?? 0;
+        if (this.latestBlockHash === undefined || height < snapshotHeight) {
+            return { hash: snapshotHash, height: snapshotHeight };
+        }
+        return { hash: this.latestBlockHash, height };
+    }
 
     getMessageBlock(blockHash: Hash): MessageBlockStruct | undefined {
         return this.blockMap.get(blockHash);
     }
 
-    // [upperBlockHash, lowerBlockHash) - iterate backwards the blockchain
-    *getIterator(
-        options?: GetRangeOptions
-    ): Generator<MessageBlockStruct, void, unknown> {
-        const { upperBlockHash, lowerBlockHash } = options ?? {};
-        const startBlockHash = upperBlockHash ?? this.latestBlockHash;
-        if (!startBlockHash || startBlockHash == ZeroHash) return;
-
-        let currentHash = startBlockHash;
-        while (currentHash != ZeroHash) {
-            if (lowerBlockHash && currentHash === lowerBlockHash) break;
-            const messageBlock = this.blockMap.get(currentHash);
-            if (!messageBlock)
-                throw new Error(
-                    `Block hash ${currentHash} not found in storage`
-                );
-            yield messageBlock;
-            currentHash = messageBlock.previousBlockHash as Hash;
-        }
+    // [upperBlockHash, lowerBlockHash) - oldest first, truncated at the first
+    // hash we do not hold
+    tryGetMessageBlocksInRange(options?: GetRangeOptions): MessageBlockRun {
+        const { newestFirst, missingBlockHash } = this.walkBack(options);
+        return { blocks: newestFirst.reverse(), missingBlockHash };
     }
 
     getMessageBlocksInRange(options?: GetRangeOptions): MessageBlockStruct[] {
-        const blocks: MessageBlockStruct[] = [];
-        for (const messageBlock of this.getIterator(options)) {
-            blocks.unshift(messageBlock);
-        }
+        const { blocks, missingBlockHash } =
+            this.tryGetMessageBlocksInRange(options);
+        if (missingBlockHash)
+            throw new Error(
+                `Block hash ${missingBlockHash} not found in storage`
+            );
         return blocks;
     }
 
@@ -99,17 +124,40 @@ export class MessageBlockStorage {
         return this.latestBlockHeight;
     }
 
+    // newest first, and truncated at a gap rather than throwing - "the latest
+    // N blocks" is exactly what a truncated walk returns
     getLatestMessageBlocks(limit?: number): MessageBlockStruct[] {
         if (!this.latestBlockHash) return [];
 
-        const blocks: MessageBlockStruct[] = [];
-        for (const messageBlock of this.getIterator({
-            upperBlockHash: this.latestBlockHash
-        })) {
-            blocks.push(messageBlock);
-            if (limit !== undefined && blocks.length >= limit) break;
+        return this.walkBack({
+            upperBlockHash: this.latestBlockHash,
+            limit
+        }).newestFirst;
+    }
+
+    // newest-first walk over [upperBlockHash, lowerBlockHash), stopping at the
+    // first hash we do not hold -> no caller walks into a gap by accident
+    private walkBack(options?: GetRangeOptions & { limit?: number }): {
+        newestFirst: MessageBlockStruct[];
+        missingBlockHash?: Hash;
+    } {
+        const { upperBlockHash, lowerBlockHash, limit } = options ?? {};
+        const newestFirst: MessageBlockStruct[] = [];
+        const startBlockHash = upperBlockHash ?? this.latestBlockHash;
+        if (!startBlockHash || startBlockHash == ZeroHash)
+            return { newestFirst };
+
+        let currentHash = startBlockHash;
+        while (currentHash != ZeroHash) {
+            if (lowerBlockHash && currentHash === lowerBlockHash) break;
+            const messageBlock = this.blockMap.get(currentHash);
+            if (!messageBlock)
+                return { newestFirst, missingBlockHash: currentHash };
+            newestFirst.push(messageBlock);
+            if (limit !== undefined && newestFirst.length >= limit) break;
+            currentHash = messageBlock.previousBlockHash as Hash;
         }
-        return blocks;
+        return { newestFirst };
     }
 
     private normalizeBlockHeight(

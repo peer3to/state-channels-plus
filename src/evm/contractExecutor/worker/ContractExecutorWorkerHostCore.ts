@@ -28,8 +28,7 @@ class ContractExecutorWorkerHost {
         request: Extract<ContractExecutorRequestPayload, { type: "init" }>
     ) {
         // Re-establish config in this worker and build its logger, then monitor
-        // this thread's event loop with the same
-        // EVENT_LOOP_DELAY_ERROR_THRESHOLD_SECONDS guard as every thread.
+        // this thread with the same fatal delay threshold as every service loop.
         createConfig(request.config);
         const logger = createLogger(
             {},
@@ -37,10 +36,6 @@ class ContractExecutorWorkerHost {
             { attachErrorListener: false }
         );
         this.logger = logger;
-        if (config.EVENT_LOOP_DELAY_ERROR_THRESHOLD_SECONDS > 0) {
-            logger.startPerformanceMonitoring({ threadLabel: "vm" });
-        }
-
         const evm = await createEvm(
             {
                 allowUnlimitedContractSize: true,
@@ -56,6 +51,9 @@ class ContractExecutorWorkerHost {
             logger
         );
         this.executor = new ContractExecutor(evm, logger);
+        if (config.EVENT_LOOP_DELAY_ERROR_THRESHOLD_SECONDS > 0) {
+            logger.startPerformanceMonitoring({ threadLabel: "vm" });
+        }
         return null;
     }
 

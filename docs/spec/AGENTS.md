@@ -11,16 +11,18 @@ These rules apply to every file under `docs/spec/`. Read [README.md](./README.md
 - Never mark engineer approval, edit [audit/approvals.md](./audit/approvals.md), or invoke
   `tools/approve.js`. Only explicit engineer action records approval.
 - Keep future work non-normative. Keep questions separate from demonstrated findings.
-- Preserve all stable `REQ-*`, `INV-*`, planned-test, `OQ-*`, and `DEF-*` IDs; never renumber on move.
+- Maintained documents describe the current model. Delete obsolete or replaced IDs and update all
+  maintained references in the same change; Git history is the archive.
 
 ## Allocate and link IDs safely
 
 - Every independently allocated root ends in an immutable six-character Crockford Base32 suffix.
   Keep the semantic stem readable, then allocate it with `yarn spec:id:new <stem>`; for example,
   `yarn spec:id:new REQ-X-10`. Never choose, copy, or edit the random suffix manually.
-- Planned-test (`.T<n>`) and permutation (`.P<n>`) children inherit their root suffix. Number
-  children contiguously within the owning table; concurrent changes to that same table must resolve
-  the ordinary Git conflict.
+- Planned-test (`.T<n>`) and permutation (`.P<n>`) children inherit their root suffix. Append new
+  children after the highest allocated number. An ID is immutable until deletion: deleting a child
+  leaves a gap, and surviving children are never renumbered or reused. Concurrent changes to that
+  table must resolve the ordinary Git conflict.
 - At the one canonical definition, keep the ID as unlinked inline code with its explicit anchor.
   Every other concrete ID occurrence must be a linked inline-code label pointing to that anchor.
 - After changing IDs or references, run `yarn spec:ids:fix`, inspect the link changes, then run
@@ -102,6 +104,10 @@ the generated requirement view computes the complete status. Directory `README.m
 subsystem responsibility and `INTEGRATION-TEST-*` cases among that directory's files. Cross-subsystem
 and E2E cases belong to verification. Link conformance evidence to the narrowest relevant source
 line (`#L…`). If a requirement is integrator-owned or cannot be enforced generically, say so.
+
+Keep every permutation for one `UNIT-TEST-*` or `INTEGRATION-TEST-*` family in that family's single
+owning table row. Add new permutations to its existing `Required permutations` cell. Never create a
+second or appended-permutations table for the same family.
 
 Make every requirement, plan, and permutation reference navigable without losing its code styling:
 use linked inline-code labels and stable explicit anchors at maintained definitions. Do not use line

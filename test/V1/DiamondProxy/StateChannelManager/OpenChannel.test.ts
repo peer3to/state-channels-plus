@@ -248,6 +248,10 @@ describe("StateChannelManagerProxy", function () {
             const snapshot = StateSnapshot.from(
                 await mathChannelManager.getStateSnapshot(openChannel.channelId)
             );
+            const balanceBeforeJoin =
+                await mathChannelManager.getChannelBalance(
+                    openChannel.channelId
+                );
             const joinTx = await mathChannelManager
                 .connect(thirdSigner)
                 .joinChannel(
@@ -289,6 +293,9 @@ describe("StateChannelManagerProxy", function () {
 
             expect(messageBlock.messages.length).to.equal(1);
             expect(messageBlock.blockHeight).to.equal(2);
+            expect(messageBlock.previousBlockHash).to.equal(
+                balanceBeforeJoin.latestInboundMessageBlockHash
+            );
 
             const forcedMessage = messageBlock.messages[0];
             const joinMessageType = ethers.keccak256(
@@ -383,8 +390,9 @@ describe("StateChannelManagerProxy", function () {
             const snapshot = StateSnapshot.from(
                 await mathChannelManager.getStateSnapshot(openChannel.channelId)
             );
-            await (
-                await mathChannelManager.connect(firstSigner).topUpBalance(
+            const topUpTx = await mathChannelManager
+                .connect(firstSigner)
+                .topUpBalance(
                     {
                         signedJoinChannel: {
                             encodedJoinChannel: String(signedTopUp.encoded),
@@ -401,8 +409,24 @@ describe("StateChannelManagerProxy", function () {
                     },
                     snapshot.hash,
                     snapshot.forkID
-                )
-            ).wait();
+                );
+            const topUpReceipt = await topUpTx.wait();
+            const inboundEvent = topUpReceipt?.logs
+                .map((log) => {
+                    try {
+                        return mathChannelManager.interface.parseLog(log);
+                    } catch {
+                        return null;
+                    }
+                })
+                .find((parsed) => parsed?.name === "InboundMessagesProcessed");
+            expect(inboundEvent, "InboundMessagesProcessed event not found").to
+                .exist;
+            expect(inboundEvent!.args.messageBlock.blockHeight).to.equal(2);
+            expect(inboundEvent!.args.messageBlock.messages).to.have.length(1);
+            expect(
+                inboundEvent!.args.messageBlock.messages[0].balance.amount
+            ).to.equal(125n);
 
             const pending = await mathChannelManager.getPendingParticipants(
                 openChannel.channelId

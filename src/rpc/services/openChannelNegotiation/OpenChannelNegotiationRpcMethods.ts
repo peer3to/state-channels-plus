@@ -33,7 +33,7 @@ export default class OpenChannelNegotiationRpcMethods extends ARpcMethods<OpenCh
         if (!from) return;
 
         const currentChannel = ethers.hexlify(
-            this.p2pManager.stateManager.getChannelId()
+            this.p2pManager.stateManager.channelId
         );
         if (channelId !== currentChannel) return;
 
@@ -73,7 +73,7 @@ export default class OpenChannelNegotiationRpcMethods extends ARpcMethods<OpenCh
         if (!from) return;
 
         const currentChannel = ethers.hexlify(
-            this.p2pManager.stateManager.getChannelId()
+            this.p2pManager.stateManager.channelId
         );
         if (channelId !== currentChannel) return;
 

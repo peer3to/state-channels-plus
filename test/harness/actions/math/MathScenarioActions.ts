@@ -1,3 +1,4 @@
+// @spec-test-coverage-ignore: shared math scenario setup exercised by owning mapped test declarations
 import { Logger, sleep } from "@/utils";
 import { ForkId, Hash } from "@/types/types";
 import { Status, TimeConfig } from "@/types";
@@ -152,6 +153,34 @@ export class MathScenarioActions extends ScenarioActions {
     }
 
     /**
+     * preDisputeSetup + a top-up of an existing participant, consumed by later
+     * blocks -> snapshotData.latestInboundMessageBlockHeight sits on inbound
+     * block 2 with the channel-open block still a real ancestor. Topping up an
+     * existing participant keeps the participant set (and block turns) intact.
+     */
+    async preDisputeSetupConsumedInboundTopUp(options?: {
+        peerCount?: number;
+        timeConfig?: {
+            p2pTime?: number;
+            agreementTime?: number;
+            chainFallbackTime?: number;
+            evidenceTime?: number;
+        };
+    }) {
+        await this.preDisputeSetup(options);
+        await this.harness.join.forceInboundJoinWait({
+            participant: this.harness.getPeer(0).address
+        });
+        await this.harness.transition.advanceState({
+            count: 2,
+            waitForFinalization: true
+        });
+        await this.harness.assert.sync.peersInSyncWait();
+        this.harness.event.resetEventSpies();
+        this.harness.contextApi.captureOriginalFork();
+    }
+
+    /**
      * A committed spam dispute (internally valid, no enforcement basis) that
      * every peer audit-failed, with every peer's `killDispute` suppressed while
      * it happened. `killerIndex` therefore holds a real dispute fraud proof
@@ -161,6 +190,7 @@ export class MathScenarioActions extends ScenarioActions {
     async stageUnkilledSpamDispute(options?: {
         killerIndex?: number;
         spammerIndex?: number;
+        addSpectatorBeforeDispute?: boolean;
         timeConfig?: {
             p2pTime?: number;
             agreementTime?: number;
@@ -171,12 +201,16 @@ export class MathScenarioActions extends ScenarioActions {
         forkId: ForkId;
         spammer: MathTestPeer;
         killer: MathTestPeer;
+        spectator: TestPeer<HarnessControlRpc> | undefined;
     }> {
         const killerIndex = options?.killerIndex ?? 0;
         const spammerIndex = options?.spammerIndex ?? 1;
         await this.preDisputeSetup({
             timeConfig: { evidenceTime: 12, ...options?.timeConfig }
         });
+        const spectator = options?.addSpectatorBeforeDispute
+            ? await this.harness.join.addSpectatorWait()
+            : undefined;
         const forkId = this.harness.activeForkId!;
 
         const kills = await Promise.all(
@@ -200,7 +234,8 @@ export class MathScenarioActions extends ScenarioActions {
         return {
             forkId,
             spammer: this.harness.getPeer(spammerIndex),
-            killer: this.harness.getPeer(killerIndex)
+            killer: this.harness.getPeer(killerIndex),
+            spectator
         };
     }
 
@@ -211,7 +246,13 @@ export class MathScenarioActions extends ScenarioActions {
             chainFallbackTime?: number;
             evidenceTime?: number;
         };
-    }) {
+        /**
+         * Hold this peer's InboundMessagesProcessed handler across the join, so
+         * it never stores the inbound head the disputes will name and the other
+         * peers alone wait on the join.
+         */
+        laggingInboundPeerIndex?: number;
+    }): Promise<{ releaseLaggingInbound?: () => Promise<void> }> {
         const timeConfig = {
             evidenceTime: 12,
             ...options?.timeConfig
@@ -222,12 +263,31 @@ export class MathScenarioActions extends ScenarioActions {
             transitionCount: 0,
             timeConfig
         });
+        const laggingIndex = options?.laggingInboundPeerIndex;
+        const held =
+            laggingIndex === undefined
+                ? undefined
+                : await this.harness.rpcStub.holdInboundMessageEvents(
+                      laggingIndex
+                  );
         const forceJoin = await this.harness.join.prepareForceInboundJoinWait();
         await this.harness.transition.advanceState({ count: 2 });
-        await this.harness.join.submitPreparedForceInboundJoinWait(forceJoin);
+        await this.harness.join.submitPreparedForceInboundJoinWait(forceJoin, {
+            observePeerIndices:
+                laggingIndex === undefined
+                    ? undefined
+                    : this.harness.peers
+                          .map((peer) => peer.index)
+                          .filter((index) => index !== laggingIndex)
+        });
 
         this.harness.contextApi.captureOriginalFork();
         this.harness.event.resetEventSpies();
+        return {
+            releaseLaggingInbound: held
+                ? () => held.release({ replay: true })
+                : undefined
+        };
     }
 
     async setupTwoLeaversAcrossMilestones(options?: {
@@ -582,6 +642,58 @@ export class MathScenarioActions extends ScenarioActions {
             .request();
 
         return { observer, author, previous, forkId, parentPostTimestamp };
+    }
+
+    /**
+     * A committed dispute the observer never learned of: its reduction entry
+     * points are held so nothing auto-reduces, and its incoming
+     * dispute-committed events are suppressed, so the on-chain window is
+     * genuinely unreadable from its local storage. `passFirst` lets the first
+     * arriving dispute event through, which flips its local `isForkDisputed`.
+     */
+    async disputeWithSuppressedCommitEvents(options: {
+        observerIndex: number;
+        maliciousPeerIndex: number;
+        peerCount?: number;
+        initialBlocks?: number;
+        passFirst?: boolean;
+    }) {
+        const {
+            observerIndex,
+            maliciousPeerIndex,
+            peerCount = 4,
+            initialBlocks = 2,
+            passFirst = false
+        } = options;
+        const h = this.harness;
+        await h.lifecycle.start(peerCount, initialBlocks);
+        const forkId = h.activeForkId!;
+
+        const race = await h.rpcStub.holdReductionRace(observerIndex);
+        // drop the observer's incoming dispute-committed events before any
+        // dispute happens: the other honest peers' commitments are then
+        // genuinely never delivered here (not merely cleared from storage,
+        // which the event-dedup cache would treat as already processed and
+        // refuse to redeliver)
+        const restoreEvents = await h.rpcStub.holdDisputeCommittedEvents(
+            observerIndex,
+            { passFirst }
+        );
+
+        // real invalid transition -> honest peers dispute + commit on-chain
+        await h.byzantine.submitInvalidStateTransitionBlock(maliciousPeerIndex);
+        await h.assert.dispute.initiatedWait();
+        // exclude the observer - its own onDisputeCommitted delivery is held
+        await h.assert.dispute.committedWait({
+            peersIndices: h.peers
+                .map((peer) => peer.index)
+                .filter(
+                    (index) =>
+                        index !== observerIndex && index !== maliciousPeerIndex
+                )
+        });
+
+        return { forkId, race, restoreEvents };
     }
 
     async activeChannelWithDispute(options: {

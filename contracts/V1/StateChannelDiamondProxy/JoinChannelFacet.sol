@@ -49,13 +49,17 @@ contract JoinChannelFacet is StateChannelCommon {
             expectedSnapshotHash == keccak256(abi.encode(currentSnapshot)), RaceConditionJoinChannelSnapshotMismatch()
         );
 
-        address[] memory thresholdParticipants = UtilityFacet(utilityFacetAddress).concatAddressArraysNoDuplicates(
+        address[] memory participantUnion = UtilityFacet(utilityFacetAddress).concatAddressArraysNoDuplicates(
             getSnapshotParticipants(channelId), getPendingParticipants(channelId)
         );
         bool isExistingParticipant =
-            UtilityFacet(utilityFacetAddress).isAddressInArray(thresholdParticipants, jc.participant);
+            UtilityFacet(utilityFacetAddress).isAddressInArray(participantUnion, jc.participant);
         if (isTopUp) {
             require(isExistingParticipant, ErrorTopUpBalanceParticipantNotFound());
+            require(
+                !isParticipantSlashedOnChain(channelId, jc.participant),
+                ErrorTopUpBalanceParticipantSlashed(jc.participant)
+            );
         } else {
             require(!isExistingParticipant, ErrorJoinChannelParticipantAlreadyExists());
             require(
@@ -69,7 +73,8 @@ contract JoinChannelFacet is StateChannelCommon {
             UtilityFacet(utilityFacetAddress).retrieveSignerAddress(sjc.encodedJoinChannel, sjc.signature);
         require(jc.participant == retrievedAddress && isValidSignature, ErrorJoinChannelInvalidSignature());
 
-        // Check threshold from existing participant set
+        // Check threshold from the current eligibility set
+        address[] memory thresholdParticipants = getOnChainThresholdSet(channelId);
         (bool isValid,) = UtilityFacet(utilityFacetAddress).verifyThresholdSigned(
             thresholdParticipants, sjc.encodedJoinChannel, joinChannelConfirmation.signatures
         );

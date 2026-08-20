@@ -8,6 +8,7 @@ import Rpc, {
 import { LoggerUtils } from "@/utils/LoggerUtils";
 import { getChecksumAddress } from "@/utils/address";
 import { Address } from "@/types";
+import { hasMethod, hasProperty } from "@/utils/ObjectChecks";
 
 abstract class ATransport {
     abstract transportType: TransportType;
@@ -81,4 +82,17 @@ abstract class ATransport {
         this._send(serializeRpcResponse(response));
     }
 }
+
+/**
+ * Type guard for transports loaded from any JavaScript module graph.
+ */
+export function isTransport(value: unknown): value is ATransport {
+    return (
+        hasProperty(value, "transportType") &&
+        typeof value.transportType === "number" &&
+        hasMethod(value, "send") &&
+        hasMethod(value, "sendRpcResponse")
+    );
+}
+
 export default ATransport;

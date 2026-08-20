@@ -119,6 +119,26 @@ export class DisputeTampering {
         dispute.input.timeout.participant = ZeroAddress;
         dispute.input.onChainSlashes = [];
     }
+
+    /**
+     * Upload posted auditing data with no inbound run. verifyStateProof never
+     * binds inboundMessageBlocks to the dispute's stated head, so re-pinning
+     * the auditing-data hash keeps the upload accepted while the auditor is
+     * handed nothing.
+     */
+    static emptyPostedInboundRun(
+        dispute: DisputeStruct,
+        _disputeConfirmation: DisputeConfirmationStruct,
+        auditingData?: DisputeAuditingDataStruct
+    ): void {
+        if (!auditingData) {
+            throw new Error("emptyPostedInboundRun needs posted auditing data");
+        }
+        auditingData.inboundMessageBlocks = [];
+        dispute.input.disputeAuditingDataHash = hash(
+            Codec.encode(auditingData, Type.DisputeAuditingData)
+        );
+    }
 }
 
 // Reused tamper statics are forwarded to the host as named strategies (they use
@@ -190,26 +210,11 @@ export class DisputeTamperingActions<
         }
         const targetForkId = forkId || this.harness.activeForkId!;
 
-        // Construct host-side; the structs come back ABI-encoded (raw ethers
-        // structs don't survive JSON across the port), so decode to plain
-        // mutable structs, then tamper, re-sign and submit on the main thread.
-        const {
-            encodedDispute,
-            encodedDisputeConfirmation,
-            encodedAuditingData
-        } = await this.harness
-            .control(peer)
-            .dispute.constructDispute(targetForkId)
-            .request();
-        const dispute = Codec.decode(encodedDispute, Type.Dispute);
-        const disputeConfirmation = Codec.decode(
-            encodedDisputeConfirmation,
-            Type.DisputeConfirmation
-        );
-        const auditingData = Codec.decode(
-            encodedAuditingData,
-            Type.DisputeAuditingData
-        );
+        const { dispute, disputeConfirmation, auditingData } =
+            await this.harness.dispute.fetchConstructedDispute(
+                authorPeerIndex,
+                targetForkId
+            );
 
         await tamper(dispute, disputeConfirmation, auditingData);
         await this.resignDispute(peer.signer, dispute, disputeConfirmation);
@@ -534,7 +539,8 @@ export class DisputeTamperingActions<
         return peer;
     }
 
-    private async resignDispute(
+    /** Re-sign `dispute` into `disputeConfirmation`, dropping co-signatures. */
+    async resignDispute(
         signer: Signer,
         dispute: DisputeStruct,
         disputeConfirmation: DisputeConfirmationStruct

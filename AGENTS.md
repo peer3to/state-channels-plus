@@ -49,15 +49,23 @@ uncertain, and leave final fingerprint approval to the engineer.
 
 ### Canonical test command and parallel run logs
 
-`yarn test:parallel` is the canonical full test gate and runs all Mocha tests;
-pass `--e2e-only` to limit discovery to `test/e2e`. The legacy in-process
-`yarn test` command is only for rare focused compatibility checks. The parallel
-runner writes each run to a fresh `./logs/run-N/` (N
+`yarn test:parallel:distributed` is the canonical full test gate and runs all
+Mocha tests across the configured distributed workers; pass `--e2e-only` to
+limit discovery to `test/e2e`. Use `yarn test:parallel` for focused local runs
+when needed. The legacy in-process `yarn test` command is only for rare focused
+compatibility checks. The parallel runner writes each run to a fresh
+`./logs/run-N/` (N
 auto-increments) and never touches earlier `run-*` dirs — error logs persist
 across runs for comparison (`TEST_FAILURES.md` workflow). Only the current
 run's dir is cleared/cleaned. An explicit `--logDir <dir>` is used (and
 cleared) as-is; dirs outside `./logs` additionally need
 `--allow-logdir-purge`. Prune old `run-*` dirs manually when done comparing.
+
+Parallel and distributed test discovery requires static declarations. Define
+every runnable case as a direct `it("literal name", ...)` call in its test file.
+Do not generate tests with loops, `.forEach`, parameter matrices, dynamic names,
+or helper functions that register tests. Put shared test bodies in a separate
+helper or fixture file, then call them with explicit arguments from each `it`.
 
 ### Test timeouts
 

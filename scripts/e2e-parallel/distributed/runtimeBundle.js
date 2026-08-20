@@ -5,6 +5,15 @@ const { execFileSync } = require("child_process");
 const tar = require("tar");
 const { sha256File } = require("../shared/fileHash");
 
+const EXCLUDED_SOURCE_ROOTS = new Set([
+    ".github",
+    ".husky",
+    "artifacts",
+    "diagrams",
+    "docs",
+    "internal_docs"
+]);
+
 function readPackageJson(root) {
     return JSON.parse(fs.readFileSync(path.join(root, "package.json"), "utf8"));
 }
@@ -89,7 +98,10 @@ function gitSourceFiles(repositoryRoot) {
         .toString("utf8")
         .split("\0")
         .filter(Boolean)
-        .filter((relative) => !ignored.has(relative));
+        .filter(
+            (relative) =>
+                !ignored.has(relative) && !isExcludedSourcePath(relative)
+        );
     const files = [];
     for (const relative of listed) {
         const source = path.join(repositoryRoot, relative);
@@ -103,6 +115,11 @@ function gitSourceFiles(repositoryRoot) {
         }
     }
     return files;
+}
+
+function isExcludedSourcePath(relative) {
+    const [root] = relative.split(/[\\/]/);
+    return EXCLUDED_SOURCE_ROOTS.has(root);
 }
 
 async function buildRuntimeManifest(projectRoot, onProgress = () => {}) {

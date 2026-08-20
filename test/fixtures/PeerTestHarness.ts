@@ -228,7 +228,6 @@ export class PeerTestHarness<
                 attachErrorListener: false
             }
         );
-        this.logger.startPerformanceMonitoring();
         LocalDiscoveryServer.setLogger(this.logger);
         this.connectionBarrier = new EventBarrier(this.logger);
         this.eventCountsBarrier = new EventBarrier(this.logger);
@@ -285,6 +284,7 @@ export class PeerTestHarness<
                 options?.disputeExecutionGasLimit ??
                 DEFAULT_HARNESS_DISPUTE_EXECUTION_GAS_LIMIT,
             autoConnect: options?.autoConnect !== false,
+            peerSetupConcurrency: options?.peerSetupConcurrency,
             configOverrides: options?.configOverrides || {},
             customPrecompiles: options?.customPrecompiles || [],
             customRpcManifest: options?.customRpcManifest
@@ -310,14 +310,35 @@ export class PeerTestHarness<
         await this.deployContracts();
         const deployMs = Date.now() - deployStart;
 
-        // Peers are independent (disjoint accounts) so their SDK/worker boots and
-        // p2p connects overlap — parallelizing collapses N sequential per-peer
-        // startups into ~one, the dominant chunk of setup time.
-        await Promise.all(
-            Array.from({ length: numPeers }, (_, i) =>
-                this.createPeer(i, this.signerFor(slotAccountIndex(i)))
-            )
-        );
+        // Peers are independent, so all boot in parallel by default. Consumers
+        // whose SDK peers each start CPU-heavy child workers can bound this to
+        // avoid starving the SDK event loops during simultaneous initialization.
+        const peerSetupConcurrency =
+            this.options.peerSetupConcurrency ?? numPeers;
+        if (
+            !Number.isInteger(peerSetupConcurrency) ||
+            peerSetupConcurrency < 1
+        ) {
+            throw new Error("peerSetupConcurrency must be a positive integer");
+        }
+        for (let start = 0; start < numPeers; start += peerSetupConcurrency) {
+            await Promise.all(
+                Array.from(
+                    {
+                        length: Math.min(peerSetupConcurrency, numPeers - start)
+                    },
+                    (_, offset) => {
+                        const index = start + offset;
+                        return this.createPeer(
+                            index,
+                            this.signerFor(slotAccountIndex(index))
+                        );
+                    }
+                )
+            );
+        }
+
+        this.logger.startPerformanceMonitoring({ threadLabel: "main" });
 
         // Pulse the event-counts barrier on every mined block so barriers
         // don't stall waiting for chain-time to advance between transactions.
@@ -825,6 +846,7 @@ export class PeerTestHarness<
 
     async cleanup(): Promise<void> {
         this.logger.debug("Starting cleanup...");
+        this.logger.stopPerformanceMonitoring();
 
         if (this.channelManager) {
             await this.channelManager.removeAllListeners();
@@ -833,15 +855,13 @@ export class PeerTestHarness<
         this.connectionBarrier.clear();
         this.eventCountsBarrier.clear();
 
-        const disposePromises: Promise<unknown>[] = [];
-
-        for (const peer of this.peers) {
+        const disposePromises = this.peers.map(async (peer) => {
             try {
                 peer.logger.verbose("Cleaning up peer", {
                     component: "TestHarness"
                 });
 
-                disposePromises.push(peer.p2pInstance.dispose());
+                await peer.p2pInstance.dispose();
 
                 Object.values(peer.eventSpies).forEach((spy) =>
                     spy?.resetHistory()
@@ -855,9 +875,9 @@ export class PeerTestHarness<
                     component: "TestHarness"
                 });
             }
-        }
+        });
 
-        await Promise.allSettled(disposePromises);
+        await Promise.all(disposePromises);
 
         await new Promise((resolve) => setImmediate(resolve));
 

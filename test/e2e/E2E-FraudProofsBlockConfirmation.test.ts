@@ -272,7 +272,7 @@ describe("E2E: Block Fraud Proofs", function () {
         ).to.equal(expectedTimestamp);
     });
 
-    it("stored duplicate drops a new signature from a non-participant without dropping the block", async function () {
+    it("stored duplicate drops a new signature from a non-participant without dropping or replaying the block", async function () {
         const h = TestSession.getHarness();
         await h.lifecycle.start(3, 1);
 
@@ -285,6 +285,13 @@ describe("E2E: Block Fraud Proofs", function () {
             .query.getLatestBlockBundle(forkId!)
             .request();
         expect(block).to.not.be.null;
+        const initialNextHeight = Number(
+            await h
+                .control(observer)
+                .query.getNextBlockHeight(forkId!)
+                .request()
+        );
+        const initialSum = await observer.contractInstance.getSum();
 
         const outsider = ethers.Wallet.createRandom();
         const badSignature = await outsider.signMessage(
@@ -322,6 +329,15 @@ describe("E2E: Block Fraud Proofs", function () {
         expect(
             storedBlock?.confirmationSignatures.includes(badSignature)
         ).to.equal(false);
+        expect(
+            Number(
+                await h
+                    .control(observer)
+                    .query.getNextBlockHeight(forkId!)
+                    .request()
+            )
+        ).to.equal(initialNextHeight);
+        expect(await observer.contractInstance.getSum()).to.equal(initialSum);
     });
 
     it("fresh block with a non-participant signature applies after dropping it", async function () {
@@ -390,6 +406,17 @@ describe("E2E: Block Fraud Proofs", function () {
                 .query.isBlacklisted(h.getPeer(1).address)
                 .request()
         ).to.equal(true);
+        for (const nonSupplierIndex of [0, 2]) {
+            expect(
+                await h
+                    .control(observer)
+                    .query.isBlacklisted(h.getPeer(nonSupplierIndex).address)
+                    .request()
+            ).to.equal(
+                false,
+                `peer ${nonSupplierIndex} did not supply the stray signature`
+            );
+        }
     });
 
     it("double sign → BlockDoubleSign", async function () {

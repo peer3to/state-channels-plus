@@ -1,3 +1,4 @@
+// @spec-test-coverage-ignore: test-harness query support exercised by owning mapped test declarations
 import { ethers } from "ethers";
 
 import ARpcMethods from "@/rpc/ARpcMethods";
@@ -79,11 +80,11 @@ export class QueryRpcMethods extends ARpcMethods {
     // ===== Identity / status =====
 
     public getStatus(): Status {
-        return this.service.sm.getStatus();
+        return this.service.sm.status;
     }
 
     public getChannelId(): string {
-        return this.service.sm.getChannelId() as string;
+        return this.service.sm.channelId as string;
     }
 
     public getSignerAddress(): string {
@@ -101,7 +102,28 @@ export class QueryRpcMethods extends ARpcMethods {
     }
 
     public async getOnChainParticipantUnion(): Promise<string[]> {
-        return (await this.service.sm.getOnChainParticipantUnion()).map(String);
+        return (
+            await this.service.sm.membershipService.getOnChainParticipantUnion()
+        ).map(String);
+    }
+
+    /** Pending inbound message blocks the next authored block would consume. */
+    public getPendingInboundMessageBlockCount(forkId: ForkId): number {
+        const sm = this.service.sm;
+        const previous =
+            sm.snapshotAssemblyService.getPreviousStateSnapshotOrThrow({
+                forkId,
+                height: sm.storage.blocks.getNextBlockHeight(forkId)
+            });
+        return sm.blockProductionService["getPendingInboundMessageBlocks"](
+            previous
+        ).length;
+    }
+
+    public async getOnChainThresholdSet(): Promise<string[]> {
+        return (
+            await this.service.sm.membershipService.getOnChainThresholdSet()
+        ).map(String);
     }
 
     /** Participants slashed on-chain for this channel. */
@@ -119,7 +141,7 @@ export class QueryRpcMethods extends ARpcMethods {
     }
 
     public async isMyTurn(): Promise<boolean> {
-        return await this.service.sm.isMyTurn();
+        return await this.service.sm.blockProductionService["isMyTurn"]();
     }
 
     // ===== Block / snapshot storage (projections only) =====
@@ -329,6 +351,24 @@ export class QueryRpcMethods extends ARpcMethods {
             : null;
     }
 
+    /** Encoded (`Type.MessageBlock`) inbound message block, or null. */
+    public getInboundMessageBlock(
+        messageBlockHash: Hash
+    ): { encodedMessageBlock: string } | null {
+        const block =
+            this.service.storage.inboundMessages.getMessageBlock(
+                messageBlockHash
+            );
+        return block
+            ? {
+                  encodedMessageBlock: Codec.encode(
+                      block,
+                      Type.MessageBlock
+                  ) as string
+              }
+            : null;
+    }
+
     /** Encoded (`Type.MessageBlock`) outbound message block, or null. */
     public getOutboundMessageBlock(
         messageBlockHash: Hash
@@ -489,7 +529,7 @@ export class QueryRpcMethods extends ARpcMethods {
 
     public getCompletedReductionForkId(forkId: ForkId): ForkId | null {
         return (
-            this.service.sm.reductionManager.getCompletedReduction(forkId)
+            this.service.sm.reductionManager["getCompletedReduction"](forkId)
                 ?.reducedForkId ?? null
         );
     }

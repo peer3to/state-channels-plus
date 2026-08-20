@@ -20,7 +20,7 @@ describe("E2E: Spectate Service", function () {
     describe("Guard Protection", function () {
         it("should NOT allow spectate RPC before handshake completes", async function () {
             const harness = TestSession.getHarness();
-            await harness.lifecycle.start(2, 0, {
+            await harness.lifecycle.start(3, 0, {
                 autoConnect: false,
                 timeConfig: {
                     agreementTime: 10,
@@ -32,12 +32,17 @@ describe("E2E: Spectate Service", function () {
 
             const peer0 = harness.peers[0];
             const peer1 = harness.peers[1];
+            const peer2 = harness.peers[2];
 
             // Peer 1: block handshake completion + install a recording guard on
             // its spectateService (so an incoming spectate RPC is blocked).
             await harness
                 .control(peer1)
                 .stub.stubBlockHandshakeAndRecordSpectateGuard()
+                .request();
+            await harness
+                .control(peer1)
+                .stub.stubCountSpectateRequests()
                 .request();
             // Peer 0: capture the transport it initiates the handshake over —
             // pre-handshake transports aren't in `openConnections`, so we grab
@@ -49,7 +54,7 @@ describe("E2E: Spectate Service", function () {
 
             // Establish transports (peer 1's handshake stays blocked, so it
             // never completes); wait until peer 0 has initiated the handshake.
-            await harness.network.connectAllPeers();
+            await harness.network.connectPeers([0, 1]);
             await waitFor(
                 () =>
                     harness.execOnHost(
@@ -61,24 +66,17 @@ describe("E2E: Spectate Service", function () {
                 5000
             );
 
-            // Peer 0: send a spectate RPC to peer 1 over the captured
-            // pre-handshake transport. The body runs host-side.
-            await harness.execOnHost(peer0, (sm) => {
-                const transport =
-                    sm.p2pManager.localRpc.stub.capturedInitHandshakeTransport;
-                if (!transport)
-                    throw new Error("no captured handshake transport");
-                // Fire it as a request over the pre-handshake transport. The
-                // guard rejects it before dispatch (recording the block); the
-                // rejected promise is expected, so swallow it.
-                void sm.p2pManager.remoteRpc.spectateService
-                    .onSpectateRequest({
-                        channelId: sm.channelId,
-                        initTime: Date.now()
-                    })
-                    .request(transport)
-                    .catch(() => {});
-            });
+            // Peer 0: send a request over the captured pre-handshake
+            // transport and wait for the guard's request consequence.
+            expect(
+                await harness
+                    .control(peer0)
+                    .stub.sendSpectateRequestOverCapturedHandshakeTransport(
+                        harness.channelId!.toString(),
+                        Date.now()
+                    )
+                    .request()
+            ).to.equal("RPC request rejected by guard");
 
             // Peer 1's guard should have blocked it (handshake never completed).
             await waitFor(
@@ -98,6 +96,39 @@ describe("E2E: Spectate Service", function () {
                 true,
                 "Guard should have blocked the spectate RPC before handshake completes"
             );
+            expect(
+                await harness
+                    .control(peer1)
+                    .stub.getSpectateRequestCount()
+                    .request()
+            ).to.equal(0);
+
+            expect(
+                await harness
+                    .control(peer1)
+                    .stub.restoreBlockedHandshake()
+                    .request()
+            ).to.equal(true);
+            await harness.network.connectPeers([1, 2]);
+            await waitFor(async () => {
+                const connected = await harness
+                    .control(peer1)
+                    .query.getConnectedPeerAddresses()
+                    .request();
+                return connected.some(
+                    (address) =>
+                        address.toLowerCase() === peer2.address.toLowerCase()
+                );
+            }, 5000);
+
+            const response = await harness
+                .control(peer2)
+                .spectateService.onSpectateRequest({
+                    channelId: harness.channelId!.toString(),
+                    initTime: Date.now()
+                })
+                .request(peer1.address);
+            expect(response.encodedSyncPayload).to.be.a("string");
         });
     });
 
@@ -228,9 +259,10 @@ describe("E2E: Spectate Service", function () {
                     };
                     try {
                         await sm.mutex.lock();
-                        const queuedBlockPromise = sm.onBlockConfirmationStruct(
-                            args.blockConfirmation
-                        );
+                        const queuedBlockPromise =
+                            sm.blockIngestService.onBlockConfirmationStruct(
+                                args.blockConfirmation
+                            );
                         const decoded =
                             sm.p2pManager.localRpc.spectate.decodeSyncPayload(
                                 args.encodedSyncPayload

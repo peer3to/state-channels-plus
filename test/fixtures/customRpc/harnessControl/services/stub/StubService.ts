@@ -1,3 +1,4 @@
+// @spec-test-coverage-ignore: RPC fixture support exercised by owning E2E declarations.
 import ARpcService from "@/rpc/ARpcService";
 import type P2PManager from "@/P2PManager";
 import type ATransport from "@/transport/ATransport";
@@ -22,6 +23,9 @@ import {
 import type { RaceConditionErrorName } from "@/utils/evmErrorHandler";
 import * as factory from "@test/factory";
 import DisputeValidationStrategy from "@/stateManager/validationStrategy/DisputeValidationStrategy";
+import CalldataCommittedStrategy from "@/stateManager/validationStrategy/CalldataCommittedStrategy";
+import type AValidationStrategy from "@/stateManager/validationStrategy/AValidationStrategy";
+import type { QueuedBlockEntry } from "@/storage/QueueStorage";
 import { BlockValidationResult } from "@/types";
 import { Block, StateSnapshot } from "@/models";
 import Clock from "@/Clock";
@@ -31,6 +35,7 @@ import { recordValidationBoundary } from "./RecordingValidationStrategy";
 
 type DisputeCommittedEventKey = string;
 type CalldataPostedEventKey = string;
+type InboundMessageLogKey = string;
 
 /** Fixed identifiers for the stub-original registry (never caller-supplied). */
 export type StubKey =
@@ -39,6 +44,7 @@ export type StubKey =
     | "pendingInboundInclusion"
     | "selectiveDisconnect"
     | "spectateCreateRpcMethods"
+    | "joinSignatureCreateRpcMethods"
     | "disputeAckCreateRpcMethods"
     | "postStateSnapshot"
     | "unsafeSetLatestState"
@@ -49,6 +55,7 @@ export type StubKey =
     | "spectateAbort"
     | "reductionTasks"
     | "snapshotUpdatedEvents"
+    | "inboundMessageEvents"
     | "disputeCommittedEvents"
     | "calldataPostedEvents"
     | "disputeInitiation"
@@ -63,7 +70,16 @@ export type StubKey =
     | "constructDisputeEntry"
     | "disputeSubmissions"
     | "disputeFraudProofApplies"
-    | "disputeKill";
+    | "disputeKill"
+    | "timeoutCheck"
+    | "scheduledTasks"
+    | "ingestConfirmations"
+    | "onChainSlashesQuery"
+    | "localDiamondInboundMessages"
+    | "inboundMessageLogs"
+    | "chainLogQueries"
+    | "disputeWindowTimestamp"
+    | "disputeCommittedHandler";
 
 export type ReductionSimulationErrorName =
     | "RaceConditionDisputeAlreadyReduced"
@@ -123,6 +139,14 @@ export type DisputeSubmissionHold = {
     held: number;
 };
 
+export type HeldOnChainSlashesQueryState = {
+    /** Callers parked at the hold so far. */
+    entered: number;
+    released: boolean;
+    gate: Promise<void>;
+    release: () => void;
+};
+
 export type RecordedFraudProofApply = {
     /** Participants named by the applied dispute fraud proofs. */
     participants: string[];
@@ -148,22 +172,56 @@ export type PausedConstructDisputeState = PausedConstructDisputeStatus & {
     release: () => void;
 };
 
-export type EventSyncFailureProbe = {
-    samePromise: boolean;
-    handlerCallCount: number;
-    firstError: string | null;
-    secondError: string | null;
-    rescheduledError: string | null;
-    cursorBefore: number | null;
-    cursorAfter: number | null;
-    detachedError: string | null;
-};
-
 export type ConcurrentCalldataRecoveryProbe = {
     queryCount: number;
     firstFound: boolean;
     secondFound: boolean;
     retryFound: boolean;
+};
+
+export type ReductionChallengeProbe = {
+    /** Recorded challenge sends - a real one would derail the session. */
+    challengeCalls: number;
+    /** The verdict: true = do not challenge. Null when the call threw. */
+    isValid: boolean | null;
+    threw: string | null;
+};
+
+export type InboundRunRecoveryProbe = {
+    /** Provider getLogs calls the recovery made (0 when storage sufficed). */
+    queryCount: number;
+    /** Each attempt's `fromBlock`, in attempt order. */
+    queriedFromBlocks: (number | null)[];
+    /** The event-sync watermark when the call started. */
+    cursorAtCall: number | null;
+    /** The `toBlock` every attempt queried up to. */
+    toBlock: number | null;
+    /** InboundMessagesProcessed logs the recovery dispatched. */
+    scheduledLogCount: number;
+    /** Blocks returned, or null when the gap survived recovery. */
+    blockCount: number | null;
+    /** Whether the peer held the requested head before the call. */
+    heldBefore: boolean;
+    heldAfter: boolean;
+    /** Set only if the recovery threw - its contract says it never does. */
+    threw: string | null;
+};
+
+/** The block range one recorded `provider.getLogs` call asked for. */
+export type ChainLogQuerySpan = {
+    fromBlock: number | null;
+    toBlock: number | null;
+};
+
+export type BlockCalldataRecoveryProbe = {
+    /** Whether the recovery ended with the calldata in local storage. */
+    recoveredCalldata: boolean;
+    /** Whether the recovery dispatched a calldata log for validation. */
+    validationScheduled: boolean;
+    /** Provider getLogs calls the recovery made. */
+    queryCount: number;
+    /** Set only if the recovery threw - its contract says it never does. */
+    threw: string | null;
 };
 
 export type DisputeStrategyResultMatrix = Record<string, string>;
@@ -184,20 +242,29 @@ export type IsDisputedForkProbe = {
     onChainQueries: number;
 };
 
-export type BlockValidationProbeOptions = {
+export type BlockProbeOptions = {
     strategy?: "active" | "dispute";
     encodedDispute?: string;
     /** Supplier of this copy - drives `sourcePeers`/`signatureSources`. */
     senderAddress?: Address;
+};
+
+export type BlockValidationProbeOptions = BlockProbeOptions & {
     /**
-     * Drive this one deviation hook on the strategy instead of the whole
-     * pipeline. For branches the pipeline can't reach: an unknown-fork entry is
-     * never handed to `validateBlockConfirmation` because
-     * `BlockQueueManager.scheduleQueueExecution` and `tryExecuteFromQueue` both
-     * return early on a non-current fork, so the missing-genesis branch is only
-     * reachable by calling the hook.
+     * Drive this one deviation hook instead of validateBlockConfirmation -
+     * for branches the pipeline can't reach: an unknown-fork entry is never
+     * handed to `validateBlockConfirmation` because
+     * `BlockQueueManager.scheduleQueueExecution` and `tryExecuteFromQueue`
+     * both return early on a non-current fork, so the missing-genesis branch
+     * is only reachable by calling the hook.
      */
-    invokeHook?: "blockAuthorIsNotParticipant" | "wrongGenesisDetected";
+    hook?: "blockAuthorIsNotParticipant" | "wrongGenesisDetected";
+    /**
+     * "validate" (default) runs validateBlockConfirmation only; "full" runs
+     * the whole onBlockConfirmation pipeline (assembly, hash compare, VM
+     * restore) under the same record-only side-effect wrappers.
+     */
+    pipeline?: "validate" | "full";
 };
 
 export type BlockValidationProbe = {
@@ -215,6 +282,34 @@ export type BlockValidationProbe = {
     sourcePeers: string[];
     /** How many times validation asked EventSyncService to recover calldata. */
     calldataRecoveryQueries: number;
+};
+
+export type BlockIngestProbe = BlockValidationProbe & {
+    /** onBlockConfirmation's return value. */
+    keepConnection: boolean;
+};
+
+/**
+ * One in-flight runBlockValidation/runBlockIngest call: the decoded block and
+ * entry, the chosen strategy (`instrumentedStrategy` is the same strategy
+ * wrapped to log fired deviation hooks into `recorded`), the side effects the
+ * record-only stubs captured, and `restore()` to put the patched live methods
+ * back.
+ */
+type RecordedValidationRun = {
+    block: Block;
+    entry: QueuedBlockEntry;
+    strategy: AValidationStrategy;
+    instrumentedStrategy: AValidationStrategy;
+    recorded: {
+        disputedForkIds: string[];
+        disconnectedAddresses: string[];
+        firedHooks: string[];
+        restoreQueuedEntryCalled: boolean;
+        calldataRecoveryQueries: number;
+        lastHookResult: BlockValidationResult | undefined;
+    };
+    restore: () => void;
 };
 
 /**
@@ -245,18 +340,34 @@ export class StubService extends ARpcService<
     spectateAbortCalled = false;
     /** Incremented by the count-spectate-requests stub per onSpectateRequest. */
     spectateRequestCount = 0;
+    /** Incremented per join-signature request by the recording wrapper. */
+    joinSignatureRequestCount = 0;
     /** `reduction-*` timer tasks captured by the hold-reduction-tasks stub. */
     readonly heldReductionTasks: {
         taskName: string;
         task: () => void | Promise<void>;
     }[] = [];
+    /** Label + delay of every scheduled task, captured by the record stub. */
+    readonly recordedScheduledTasks: {
+        taskName: string;
+        delayMs: number;
+    }[] = [];
     /** Event arg-tuples captured by the hold-event stubs. */
     readonly heldSnapshotUpdatedArgs: unknown[][] = [];
     readonly heldDisputeCommittedArgs: unknown[][] = [];
+    readonly heldInboundMessageArgs: unknown[][] = [];
     readonly passedDisputeCommittedEventKeys =
         new Set<DisputeCommittedEventKey>();
+    /** Subscribed inbound logs the drop stub has already lost once. */
+    readonly droppedInboundMessageLogKeys = new Set<InboundMessageLogKey>();
+    /** How many distinct inbound logs may be dropped (undefined = all). */
+    inboundMessageLogDropLimit?: number;
     /** Subscribed calldata logs the hold stub has already lost once. */
     readonly heldCalldataPostedEventKeys = new Set<CalldataPostedEventKey>();
+    /** getLogs spans recorded by the current chain-log-query patch. */
+    private chainLogQuerySpans: ChainLogQuerySpan[] = [];
+    /** Dispatches that reached the failing onDisputeCommitted stub. */
+    private failedDisputeCommittedCalls = 0;
     /** Resolvers waiting for the first held calldata log. */
     private readonly heldCalldataPostedWaiters: (() => void)[] = [];
     /** Whether the dispute-event hold stub should pass its first new log. */
@@ -291,8 +402,13 @@ export class StubService extends ARpcService<
     fraudProofApplyFailure?: DisputeSubmissionFailureSpec;
     /** Incremented per `killDispute` skipped by the suppress-kill stub. */
     suppressedDisputeKillCount = 0;
+    /** State for the dispute-audit hold at the on-chain-slashes query. */
+    heldOnChainSlashesQuery?: HeldOnChainSlashesQueryState;
+    /** Resolvers waiting for the first parked slashes query. */
+    private readonly heldOnChainSlashesQueryWaiters: (() => void)[] = [];
     /**
-     * Serializes `runBlockValidation`'s record-only patch/restore region. The
+     * Serializes runBlockValidation/runBlockIngest's record-only
+     * patch/restore region. The
      * patch replaces shared live methods (dispute, disconnect, restore), so two
      * overlapping probes would restore each other's replacements.
      */
@@ -369,6 +485,50 @@ export class StubService extends ARpcService<
         );
     }
 
+    /** Hold subscribed calldata logs before the scheduler records their key. */
+    public holdCalldataPostedEvents(): void {
+        const eventSyncService = this.sm.eventSyncService;
+        if (!this.stubOriginals.has("calldataPostedEvents")) {
+            this.stubOriginals.set(
+                "calldataPostedEvents",
+                eventSyncService.scheduleLog.bind(eventSyncService)
+            );
+        }
+        const original = this.stubOriginals.get(
+            "calldataPostedEvents"
+        ) as typeof eventSyncService.scheduleLog;
+        eventSyncService.scheduleLog = async (...args) => {
+            const parsed =
+                this.sm.stateChannelManagerContract.interface.parseLog({
+                    topics: args[0].topics,
+                    data: args[0].data
+                });
+            if (parsed?.name === "BlockCalldataPosted") {
+                const eventKey = `${args[0].transactionHash}:${args[0].index}`;
+                if (!this.heldCalldataPostedEventKeys.has(eventKey)) {
+                    // Lose the subscribed delivery once. A later explicit
+                    // query of the same log must reach the real scheduler so
+                    // this stub accurately models missed subscription data.
+                    this.heldCalldataPostedEventKeys.add(eventKey);
+                    this.notifyCalldataPostedEventHeld();
+                    return;
+                }
+            }
+            return original(...args);
+        };
+    }
+
+    public restoreCalldataPostedEvents(): boolean {
+        const eventSyncService = this.sm.eventSyncService;
+        const original = this.stubOriginals.get("calldataPostedEvents");
+        if (original === undefined) return false;
+        eventSyncService.scheduleLog =
+            original as typeof eventSyncService.scheduleLog;
+        this.stubOriginals.delete("calldataPostedEvents");
+        this.heldCalldataPostedEventKeys.clear();
+        return true;
+    }
+
     /**
      * Run `isDisputedFork` while counting the local-diamond queries, so a test
      * can prove which of the two sources decided. `markLocallyDisputed`
@@ -399,6 +559,79 @@ export class StubService extends ARpcService<
         } finally {
             localDiamond.isForkDisputed = original;
         }
+    }
+
+    /**
+     * Park `localDiamondContract.getOnChainSlashedParticipants` callers until
+     * released - the dispute audit's first await after it captured auditing
+     * data, so a test can mutate real state mid-audit deterministically. Both
+     * live call sites invoke the method plainly, so a plain async replacement
+     * is faithful.
+     */
+    public installOnChainSlashesQueryHold(): void {
+        const localDiamond = this.sm.diamondStateMachine.localDiamondContract;
+        if (!this.stubOriginals.has("onChainSlashesQuery")) {
+            this.stubOriginals.set(
+                "onChainSlashesQuery",
+                localDiamond.getOnChainSlashedParticipants
+            );
+        }
+        const original = this.stubOriginals.get(
+            "onChainSlashesQuery"
+        ) as typeof localDiamond.getOnChainSlashedParticipants;
+        let releaseGate!: () => void;
+        const gate = new Promise<void>((resolve) => {
+            releaseGate = resolve;
+        });
+        const held: HeldOnChainSlashesQueryState = {
+            entered: 0,
+            released: false,
+            gate,
+            release: () => {
+                held.released = true;
+                releaseGate();
+            }
+        };
+        this.heldOnChainSlashesQuery = held;
+        localDiamond.getOnChainSlashedParticipants = (async (
+            ...args: Parameters<typeof original>
+        ) => {
+            held.entered += 1;
+            this.heldOnChainSlashesQueryWaiters
+                .splice(0)
+                .forEach((resolve) => resolve());
+            await gate;
+            return original(...args);
+        }) as typeof localDiamond.getOnChainSlashedParticipants;
+    }
+
+    /** Release parked callers and reinstall the real query. */
+    public releaseOnChainSlashesQueryHold(): boolean {
+        this.heldOnChainSlashesQuery?.release();
+        this.heldOnChainSlashesQuery = undefined;
+        const original = this.stubOriginals.get("onChainSlashesQuery");
+        if (original === undefined) return false;
+        const localDiamond = this.sm.diamondStateMachine.localDiamondContract;
+        localDiamond.getOnChainSlashedParticipants =
+            original as typeof localDiamond.getOnChainSlashedParticipants;
+        this.stubOriginals.delete("onChainSlashesQuery");
+        return true;
+    }
+
+    /** Resolve with the parked-caller count once at least one is held. */
+    public waitForHeldOnChainSlashesQuery(): Promise<number> {
+        const held = this.heldOnChainSlashesQuery;
+        if (!held) {
+            return Promise.reject(
+                new Error("onChainSlashesQuery hold not installed")
+            );
+        }
+        if (held.entered > 0) return Promise.resolve(held.entered);
+        return new Promise((resolve) =>
+            this.heldOnChainSlashesQueryWaiters.push(() =>
+                resolve(held.entered)
+            )
+        );
     }
 
     /**
@@ -465,101 +698,307 @@ export class StubService extends ARpcService<
         };
     }
 
-    /** Exercise rejected-log retention through the real EventSyncService. */
-    public async probeRejectedEventSyncLog(): Promise<EventSyncFailureProbe> {
+    get chainProvider() {
+        const provider = this.sm.stateChannelManagerContract.runner?.provider;
+        if (!provider) throw new Error("Expected a chain provider");
+        return provider;
+    }
+
+    /** Spans of the getLogs calls seen since the current patch went in. */
+    get chainLogQueries(): readonly ChainLogQuerySpan[] {
+        return this.chainLogQuerySpans;
+    }
+
+    /** Make every provider getLogs throw -> no recovery query can succeed. */
+    failChainLogQueries(): void {
+        this.patchChainLogQueries(true);
+    }
+
+    /** Record every provider getLogs span and forward it. */
+    countChainLogQueries(): void {
+        this.patchChainLogQueries(false);
+    }
+
+    restoreChainLogQueries(): boolean {
+        const original = this.stubOriginals.get("chainLogQueries");
+        if (original === undefined) return false;
+        this.chainProvider.getLogs =
+            original as typeof this.chainProvider.getLogs;
+        this.stubOriginals.delete("chainLogQueries");
+        return true;
+    }
+
+    /**
+     * Record every provider getLogs span; with `fail` each call throws too.
+     * One such patch is active at a time - installing a second one resets the
+     * recorded spans.
+     */
+    private patchChainLogQueries(fail: boolean): void {
+        const provider = this.chainProvider;
+        if (!this.stubOriginals.has("chainLogQueries")) {
+            this.stubOriginals.set(
+                "chainLogQueries",
+                provider.getLogs.bind(provider)
+            );
+        }
+        const original = this.stubOriginals.get(
+            "chainLogQueries"
+        ) as typeof provider.getLogs;
+        this.chainLogQuerySpans = [];
+        provider.getLogs = (async (filter) => {
+            this.chainLogQuerySpans.push({
+                fromBlock:
+                    "fromBlock" in filter ? Number(filter.fromBlock) : null,
+                toBlock: "toBlock" in filter ? Number(filter.toBlock) : null
+            });
+            if (fail) throw new Error("stubbed getLogs failure");
+            return original(filter);
+        }) as typeof provider.getLogs;
+    }
+
+    /**
+     * Run the real `loadSynchronizedInboundRun` for `upperBlockHash`, bounded
+     * below by this peer's fork-genesis inbound head, recording the chain
+     * queries it makes (count and each query's span) and how many logs it
+     * dispatched.
+     */
+    public async probeInboundRunRecovery(
+        upperBlockHash: Hash,
+        options?: { failChainQueries?: boolean }
+    ): Promise<InboundRunRecoveryProbe> {
         const sm = this.sm;
-        const contract = sm.stateChannelManagerContract;
-        const provider = contract.runner?.provider;
-        if (!provider) throw new Error("Expected a provider for event sync");
-        const latestBlock = await provider.getBlock("latest");
-        if (!latestBlock?.hash) throw new Error("Expected a latest block");
-        const stateSnapshot = await contract.getStateSnapshot(sm.channelId);
-        const event = contract.interface.getEvent("StateSnapshotUpdated");
-        const encodedEvent = contract.interface.encodeEventLog(event, [
-            sm.channelId,
-            stateSnapshot
-        ]);
-        const log = new Log(
-            {
-                address: String(contract.target),
-                blockHash: latestBlock.hash,
-                blockNumber: latestBlock.number + 1,
-                data: encodedEvent.data,
-                index: 0,
-                removed: false,
-                topics: encodedEvent.topics,
-                transactionHash: id(`event-sync-failure-${Date.now()}`),
-                transactionIndex: 0
-            },
-            provider
+        const genesis = sm.storage.stateSnapshots.getGenesisSnapshotByForkId(
+            sm.forkId
         );
-        const eventHandler = sm.eventHandler;
-        const original = eventHandler.onStateSnapshotUpdated.bind(eventHandler);
-        let handlerCallCount = 0;
-        eventHandler.onStateSnapshotUpdated = async () => {
-            handlerCallCount += 1;
-            throw new Error("Expected event-sync rejection");
-        };
-        const cursorBefore =
+        if (!genesis) throw new Error("Expected a genesis snapshot");
+        const held = () =>
+            Boolean(sm.storage.inboundMessages.getMessageBlock(upperBlockHash));
+        const heldBefore = held();
+        const cursorAtCall =
             sm.storage.eventSync.getLatestProcessedBlock(sm.channelId) ?? null;
+
+        if (options?.failChainQueries) this.failChainLogQueries();
+        else this.countChainLogQueries();
+        // count-and-forward: the driver's dispatch count is what proves an
+        // already-applied log is not re-dispatched
+        const eventSyncService = sm.eventSyncService;
+        const originalScheduleLog =
+            eventSyncService.scheduleLog.bind(eventSyncService);
+        let scheduledLogCount = 0;
+        eventSyncService.scheduleLog = ((log, scheduledChannelId) => {
+            const parsed = sm.stateChannelManagerContract.interface.parseLog({
+                topics: log.topics,
+                data: log.data
+            });
+            if (parsed?.name === "InboundMessagesProcessed") {
+                scheduledLogCount += 1;
+            }
+            return originalScheduleLog(log, scheduledChannelId);
+        }) as typeof eventSyncService.scheduleLog;
+
         try {
-            const first = sm.eventSyncService.scheduleLog(log, sm.channelId);
-            const second = sm.eventSyncService.scheduleLog(log, sm.channelId);
-            DetachedPromises.collect(first);
-            const [firstError, secondError] = await Promise.all([
-                first.then(
-                    () => null,
-                    (error: unknown) =>
-                        error instanceof Error ? error.message : String(error)
-                ),
-                second.then(
-                    () => null,
-                    (error: unknown) =>
-                        error instanceof Error ? error.message : String(error)
-                )
-            ]);
-            const detached = await DetachedPromises.collectSettledAndClear();
-            const rejected = detached.find(
-                (result): result is PromiseRejectedResult =>
-                    result.status === "rejected"
+            const run = await sm.eventSyncService.loadSynchronizedInboundRun(
+                upperBlockHash,
+                genesis.latestInboundMessageBlockHash,
+                genesis.timestamp
             );
-            const detachedError = rejected
-                ? rejected.reason instanceof Error
-                    ? rejected.reason.message
-                    : String(rejected.reason)
-                : null;
-
-            // A failed log is fatal - rescheduling it returns the cached
-            // rejection and never re-enters the handler, even once the handler
-            // would succeed.
-            eventHandler.onStateSnapshotUpdated = async () => {
-                handlerCallCount += 1;
-            };
-            const rescheduled = sm.eventSyncService.scheduleLog(
-                log,
-                sm.channelId
-            );
-            const rescheduledError = await rescheduled.then(
-                () => null,
-                (error: unknown) =>
-                    error instanceof Error ? error.message : String(error)
-            );
-
             return {
-                samePromise: first === second,
-                handlerCallCount,
-                firstError,
-                secondError,
-                rescheduledError,
-                cursorBefore,
-                cursorAfter:
-                    sm.storage.eventSync.getLatestProcessedBlock(
-                        sm.channelId
-                    ) ?? null,
-                detachedError
+                ...this.describeChainLogQueries(),
+                cursorAtCall,
+                scheduledLogCount,
+                blockCount: run ? run.length : null,
+                heldBefore,
+                heldAfter: held(),
+                threw: null
+            };
+        } catch (error) {
+            return {
+                ...this.describeChainLogQueries(),
+                cursorAtCall,
+                scheduledLogCount,
+                blockCount: null,
+                heldBefore,
+                heldAfter: held(),
+                threw: error instanceof Error ? error.message : String(error)
             };
         } finally {
-            eventHandler.onStateSnapshotUpdated = original;
+            eventSyncService.scheduleLog = originalScheduleLog;
+            this.restoreChainLogQueries();
+        }
+    }
+
+    /** The recorded getLogs spans as a probe reports them. */
+    private describeChainLogQueries() {
+        const spans = this.chainLogQueries;
+        return {
+            queryCount: spans.length,
+            queriedFromBlocks: spans.map((span) => span.fromBlock),
+            toBlock: spans.length ? spans[spans.length - 1].toBlock : null
+        };
+    }
+
+    /**
+     * Lose a subscribed `BlockCalldataPosted` delivery for one of this peer's
+     * own blocks, then run the real calldata recovery for that block. With
+     * `failChainQueries` the recovery query is blinded, so the contained
+     * failure path runs instead.
+     */
+    public async probeBlockCalldataRecovery(options?: {
+        failChainQueries?: boolean;
+    }): Promise<BlockCalldataRecoveryProbe> {
+        const sm = this.sm;
+        const forkId = sm.forkId;
+        const block = await this.findOwnBlockWithoutPostedCalldata(forkId);
+
+        this.holdCalldataPostedEvents();
+        if (options?.failChainQueries) this.failChainLogQueries();
+        else this.countChainLogQueries();
+
+        try {
+            await this.postBlockCalldataOnChain(
+                Codec.encode(block.signedBlock, Type.SignedBlock) as string
+            );
+            // premise - the subscribed delivery really was lost
+            await this.waitForHeldCalldataPostedEvent();
+            const recovery =
+                await sm.eventSyncService.tryRecoverBlockCalldataAndScheduleValidation(
+                    forkId,
+                    block.height,
+                    block.author
+                );
+            return {
+                recoveredCalldata: recovery.blockCalldata !== undefined,
+                validationScheduled: recovery.validationScheduled,
+                queryCount: this.chainLogQueries.length,
+                threw: null
+            };
+        } catch (error) {
+            return {
+                recoveredCalldata: false,
+                validationScheduled: false,
+                queryCount: this.chainLogQueries.length,
+                threw: error instanceof Error ? error.message : String(error)
+            };
+        } finally {
+            this.restoreChainLogQueries();
+            this.restoreCalldataPostedEvents();
+        }
+    }
+
+    /**
+     * The newest block this peer authored whose on-chain calldata slot is
+     * still free - only its author may post it, and only once.
+     */
+    private async findOwnBlockWithoutPostedCalldata(forkId: ForkId) {
+        const latest = this.sm.storage.blocks.getLatestBlock(forkId);
+        if (!latest) throw new Error("Expected a block on the current fork");
+        for (let height = Number(latest.height); height >= 0; height--) {
+            const block = this.sm.storage.blocks.getBlock(forkId, height);
+            if (!block || block.author !== this.sm.signerAddress) continue;
+            const commitment =
+                await this.sm.stateChannelManagerContract.getBlockCallDataCommitment(
+                    this.sm.channelId,
+                    forkId,
+                    height,
+                    block.author
+                );
+            if (!commitment.found) return block;
+        }
+        throw new Error("Expected an own block with a free calldata slot");
+    }
+
+    get failedDisputeCommittedHandlerCalls(): number {
+        return this.failedDisputeCommittedCalls;
+    }
+
+    /**
+     * Make `onDisputeCommitted` throw, counting the dispatches that reached
+     * it - a re-dispatched dispute log that fails again.
+     */
+    failDisputeCommittedHandler(): void {
+        const eventHandler = this.sm.eventHandler;
+        if (!this.stubOriginals.has("disputeCommittedHandler")) {
+            this.stubOriginals.set(
+                "disputeCommittedHandler",
+                eventHandler.onDisputeCommitted.bind(eventHandler)
+            );
+        }
+        this.failedDisputeCommittedCalls = 0;
+        eventHandler.onDisputeCommitted = async () => {
+            this.failedDisputeCommittedCalls += 1;
+            throw new Error("stubbed onDisputeCommitted failure");
+        };
+    }
+
+    restoreDisputeCommittedHandler(): boolean {
+        const original = this.stubOriginals.get("disputeCommittedHandler");
+        if (original === undefined) return false;
+        this.sm.eventHandler.onDisputeCommitted =
+            original as typeof this.sm.eventHandler.onDisputeCommitted;
+        this.stubOriginals.delete("disputeCommittedHandler");
+        return true;
+    }
+
+    /** Make the dispute-window creation timestamp read throw. */
+    failDisputeWindowTimestampRead(): void {
+        const contract = this.sm.stateChannelManagerContract;
+        if (!this.stubOriginals.has("disputeWindowTimestamp")) {
+            this.stubOriginals.set(
+                "disputeWindowTimestamp",
+                contract.getDisputeWindowCreationTimestamp
+            );
+        }
+        contract.getDisputeWindowCreationTimestamp =
+            this.asRecordingContractMethod(
+                contract.getDisputeWindowCreationTimestamp,
+                async () => {
+                    throw new Error(
+                        "stubbed getDisputeWindowCreationTimestamp failure"
+                    );
+                }
+            );
+    }
+
+    restoreDisputeWindowTimestampRead(): boolean {
+        const original = this.stubOriginals.get("disputeWindowTimestamp");
+        if (original === undefined) return false;
+        this.sm.stateChannelManagerContract.getDisputeWindowCreationTimestamp =
+            original as StateChannelManagerProxy["getDisputeWindowCreationTimestamp"];
+        this.stubOriginals.delete("disputeWindowTimestamp");
+        return true;
+    }
+
+    /**
+     * Run the real `validateDisputeReductionAndChallenge` against a claimed
+     * `reducedForkId`, recording the challenge send instead of making it - a
+     * real challenge transaction would derail the session.
+     */
+    public async probeDisputeReductionChallenge(
+        reducedForkId: ForkId
+    ): Promise<ReductionChallengeProbe> {
+        const contract = this.sm.stateChannelManagerContract;
+        const original = contract.challengeDisputeReduction;
+        let challengeCalls = 0;
+        contract.challengeDisputeReduction = this.asRecordingContractMethod(
+            original,
+            async () => {
+                challengeCalls += 1;
+                return { wait: async () => null };
+            }
+        );
+        try {
+            const isValid = await this.sm.eventHandler[
+                "validateDisputeReductionAndChallenge"
+            ](this.sm.forkId, reducedForkId);
+            return { challengeCalls, isValid, threw: null };
+        } catch (error) {
+            return {
+                challengeCalls,
+                isValid: null,
+                threw: error instanceof Error ? error.message : String(error)
+            };
+        } finally {
+            contract.challengeDisputeReduction = original;
         }
     }
 
@@ -989,6 +1428,62 @@ export class StubService extends ARpcService<
         return true;
     }
 
+    /**
+     * White-box: run `tryMergeStoredBlockConfirmation` against the entry built
+     * from the confirmation, under the peer's live, spectating, calldata, or a
+     * fabricated dispute strategy. Returns the merge result and the persisted
+     * signature set for the block's hash.
+     */
+    public async runStoredBlockMerge(
+        encodedBlockConfirmation: string,
+        options?: {
+            strategy?: "active" | "dispute" | "spectating" | "calldata";
+        }
+    ): Promise<{
+        result: number | null;
+        persistedSignatures: string[] | null;
+    }> {
+        const sm = this.sm;
+        const blockConfirmation = Codec.decode(
+            encodedBlockConfirmation,
+            Type.BlockConfirmation
+        );
+        const block = Block.fromBlockConfirmation(blockConfirmation);
+        const entry = sm.storage.queues.createEntry(block);
+        let strategy: AValidationStrategy;
+        switch (options?.strategy) {
+            case "dispute":
+                strategy = this.createDisputeValidationStrategy(
+                    factory.dispute()
+                );
+                break;
+            case "spectating":
+                strategy = sm.spectatingValidationStrategy;
+                break;
+            case "calldata":
+                // built as EventHandler builds it for a CalldataPosted event
+                strategy = new CalldataCommittedStrategy(
+                    sm.disputeManager,
+                    sm.blockValidationStrategy
+                );
+                break;
+            default:
+                strategy = sm.blockValidationStrategy;
+        }
+        const result =
+            await sm.storedBlockMergeService.tryMergeStoredBlockConfirmation(
+                entry,
+                strategy
+            );
+        const persisted = sm.storage.blocks.getBlock(block.hash);
+        return {
+            result: result === undefined ? null : Number(result),
+            persistedSignatures: persisted
+                ? Array.from(persisted.confirmationSignatures).map(String)
+                : null
+        };
+    }
+
     public async runBlockValidation(
         encodedBlockConfirmation: string,
         options?: BlockValidationProbeOptions
@@ -997,19 +1492,76 @@ export class StubService extends ARpcService<
             taskName: "stub-run-block-validation"
         });
         try {
-            return await this.runBlockValidationLocked(
+            const run = this.startRecordedValidation(
                 encodedBlockConfirmation,
                 options
             );
+            try {
+                const result = options?.hook
+                    ? await run.instrumentedStrategy[options.hook](run.entry)
+                    : await this.sm.validationService.validateBlockConfirmation(
+                          run.entry,
+                          run.instrumentedStrategy
+                      );
+                return this.buildValidationProbe(run, result);
+            } finally {
+                run.restore();
+            }
         } finally {
             this.blockValidationProbeMutex.unlock();
         }
     }
 
-    private async runBlockValidationLocked(
+    /**
+     * White-box: run the whole onBlockConfirmation pipeline (assembly, hash
+     * compare, VM restore) under the same record-only side-effect wrappers as
+     * `runBlockValidation`. `result` is the last deviation-hook verdict, or
+     * SUCCESS when none fired.
+     */
+    public async runBlockIngest(
         encodedBlockConfirmation: string,
-        options?: BlockValidationProbeOptions
-    ): Promise<BlockValidationProbe> {
+        options?: BlockProbeOptions
+    ): Promise<BlockIngestProbe> {
+        await this.blockValidationProbeMutex.lock({
+            taskName: "stub-run-block-ingest"
+        });
+        try {
+            const run = this.startRecordedValidation(
+                encodedBlockConfirmation,
+                options
+            );
+            try {
+                const keepConnection =
+                    await this.sm.blockIngestService.onBlockConfirmation(
+                        run.entry,
+                        { validationStrategy: run.instrumentedStrategy }
+                    );
+                const result =
+                    run.recorded.lastHookResult ??
+                    BlockValidationResult.SUCCESS;
+                return {
+                    ...this.buildValidationProbe(run, result),
+                    keepConnection
+                };
+            } finally {
+                run.restore();
+            }
+        } finally {
+            this.blockValidationProbeMutex.unlock();
+        }
+    }
+
+    /**
+     * Decode the confirmation, build the same entry the gossip pipeline
+     * builds, pick the strategy, and swap the destructive side effects
+     * (dispute, disconnect, queue restore) for recorders. The caller drives
+     * validation against `entry`/`instrumentedStrategy`, reads what happened
+     * off `recorded`, and MUST call `restore()` when done.
+     */
+    private startRecordedValidation(
+        encodedBlockConfirmation: string,
+        options: BlockProbeOptions | undefined
+    ): RecordedValidationRun {
         const sm = this.sm;
         const blockConfirmation = Codec.decode(
             encodedBlockConfirmation,
@@ -1036,9 +1588,14 @@ export class StubService extends ARpcService<
                   )
                 : sm.getActiveValidationStrategy();
 
-        const disputedForkIds: string[] = [];
-        const disconnectedAddresses: string[] = [];
-        let restoreQueuedEntryCalled = false;
+        const recorded: RecordedValidationRun["recorded"] = {
+            disputedForkIds: [],
+            disconnectedAddresses: [],
+            firedHooks: [],
+            restoreQueuedEntryCalled: false,
+            calldataRecoveryQueries: 0,
+            lastHookResult: undefined
+        };
 
         // record-only: a real dispute posts on-chain against the crafted block,
         // a real disconnect cuts a live transport, a real restore re-arms a
@@ -1054,7 +1611,7 @@ export class StubService extends ARpcService<
         const originalDispute = disputeManager?.dispute.bind(disputeManager);
         if (disputeManager) {
             disputeManager.dispute = async (forkId: ForkId) => {
-                disputedForkIds.push(String(forkId));
+                recorded.disputedForkIds.push(String(forkId));
             };
         }
         const p2pManager = this.p2pManager;
@@ -1063,17 +1620,16 @@ export class StubService extends ARpcService<
         p2pManager.disconnectAndBlacklistPeerByEvmAddress = ((
             address: Address
         ) => {
-            disconnectedAddresses.push(String(address));
+            recorded.disconnectedAddresses.push(String(address));
         }) as typeof p2pManager.disconnectAndBlacklistPeerByEvmAddress;
         const originalRestore = sm.blockQueueManager.restoreQueuedEntry.bind(
             sm.blockQueueManager
         );
         sm.blockQueueManager.restoreQueuedEntry = (() => {
-            restoreQueuedEntryCalled = true;
+            recorded.restoreQueuedEntryCalled = true;
         }) as typeof sm.blockQueueManager.restoreQueuedEntry;
         // count-and-forward: recovery must stay real, the count only proves
         // validation reached the on-chain lookup
-        let calldataRecoveryQueries = 0;
         const eventSyncService = sm.eventSyncService;
         const originalRecover =
             eventSyncService.tryRecoverBlockCalldataAndScheduleValidation.bind(
@@ -1082,13 +1638,12 @@ export class StubService extends ARpcService<
         eventSyncService.tryRecoverBlockCalldataAndScheduleValidation = ((
             ...args: Parameters<typeof originalRecover>
         ) => {
-            calldataRecoveryQueries += 1;
+            recorded.calldataRecoveryQueries += 1;
             return originalRecover(...args);
         }) as typeof eventSyncService.tryRecoverBlockCalldataAndScheduleValidation;
 
         // record which deviation hook the strategy fired, so a test can pin its
         // named guard
-        const firedHooks: string[] = [];
         const instrumentedStrategy = new Proxy(strategy, {
             get(target, prop) {
                 const value = Reflect.get(target, prop);
@@ -1105,50 +1660,55 @@ export class StubService extends ARpcService<
                             typeof resolved === "number" &&
                             BlockValidationResult[resolved] !== undefined
                         ) {
-                            firedHooks.push(prop);
+                            recorded.firedHooks.push(prop);
+                            recorded.lastHookResult =
+                                resolved as BlockValidationResult;
                         }
                         return resolved;
                     });
             }
         });
 
-        try {
-            const result = options?.invokeHook
-                ? await instrumentedStrategy[options.invokeHook](entry)
-                : await sm.validationService.validateBlockConfirmation(
-                      entry,
-                      instrumentedStrategy
-                  );
-            const fraudProof =
-                sm.storage.fraudProofs.getFraudProofForParticipant(
-                    block.signerAddress
-                );
-            return {
-                result,
-                resultName:
-                    BlockValidationResult[result] ?? `UNKNOWN(${result})`,
-                strategyName: strategy.name,
-                disputedForkIds,
-                disconnectedAddresses,
-                firedHooks,
-                restoreQueuedEntryCalled,
-                signerAddress: String(block.signerAddress),
-                fraudProofType: fraudProof
-                    ? String(fraudProof.proofType)
-                    : null,
-                sourcePeers: [...entry.sourcePeers].map(String),
-                calldataRecoveryQueries
-            };
-        } finally {
-            if (disputeManager && originalDispute) {
-                disputeManager.dispute = originalDispute;
+        return {
+            block,
+            entry,
+            strategy,
+            instrumentedStrategy,
+            recorded,
+            restore: () => {
+                if (disputeManager && originalDispute) {
+                    disputeManager.dispute = originalDispute;
+                }
+                p2pManager.disconnectAndBlacklistPeerByEvmAddress =
+                    originalDisconnect;
+                sm.blockQueueManager.restoreQueuedEntry = originalRestore;
+                eventSyncService.tryRecoverBlockCalldataAndScheduleValidation =
+                    originalRecover;
             }
-            p2pManager.disconnectAndBlacklistPeerByEvmAddress =
-                originalDisconnect;
-            sm.blockQueueManager.restoreQueuedEntry = originalRestore;
-            eventSyncService.tryRecoverBlockCalldataAndScheduleValidation =
-                originalRecover;
-        }
+        };
+    }
+
+    private buildValidationProbe(
+        run: RecordedValidationRun,
+        result: BlockValidationResult
+    ): BlockValidationProbe {
+        const fraudProof =
+            this.sm.storage.fraudProofs.getFraudProofForParticipant(
+                run.block.signerAddress
+            );
+        return {
+            result,
+            resultName: BlockValidationResult[result] ?? `UNKNOWN(${result})`,
+            strategyName: run.strategy.name,
+            disputedForkIds: run.recorded.disputedForkIds,
+            disconnectedAddresses: run.recorded.disconnectedAddresses,
+            firedHooks: run.recorded.firedHooks,
+            restoreQueuedEntryCalled: run.recorded.restoreQueuedEntryCalled,
+            signerAddress: String(run.block.signerAddress),
+            fraudProofType: fraudProof ? String(fraudProof.proofType) : null,
+            sourcePeers: [...run.entry.sourcePeers].map(String),
+            calldataRecoveryQueries: run.recorded.calldataRecoveryQueries
+        };
     }
 
     private async runAuthorGate(

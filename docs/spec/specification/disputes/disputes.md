@@ -123,7 +123,10 @@ feeds the next dispute.
 (`DisputeManagerFacet`):
 
 - The disputer MUST be `msg.sender` and MUST be dispute-eligible (`canParticipateInDisputes`:
-  in the snapshot-or-pending participant union and not in the on-chain slash set).
+  in the snapshot-or-pending participant union and not in the on-chain slash set). Excluding
+  on-chain-slashed participants is a current-eligibility rule for point-in-time chain decisions
+  only — it never applies to historical proof thresholds
+  ([finality.md §6](../protocol-model/finality.md)).
 - If the dispute's last milestone is not provably final on its own, the full
   `DisputeAuditingData` MUST be posted as calldata (`postedAuditingData = true`,
   hash-checked against `disputeAuditingDataHash`); otherwise the cheap no-calldata variant is

@@ -15,6 +15,7 @@ const {
     requirementPath,
     sorted
 } = require("./shared/documentation-graph");
+const { ignoreDisposition } = require("./shared/test-inventory");
 
 const REQUIREMENT_GLOBAL_RE = new RegExp(REQUIREMENT_PATTERN, "g");
 const PLAN_GLOBAL_RE = new RegExp(
@@ -127,6 +128,14 @@ function main() {
     const changed = new Set(change.files);
     const directReasons = new Map();
     const accountedFiles = new Set();
+
+    for (const changedPath of changed) {
+        if (!changedPath.startsWith("test/")) continue;
+        const target = path.join(graph.roots.repo, changedPath);
+        if (!fs.existsSync(target) || !fs.statSync(target).isFile()) continue;
+        const disposition = ignoreDisposition(target);
+        if (disposition.ignored) accountedFiles.add(changedPath);
+    }
 
     for (const [id, item] of graph.nodes) {
         const document = relative(graph.roots.repo, item.document);

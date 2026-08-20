@@ -84,6 +84,93 @@ describe("MessageBlockStorage - inbound blocks", () => {
         });
     });
 
+    describe("tolerant range reads", () => {
+        // a chain 0..3 where block 2 was never stored, so the head sits above a
+        // hole - exactly what a missed InboundMessagesProcessed log leaves
+        let hash0: Hash;
+        let hash1: Hash;
+        let hash2: Hash;
+        let hash3: Hash;
+        let block1: MessageBlockStruct;
+        let block2: MessageBlockStruct;
+        let block3: MessageBlockStruct;
+
+        beforeEach(() => {
+            hash0 = storage.store(mockMessageBlock);
+            block1 = {
+                ...mockMessageBlock,
+                previousBlockHash: hash0,
+                blockHeight: 1n
+            };
+            hash1 = storage.store(block1);
+            block2 = {
+                ...mockMessageBlock,
+                previousBlockHash: hash1,
+                blockHeight: 2n
+            };
+            hash2 = hash(Codec.encode(block2, Type.MessageBlock));
+            block3 = {
+                ...mockMessageBlock,
+                previousBlockHash: hash2,
+                blockHeight: 3n
+            };
+            hash3 = storage.store(block3);
+        });
+
+        it("complete range → blocks oldest-first, no missingBlockHash", () => {
+            const run = storage.tryGetMessageBlocksInRange({
+                upperBlockHash: hash1,
+                lowerBlockHash: mockMessageBlock.previousBlockHash as Hash
+            });
+            expect(run.missingBlockHash).to.be.undefined;
+            expect(run.blocks).to.deep.equal([mockMessageBlock, block1]);
+        });
+
+        it("gap mid-range → blocks stop at the gap, missingBlockHash is the unheld hash", () => {
+            const run = storage.tryGetMessageBlocksInRange({
+                upperBlockHash: hash3,
+                lowerBlockHash: mockMessageBlock.previousBlockHash as Hash
+            });
+            expect(run.missingBlockHash).to.equal(hash2);
+            // only the part above the hole can be proven
+            expect(run.blocks).to.deep.equal([block3]);
+        });
+
+        it("unheld upperBlockHash → empty blocks, missingBlockHash is it", () => {
+            const run = storage.tryGetMessageBlocksInRange({
+                upperBlockHash: hash2,
+                lowerBlockHash: hash1
+            });
+            expect(run.missingBlockHash).to.equal(hash2);
+            expect(run.blocks).to.deep.equal([]);
+        });
+
+        it("upperBlockHash = ZeroHash → empty run, no gap (honest pre-genesis anchor)", () => {
+            const run = storage.tryGetMessageBlocksInRange({
+                upperBlockHash: ethers.ZeroHash,
+                lowerBlockHash: ethers.ZeroHash
+            });
+            expect(run.blocks).to.deep.equal([]);
+            expect(run.missingBlockHash).to.be.undefined;
+        });
+
+        it("empty store → empty run, no gap", () => {
+            const empty = new MessageBlockStorage();
+            const run = empty.tryGetMessageBlocksInRange();
+            expect(run.blocks).to.deep.equal([]);
+            expect(run.missingBlockHash).to.be.undefined;
+        });
+
+        it("the strict read still throws the same message on that gap", () => {
+            expect(() =>
+                storage.getMessageBlocksInRange({
+                    upperBlockHash: hash3,
+                    lowerBlockHash: mockMessageBlock.previousBlockHash as Hash
+                })
+            ).to.throw(`Block hash ${hash2} not found in storage`);
+        });
+    });
+
     describe("latest block helpers", () => {
         it("returns undefined when storage is empty", () => {
             expect(storage.getLatestMessageBlock()).to.be.undefined;

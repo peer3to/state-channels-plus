@@ -14,8 +14,8 @@ export type ContractExecutorRequestPayload =
     | {
           type: "init";
           customPrecompiles: WorkerCustomPrecompile[];
-          // Config the worker re-establishes so its logger event-loop monitor
-          // uses the same EVENT_LOOP_DELAY_ERROR_THRESHOLD_SECONDS as everyone.
+          // Config the worker re-establishes so logging and timing use the same
+          // thresholds as the rest of the runtime.
           config: Partial<Config>;
       }
     | {

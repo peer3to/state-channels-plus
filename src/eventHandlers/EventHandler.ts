@@ -37,6 +37,7 @@ import P2pEventHooksUtils from "@/utils/P2pEventHooksUtils";
 import { isEqual } from "lodash";
 import CalldataCommittedStrategy from "@/stateManager/validationStrategy/CalldataCommittedStrategy";
 import type { ReductionGenesis } from "@/stateManager/reduction";
+import { PartialAuditingDataError } from "@/disputeManager/DisputeManager";
 import { Status } from "@/types";
 import { Block, StateSnapshot } from "@/models";
 
@@ -80,7 +81,7 @@ export class EventHandler {
 
         await this.stateManager.withMutex(
             () =>
-                this.stateManager.unsafeSetGenesisState(
+                this.stateManager.stateApplicationService.unsafeSetGenesisState(
                     stateSnapshot.snapshotData,
                     encodedState,
                     stateSnapshot.forkId,
@@ -117,7 +118,7 @@ export class EventHandler {
                 updatedSnapshot.hash
             );
         if (!knownSnapshot) {
-            const status = this.stateManager.getStatus();
+            const status = this.stateManager.status;
             if (status === Status.SYNCED) {
                 // TODO: call stateManager.abort() here; it drops to OPENED and disposes,
                 // but no resync path exists yet.
@@ -185,7 +186,7 @@ export class EventHandler {
         const signerAddress = this.stateManager.signerAddress;
         const snapshotParticipants = stateSnapshot.snapshotData
             .participants as Address[];
-        const status = this.stateManager.getStatus();
+        const status = this.stateManager.status;
 
         const snapshotHasSigner = snapshotParticipants.some((p) =>
             addressesEqual(p, signerAddress)
@@ -274,13 +275,16 @@ export class EventHandler {
             signedBlock,
             signatures: []
         };
-        await this.stateManager.ingestBlockConfirmation(blockConfirmation, {
-            onChainTimestamp: Number(timestamp),
-            validationStrategy: new CalldataCommittedStrategy(
-                this.stateManager.disputeManager,
-                this.stateManager.blockValidationStrategy
-            )
-        });
+        await this.stateManager.blockQueueManager.ingestBlockConfirmation(
+            blockConfirmation,
+            {
+                onChainTimestamp: Number(timestamp),
+                validationStrategy: new CalldataCommittedStrategy(
+                    this.stateManager.disputeManager,
+                    this.stateManager.blockValidationStrategy
+                )
+            }
+        );
     }
 
     async onDisputeCommitted(
@@ -379,7 +383,7 @@ export class EventHandler {
             try {
                 if (!disputeAuditingData) {
                     const { isPartial, auditingData } =
-                        this.stateManager.disputeManager.getAuditingData(
+                        await this.stateManager.disputeManager.getAuditingData(
                             forkId,
                             dispute.input.stateProof,
                             {
@@ -388,9 +392,21 @@ export class EventHandler {
                             }
                         );
                     if (isPartial) {
-                        throw new Error(
-                            "DisputeAuditingData not available on a final dispute"
+                        // cannot rebuild the final dispute's data yet. the
+                        // confirmation is already stored, so the ordinary reduce
+                        // path picks the window up with this dispute in it and
+                        // derives the same result
+                        this.logger.warn(
+                            "Final dispute genesis deferred: auditing data could not be rebuilt locally",
+                            { channelId, forkId, dispute: disputeMeta }
                         );
+                        this.stateManager.reductionManager.schedule(
+                            forkId,
+                            Number(disputeCreationTimestamp) +
+                                this.stateManager.timeConfig.chainFallbackTime,
+                            true
+                        );
+                        return;
                     }
                     disputeAuditingData = auditingData;
                 }
@@ -436,7 +452,7 @@ export class EventHandler {
                             : undefined
                 };
             } catch (error) {
-                const status = this.stateManager.getStatus();
+                const status = this.stateManager.status;
                 if (
                     status !== Status.PARTICIPATING &&
                     status !== Status.PENDING_PARTICIPANT
@@ -482,7 +498,7 @@ export class EventHandler {
             if (!persistableAuditingData) {
                 try {
                     const derived =
-                        this.stateManager.disputeManager.getAuditingData(
+                        await this.stateManager.disputeManager.getAuditingData(
                             forkId,
                             dispute.input.stateProof,
                             {
@@ -608,10 +624,27 @@ export class EventHandler {
         dispute: DisputeStruct
     ): Promise<boolean> {
         // Create our own dispute
-        const { dispute: ourDispute } =
-            await this.stateManager.disputeManager.constructDispute(
-                this.stateManager.latestForkId
+        let ourDispute: DisputeStruct;
+        try {
+            ourDispute = (
+                await this.stateManager.disputeManager.constructDispute(
+                    this.stateManager.forkId
+                )
+            ).dispute;
+        } catch (error) {
+            if (!(error instanceof PartialAuditingDataError)) throw error;
+            // we cannot rebuild our own auditing data -> we have no more
+            // evidence to give. the caller falls through to scheduling the
+            // reduction instead of dying on the throw
+            this.logger.warn(
+                "No more evidence: own auditing data could not be rebuilt locally",
+                {
+                    forkId: this.stateManager.forkId,
+                    dispute: LoggerUtils.getDisputeMetadata(dispute)
+                }
             );
+            return false;
+        }
 
         this.logger.verbose("Constructed our own dispute for comparison", {
             ourDispute: LoggerUtils.getDisputeMetadata(ourDispute),
@@ -658,7 +691,7 @@ export class EventHandler {
         this.stateManager.p2pManager.disconnectAndBlacklistPeerByEvmAddress(
             participant
         );
-        const latestFork = this.stateManager.latestForkId;
+        const latestFork = this.stateManager.forkId;
         let isDisputed =
             await this.diamondStateMachine.localDiamondContract.isForkDisputed(
                 channelId,
@@ -739,7 +772,7 @@ export class EventHandler {
                 reducedForkId
             );
         } catch (error) {
-            const status = this.stateManager.getStatus();
+            const status = this.stateManager.status;
             if (
                 status !== Status.PARTICIPATING &&
                 status !== Status.PENDING_PARTICIPANT
@@ -892,6 +925,17 @@ export class EventHandler {
             await this.stateManager.reductionManager.getSyncedForkDisputes(
                 forkId
             );
+        if (!disputes) {
+            // the window's disputes are on-chain but not locally readable yet,
+            // so we are in no position to challenge it. `true` follows the
+            // chain instead, the same path a peer takes for a reduction it
+            // agrees with
+            this.logger.warn(
+                "Dispute reduction not challenged: dispute window unavailable",
+                { forkId, reducedForkId }
+            );
+            return true;
+        }
         if (disputes.length === 0) {
             // The commitments for this fork are no longer available locally:
             // the reduction was already consumed (finalized and applied) or
@@ -912,6 +956,16 @@ export class EventHandler {
                 forkId,
                 disputes
             );
+        if (!computation) {
+            // we cannot rebuild the run this reduction consumed -> we are in no
+            // position to challenge it. `true` follows the chain instead, the
+            // same path a peer takes for a reduction it agrees with
+            this.logger.warn(
+                "Dispute reduction not challenged: reduce data unavailable",
+                { forkId, reducedForkId }
+            );
+            return true;
+        }
         const { reduceData } = computation;
         const latestSnapshot = reduceData.latestStateSnapshot;
         const isValid = computation.reducedForkId == reducedForkId;

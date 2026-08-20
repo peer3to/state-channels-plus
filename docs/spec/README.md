@@ -177,7 +177,11 @@ REQ-* / INV-*
 
 Every test declaration maps to at least one planned-test item. A test-file link is not evidence.
 Dynamic/fuzz declarations use `[test family](...#L...)` and document their dimensions and oracles.
-A genuinely out-of-scope test file may use
+Maintained test plans contain only current obligations. Delete obsolete or replaced IDs and their
+maintained references. An ID is immutable until deletion, so surviving children keep their numbers
+and deleted children leave gaps. Git history preserves deleted identities and wording.
+
+A genuinely out-of-scope test or test-support file may use
 `// @spec-test-coverage-ignore: <reason>` in its first ten lines.
 
 ## 6. Open questions and findings

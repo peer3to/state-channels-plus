@@ -190,7 +190,7 @@ describe("E2E: Participant Lifecycle", function () {
             const retryState = await h.execOnHost(
                 h.getPeer(spectator.index),
                 async (sm) => ({
-                    status: sm.getStatus(),
+                    status: sm.status,
                     joinSubmissionHeight:
                         sm.storage.forceJoin.getJoinSubmissionBlockHeight()
                 }),

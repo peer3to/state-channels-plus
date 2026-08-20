@@ -1,13 +1,16 @@
+// @spec-test-coverage-ignore: RPC fixture support exercised by owning E2E declarations.
 import ARpcMethods from "@/rpc/ARpcMethods";
 import type P2PManager from "@/P2PManager";
 import type ATransport from "@/transport/ATransport";
 import { Codec, sleep, Type } from "@/utils";
 import { HandshakeCompletedGuard } from "@/rpc/guards";
+import type { Status } from "@/types";
 import type { Address } from "@/types/types";
 import type SpectateServiceRpcMethods from "@/rpc/services/spectate/SpectateRpcMethods";
 import type { SyncRequest } from "@/rpc/services/spectate/SpectateService";
 import type IsForkDisputedRpcMethods from "@/rpc/services/isForkDisputedService/IsForkDisputedRpcMethods";
 import InitHandshakeRpcMethods from "@/rpc/services/initHandshake/InitHandshakeRpcMethods";
+import type JoinChannelRpcMethods from "@/rpc/services/joinChannel/JoinChannelRpcMethods";
 import type { StateSnapshot } from "@/models";
 import type { MessageBlockStruct } from "@typechain-types/contracts/V1/types/DataTypes";
 import { id } from "ethers";
@@ -15,7 +18,6 @@ import type { ForkId, Hash, Timestamp } from "@/types/types";
 import type { HarnessControlRpc } from "../../HarnessControlRpc";
 import type {
     DisputeSubmissionFailureSpec,
-    EventSyncFailureProbe,
     PausedConstructDisputeState,
     PausedConstructDisputeStatus,
     PausedReductionStatus,
@@ -28,6 +30,11 @@ import type {
     MissingParticipantSnapshotsProbe,
     BlockValidationProbe,
     BlockValidationProbeOptions,
+    BlockProbeOptions,
+    BlockIngestProbe,
+    BlockCalldataRecoveryProbe,
+    InboundRunRecoveryProbe,
+    ReductionChallengeProbe,
     IsDisputedForkProbe
 } from "./StubService";
 import type { StubService } from "./StubService";
@@ -102,21 +109,17 @@ export class StubRpcMethods extends ARpcMethods<P2PManager<HarnessControlRpc>> {
 
     /** Make authored blocks omit pending inbound messages. */
     public stubPendingInboundInclusion(): boolean {
-        // This is deliberately scoped to block assembly. Stubbing the inbound
+        // This is deliberately scoped to block authoring. Stubbing the inbound
         // storage head also corrupts disputes constructed while the stub is
         // active.
-        const sm = this.service.sm as unknown as {
-            getPendingInboundMessageBlocks: (
-                previousStateSnapshot: StateSnapshot
-            ) => MessageBlockStruct[];
-        };
+        const production = this.service.sm.blockProductionService;
         if (!this.service.stubOriginals.has("pendingInboundInclusion")) {
             this.service.stubOriginals.set(
                 "pendingInboundInclusion",
-                sm.getPendingInboundMessageBlocks
+                production["getPendingInboundMessageBlocks"]
             );
         }
-        sm.getPendingInboundMessageBlocks = () => [];
+        production["getPendingInboundMessageBlocks"] = () => [];
         return true;
     }
 
@@ -125,10 +128,9 @@ export class StubRpcMethods extends ARpcMethods<P2PManager<HarnessControlRpc>> {
             "pendingInboundInclusion"
         );
         if (original === undefined) return false;
-        const sm = this.service.sm as unknown as {
-            getPendingInboundMessageBlocks: unknown;
-        };
-        sm.getPendingInboundMessageBlocks = original;
+        const production = this.service.sm.blockProductionService;
+        production["getPendingInboundMessageBlocks"] =
+            original as (typeof production)["getPendingInboundMessageBlocks"];
         this.service.stubOriginals.delete("pendingInboundInclusion");
         return true;
     }
@@ -169,19 +171,17 @@ export class StubRpcMethods extends ARpcMethods<P2PManager<HarnessControlRpc>> {
 
     /**
      * Suppress this peer posting its own block on-chain (forces the on-chain
-     * calldata path). `maybePostBlockOnChain` is private — cast to reach it.
+     * calldata path).
      */
     public stubSuppressMaybePostBlockOnChain(): boolean {
-        const sm = this.service.sm as unknown as {
-            maybePostBlockOnChain: (blockHash: unknown) => void;
-        };
+        const posting = this.service.sm.calldataPostingService;
         if (!this.service.stubOriginals.has("maybePostBlockOnChain")) {
             this.service.stubOriginals.set(
                 "maybePostBlockOnChain",
-                sm.maybePostBlockOnChain
+                posting.maybePostBlockOnChain
             );
         }
-        sm.maybePostBlockOnChain = () => {};
+        posting.maybePostBlockOnChain = () => {};
         return true;
     }
 
@@ -190,12 +190,108 @@ export class StubRpcMethods extends ARpcMethods<P2PManager<HarnessControlRpc>> {
             "maybePostBlockOnChain"
         );
         if (original === undefined) return false;
-        (
-            this.service.sm as unknown as {
-                maybePostBlockOnChain: unknown;
-            }
-        ).maybePostBlockOnChain = original;
+        const posting = this.service.sm.calldataPostingService;
+        posting.maybePostBlockOnChain =
+            original as typeof posting.maybePostBlockOnChain;
         this.service.stubOriginals.delete("maybePostBlockOnChain");
+        return true;
+    }
+
+    /**
+     * Stop this peer running the participant-timeout check, so a staged
+     * scenario is not cut short by a real timeout dispute.
+     */
+    public stubSuppressTimeoutCheck(): boolean {
+        const timeouts = this.service.sm.participantTimeoutService;
+        if (!this.service.stubOriginals.has("timeoutCheck")) {
+            this.service.stubOriginals.set(
+                "timeoutCheck",
+                timeouts["tryTimeoutParticipant"]
+            );
+        }
+        timeouts["tryTimeoutParticipant"] = async () => undefined;
+        return true;
+    }
+
+    public restoreSuppressTimeoutCheck(): boolean {
+        const original = this.service.stubOriginals.get("timeoutCheck");
+        if (original === undefined) return false;
+        const timeouts = this.service.sm.participantTimeoutService;
+        timeouts["tryTimeoutParticipant"] =
+            original as (typeof timeouts)["tryTimeoutParticipant"];
+        this.service.stubOriginals.delete("timeoutCheck");
+        return true;
+    }
+
+    /**
+     * Make this peer reject every ingested block confirmation, as if the
+     * queue refused it.
+     */
+    public stubRejectIngestedConfirmations(): boolean {
+        const queue = this.service.sm.blockQueueManager;
+        if (!this.service.stubOriginals.has("ingestConfirmations")) {
+            this.service.stubOriginals.set(
+                "ingestConfirmations",
+                queue.ingestBlockConfirmation
+            );
+        }
+        queue.ingestBlockConfirmation = async () => false;
+        return true;
+    }
+
+    public restoreRejectIngestedConfirmations(): boolean {
+        const original = this.service.stubOriginals.get("ingestConfirmations");
+        if (original === undefined) return false;
+        const queue = this.service.sm.blockQueueManager;
+        queue.ingestBlockConfirmation =
+            original as typeof queue.ingestBlockConfirmation;
+        this.service.stubOriginals.delete("ingestConfirmations");
+        return true;
+    }
+
+    /**
+     * Record the label and delay of every scheduled task; tasks whose label
+     * starts with `suppressPrefix` are recorded and never run.
+     */
+    public stubRecordScheduledTasks(suppressPrefix?: string): boolean {
+        const timeoutManager = this.service.sm.timeoutManager;
+        if (!this.service.stubOriginals.has("scheduledTasks")) {
+            this.service.stubOriginals.set(
+                "scheduledTasks",
+                timeoutManager.scheduleTask.bind(timeoutManager)
+            );
+        }
+        const original = this.service.stubOriginals.get(
+            "scheduledTasks"
+        ) as typeof timeoutManager.scheduleTask;
+        this.service.recordedScheduledTasks.length = 0;
+        timeoutManager.scheduleTask = (task, delayMs, taskName = "unnamed") => {
+            this.service.recordedScheduledTasks.push({ taskName, delayMs });
+            if (suppressPrefix && taskName.startsWith(suppressPrefix)) {
+                return {} as ReturnType<typeof setTimeout>;
+            }
+            return original(task, delayMs, taskName);
+        };
+        return true;
+    }
+
+    public getRecordedScheduledTasks(): {
+        tasks: { taskName: string; delayMs: number }[];
+    } {
+        return {
+            tasks: this.service.recordedScheduledTasks.map((entry) => ({
+                ...entry
+            }))
+        };
+    }
+
+    public restoreRecordScheduledTasks(): boolean {
+        const original = this.service.stubOriginals.get("scheduledTasks");
+        if (original === undefined) return false;
+        const timeoutManager = this.service.sm.timeoutManager;
+        timeoutManager.scheduleTask =
+            original as typeof timeoutManager.scheduleTask;
+        this.service.stubOriginals.delete("scheduledTasks");
         return true;
     }
 
@@ -227,21 +323,21 @@ export class StubRpcMethods extends ARpcMethods<P2PManager<HarnessControlRpc>> {
      * `wasUnsafeSetLatestStateCalled`) but still runs the original.
      */
     public stubRecordUnsafeSetLatestState(): boolean {
-        const sm = this.service.sm;
+        const stateApplication = this.service.sm.stateApplicationService;
         if (!this.service.stubOriginals.has("unsafeSetLatestState")) {
             this.service.stubOriginals.set(
                 "unsafeSetLatestState",
-                sm.unsafeSetLatestState
+                stateApplication.unsafeSetLatestState
             );
         }
         this.service.unsafeSetLatestStateCalled = false;
         const original = this.service.stubOriginals.get(
             "unsafeSetLatestState"
-        ) as typeof sm.unsafeSetLatestState;
+        ) as typeof stateApplication.unsafeSetLatestState;
         const stubService = this.service;
-        sm.unsafeSetLatestState = async (...args) => {
+        stateApplication.unsafeSetLatestState = async (...args) => {
             stubService.unsafeSetLatestStateCalled = true;
-            return original.apply(stubService.sm, args);
+            return original.apply(stateApplication, args);
         };
         return true;
     }
@@ -253,8 +349,9 @@ export class StubRpcMethods extends ARpcMethods<P2PManager<HarnessControlRpc>> {
     public restoreUnsafeSetLatestState(): boolean {
         const original = this.service.stubOriginals.get("unsafeSetLatestState");
         if (original === undefined) return false;
-        const sm = this.service.sm;
-        sm.unsafeSetLatestState = original as typeof sm.unsafeSetLatestState;
+        const stateApplication = this.service.sm.stateApplicationService;
+        stateApplication.unsafeSetLatestState =
+            original as typeof stateApplication.unsafeSetLatestState;
         this.service.stubOriginals.delete("unsafeSetLatestState");
         return true;
     }
@@ -388,6 +485,123 @@ export class StubRpcMethods extends ARpcMethods<P2PManager<HarnessControlRpc>> {
         return this.restoreSpectateStaleProof();
     }
 
+    /** Delay join-signature replies while still running the real handler. */
+    public stubDelayJoinSignatureResponses(delayMs: number): boolean {
+        const service = this.p2pManager.localRpc.joinChannelService;
+        if (!this.service.stubOriginals.has("joinSignatureCreateRpcMethods")) {
+            this.service.stubOriginals.set(
+                "joinSignatureCreateRpcMethods",
+                service.createRPCMethods.bind(service)
+            );
+        }
+        const original = this.service.stubOriginals.get(
+            "joinSignatureCreateRpcMethods"
+        ) as typeof service.createRPCMethods;
+        service.createRPCMethods = (transport: ATransport) => {
+            const methods = original(transport);
+            const realRequest = methods.requestJoinSignature.bind(methods);
+            methods.requestJoinSignature = async (...args) => {
+                await sleep(delayMs);
+                return realRequest(...args);
+            };
+            return methods;
+        };
+        return true;
+    }
+
+    /** Make join-signature requests fail at the responder. */
+    public stubFailJoinSignatureRequests(): boolean {
+        const service = this.p2pManager.localRpc.joinChannelService;
+        if (!this.service.stubOriginals.has("joinSignatureCreateRpcMethods")) {
+            this.service.stubOriginals.set(
+                "joinSignatureCreateRpcMethods",
+                service.createRPCMethods.bind(service)
+            );
+        }
+        const original = this.service.stubOriginals.get(
+            "joinSignatureCreateRpcMethods"
+        ) as typeof service.createRPCMethods;
+        service.createRPCMethods = (transport: ATransport) => {
+            const methods = original(transport);
+            methods.requestJoinSignature = async function (
+                this: JoinChannelRpcMethods
+            ) {
+                throw new Error("stubbed join-signature failure");
+            };
+            return methods;
+        };
+        return true;
+    }
+
+    /** Return the joiner's signature instead of the responder's signature. */
+    public stubWrongJoinSignatureSigner(): boolean {
+        const service = this.p2pManager.localRpc.joinChannelService;
+        if (!this.service.stubOriginals.has("joinSignatureCreateRpcMethods")) {
+            this.service.stubOriginals.set(
+                "joinSignatureCreateRpcMethods",
+                service.createRPCMethods.bind(service)
+            );
+        }
+        const original = this.service.stubOriginals.get(
+            "joinSignatureCreateRpcMethods"
+        ) as typeof service.createRPCMethods;
+        service.createRPCMethods = (transport: ATransport) => {
+            const methods = original(transport);
+            methods.requestJoinSignature = async (
+                encodedSignedJoinChannel: string
+            ) => {
+                const signedJoinChannel = Codec.decode(
+                    encodedSignedJoinChannel,
+                    Type.SignedJoinChannel
+                );
+                return { signature: String(signedJoinChannel.signature) };
+            };
+            return methods;
+        };
+        return true;
+    }
+
+    /** Count join-signature requests while still running the real handler. */
+    public stubCountJoinSignatureRequests(): boolean {
+        const service = this.p2pManager.localRpc.joinChannelService;
+        if (!this.service.stubOriginals.has("joinSignatureCreateRpcMethods")) {
+            this.service.stubOriginals.set(
+                "joinSignatureCreateRpcMethods",
+                service.createRPCMethods.bind(service)
+            );
+        }
+        this.service.joinSignatureRequestCount = 0;
+        const original = this.service.stubOriginals.get(
+            "joinSignatureCreateRpcMethods"
+        ) as typeof service.createRPCMethods;
+        const stubService = this.service;
+        service.createRPCMethods = (transport: ATransport) => {
+            const methods = original(transport);
+            const realRequest = methods.requestJoinSignature.bind(methods);
+            methods.requestJoinSignature = (...args) => {
+                stubService.joinSignatureRequestCount++;
+                return realRequest(...args);
+            };
+            return methods;
+        };
+        return true;
+    }
+
+    public getJoinSignatureRequestCount(): number {
+        return this.service.joinSignatureRequestCount;
+    }
+
+    public restoreJoinSignatureRequests(): boolean {
+        const original = this.service.stubOriginals.get(
+            "joinSignatureCreateRpcMethods"
+        );
+        if (original === undefined) return false;
+        const service = this.p2pManager.localRpc.joinChannelService;
+        service.createRPCMethods = original as typeof service.createRPCMethods;
+        this.service.stubOriginals.delete("joinSignatureCreateRpcMethods");
+        return true;
+    }
+
     /**
      * Replace `isForkDisputedService.onDisputeAcknowledgmentRequest` with a
      * no-op that records it was called (queried via `wasDisputeAckRequestCalled`).
@@ -465,6 +679,37 @@ export class StubRpcMethods extends ARpcMethods<P2PManager<HarnessControlRpc>> {
 
     public wasSpectateGuardBlocked(): boolean {
         return this.service.spectateGuardBlocked;
+    }
+
+    public async sendSpectateRequestOverCapturedHandshakeTransport(
+        channelId: string,
+        initTime: number
+    ): Promise<string> {
+        const transport = this.service.capturedInitHandshakeTransport;
+        if (!transport) throw new Error("no captured handshake transport");
+        try {
+            await this.p2pManager.sendRpcRequest(
+                {
+                    service: "spectateService",
+                    method: "onSpectateRequest",
+                    params: [{ channelId, initTime }]
+                },
+                transport,
+                { timeoutMs: 2000 }
+            );
+            return "resolved";
+        } catch (error) {
+            return error instanceof Error ? error.message : String(error);
+        }
+    }
+
+    public restoreBlockedHandshake(): boolean {
+        const original = this.service.stubOriginals.get("blockedInitHandshake");
+        if (original === undefined) return false;
+        const service = this.p2pManager.localRpc.initHandshakeService;
+        service.initHandshake = original as typeof service.initHandshake;
+        this.service.stubOriginals.delete("blockedInitHandshake");
+        return true;
     }
 
     /**
@@ -637,6 +882,53 @@ export class StubRpcMethods extends ARpcMethods<P2PManager<HarnessControlRpc>> {
         return true;
     }
 
+    /**
+     * Stop applying processed inbound messages to the local diamond -> its
+     * in-memory EVM falls behind the RPC node while storage stays whole.
+     */
+    public stubLocalDiamondInboundMessages(): boolean {
+        const localDiamond =
+            this.service.sm.diamondStateMachine.localDiamondContract;
+        if (!this.service.stubOriginals.has("localDiamondInboundMessages")) {
+            this.service.stubOriginals.set(
+                "localDiamondInboundMessages",
+                localDiamond.onInboundMessagesProcessed
+            );
+        }
+        localDiamond.onInboundMessagesProcessed = (async () =>
+            undefined) as unknown as typeof localDiamond.onInboundMessagesProcessed;
+        return true;
+    }
+
+    public restoreLocalDiamondInboundMessages(): boolean {
+        const original = this.service.stubOriginals.get(
+            "localDiamondInboundMessages"
+        );
+        if (original === undefined) return false;
+        const localDiamond =
+            this.service.sm.diamondStateMachine.localDiamondContract;
+        localDiamond.onInboundMessagesProcessed =
+            original as typeof localDiamond.onInboundMessagesProcessed;
+        this.service.stubOriginals.delete("localDiamondInboundMessages");
+        return true;
+    }
+
+    /** Park the dispute audit at its on-chain-slashes query until released. */
+    public stubHoldOnChainSlashesQuery(): boolean {
+        this.service.installOnChainSlashesQueryHold();
+        return true;
+    }
+
+    /** Release parked audits and restore the real query. */
+    public restoreOnChainSlashesQuery(): boolean {
+        return this.service.releaseOnChainSlashesQueryHold();
+    }
+
+    /** Resolves once a caller is parked at the hold; parked count. */
+    public waitForHeldOnChainSlashesQuery(): Promise<number> {
+        return this.service.waitForHeldOnChainSlashesQuery();
+    }
+
     public getHeldReductionTaskCount(): number {
         return this.service.heldReductionTasks.length;
     }
@@ -647,12 +939,27 @@ export class StubRpcMethods extends ARpcMethods<P2PManager<HarnessControlRpc>> {
     }
 
     public cancelScheduledReductions(): boolean {
-        this.service.sm.reductionManager.cancelScheduledReductions();
+        this.service.sm.reductionManager["cancelScheduledReductions"]();
         return true;
     }
 
-    public async probeRejectedEventSyncLog(): Promise<EventSyncFailureProbe> {
-        return this.service.probeRejectedEventSyncLog();
+    public async probeDisputeReductionChallenge(
+        reducedForkId: ForkId
+    ): Promise<ReductionChallengeProbe> {
+        return this.service.probeDisputeReductionChallenge(reducedForkId);
+    }
+
+    public async probeInboundRunRecovery(
+        upperBlockHash: Hash,
+        options?: { failChainQueries?: boolean }
+    ): Promise<InboundRunRecoveryProbe> {
+        return this.service.probeInboundRunRecovery(upperBlockHash, options);
+    }
+
+    public async probeBlockCalldataRecovery(options?: {
+        failChainQueries?: boolean;
+    }): Promise<BlockCalldataRecoveryProbe> {
+        return this.service.probeBlockCalldataRecovery(options);
     }
 
     public async probeConcurrentCalldataRecovery(): Promise<ConcurrentCalldataRecoveryProbe> {
@@ -1105,6 +1412,149 @@ export class StubRpcMethods extends ARpcMethods<P2PManager<HarnessControlRpc>> {
         return this.service.heldSnapshotUpdatedArgs.length;
     }
 
+    /** Hold InboundMessagesProcessed events instead of handling them. */
+    public stubHoldInboundMessageEvents(): boolean {
+        const eventHandler = this.service.sm.eventHandler;
+        if (!this.service.stubOriginals.has("inboundMessageEvents")) {
+            this.service.stubOriginals.set(
+                "inboundMessageEvents",
+                eventHandler.onInboundMessagesProcessed.bind(eventHandler)
+            );
+        }
+        eventHandler.onInboundMessagesProcessed = (async (
+            ...args: unknown[]
+        ) => {
+            this.service.heldInboundMessageArgs.push(args);
+        }) as typeof eventHandler.onInboundMessagesProcessed;
+        return true;
+    }
+
+    /** Restore the handler; optionally replay the held events through it. */
+    public restoreInboundMessageEvents(replay: boolean): boolean {
+        const eventHandler = this.service.sm.eventHandler;
+        const original = this.service.stubOriginals.get("inboundMessageEvents");
+        if (original === undefined) return false;
+        const restored =
+            original as typeof eventHandler.onInboundMessagesProcessed;
+        eventHandler.onInboundMessagesProcessed = restored;
+        this.service.stubOriginals.delete("inboundMessageEvents");
+        const held = this.service.heldInboundMessageArgs.splice(0);
+        if (replay) {
+            for (const args of held) {
+                void (restored as (...a: unknown[]) => Promise<void>)(...args);
+            }
+        }
+        return true;
+    }
+
+    public getHeldInboundMessageCount(): number {
+        return this.service.heldInboundMessageArgs.length;
+    }
+
+    /**
+     * Drop subscribed inbound logs before the scheduler records their key.
+     * Unlike `stubHoldInboundMessageEvents`, which replaces the handler, this
+     * only loses the delivery - an explicit query of the same log still reaches
+     * the real scheduler, so recovery can heal it. `dropCount` caps how many
+     * distinct keys are lost (default: all).
+     */
+    public stubDropInboundMessageLogs(dropCount?: number): boolean {
+        const eventSyncService = this.service.sm.eventSyncService;
+        // an omitted arg crosses the port as null -> normalize to "no limit"
+        this.service.inboundMessageLogDropLimit = dropCount ?? undefined;
+        if (!this.service.stubOriginals.has("inboundMessageLogs")) {
+            this.service.stubOriginals.set(
+                "inboundMessageLogs",
+                eventSyncService.scheduleLog.bind(eventSyncService)
+            );
+        }
+        const original = this.service.stubOriginals.get(
+            "inboundMessageLogs"
+        ) as typeof eventSyncService.scheduleLog;
+        eventSyncService.scheduleLog = async (...args) => {
+            const parsed =
+                this.service.sm.stateChannelManagerContract.interface.parseLog({
+                    topics: args[0].topics,
+                    data: args[0].data
+                });
+            if (parsed?.name === "InboundMessagesProcessed") {
+                const eventKey = `${args[0].transactionHash}:${args[0].index}`;
+                const limit = this.service.inboundMessageLogDropLimit;
+                const dropped = this.service.droppedInboundMessageLogKeys;
+                if (
+                    !dropped.has(eventKey) &&
+                    (limit === undefined || dropped.size < limit)
+                ) {
+                    dropped.add(eventKey);
+                    return;
+                }
+            }
+            return original(...args);
+        };
+        return true;
+    }
+
+    /** Restore scheduling. Dropped subscription payloads are recovered by query. */
+    public restoreInboundMessageLogs(): boolean {
+        const eventSyncService = this.service.sm.eventSyncService;
+        const original = this.service.stubOriginals.get("inboundMessageLogs");
+        if (original === undefined) return false;
+        eventSyncService.scheduleLog =
+            original as typeof eventSyncService.scheduleLog;
+        this.service.stubOriginals.delete("inboundMessageLogs");
+        this.service.droppedInboundMessageLogKeys.clear();
+        this.service.inboundMessageLogDropLimit = undefined;
+        return true;
+    }
+
+    public getDroppedInboundMessageLogCount(): number {
+        return this.service.droppedInboundMessageLogKeys.size;
+    }
+
+    /** Make every provider getLogs throw, so no recovery query can succeed. */
+    public stubFailChainLogQueries(): boolean {
+        this.service.failChainLogQueries();
+        return true;
+    }
+
+    /** Record every provider getLogs span and forward it. */
+    public stubCountChainLogQueries(): boolean {
+        this.service.countChainLogQueries();
+        return true;
+    }
+
+    public getChainLogQueryCount(): number {
+        return this.service.chainLogQueries.length;
+    }
+
+    public restoreChainLogQueries(): boolean {
+        return this.service.restoreChainLogQueries();
+    }
+
+    /** Make onDisputeCommitted throw for every dispatched dispute log. */
+    public stubFailDisputeCommittedHandler(): boolean {
+        this.service.failDisputeCommittedHandler();
+        return true;
+    }
+
+    public restoreDisputeCommittedHandler(): boolean {
+        return this.service.restoreDisputeCommittedHandler();
+    }
+
+    public getFailedDisputeCommittedHandlerCallCount(): number {
+        return this.service.failedDisputeCommittedHandlerCalls;
+    }
+
+    /** Make the dispute-window creation timestamp read throw. */
+    public stubFailDisputeWindowTimestampRead(): boolean {
+        this.service.failDisputeWindowTimestampRead();
+        return true;
+    }
+
+    public restoreDisputeWindowTimestampRead(): boolean {
+        return this.service.restoreDisputeWindowTimestampRead();
+    }
+
     /** Drop subscribed dispute logs before the scheduler records their key. */
     public stubHoldDisputeCommittedEvents(passFirst = true): boolean {
         const eventSyncService = this.service.sm.eventSyncService;
@@ -1178,47 +1628,12 @@ export class StubRpcMethods extends ARpcMethods<P2PManager<HarnessControlRpc>> {
 
     /** Hold subscribed calldata logs before the scheduler records their key. */
     public stubHoldCalldataPostedEvents(): boolean {
-        const eventSyncService = this.service.sm.eventSyncService;
-        if (!this.service.stubOriginals.has("calldataPostedEvents")) {
-            this.service.stubOriginals.set(
-                "calldataPostedEvents",
-                eventSyncService.scheduleLog.bind(eventSyncService)
-            );
-        }
-        const original = this.service.stubOriginals.get(
-            "calldataPostedEvents"
-        ) as typeof eventSyncService.scheduleLog;
-        eventSyncService.scheduleLog = async (...args) => {
-            const parsed =
-                this.service.sm.stateChannelManagerContract.interface.parseLog({
-                    topics: args[0].topics,
-                    data: args[0].data
-                });
-            if (parsed?.name === "BlockCalldataPosted") {
-                const eventKey = `${args[0].transactionHash}:${args[0].index}`;
-                if (!this.service.heldCalldataPostedEventKeys.has(eventKey)) {
-                    // Lose the subscribed delivery once. A later explicit
-                    // query of the same log must reach the real scheduler so
-                    // this stub accurately models missed subscription data.
-                    this.service.heldCalldataPostedEventKeys.add(eventKey);
-                    this.service.notifyCalldataPostedEventHeld();
-                    return;
-                }
-            }
-            return original(...args);
-        };
+        this.service.holdCalldataPostedEvents();
         return true;
     }
 
     public restoreCalldataPostedEvents(): boolean {
-        const eventSyncService = this.service.sm.eventSyncService;
-        const original = this.service.stubOriginals.get("calldataPostedEvents");
-        if (original === undefined) return false;
-        eventSyncService.scheduleLog =
-            original as typeof eventSyncService.scheduleLog;
-        this.service.stubOriginals.delete("calldataPostedEvents");
-        this.service.heldCalldataPostedEventKeys.clear();
-        return true;
+        return this.service.restoreCalldataPostedEvents();
     }
 
     /** Resolves once a subscribed calldata log has been held. */
@@ -1502,6 +1917,34 @@ export class StubRpcMethods extends ARpcMethods<P2PManager<HarnessControlRpc>> {
             encodedBlockConfirmation,
             options
         );
+    }
+
+    public async runBlockIngest(
+        encodedBlockConfirmation: string,
+        options?: BlockProbeOptions
+    ): Promise<BlockIngestProbe> {
+        return this.service.runBlockIngest(encodedBlockConfirmation, options);
+    }
+
+    public async runStoredBlockMerge(
+        encodedBlockConfirmation: string,
+        options?: {
+            strategy?: "active" | "dispute" | "spectating" | "calldata";
+        }
+    ): Promise<{
+        result: number | null;
+        persistedSignatures: string[] | null;
+    }> {
+        return this.service.runStoredBlockMerge(
+            encodedBlockConfirmation,
+            options
+        );
+    }
+
+    /** Staging: force this peer's session status (fault injection). */
+    public setPeerStatus(status: Status): boolean {
+        this.service.sm.setStatus(status);
+        return true;
     }
 }
 

@@ -1,51 +1,28 @@
 import { expect } from "chai";
-import { MathStateMachine } from "@typechain-types";
-import path from "node:path";
 
-import { DEFAULT_MATH_HARNESS_DEPLOYMENT } from "@test/harness/core/defaultMathHarnessDeployment";
-import { PeerTestHarness } from "@test/fixtures/PeerTestHarness";
-import type { PingPongRpc } from "@test/fixtures/customRpc/PingPongRpcManifest";
-import type { RemoteRpcProxyType } from "@/rpc/RemoteRpcProxy";
+import { PingPongE2EFixture } from "@test/fixtures/PingPongE2EFixture";
 import { waitFor } from "@test/utils/waitFor";
 
 describe("E2E: PingPongService (custom RPC)", function () {
-    let harness: PeerTestHarness<PingPongRpc, MathStateMachine> | undefined;
+    let fixture: PingPongE2EFixture;
+
+    beforeEach(function () {
+        fixture = new PingPongE2EFixture();
+    });
 
     afterEach(async function () {
-        await harness?.cleanup();
-        harness = undefined;
+        await fixture.cleanup();
     });
 
     it("should let two peers call custom Ping/Pong RPC services", async function () {
-        harness = new PeerTestHarness<PingPongRpc, MathStateMachine>({
-            deployment: DEFAULT_MATH_HARNESS_DEPLOYMENT
-        });
+        await fixture.setup(2);
 
-        await harness.setup(2, {
-            autoConnect: false,
-            customRpcManifest: {
-                module: path.resolve(
-                    __dirname,
-                    "../fixtures/customRpc/PingPongRpcManifest.ts"
-                )
-            },
-            timeConfig: {
-                agreementTime: 10,
-                p2pTime: 2,
-                chainFallbackTime: 2,
-                evidenceTime: 2
-            }
-        });
-        await harness.lifecycle.openChannel();
-        await harness.rpc.connectPeers([0, 1]);
-        await harness.event.waitUntilEventOccurs("onConnection", 5000, [0, 1]);
-
+        const { harness } = fixture;
         const peer0 = harness.getPeer(0);
         const peer1 = harness.getPeer(1);
         // The custom RPC services hang off the same loopback hostRpc as the
         // harness-control services; target peers by EVM address.
-        const ctl = (p: typeof peer0) =>
-            harness!.control(p) as unknown as RemoteRpcProxyType<PingPongRpc>;
+        const ctl = fixture.control.bind(fixture);
 
         // --- Fire-and-forget: peer 0 pings peer 1 (by address) ---
         ctl(peer0).pingService.ping("from-0").sendOne(peer1.address);
@@ -103,5 +80,119 @@ describe("E2E: PingPongService (custom RPC)", function () {
         expect(
             await ctl(peer1).pingService.getReceivedSumNonces().request()
         ).to.include("sum-0");
+        expect(
+            (
+                await ctl(peer1).pingService.getReceivedPingNonces().request()
+            ).filter((nonce) => nonce === "from-0").length
+        ).to.equal(1);
+        expect(
+            (
+                await ctl(peer1).pingService.getReceivedSumNonces().request()
+            ).filter((nonce) => nonce === "sum-0").length
+        ).to.equal(1);
+    });
+
+    it("disconnects a peer that sends an inherited method name without affecting another session", async function () {
+        await fixture.setup(3);
+
+        const { harness } = fixture;
+        const offender = harness.getPeer(0);
+        const receiver = harness.getPeer(1);
+        const bystander = harness.getPeer(2);
+        const ctl = fixture.control.bind(fixture);
+
+        await ctl(offender)
+            .rpcHandlerProbe.sendRawRpc(
+                receiver.address,
+                "pingService",
+                "toString"
+            )
+            .request();
+
+        await harness.assert.rpc.peerDisconnectedFrom({
+            peerIndex: receiver.index,
+            expectedFinalCount: 1
+        });
+        expect(
+            await ctl(receiver).pingService.getReceivedPingNonces().request()
+        ).to.deep.equal([]);
+        expect(
+            await ctl(receiver).pingService.getReceivedSumNonces().request()
+        ).to.deep.equal([]);
+
+        ctl(receiver)
+            .pingService.ping("after-rejection")
+            .sendOne(bystander.address);
+        await waitFor(
+            async () =>
+                (
+                    await ctl(bystander)
+                        .pingService.getReceivedPingNonces()
+                        .request()
+                ).includes("after-rejection") &&
+                (
+                    await ctl(receiver)
+                        .pingService.getReceivedPongNonces()
+                        .request()
+                ).includes("after-rejection"),
+            5000
+        );
+    });
+
+    it("returns one response for an empty request id over the peer transport", async function () {
+        await fixture.setup(2);
+
+        const { harness } = fixture;
+        const sender = harness.getPeer(0);
+        const receiver = harness.getPeer(1);
+        const ctl = fixture.control.bind(fixture);
+
+        const response = await ctl(sender)
+            .rpcHandlerProbe.sendEmptyIdRequestAndCaptureResponse(
+                receiver.address
+            )
+            .request();
+
+        expect(response.requestId).to.equal("");
+        expect(response.ok).to.equal(true);
+        expect(response.result).to.deep.equal({
+            sum: 3,
+            nonce: "empty-id-e2e",
+            requester: sender.address
+        });
+        expect(
+            await ctl(receiver).pingService.getReceivedSumNonces().request()
+        ).to.deep.equal(["empty-id-e2e"]);
+    });
+
+    it("disconnects a multibyte oversized sender without affecting another session", async function () {
+        await fixture.setup(3);
+
+        const { harness } = fixture;
+        const offender = harness.getPeer(0);
+        const receiver = harness.getPeer(1);
+        const bystander = harness.getPeer(2);
+        const ctl = fixture.control.bind(fixture);
+
+        await ctl(offender)
+            .rpcHandlerProbe.sendMultibyteOversizedRpc(receiver.address)
+            .request();
+
+        await harness.assert.rpc.peerDisconnectedFrom({
+            peerIndex: receiver.index,
+            expectedFinalCount: 1
+        });
+        ctl(receiver)
+            .pingService.ping("after-oversized-frame")
+            .sendOne(bystander.address);
+        await waitFor(
+            async () =>
+                (
+                    await ctl(bystander)
+                        .pingService.getReceivedPingNonces()
+                        .request()
+                ).includes("after-oversized-frame"),
+            5000
+        );
     });
 });

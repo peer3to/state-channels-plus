@@ -303,7 +303,7 @@ describe("E2E: Dispute Manager", function () {
                 .control(missedPeer)
                 .dispute.recoverCommittedDisputes(disputedForkId)
                 .request();
-            if (recoveredCount < 1) {
+            if (recoveredCount === null || recoveredCount < 1) {
                 throw new Error("Expected at least one recovered dispute");
             }
             await h.assert.storage.storedDisputeConfirmationsWait({
