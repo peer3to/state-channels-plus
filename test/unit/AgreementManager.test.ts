@@ -5,6 +5,7 @@ import { MathTestSession as TestSession } from "@test/harness";
 import { hash as randomHash, randomAddress } from "../factory";
 import { waitFor } from "@test/utils/waitFor";
 import { ZeroHash } from "ethers";
+import { Status } from "@/types";
 
 describe("Unit: AgreementManager", function () {
     describe("getLatestSignedBlockByParticipant", function () {
@@ -259,18 +260,12 @@ describe("Unit: AgreementManager", function () {
 
         it("proof requested below a participant join → tops out at the requested height", async function () {
             const h = TestSession.getHarness();
-            // the join staging runs for seconds between block 1 and block 2 ->
-            // with the default p2pTime block 2's timestamp is clamped back to
-            // block 1 + 2s and receivers reject it (NOT_ENOUGH_TIME), so the
-            // authoring window has to cover the whole join
-            await h.lifecycle.start(2, 2, {
-                timeConfig: { p2pTime: 30, agreementTime: 10 }
-            }); // peers 0,1; blocks 0..1
+            await h.lifecycle.start(2, 0);
 
             // a spectator joins -> the set grows to 3 at block 2
-            const spectator = await h.join.addSpectatorWait({
-                statusTimeoutMs: 5000
-            });
+            const spectator = await h.join.addSpectatorDetached();
+            await h.transition.advanceState({ count: 2, waitForPeers: [0, 1] });
+            await h.event.waitUntilPeerStatus(spectator.index, Status.SYNCED);
             await h.assert.sync.peersInSyncWait({ peerIndices: [0, 1, 2] });
 
             await h.join.joinChannelWait({ joiner: spectator });
@@ -344,14 +339,11 @@ describe("Unit: AgreementManager", function () {
 
         it("proof requested at the exact join-block height, raised threshold completed only above it → tops out at the requested height", async function () {
             const h = TestSession.getHarness();
-            // same join staging as above -> same authoring window
-            await h.lifecycle.start(2, 2, {
-                timeConfig: { p2pTime: 30, agreementTime: 10 }
-            }); // peers 0,1; blocks 0..1
+            await h.lifecycle.start(2, 0);
 
-            const spectator = await h.join.addSpectatorWait({
-                statusTimeoutMs: 5000
-            });
+            const spectator = await h.join.addSpectatorDetached();
+            await h.transition.advanceState({ count: 2, waitForPeers: [0, 1] });
+            await h.event.waitUntilPeerStatus(spectator.index, Status.SYNCED);
             await h.assert.sync.peersInSyncWait({ peerIndices: [0, 1, 2] });
 
             await h.byzantine.stubBroadcast(spectator.index);
@@ -733,7 +725,7 @@ describe("Unit: AgreementManager", function () {
                         .control(h.getPeer(3))
                         .query.getNextBlockHeight(forkId)
                         .request()) === 3,
-                15000
+                h.event.protocolEventTimeoutMs()
             );
 
             const qd = h.control(h.getPeer(3)).query;
@@ -772,7 +764,7 @@ describe("Unit: AgreementManager", function () {
             });
             await waitFor(
                 async () => (await signersAt(1)).includes(h.getPeer(0).address),
-                10000
+                h.event.protocolEventTimeoutMs()
             );
 
             // d stops broadcasting and authors the latest block alone:
@@ -782,7 +774,7 @@ describe("Unit: AgreementManager", function () {
             await waitFor(
                 async () =>
                     (await qd.getNextBlockHeight(forkId).request()) === 4,
-                15000
+                h.event.protocolEventTimeoutMs()
             );
 
             const [a, b, c, d] = h.peers.map((peer) => peer.address);
@@ -956,7 +948,12 @@ describe("Unit: AgreementManager", function () {
                         };
                     },
                     { forkId },
-                    { timeoutMs: 40000 }
+                    {
+                        timeoutMs:
+                            h.event.protocolEventTimeoutMs({
+                                withFirstBlockGrace: true
+                            }) * 2
+                    }
                 );
 
             it("unrecoverable reduce run → undefined, not a throw", async function () {

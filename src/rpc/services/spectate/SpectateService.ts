@@ -306,18 +306,21 @@ class SpectateService extends ARpcService<SpectateServiceRpcMethods> {
             const genesisSnapshot = StateSnapshot.from(
                 syncPayload.latestForkGenesisSnapshot
             );
-            const { lowerOutboundSnapshot, upperOutboundSnapshot } =
-                SpectateService.orderOutboundSnapshots(
-                    onChainSnapshot,
-                    genesisSnapshot
-                );
-
             let areValidExitBlocks =
-                await diamondStateMachine.localDiamondContract.verifyOutboundMessageBlocks(
-                    syncPayload.outboundMessageBlocksUpToLatestGenesis,
-                    lowerOutboundSnapshot.toStruct().snapshotData,
-                    upperOutboundSnapshot.toStruct().snapshotData
-                );
+                syncPayload.outboundMessageBlocksUpToLatestGenesis.length === 0;
+            if (onChainSnapshot.forkID !== genesisSnapshot.forkID) {
+                const { lowerOutboundSnapshot, upperOutboundSnapshot } =
+                    SpectateService.orderOutboundSnapshots(
+                        onChainSnapshot,
+                        genesisSnapshot
+                    );
+                areValidExitBlocks =
+                    await diamondStateMachine.localDiamondContract.verifyOutboundMessageBlocks(
+                        syncPayload.outboundMessageBlocksUpToLatestGenesis,
+                        lowerOutboundSnapshot.toStruct().snapshotData,
+                        upperOutboundSnapshot.toStruct().snapshotData
+                    );
+            }
 
             if (!areValidExitBlocks) return this.abort(peerAddress);
 
@@ -596,19 +599,24 @@ class SpectateService extends ARpcService<SpectateServiceRpcMethods> {
             );
         }
 
-        const { lowerOutboundSnapshot, upperOutboundSnapshot } =
-            SpectateService.orderOutboundSnapshots(
-                currentOnChainSnapshot,
-                latestForkGenesisSnapshot
-            );
-
-        const outboundMessageBlocksUpToLatestGenesis =
-            stateManager.storage.outboundMessages.getMessageBlocksInRange({
-                upperBlockHash:
-                    upperOutboundSnapshot.latestOutboundMessageBlockHash,
-                lowerBlockHash:
-                    lowerOutboundSnapshot.latestOutboundMessageBlockHash
-            });
+        let outboundMessageBlocksUpToLatestGenesis: SyncPayload["outboundMessageBlocksUpToLatestGenesis"] =
+            [];
+        if (
+            currentOnChainSnapshot.forkID !== latestForkGenesisSnapshot.forkID
+        ) {
+            const { lowerOutboundSnapshot, upperOutboundSnapshot } =
+                SpectateService.orderOutboundSnapshots(
+                    currentOnChainSnapshot,
+                    latestForkGenesisSnapshot
+                );
+            outboundMessageBlocksUpToLatestGenesis =
+                stateManager.storage.outboundMessages.getMessageBlocksInRange({
+                    upperBlockHash:
+                        upperOutboundSnapshot.latestOutboundMessageBlockHash,
+                    lowerBlockHash:
+                        lowerOutboundSnapshot.latestOutboundMessageBlockHash
+                });
+        }
 
         const latestBlockHeight =
             stateManager.storage.blocks.getNextBlockHeight(forkId) - 1;
@@ -744,6 +752,7 @@ class SpectateService extends ARpcService<SpectateServiceRpcMethods> {
             stateChannelManagerContract.interface as ethers.Interface;
         // Encode data for multicall
         const calldata: string[] = [];
+        const reductionCalldata: string[] = [];
         for (const dw of disputeWindowsThatNeedToBeReducedOnChain) {
             const disputes = dw.disputeConfirmations.map(
                 (disputeConfirmation) =>
@@ -760,6 +769,7 @@ class SpectateService extends ARpcService<SpectateServiceRpcMethods> {
                     dw.inboundMessageBlocksAppliedInReduce,
                     dw.reducedForkId
                 );
+            reductionCalldata.push(reduceCalldata);
             calldata.push(reduceCalldata);
         }
         // check if we need to update the genesis snapshot first
@@ -806,6 +816,44 @@ class SpectateService extends ARpcService<SpectateServiceRpcMethods> {
                 );
             } catch (e) {
                 const custom = tryDecodeCustomError(e);
+                if (
+                    custom?.name === "RaceConditionBlockHeightTooOld" &&
+                    syncPayload.milestoneSnapshots.length > 0
+                ) {
+                    const latestOnChainSnapshot = StateSnapshot.from(
+                        await stateChannelManagerContract.getStateSnapshot(
+                            channelId
+                        )
+                    );
+                    const targetSnapshot = StateSnapshot.from(
+                        syncPayload.milestoneSnapshots.at(-1)!
+                    );
+                    if (latestOnChainSnapshot.hash === targetSnapshot.hash) {
+                        try {
+                            if (reductionCalldata.length > 0) {
+                                await stateChannelManagerContract.multicall.staticCall(
+                                    reductionCalldata
+                                );
+                            }
+                        } catch (reductionError) {
+                            this.logger.error(
+                                "Spectate reduction multicall error",
+                                tryDecodeCustomError(reductionError),
+                                reductionCalldata,
+                                reductionError
+                            );
+                            return false;
+                        }
+                        this.logger.debug(
+                            "Spectate multicall target already on-chain",
+                            {
+                                forkId: targetSnapshot.forkID,
+                                blockHeight: targetSnapshot.blockHeight
+                            }
+                        );
+                        return true;
+                    }
+                }
                 this.logger.error(
                     "Spectate multicall error",
                     custom,

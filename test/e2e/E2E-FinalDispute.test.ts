@@ -70,8 +70,7 @@ describe("E2E: final dispute resolution", function () {
         });
         expect(expectedSnapshot).to.not.equal(undefined);
         await h.assert.snapshot.localSnapshotsChangedWait({
-            expectedSnapshot,
-            timeoutMs: 15000
+            expectedSnapshot
         });
     });
 

@@ -217,12 +217,18 @@ describe("Unit: BlockIngestService", function () {
                 ...stored!.confirmationSignerAddresses
             ].sort();
 
+            h.event.resetEventSpies(observer.index);
             const accepted = await h
                 .control(observer)
                 .transition.ingestBlockConfirmation(
                     stored!.encodedBlockConfirmation
                 )
                 .request();
+            await h.event.waitForBlockConfirmationProcessed({
+                peerIndex: observer.index,
+                blockHash: stored!.hash,
+                keepConnection: true
+            });
 
             const after = await h
                 .control(observer)
@@ -260,6 +266,7 @@ describe("Unit: BlockIngestService", function () {
                 .query.getClockTimeInSeconds()
                 .request();
 
+            h.event.resetEventSpies(observer.index);
             await h
                 .control(observer)
                 .transition.ingestBlockConfirmation(
@@ -267,6 +274,11 @@ describe("Unit: BlockIngestService", function () {
                     { onChainTimestamp }
                 )
                 .request();
+            await h.event.waitForBlockConfirmationProcessed({
+                peerIndex: observer.index,
+                blockHash: stored!.hash,
+                keepConnection: true
+            });
 
             const after = await h
                 .control(observer)
@@ -309,7 +321,11 @@ describe("Unit: BlockIngestService", function () {
                         args.blockConfirmation
                     ),
                 { blockConfirmation },
-                { timeoutMs: 20000 }
+                {
+                    timeoutMs: h.event.protocolEventTimeoutMs({
+                        withFirstBlockGrace: true
+                    })
+                }
             );
 
             expect(accepted).to.equal(false);

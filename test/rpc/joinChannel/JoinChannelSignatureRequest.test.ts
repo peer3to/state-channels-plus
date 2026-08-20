@@ -26,7 +26,12 @@ describe("JoinChannel signature requests", function () {
                 await sm.disputeManager.killDispute(proofs[0].dispute);
             },
             {},
-            { timeoutMs: 30000 }
+            {
+                timeoutMs:
+                    h.event.protocolEventTimeoutMs({
+                        withFirstBlockGrace: true
+                    }) * 2
+            }
         );
         expect(await h.query.onChainSlashedParticipants()).to.include(
             spammer.address
@@ -111,9 +116,18 @@ describe("JoinChannel signature requests", function () {
 
     it("validates requests, signs exact joins, and fails fast when a threshold transport is missing", async function () {
         const h = TestSession.getHarness();
-        await h.lifecycle.start(2, 1);
-        const joiner = await h.join.addSpectatorWait();
-        const nonUnionSigner = await h.join.addSpectatorWait();
+        // Spectating is asynchronous to the channel: spawn both spectators
+        // detached and await SYNCED only where the assertions below need
+        // them. No transition is scheduled until the closing advanceState,
+        // so nothing blocks an author's window; producing a block up front
+        // instead would cap the next block's timestamp at prev + p2pTime and
+        // this setup phase would make peer 0 reject it as stale
+        // (|now - blockTs| > agreementTime) and dispute.
+        await h.lifecycle.start(2, 0);
+        const joiner = await h.join.addSpectatorDetached();
+        const nonUnionSigner = await h.join.addSpectatorDetached();
+        await h.event.waitUntilPeerStatus(joiner.index, Status.SYNCED);
+        await h.event.waitUntilPeerStatus(nonUnionSigner.index, Status.SYNCED);
         await h.assert.sync.peersInSyncWait();
 
         const joinChannel = {

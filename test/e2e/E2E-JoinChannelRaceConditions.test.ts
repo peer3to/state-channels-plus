@@ -336,7 +336,6 @@ describe("E2E: Join channel race conditions", function () {
 
             await h.dispute.resolveDisputeWait({
                 forkId: originalForkId,
-                forkSettleTimeoutMs: 15000,
                 honestPeerIndices: remainingPeerIndices,
                 assertMaliciousRemoved: false
             });
@@ -346,7 +345,7 @@ describe("E2E: Join channel race conditions", function () {
                     h.channelId
                 );
                 return snapshot.forkId !== originalForkId;
-            }, 15000);
+            }, h.event.protocolEventTimeoutMs());
 
             const onChainParticipants = await h.channelManager.getParticipants(
                 h.channelId
@@ -362,6 +361,17 @@ describe("E2E: Join channel race conditions", function () {
                 lowered,
                 "joiner's MESSAGE_TYPE_JOIN was applied during reduction → joiner must be in on-chain getParticipants on the reduced fork"
             ).to.include(joiner.address.toLowerCase());
+
+            // Reduction processing is detached from the on-chain fork change.
+            // Drain it before teardown so block production has promoted the
+            // pending joiner and all remaining peers have reached that fork.
+            await h.event.waitUntilPeerStatus(
+                joiner.index,
+                Status.PARTICIPATING
+            );
+            await h.assert.sync.peersInSyncWait({
+                peerIndices: remainingPeerIndices
+            });
         });
 
         it("allows existing and pending participants to top up during a dispute and converge after reduction", async function () {
@@ -443,7 +453,6 @@ describe("E2E: Join channel race conditions", function () {
 
             await h.dispute.resolveDisputeWait({
                 forkId: originalForkId,
-                forkSettleTimeoutMs: 15000,
                 honestPeerIndices: remainingPeerIndices,
                 assertMaliciousRemoved: false
             });
@@ -452,7 +461,7 @@ describe("E2E: Join channel race conditions", function () {
                     h.channelId
                 );
                 return snapshot.forkId !== originalForkId;
-            }, 15000);
+            }, h.event.protocolEventTimeoutMs());
 
             const union = await h
                 .control(h.getPeer(1))

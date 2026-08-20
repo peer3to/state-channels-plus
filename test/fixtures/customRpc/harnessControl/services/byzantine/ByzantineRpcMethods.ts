@@ -77,49 +77,38 @@ export class ByzantineRpcMethods extends ARpcMethods {
     }
 
     /**
-     * Broadcast a second, conflicting block at the head height of `forkId`
-     * (same coordinates, different content) — a double-sign fault.
+     * Re-sign this peer's latest authored block on `forkId` after changing only
+     * its timestamp, then broadcast the resulting conflict.
      */
-    public async submitDoubleSignBlock(options?: {
-        forkId?: ForkId;
-        transactionData?: Bytes;
-    }): Promise<{
+    public async submitDoubleSignBlock(options?: { forkId?: ForkId }): Promise<{
         conflictingBlockHash: Hash;
         conflictingBlockHeight: BlockHeight;
         originalBlockHash: Hash;
         originalBlockHeight: BlockHeight;
     }> {
         const forkId = (options?.forkId ?? this.service.sm.forkId) as ForkId;
-        const originalBlock =
-            this.service.storage.blocks.getLatestBlock(forkId);
+        const originalBlock = Array.from(
+            this.service.storage.blocks.getIterator(forkId)
+        ).find((block) => block.author === this.service.sm.signerAddress);
         if (!originalBlock) {
-            throw new Error(`No block found for fork ${forkId}`);
+            throw new Error(
+                `No block authored by ${this.service.sm.signerAddress} found for fork ${forkId}`
+            );
         }
 
-        const conflictingTransactionData: Bytes =
-            options?.transactionData ??
-            (ethers.hexlify(ethers.randomBytes(64)) as Bytes);
-        const conflictingStateSnapshotHash = hash(
-            ethers.randomBytes(32)
-        ) as Hash;
-
         const conflictingBlockStruct: BlockStruct = {
+            ...originalBlock.blockStruct,
             transaction: {
+                ...originalBlock.blockStruct.transaction,
                 header: {
-                    channelId: originalBlock.channelId,
-                    participant: originalBlock.author,
-                    forkId: originalBlock.forkId,
-                    transactionCnt: BigInt(originalBlock.height),
-                    timestamp: originalBlock.timestamp
-                },
-                body: {
-                    encodedData: conflictingTransactionData,
-                    data: conflictingTransactionData
+                    ...originalBlock.blockStruct.transaction.header,
+                    timestamp:
+                        BigInt(
+                            originalBlock.blockStruct.transaction.header
+                                .timestamp
+                        ) + 1n
                 }
-            },
-            stateSnapshotHash: conflictingStateSnapshotHash,
-            previousBlockHash: originalBlock.previousBlockHash,
-            messageBlocks: []
+            }
         };
 
         const conflictingBlock = await Block.fromBlockStruct(

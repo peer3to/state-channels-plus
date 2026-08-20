@@ -85,7 +85,7 @@ describe("E2E: ReductionManager", function () {
                         .control(targetPeer)
                         .query.getStatus()
                         .request()) === Status.OPENED,
-                20000,
+                h.event.protocolEventTimeoutMs(),
                 50
             );
             const hostErrors = await h.quiesceHosts();
@@ -99,7 +99,7 @@ describe("E2E: ReductionManager", function () {
             );
             await TestSession.expectFirstDetachedError({
                 includes: "RaceConditionReductionExpectationDoesntMatch",
-                timeoutMs: 5000
+                timeoutMs: h.event.protocolEventTimeoutMs()
             });
             expect(
                 await h
@@ -145,7 +145,7 @@ describe("E2E: ReductionManager", function () {
                     },
                     { forkId }
                 ),
-            25000
+            h.event.protocolEventTimeoutMs()
         );
 
         const commitmentsBefore = (
@@ -200,8 +200,7 @@ describe("E2E: ReductionManager", function () {
         });
         await h.assert.sync.forkChangedWait({
             originalForkId: forkId,
-            honestPeerIndices: [laggingIndex, ...healthyIndices],
-            timeoutMs: 30000
+            honestPeerIndices: [laggingIndex, ...healthyIndices]
         });
     });
 
@@ -227,8 +226,7 @@ describe("E2E: ReductionManager", function () {
             );
         });
         await h.event.waitForPeers("onDisputeKilled", [targetPeer.index], 1, {
-            mode: "atLeast",
-            timeoutMs: 15000
+            mode: "atLeast"
         });
         await waitFor(
             async () =>
@@ -238,7 +236,7 @@ describe("E2E: ReductionManager", function () {
                         sourceForkId
                     )
                 ).length === 0,
-            10000,
+            h.event.protocolEventTimeoutMs(),
             50
         );
 
@@ -276,7 +274,7 @@ describe("E2E: ReductionManager", function () {
                         sourceForkId
                     )
                 ).length > 0,
-            15000,
+            h.event.protocolEventTimeoutMs(),
             50
         );
         await waitFor(
@@ -285,7 +283,7 @@ describe("E2E: ReductionManager", function () {
                     .control(targetPeer)
                     .query.getCompletedReductionForkId(sourceForkId)
                     .request()) !== null,
-            30000,
+            h.event.protocolEventTimeoutMs(),
             50
         );
         expect(

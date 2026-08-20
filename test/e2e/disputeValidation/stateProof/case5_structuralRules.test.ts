@@ -46,8 +46,7 @@ describe("E2E: dispute validation / stateProof / structural rules", function () 
             });
             await h.assert.storage.honestPeersStoredDisputeFraudProofDetached({
                 disputeFraudProofType:
-                    DisputeFraudProofType.DisputeInvalidStateProof,
-                timeoutMs: 10000
+                    DisputeFraudProofType.DisputeInvalidStateProof
             });
             await h.dispute.resolveDisputeWait({
                 forkId,
@@ -90,8 +89,7 @@ describe("E2E: dispute validation / stateProof / structural rules", function () 
             });
             await h.assert.storage.honestPeersStoredDisputeFraudProofDetached({
                 disputeFraudProofType:
-                    DisputeFraudProofType.DisputeInvalidStateProof,
-                timeoutMs: 10000
+                    DisputeFraudProofType.DisputeInvalidStateProof
             });
             await h.dispute.resolveDisputeWait({
                 forkId,
@@ -138,8 +136,7 @@ describe("E2E: dispute validation / stateProof / structural rules", function () 
             });
             await h.assert.storage.honestPeersStoredDisputeFraudProofDetached({
                 disputeFraudProofType:
-                    DisputeFraudProofType.DisputeInvalidBlockStructure,
-                timeoutMs: 10000
+                    DisputeFraudProofType.DisputeInvalidBlockStructure
             });
             await h.dispute.resolveDisputeWait({
                 forkId,

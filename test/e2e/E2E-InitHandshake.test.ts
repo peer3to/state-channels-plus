@@ -66,7 +66,11 @@ describe("E2E: Init Handshake", function () {
                 // short default RPC timeout when the parallel runner is under
                 // CPU pressure. This is a test-control RPC, not a protocol
                 // deadline, so give the host-side operation its own bound.
-                { timeoutMs: 20000 }
+                {
+                    timeoutMs: h.event.protocolEventTimeoutMs({
+                        withFirstBlockGrace: true
+                    })
+                }
             );
             expect(before.transportType).to.equal(
                 TransportType.HOLEPUNCH,

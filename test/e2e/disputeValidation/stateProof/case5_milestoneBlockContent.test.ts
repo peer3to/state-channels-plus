@@ -45,8 +45,7 @@ describe("E2E: dispute validation / stateProof / milestone block content integri
             });
 
             await h.event.waitForAllPeers("onDisputeKilled", 1, {
-                mode: "atLeast",
-                timeoutMs: 10000
+                mode: "atLeast"
             });
             await h.assert.dispute.slashedOnChain(h.getPeer(0).address);
             await h.tamper.restoreConstructDispute(0);
@@ -63,8 +62,7 @@ describe("E2E: dispute validation / stateProof / milestone block content integri
             ).to.not.have.length(0);
             await h.assert.storage.honestPeersStoredDisputeFraudProofWait({
                 disputeFraudProofType:
-                    DisputeFraudProofType.DisputeInvalidBlockStructure,
-                timeoutMs: 10000
+                    DisputeFraudProofType.DisputeInvalidBlockStructure
             });
 
             for (const peer of h.getHonestPeers()) {
@@ -129,18 +127,15 @@ describe("E2E: dispute validation / stateProof / milestone block content integri
                 initiatedWithAuditingData: true
             });
             await h.event.waitForPeers("onDisputeKilled", [0], 1, {
-                mode: "atLeast",
-                timeoutMs: 15000
+                mode: "atLeast"
             });
             await h.assert.storage.honestPeersStoredDisputeFraudProofDetached({
                 disputeFraudProofType:
-                    DisputeFraudProofType.DisputeInvalidBlockInStateProofApplyFraudProof,
-                timeoutMs: 10000
+                    DisputeFraudProofType.DisputeInvalidBlockInStateProofApplyFraudProof
             });
             await h.dispute.resolveDisputeWait({
                 forkId,
-                syntheticOnChainParticipants: 1,
-                forkSettleTimeoutMs: 20000
+                syntheticOnChainParticipants: 1
             });
         });
 
@@ -149,6 +144,10 @@ describe("E2E: dispute validation / stateProof / milestone block content integri
             await h.scenario.preDisputeSetupCalldataPath({
                 timeConfig: { evidenceTime: 8 }
             });
+            const p2pTime = h.options.timeConfig?.p2pTime;
+            if (p2pTime === undefined) {
+                throw new Error("Expected a configured p2p time");
+            }
 
             // Keep the next block off-chain until we post it explicitly, then
             // make peer 0 miss that event so dispute replay must recover it.
@@ -160,25 +159,57 @@ describe("E2E: dispute validation / stateProof / milestone block content integri
                         .request()
                 )
             );
+            const auditor = h.getPeer(0);
+            const authorAddress = await h
+                .control(auditor)
+                .query.getNextToWrite()
+                .request();
+            const author = h.peers.find(
+                (peer) => peer.address === authorAddress
+            );
+            if (!author) throw new Error("Expected the block author peer");
+            const silentConfirmers = h.peers.filter(
+                (peer) => peer.index !== author.index
+            );
+            await Promise.all(
+                silentConfirmers.map((peer) =>
+                    h.control(peer).stub.stubBroadcast().request()
+                )
+            );
             await h.transition.advanceState({ waitForFinalization: false });
+            await Promise.all(
+                silentConfirmers.map((peer) =>
+                    h.control(peer).stub.restoreBroadcast().request()
+                )
+            );
 
             const forkId = h.activeForkId;
             if (!forkId) throw new Error("Expected an active fork");
-            const auditor = h.getPeer(0);
             const postedBlock = await h
                 .control(auditor)
                 .query.getLatestBlockBundle(forkId)
                 .request();
             if (!postedBlock) throw new Error("Expected a block to post");
             expect(postedBlock.onChainTimestamp).to.be.null;
+            const nextAuthorAddress = await h
+                .control(auditor)
+                .query.getNextToWrite()
+                .request();
+            if (
+                postedBlock.confirmationSignerAddresses.includes(
+                    nextAuthorAddress
+                )
+            ) {
+                throw new Error("Next author unexpectedly signed the parent");
+            }
 
-            await h.byzantine.stubCalldataHandler(auditor.index);
-            const author = h.peers.find(
-                (peer) =>
-                    peer.address.toLowerCase() ===
-                    postedBlock.author.toLowerCase()
+            await h
+                .control(auditor)
+                .stub.stubHoldCalldataPostedEvents()
+                .request();
+            await h.event.waitUntilTimestamp(
+                postedBlock.timestamp + p2pTime + 1
             );
-            if (!author) throw new Error("Expected the block author peer");
             const tx =
                 await author.p2pInstance.stateChannelManagerContract.postBlockCalldata(
                     Codec.decode(
@@ -190,9 +221,12 @@ describe("E2E: dispute validation / stateProof / milestone block content integri
             const receipt = await tx.wait();
             const minedBlock = await h.provider.getBlock(receipt!.blockNumber);
             if (!minedBlock) throw new Error("Expected calldata receipt block");
+            await h
+                .control(auditor)
+                .stub.waitForHeldCalldataPostedEvent()
+                .request();
             await h.event.waitForPeers("onBlockCalldataPosted", [1, 2, 3], 1, {
-                mode: "atLeast",
-                timeoutMs: 10000
+                mode: "atLeast"
             });
             expect(
                 (
@@ -202,7 +236,10 @@ describe("E2E: dispute validation / stateProof / milestone block content integri
                         .request()
                 )?.onChainTimestamp
             ).to.be.null;
-            await h.byzantine.restoreCalldataHandler(auditor.index);
+            await h
+                .control(auditor)
+                .stub.restoreCalldataPostedEvents()
+                .request();
 
             await h.tamper.stubConstructDispute(3, async (dispute, sm) => {
                 const svc = sm.p2pManager.localRpc.dispute;
@@ -216,6 +253,8 @@ describe("E2E: dispute validation / stateProof / milestone block content integri
                     );
                 }
                 const previous = confirmations.at(-1)!;
+                const nextAuthor =
+                    await sm.diamondStateMachine.getNextToWrite();
                 const previousHash = svc.hash(
                     previous.signedBlock.encodedBlock
                 );
@@ -225,8 +264,10 @@ describe("E2E: dispute validation / stateProof / milestone block content integri
                         block.transaction.header.transactionCnt =
                             BigInt(block.transaction.header.transactionCnt) +
                             1n;
+                        block.transaction.header.participant = nextAuthor;
                         block.transaction.header.timestamp =
-                            BigInt(block.transaction.header.timestamp) + 1n;
+                            BigInt(block.transaction.header.timestamp) +
+                            BigInt(sm.timeConfig.p2pTime + 1);
                         block.transaction.body.data = "0x";
                         block.previousBlockHash = previousHash;
                         return block;
@@ -237,7 +278,7 @@ describe("E2E: dispute validation / stateProof / milestone block content integri
             await h.byzantine.submitDoubleSignBlock(1);
             await h.event.waitForPeers("onDisputeKilled", [auditor.index], 1, {
                 mode: "atLeast",
-                timeoutMs: 15000
+                timeoutMs: h.event.protocolEventTimeoutMs()
             });
 
             // Peer 0 could only acquire this timestamp by recovering the
@@ -252,8 +293,7 @@ describe("E2E: dispute validation / stateProof / milestone block content integri
             ).to.equal(Number(minedBlock.timestamp));
             await h.assert.storage.honestPeersStoredDisputeFraudProofDetached({
                 disputeFraudProofType:
-                    DisputeFraudProofType.DisputeInvalidBlockInStateProofApplyFraudProof,
-                timeoutMs: 10000
+                    DisputeFraudProofType.DisputeInvalidBlockInStateProofApplyFraudProof
             });
         });
     });

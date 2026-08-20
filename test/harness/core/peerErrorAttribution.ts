@@ -28,11 +28,35 @@ export class PeerIdentityExecutionContext
 
     constructor(private readonly peerAddress: string) {}
 
-    /** Run one host handler invocation under this peer's identity. */
+    /**
+     * Run one host handler invocation under this peer's identity.
+     *
+     * Errors escaping the handler are stamped here, at the throw boundary:
+     * paths like EventSyncService collect the handler's promise from their
+     * own polling context, where the collect-time stamping below can't see
+     * the peer, so a late rejection would otherwise surface unattributed.
+     */
     runHandler<T>(handlerBody: () => T): T {
         return PeerIdentityExecutionContext.currentPeerIdentityStorage.run(
             { peerAddress: this.peerAddress },
-            handlerBody
+            () => {
+                try {
+                    const result = handlerBody();
+                    if (result instanceof Promise) {
+                        return result.catch((error: unknown) => {
+                            maybeStampErrorWithPeerAddress(
+                                error,
+                                this.peerAddress
+                            );
+                            throw error;
+                        }) as T;
+                    }
+                    return result;
+                } catch (error) {
+                    maybeStampErrorWithPeerAddress(error, this.peerAddress);
+                    throw error;
+                }
+            }
         );
     }
 

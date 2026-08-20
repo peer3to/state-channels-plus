@@ -53,6 +53,10 @@ export interface GasPeak {
 
 export function getFreePort(): Promise<number>;
 export function startHardhatNode(opts?: StartInfraOptions): Promise<NodeHandle>;
+export function waitForHardhatNode(
+    url: string,
+    timeoutMs?: number
+): Promise<void>;
 export function startDiscoveryRegistry(
     opts?: StartInfraOptions
 ): Promise<DiscoveryHandle>;

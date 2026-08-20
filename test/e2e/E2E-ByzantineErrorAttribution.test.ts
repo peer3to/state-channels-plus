@@ -33,7 +33,7 @@ describe("E2E: Byzantine error attribution", function () {
 
         await TestSession.expectFirstDetachedError({
             includes: "honest peer stray error",
-            timeoutMs: 5000
+            timeoutMs: h.event.protocolEventTimeoutMs()
         });
     });
 });

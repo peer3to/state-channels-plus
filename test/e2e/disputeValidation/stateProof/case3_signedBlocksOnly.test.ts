@@ -54,8 +54,7 @@ describe("E2E: dispute validation / stateProof / Case 3 (signedBlocks-only)", fu
             });
             await h.assert.storage.honestPeersStoredDisputeFraudProofDetached({
                 disputeFraudProofType:
-                    DisputeFraudProofType.DisputeInvalidBlockInStateProofApplyFraudProof,
-                timeoutMs: 15000
+                    DisputeFraudProofType.DisputeInvalidBlockInStateProofApplyFraudProof
             });
         });
     });
@@ -90,8 +89,7 @@ describe("E2E: dispute validation / stateProof / Case 3 (signedBlocks-only)", fu
             });
             await h.assert.storage.honestPeersStoredDisputeFraudProofDetached({
                 disputeFraudProofType:
-                    DisputeFraudProofType.DisputeInvalidBlockStructure,
-                timeoutMs: 15000
+                    DisputeFraudProofType.DisputeInvalidBlockStructure
             });
             await h.dispute.resolveDisputeWait({ forkId });
         });
@@ -131,8 +129,7 @@ describe("E2E: dispute validation / stateProof / Case 3 (signedBlocks-only)", fu
             });
             await h.assert.storage.honestPeersStoredDisputeFraudProofDetached({
                 disputeFraudProofType:
-                    DisputeFraudProofType.DisputeInvalidBlockInStateProofApplyFraudProof,
-                timeoutMs: 10000
+                    DisputeFraudProofType.DisputeInvalidBlockInStateProofApplyFraudProof
             });
             await h.dispute.resolveDisputeWait({ forkId });
         });
@@ -195,8 +192,7 @@ describe("E2E: dispute validation / stateProof / Case 3 (signedBlocks-only)", fu
             await h.event.waitForPeers("onDisputeKilled", [0], 1);
             await h.assert.storage.honestPeersStoredDisputeFraudProofDetached({
                 disputeFraudProofType:
-                    DisputeFraudProofType.DisputeInvalidBlockInStateProofApplyFraudProof,
-                timeoutMs: 10000
+                    DisputeFraudProofType.DisputeInvalidBlockInStateProofApplyFraudProof
             });
             await h.dispute.resolveDisputeWait({ forkId });
         });
@@ -238,8 +234,7 @@ describe("E2E: dispute validation / stateProof / Case 3 (signedBlocks-only)", fu
             });
             await h.assert.storage.honestPeersStoredDisputeFraudProofDetached({
                 disputeFraudProofType:
-                    DisputeFraudProofType.DisputeInvalidBlockStructure,
-                timeoutMs: 10000
+                    DisputeFraudProofType.DisputeInvalidBlockStructure
             });
             await h.dispute.resolveDisputeWait({ forkId });
         });
@@ -267,8 +262,7 @@ describe("E2E: dispute validation / stateProof / Case 3 (signedBlocks-only)", fu
             });
             await h.assert.storage.honestPeersStoredDisputeFraudProofDetached({
                 disputeFraudProofType:
-                    DisputeFraudProofType.DisputeInvalidBlockStructure,
-                timeoutMs: 10000
+                    DisputeFraudProofType.DisputeInvalidBlockStructure
             });
             await h.dispute.resolveDisputeWait({ forkId });
         });
@@ -295,8 +289,7 @@ describe("E2E: dispute validation / stateProof / Case 3 (signedBlocks-only)", fu
             });
             await h.assert.storage.honestPeersStoredDisputeFraudProofDetached({
                 disputeFraudProofType:
-                    DisputeFraudProofType.DisputeInvalidBlockStructure,
-                timeoutMs: 10000
+                    DisputeFraudProofType.DisputeInvalidBlockStructure
             });
             await h.dispute.resolveDisputeWait({ forkId });
         });
@@ -325,8 +318,7 @@ describe("E2E: dispute validation / stateProof / Case 3 (signedBlocks-only)", fu
             await h.assert.storage.honestPeersStoredDisputeFraudProofWait({
                 disputeFraudProofType:
                     DisputeFraudProofType.DisputeBlockAuthorNotParticipant,
-                peerIndices: [0, 1, 3],
-                timeoutMs: 15000
+                peerIndices: [0, 1, 3]
             });
 
             const overlappingProofTypes = [
@@ -380,8 +372,7 @@ describe("E2E: dispute validation / stateProof / Case 3 (signedBlocks-only)", fu
             });
             await h.assert.storage.honestPeersStoredDisputeFraudProofDetached({
                 disputeFraudProofType:
-                    DisputeFraudProofType.DisputeInvalidBlockInStateProofApplyFraudProof,
-                timeoutMs: 15000
+                    DisputeFraudProofType.DisputeInvalidBlockInStateProofApplyFraudProof
             });
 
             await h.dispute.resolveDisputeWait({ forkId });

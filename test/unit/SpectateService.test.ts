@@ -1,7 +1,153 @@
 import { expect } from "chai";
 import { MathTestSession as TestSession } from "@test/harness";
+import StateSnapshot from "@/models/StateSnapshot";
+import { Status } from "@/types";
+import { Codec, Type } from "@/utils";
 
 describe("Unit: SpectateService", function () {
+    describe("applySyncResponse", function () {
+        it("the same-fork target snapshot lands before validation → accepts the proof", async function () {
+            const h = TestSession.getHarness();
+            await h.lifecycle.start(4, 0);
+            const forkId = h.activeForkId!;
+            const participantIndices = [0, 1, 2, 3];
+
+            const requester = await h.join.addSpectatorWait();
+            await h.network.disconnectPeer(requester.index);
+            for (const peerIndex of participantIndices) {
+                await h
+                    .control(h.getPeer(peerIndex))
+                    .stub.stubPostStateSnapshot()
+                    .request();
+            }
+
+            await h.transition.advanceState({
+                count: 2,
+                waitForPeers: participantIndices,
+                waitForFinalization: true
+            });
+            const leaverIndex =
+                await h.transition.participantLeaveStateTransition({
+                    waitForPeers: participantIndices,
+                    waitForFinalization: true
+                });
+            const responder = h.getPeer(
+                participantIndices.find((index) => index !== leaverIndex)!
+            );
+            const latestHeight = await h
+                .control(responder)
+                .query.getLatestBlockHeight(forkId)
+                .request();
+            expect(latestHeight).to.not.equal(null);
+
+            const payload = await h
+                .control(responder)
+                .spectate.generateSyncPayload(
+                    h.channelId,
+                    forkId,
+                    latestHeight!
+                )
+                .request();
+            expect(payload).to.not.equal(null);
+            const decodedPayload = Codec.decode(
+                payload!.encodedSyncPayload,
+                Type.SyncPayload
+            );
+            expect(
+                decodedPayload.outboundMessageBlocksOfTheLatestFork.length
+            ).to.be.greaterThan(0);
+
+            await h
+                .control(responder)
+                .stub.restorePostStateSnapshot()
+                .request();
+            const postedSnapshot = await h.transition.postSnapshotWait({
+                peerIndex: responder.index,
+                forkId: String(forkId)
+            });
+            expect(postedSnapshot).to.not.equal(undefined);
+            expect(postedSnapshot!.blockHeight).to.equal(latestHeight);
+            const payloadAfterSnapshot = await h
+                .control(responder)
+                .spectate.generateSyncPayload(
+                    h.channelId,
+                    forkId,
+                    latestHeight!
+                )
+                .request();
+            expect(payloadAfterSnapshot).to.not.equal(null);
+            expect(
+                Codec.decode(
+                    payloadAfterSnapshot!.encodedSyncPayload,
+                    Type.SyncPayload
+                ).outboundMessageBlocksUpToLatestGenesis
+            ).to.deep.equal([]);
+
+            await h
+                .control(requester)
+                .spectate.applySyncResponse(
+                    responder.address,
+                    forkId,
+                    latestHeight!,
+                    payload!.encodedSyncPayload
+                )
+                .request();
+            expect(
+                await h.control(requester).query.getStatus().request()
+            ).to.equal(Status.SYNCED);
+        });
+    });
+
+    describe("tryMulticallSnapshotUpdate", function () {
+        it("the exact target snapshot lands first → accepts the benign height race", async function () {
+            const h = TestSession.getHarness();
+            await h.lifecycle.start(3, 3);
+            const forkId = h.activeForkId!;
+            const source = h.getPeer(0);
+            const staleOnChainSnapshot =
+                await h.channelManager.getStateSnapshot(h.channelId);
+            const latestHeight = await h
+                .control(source)
+                .query.getLatestBlockHeight(forkId)
+                .request();
+            expect(latestHeight).to.not.equal(null);
+            const payload = await h
+                .control(source)
+                .spectate.generateSyncPayload(
+                    h.channelId,
+                    forkId,
+                    latestHeight!
+                )
+                .request();
+            expect(payload).to.not.equal(null);
+
+            const postedSnapshot = await h.transition.postSnapshotWait({
+                peerIndex: source.index,
+                forkId: String(forkId)
+            });
+            expect(postedSnapshot).to.not.equal(undefined);
+            const currentOnChainSnapshot = StateSnapshot.from(
+                await h.channelManager.getStateSnapshot(h.channelId)
+            );
+            expect(currentOnChainSnapshot.hash).to.equal(postedSnapshot!.hash);
+
+            await h
+                .control(source)
+                .stub.stubNextReductionSimulationError(
+                    "RaceConditionBlockHeightTooOld"
+                )
+                .request();
+            const accepted = await h
+                .control(source)
+                .spectate.tryMulticallSnapshotUpdate(
+                    StateSnapshot.from(staleOnChainSnapshot).encode() as string,
+                    payload!.encodedSyncPayload
+                )
+                .request();
+            expect(accepted).to.equal(true);
+        });
+    });
+
     describe("generateSyncPayload", function () {
         // a dispute commitment can land on-chain before our
         // onDisputeCommitted handler stores the struct locally.

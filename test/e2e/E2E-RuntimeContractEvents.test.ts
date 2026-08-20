@@ -43,7 +43,10 @@ describe("E2E: Runtime contract events", function () {
         // the log and forwards it over its own runtime port.
         await h.transition.advanceState({ count: 1 });
 
-        await waitFor(() => received.length >= 1, 15_000);
+        await waitFor(
+            () => received.length >= 1,
+            h.event.protocolEventTimeoutMs()
+        );
 
         expect(received).to.have.lengthOf(1);
         const [a, b, result] = received[0];

@@ -40,11 +40,20 @@ describe("E2E: First block timestamp grace", function () {
         const recorder = await h.rpcStub.recordScheduledTasks(0, {
             suppressPrefix: "participantTimeout("
         });
-        // next height 0 -> grace applies
+        // next height 0 -> grace applies. Re-apply on BOTH peers with one
+        // shared timestamp: the override is part of the snapshot hash, so a
+        // peer left on the original genesis would reject peer 0's height-0
+        // block as WrongGenesis and dispute the fork.
+        const heightZeroTimestamp = Clock.getTimeInSeconds();
         await h.transition.runSetLatestState({
             peerIndex: 0,
             forkId,
-            timestampOverride: Clock.getTimeInSeconds()
+            timestampOverride: heightZeroTimestamp
+        });
+        await h.transition.runSetLatestState({
+            peerIndex: 1,
+            forkId,
+            timestampOverride: heightZeroTimestamp
         });
         await h.transition.advanceState({ count: 1 });
         // next height 1 -> no grace

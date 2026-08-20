@@ -69,7 +69,12 @@ describe("Dispute reduction stale event", function () {
                 return { errorMessage, forkId: String(sm.forkId) };
             },
             { eventArgs },
-            { timeoutMs: 60000 }
+            {
+                timeoutMs:
+                    h.event.protocolEventTimeoutMs({
+                        withFirstBlockGrace: true
+                    }) * 3
+            }
         );
 
         // No ErrorNoDisputesProvided revert, no fatal error, fork unchanged.
@@ -78,7 +83,12 @@ describe("Dispute reduction stale event", function () {
             h.getPeer(observerIndex),
             (sm) => String(sm.forkId),
             {},
-            { timeoutMs: 30000 }
+            {
+                timeoutMs:
+                    h.event.protocolEventTimeoutMs({
+                        withFirstBlockGrace: true
+                    }) * 2
+            }
         );
         expect(forkAfter).to.equal(result.forkId);
     });

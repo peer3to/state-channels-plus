@@ -33,8 +33,7 @@ describe("E2E: dispute validation / disputeInputFields / onChainSlashes", functi
 
         await h.assert.storage.honestPeersStoredDisputeFraudProofDetached({
             disputeFraudProofType:
-                DisputeFraudProofType.DisputeOnChainSlashesNotSubset,
-            timeoutMs: 10000
+                DisputeFraudProofType.DisputeOnChainSlashesNotSubset
         });
         // This case proves that the malformed on-chain-slash claim is killed.
         // It does not control which later counter-dispute wins, so it cannot
@@ -58,13 +57,10 @@ describe("E2E: dispute validation / disputeInputFields / onChainSlashes", functi
         const slashedAddress = h.getPeer(1).address;
         const forkBeforeResolution = h.activeForkId!;
         await h.scenario.disputeAndResolve({
-            maliciousPeerIndex: 1,
-            forkSettleTimeoutMs: 15000,
-            disputesCommittedTimeoutMs: 10000
+            maliciousPeerIndex: 1
         });
         await h.assert.snapshot.localSnapshotsChangedWait({
-            previousForkId: forkBeforeResolution,
-            timeoutMs: 15000
+            previousForkId: forkBeforeResolution
         });
 
         await h.transition.advanceState({
@@ -95,12 +91,10 @@ describe("E2E: dispute validation / disputeInputFields / onChainSlashes", functi
             mode: "atLeast"
         });
         await h.assert.storage.honestPeersStoredDisputeFraudProofDetached({
-            disputeFraudProofType: DisputeFraudProofType.InvalidDisputeReason,
-            timeoutMs: 10000
+            disputeFraudProofType: DisputeFraudProofType.InvalidDisputeReason
         });
         await h.dispute.resolveDisputeWait({
-            forkId: h.context.originalForkId!,
-            forkSettleTimeoutMs: 15000
+            forkId: h.context.originalForkId!
         });
     });
 

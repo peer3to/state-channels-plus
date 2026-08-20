@@ -38,6 +38,7 @@ import type {
     IsDisputedForkProbe
 } from "./StubService";
 import type { StubService } from "./StubService";
+import { protocolEventTimeoutMs } from "@test/harness/core/testTimeConfig";
 
 /**
  * Concrete method stub/restore sites. Each `stubX` saves the live original in
@@ -695,7 +696,11 @@ export class StubRpcMethods extends ARpcMethods<P2PManager<HarnessControlRpc>> {
                     params: [{ channelId, initTime }]
                 },
                 transport,
-                { timeoutMs: 2000 }
+                {
+                    timeoutMs: protocolEventTimeoutMs(
+                        this.p2pManager.stateManager.timeConfig
+                    )
+                }
             );
             return "resolved";
         } catch (error) {

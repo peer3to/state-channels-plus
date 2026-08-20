@@ -29,8 +29,7 @@ describe("E2E: dispute validation / outputState", function () {
         });
         await h.assert.storage.honestPeersStoredDisputeFraudProofDetached({
             disputeFraudProofType:
-                DisputeFraudProofType.DisputeInvalidOutputState,
-            timeoutMs: 10000
+                DisputeFraudProofType.DisputeInvalidOutputState
         });
         await h.dispute.resolveDisputeWait({ forkId });
     });

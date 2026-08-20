@@ -135,7 +135,7 @@ describe("E2E: Spectate stale-proof guard", function () {
                     .control(requester)
                     .query.isBlacklisted(responder.address)
                     .request(),
-            15000
+            h.event.protocolEventTimeoutMs()
         );
         expect(
             await h

@@ -4,8 +4,8 @@
 
 ## Score
 
-- Specification IDs fully implemented (only `Covered` claims): **200/243** (82%)
-- Source files with a file report: **236/258** (91%)
+- Specification IDs fully implemented (only `Covered` claims): **199/243** (82%)
+- Source files with a file report: **235/257** (91%)
 
 ## Contents
 
@@ -61,6 +61,7 @@ the claiming conformance rows; an ID absent from every conformance table has no 
 | [`REQ-STOR-5-T6EQSA`](../specification/storage/durability.md#req-stor-5-t6eqsa) | Partial | [implementation/source/src/storage/Storage.ts.md](../implementation/source/src/storage/Storage.ts.md#conformance-traceability) |
 | [`REQ-STOR-6-SKP0KM`](../specification/storage/durability.md#req-stor-6-skp0km) | `Contradicts` | [implementation/source/src/utils/DeepCopyProxy.ts.md](../implementation/source/src/utils/DeepCopyProxy.ts.md#conformance-traceability) |
 | [`REQ-SYNC-1-T2589H`](../specification/peer-communication/synchronization.md#req-sync-1-t2589h) | Partial | [implementation/source/src/rpc/services/spectate/SpectateRpcMethods.ts.md](../implementation/source/src/rpc/services/spectate/SpectateRpcMethods.ts.md#conformance-traceability)<br>[implementation/source/src/rpc/services/spectate/SpectateService.ts.md](../implementation/source/src/rpc/services/spectate/SpectateService.ts.md#conformance-traceability) |
+| [`REQ-TIME-2-VG94S7`](../specification/protocol-model/time.md#req-time-2-vg94s7) | Partial | [implementation/source/src/Clock.ts.md](../implementation/source/src/Clock.ts.md#conformance-traceability) |
 | [`REQ-TRUST-4-KW24NF`](../specification/security/trust-model.md#req-trust-4-kw24nf) | Partial | [implementation/views/security/trust-model.md](../implementation/views/security/trust-model.md#conformance-traceability) |
 | [`REQ-UPG-1-MFBTZ1`](../specification/peer-communication/transport-upgrade.md#req-upg-1-mfbtz1) | Partial | [implementation/source/src/rpc/services/WebRTCSetup/WebRTCSetupService.ts.md](../implementation/source/src/rpc/services/WebRTCSetup/WebRTCSetupService.ts.md#conformance-traceability) |
 

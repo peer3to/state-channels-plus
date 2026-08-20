@@ -27,15 +27,18 @@ export class SyncCoordinator<
     private logger: Logger;
     private eventBarrier: EventBarrier;
     private control: ControlFn<TCustomRpc>;
+    private defaultTimeoutMs: number;
 
     constructor(
         logger: Logger,
         eventBarrier: EventBarrier,
-        control: ControlFn<TCustomRpc>
+        control: ControlFn<TCustomRpc>,
+        defaultTimeoutMs: number
     ) {
         this.logger = logger.child({ component: "SyncCoordinator" });
         this.eventBarrier = eventBarrier;
         this.control = control;
+        this.defaultTimeoutMs = defaultTimeoutMs;
     }
 
     private loadTips(peers: TestPeer<TCustomRpc>[], forkId: ForkId) {
@@ -57,7 +60,7 @@ export class SyncCoordinator<
         options?: WaitForPeersToSyncOptions
     ): Promise<void> {
         const {
-            timeoutMs = 15000,
+            timeoutMs = this.defaultTimeoutMs,
             waitForFinalization,
             minHeight
         } = options || {};

@@ -68,7 +68,13 @@ describe("Unit: BlockCommitService", function () {
             const h = TestSession.getHarness();
             await h.lifecycle.start(3, 1);
             const forkId = h.activeForkId!;
-            const { index: spectatorIndex } = await h.join.addSpectatorWait();
+            const spectatorPromise = h.join.addSpectatorDetached();
+            await h.transition.advanceState({
+                count: 2,
+                waitForPeers: [0, 1, 2]
+            });
+            const { index: spectatorIndex } = await spectatorPromise;
+            await h.event.waitUntilPeerStatus(spectatorIndex, Status.SYNCED);
 
             const r = await h.execOnHost(
                 h.getPeer(spectatorIndex),
@@ -90,7 +96,7 @@ describe("Unit: BlockCommitService", function () {
 
         it("a participant that joined after the block → outside its union, not signed", async function () {
             const h = TestSession.getHarness();
-            await h.lifecycle.start(2, 2, {
+            await h.lifecycle.start(2, 0, {
                 timeConfig: {
                     p2pTime: 2,
                     agreementTime: 4,
@@ -99,7 +105,10 @@ describe("Unit: BlockCommitService", function () {
                 }
             });
             const forkId = h.activeForkId!;
-            const joiner = await h.join.addSpectatorWait();
+            const joinerPromise = h.join.addSpectatorDetached();
+            await h.transition.advanceState({ count: 2, waitForPeers: [0, 1] });
+            const joiner = await joinerPromise;
+            await h.event.waitUntilPeerStatus(joiner.index, Status.SYNCED);
             await h.assert.sync.peersInSyncWait();
             // the pre-join tip: the newest block whose union cannot contain
             // the joiner (a joiner does not sync genesis-era history)
@@ -109,6 +118,7 @@ describe("Unit: BlockCommitService", function () {
                     .query.getNextBlockHeight(forkId)
                     .request()) - 1;
             await h.join.joinChannelWait({ joiner });
+            await h.transition.advanceState({ count: 2 });
             await h.event.waitUntilPeerStatus(
                 joiner.index,
                 Status.PARTICIPATING
@@ -175,7 +185,7 @@ describe("Unit: BlockCommitService", function () {
     describe("success → status promotion", function () {
         it("a PENDING joiner's first committed block includes it → PARTICIPATING and the recorded forceJoin height cleared", async function () {
             const h = TestSession.getHarness();
-            await h.lifecycle.start(2, 2, {
+            await h.lifecycle.start(2, 0, {
                 timeConfig: {
                     p2pTime: 2,
                     agreementTime: 4,
@@ -183,7 +193,10 @@ describe("Unit: BlockCommitService", function () {
                     evidenceTime: 6
                 }
             });
-            const joiner = await h.join.addSpectatorWait();
+            const joinerPromise = h.join.addSpectatorDetached();
+            await h.transition.advanceState({ count: 2, waitForPeers: [0, 1] });
+            const joiner = await joinerPromise;
+            await h.event.waitUntilPeerStatus(joiner.index, Status.SYNCED);
             await h.assert.sync.peersInSyncWait();
             await h.join.joinChannelWait({ joiner });
 

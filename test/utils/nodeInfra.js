@@ -426,6 +426,7 @@ function startGasMonitor(slots, onNewPeak, intervalMs = 1000) {
 
 module.exports = {
     getFreePort,
+    waitForHardhatNode,
     startHardhatNode,
     startDiscoveryRegistry,
     jsonRpc,

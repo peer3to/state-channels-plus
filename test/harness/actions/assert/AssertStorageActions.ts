@@ -55,6 +55,11 @@ export class AssertStorageActions<
         timeoutMs?: number;
     }): Promise<void> {
         const forkId = options.forkId ?? this.harness.activeForkId;
+        const timeoutMs =
+            options.timeoutMs ??
+            this.harness.event.protocolEventTimeoutMs({
+                withFirstBlockGrace: true
+            });
 
         const condition = async () => {
             try {
@@ -69,9 +74,9 @@ export class AssertStorageActions<
         };
 
         return this.harness.eventCountsBarrier.waitFor(condition, {
-            timeoutMs: options.timeoutMs,
+            timeoutMs,
             timeoutMessageFn: async () => {
-                let errorMsg = `Block and state were not stored on all honest peers within ${options.timeoutMs ?? 5000}ms for ${forkId}:${options.height}`;
+                let errorMsg = `Block and state were not stored on all honest peers within ${timeoutMs}ms for ${forkId}:${options.height}`;
                 try {
                     await this.honestPeersStoredBlockAndState(
                         options.height,
@@ -90,6 +95,11 @@ export class AssertStorageActions<
         peerIndices?: number[];
         timeoutMs?: number;
     }): Promise<void> {
+        const timeoutMs =
+            options?.timeoutMs ??
+            this.harness.event.protocolEventTimeoutMs({
+                withFirstBlockGrace: true
+            });
         const honestPeers = this.harness.getFilteredOrHonestPeers(
             options?.peerIndices
         );
@@ -108,8 +118,8 @@ export class AssertStorageActions<
         };
 
         return this.harness.eventCountsBarrier.waitFor(condition, {
-            timeoutMs: options?.timeoutMs,
-            timeoutMessage: `Honest peers did not observe inbound message within ${options?.timeoutMs ?? 5000}ms`
+            timeoutMs,
+            timeoutMessage: `Honest peers did not observe inbound message within ${timeoutMs}ms`
         });
     }
 
@@ -207,8 +217,13 @@ export class AssertStorageActions<
     async honestPeersStoredDisputeFraudProof(options: {
         disputeFraudProofType: DisputeFraudProofType;
         peerIndices?: number[];
+        atLeastOneHonestPeer?: boolean;
     }): Promise<void> {
-        const { disputeFraudProofType, peerIndices } = options;
+        const {
+            disputeFraudProofType,
+            peerIndices,
+            atLeastOneHonestPeer = false
+        } = options;
         const peers = this.harness.getFilteredOrHonestPeers(peerIndices);
         if (peers.length === 0) {
             throw new Error(
@@ -220,6 +235,25 @@ export class AssertStorageActions<
         const want = String(
             toSolidityDisputeFraudProofType(disputeFraudProofType)
         );
+
+        if (atLeastOneHonestPeer) {
+            const failures: string[] = [];
+            for (const peer of peers) {
+                const proofTypes = await this.harness
+                    .control(peer)
+                    .query.getDisputeFraudProofTypes()
+                    .request();
+                if (proofTypes.includes(want)) {
+                    return;
+                }
+                failures.push(
+                    `peer ${peer.index} stored [${proofTypes.join(", ")}]`
+                );
+            }
+            throw new Error(
+                `Expected at least one honest peer to store dispute fraud proof type ${disputeFraudProofType}. ${failures.join(" | ")}`
+            );
+        }
 
         for (const peer of peers) {
             const proofTypes = await this.harness
@@ -237,9 +271,15 @@ export class AssertStorageActions<
     honestPeersStoredDisputeFraudProofWait(options: {
         disputeFraudProofType: DisputeFraudProofType;
         peerIndices?: number[];
+        atLeastOneHonestPeer?: boolean;
         timeoutMs?: number;
     }): Promise<void> {
         const { timeoutMs, disputeFraudProofType, ...rest } = options;
+        const waitTimeoutMs =
+            timeoutMs ??
+            this.harness.event.protocolEventTimeoutMs({
+                withFirstBlockGrace: true
+            });
         return this.harness.eventCountsBarrier.waitFor(
             async () => {
                 try {
@@ -253,8 +293,8 @@ export class AssertStorageActions<
                 }
             },
             {
-                timeoutMs,
-                timeoutMessage: `Not all checked peers stored dispute fraud proof type ${disputeFraudProofType} within ${timeoutMs ?? 5000}ms`,
+                timeoutMs: waitTimeoutMs,
+                timeoutMessage: `Not all checked peers stored dispute fraud proof type ${disputeFraudProofType} within ${waitTimeoutMs}ms`,
                 label: `disputeFraudProofWait:${disputeFraudProofType}`
             }
         );
@@ -263,6 +303,7 @@ export class AssertStorageActions<
     async honestPeersStoredDisputeFraudProofDetached(options: {
         disputeFraudProofType: DisputeFraudProofType;
         peerIndices?: number[];
+        atLeastOneHonestPeer?: boolean;
         timeoutMs?: number;
     }): Promise<void> {
         DetachedPromises.collect(
@@ -354,6 +395,11 @@ export class AssertStorageActions<
         forkId?: ForkId;
         timeoutMs?: number;
     }): Promise<void> {
+        const timeoutMs =
+            options?.timeoutMs ??
+            this.harness.event.protocolEventTimeoutMs({
+                withFirstBlockGrace: true
+            });
         const condition = async () => {
             try {
                 await this.storedDisputeConfirmations(options);
@@ -364,9 +410,9 @@ export class AssertStorageActions<
         };
 
         return this.harness.eventCountsBarrier.waitFor(condition, {
-            timeoutMs: options?.timeoutMs,
+            timeoutMs,
             timeoutMessageFn: async () => {
-                let errorMsg = `Dispute confirmations were not stored on all peers within ${options?.timeoutMs ?? 5000}ms`;
+                let errorMsg = `Dispute confirmations were not stored on all peers within ${timeoutMs}ms`;
                 try {
                     await this.storedDisputeConfirmations(options);
                 } catch (error) {

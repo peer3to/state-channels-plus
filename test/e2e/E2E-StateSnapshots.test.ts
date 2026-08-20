@@ -61,7 +61,7 @@ describe("E2E: State Snapshots", function () {
         await h.contextApi.capturePrePostSnapshotContext();
         await h.assert.snapshot.verifyOnChainChannelBalanceInvariant();
         h.event.resetEventSpies();
-        await h.transition.postSnapshotWait({ timeoutMs: 10000 });
+        await h.transition.postSnapshotWait();
         await h.assert.snapshot.withdrawalDeltaMatchesExpected();
         await h.assert.snapshot.verifyOnChainChannelBalanceInvariant();
         await h.assert.snapshot.snapshotMatchesLocal();
@@ -85,7 +85,7 @@ describe("E2E: State Snapshots", function () {
         h.event.resetEventSpies();
         await h.contextApi.capturePrePostSnapshotContext();
         await h.assert.snapshot.verifyOnChainChannelBalanceInvariant();
-        await h.transition.postSnapshotWait({ timeoutMs: 10000 });
+        await h.transition.postSnapshotWait();
         await h.assert.snapshot.withdrawalDeltaMatchesExpected();
         await h.assert.snapshot.verifyOnChainChannelBalanceInvariant();
         await h.assert.snapshot.onChainSnapshotOnFork();
@@ -116,9 +116,7 @@ describe("E2E: State Snapshots", function () {
             maliciousPeerIndex,
             forkId: originalForkId,
             honestPeerIndices: honest,
-            resetEventSpies: false,
-            forkSettleTimeoutMs: 20000,
-            disputesCommittedTimeoutMs: 10000
+            resetEventSpies: false
         });
 
         const heldReductionCount = await h
@@ -131,7 +129,6 @@ describe("E2E: State Snapshots", function () {
         );
 
         await h.event.waitForPeers("onSetState", [targetPeerIndex], 1, {
-            timeoutMs: 20000,
             mode: "atLeast"
         });
         expect(
@@ -209,9 +206,7 @@ describe("E2E: State Snapshots", function () {
             maliciousPeerIndex,
             forkId: originalForkId,
             honestPeerIndices: reducingHonestPeers,
-            resetEventSpies: false,
-            forkSettleTimeoutMs: 20000,
-            disputesCommittedTimeoutMs: 10000
+            resetEventSpies: false
         });
 
         try {
@@ -221,7 +216,7 @@ describe("E2E: State Snapshots", function () {
                         .control(targetPeer)
                         .stub.getHeldReductionTaskCount()
                         .request()) > 0,
-                15000,
+                h.event.protocolEventTimeoutMs(),
                 50
             );
             await h
@@ -237,7 +232,7 @@ describe("E2E: State Snapshots", function () {
                             .stub.getPausedReductionStatus()
                             .request()
                     ).entered,
-                15000,
+                h.event.protocolEventTimeoutMs(),
                 50
             );
 
@@ -255,7 +250,7 @@ describe("E2E: State Snapshots", function () {
                             .stub.getPausedReductionStatus()
                             .request()
                     ).settled,
-                30000,
+                h.event.protocolEventTimeoutMs(),
                 50
             );
             const reductionStatus = await h
@@ -270,7 +265,6 @@ describe("E2E: State Snapshots", function () {
             expect(reductionStatus.error).to.equal(undefined);
 
             await h.event.waitForPeers("onSetState", [targetPeerIndex], 1, {
-                timeoutMs: 20000,
                 mode: "atLeast"
             });
             expect(
@@ -419,8 +413,7 @@ describe("E2E: State Snapshots", function () {
             });
             await h.assert.storage.honestPeersStoredDisputeFraudProofDetached({
                 disputeFraudProofType:
-                    DisputeFraudProofType.DisputeInvalidStateProof,
-                timeoutMs: 10000
+                    DisputeFraudProofType.DisputeInvalidStateProof
             });
 
             const hostErrors = await h.quiesceHosts();
@@ -435,10 +428,7 @@ describe("E2E: State Snapshots", function () {
                 )
             );
 
-            await h.dispute.resolveDisputeWait({
-                forkId,
-                forkSettleTimeoutMs: 15000
-            });
+            await h.dispute.resolveDisputeWait({ forkId });
         });
     });
 });

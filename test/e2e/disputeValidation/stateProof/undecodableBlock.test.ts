@@ -36,8 +36,7 @@ describe("E2E: dispute validation / stateProof / undecodableBlock", function () 
         });
         await h.assert.storage.honestPeersStoredDisputeFraudProofDetached({
             disputeFraudProofType:
-                DisputeFraudProofType.DisputeInvalidStateProof,
-            timeoutMs: 10000
+                DisputeFraudProofType.DisputeInvalidStateProof
         });
         await h.dispute.resolveDisputeWait({
             forkId,

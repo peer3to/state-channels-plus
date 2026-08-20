@@ -55,7 +55,7 @@ describe("Unit: BlockProductionService", function () {
             const h = TestSession.getHarness();
             // the timeConfig is the one the promotion scenario needs to keep a
             // 2-peer channel serving the spectator's sync
-            await h.lifecycle.start(2, 2, {
+            await h.lifecycle.start(2, 0, {
                 timeConfig: {
                     p2pTime: 2,
                     agreementTime: 4,
@@ -65,7 +65,9 @@ describe("Unit: BlockProductionService", function () {
             });
             const forkId = h.activeForkId!;
 
-            const joiner = await h.join.addSpectatorWait();
+            const joiner = await h.join.addSpectatorDetached();
+            await h.transition.advanceState({ count: 2, waitForPeers: [0, 1] });
+            await h.event.waitUntilPeerStatus(joiner.index, Status.SYNCED);
             await h.assert.sync.peersInSyncWait();
             await h.join.joinChannelWait({ joiner });
 

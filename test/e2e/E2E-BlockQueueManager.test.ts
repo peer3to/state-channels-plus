@@ -128,7 +128,7 @@ describe("E2E: BlockQueueManager", function () {
                     .control(observer)
                     .query.isBlacklisted(sender.address)
                     .request(),
-            5000
+            h.event.protocolEventTimeoutMs()
         );
         expect(
             await h
@@ -392,9 +392,7 @@ describe("E2E: BlockQueueManager", function () {
                 maliciousPeerIndex,
                 forkId: originalForkId,
                 honestPeerIndices: reducingHonestPeers,
-                resetEventSpies: false,
-                forkSettleTimeoutMs: 20000,
-                disputesCommittedTimeoutMs: 10000
+                resetEventSpies: false
             });
 
             expect(
@@ -411,7 +409,7 @@ describe("E2E: BlockQueueManager", function () {
             // the first-block delivery.
             await waitFor(
                 async () => (await race.heldSnapshotEventCount()) > 0,
-                10000,
+                h.event.protocolEventTimeoutMs(),
                 50
             );
 
@@ -441,7 +439,7 @@ describe("E2E: BlockQueueManager", function () {
                     .query.getBlockByHeight(newForkId, 0)
                     .request();
                 return Boolean(block?.encodedBlockConfirmation);
-            }, 10000);
+            }, h.event.protocolEventTimeoutMs());
 
             const firstBlock = await h
                 .control(sourcePeer)
@@ -461,8 +459,7 @@ describe("E2E: BlockQueueManager", function () {
                     senderAddress: writerPeer!.address
                 },
                 keepConnection: true,
-                processedKeepConnection: true,
-                timeoutMs: 20000
+                processedKeepConnection: true
             });
 
             await waitFor(
@@ -471,7 +468,7 @@ describe("E2E: BlockQueueManager", function () {
                         .control(targetPeer)
                         .query.getForkId()
                         .request()) === newForkId,
-                10000
+                h.event.protocolEventTimeoutMs()
             );
             expect(
                 h.event.getEventCallCount(targetPeerIndex, "onSetState")
@@ -720,9 +717,7 @@ describe("E2E: BlockQueueManager", function () {
                 maliciousPeerIndex,
                 forkId: originalForkId,
                 honestPeerIndices: reducingHonestPeers,
-                resetEventSpies: false,
-                forkSettleTimeoutMs: 20000,
-                disputesCommittedTimeoutMs: 10000
+                resetEventSpies: false
             });
 
             expect(
@@ -796,7 +791,7 @@ describe("E2E: BlockQueueManager", function () {
                         .control(targetPeer)
                         .query.isBlacklisted(author.address)
                         .request(),
-                15000
+                h.event.protocolEventTimeoutMs()
             );
 
             await race.release();
@@ -843,9 +838,7 @@ describe("E2E: BlockQueueManager", function () {
                 maliciousPeerIndex,
                 forkId: originalForkId,
                 honestPeerIndices: reducingHonestPeers,
-                resetEventSpies: false,
-                forkSettleTimeoutMs: 20000,
-                disputesCommittedTimeoutMs: 10000
+                resetEventSpies: false
             });
 
             const sourcePeer = h.getPeer(reducingHonestPeers[0]);
@@ -868,7 +861,7 @@ describe("E2E: BlockQueueManager", function () {
                     .query.getBlockByHeight(newForkId, 0)
                     .request();
                 return Boolean(block?.encodedBlockConfirmation);
-            }, 10000);
+            }, h.event.protocolEventTimeoutMs());
             const firstBlock = await h
                 .control(sourcePeer)
                 .query.getBlockByHeight(newForkId, 0)
@@ -892,7 +885,7 @@ describe("E2E: BlockQueueManager", function () {
                         .control(targetPeer)
                         .query.isBlockQueued(firstBlock!.hash)
                         .request(),
-                5000
+                h.event.protocolEventTimeoutMs()
             );
             expect(
                 await h.control(targetPeer).query.getForkId().request()
@@ -908,7 +901,7 @@ describe("E2E: BlockQueueManager", function () {
             // the replay below is what drives the transition.
             await waitFor(
                 async () => (await race.heldSnapshotEventCount()) > 0,
-                10000,
+                h.event.protocolEventTimeoutMs(),
                 50
             );
 
@@ -924,7 +917,7 @@ describe("E2E: BlockQueueManager", function () {
                         .control(targetPeer)
                         .query.getForkId()
                         .request()) === newForkId,
-                15000
+                h.event.protocolEventTimeoutMs()
             );
             await waitFor(
                 async () =>
@@ -932,7 +925,7 @@ describe("E2E: BlockQueueManager", function () {
                         .control(targetPeer)
                         .query.getBlockByHeight(newForkId, 0)
                         .request()) !== null,
-                15000
+                h.event.protocolEventTimeoutMs()
             );
             expect(
                 h.event.getEventCallCount(targetPeerIndex, "onSetState")

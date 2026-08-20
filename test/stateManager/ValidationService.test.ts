@@ -9,7 +9,11 @@ describe("ValidationService - block author participant gate", function () {
     it("binds the author to the previous snapshot and to a coordinate-matched resulting snapshot", async function () {
         const h = TestSession.getHarness();
         await h.lifecycle.start(4, 0);
-        await h.transition.advanceState();
+        const joiner = await h.join.addSpectatorDetached();
+        await h.transition.advanceState({
+            waitForPeers: [0, 1, 2, 3],
+            waitForFinalization: true
+        });
         const peer = h.control(h.getPeer(0));
 
         expect(
@@ -67,7 +71,7 @@ describe("ValidationService - block author participant gate", function () {
 
         // a real pending participant: joined on-chain but not yet in the
         // current set, so only the pending half of the union can admit it
-        const joiner = await h.join.addSpectatorWait();
+        await h.event.waitUntilPeerStatus(joiner.index, Status.SYNCED);
         await h.join.joinChannelWait({ joiner });
         expect(
             await h.control(joiner).query.getStatus().request(),

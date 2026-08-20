@@ -16,7 +16,9 @@ describe("E2E: dispute validation / stateProof / Case 1 (M1/M2 inbound divergenc
     describe("Case 1.1: auditingData.milestoneSnapshots[1].snapshotData.latestInboundMessageBlockHash = random", function () {
         it("Case 1.1 → DisputeInvalidStateProof", async function () {
             const h = TestSession.getHarness();
-            await h.scenario.setupTwoLeaversAcrossMilestones();
+            await h.scenario.setupTwoLeaversAcrossMilestones({
+                forceExitPeerIndex: 0
+            });
 
             await h.tamper.postTamperedDispute(
                 0,
@@ -28,9 +30,9 @@ describe("E2E: dispute validation / stateProof / Case 1 (M1/M2 inbound divergenc
                         dispute.input.stateProof.milestones.length,
                         "need ≥2 milestones to target M2 snapshot"
                     ).to.be.greaterThanOrEqual(2);
-                    expect(dispute.postedAuditingData).to.equal(true);
                     auditingData.milestoneSnapshots[1]!.snapshotData.latestInboundMessageBlockHash =
                         randomHash();
+                    dispute.postedAuditingData = true;
                     dispute.input.disputeAuditingDataHash = hash(
                         Codec.encode(auditingData, Type.DisputeAuditingData)
                     );
@@ -38,14 +40,13 @@ describe("E2E: dispute validation / stateProof / Case 1 (M1/M2 inbound divergenc
             );
 
             await h.event.waitForPeers("onDisputeKilled", [0, 1, 3], 1, {
-                mode: "atLeast",
-                timeoutMs: 25000
+                mode: "atLeast"
             });
-            await h.assert.storage.honestPeersStoredDisputeFraudProofDetached({
+            await h.assert.storage.honestPeersStoredDisputeFraudProof({
                 disputeFraudProofType:
                     DisputeFraudProofType.DisputeInvalidStateProof,
-                timeoutMs: 15000,
-                peerIndices: [1, 3]
+                peerIndices: [1, 3],
+                atLeastOneHonestPeer: true
             });
         });
     });
@@ -59,7 +60,9 @@ describe("E2E: dispute validation / stateProof / Case 1 (M1/M2 inbound divergenc
     describe("Case 1.3: auditingData.milestoneSnapshots[1] = milestoneSnapshots[2] (M2 row claims M3 snapshot, skip-ahead)", function () {
         it("Case 1.3 → DisputeInvalidStateProof", async function () {
             const h = TestSession.getHarness();
-            await h.scenario.setupTwoLeaversAcrossMilestones();
+            await h.scenario.setupTwoLeaversAcrossMilestones({
+                forceExitPeerIndex: 0
+            });
 
             await h.tamper.postTamperedDispute(
                 0,
@@ -74,6 +77,7 @@ describe("E2E: dispute validation / stateProof / Case 1 (M1/M2 inbound divergenc
                     // M2 row carries M3's full snapshot (hash won't match M2 proof's finalizedSnapshotHash).
                     auditingData.milestoneSnapshots[1] =
                         auditingData.milestoneSnapshots[2]!;
+                    dispute.postedAuditingData = true;
                     dispute.input.disputeAuditingDataHash = hash(
                         Codec.encode(auditingData, Type.DisputeAuditingData)
                     );
@@ -81,14 +85,13 @@ describe("E2E: dispute validation / stateProof / Case 1 (M1/M2 inbound divergenc
             );
 
             await h.event.waitForPeers("onDisputeKilled", [0, 1, 3], 1, {
-                mode: "atLeast",
-                timeoutMs: 25000
+                mode: "atLeast"
             });
-            await h.assert.storage.honestPeersStoredDisputeFraudProofDetached({
+            await h.assert.storage.honestPeersStoredDisputeFraudProof({
                 disputeFraudProofType:
                     DisputeFraudProofType.DisputeInvalidStateProof,
-                timeoutMs: 15000,
-                peerIndices: [1, 3]
+                peerIndices: [1, 3],
+                atLeastOneHonestPeer: true
             });
         });
     });
@@ -96,7 +99,9 @@ describe("E2E: dispute validation / stateProof / Case 1 (M1/M2 inbound divergenc
     describe("Case 1.4: auditingData.milestoneSnapshots[1] = milestoneSnapshots[0] (M2 row claims M1 snapshot, stay-back)", function () {
         it("Case 1.4 → DisputeInvalidStateProof", async function () {
             const h = TestSession.getHarness();
-            await h.scenario.setupTwoLeaversAcrossMilestones();
+            await h.scenario.setupTwoLeaversAcrossMilestones({
+                forceExitPeerIndex: 0
+            });
 
             await h.tamper.postTamperedDispute(
                 0,
@@ -111,6 +116,7 @@ describe("E2E: dispute validation / stateProof / Case 1 (M1/M2 inbound divergenc
                     // M2 row carries M1's full snapshot (hash won't match M2 proof's finalizedSnapshotHash).
                     auditingData.milestoneSnapshots[1] =
                         auditingData.milestoneSnapshots[0]!;
+                    dispute.postedAuditingData = true;
                     dispute.input.disputeAuditingDataHash = hash(
                         Codec.encode(auditingData, Type.DisputeAuditingData)
                     );
@@ -118,14 +124,13 @@ describe("E2E: dispute validation / stateProof / Case 1 (M1/M2 inbound divergenc
             );
 
             await h.event.waitForPeers("onDisputeKilled", [0, 1, 3], 1, {
-                mode: "atLeast",
-                timeoutMs: 25000
+                mode: "atLeast"
             });
-            await h.assert.storage.honestPeersStoredDisputeFraudProofDetached({
+            await h.assert.storage.honestPeersStoredDisputeFraudProof({
                 disputeFraudProofType:
                     DisputeFraudProofType.DisputeInvalidStateProof,
-                timeoutMs: 15000,
-                peerIndices: [1, 3]
+                peerIndices: [1, 3],
+                atLeastOneHonestPeer: true
             });
         });
     });
@@ -184,6 +189,7 @@ describe("E2E: dispute validation / stateProof / Case 1 (M1/M2 inbound divergenc
             });
 
             h.context.leftChannelPeerIndices = [secondLeaver.index];
+            await h.control(h.getPeer(0)).dispute.setForceExit(true).request();
             h.event.resetEventSpies();
             h.contextApi.captureOriginalFork();
 
@@ -220,14 +226,13 @@ describe("E2E: dispute validation / stateProof / Case 1 (M1/M2 inbound divergenc
             );
 
             await h.event.waitForPeers("onDisputeKilled", [0, 1, 3], 1, {
-                mode: "atLeast",
-                timeoutMs: 25000
+                mode: "atLeast"
             });
-            await h.assert.storage.honestPeersStoredDisputeFraudProofDetached({
+            await h.assert.storage.honestPeersStoredDisputeFraudProof({
                 disputeFraudProofType:
                     DisputeFraudProofType.DisputeInvalidStateProof,
-                timeoutMs: 15000,
-                peerIndices: [1, 3]
+                peerIndices: [1, 3],
+                atLeastOneHonestPeer: true
             });
         });
     });

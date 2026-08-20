@@ -5,6 +5,7 @@ import fs from "fs";
 import os from "os";
 import path from "path";
 import WebSocket from "ws";
+import { waitFor } from "../utils/waitFor";
 import {
     createLocalDhtNetwork,
     createSocketPair,
@@ -74,6 +75,14 @@ describe("distributed parallel runner", function () {
             });
             client.close();
             await new Promise<void>((resolve) => client.once("close", resolve));
+            await waitFor(
+                () =>
+                    fs.existsSync(logPath) &&
+                    fs
+                        .readFileSync(logPath, "utf8")
+                        .includes("connection 1 closed with code"),
+                TEST_DISTRIBUTED_CONNECTION_TIMEOUT_MS
+            );
             discovery.stop();
             const exit = await discovery.exited;
             await discovery.logClosed;

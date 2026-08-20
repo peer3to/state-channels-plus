@@ -92,12 +92,8 @@ describe("E2E: dispute validation / disputeInputFields / selfRemoval", function 
         });
         await h.assert.storage.honestPeersStoredDisputeFraudProofDetached({
             disputeFraudProofType:
-                DisputeFraudProofType.DisputeInvalidOutputState,
-            timeoutMs: 10000
+                DisputeFraudProofType.DisputeInvalidOutputState
         });
-        await h.dispute.resolveDisputeWait({
-            forkId,
-            forkSettleTimeoutMs: 15000
-        });
+        await h.dispute.resolveDisputeWait({ forkId });
     });
 });

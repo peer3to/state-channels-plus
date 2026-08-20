@@ -32,8 +32,7 @@ describe("E2E: dispute validation / stateProof / last-milestone finality and aud
             });
             await h.assert.storage.honestPeersStoredDisputeFraudProofDetached({
                 disputeFraudProofType:
-                    DisputeFraudProofType.DisputeLastMilestoneNotFinalAndNoAuditingData,
-                timeoutMs: 10000
+                    DisputeFraudProofType.DisputeLastMilestoneNotFinalAndNoAuditingData
             });
             await h.dispute.resolveDisputeWait({ forkId });
         });

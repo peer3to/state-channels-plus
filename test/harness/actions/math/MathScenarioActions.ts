@@ -205,12 +205,29 @@ export class MathScenarioActions extends ScenarioActions {
     }> {
         const killerIndex = options?.killerIndex ?? 0;
         const spammerIndex = options?.spammerIndex ?? 1;
+        const addSpectatorBeforeDispute =
+            options?.addSpectatorBeforeDispute ?? false;
         await this.preDisputeSetup({
+            transitionCount: addSpectatorBeforeDispute ? 0 : undefined,
             timeConfig: { evidenceTime: 12, ...options?.timeConfig }
         });
-        const spectator = options?.addSpectatorBeforeDispute
-            ? await this.harness.join.addSpectatorWait()
+        const spectator = addSpectatorBeforeDispute
+            ? await this.harness.join.addSpectatorDetached()
             : undefined;
+        if (spectator) {
+            await this.harness.transition.advanceState({
+                count: 2,
+                waitForPeers: [0, 1, 2],
+                waitForFinalization: true
+            });
+            await this.harness.event.waitUntilPeerStatus(
+                spectator.index,
+                Status.SYNCED
+            );
+            await this.harness.assert.sync.peersInSyncWait();
+            this.harness.event.resetEventSpies();
+            this.harness.contextApi.captureOriginalFork();
+        }
         const forkId = this.harness.activeForkId!;
 
         const kills = await Promise.all(
@@ -291,6 +308,7 @@ export class MathScenarioActions extends ScenarioActions {
     }
 
     async setupTwoLeaversAcrossMilestones(options?: {
+        forceExitPeerIndex?: number;
         timeConfig?: {
             p2pTime?: number;
             agreementTime?: number;
@@ -332,6 +350,20 @@ export class MathScenarioActions extends ScenarioActions {
             waitForPeers: [0, 1, 3],
             count: 1
         });
+
+        // Snapshot posting stays automatic. Wait for both detached exits only
+        // after every state transition in this setup has completed.
+        await Promise.all([
+            this.harness.event.waitUntilPeerStatus(firstLeaver, Status.SYNCED),
+            this.harness.event.waitUntilPeerStatus(secondLeaver, Status.SYNCED)
+        ]);
+
+        if (options?.forceExitPeerIndex !== undefined) {
+            await this.harness
+                .control(this.harness.getPeer(options.forceExitPeerIndex))
+                .dispute.setForceExit(true)
+                .request();
+        }
 
         this.harness.event.resetEventSpies();
         this.harness.contextApi.captureOriginalFork();
@@ -376,7 +408,7 @@ export class MathScenarioActions extends ScenarioActions {
 
     async syncSpectatorAndPrepareJoin(initialTransitions: number = 4) {
         const h = this.harness;
-        await h.lifecycle.start(3, initialTransitions, {
+        await h.lifecycle.start(3, 0, {
             timeConfig: {
                 p2pTime: 5,
                 agreementTime: 4,
@@ -385,7 +417,14 @@ export class MathScenarioActions extends ScenarioActions {
             }
         });
 
-        const joiner = await h.join.addSpectatorWait();
+        const joiner = await h.join.addSpectatorDetached();
+        if (initialTransitions > 0) {
+            await h.transition.advanceState({
+                count: initialTransitions,
+                waitForPeers: [0, 1, 2]
+            });
+        }
+        await h.event.waitUntilPeerStatus(joiner.index, Status.SYNCED);
         await h.assert.sync.peersInSyncWait();
 
         const stateSnapshot = await h.channelManager.getStateSnapshot(
@@ -414,11 +453,31 @@ export class MathScenarioActions extends ScenarioActions {
             evidenceTime: 6
         };
 
-        await this.harness.lifecycle.start(initialPeers, initialTransitions, {
+        await this.harness.lifecycle.start(initialPeers, 0, {
             timeConfig
         });
 
-        const joiner = await this.harness.join.addSpectatorWait();
+        // Spectating is asynchronous to the channel: participants author on
+        // their own cadence and never wait for a joiner's spawn/sync. Spawn
+        // detached, produce the initial blocks immediately, and await SYNCED
+        // only right before the join needs it. A blocking spawn between
+        // blocks would idle past p2pTime + agreementTime and get the
+        // promotion block rejected (its timestamp is capped at
+        // prev + p2pTime), disputing the fork.
+        const joiner = await this.harness.join.addSpectatorDetached();
+        if (initialTransitions > 0) {
+            await this.harness.transition.advanceState({
+                count: initialTransitions,
+                waitForPeers: Array.from(
+                    { length: initialPeers },
+                    (_, index) => index
+                )
+            });
+        }
+        await this.harness.event.waitUntilPeerStatus(
+            joiner.index,
+            Status.SYNCED
+        );
         await this.harness.assert.sync.peersInSyncWait();
 
         await this.harness.join.joinChannelWait({
@@ -462,11 +521,17 @@ export class MathScenarioActions extends ScenarioActions {
         await this.harness.assert.sync.participantCount({
             expectedCount: 3
         });
+        const spectator = await this.harness.join.addSpectatorDetached();
         await this.harness.transition.advanceState({
-            count: initialTransitions
+            count: initialTransitions,
+            waitForPeers: [0, 1, 2],
+            waitForFinalization: true
         });
+        await this.harness.event.waitUntilPeerStatus(
+            spectator.index,
+            Status.SYNCED
+        );
         await this.harness.event.resetEventSpies();
-        await this.harness.join.addSpectatorWait();
         await this.harness.assert.sync.peersInSyncWait({
             peerIndices: [0, 1, 2, 3]
         });
@@ -485,11 +550,23 @@ export class MathScenarioActions extends ScenarioActions {
             chainFallbackTime: 4,
             evidenceTime: 6
         };
-        await this.harness.lifecycle.start(initialPeers, initialTransitions, {
+        await this.harness.lifecycle.start(initialPeers, 0, {
             timeConfig
         });
-        // TODO - switch to addSpectatorDetached and drop the inflated timeConfig
-        const spectator = await this.harness.join.addSpectatorWait();
+        const spectator = await this.harness.join.addSpectatorDetached();
+        if (initialTransitions > 0) {
+            await this.harness.transition.advanceState({
+                count: initialTransitions,
+                waitForPeers: Array.from(
+                    { length: initialPeers },
+                    (_, index) => index
+                )
+            });
+        }
+        await this.harness.event.waitUntilPeerStatus(
+            spectator.index,
+            Status.SYNCED
+        );
         await this.harness.assert.sync.peersInSyncWait();
         return { spectator, initialPeers };
     }

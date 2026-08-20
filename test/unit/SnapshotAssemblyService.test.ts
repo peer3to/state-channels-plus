@@ -237,7 +237,11 @@ describe("Unit: SnapshotAssemblyService", function () {
                     };
                 },
                 { forkId, height, timestamp, tx },
-                { timeoutMs: 20000 }
+                {
+                    timeoutMs: h.event.protocolEventTimeoutMs({
+                        withFirstBlockGrace: true
+                    })
+                }
             );
 
             expect(r.success).to.equal(true);
@@ -359,7 +363,11 @@ describe("Unit: SnapshotAssemblyService", function () {
                     return { success: assembled.success };
                 },
                 { forkId, height, timestamp, tx },
-                { timeoutMs: 20000 }
+                {
+                    timeoutMs: h.event.protocolEventTimeoutMs({
+                        withFirstBlockGrace: true
+                    })
+                }
             );
             expect(r.success).to.equal(false);
         });
@@ -451,7 +459,11 @@ describe("Unit: SnapshotAssemblyService", function () {
                     };
                 },
                 { forkId, height, timestamp, tx },
-                { timeoutMs: 20000 }
+                {
+                    timeoutMs: h.event.protocolEventTimeoutMs({
+                        withFirstBlockGrace: true
+                    })
+                }
             );
 
             expect(r.success).to.equal(true);
@@ -521,7 +533,11 @@ describe("Unit: SnapshotAssemblyService", function () {
                     };
                 },
                 { forkId, height, timestamp, tx },
-                { timeoutMs: 20000 }
+                {
+                    timeoutMs: h.event.protocolEventTimeoutMs({
+                        withFirstBlockGrace: true
+                    })
+                }
             );
 
             expect(r.success).to.equal(true);
@@ -602,7 +618,11 @@ describe("Unit: SnapshotAssemblyService", function () {
                     }
                 },
                 { forkId, height, timestamp, tx, junkInbound },
-                { timeoutMs: 20000 }
+                {
+                    timeoutMs: h.event.protocolEventTimeoutMs({
+                        withFirstBlockGrace: true
+                    })
+                }
             );
 
             expect(outcome).to.contain("Failed to process inbound message");

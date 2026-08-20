@@ -406,7 +406,10 @@ export class RpcStubActions<
             await ctl().getDroppedInboundMessageLogCount().request();
         return {
             droppedCount,
-            waitUntilDropped: (count = 1, timeoutMs = 15000) =>
+            waitUntilDropped: (
+                count = 1,
+                timeoutMs = this.harness.event.protocolEventTimeoutMs()
+            ) =>
                 waitFor(async () => (await droppedCount()) >= count, timeoutMs),
             release: async () => {
                 await ctl().restoreInboundMessageLogs().request();
@@ -446,8 +449,9 @@ export class RpcStubActions<
         return {
             submissions: async () => (await recorded()).submissions,
             heldCount,
-            waitUntilHeld: (timeoutMs = 10000) =>
-                waitFor(async () => (await heldCount()) > 0, timeoutMs),
+            waitUntilHeld: (
+                timeoutMs = this.harness.event.protocolEventTimeoutMs()
+            ) => waitFor(async () => (await heldCount()) > 0, timeoutMs),
             release: async () => {
                 await ctl().releaseDisputeSubmissions().request();
             },
@@ -490,8 +494,10 @@ export class RpcStubActions<
         return {
             applies: async () => (await recorded()).applies,
             heldCount,
-            waitUntilHeld: (count, timeoutMs = 20000) =>
-                waitFor(async () => (await heldCount()) >= count, timeoutMs),
+            waitUntilHeld: (
+                count,
+                timeoutMs = this.harness.event.protocolEventTimeoutMs()
+            ) => waitFor(async () => (await heldCount()) >= count, timeoutMs),
             release: async () => {
                 await ctl().releaseDisputeFraudProofApplies().request();
             },
@@ -515,8 +521,9 @@ export class RpcStubActions<
             ctl().getSuppressedDisputeKillCount().request();
         return {
             skippedCount,
-            waitUntilSkipped: (timeoutMs = 20000) =>
-                waitFor(async () => (await skippedCount()) > 0, timeoutMs),
+            waitUntilSkipped: (
+                timeoutMs = this.harness.event.protocolEventTimeoutMs()
+            ) => waitFor(async () => (await skippedCount()) > 0, timeoutMs),
             restore: async () => {
                 await ctl().restoreDisputeKill().request();
             }
@@ -533,7 +540,7 @@ export class RpcStubActions<
     /** Resolve once a second `dispute()` caller is queued behind the mutex. */
     async waitUntilDisputeMutexContended(
         peerIndex: number,
-        timeoutMs = 10000
+        timeoutMs = this.harness.event.protocolEventTimeoutMs()
     ): Promise<void> {
         await waitFor(
             async () => (await this.disputeMutexWaiterCount(peerIndex)) > 0,
@@ -565,8 +572,9 @@ export class RpcStubActions<
             (await ctl().getPausedConstructDisputeStatus().request()).entered;
         return {
             parkedCount,
-            waitUntilParked: (timeoutMs = 10000) =>
-                waitFor(async () => (await parkedCount()) > 0, timeoutMs),
+            waitUntilParked: (
+                timeoutMs = this.harness.event.protocolEventTimeoutMs()
+            ) => waitFor(async () => (await parkedCount()) > 0, timeoutMs),
             release: async () => {
                 await ctl().restorePausedConstructDispute().request();
             }
@@ -696,7 +704,7 @@ export class RpcStubActions<
     async spectateSyncTargetsWait(
         peerIndex: number,
         count: number,
-        timeoutMs: number
+        timeoutMs = this.harness.event.protocolEventTimeoutMs()
     ): Promise<string[]> {
         return await this.harness
             .control(this.harness.getPeer(peerIndex))

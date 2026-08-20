@@ -45,9 +45,10 @@ export class EventActions<
     async waitForEventCounts(
         eventName: keyof EventSpies,
         expectedCounts: Array<{ peerId: number; expectedCount: number }>,
-        timeoutMs: number = 10000,
+        timeoutMs?: number,
         { mode = "exact" }: { mode?: "exact" | "atLeast" } = { mode: "exact" }
     ): Promise<boolean> {
+        const waitTimeoutMs = timeoutMs ?? this.protocolEventTimeoutMs();
         const condition = () => {
             for (const { peerId, expectedCount } of expectedCounts) {
                 const actualCount = this.getEventCallCount(peerId, eventName);
@@ -62,7 +63,7 @@ export class EventActions<
         };
 
         await this.harness.eventCountsBarrier.waitFor(condition, {
-            timeoutMs,
+            timeoutMs: waitTimeoutMs,
             timeoutMessageFn: () => {
                 let actualCounts: Array<{
                     peerId: number;
@@ -75,7 +76,7 @@ export class EventActions<
                     );
                     actualCounts.push({ peerId, actualCount });
                 }
-                return `${String(eventName)} counts not reached within ${timeoutMs}ms, expected: ${JSON.stringify(expectedCounts)}, actual: ${JSON.stringify(actualCounts)}`;
+                return `${String(eventName)} counts not reached within ${waitTimeoutMs}ms, expected: ${JSON.stringify(expectedCounts)}, actual: ${JSON.stringify(actualCounts)}`;
             }
         });
         return true;

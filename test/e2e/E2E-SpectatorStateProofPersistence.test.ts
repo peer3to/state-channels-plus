@@ -19,59 +19,63 @@ describe("E2E: Join/Leave Sequence", function () {
         await h.transition.advanceState({ count: 2 });
 
         // Leave peer 2, block 2
-        const leaverIndex = await h.transition.participantLeaveWait();
+        const leaverIndex = await h.transition.participantLeaveDetached();
         expect(leaverIndex).to.equal(2);
 
         await h.assert.sync.participantCount({ expectedCount: 3 });
 
-        // turns of 3,0, blocks 3,4; the leaver may disconnect at any point
+        // Start peer 4 while the remaining participants produce blocks 3-6.
+        // Finish its initial sync before the next leave advances the snapshot
+        // that its spectate proof is pinned to.
+        const spectator4Promise = h.join.addSpectatorDetached();
         await h.transition.advanceState({
-            count: 2
+            count: 4,
+            waitForPeers: [0, 1, 3],
+            waitForFinalization: true
         });
         await h.assert.sync.blockHeight({
-            expectedHeight: 4,
+            expectedHeight: 6,
             peerIndices: [0, 1, 3]
         });
 
-        // Join peer 4 as spectator (`addPeer` waits for SYNCED)
-        await h.join.addSpectatorWait();
+        const spectator4 = await spectator4Promise;
+        await h.event.waitUntilPeerStatus(spectator4.index, Status.SYNCED);
+        await h.assert.sync.peersInSyncWait({
+            peerIndices: [0, 1, 3, spectator4.index]
+        });
+
         // stays 3, does not count spectators
         await h.assert.sync.participantCount({ expectedCount: 3 });
 
-        // turns of 1,3, blocks 5,6
-        await h.transition.advanceState({
-            count: 2
-        });
-
-        await h.assert.sync.blockHeight({
-            expectedHeight: 6,
-            peerIndices: [0, 1, 3, 4]
-        });
-
         // peer 0 is leaving the channel, block 7
-
-        const leaverIndex2 = await h.transition.participantLeaveWait();
+        const leaverIndex2 = await h.transition.participantLeaveDetached();
         expect(leaverIndex2).to.equal(0);
 
         await h.assert.sync.participantCount({ expectedCount: 2 });
 
-        // turns of 1,3, blocks 8,9
+        // Start peer 5 while peers 1 and 3 produce blocks 8-11.
+        const spectator5Promise = h.join.addSpectatorDetached();
         await h.transition.advanceState({
-            count: 2,
+            count: 4,
+            waitForPeers: [1, 3],
             waitForFinalization: true
         });
+        const spectator5 = await spectator5Promise;
+        await h.event.waitUntilPeerStatus(spectator5.index, Status.SYNCED);
 
-        // Join peer 5 as spectator
-        await h.join.addSpectatorWait();
+        // No valid block production follows these waits, so they cannot consume
+        // an authoring window.
+        await Promise.all([
+            h.event.waitUntilPeerStatus(leaverIndex, Status.SYNCED),
+            h.event.waitUntilPeerStatus(leaverIndex2, Status.SYNCED)
+        ]);
+        const spectatorIndices = [spectator4.index, spectator5.index];
+        await h.assert.sync.peersInSyncWait({
+            peerIndices: [1, 3].concat(spectatorIndices)
+        });
+
         // stays 2, does not count spectators
         await h.assert.sync.participantCount({ expectedCount: 2 });
-        const spectatorIndices = [4, 5];
-
-        await h.transition.advanceState({
-            count: 2,
-            waitForPeers: [1, 3].concat(spectatorIndices),
-            waitForFinalization: true
-        });
 
         // Capture the state before malicious action
         const preDisputeForkId = h.activeForkId!;
@@ -105,8 +109,7 @@ describe("E2E: Join/Leave Sequence", function () {
         await h.assert.sync.forkChangedWait({
             originalForkId: preDisputeForkId,
             expectedForkId: newForkId,
-            honestPeerIndices,
-            timeoutMs: 10000
+            honestPeerIndices
         });
     });
 });

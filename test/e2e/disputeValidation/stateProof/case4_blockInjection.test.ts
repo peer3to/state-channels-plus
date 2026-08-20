@@ -34,8 +34,7 @@ describe("E2E: dispute validation / stateProof / block injection with incorrect 
             });
             await h.assert.storage.honestPeersStoredDisputeFraudProofDetached({
                 disputeFraudProofType:
-                    DisputeFraudProofType.DisputeStateProofHeaderMismatch,
-                timeoutMs: 10000
+                    DisputeFraudProofType.DisputeStateProofHeaderMismatch
             });
             await h.dispute.resolveDisputeWait({ forkId });
         });
@@ -67,8 +66,7 @@ describe("E2E: dispute validation / stateProof / block injection with incorrect 
             });
             await h.assert.storage.honestPeersStoredDisputeFraudProofDetached({
                 disputeFraudProofType:
-                    DisputeFraudProofType.DisputeStateProofHeaderMismatch,
-                timeoutMs: 10000
+                    DisputeFraudProofType.DisputeStateProofHeaderMismatch
             });
             await h.dispute.resolveDisputeWait({ forkId });
         });
@@ -104,8 +102,7 @@ describe("E2E: dispute validation / stateProof / block injection with incorrect 
             });
             await h.assert.storage.honestPeersStoredDisputeFraudProofDetached({
                 disputeFraudProofType:
-                    DisputeFraudProofType.DisputeStateProofHeaderMismatch,
-                timeoutMs: 10000
+                    DisputeFraudProofType.DisputeStateProofHeaderMismatch
             });
             await h.dispute.resolveDisputeWait({ forkId });
         });
@@ -140,8 +137,7 @@ describe("E2E: dispute validation / stateProof / block injection with incorrect 
             });
             await h.assert.storage.honestPeersStoredDisputeFraudProofDetached({
                 disputeFraudProofType:
-                    DisputeFraudProofType.DisputeStateProofHeaderMismatch,
-                timeoutMs: 10000
+                    DisputeFraudProofType.DisputeStateProofHeaderMismatch
             });
             await h.dispute.resolveDisputeWait({
                 forkId,
@@ -177,8 +173,7 @@ describe("E2E: dispute validation / stateProof / block injection with incorrect 
             });
             await h.assert.storage.honestPeersStoredDisputeFraudProofDetached({
                 disputeFraudProofType:
-                    DisputeFraudProofType.DisputeStateProofHeaderMismatch,
-                timeoutMs: 10000
+                    DisputeFraudProofType.DisputeStateProofHeaderMismatch
             });
             await h.dispute.resolveDisputeWait({
                 forkId,

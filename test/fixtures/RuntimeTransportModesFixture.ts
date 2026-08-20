@@ -6,7 +6,6 @@ import { EvmStateMachine } from "@/evm";
 import MathStateMachineArtifact from "../../artifacts/contracts/V1/examples/MathStateMachine/MathStateMachine.sol/MathStateMachine.json";
 import MathConsumerFacetArtifact from "../../artifacts/contracts/V1/examples/MathStateMachine/MathConsumerFacet.sol/MathConsumerFacet.json";
 import { deployFullStack } from "../../scripts/V1/deploy";
-import { waitFor } from "@test/utils/waitFor";
 import {
     slotAccountIndex,
     slotDeployerIndex
@@ -17,7 +16,11 @@ import {
     StateChannelManagerProxy__factory
 } from "@typechain-types";
 import { ContractFactory } from "ethers";
-import { startHardhatNode, type NodeHandle } from "@test/utils/nodeInfra";
+import {
+    startHardhatNode,
+    waitForHardhatNode,
+    type NodeHandle
+} from "@test/utils/nodeInfra";
 import path from "node:path";
 import type { ReadyLifecycleRpc } from "@test/fixtures/customRpc/ReadyLifecycleRpcManifest";
 import type P2pInstance from "@/evm/P2pInstance";
@@ -25,19 +28,6 @@ import type P2pInstance from "@/evm/P2pInstance";
 let hardhatNodeUrl = process.env.HARDHAT_NODE_URL;
 const DEFAULT_HARDHAT_MNEMONIC =
     "test test test test test test test test test test test junk";
-
-async function waitForNode(url: string): Promise<void> {
-    const provider = new ethers.JsonRpcProvider(url);
-
-    await waitFor(async () => {
-        try {
-            await provider.getBlockNumber();
-            return true;
-        } catch {
-            return false;
-        }
-    }, 30_000);
-}
 
 async function setupP2pInstance(options: {
     runSdkInThread: boolean;
@@ -132,7 +122,7 @@ let nodeHandle: NodeHandle | undefined;
 
 export async function startRuntimeTransportModesFixture(): Promise<void> {
     if (hardhatNodeUrl) {
-        await waitForNode(hardhatNodeUrl);
+        await waitForHardhatNode(hardhatNodeUrl);
     } else {
         nodeHandle = await startHardhatNode();
         hardhatNodeUrl = nodeHandle.url;

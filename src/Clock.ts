@@ -14,9 +14,12 @@ class Clock {
 
     public static async init(provider: ethers.Provider): Promise<void> {
         // A fresh session brings a fresh provider and may have destroyed the
-        // old one; re-initialize instead of serving stale chain reads.
+        // old one; re-initialize instead of serving stale chain reads. Keep
+        // the old instance serving until the replacement has synced: code
+        // already running in this process (e.g. an in-flight spectate sync)
+        // reads the clock concurrently, and a hard "not initialized" throw
+        // there aborts live work over a sub-second adjustment refresh.
         if (Clock.instance && Clock.instance.provider !== provider) {
-            Clock.instance = undefined;
             Clock.initialization = undefined;
         }
         if (!Clock.initialization) {

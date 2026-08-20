@@ -46,13 +46,15 @@ export class RPCActions<
     private async waitForHandshakeCompleted(
         peerIndex: number,
         otherPeerAddress: Address,
-        timeoutMs: number = 5000
+        timeoutMs?: number
     ): Promise<void> {
+        const waitTimeoutMs =
+            timeoutMs ?? this.harness.event.protocolEventTimeoutMs();
         await this.harness.connectionBarrier.waitFor(
             () => this.isHandshakeCompleted(peerIndex, otherPeerAddress),
             {
-                timeoutMs,
-                timeoutMessage: `Handshake between peer ${peerIndex} and ${otherPeerAddress} not completed within ${timeoutMs}ms`
+                timeoutMs: waitTimeoutMs,
+                timeoutMessage: `Handshake between peer ${peerIndex} and ${otherPeerAddress} not completed within ${waitTimeoutMs}ms`
             }
         );
     }

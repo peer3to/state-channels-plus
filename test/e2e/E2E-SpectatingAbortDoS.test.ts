@@ -149,11 +149,38 @@ describe("E2E: spectating strategy junk-block handling", function () {
         await h.lifecycle.start(3, 1, { timeConfig: LIVE_FORK_TIME });
         const forkId = h.activeForkId!;
 
-        const victim = await h.join.addSpectatorWait();
+        // Peer processes start while the participants keep authoring. Awaiting
+        // each process first would consume the next block's authoring window.
+        const victimPromise = h.join.addSpectatorDetached();
+        await h.transition.advanceState({
+            count: 2,
+            waitForPeers: [0, 1, 2],
+            waitForFinalization: true
+        });
+        const victim = await victimPromise;
+        await h.event.waitUntilPeerStatus(victim.index, Status.SYNCED);
+
+        const authorPromise = h.join.addSpectator();
+        await h.transition.advanceState({
+            count: 2,
+            waitForPeers: [0, 1, 2],
+            waitForFinalization: true
+        });
+        const author = await authorPromise;
+
+        const relayerPromise = h.join.addSpectator();
+        await h.transition.advanceState({
+            count: 2,
+            waitForPeers: [0, 1, 2],
+            waitForFinalization: true
+        });
+        const relayer = await relayerPromise;
+        await h.assert.sync.peersInSyncWait({
+            peerIndices: [0, 1, 2, victim.index]
+        });
+
         // two distinct non-participants: one signs the block, the other hands it
         // to the victim. neither is in the channel.
-        const author = await h.join.addSpectator();
-        const relayer = await h.join.addSpectator();
         await h.connectionBarrier.waitFor(
             async () =>
                 (await h
@@ -210,19 +237,31 @@ describe("E2E: spectating strategy junk-block handling", function () {
 
         // victim spectates and stores the pre-leave snapshots (still listing the
         // leaver as a participant)
-        const victim = await h.join.addSpectatorWait();
-        await h.transition.advanceState({ count: 2 });
+        const victim = await h.join.addSpectatorDetached();
+        await h.transition.advanceState({
+            count: 2,
+            waitForPeers: [0, 1, 2, 3],
+            waitForFinalization: true
+        });
+        await h.event.waitUntilPeerStatus(victim.index, Status.SYNCED);
 
         const staleHeight = await h
             .control(h.getPeer(0))
             .query.getLatestBlockHeight(forkId)
             .request();
 
-        const leaverIndex = await h.transition.participantLeaveWait();
+        const leaverIndex = await h.transition.participantLeaveDetached();
         const leaver = h.getPeer(leaverIndex);
+        const remainingParticipantIndices = [0, 1, 2, 3].filter(
+            (peerIndex) => peerIndex !== leaverIndex
+        );
 
         // move past the leave so the current previous snapshot excludes them
-        await h.transition.advanceState({ count: 2 });
+        await h.transition.advanceState({
+            count: 2,
+            waitForPeers: remainingParticipantIndices
+        });
+        await h.event.waitUntilPeerStatus(leaverIndex, Status.SYNCED);
 
         const participants = await h
             .control(h.getPeer(0))
@@ -271,9 +310,16 @@ describe("E2E: active-participant stale-membership handling", function () {
 
         // a participant leaves; move past the leave so the current previous
         // snapshot excludes them
-        const leaverIndex = await h.transition.participantLeaveWait();
+        const leaverIndex = await h.transition.participantLeaveDetached();
         const leaver = h.getPeer(leaverIndex);
-        await h.transition.advanceState({ count: 2 });
+        const remainingParticipantIndices = [0, 1, 2, 3].filter(
+            (peerIndex) => peerIndex !== leaverIndex
+        );
+        await h.transition.advanceState({
+            count: 2,
+            waitForPeers: remainingParticipantIndices
+        });
+        await h.event.waitUntilPeerStatus(leaverIndex, Status.SYNCED);
 
         // victim = an active participant that is not the leaver; read the craft
         // source from it too so the crafted block links to the live head (the
