@@ -38,6 +38,22 @@ export class NetworkRpcMethods extends ARpcMethods {
         return true;
     }
 
+    /**
+     * Wires local peer discovery for a lobby topic under
+     * `DEBUG_LOCAL_TRANSPORT` (LobbyService.joinLobby's own swarm join is a
+     * no-op there, mirroring connectToChannel above). `topicHex` is exactly
+     * the `topic` string `p2pInstance.discovery.joinLobby()` returns.
+     */
+    public async connectToLobbyPeers(topicHex: string): Promise<boolean> {
+        await LocalDiscoveryServer.tryStart();
+        await LocalDiscoveryServer.connectToPeers(
+            this.p2pManager.self,
+            topicHex as ChannelId,
+            String(this.p2pManager.stateManager.signerAddress)
+        );
+        return true;
+    }
+
     /** Disconnect every open connection (peer isolation). Returns the count. */
     public disconnectAllConnections(): number {
         const connections = [...this.p2pManager.openConnections];

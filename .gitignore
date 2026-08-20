@@ -44,3 +44,6 @@ src/utils/GeneratedArtifacts.ts
 /profiles
 
 /extensions
+
+# Local agent memory/notes — never committed (matches peer3-poker-web convention)
+.claude/*

@@ -40,6 +40,8 @@ import {
 import type { HostHandlerExecutionContext } from "./HostHandlerExecutionContext";
 import type { Logger } from "@/utils/logging/Logger";
 import { LocalDiscoveryServer } from "@/utils";
+import { decodeChannelAd } from "@/discovery/ChannelAd";
+import type { AcquireCandidates } from "@/discovery/ChannelAcquisitionCoordinator";
 import type {
     HostRpcRequest,
     RuntimeClientRequest,
@@ -233,6 +235,11 @@ export async function startP2pRuntimeHost<
                 );
             }
             if (runtimeHandle) {
+                // The lobby/coordinator are owned by the
+                // signer (never P2PManager) - dispose them
+                // before the rest of the runtime graph so a leaked lobby
+                // swarm socket never blocks worker teardown.
+                await runtimeHandle.stateManager.p2pManager.p2pSigner.dispose();
                 await runtimeHandle.stateManager.dispose();
             } else {
                 await contractExecutor?.dispose();
@@ -585,6 +592,65 @@ export async function startP2pRuntimeHost<
                             throw new Error("Runtime is not ready");
                         runtimeHandle.stateManager.p2pManager.p2pSigner.disconnectFromPeers();
                         break;
+                    case "joinLobby":
+                        if (!runtimeHandle)
+                            throw new Error("Runtime is not ready");
+                        result =
+                            await runtimeHandle.stateManager.p2pManager.p2pSigner.joinLobby(
+                                request.appNamespace
+                            );
+                        break;
+                    case "leaveLobby":
+                        if (!runtimeHandle)
+                            throw new Error("Runtime is not ready");
+                        await runtimeHandle.stateManager.p2pManager.p2pSigner.leaveLobby();
+                        break;
+                    case "publishAd":
+                        if (!runtimeHandle)
+                            throw new Error("Runtime is not ready");
+                        result =
+                            await runtimeHandle.stateManager.p2pManager.p2pSigner.publishAd(
+                                decodeChannelAd(request.encodedAd)
+                            );
+                        break;
+                    case "withdrawAd":
+                        if (!runtimeHandle)
+                            throw new Error("Runtime is not ready");
+                        await runtimeHandle.stateManager.p2pManager.p2pSigner.withdrawAd(
+                            request.adId
+                        );
+                        break;
+                    case "listAds":
+                        if (!runtimeHandle)
+                            throw new Error("Runtime is not ready");
+                        result =
+                            await runtimeHandle.stateManager.p2pManager.p2pSigner.listAds(
+                                {
+                                    kind: request.kind,
+                                    minAmount: request.minAmount,
+                                    maxAmount: request.maxAmount
+                                }
+                            );
+                        break;
+                    case "acquireChannel": {
+                        if (!runtimeHandle)
+                            throw new Error("Runtime is not ready");
+                        const candidates: AcquireCandidates =
+                            request.candidates.map((encodedAd) =>
+                                decodeChannelAd(encodedAd)
+                            );
+                        result =
+                            await runtimeHandle.stateManager.p2pManager.p2pSigner.acquireChannel(
+                                {
+                                    candidates,
+                                    parallelism: request.parallelism,
+                                    maxWinners: request.maxWinners,
+                                    deadlineMs: request.deadlineMs,
+                                    amount: request.amount
+                                }
+                            );
+                        break;
+                    }
                     case "hostRpc":
                         if (!runtimeHandle)
                             throw new Error("Runtime is not ready");

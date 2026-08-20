@@ -34,3 +34,7 @@ export type {
     OpenChannelNegotiationP2PManager
 } from "./openChannelNegotiation/OpenChannelNegotiationRpcMethods";
 export * from "./openChannelNegotiation/OpenChannelNegotiationHelpers";
+
+export { default as LobbyService } from "./lobby/LobbyService";
+export { default as LobbyRpcMethods } from "./lobby/LobbyRpcMethods";
+export type { LobbyCustomRpc, LobbyP2PManager } from "./lobby/LobbyRpcMethods";

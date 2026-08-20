@@ -94,6 +94,19 @@ class Holepunch {
         return;
     }
 
+    public async leave(topic: Buffer) {
+        const index = this.topics.findIndex((joinedTopic) =>
+            joinedTopic.equals(topic)
+        );
+        if (index === -1) return;
+        this.topics.splice(index, 1);
+        if (!this.swarm) return;
+        await Promise.resolve(this.swarm.leave(topic));
+        this.p2pManager.logger.debug("Left holepunch topic", {
+            topic: topic.toString("hex")
+        });
+    }
+
     private rejoinTopics() {
         for (const topic of this.topics) {
             this.swarm.join(topic, {

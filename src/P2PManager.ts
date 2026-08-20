@@ -105,13 +105,15 @@ class P2PManager<TCustomRpc extends MainRpcService = MainRpcService>
         this.holepunch = new Holepunch(this.self);
 
         // Own the promotion decision for every handshake completed on this
-        // P2PManager's transports: they all originate from joining THIS
-        // channel's topic (`tryOpenConnectionToChannel`), so a verified peer
-        // here is always a channel peer - promote it into `openConnections`
-        // and continue the existing sync/negotiation path. A non-channel
-        // (e.g. lobby) handshake never reaches this hook: the lobby stack is
-        // deliberately standalone and never touches a `P2PManager` (see
-        // `LobbyClient`'s hard-boundary comment).
+        // P2PManager's transports. A transport can now originate from
+        // joining THIS channel's topic (`tryOpenConnectionToChannel`) OR
+        // from an opt-in `LobbyService` joining its own topic on this SAME
+        // shared swarm (`LobbyService.joinLobby` -> `holepunch.join`) - a
+        // verified peer here is NOT necessarily a channel peer. The
+        // `canParticipateInDisputes` check below is what actually decides:
+        // it promotes into `openConnections` only a real dispute
+        // participant, so a lobby-only peer's handshake reaches this hook
+        // but is deferred (never promoted) - see the method comment.
         this.unsubscribeHandshakeCompleted = this.stateManager.events.on(
             "p2pEventHooks",
             "handshakeCompleted",
@@ -568,6 +570,34 @@ class P2PManager<TCustomRpc extends MainRpcService = MainRpcService>
                 continue;
             }
 
+            const profile =
+                this.profileManager.getProfileByTransport(transport);
+            const fromProfile = profile?.getEvmAddress();
+            if (fromProfile) {
+                addresses.add(fromProfile.toString());
+            }
+        }
+        return addresses;
+    }
+
+    /**
+     * Every transport that finished the handshake on this P2PManager,
+     * whether or not it was promoted into `openConnections`
+     * (`getConnectedPeers()`). Read-only introspection - never touches the
+     * promotion decision itself. Exists for a consumer that needs "is this
+     * peer authenticated at all" rather than "is this peer a dispute
+     * participant" (e.g. an opt-in service riding this same shared swarm,
+     * like `LobbyService`, discovering a peer whose handshake completed
+     * before it was ever asked to look).
+     */
+    public getHandshakeCompletedPeers(): Set<Address> {
+        const addresses = this.getConnectedPeers();
+        for (const transport of this.pendingChannelMembershipTransports) {
+            const fromTransport = transport.peerAddress;
+            if (fromTransport) {
+                addresses.add(getChecksumAddress(fromTransport));
+                continue;
+            }
             const profile =
                 this.profileManager.getProfileByTransport(transport);
             const fromProfile = profile?.getEvmAddress();

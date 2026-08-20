@@ -23,6 +23,9 @@
             "@platform/LocalDiscoveryServer": [
                 "src/utils/browser/LocalDiscoveryServer"
             ],
+            "@platform/lobbySwarm": [
+                "src/discovery/lobbySwarm/browser/LobbySwarm"
+            ],
             "@platform/evmJumpdestCache": ["src/evm/browser/evmJumpdestCache"],
             "@platform/moduleLoader": [
                 "src/utils/moduleLoader/browser/importModuleFromManifest"
@@ -42,6 +45,7 @@
         "src/evm/contractExecutor/node",
         "src/evm/p2pRuntime/node",
         "src/utils/node",
-        "src/utils/logging/node"
+        "src/utils/logging/node",
+        "src/discovery/lobbySwarm/node"
     ]
 }

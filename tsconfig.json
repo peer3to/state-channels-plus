@@ -27,6 +27,9 @@
             "@platform/LocalDiscoveryServer": [
                 "src/utils/node/LocalDiscoveryServer"
             ],
+            "@platform/lobbySwarm": [
+                "src/discovery/lobbySwarm/node/LobbySwarm"
+            ],
             "@platform/evmJumpdestCache": ["src/evm/node/evmJumpdestCache"],
             "@platform/moduleLoader": [
                 "src/utils/moduleLoader/node/importModuleFromManifest"
@@ -46,7 +49,8 @@
         "src/evm/contractExecutor/browser",
         "src/evm/p2pRuntime/browser",
         "src/utils/browser",
-        "src/utils/logging/browser"
+        "src/utils/logging/browser",
+        "src/discovery/lobbySwarm/browser"
     ],
     "ts-node": {
         "require": ["tsconfig-paths/register"],

@@ -58,7 +58,7 @@ harness `FooActions` drives it, its host methods belong in a `foo` service —
 don't grow a catch-all.
 
 Current services: `query`, `transition`, `balance`, `network`, `byzantine`,
-`stub`, `handshake`, `signer`, `spectate`, `scenario`, `dispute`.
+`stub`, `handshake`, `signer`, `spectate`, `scenario`, `dispute`, `punishment`.
 
 ### Serialization rules for endpoints
 

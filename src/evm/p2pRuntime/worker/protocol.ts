@@ -6,6 +6,7 @@ import type {
     SetupPayload
 } from "../types";
 import type { SerializedTransactionRequest } from "../chainSignerSerialization";
+import type { AdKind } from "@/discovery/ChannelAd";
 
 /**
  * Worker-level bootstrap message (NOT a runtime-port message). Sent via
@@ -127,6 +128,41 @@ export interface DeployCompleteRequest
     diamondStateMachineAddress: string;
 }
 
+/**
+ * Discovery facade requests. Progress surfaces via the `discovery` bus kind.
+ */
+export interface JoinLobbyRequest extends RuntimeRequest<"joinLobby"> {
+    appNamespace?: string;
+}
+
+export type LeaveLobbyRequest = RuntimeRequest<"leaveLobby">;
+
+export interface PublishAdRequest extends RuntimeRequest<"publishAd"> {
+    /** ABI-encoded ChannelAdStruct (F5 - no BigInt crosses the port). */
+    encodedAd: string;
+}
+
+export interface WithdrawAdRequest extends RuntimeRequest<"withdrawAd"> {
+    adId: string;
+}
+
+export interface ListAdsRequest extends RuntimeRequest<"listAds"> {
+    kind?: AdKind;
+    minAmount?: string;
+    maxAmount?: string;
+}
+
+export interface AcquireChannelRequest
+    extends RuntimeRequest<"acquireChannel"> {
+    /** ABI-encoded candidate ads (F5 - no function ever crosses the port). */
+    candidates: string[];
+    parallelism?: number;
+    maxWinners?: number;
+    deadlineMs?: number;
+    /** Decimal string (required) - drives requestIntent/setStakeAmount/JoinChannelStruct.balance. */
+    amount: string;
+}
+
 export type DisposeRequest = RuntimeRequest<"dispose">;
 
 /**
@@ -184,6 +220,12 @@ export type RuntimeClientRequest =
     | DeployCompleteRequest
     | HostRpcRequest
     | QuiesceRequest
+    | JoinLobbyRequest
+    | LeaveLobbyRequest
+    | PublishAdRequest
+    | WithdrawAdRequest
+    | ListAdsRequest
+    | AcquireChannelRequest
     | DisposeRequest;
 
 /** A request without its correlation id, as supplied by callers. */
