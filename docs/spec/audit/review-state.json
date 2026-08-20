@@ -258,5 +258,70 @@
         "hash": "e4c681355e9a5ff4",
         "reviewer": "Luka",
         "date": "2026-08-19"
+    },
+    "specification/security/trust-model.md": {
+        "hash": "8f388037ccb62930",
+        "reviewer": "Luke Fishman",
+        "date": "2026-08-18"
+    },
+    "specification/security/data-availability.md": {
+        "hash": "acc09b2ccc137f2f",
+        "reviewer": "Luke Fishman",
+        "date": "2026-08-17"
+    },
+    "specification/storage/message-blocks.md": {
+        "hash": "e1fc68eb715acfde",
+        "reviewer": "Luke Fishman",
+        "date": "2026-08-17"
+    },
+    "specification/storage/durability.md": {
+        "hash": "13de868cb7943190",
+        "reviewer": "Luke Fishman",
+        "date": "2026-08-17"
+    },
+    "specification/storage/queue.md": {
+        "hash": "2f27b3ac15c1e6be",
+        "reviewer": "Luke Fishman",
+        "date": "2026-08-17"
+    },
+    "specification/storage/dispute-evidence.md": {
+        "hash": "a389f9a98e1a6be2",
+        "reviewer": "Luke Fishman",
+        "date": "2026-08-17"
+    },
+    "specification/storage/snapshots-and-states.md": {
+        "hash": "323d01c512eb86a5",
+        "reviewer": "Luke Fishman",
+        "date": "2026-08-17"
+    },
+    "specification/storage/blocks.md": {
+        "hash": "1cae28b591ef9b61",
+        "reviewer": "Luke Fishman",
+        "date": "2026-08-17"
+    },
+    "specification/storage/calldata-and-timeouts.md": {
+        "hash": "230b2105f64b4c93",
+        "reviewer": "Luke Fishman",
+        "date": "2026-08-17"
+    },
+    "specification/storage/participant-changes.md": {
+        "hash": "f54bdd545a361b81",
+        "reviewer": "Luke Fishman",
+        "date": "2026-08-17"
+    },
+    "specification/storage/progress-markers.md": {
+        "hash": "b68eac24d7dbd70c",
+        "reviewer": "Luke Fishman",
+        "date": "2026-08-17"
+    },
+    "specification/storage/README.md": {
+        "hash": "1330d75737c681db",
+        "reviewer": "Luke Fishman",
+        "date": "2026-08-17"
+    },
+    "specification/security/README.md": {
+        "hash": "31e49a70f87524ae",
+        "reviewer": "Luke Fishman",
+        "date": "2026-08-18"
     }
 }

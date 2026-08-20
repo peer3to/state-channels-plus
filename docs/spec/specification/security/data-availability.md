@@ -29,7 +29,8 @@ This avoids adding a separate data-availability trust assumption: the only DA de
 same live, honest, final chain the protocol already assumes (A1 in
 [trust-model.md](./trust-model.md)). The observable contract is:
 
-- Any participant can commit a signed block on-chain via calldata posting (§2).
+- A block's author can commit its own signed block on-chain via calldata posting (§2); publication
+  is author-only, since a posted commitment also excuses the author from timeout.
 - Any participant can, when required, obtain the data behind any commitment relevant to a dispute,
   because posting the commitment publishes the full signed block as calldata in the posting
   transaction.
@@ -67,8 +68,11 @@ Where the extra time is granted:
   `previousTimestamp + [evidenceTime if first block] + p2pTime + agreementTime + chainFallbackTime`
   The author therefore always has the on-chain fallback window before silence becomes a timeout.
 - **Block timestamps.** The `InvalidTimestamp` fraud proof measures a block's timestamp against
-  `p2pTime` from its parent — but if the parent was posted as block calldata, the **on-chain
-  posting timestamp replaces the parent's claimed timestamp** as the reference point
+  `p2pTime` from its parent; a first block (transaction count zero) is measured against its
+  snapshot with the same first-block grace — valid up to
+  `snapshotTimestamp + evidenceTime + p2pTime`, and never before the snapshot. If the parent was
+  posted as block calldata, the **on-chain posting timestamp replaces the parent's claimed
+  timestamp** as the reference point
   Posting on-chain thus objectively re-anchors "when the data became available" and grants the
   next author fresh time from that anchor. A participant who already signed the parent forfeits
   this extra time (the forfeit-of-extra-time rule: its signature proves earlier possession).
@@ -182,7 +186,7 @@ _Non-normative._
 
 - **Better DA approaches** that reduce calldata cost and recovery latency. Candidates: the
   web-of-trust model planned for a later version; alternative DA layers; running channels on
-  smaller/cheaper L2 or L3 partitions so posting is cheap. Each proposal MUST state its new trust,
+  smaller/cheaper L2 or L3 chains so posting is cheap. Each proposal MUST state its new trust,
   security, availability, privacy, and fee assumptions explicitly and preserve a clear safety and
   recovery model ([`REQ-DA-4-1B0MF4`](data-availability.md#req-da-4-1b0mf4)).
 - **Optimistic reduction / commitment-only paths** that keep full data off-chain unless a

@@ -32,9 +32,12 @@ Three markers that carry a node's position or intent across protocol phases:
 store of a lower block number than the retained one leaves the retained value. Progress reflects
 _processed_, not merely observed, events — the producer stores it only after handling.
 
-**<a id="req-rmstore-2-y2t1pg"></a>`REQ-RMSTORE-2-Y2T1PG` — Explicit intent lifecycle.** The force-exit flag and force-join marker are set,
-read, and cleared explicitly; clearing returns them to their absent state. Absent means "no intent /
-no pending submission", and consumers MUST NOT infer intent from any other module.
+**<a id="req-rmstore-2-y2t1pg"></a>`REQ-RMSTORE-2-Y2T1PG` — Explicit intent lifecycle.** The force-join marker is set on submission, read
+for non-inclusion detection, and cleared explicitly; clearing returns it to its absent state. The
+force-exit flag is one-way in the designed lifecycle: off initially ("no exit intent"), set on when
+the node commits to a self-removal exit, and never retracted — from that point every dispute the
+node raises declares self-removal. Absent/off means "no intent / no pending submission", and
+consumers MUST NOT infer intent from any other module.
 
 ## Assumptions and constraints
 
@@ -58,7 +61,7 @@ and the processed-only rule.
 | Plan item                                                     | Requirements / invariants                                          | Setup and stimulus                                                          | Expected result                                                  | Required permutations                                                                                                                                                                                                                                                                                                                                                                                 |
 | ------------------------------------------------------------- | ------------------------------------------------------------------ | --------------------------------------------------------------------------- | ---------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | <a id="req-rmstore-1-bwkvbg.t1"></a>`REQ-RMSTORE-1-BWKVBG.T1` | [`REQ-RMSTORE-1-BWKVBG`](progress-markers.md#req-rmstore-1-bwkvbg) | Store progress values increasing, repeated, and regressing across channels. | Monotone per channel; regressions ignored; channels independent. | <a id="req-rmstore-1-bwkvbg.t1.p1"></a>`REQ-RMSTORE-1-BWKVBG.T1.P1` — advance; <a id="req-rmstore-1-bwkvbg.t1.p2"></a>`REQ-RMSTORE-1-BWKVBG.T1.P2` — regression ignored; <a id="req-rmstore-1-bwkvbg.t1.p3"></a>`REQ-RMSTORE-1-BWKVBG.T1.P3` — per-channel isolation.                                                                                                                                 |
-| <a id="req-rmstore-2-y2t1pg.t1"></a>`REQ-RMSTORE-2-Y2T1PG.T1` | [`REQ-RMSTORE-2-Y2T1PG`](progress-markers.md#req-rmstore-2-y2t1pg) | Set, read, and clear each intent marker, including reads before any set.    | Explicit lifecycle honored; absent state distinct and default.   | <a id="req-rmstore-2-y2t1pg.t1.p1"></a>`REQ-RMSTORE-2-Y2T1PG.T1.P1` — set/read/clear force-exit flag; <a id="req-rmstore-2-y2t1pg.t1.p2"></a>`REQ-RMSTORE-2-Y2T1PG.T1.P2` — read before set; <a id="req-rmstore-2-y2t1pg.t1.p3"></a>`REQ-RMSTORE-2-Y2T1PG.T1.P3` — repeated clear idempotent; <a id="req-rmstore-2-y2t1pg.t1.p4"></a>`REQ-RMSTORE-2-Y2T1PG.T1.P4` — set/read/clear force-join marker. |
+| <a id="req-rmstore-2-y2t1pg.t1"></a>`REQ-RMSTORE-2-Y2T1PG.T1` | [`REQ-RMSTORE-2-Y2T1PG`](progress-markers.md#req-rmstore-2-y2t1pg) | Exercise each marker's lifecycle, including reads before any set.    | Lifecycles honored; defaults distinct and read back before any set.   | <a id="req-rmstore-2-y2t1pg.t1.p1"></a>`REQ-RMSTORE-2-Y2T1PG.T1.P1` — force-exit defaults off; set-on reads back on; <a id="req-rmstore-2-y2t1pg.t1.p2"></a>`REQ-RMSTORE-2-Y2T1PG.T1.P2` — read before set; <a id="req-rmstore-2-y2t1pg.t1.p3"></a>`REQ-RMSTORE-2-Y2T1PG.T1.P3` — repeated force-join clear idempotent; <a id="req-rmstore-2-y2t1pg.t1.p4"></a>`REQ-RMSTORE-2-Y2T1PG.T1.P4` — set/read/clear force-join marker. |
 
 ## Future Work
 

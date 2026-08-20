@@ -51,9 +51,9 @@ timestamp.
 A file may contribute to several requirements; this report describes the contribution and never
 claims complete conformance for a requirement that depends on other files.
 
-| Source file                                                      | Specification IDs                                                                                                                                                                                                                                                                                                                                                                      |
-| ---------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| [BlockStorage.ts](../../../../../../src/storage/BlockStorage.ts) | [`INV-BLKSTORE-1-MK4W8D`](../../../../specification/storage/blocks.md#inv-blkstore-1-mk4w8d), [`REQ-BLKSTORE-1-KYHTWT`](../../../../specification/storage/blocks.md#req-blkstore-1-kyhtwt), [`REQ-BLKSTORE-2-VWXP2C`](../../../../specification/storage/blocks.md#req-blkstore-2-vwxp2c), [`REQ-BLKSTORE-3-S9V2KC`](../../../../specification/storage/blocks.md#req-blkstore-3-s9v2kc) |
+| Source file                                                      | Specification IDs                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
+| ---------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| [BlockStorage.ts](../../../../../../src/storage/BlockStorage.ts) | [`INV-BLKSTORE-1-MK4W8D`](../../../../specification/storage/blocks.md#inv-blkstore-1-mk4w8d), [`REQ-BLKSTORE-1-KYHTWT`](../../../../specification/storage/blocks.md#req-blkstore-1-kyhtwt), [`REQ-BLKSTORE-2-VWXP2C`](../../../../specification/storage/blocks.md#req-blkstore-2-vwxp2c), [`REQ-BLKSTORE-3-S9V2KC`](../../../../specification/storage/blocks.md#req-blkstore-3-s9v2kc) , [`REQ-STOR-6-SKP0KM`](../../../../specification/storage/durability.md#req-stor-6-skp0km) — `getIterator` is one of the two store generators whose yielded values escape the copy boundary. |
 
 ## Assumptions, dependencies, trust boundaries, and limits
 
@@ -70,6 +70,15 @@ claims complete conformance for a requirement that depends on other files.
 - Tip advances only on non-`justPersist` stores that raise the height; traversal clamped ([`REQ-BLKSTORE-3-S9V2KC`](../../../../specification/storage/blocks.md#req-blkstore-3-s9v2kc)).
 
 ## Specification contradictions
+
+**Iterator aliasing.** [`REQ-STOR-6-SKP0KM`](../../../../specification/storage/durability.md#req-stor-6-skp0km)
+requires sequential reads to yield copies like every other read shape. `getIterator`
+([L234-268](../../../../../../src/storage/BlockStorage.ts#L234-L268)) yields the store's own `Block`
+objects straight out of `coordinatesToBlockMap`, and the wrapping proxy exempts generators, so a
+caller can mutate stored blocks without a store operation
+([`FIND-STORAGE-6-MT9Z2D`](../../../../audit/open-findings.md#find-storage-6-mt9z2d)).
+`getLatestBlock` ([L272-276](../../../../../../src/storage/BlockStorage.ts#L272-L276)) consumes the
+same generator but returns across the proxy, so its result is copied.
 
 **Timestamp overwrite.** [`REQ-BLKSTORE-2-VWXP2C`](../../../../specification/storage/blocks.md#req-blkstore-2-vwxp2c) requires the _earliest_ observed on-chain timestamp to
 win, but both `setOnChainTimestamp` ([#L133](../../../../../../src/storage/BlockStorage.ts#L133)) and the equal-block merge
