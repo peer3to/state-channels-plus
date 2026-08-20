@@ -101,6 +101,12 @@ describe("EventBus discovery kind (component)", function () {
                 stage: "connect",
                 outcome: "pending",
                 reason: undefined
+            },
+            probeStage: {
+                channelId: "0xchannel",
+                stage: "rendezvous",
+                outcome: "ok",
+                reason: undefined
             }
         };
 

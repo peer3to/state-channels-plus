@@ -23,4 +23,13 @@ export type DiscoveryEventMap = {
     acquireStage: [
         { adId: string; stage: string; outcome: string; reason?: string }
     ];
+    /**
+     * `ChannelProber` progress: one entry per candidate per phase
+     * ("rendezvous" | "sync"). `channelId` crosses as its string form (a
+     * `ChannelId`/`BytesLike` is not itself structured-clone-safe in every
+     * representation).
+     */
+    probeStage: [
+        { channelId: string; stage: string; outcome: string; reason?: string }
+    ];
 };
