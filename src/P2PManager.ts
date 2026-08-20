@@ -16,6 +16,7 @@ import { DebugProxy, getChecksumAddress, LocalDiscoveryServer } from "@/utils";
 import type { Logger } from "@/utils";
 import { Buffer } from "buffer";
 import { config, isNodeRuntime } from "@/utils/config";
+import { Status } from "@/types";
 import { Address } from "./types/types";
 import { hasRpcService } from "./utils/ObjectChecks";
 import type ARpcService from "@/rpc/ARpcService";
@@ -51,6 +52,9 @@ class P2PManager<TCustomRpc extends MainRpcService = MainRpcService>
         }
     >();
     private disposalPromise?: Promise<void>;
+    // Owns the "channel connection" promotion decision: unsubscribed on
+    // dispose() so a disposed P2PManager never promotes a late handshake.
+    private readonly unsubscribeHandshakeCompleted: () => void;
 
     constructor(
         stateManager: StateManager<TCustomRpc>,
@@ -87,6 +91,22 @@ class P2PManager<TCustomRpc extends MainRpcService = MainRpcService>
         ) as unknown as RemoteRpcProxyType<TCustomRpc>;
         this.loopbackTransport = new LoopbackTransport(this.self);
         this.holepunch = new Holepunch(this.self);
+
+        // Own the promotion decision for every handshake completed on this
+        // P2PManager's transports: they all originate from joining THIS
+        // channel's topic (`tryOpenConnectionToChannel`), so a verified peer
+        // here is always a channel peer - promote it into `openConnections`
+        // and continue the existing sync/negotiation path. A non-channel
+        // (e.g. lobby) handshake never reaches this hook: the lobby stack is
+        // deliberately standalone and never touches a `P2PManager` (see
+        // `LobbyClient`'s hard-boundary comment).
+        this.unsubscribeHandshakeCompleted = this.stateManager.events.on(
+            "p2pEventHooks",
+            "handshakeCompleted",
+            (peerAddress) => {
+                void this.onHandshakeCompleted(peerAddress);
+            }
+        );
         return this.self;
     }
     //Mark resources for garbage collection
@@ -95,9 +115,75 @@ class P2PManager<TCustomRpc extends MainRpcService = MainRpcService>
             return this.disposalPromise;
         }
 
+        this.unsubscribeHandshakeCompleted();
         this.disconnectAll();
         this.disposalPromise = this.holepunch.dispose();
         return this.disposalPromise;
+    }
+
+    /**
+     * Channel-connection promotion, run once a handshake finishes on this
+     * P2PManager's transport. `ProfileManager` (updated by
+     * `InitHandshakeService` before this hook fires) tracks identity and
+     * transport mapping; `openConnections` is the broadcast/
+     * `getConnectedPeers`/cleanup set - registering a profile must not by
+     * itself grant channel traffic, so promotion happens only here. The hook
+     * only carries the address (it crosses the runtime port, which
+     * structured-clones every payload, so it can never carry a live
+     * transport) - the live transport is resolved host-side, same realm,
+     * via `ProfileManager`.
+     */
+    private async onHandshakeCompleted(peerAddress: Address): Promise<void> {
+        const stateManager = this.stateManager;
+        if (stateManager.isDisposed) return;
+
+        const transport =
+            this.profileManager.getTransportByEvmAddress(peerAddress);
+        if (!transport) return;
+
+        // Only treat the transport as an "open connection" after handshake is final.
+        this.addConnection(transport);
+
+        const isChannelOpenedStatus =
+            stateManager.getStatus() === Status.OPENED;
+        let isPeerParticipant: boolean;
+        try {
+            isPeerParticipant =
+                await stateManager.diamondStateMachine.localDiamondContract.canParticipateInDisputes(
+                    stateManager.getChannelId(),
+                    peerAddress
+                );
+        } catch (error) {
+            if (stateManager.isDisposed) {
+                this.logger.debug(
+                    "Skipping finalized handshake after state manager disposal"
+                );
+                return;
+            }
+            throw error;
+        }
+        if (stateManager.isDisposed) return;
+
+        if (isChannelOpenedStatus) {
+            if (isPeerParticipant) {
+                this.logger.debug(
+                    `Initiating sync after handshake with peer ${peerAddress}`
+                );
+                this.localRpc.spectateService.sync(
+                    peerAddress,
+                    stateManager.getChannelId()
+                );
+            } else {
+                this.logger.debug(
+                    `Skipping sync after handshake with peer ${peerAddress} - not a participant`
+                );
+            }
+        }
+
+        stateManager.p2pEventHooks.onConnection?.(
+            peerAddress,
+            isChannelOpenedStatus
+        );
     }
     public broadcastRpc(rpc: Rpc) {
         const debugConnections = this.openConnections.map((transport) => {

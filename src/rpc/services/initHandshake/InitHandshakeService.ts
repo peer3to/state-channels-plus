@@ -9,7 +9,6 @@ import InitHandshakeRpcMethods from "./InitHandshakeRpcMethods";
 import type P2PManager from "@/P2PManager";
 import { TimeoutManager } from "@/utils/TimeoutManager";
 import EventBarrier from "@/utils/EventBarrier";
-import { Status } from "@/types";
 import { Hash, Signature, Timestamp } from "@/types/types";
 import { DetachedPromises, getChecksumAddress } from "@/utils";
 import { LoggerUtils } from "@/utils/LoggerUtils";
@@ -423,9 +422,6 @@ class InitHandshakeService extends ARpcService<InitHandshakeRpcMethods> {
             remotePreferred
         });
 
-        // Only treat the transport as an "open connection" after handshake is final.
-        this.p2pManager.addConnection(transport);
-
         const localAddress = this.p2pManager.p2pSigner.signerAddress.toString();
 
         const shouldInitiateWebRTC =
@@ -440,44 +436,15 @@ class InitHandshakeService extends ARpcService<InitHandshakeRpcMethods> {
             );
         }
 
-        const isChannelOpenedStatus = stateManager.status === Status.OPENED;
-        let isPeerParticipant: boolean;
-        try {
-            isPeerParticipant =
-                await stateManager.diamondStateMachine.localDiamondContract.canParticipateInDisputes(
-                    stateManager.channelId,
-                    completedPeerAddress
-                );
-        } catch (error) {
-            if (stateManager.isDisposed) {
-                this.logger.debug(
-                    "Skipping finalized handshake after state manager disposal"
-                );
-                return;
-            }
-            throw error;
-        }
-        if (stateManager.isDisposed) return;
-
-        if (isChannelOpenedStatus) {
-            if (isPeerParticipant) {
-                this.logger.debug(
-                    `Initiating sync after handshake with peer ${completedPeerAddress}`
-                );
-                this.p2pManager.localRpc.spectateService.sync(
-                    completedPeerAddress,
-                    stateManager.channelId
-                );
-            } else {
-                this.logger.debug(
-                    `Skipping sync after handshake with peer ${completedPeerAddress} - not a participant`
-                );
-            }
-        }
-
-        this.p2pManager.stateManager.p2pEventHooks.onConnection?.(
-            completedPeerAddress,
-            isChannelOpenedStatus
+        // Handshake lifecycle ends here: identity is verified and the profile
+        // is registered/updated above, but that does NOT imply the peer is
+        // admitted to the channel connection set. `ProfileManager` tracks
+        // identity/transport; `P2PManager.openConnections` is the
+        // broadcast/`getConnectedPeers`/cleanup set. Whoever owns this
+        // transport (e.g. the channel-connection path) decides whether to
+        // promote it via this hook - this service does not decide.
+        this.p2pManager.stateManager.p2pEventHooks.handshakeCompleted?.(
+            completedPeerAddress
         );
 
         // Allow guards to return early once handshake completes.
