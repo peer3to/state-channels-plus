@@ -1,4 +1,4 @@
-import { ATransport } from "@/transport";
+import { ATransport, BannablePeerInfo } from "@/transport";
 import { Address } from "@/types/types";
 
 //TODO? maybe rename to ParticipantProfile to be consistent with the rest of the codebase, even though PeerProfile sounds better
@@ -8,6 +8,11 @@ class PeerProfile {
     hpAddress: string | undefined;
     isLeader: boolean;
     isBlackListed: boolean;
+    // The Holepunch peer-info handle for this identity, kept even after the
+    // active transport is upgraded to WebRTC so `ProfileManager` can still
+    // apply ban policy (upgrade ban / fallback release) once Holepunch is no
+    // longer the active transport.
+    private holepunchPeerInfo: BannablePeerInfo | undefined;
     private isHandshakeCompleted = false;
     constructor(
         transport: ATransport,
@@ -35,6 +40,12 @@ class PeerProfile {
     }
     public removeTransport() {
         this.transport = undefined;
+    }
+    public setHolepunchPeerInfo(peerInfo: BannablePeerInfo) {
+        this.holepunchPeerInfo = peerInfo;
+    }
+    public getHolepunchPeerInfo(): BannablePeerInfo | undefined {
+        return this.holepunchPeerInfo;
     }
     public getEvmAddress() {
         return this.evmAddress;

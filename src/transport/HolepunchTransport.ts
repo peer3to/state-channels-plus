@@ -2,14 +2,15 @@ import type P2PManager from "@/P2PManager";
 import ATransport from "./ATransport";
 import { Buffer } from "buffer";
 import { TransportType } from "./TransportType";
+import { BannablePeerInfo } from "./BannablePeerInfo";
 
 class HolepunchTransport extends ATransport {
     transportType = TransportType.HOLEPUNCH;
     holepunchSocket: any;
-    holepunchPeerInfo: any;
+    holepunchPeerInfo: BannablePeerInfo;
     constructor(
         holepunchSocket: any,
-        holepunchPeerInfo: any,
+        holepunchPeerInfo: BannablePeerInfo,
         p2pManager: P2PManager
     ) {
         super(p2pManager);
@@ -41,8 +42,16 @@ class HolepunchTransport extends ATransport {
         this.p2pManager.onRpc(serializedRPC, this);
     }
 
+    getBannablePeerInfo(): BannablePeerInfo | undefined {
+        return this.holepunchPeerInfo;
+    }
+
+    // Ban/unban policy is owned entirely by `ProfileManager` (blacklist,
+    // transport-upgrade, fallback release) - a transport close only tears
+    // down the socket, it never decides ban policy itself. Banning
+    // unconditionally here used to permanently ban a peer on every close,
+    // including an expected transport upgrade.
     _close(): void {
-        this.holepunchPeerInfo.ban(true);
         this.holepunchSocket.destroy();
     }
 }

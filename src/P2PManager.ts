@@ -375,6 +375,11 @@ class P2PManager<TCustomRpc extends MainRpcService = MainRpcService>
             (t) => t !== transport
         );
 
+        // Case 3 of the Holepunch ban policy: a closing WebRTC transport
+        // releases the Holepunch fallback ban (ProfileManager decides based
+        // on blacklist status; no-op for a non-WebRTC transport).
+        this.profileManager.releaseHolepunchBanOnWebRtcClose(transport);
+
         try {
             if (profile) {
                 this.profileManager.removeTransport(transport);
@@ -387,7 +392,8 @@ class P2PManager<TCustomRpc extends MainRpcService = MainRpcService>
     }
 
     public disconnectAndBlacklistPeer(transport: ATransport, cause?: string) {
-        this.profileManager.getProfileByTransport(transport)?.blacklist();
+        const profile = this.profileManager.getProfileByTransport(transport);
+        if (profile) this.profileManager.blacklistProfile(profile);
 
         this.disconnectConnection(transport);
     }
@@ -395,7 +401,7 @@ class P2PManager<TCustomRpc extends MainRpcService = MainRpcService>
     public disconnectAndBlacklistPeerByEvmAddress(evmAddress: Address) {
         const profile = this.profileManager.getProfileByEvmAddress(evmAddress);
         if (!profile) return;
-        profile.blacklist();
+        this.profileManager.blacklistProfile(profile);
         const transport = profile.getTransport();
         if (!transport) return;
         this.disconnectConnection(transport);
