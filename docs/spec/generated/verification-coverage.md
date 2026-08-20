@@ -6,10 +6,10 @@ A permutation counts as tested only when an exact repository test declaration is
 
 ## Score
 
-- Specification IDs with test evidence: **82/241** (34%)
-- Test IDs (planned permutations) evidenced: **498/4248** (12%)
-- Test files with verification reports: **121/122** (99%)
-- Test declarations covering at least one test ID: **301/810** (37%)
+- Specification IDs with test evidence: **82/242** (34%)
+- Test IDs (planned permutations) evidenced: **498/4255** (12%)
+- Test files with verification reports: **121/123** (98%)
+- Test declarations covering at least one test ID: **301/815** (37%)
 - Assigned test IDs with exactly one owning test: **498/498** (100%)
 - Test files excluded as out of scope (`@spec-test-coverage-ignore`): 13
 
@@ -173,6 +173,7 @@ Requirements/invariants with no mapped test evidence on any of their planned per
 | [`REQ-STOR-3-4RJGER`](../specification/storage/durability.md#req-stor-3-4rjger) | [specification/storage/durability.md](../specification/storage/durability.md#req-stor-3-4rjger) |
 | [`REQ-STOR-4-MF6FT6`](../specification/storage/durability.md#req-stor-4-mf6ft6) | [specification/storage/durability.md](../specification/storage/durability.md#req-stor-4-mf6ft6) |
 | [`REQ-STOR-5-T6EQSA`](../specification/storage/durability.md#req-stor-5-t6eqsa) | [specification/storage/durability.md](../specification/storage/durability.md#req-stor-5-t6eqsa) |
+| [`REQ-STOR-6-SKP0KM`](../specification/storage/durability.md#req-stor-6-skp0km) | [specification/storage/durability.md](../specification/storage/durability.md#req-stor-6-skp0km) |
 | [`REQ-SYNC-3-1P5ZHT`](../specification/peer-communication/synchronization.md#req-sync-3-1p5zht) | [specification/peer-communication/synchronization.md](../specification/peer-communication/synchronization.md#req-sync-3-1p5zht) |
 | [`REQ-TIME-1-FM4651`](../specification/protocol-model/time.md#req-time-1-fm4651) | [specification/protocol-model/time.md](../specification/protocol-model/time.md#req-time-1-fm4651) |
 | [`REQ-TIME-2-VG94S7`](../specification/protocol-model/time.md#req-time-2-vg94s7) | [specification/protocol-model/time.md](../specification/protocol-model/time.md#req-time-2-vg94s7) |
@@ -3059,6 +3060,12 @@ Every planned test permutation — specification black-box plans and implementat
 | [`REQ-STOR-5-T6EQSA.T1.P4`](../specification/storage/durability.md#req-stor-5-t6eqsa.t1.p4) | Specification | [specification/storage/durability.md](../specification/storage/durability.md#req-stor-5-t6eqsa.t1.p4) |
 | [`REQ-STOR-5-T6EQSA.T1.P5`](../specification/storage/durability.md#req-stor-5-t6eqsa.t1.p5) | Specification | [specification/storage/durability.md](../specification/storage/durability.md#req-stor-5-t6eqsa.t1.p5) |
 | [`REQ-STOR-5-T6EQSA.T1.P6`](../specification/storage/durability.md#req-stor-5-t6eqsa.t1.p6) | Specification | [specification/storage/durability.md](../specification/storage/durability.md#req-stor-5-t6eqsa.t1.p6) |
+| [`REQ-STOR-6-SKP0KM.T1.P1`](../specification/storage/durability.md#req-stor-6-skp0km.t1.p1) | Specification | [specification/storage/durability.md](../specification/storage/durability.md#req-stor-6-skp0km.t1.p1) |
+| [`REQ-STOR-6-SKP0KM.T1.P2`](../specification/storage/durability.md#req-stor-6-skp0km.t1.p2) | Specification | [specification/storage/durability.md](../specification/storage/durability.md#req-stor-6-skp0km.t1.p2) |
+| [`REQ-STOR-6-SKP0KM.T1.P3`](../specification/storage/durability.md#req-stor-6-skp0km.t1.p3) | Specification | [specification/storage/durability.md](../specification/storage/durability.md#req-stor-6-skp0km.t1.p3) |
+| [`REQ-STOR-6-SKP0KM.T1.P4`](../specification/storage/durability.md#req-stor-6-skp0km.t1.p4) | Specification | [specification/storage/durability.md](../specification/storage/durability.md#req-stor-6-skp0km.t1.p4) |
+| [`REQ-STOR-6-SKP0KM.T1.P5`](../specification/storage/durability.md#req-stor-6-skp0km.t1.p5) | Specification | [specification/storage/durability.md](../specification/storage/durability.md#req-stor-6-skp0km.t1.p5) |
+| [`REQ-STOR-6-SKP0KM.T1.P6`](../specification/storage/durability.md#req-stor-6-skp0km.t1.p6) | Specification | [specification/storage/durability.md](../specification/storage/durability.md#req-stor-6-skp0km.t1.p6) |
 | [`REQ-STS-1-15EQRF.T1.P1`](../implementation/views/architecture/sdk/rpc/state-transition.md#req-sts-1-15eqrf.t1.p1) | Implementation | [implementation/views/architecture/sdk/rpc/state-transition.md](../implementation/views/architecture/sdk/rpc/state-transition.md#req-sts-1-15eqrf.t1.p1) |
 | [`REQ-STS-1-15EQRF.T1.P2`](../implementation/views/architecture/sdk/rpc/state-transition.md#req-sts-1-15eqrf.t1.p2) | Implementation | [implementation/views/architecture/sdk/rpc/state-transition.md](../implementation/views/architecture/sdk/rpc/state-transition.md#req-sts-1-15eqrf.t1.p2) |
 | [`REQ-STS-1-15EQRF.T1.P3`](../implementation/views/architecture/sdk/rpc/state-transition.md#req-sts-1-15eqrf.t1.p3) | Implementation | [implementation/views/architecture/sdk/rpc/state-transition.md](../implementation/views/architecture/sdk/rpc/state-transition.md#req-sts-1-15eqrf.t1.p3) |
@@ -3317,6 +3324,7 @@ Every planned test permutation — specification black-box plans and implementat
 | [`UNIT-TEST-DEEP-COPY-PROXY-1-WWX3NZ.P2`](../implementation/source/src/utils/DeepCopyProxy.ts.md#unit-test-deep-copy-proxy-1-wwx3nz.p2) | Implementation | [implementation/source/src/utils/DeepCopyProxy.ts.md](../implementation/source/src/utils/DeepCopyProxy.ts.md#unit-test-deep-copy-proxy-1-wwx3nz.p2) |
 | [`UNIT-TEST-DEEP-COPY-PROXY-1-WWX3NZ.P3`](../implementation/source/src/utils/DeepCopyProxy.ts.md#unit-test-deep-copy-proxy-1-wwx3nz.p3) | Implementation | [implementation/source/src/utils/DeepCopyProxy.ts.md](../implementation/source/src/utils/DeepCopyProxy.ts.md#unit-test-deep-copy-proxy-1-wwx3nz.p3) |
 | [`UNIT-TEST-DEEP-COPY-PROXY-1-WWX3NZ.P4`](../implementation/source/src/utils/DeepCopyProxy.ts.md#unit-test-deep-copy-proxy-1-wwx3nz.p4) | Implementation | [implementation/source/src/utils/DeepCopyProxy.ts.md](../implementation/source/src/utils/DeepCopyProxy.ts.md#unit-test-deep-copy-proxy-1-wwx3nz.p4) |
+| [`UNIT-TEST-DEEP-COPY-PROXY-1-WWX3NZ.P5`](../implementation/source/src/utils/DeepCopyProxy.ts.md#unit-test-deep-copy-proxy-1-wwx3nz.p5) | Implementation | [implementation/source/src/utils/DeepCopyProxy.ts.md](../implementation/source/src/utils/DeepCopyProxy.ts.md#unit-test-deep-copy-proxy-1-wwx3nz.p5) |
 | [`UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7.P1`](../implementation/source/contracts/V1/StateChannelDiamondProxy/DisputeFraudProofFacet.sol.md#unit-test-dispute-fraud-proof-facet-1-qk8hq7.p1) | Implementation | [implementation/source/contracts/V1/StateChannelDiamondProxy/DisputeFraudProofFacet.sol.md](../implementation/source/contracts/V1/StateChannelDiamondProxy/DisputeFraudProofFacet.sol.md#unit-test-dispute-fraud-proof-facet-1-qk8hq7.p1) |
 | [`UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7.P10`](../implementation/source/contracts/V1/StateChannelDiamondProxy/DisputeFraudProofFacet.sol.md#unit-test-dispute-fraud-proof-facet-1-qk8hq7.p10) | Implementation | [implementation/source/contracts/V1/StateChannelDiamondProxy/DisputeFraudProofFacet.sol.md](../implementation/source/contracts/V1/StateChannelDiamondProxy/DisputeFraudProofFacet.sol.md#unit-test-dispute-fraud-proof-facet-1-qk8hq7.p10) |
 | [`UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7.P12`](../implementation/source/contracts/V1/StateChannelDiamondProxy/DisputeFraudProofFacet.sol.md#unit-test-dispute-fraud-proof-facet-1-qk8hq7.p12) | Implementation | [implementation/source/contracts/V1/StateChannelDiamondProxy/DisputeFraudProofFacet.sol.md](../implementation/source/contracts/V1/StateChannelDiamondProxy/DisputeFraudProofFacet.sol.md#unit-test-dispute-fraud-proof-facet-1-qk8hq7.p12) |
@@ -3951,6 +3959,7 @@ Repository test files containing executable declarations that have no maintained
 | Test file |
 | --- |
 | [test/cache/SignerRecoveryCache.test.ts](../../../test/cache/SignerRecoveryCache.test.ts) |
+| [test/storage/_AliasingProbe.test.ts](../../../test/storage/_AliasingProbe.test.ts) |
 
 ## Tests not referenced in verification reports
 
@@ -4178,6 +4187,11 @@ Repository test declarations that no verification document maps to any planned p
 | `SnapshotUpdateService > blocks same-fork calldata when its snapshot has not consumed the on-chain inbound head` | [test/stateManager/SnapshotUpdateService.test.ts#L90](../../../test/stateManager/SnapshotUpdateService.test.ts#L90) |
 | `StateManager abort > cancels session-owned timeout work` | [test/stateManager/StateManagerAbort.test.ts#L7](../../../test/stateManager/StateManagerAbort.test.ts#L7) |
 | `ValidationService - block author participant gate > binds the author to the previous snapshot and to a coordinate-matched resulting snapshot` | [test/stateManager/ValidationService.test.ts#L9](../../../test/stateManager/ValidationService.test.ts#L9) |
+| `_AliasingProbe > control - getBlock returns a copy, mutation does not reach the store` | [test/storage/_AliasingProbe.test.ts#L24](../../../test/storage/_AliasingProbe.test.ts#L24) |
+| `_AliasingProbe > control - the caller's stored argument is copied on write` | [test/storage/_AliasingProbe.test.ts#L33](../../../test/storage/_AliasingProbe.test.ts#L33) |
+| `_AliasingProbe > probe - block getIterator yields a LIVE reference into the store` | [test/storage/_AliasingProbe.test.ts#L39](../../../test/storage/_AliasingProbe.test.ts#L39) |
+| `_AliasingProbe > probe - message-block getIterator yields a LIVE reference, array read does not` | [test/storage/_AliasingProbe.test.ts#L49](../../../test/storage/_AliasingProbe.test.ts#L49) |
+| `_AliasingProbe > probe - getLatestBlock through the proxy` | [test/storage/_AliasingProbe.test.ts#L64](../../../test/storage/_AliasingProbe.test.ts#L64) |
 | `BlockStorage > CREATE - storeBlockConfirmation() > should insert block confirmation with auto-computed keys` | [test/storage/BlockStorage.test.ts#L95](../../../test/storage/BlockStorage.test.ts#L95) |
 | `BlockStorage > READ - getBlockEntry() > should get block by hash` | [test/storage/BlockStorage.test.ts#L124](../../../test/storage/BlockStorage.test.ts#L124) |
 | `BlockStorage > READ - getBlockEntry() > should get block by coordinates` | [test/storage/BlockStorage.test.ts#L129](../../../test/storage/BlockStorage.test.ts#L129) |

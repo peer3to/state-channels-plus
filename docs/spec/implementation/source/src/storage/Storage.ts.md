@@ -52,9 +52,9 @@ author-relevant previous timestamp.
 A file may contribute to several requirements; this report describes the contribution and never
 claims complete conformance for a requirement that depends on other files.
 
-| Source file                                            | Specification IDs                                                                                                                                                                            |
-| ------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| [Storage.ts](../../../../../../src/storage/Storage.ts) | [`REQ-SNAPSTORE-2-Q7E6TQ`](../../../../specification/storage/snapshots-and-states.md#req-snapstore-2-q7e6tq), [`REQ-IX-9-AV56NR`](../../../../specification/interactions.md#req-ix-9-av56nr) |
+| Source file                                            | Specification IDs                                                                                                                                                                                                                                                                                                                                                                   |
+| ------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| [Storage.ts](../../../../../../src/storage/Storage.ts) | [`REQ-SNAPSTORE-2-Q7E6TQ`](../../../../specification/storage/snapshots-and-states.md#req-snapstore-2-q7e6tq), [`REQ-IX-9-AV56NR`](../../../../specification/interactions.md#req-ix-9-av56nr), [`REQ-STOR-6-SKP0KM`](../../../../specification/storage/durability.md#req-stor-6-skp0km) — wraps every store module in the copy proxy, so this file is where the boundary is applied. |
 
 ## Assumptions, dependencies, trust boundaries, and limits
 
@@ -67,6 +67,7 @@ claims complete conformance for a requirement that depends on other files.
 
 - Coordinate reads (`getStateSnapshot`, `getGenesisStateMachineState`) return explicit absence on any missing join link and resolve negative heights to fork genesis, per [`REQ-SNAPSTORE-2-Q7E6TQ`](../../../../specification/storage/snapshots-and-states.md#req-snapstore-2-q7e6tq).
 - Participant union merges previous and resulting snapshot sets, honoring an explicitly supplied resulting-snapshot hash.
+- Every store module is constructed wrapped in `deepCopyProxy`, and the aggregate itself is returned wrapped ([#L39-L56](../../../../../../src/storage/Storage.ts#L39-L56)), so the copy boundary of [`REQ-STOR-6-SKP0KM`](../../../../specification/storage/durability.md#req-stor-6-skp0km) applies uniformly rather than per module — subject to the generator exemption owned by [DeepCopyProxy.ts.md](../utils/DeepCopyProxy.ts.md).
 
 ## Specification contradictions
 

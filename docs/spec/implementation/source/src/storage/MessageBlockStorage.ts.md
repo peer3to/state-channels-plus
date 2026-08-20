@@ -46,9 +46,9 @@ and backward `[upper, lower)` range reads following `previousBlockHash` linkage.
 A file may contribute to several requirements; this report describes the contribution and never
 claims complete conformance for a requirement that depends on other files.
 
-| Source file                                                                    | Specification IDs                                                                                                                                                                                          |
-| ------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| [MessageBlockStorage.ts](../../../../../../src/storage/MessageBlockStorage.ts) | [`REQ-MSGSTORE-1-6ME9D7`](../../../../specification/storage/message-blocks.md#req-msgstore-1-6me9d7), [`REQ-MSGSTORE-2-8RDXPZ`](../../../../specification/storage/message-blocks.md#req-msgstore-2-8rdxpz) |
+| Source file                                                                    | Specification IDs                                                                                                                                                                                                                                                                                                                                                                                 |
+| ------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| [MessageBlockStorage.ts](../../../../../../src/storage/MessageBlockStorage.ts) | [`REQ-MSGSTORE-1-6ME9D7`](../../../../specification/storage/message-blocks.md#req-msgstore-1-6me9d7), [`REQ-MSGSTORE-2-8RDXPZ`](../../../../specification/storage/message-blocks.md#req-msgstore-2-8rdxpz), [`REQ-STOR-6-SKP0KM`](../../../../specification/storage/durability.md#req-stor-6-skp0km) — `getIterator` is the second store generator whose yielded values escape the copy boundary. |
 
 ## Assumptions, dependencies, trust boundaries, and limits
 
@@ -64,7 +64,7 @@ claims complete conformance for a requirement that depends on other files.
 
 ## Specification contradictions
 
-Two divergences, both needing an engineer decision (align code or relax spec):
+Three divergences, the first two needing an engineer decision (align code or relax spec):
 
 1. **Tip update uses `>=`.** [`REQ-MSGSTORE-1-6ME9D7`](../../../../specification/storage/message-blocks.md#req-msgstore-1-6me9d7) says the tip advances only when the height
    _exceeds_ the current tip; the code replaces the tip on equal height too ([#L41](../../../../../../src/storage/MessageBlockStorage.ts#L41)).
@@ -73,6 +73,12 @@ Two divergences, both needing an engineer decision (align code or relax spec):
 2. **A gap throws.** [`REQ-MSGSTORE-2-8RDXPZ`](../../../../specification/storage/message-blocks.md#req-msgstore-2-8rdxpz) says an absent block _ends the walk_ with the blocks
    proven so far; the iterator throws on a missing middle block ([#L72](../../../../../../src/storage/MessageBlockStorage.ts#L72)),
    propagating to range callers.
+3. **Iterator aliasing.** [`REQ-STOR-6-SKP0KM`](../../../../specification/storage/durability.md#req-stor-6-skp0km) requires sequential reads to yield copies like every other
+   read shape; `getIterator` ([#L61-L79](../../../../../../src/storage/MessageBlockStorage.ts#L61-L79)) yields the store's own
+   `MessageBlockStruct` values and the wrapping proxy exempts generators
+   ([`FIND-STORAGE-6-MT9Z2D`](../../../../audit/open-findings.md#find-storage-6-mt9z2d)). The
+   array-returning wrappers `getMessageBlocksInRange` ([#L82-L88](../../../../../../src/storage/MessageBlockStorage.ts#L82-L88)) and
+   `getLatestMessageBlocks` ([#L99-L111](../../../../../../src/storage/MessageBlockStorage.ts#L99-L111)) return across the proxy and are copied.
 
 ## Missing behavior
 

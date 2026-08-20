@@ -18,16 +18,16 @@ Detailed statements, source evidence, design analysis, and test mappings remain 
 
 ## Readiness
 
-- Requirements/invariants: 241
-- Structurally complete requirement paths: **5/241** (2%)
-- Current engineer-approved paths: **0/241** (0%)
-- Current security-accepted paths: **0/241** (0%)
-- Final ready paths: **0/241** (0%)
+- Requirements/invariants: 242
+- Structurally complete requirement paths: **5/242** (2%)
+- Current engineer-approved paths: **0/242** (0%)
+- Current security-accepted paths: **0/242** (0%)
+- Final ready paths: **0/242** (0%)
 - Source files assigned to implementation subjects: **243/243** (100%)
-- Test declarations mapped or explicitly ignored: **433/942** (46%)
-- Open questions: 37
-- Active findings: 15
-- Strict blocking items: 4979
+- Test declarations mapped or explicitly ignored: **433/947** (46%)
+- Open questions: 38
+- Active findings: 16
+- Strict blocking items: 4997
 
 ## Requirement paths
 
@@ -257,6 +257,7 @@ Detailed statements, source evidence, design analysis, and test mappings remain 
 | [`REQ-STOR-3-4RJGER`](../specification/storage/durability.md#req-stor-3-4rjger) | [REQ-STOR-3-4RJGER · 1 plan](../specification/storage/durability.md#req-stor-3-4rjger) | [Covered](../implementation/source/src/stateManager/EventSyncService.ts.md#conformance-traceability) | 0/4 permutations evidenced | 0 | None linked | Gap | Approval pending | Assessment pending | Not ready |
 | [`REQ-STOR-4-MF6FT6`](../specification/storage/durability.md#req-stor-4-mf6ft6) | [REQ-STOR-4-MF6FT6 · 1 plan](../specification/storage/durability.md#req-stor-4-mf6ft6) | [Partial](../implementation/source/src/storage/Storage.ts.md#conformance-traceability) | 0/5 permutations evidenced | 0 | None linked | Gap | Approval pending | Assessment pending | Not ready |
 | [`REQ-STOR-5-T6EQSA`](../specification/storage/durability.md#req-stor-5-t6eqsa) | [REQ-STOR-5-T6EQSA · 1 plan](../specification/storage/durability.md#req-stor-5-t6eqsa) | [Partial](../implementation/source/src/storage/Storage.ts.md#conformance-traceability) | 0/6 permutations evidenced | 0 | None linked | Gap | Approval pending | Assessment pending | Not ready |
+| [`REQ-STOR-6-SKP0KM`](../specification/storage/durability.md#req-stor-6-skp0km) | [REQ-STOR-6-SKP0KM · 1 plan](../specification/storage/durability.md#req-stor-6-skp0km) | [Covered](../implementation/source/src/utils/DeepCopyProxy.ts.md#conformance-traceability) | 0/6 permutations evidenced | 0 | [`FIND-STORAGE-6-MT9Z2D`](../audit/open-findings.md#find-storage-6-mt9z2d) | Gap | Approval pending | Blocked | Not ready |
 | [`REQ-SYNC-1-T2589H`](../specification/peer-communication/synchronization.md#req-sync-1-t2589h) | [REQ-SYNC-1-T2589H · 1 plan](../specification/peer-communication/synchronization.md#req-sync-1-t2589h) | [Partial](../implementation/source/src/rpc/services/spectate/SpectateRpcMethods.ts.md#conformance-traceability) | 4/7 permutations evidenced | 4 | None linked | Gap | Approval pending | Assessment pending | Not ready |
 | [`REQ-SYNC-2-TNT4F4`](../specification/peer-communication/synchronization.md#req-sync-2-tnt4f4) | [REQ-SYNC-2-TNT4F4 · 1 plan](../specification/peer-communication/synchronization.md#req-sync-2-tnt4f4) | [Covered](../implementation/source/src/rpc/services/spectate/SpectateService.ts.md#conformance-traceability) | 1/3 permutations evidenced | 1 | None linked | Gap | Approval pending | Assessment pending | Not ready |
 | [`REQ-SYNC-3-1P5ZHT`](../specification/peer-communication/synchronization.md#req-sync-3-1p5zht) | [REQ-SYNC-3-1P5ZHT · 1 plan](../specification/peer-communication/synchronization.md#req-sync-3-1p5zht) | [Covered](../implementation/source/src/rpc/services/spectate/SpectateService.ts.md#conformance-traceability) | 0/3 permutations evidenced | 0 | None linked | Gap | Approval pending | Assessment pending | Not ready |
@@ -277,11 +278,11 @@ Detailed statements, source evidence, design analysis, and test mappings remain 
 
 ## Global gaps
 
-- 509 test declaration(s) are unaccounted.
-- 37 open question(s) require decisions.
-- 15 active finding(s) remain.
-- 241 requirement path(s) lack current engineer approval.
-- 241 requirement path(s) lack current security-risk acceptance.
+- 514 test declaration(s) are unaccounted.
+- 38 open question(s) require decisions.
+- 16 active finding(s) remain.
+- 242 requirement path(s) lack current engineer approval.
+- 242 requirement path(s) lack current security-risk acceptance.
 
 ## Audit sources
 

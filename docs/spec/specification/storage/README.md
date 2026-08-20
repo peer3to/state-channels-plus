@@ -40,9 +40,11 @@ strength, never observable semantics.
   duplicate delivery converge, and a known on-chain posting timestamp is never discarded by a merge
   ([blocks.md](./blocks.md), [queue.md](./queue.md)). Cross-module consistency at an operation
   boundary is the *caller's* transaction, specified by [`REQ-STOR-2-TARP8S`](durability.md#req-stor-2-tarp8s).
-- **Aliasing and isolation.** Stores copy their arguments on write and their results on read, so no
-  caller-held reference aliases store state. Iterator reads are the exception: they yield live
-  references into the store, and callers MUST NOT mutate yielded objects.
+- **Aliasing and isolation.** Stores exchange values, not references: arguments are copied on write
+  and results are copied on read — every read shape included, sequential entry-at-a-time reads no
+  differently from reads by key — so no caller-held reference aliases store state and stored data
+  changes only through an explicit store operation
+  ([`REQ-STOR-6-SKP0KM`](durability.md#req-stor-6-skp0km)).
 - **Invariants (owned).** `REQ-STOR-*` ([durability.md](./durability.md)) plus the per-module
   requirements in the module documents below.
 - **Failure and recovery outcomes.** A read of absent data returns nothing, never a default that
