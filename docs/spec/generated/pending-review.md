@@ -4,17 +4,18 @@
 > its content hash with `SPEC_REVIEWER="Name" node docs/spec/tools/review.js <file...>`.
 > Any later edit invalidates the record automatically (the file returns to pending as stale).
 
-- Verified (current): **40/527** (8%)
-- Pending (never reviewed): **462**
-- Stale (edited since review): **25**
+- Verified (current): **39/528** (7%)
+- Pending (never reviewed): **463**
+- Stale (edited since review): **26**
 
 ## Stale — edited since engineer review
 
-### specification (4)
+### specification (5)
 
 - [specification/disputes/disputes.md](../specification/disputes/disputes.md) — Luka, 2026-08-14
 - [specification/security/trust-model.md](../specification/security/trust-model.md) — Luke Fishman, 2026-08-18
 - [specification/storage/durability.md](../specification/storage/durability.md) — Luke Fishman, 2026-08-17
+- [specification/storage/queue.md](../specification/storage/queue.md) — Luke Fishman, 2026-08-17
 - [specification/storage/README.md](../specification/storage/README.md) — Luke Fishman, 2026-08-17
 
 ### implementation (9)
@@ -404,7 +405,7 @@
 - [implementation/views/security/data-availability.md](../implementation/views/security/data-availability.md)
 - [implementation/views/security/trust-model.md](../implementation/views/security/trust-model.md)
 
-### verification (110)
+### verification (111)
 
 - [verification/open-questions.md](../verification/open-questions.md)
 - [verification/README.md](../verification/README.md)
@@ -513,13 +514,14 @@
 - [verification/tests/test/V1/DiamondProxy/UtilityLibrary/SignatureVerification.test.ts.md](../verification/tests/test/V1/DiamondProxy/UtilityLibrary/SignatureVerification.test.ts.md)
 - [verification/tests/test/V1/StateChannelDiamondProxy/DisputeVerificationFacet.t.sol.md](../verification/tests/test/V1/StateChannelDiamondProxy/DisputeVerificationFacet.t.sol.md)
 - [verification/tests/test/V1/StateChannelDiamondProxy/FraudProofFacet.t.sol.md](../verification/tests/test/V1/StateChannelDiamondProxy/FraudProofFacet.t.sol.md)
+- [verification/tests/test/V1/StateChannelDiamondProxy/StateChannelManagerProxyOpen.t.sol.md](../verification/tests/test/V1/StateChannelDiamondProxy/StateChannelManagerProxyOpen.t.sol.md)
 - [verification/tests/test/V1/StateChannelDiamondProxy/UtilityFacet.t.sol.md](../verification/tests/test/V1/StateChannelDiamondProxy/UtilityFacet.t.sol.md)
 - [verification/tests/test/V1/StateChannelDiamondProxy/utils/DisputeUtils.t.sol.md](../verification/tests/test/V1/StateChannelDiamondProxy/utils/DisputeUtils.t.sol.md)
 - [verification/tests/test/V1/UniversalDeployment.test.ts.md](../verification/tests/test/V1/UniversalDeployment.test.ts.md)
 
 ## Verified — current
 
-### specification (14)
+### specification (13)
 
 - [specification/block-progression/block-processing.md](../specification/block-progression/block-processing.md) — Luka, 2026-08-18
 - [specification/block-progression/README.md](../specification/block-progression/README.md) — Luka, 2026-08-14
@@ -533,7 +535,6 @@
 - [specification/storage/message-blocks.md](../specification/storage/message-blocks.md) — Luke Fishman, 2026-08-17
 - [specification/storage/participant-changes.md](../specification/storage/participant-changes.md) — Luke Fishman, 2026-08-17
 - [specification/storage/progress-markers.md](../specification/storage/progress-markers.md) — Luke Fishman, 2026-08-17
-- [specification/storage/queue.md](../specification/storage/queue.md) — Luke Fishman, 2026-08-17
 - [specification/storage/snapshots-and-states.md](../specification/storage/snapshots-and-states.md) — Luke Fishman, 2026-08-17
 
 ### implementation (13)

@@ -65,6 +65,14 @@ fail the affected join per the composition mode with no partial escrow or unback
 - The consumer adapter is integrator code inside the trust boundary of escrowed funds; its
   obligations are part of the integration contract
   ([state-machines.md](../protocol-model/state-machines.md)).
+- The open terms carry per-participant data as parallel sequences (one balance per listed
+  participant). This correspondence is **not** validated at the boundary, by decision: unanimous
+  authorization already means every listed participant inspected and agreed to the exact terms, so a
+  malformed term cannot reach the threshold while any listed participant is honest, and a set that
+  all authorize an ill-formed term of their own affects only itself. Per-participant data is
+  consumed only for listed participants, so a surplus entry is never escrowed and never becomes
+  withdrawable credit; the value-conservation invariant bounds the remaining exposure. Callers
+  constructing terms are responsible for the correspondence.
 - Off-chain application of appended blocks is settlement's inbound-inclusion obligation
   ([`REQ-IX-3-H8WCVY`](../interactions.md#req-ix-3-h8wcvy)); this module only guarantees the on-chain record.
 
@@ -77,6 +85,18 @@ participants, double-entry (membership split), and unbacked balances ([`INV-ENFA
 to an inbound block whose totals the balance invariant later audits). The adapter is the riskiest
 dependency: it executes integrator code during deposit composition; atomicity rules bound the blast
 radius to the submitted batch.
+
+Structural properties of the open terms are deliberately left unvalidated at the boundary rather
+than enforced, and the reasoning is worth stating because it is the same reasoning the whole
+admission path rests on. Unanimity is the trust boundary: a signature means the signer inspected and
+agreed to those exact terms, so one honest listed participant is sufficient to keep an ill-formed
+term below the threshold — an on-chain shape check would only repeat what the signature set already
+decides. For a set that all authorize an ill-formed term, the exposure is bounded structurally
+rather than by validation: per-participant data is consumed only for listed participants, so surplus
+entries create no deposit credit, and the value-conservation invariant continues to cap withdrawals
+at what was actually escrowed. The residual cost is diagnostic, not custodial — a malformed term
+surfaces as a threshold failure or an out-of-range fault whose reported cause points away from the
+term itself.
 
 ## Verification and test plan
 
