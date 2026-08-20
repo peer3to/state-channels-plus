@@ -45,6 +45,11 @@ export type Config = {
     LOBBY_COMMIT_CONNECT_TIMEOUT_MS: number;
     LOBBY_COMMIT_SYNC_TIMEOUT_MS: number;
     LOBBY_COMMIT_CONFIRM_TIMEOUT_MS: number;
+    // Channel discovery (on-chain enumeration): bounds for ChannelIndex's
+    // newest-first backward log scan.
+    DISCOVERY_SCAN_CHUNK_BLOCKS: number;
+    DISCOVERY_SCAN_MAX_LOOKBACK_BLOCKS: number;
+    DISCOVERY_SCAN_MAX_CANDIDATES: number;
 };
 
 const DEFAULT_CONFIG: Config = {
@@ -80,7 +85,10 @@ const DEFAULT_CONFIG: Config = {
     LOBBY_MAX_PARALLELISM: 1,
     LOBBY_COMMIT_CONNECT_TIMEOUT_MS: 15000,
     LOBBY_COMMIT_SYNC_TIMEOUT_MS: 15000,
-    LOBBY_COMMIT_CONFIRM_TIMEOUT_MS: 30000
+    LOBBY_COMMIT_CONFIRM_TIMEOUT_MS: 30000,
+    DISCOVERY_SCAN_CHUNK_BLOCKS: 5_000,
+    DISCOVERY_SCAN_MAX_LOOKBACK_BLOCKS: 100_000,
+    DISCOVERY_SCAN_MAX_CANDIDATES: 25
 };
 
 export function isNodeRuntime() {
