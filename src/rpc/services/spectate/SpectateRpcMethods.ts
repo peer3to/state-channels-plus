@@ -55,6 +55,13 @@ class SpectateServiceRpcMethods extends ARpcMethods {
             throw new Error("onSpectateRequest - no sync payload to prove");
         }
 
+        // Accepting the spectate request establishes the spectate
+        // relationship: this peer isn't a dispute participant, but it now
+        // needs our block broadcasts to keep following the channel, so
+        // promote it into `openConnections` here, on acceptance, rather than
+        // at handshake time.
+        this.service.p2pManager.addConnection(senderTransport);
+
         this.service.logger.debug(`onSpectateRequest - done`);
         return {
             encodedSyncPayload: Codec.encode(syncPayload, Type.SyncPayload)
