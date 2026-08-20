@@ -1,5 +1,6 @@
 import type P2PManager from "@/P2PManager";
 import { TransportType } from "./TransportType";
+import { BannablePeerInfo } from "./BannablePeerInfo";
 import Rpc, {
     RpcResponse,
     serializeRpc,
@@ -46,6 +47,16 @@ abstract class ATransport {
      */
     get isTrusted(): boolean {
         return false;
+    }
+
+    /**
+     * Holepunch (Hyperswarm) peer-info handle used to ban/unban this peer at
+     * the DHT level. Only `HolepunchTransport` has one; every other transport
+     * has nothing to ban and keeps the default `undefined`. `ProfileManager`
+     * is the sole caller of `.ban()` on the returned handle.
+     */
+    getBannablePeerInfo(): BannablePeerInfo | undefined {
+        return undefined;
     }
 
     close(isExpected = false): void {
