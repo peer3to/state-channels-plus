@@ -129,7 +129,10 @@ describe("e2e-parallel argParser - logDir validation", function () {
             "--dry-run",
             "--distributed",
             "--discovery-timeout",
-            "--forward-env"
+            "--forward-env",
+            "--forge-only",
+            "--no-forge",
+            "--forge-threads"
         ]) {
             expect(help).to.include(option);
         }
@@ -199,7 +202,7 @@ describe("e2e-parallel argParser - logDir validation", function () {
         }
         expect(lines).to.have.length(1);
         expect(lines[0]).to.match(
-            /^Distributed dry run: \d+ task\(s\); capacity is configured by test:parallel:server$/
+            /^Distributed dry run: \d+ task\(s\) \(\d+ forge\); capacity is configured by test:parallel:server$/
         );
         expect(lines[0]).to.not.include("slots=");
     });

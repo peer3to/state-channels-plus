@@ -26,7 +26,12 @@ peer3.config.json
 
 
 # foundry stuff
-lib
+# lib/* (not bare "lib") so the forge-std submodule can be re-included:
+# git never descends into an ignored directory, so !/lib/forge-std only works
+# when lib itself stays unignored. The distributed test bundle drops every
+# tracked-but-ignored path, and forge test needs forge-std on the workers.
+/lib/*
+!/lib/forge-std
 out
 cache_forge
 

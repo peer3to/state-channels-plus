@@ -5,6 +5,7 @@ const path = require("path");
 const { globSync } = require("glob");
 const { Project, SyntaxKind } = require("ts-morph");
 const { MAX_LOG_NAME_LEN } = require("./constants");
+const { TASK_RUNNERS } = require("./taskRunners");
 
 function getStringLiteralValue(node) {
     if (node.getKind() === SyntaxKind.StringLiteral) {
@@ -165,6 +166,7 @@ function discoverTasks(
                         `${path.basename(f, path.extname(f))}__${fullTitle}`
                     ),
                     fullTitle,
+                    runner: TASK_RUNNERS.HARDHAT,
                     isE2E
                 });
             }
@@ -180,6 +182,7 @@ function discoverTasks(
                 args: ["test", "--no-compile", f, "--grep", taskGrep],
                 logName,
                 fullTitle,
+                runner: TASK_RUNNERS.HARDHAT,
                 isE2E
             });
         }

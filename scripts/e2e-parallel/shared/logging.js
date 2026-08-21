@@ -268,6 +268,7 @@ function cleanupNonErrorLogs(logDir, allowLogdirPurge, keepInfraLogs = false) {
 
 function runHeader({
     taskCount,
+    forgeTaskCount = 0,
     grep,
     e2eOnly,
     slotCount,
@@ -277,8 +278,12 @@ function runHeader({
     memBoundGb,
     concurrencyCap
 }) {
+    const mochaTier = e2eOnly ? "E2E" : "Mocha";
+    const composition = forgeTaskCount
+        ? `${taskCount - forgeTaskCount} ${mochaTier} + ${forgeTaskCount} forge`
+        : mochaTier;
     console.log(
-        `Running ${taskCount} ${e2eOnly ? "E2E" : "Mocha"} task(s)${grep ? ` matching --grep ${JSON.stringify(grep)}` : ""}`
+        `Running ${taskCount} task(s) [${composition}]${grep ? ` matching --grep ${JSON.stringify(grep)}` : ""}`
     );
     console.log(
         `  slots=${slotCount} vmThread=${threadModes.vmThread} sdkThread=${threadModes.sdkThread} targetLoad/core=${targetLoad} schedulerTickMs=${tickMs} memBound=${memBoundGb.toFixed(1)}GB concurrencyCap=${concurrencyCap}`
@@ -287,6 +292,8 @@ function runHeader({
 
 function dryRun({
     taskCount,
+    forgeTaskCount = 0,
+    forgeThreads,
     slotCount,
     threadModes,
     targetLoad,
@@ -296,6 +303,9 @@ function dryRun({
     tickMs
 }) {
     console.log(`\nDry-run (${taskCount} task(s)):`);
+    console.log(
+        `  forge tasks      : ${forgeTaskCount}${forgeTaskCount ? ` (${forgeThreads} thread(s) each)` : ""}`
+    );
     console.log(`  slots            : ${slotCount}`);
     console.log(`  vmThread         : ${threadModes.vmThread}`);
     console.log(`  sdkThread        : ${threadModes.sdkThread}`);

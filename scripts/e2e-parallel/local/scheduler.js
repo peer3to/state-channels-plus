@@ -1,5 +1,6 @@
 /* eslint-disable no-console */
 const { HARDHAT_CLI, SCHEDULER_TICK_MS } = require("../shared/constants");
+const { requiresChainSlot } = require("../shared/taskRunners");
 const {
     AccountPartitionPool,
     accountPartitionFor
@@ -101,17 +102,26 @@ async function runScheduler({
         requestTask: async () => coordinator.requestTask("local"),
         onError: (error) => rejectRun?.(error),
         runTask: async (assignment) => {
-            sequence++;
-            const account = accountPartitions.acquire();
-            const slot =
-                slotCount > 0 ? slots[(sequence - 1) % slotCount] : null;
+            // Forge brings its own EVM: no warm slot, no funded partition.
+            const needsChain = requiresChainSlot(assignment.task);
+            let account = null;
+            let slot = null;
+            if (needsChain) {
+                sequence++;
+                account = accountPartitions.acquire();
+                slot = slotCount > 0 ? slots[(sequence - 1) % slotCount] : null;
+            }
             logging.admission({
                 seq: assignment.seq,
                 total: tasks.length,
-                where: slot ? `slot ${slot.id}/${slotCount}` : "in-process",
+                where: slot
+                    ? `slot ${slot.id}/${slotCount}`
+                    : needsChain
+                      ? "in-process"
+                      : "forge",
                 running: scheduler.running,
                 concurrencyCap,
-                acct: account,
+                acct: needsChain ? account : "-",
                 cpuUtil: resources.cpuUtil,
                 targetLoad,
                 occupiedGb: resources.occupiedGb,
@@ -122,18 +132,20 @@ async function runScheduler({
                 attempt = await runTask(
                     process.execPath,
                     [HARDHAT_CLI, ...assignment.task.args],
-                    {
-                        ...baseEnv,
-                        ...buildSlotEnv(
-                            slot,
-                            accountPartitionFor(slot, account)
-                        )
-                    },
+                    needsChain
+                        ? {
+                              ...baseEnv,
+                              ...buildSlotEnv(
+                                  slot,
+                                  accountPartitionFor(slot, account)
+                              )
+                          }
+                        : { ...baseEnv },
                     assignment.task.label,
                     logging.getLogPath(logDir, assignment.task.logName)
                 );
             } finally {
-                accountPartitions.release(account);
+                if (account !== null) accountPartitions.release(account);
             }
             const result = coordinator.completeAttempt("local", {
                 ...attempt,

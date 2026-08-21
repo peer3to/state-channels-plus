@@ -86,6 +86,45 @@ Compile the contracts and run tests
 yarn testc
 ```
 
+### Foundry tests
+
+Foundry test contracts are discovered alongside the Mocha tests and scheduled as
+ordinary tasks, one task per test contract. A contract counts as a test contract
+when it declares a `test`, `invariant`, or `statefulFuzz` function, so harness
+and helper contracts sharing a file are left out.
+
+```shell
+yarn test:parallel --forge-only     # only the forge tier
+yarn test:parallel --no-forge       # only the Mocha tier
+yarn test:parallel --forge-threads 2
+```
+
+Each forge task runs on a single thread. `forge test` otherwise sizes its thread
+pool from the logical core count, which inside a CPU-limited container is still
+the host's count, so unpinned tasks oversubscribe the host. The runner already
+parallelizes across tasks. `--e2e-only` selects the Mocha end-to-end tier and
+drops the forge tier with it.
+
+Forge tasks need no Hardhat node, so they take neither a warm slot nor a funded
+account partition. Local runs build the contracts once before scheduling;
+distributed runs rely on the worker's prepare script for that.
+
+Forge tasks run through the Hardhat CLI like every other task. A forge task's
+arguments invoke the `forge-test` Hardhat task in `tasks/forgeTest.ts`, which
+shells out to `forge test --match-contract <contract> --threads <count>`,
+streams its output through, and passes its exit code on. It does not depend on
+the compile task, so no task recompiles.
+
+The indirection is what makes the tier work on a distributed worker: a worker
+executes tasks with its own copy of the runner, taken from the checkout that
+started `yarn test:parallel:server`, while only the project sources are synced
+to it. `hardhat.config.ts` is a synced project source, so a task registered
+there reaches every worker without any worker-side update.
+
+```shell
+yarn hardhat forge-test --match-contract '^UtilityFacetTest$'
+```
+
 ### Distributed parallel tests
 
 The worker and orchestrator can run on different devices. They do not need a
