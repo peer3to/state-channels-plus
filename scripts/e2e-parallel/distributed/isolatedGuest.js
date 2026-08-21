@@ -17,6 +17,7 @@ const {
     inspectWorkspace,
     markPrepared,
     removeDeletedFiles,
+    resolveRunnerRepositoryRoot,
     resolveWorkspaceFile,
     validateWorkspaceManifestPaths
 } = require("./workspaceCache");
@@ -185,6 +186,7 @@ async function completeSource(payload) {
         cache.workspace,
         manifest.rootProjectPath
     );
+    offer.runnerRoot = resolveRunnerRepositoryRoot(cache.workspace, manifest);
     send("PREPARED", {
         reused: cache.prepared && !cache.changed.length,
         projectRoot: manifest.rootProjectPath
@@ -227,6 +229,7 @@ function startWorker(config) {
             PATH: process.env.PATH,
             HOME: path.join(root, "home"),
             NODE_PATH: [
+                path.join(offer.runnerRoot, "node_modules"),
                 path.join(offer.projectRoot, "node_modules"),
                 process.env.NODE_PATH
             ]

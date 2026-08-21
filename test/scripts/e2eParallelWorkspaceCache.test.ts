@@ -14,6 +14,7 @@ const {
     removeDeletedFiles,
     commitSourceManifest,
     markPrepared,
+    resolveRunnerRepositoryRoot,
     validateWorkspaceManifestPaths
 } = require("../../scripts/e2e-parallel/distributed/workspaceCache.js");
 
@@ -63,6 +64,23 @@ describe("distributed workspace cache", function () {
             changed: ["repo/a.ts", "repo/new.ts"],
             deleted: ["repo/old.ts"]
         });
+    });
+
+    it("resolves linked runner dependencies separately from the consumer project", function () {
+        const workspace = path.join(os.tmpdir(), "distributed-workspace");
+        const manifest = {
+            rootProjectPath: "poker-contracts",
+            runnerEntry:
+                "state-channels-plus/scripts/e2e-parallel/distributed/worker.js",
+            repositories: [
+                { path: "state-channels-plus" },
+                { path: "poker-contracts" }
+            ]
+        };
+
+        expect(resolveRunnerRepositoryRoot(workspace, manifest)).to.equal(
+            path.join(workspace, "state-channels-plus")
+        );
     });
 
     it("derives different environment keys for identical source from two orchestrators", function () {

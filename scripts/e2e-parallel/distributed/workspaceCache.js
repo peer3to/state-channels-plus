@@ -311,6 +311,21 @@ function resolveWorkspaceFile(workspaceRoot, relative) {
     });
 }
 
+function resolveRunnerRepositoryRoot(workspaceRoot, manifest) {
+    const runnerRepository = manifest.repositories.find(
+        (repository) =>
+            manifest.runnerEntry ===
+            path.posix.join(
+                repository.path,
+                "scripts/e2e-parallel/distributed/worker.js"
+            )
+    );
+    if (!runnerRepository) {
+        throw new Error("Distributed runner repository is missing");
+    }
+    return resolveWorkspaceFile(workspaceRoot, runnerRepository.path);
+}
+
 function validateWorkspaceManifestPaths(workspaceRoot, manifest) {
     if (
         !manifest ||
@@ -385,6 +400,7 @@ module.exports = {
     diffSourceFiles,
     inspectWorkspace,
     resolveWorkspaceFile,
+    resolveRunnerRepositoryRoot,
     validateWorkspaceManifestPaths,
     removeDeletedFiles,
     commitSourceManifest,
