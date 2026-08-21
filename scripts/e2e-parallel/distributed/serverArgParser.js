@@ -24,6 +24,7 @@ const DEFAULTS = {
     executionBackend: "docker",
     runnerImage: process.env.SCP_TEST_RUNNER_IMAGE,
     allowUnlistedOrchestrators: true,
+    authorizationPolicyProvided: false,
     authorizedPublicKeys: [],
     adminPublicKeys: [],
     cpuLimit: Math.max(0.25, os.cpus().length - 1),
@@ -83,6 +84,12 @@ function parseServerArgs(argv, env = process.env) {
         }
         if (arg === "--deny-unlisted-orchestrators") {
             result.allowUnlistedOrchestrators = false;
+            result.authorizationPolicyProvided = true;
+            continue;
+        }
+        if (arg === "--allow-unlisted-orchestrators") {
+            result.allowUnlistedOrchestrators = true;
+            result.authorizationPolicyProvided = true;
             continue;
         }
         const [flag, inline] = arg.split(/=(.*)/s);

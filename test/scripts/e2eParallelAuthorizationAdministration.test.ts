@@ -8,7 +8,10 @@ import {
     LeasePoolHarness,
     startLeaseWorkerServer
 } from "../fixtures/distributed/leasePool";
-import { createLocalDhtNetwork } from "../fixtures/distributed/testTransport";
+import {
+    createLocalDhtNetwork,
+    TEST_DISTRIBUTED_CONNECTION_TIMEOUT_MS
+} from "../fixtures/distributed/testTransport";
 
 const {
     AuthorizationStore
@@ -80,12 +83,13 @@ describe("distributed authorization administration", function () {
             const ordinary = "c".repeat(64);
             const store = new AuthorizationStore(root, {
                 adminPublicKeys: ["a".repeat(64)],
-                authorizedPublicKeys: [ordinary]
+                authorizedPublicKeys: [ordinary],
+                allowUnlistedOrchestrators: false
             });
-            const activeAdmission = store.authorize(ordinary, false);
+            const activeAdmission = store.authorize(ordinary);
             store.remove(ordinary);
             expect(activeAdmission.accepted).to.equal(true);
-            expect(store.authorize(ordinary, false).accepted).to.equal(false);
+            expect(store.authorize(ordinary).accepted).to.equal(false);
         } finally {
             fs.rmSync(root, { recursive: true, force: true });
         }
@@ -124,6 +128,29 @@ describe("distributed authorization administration", function () {
                 adminPublicKeys: [admin]
             });
             expect(() => store.remove(admin)).to.throw("final admin");
+        } finally {
+            fs.rmSync(root, { recursive: true, force: true });
+        }
+    });
+
+    it("persists public-key authorization policy changes", function () {
+        const root = fs.mkdtempSync(
+            path.join(os.tmpdir(), "authorization-policy-")
+        );
+        try {
+            const store = new AuthorizationStore(root, {
+                adminPublicKeys: ["a".repeat(64)]
+            });
+            expect(store.policy()).to.deep.equal({
+                publicKeyAuthorizationRequired: false
+            });
+            store.setPublicKeyAuthorizationRequired(true);
+            expect(new AuthorizationStore(root).policy()).to.deep.equal({
+                publicKeyAuthorizationRequired: true
+            });
+            expect(
+                new AuthorizationStore(root).authorize("b".repeat(64)).accepted
+            ).to.equal(false);
         } finally {
             fs.rmSync(root, { recursive: true, force: true });
         }
@@ -203,6 +230,122 @@ describe("distributed authorization administration", function () {
         ]);
         expect(parsed.worker).to.equal(undefined);
         expect(parsed.publicKey).to.equal(publicKey);
+    });
+
+    it("parses pool-wide public-key authorization policy changes", function () {
+        const enabled = parseAdminArgs([
+            "node",
+            "distributedAdmin.js",
+            "authorization-policy-set",
+            "--require-public-key",
+            "on"
+        ]);
+        expect(enabled).to.include({
+            command: "authorization-policy-set",
+            publicKeyAuthorizationRequired: true
+        });
+        expect(enabled.worker).to.equal(undefined);
+        expect(() =>
+            parseAdminArgs([
+                "node",
+                "distributedAdmin.js",
+                "authorization-policy-set",
+                "--require-public-key",
+                "sometimes"
+            ])
+        ).to.throw("must be on or off");
+    });
+
+    it("sets and reports public-key authorization policy on every discovered worker", async function () {
+        const root = fs.mkdtempSync(
+            path.join(os.tmpdir(), "authorization-policy-client-")
+        );
+        const network = await createLocalDhtNetwork();
+        const poolSecret = `policy-client-${process.pid}-${Date.now()}`;
+        const adminKeyPair = loadOrchestratorKeyPair(path.join(root, "admin"));
+        const adminPublicKey = adminKeyPair.publicKey.toString("hex");
+        const firstRoot = path.join(root, "worker-one");
+        const secondRoot = path.join(root, "worker-two");
+        const first = await startLeaseWorkerServer({
+            dht: network.createNode(),
+            name: "worker-policy-one",
+            poolSecret,
+            workRoot: firstRoot,
+            adminPublicKeys: [adminPublicKey],
+            allowUnlistedOrchestrators: true
+        });
+        const second = await startLeaseWorkerServer({
+            dht: network.createNode(),
+            name: "worker-policy-two",
+            poolSecret,
+            workRoot: secondRoot,
+            adminPublicKeys: [adminPublicKey],
+            allowUnlistedOrchestrators: true
+        });
+        try {
+            const changed = await runAdmin(
+                {
+                    command: "authorization-policy-set",
+                    stateDir: path.join(root, "admin"),
+                    discoveryTimeoutMs: TEST_DISTRIBUTED_CONNECTION_TIMEOUT_MS,
+                    publicKeyAuthorizationRequired: true,
+                    role: "orchestrator",
+                    note: "",
+                    poolSecret,
+                    keyPair: adminKeyPair
+                },
+                { dht: network.createNode() }
+            );
+            expect(changed.results).to.have.length(2);
+            expect(
+                changed.results.every(
+                    (entry: {
+                        accepted: boolean;
+                        authorizationPolicy: {
+                            publicKeyAuthorizationRequired: boolean;
+                        };
+                    }) =>
+                        entry.accepted &&
+                        entry.authorizationPolicy.publicKeyAuthorizationRequired
+                )
+            ).to.equal(true);
+            expect(new AuthorizationStore(firstRoot).policy()).to.deep.equal({
+                publicKeyAuthorizationRequired: true
+            });
+            expect(new AuthorizationStore(secondRoot).policy()).to.deep.equal({
+                publicKeyAuthorizationRequired: true
+            });
+
+            const listed = await runAdmin(
+                {
+                    command: "workers",
+                    stateDir: path.join(root, "admin"),
+                    discoveryTimeoutMs: TEST_DISTRIBUTED_CONNECTION_TIMEOUT_MS,
+                    role: "orchestrator",
+                    note: "",
+                    poolSecret,
+                    keyPair: adminKeyPair
+                },
+                { dht: network.createNode() }
+            );
+            expect(listed.workers).to.have.length(2);
+            expect(
+                listed.workers.every(
+                    (worker: {
+                        authorizationPolicy: {
+                            publicKeyAuthorizationRequired: boolean;
+                        };
+                    }) =>
+                        worker.authorizationPolicy
+                            .publicKeyAuthorizationRequired
+                )
+            ).to.equal(true);
+        } finally {
+            await first.shutdown();
+            await second.shutdown();
+            await network.close();
+            fs.rmSync(root, { recursive: true, force: true });
+        }
     });
 
     it("uses the persistent admin identity to add an admin key over worker discovery", async function () {

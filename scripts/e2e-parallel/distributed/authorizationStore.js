@@ -30,7 +30,9 @@ class AuthorizationStore {
         this.file = path.join(this.root, "authorization.json");
         fs.mkdirSync(this.root, { recursive: true, mode: 0o700 });
         this.entries = new Map();
-        this.load();
+        this.allowUnlistedOrchestrators =
+            bootstrap.allowUnlistedOrchestrators ?? true;
+        const loadedVersion = this.load();
         if (!this.entries.size) {
             for (const publicKey of bootstrap.authorizedPublicKeys || []) {
                 this.entries.set(assertPublicKey(publicKey), {
@@ -45,14 +47,25 @@ class AuthorizationStore {
                 });
             }
             this.persist();
+        } else if (loadedVersion === 1) {
+            this.persist();
         }
     }
 
     load() {
         if (!fs.existsSync(this.file)) return;
         const parsed = JSON.parse(fs.readFileSync(this.file, "utf8"));
-        if (parsed.version !== 1 || !Array.isArray(parsed.entries)) {
+        if (
+            ![1, 2].includes(parsed.version) ||
+            !Array.isArray(parsed.entries)
+        ) {
             throw new Error("Unsupported authorization store");
+        }
+        if (parsed.version === 2) {
+            if (typeof parsed.allowUnlistedOrchestrators !== "boolean") {
+                throw new Error("Invalid authorization policy");
+            }
+            this.allowUnlistedOrchestrators = parsed.allowUnlistedOrchestrators;
         }
         for (const entry of parsed.entries) {
             const publicKey = assertPublicKey(entry.publicKey);
@@ -64,6 +77,7 @@ class AuthorizationStore {
                 note: validateNote(entry.note)
             });
         }
+        return parsed.version;
     }
 
     persist() {
@@ -75,20 +89,43 @@ class AuthorizationStore {
             );
         fs.writeFileSync(
             temporary,
-            JSON.stringify({ version: 1, entries }, null, 2),
+            JSON.stringify(
+                {
+                    version: 2,
+                    allowUnlistedOrchestrators: this.allowUnlistedOrchestrators,
+                    entries
+                },
+                null,
+                2
+            ),
             { mode: 0o600 }
         );
         fs.renameSync(temporary, this.file);
         fs.chmodSync(this.file, 0o600);
     }
 
-    authorize(publicKey, allowUnlistedOrchestrators) {
+    authorize(publicKey) {
         const key = assertPublicKey(publicKey);
         const entry = this.entries.get(key);
         if (entry) return { accepted: true, mode: "allowlist", ...entry };
-        return allowUnlistedOrchestrators
+        return this.allowUnlistedOrchestrators
             ? { accepted: true, mode: "shared-secret-migration", role: null }
             : { accepted: false, mode: "allowlist-required", role: null };
+    }
+
+    policy() {
+        return {
+            publicKeyAuthorizationRequired: !this.allowUnlistedOrchestrators
+        };
+    }
+
+    setPublicKeyAuthorizationRequired(required) {
+        if (typeof required !== "boolean") {
+            throw new Error("Public-key authorization policy must be boolean");
+        }
+        this.allowUnlistedOrchestrators = !required;
+        this.persist();
+        return this.policy();
     }
 
     isAdmin(publicKey) {

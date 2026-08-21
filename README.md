@@ -225,10 +225,10 @@ transport public key. Start migration with unlisted orchestrators allowed (the
 default). Print the persistent orchestrator public key with
 `yarn distributed:identity`, then bootstrap it on a new worker by passing
 that key to the worker server's repeatable `--admin-key` option. Admin
-list/add/remove operations apply to every worker discovered before the deadline
-unless `--worker` selects one verified worker identity. Changes apply only to
-future connection admission. A removed identity keeps its current lease but
-cannot reconnect. Migration admissions record the full unlisted public
+list/add/remove and policy operations apply to every worker discovered before
+the deadline unless `--worker` selects one verified worker identity. Changes
+apply only to future connection admission. A removed identity keeps its current
+lease but cannot reconnect. Migration admissions record the full unlisted public
 transport key in the host audit log so an operator can copy it into the
 allowlist; ordinary allowlisted admissions record only the fingerprint.
 
@@ -245,6 +245,10 @@ yarn distributed:admin authorization-add --discovery-timeout 10000 \
   --public-key <admin-public-key> --role admin --note "backup operator"
 yarn distributed:admin authorization-remove --discovery-timeout 10000 \
   --public-key <public-key>
+yarn distributed:admin authorization-policy-set --discovery-timeout 10000 \
+  --require-public-key on
+yarn distributed:admin authorization-policy-set --discovery-timeout 10000 \
+  --require-public-key off
 ```
 
 Omitting `--worker` is the pool-wide form: the command waits for the discovery
@@ -253,13 +257,18 @@ pass `--worker <worker-public-key>`, using the full verified identity returned
 by `workers`, not its short log fingerprint. These commands use
 `SCP_TEST_POOL_SECRET` from the local `.env` and the same
 `temp/distributed-orchestrator` identity as normal distributed runs.
+The `workers` result includes `authorizationPolicy.publicKeyAuthorizationRequired`
+for every discovered worker.
 
 The shared secret is always required for discovery and mutual authentication.
-Without `--deny-unlisted-orchestrators`, any identity that proves knowledge of
-that secret is admitted through migration mode. With the flag, the worker also
-requires the authenticated orchestrator public key to be in its authorization
-store. Bootstrap an admin and add every expected orchestrator before enabling
-strict admission.
+On a new worker, any identity that proves knowledge of that secret is admitted
+through migration mode. `authorization-policy-set --require-public-key on`
+requires the authenticated orchestrator public key to be in the authorization
+store; `off` restores migration admission. The setting is persisted under the
+worker's host state and survives restarts. The startup flags
+`--deny-unlisted-orchestrators` and `--allow-unlisted-orchestrators` explicitly
+override the persisted setting. Bootstrap an admin and add every expected
+orchestrator before enabling strict admission.
 
 Inspect host-only audit state without entering a guest:
 

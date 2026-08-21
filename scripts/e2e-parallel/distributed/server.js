@@ -78,9 +78,16 @@ function acknowledgeLoglessAttempt(connection, requestId, logTransferred) {
 }
 
 async function main(options = {}) {
-    const config = Object.keys(options).length
+    const programmaticOptions = Object.keys(options).length > 0;
+    const config = programmaticOptions
         ? { ...DEFAULTS, ...options }
         : parseServerArgs(process.argv);
+    const authorizationPolicyProvided = programmaticOptions
+        ? Object.prototype.hasOwnProperty.call(
+              options,
+              "allowUnlistedOrchestrators"
+          )
+        : config.authorizationPolicyProvided;
     if (
         config.allowSharedHost &&
         !config.workRootProvided &&
@@ -110,8 +117,14 @@ async function main(options = {}) {
     const hostLock = acquireHostLock(config);
     const authorization = new AuthorizationStore(config.workRoot, {
         authorizedPublicKeys: config.authorizedPublicKeys,
-        adminPublicKeys: config.adminPublicKeys
+        adminPublicKeys: config.adminPublicKeys,
+        allowUnlistedOrchestrators: config.allowUnlistedOrchestrators
     });
+    if (authorizationPolicyProvided) {
+        authorization.setPublicKeyAuthorizationRequired(
+            !config.allowUnlistedOrchestrators
+        );
+    }
     const audit = new WorkerAuditLog(config.workRoot);
     const environmentCache = new EnvironmentCache(config.workRoot, config);
     const environmentManager = await IsolatedEnvironmentManager.create({
@@ -153,7 +166,11 @@ async function main(options = {}) {
         onGrant(connection) {
             connection.peer
                 .send("LEASE_GRANTED", {
-                    capabilities: capabilities(config, environmentManager)
+                    capabilities: capabilities(
+                        config,
+                        environmentManager,
+                        authorization
+                    )
                 })
                 .catch(() => {});
         },
@@ -228,15 +245,25 @@ async function main(options = {}) {
                     message.header.note || "",
                     message.header.role || "orchestrator"
                 );
-            } else {
+            } else if (message.kind === "AUTHORIZATION_REMOVE") {
                 response = authorization.remove(message.header.publicKey);
+            } else {
+                response = {
+                    authorizationPolicy:
+                        authorization.setPublicKeyAuthorizationRequired(
+                            message.header.publicKeyAuthorizationRequired
+                        )
+                };
             }
             accepted = true;
             await connection.peer.send("AUTHORIZATION_RESULT", {
                 requestId,
                 accepted,
                 message: "ok",
-                entries: response.entries || [response]
+                entries:
+                    response.entries ||
+                    (response.authorizationPolicy ? [] : [response]),
+                authorizationPolicy: response.authorizationPolicy
             });
         } catch (error) {
             decisionReason = error.message;
@@ -260,6 +287,10 @@ async function main(options = {}) {
             targetRole:
                 message.kind === "AUTHORIZATION_ADD"
                     ? message.header.role || "orchestrator"
+                    : undefined,
+            authorizationPolicy:
+                message.kind === "AUTHORIZATION_POLICY_SET"
+                    ? authorization.policy()
                     : undefined,
             reason: decisionReason
         });
@@ -384,10 +415,7 @@ async function main(options = {}) {
             );
             const authenticatedKey =
                 authentication.remotePublicKey.toString("hex");
-            const admission = authorization.authorize(
-                authenticatedKey,
-                config.allowUnlistedOrchestrators
-            );
+            const admission = authorization.authorize(authenticatedKey);
             audit.append({
                 action: "connection",
                 accepted: admission.accepted,
@@ -438,7 +466,11 @@ async function main(options = {}) {
             }
             await peer.send("SERVER_READY", {
                 name: config.name,
-                capabilities: capabilities(config, environmentManager)
+                capabilities: capabilities(
+                    config,
+                    environmentManager,
+                    authorization
+                )
             });
             console.log("Orchestrator connected and authenticated");
             peer.on("message", (message) => {
@@ -564,7 +596,8 @@ async function main(options = {}) {
             if (
                 message.kind === "AUTHORIZATION_LIST" ||
                 message.kind === "AUTHORIZATION_ADD" ||
-                message.kind === "AUTHORIZATION_REMOVE"
+                message.kind === "AUTHORIZATION_REMOVE" ||
+                message.kind === "AUTHORIZATION_POLICY_SET"
             ) {
                 await handleAuthorizationAdmin(connection, message);
                 return;
@@ -1288,7 +1321,7 @@ async function main(options = {}) {
     return { pool, manager, environmentManager, shutdown };
 }
 
-function capabilities(config, environmentManager) {
+function capabilities(config, environmentManager, authorization) {
     const runtime = environmentManager?.capabilities() || {
         backend: "unresolved",
         isolation: null
@@ -1300,13 +1333,17 @@ function capabilities(config, environmentManager) {
         memoryGb: config.memLimitGb,
         heartbeatTimeoutMs: config.heartbeatTimeoutMs,
         isolatedRuntime: runtime,
+        authorizationPolicy: authorization?.policy() || {
+            publicKeyAuthorizationRequired: !config.allowUnlistedOrchestrators
+        },
         extensions: {
             executionProfile: true,
             resourceAllocationDetails: true,
             resourceLimitDetails: true,
             isolatedRuntimeMetadata: true,
             authorizationAdministration: true,
-            authorizationRoleManagement: true
+            authorizationRoleManagement: true,
+            authorizationPolicyManagement: true
         }
     };
 }

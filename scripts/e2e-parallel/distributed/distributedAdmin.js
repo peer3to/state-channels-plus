@@ -16,7 +16,8 @@ const COMMANDS = new Set([
     "workers",
     "authorization-list",
     "authorization-add",
-    "authorization-remove"
+    "authorization-remove",
+    "authorization-policy-set"
 ]);
 
 function usage() {
@@ -27,12 +28,14 @@ Commands:
   authorization-list              List authorization entries on one worker
   authorization-add               Add an orchestrator or admin key
   authorization-remove            Remove an orchestrator or admin key
+  authorization-policy-set        Require or relax public-key authorization
 
 Options:
   --worker PUBLIC_KEY              Target one worker (default: all discovered workers)
   --public-key PUBLIC_KEY          Key to add or remove
   --role orchestrator|admin        Role to add (default: orchestrator)
   --note TEXT                      Bounded operator note for an added key
+  --require-public-key on|off      Policy value for authorization-policy-set
   --state-dir PATH                 Persistent orchestrator identity directory
   --discovery-timeout MS           Discovery deadline (default: 30000)
   -h, --help                       Show this help`;
@@ -58,6 +61,7 @@ function parseAdminArgs(argv) {
         ["--public-key", "publicKey"],
         ["--role", "role"],
         ["--note", "note"],
+        ["--require-public-key", "publicKeyAuthorizationRequired"],
         ["--state-dir", "stateDir"],
         ["--discovery-timeout", "discoveryTimeoutMs"]
     ]);
@@ -102,6 +106,24 @@ function parseAdminArgs(argv) {
             "--role and --note are valid only for authorization-add"
         );
     }
+    if (options.command === "authorization-policy-set") {
+        const values = new Map([
+            ["on", true],
+            ["true", true],
+            ["off", false],
+            ["false", false]
+        ]);
+        if (!values.has(options.publicKeyAuthorizationRequired)) {
+            throw new Error("--require-public-key must be on or off");
+        }
+        options.publicKeyAuthorizationRequired = values.get(
+            options.publicKeyAuthorizationRequired
+        );
+    } else if (options.publicKeyAuthorizationRequired !== undefined) {
+        throw new Error(
+            "--require-public-key is valid only for authorization-policy-set"
+        );
+    }
     return options;
 }
 
@@ -124,6 +146,17 @@ function authorizationRequest(options, workerId) {
         return {
             kind: "AUTHORIZATION_ADD",
             header
+        };
+    }
+    if (options.command === "authorization-policy-set") {
+        return {
+            kind: "AUTHORIZATION_POLICY_SET",
+            header: {
+                targetWorker: workerId,
+                requestId,
+                publicKeyAuthorizationRequired:
+                    options.publicKeyAuthorizationRequired
+            }
         };
     }
     return {
@@ -236,6 +269,8 @@ async function runAdmin(options, dependencies = {}) {
             const worker = {
                 name: ready.header.name,
                 publicKey: workerId,
+                authorizationPolicy:
+                    ready.header.capabilities.authorizationPolicy,
                 capabilities: ready.header.capabilities
             };
             workers.set(workerId, worker);
@@ -263,6 +298,15 @@ async function runAdmin(options, dependencies = {}) {
                     `Worker ${ready.header.name} does not support admin-role changes`
                 );
             }
+            if (
+                options.command === "authorization-policy-set" &&
+                !ready.header.capabilities.extensions
+                    ?.authorizationPolicyManagement
+            ) {
+                throw new Error(
+                    `Worker ${ready.header.name} does not support authorization policy management`
+                );
+            }
             const request = authorizationRequest(options, workerId);
             const responsePromise = waitForMessage(
                 peer,
@@ -282,6 +326,10 @@ async function runAdmin(options, dependencies = {}) {
                 accepted: true,
                 entries: response.header.entries
             };
+            if (response.header.authorizationPolicy) {
+                outcome.authorizationPolicy =
+                    response.header.authorizationPolicy;
+            }
             outcomes.set(workerId, outcome);
             if (options.worker) finish(null, outcome);
             else peer.close("distributed admin operation completed");

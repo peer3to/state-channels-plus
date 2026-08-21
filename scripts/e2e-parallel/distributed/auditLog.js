@@ -5,6 +5,7 @@ const ALLOWED_FIELDS = new Set([
     "action",
     "accepted",
     "authorizationMode",
+    "authorizationPolicy",
     "backend",
     "cacheBudgets",
     "cacheBytes",
@@ -77,6 +78,16 @@ function sanitizeRecord(record) {
             key === "cacheBudgets"
         ) {
             safe[key] = sanitizeNumericSummary(value);
+        } else if (
+            value &&
+            typeof value === "object" &&
+            key === "authorizationPolicy" &&
+            typeof value.publicKeyAuthorizationRequired === "boolean"
+        ) {
+            safe[key] = {
+                publicKeyAuthorizationRequired:
+                    value.publicKeyAuthorizationRequired
+            };
         }
     }
     return safe;

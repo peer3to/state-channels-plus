@@ -49,6 +49,7 @@ const MESSAGE_KINDS = new Set([
     "AUTHORIZATION_LIST",
     "AUTHORIZATION_ADD",
     "AUTHORIZATION_REMOVE",
+    "AUTHORIZATION_POLICY_SET",
     "AUTHORIZATION_RESULT"
 ]);
 const HEADER_FIELDS = {
@@ -131,7 +132,18 @@ const HEADER_FIELDS = {
         "role"
     ],
     AUTHORIZATION_REMOVE: ["targetWorker", "requestId", "publicKey"],
-    AUTHORIZATION_RESULT: ["requestId", "accepted", "message", "entries"]
+    AUTHORIZATION_POLICY_SET: [
+        "targetWorker",
+        "requestId",
+        "publicKeyAuthorizationRequired"
+    ],
+    AUTHORIZATION_RESULT: [
+        "requestId",
+        "accepted",
+        "message",
+        "entries",
+        "authorizationPolicy"
+    ]
 };
 
 function validateHeader(kind, header) {

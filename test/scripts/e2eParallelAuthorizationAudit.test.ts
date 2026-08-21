@@ -25,16 +25,17 @@ describe("distributed authorization and host audit", function () {
             const store = new AuthorizationStore(root, {
                 authorizedPublicKeys: [allowed]
             });
-            expect(store.authorize(allowed, true)).to.deep.include({
+            expect(store.authorize(allowed)).to.deep.include({
                 accepted: true,
                 mode: "allowlist",
                 role: "orchestrator"
             });
-            expect(store.authorize(unlisted, true)).to.deep.include({
+            expect(store.authorize(unlisted)).to.deep.include({
                 accepted: true,
                 mode: "shared-secret-migration"
             });
-            expect(store.authorize(unlisted, false)).to.deep.include({
+            store.setPublicKeyAuthorizationRequired(true);
+            expect(store.authorize(unlisted)).to.deep.include({
                 accepted: false,
                 mode: "allowlist-required"
             });
@@ -104,6 +105,10 @@ describe("distributed authorization and host audit", function () {
             sanitizeRecord({
                 action: "lease-request",
                 accepted: false,
+                authorizationPolicy: {
+                    publicKeyAuthorizationRequired: true,
+                    injectedSecret: "never"
+                },
                 requestedProfile: { cpu: 8, injectedSecret: "never" },
                 resolvedProfile: { cpu: 4 },
                 privateKey: "never",
@@ -112,6 +117,9 @@ describe("distributed authorization and host audit", function () {
         ).to.deep.equal({
             action: "lease-request",
             accepted: false,
+            authorizationPolicy: {
+                publicKeyAuthorizationRequired: true
+            },
             requestedProfile: { cpu: 8 },
             resolvedProfile: { cpu: 4 }
         });

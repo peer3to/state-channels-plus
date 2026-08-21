@@ -76,6 +76,27 @@ describe("distributed worker scheduler", function () {
         ).to.throw("either docker or unsafe-host");
     });
 
+    it("marks explicit authorization-policy startup overrides", function () {
+        expect(
+            parseServerArgs(
+                ["node", "server.js", "--deny-unlisted-orchestrators"],
+                { SCP_TEST_WORKER_NAME: "server-1" }
+            )
+        ).to.include({
+            allowUnlistedOrchestrators: false,
+            authorizationPolicyProvided: true
+        });
+        expect(
+            parseServerArgs(
+                ["node", "server.js", "--allow-unlisted-orchestrators"],
+                { SCP_TEST_WORKER_NAME: "server-1" }
+            )
+        ).to.include({
+            allowUnlistedOrchestrators: true,
+            authorizationPolicyProvided: true
+        });
+    });
+
     it("requires a unique work root when host sharing is enabled", function () {
         expect(() =>
             parseServerArgs(["node", "server.js", "--allow-shared-host"], {
