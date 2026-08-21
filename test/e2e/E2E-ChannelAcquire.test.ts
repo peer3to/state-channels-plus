@@ -189,8 +189,18 @@ describe("E2E: ChannelAcquire", function () {
             configOverrides: {
                 LOBBY_APP_NAMESPACE: appNamespace
             },
+            // This test's runtime is dominated by ONE protocol wait, not by
+            // setup: the acquirer goes PENDING_PARTICIPANT on broadcast (before
+            // its joinChannel tx is even sent) and stays there until a block
+            // that includes it is produced. Nobody transitions here, so it
+            // waits out the full height-0 writer window,
+            // `p2pTime + agreementTime + chainFallbackTime +
+            // evidenceTime` (firstBlockGrace = evidenceTime at height 0).
+            // agreementTime is therefore held at MIN_TEST_TIME_CONFIG's 3
+            // rather than the 10 the OPEN tests below use - the measured
+            // difference in `acquireChannel` alone is 19.8s -> 12.8s.
             timeConfig: {
-                agreementTime: 10,
+                agreementTime: 3,
                 p2pTime: 2,
                 chainFallbackTime: 2,
                 evidenceTime: 2
