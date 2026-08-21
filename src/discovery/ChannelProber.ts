@@ -112,6 +112,15 @@ export type ChannelProberSigner = {
             join(topic: Buffer): Promise<void>;
             leave(topic: Buffer): Promise<void>;
         };
+        localRpc: {
+            spectateService: {
+                probeChannel(
+                    peerAddress: string,
+                    channelId: ChannelId,
+                    options?: { timeoutMs?: number }
+                ): Promise<boolean>;
+            };
+        };
         stateManager: {
             events: EventBus;
             getOnChainParticipantUnion(
@@ -152,9 +161,6 @@ export class ChannelProber {
     private readonly timeoutMs: number;
     private readonly rendezvousAttempt: RendezvousAttemptFn;
     private readonly syncAttempt: SyncAttemptFn;
-    // Invariant: at most one candidate is armed (connectToChannel called) at
-    // any moment. Enforced defensively in runSync - see the deviation note.
-    private armed: ChannelId | undefined;
 
     constructor(deps: ChannelProberDeps, options: ChannelProberOptions = {}) {
         this.signer = deps.signer;
@@ -203,27 +209,14 @@ export class ChannelProber {
         };
 
         const queue = [...candidates];
-        for (;;) {
-            const winner = await this.runRendezvousPool(queue, record);
-            if (!winner) return { status: "exhausted", attempts };
-
-            const synced = await this.runSync(
-                winner.channelId,
-                winner.peerAddress,
-                record
-            );
-            if (synced) {
-                return {
-                    status: "usable",
-                    channelId: winner.channelId,
-                    peerAddress: winner.peerAddress,
-                    attempts
-                };
-            }
-            // Sync failed/timed out for the armed candidate - fall through
-            // and resume the rendezvous pool over whatever candidates remain
-            // (the failed one is not requeued; it got its full timeout).
-        }
+        const winner = await this.runRendezvousPool(queue, record);
+        if (!winner) return { status: "exhausted", attempts };
+        return {
+            status: "usable",
+            channelId: winner.channelId,
+            peerAddress: winner.peerAddress,
+            attempts
+        };
     }
 
     /**
@@ -253,26 +246,32 @@ export class ChannelProber {
                 this.timeoutMs,
                 controller.signal
             );
-            controllers.delete(workerId);
+            // NOTE: the controller stays registered until this worker is
+            // fully done (rendezvous AND probe). Dropping it here would make
+            // a sibling that is already probing unreachable by the
+            // abort-siblings loop below, and probe() would then block waiting
+            // for a probe nothing can cancel.
             switch (result.outcome) {
-                case "verified":
-                    if (!winner) {
+                case "verified": {
+                    if (winner) break;
+                    record({ channelId, stage: "rendezvous", outcome: "ok" });
+                    // Probe inline rather than handing back to a serialized
+                    // second phase. probeChannel neither arms the channel nor
+                    // mutates local state, so siblings keep probing
+                    // concurrently and the first candidate to prove itself
+                    // wins outright.
+                    const usable = await this.runSync(
+                        channelId,
+                        result.peerAddress,
+                        controller.signal,
+                        record
+                    );
+                    if (usable && !winner) {
                         winner = { channelId, peerAddress: result.peerAddress };
-                        record({
-                            channelId,
-                            stage: "rendezvous",
-                            outcome: "ok"
-                        });
                         for (const other of controllers.values()) other.abort();
-                    } else {
-                        // A sibling already won this round. This candidate
-                        // still reached a real peer - requeue it instead of
-                        // discarding it, so a later round (should the
-                        // current winner's sync fail) doesn't waste a fresh
-                        // topic join re-proving what we already know.
-                        queue.unshift(channelId);
                     }
                     break;
+                }
                 case "timeout":
                     record({
                         channelId,
@@ -304,6 +303,7 @@ export class ChannelProber {
             active.set(
                 workerId,
                 runOne(workerId, channelId, controller).finally(() => {
+                    controllers.delete(workerId);
                     active.delete(workerId);
                 })
             );
@@ -330,36 +330,26 @@ export class ChannelProber {
     private async runSync(
         channelId: ChannelId,
         peerAddress: Address,
+        signal: AbortSignal,
         record: (attempt: ProbeAttempt) => void
     ): Promise<boolean> {
-        if (this.armed !== undefined) {
-            throw new Error(
-                "ChannelProber: invariant violated - a candidate is already armed"
-            );
+        const result = await this.syncAttempt(
+            channelId,
+            peerAddress,
+            this.timeoutMs,
+            signal
+        );
+        if (result.outcome === "synced") {
+            record({ channelId, stage: "sync", outcome: "ok" });
+            return true;
         }
-        this.armed = channelId;
-        try {
-            const controller = new AbortController();
-            const result = await this.syncAttempt(
-                channelId,
-                peerAddress,
-                this.timeoutMs,
-                controller.signal
-            );
-            if (result.outcome === "synced") {
-                record({ channelId, stage: "sync", outcome: "ok" });
-                return true;
-            }
-            record({
-                channelId,
-                stage: "sync",
-                outcome: result.outcome,
-                reason: result.outcome === "error" ? result.reason : undefined
-            });
-            return false;
-        } finally {
-            this.armed = undefined;
-        }
+        record({
+            channelId,
+            stage: "sync",
+            outcome: result.outcome,
+            reason: result.outcome === "error" ? result.reason : undefined
+        });
+        return false;
     }
 
     // ---- Default (real) seam implementations -----------------------------
@@ -460,23 +450,34 @@ export class ChannelProber {
      * existing spectate/sync path to reach `SYNCED`, bounded by `timeoutMs`
      * and `signal`. Leaves no listener/timer behind on any exit path.
      */
+    /**
+     * Probe-only: asks the verified peer to prove the channel and reports
+     * whether it did. Deliberately does NOT arm the channel (no
+     * connectToChannel, no channelId set on StateManager) - that is what
+     * makes several of these safe to run at once. Arming happens exactly
+     * once, later, when the coordinator commits a join on the winner.
+     */
     private async defaultSyncAttempt(
         channelId: ChannelId,
-        _peerAddress: Address,
+        peerAddress: Address,
         timeoutMs: number,
-        signal: AbortSignal
+        _signal: AbortSignal
     ): Promise<SyncResult> {
         try {
-            await this.signer.connectToChannel(channelId);
+            const usable =
+                await this.signer.p2pManager.localRpc.spectateService.probeChannel(
+                    String(peerAddress),
+                    channelId,
+                    { timeoutMs }
+                );
+            return usable ? { outcome: "synced" } : { outcome: "timeout" };
         } catch (error) {
             return {
                 outcome: "error",
                 reason: error instanceof Error ? error.message : String(error)
             };
         }
-        return this.waitForSyncedOrTimeout(timeoutMs, signal);
     }
-
     private waitForSyncedOrTimeout(
         timeoutMs: number,
         signal: AbortSignal

@@ -89,6 +89,7 @@ function makeSignerDouble(
         getOnChainParticipantUnion?: (
             channelId: ChannelId
         ) => Promise<Address[]>;
+        probeChannel?: (peerAddress: string, channelId: ChannelId) => boolean;
     } = {}
 ): {
     signer: ChannelProberSigner;
@@ -101,6 +102,7 @@ function makeSignerDouble(
     const joins: string[] = [];
     const leaves: string[] = [];
     const connectCalls: ChannelId[] = [];
+    const probeCalls: { peerAddress: string; channelId: string }[] = [];
     const signer: ChannelProberSigner = {
         connectToChannel: async (channelId) => {
             connectCalls.push(channelId);
@@ -115,6 +117,20 @@ function makeSignerDouble(
                 },
                 leave: async (topic) => {
                     leaves.push(topic.toString("hex"));
+                }
+            },
+            localRpc: {
+                spectateService: {
+                    probeChannel: async (peerAddress, channelId) => {
+                        probeCalls.push({
+                            peerAddress,
+                            channelId: String(channelId)
+                        });
+                        return (
+                            overrides.probeChannel?.(peerAddress, channelId) ??
+                            true
+                        );
+                    }
                 }
             },
             stateManager: {
@@ -219,7 +235,7 @@ describe("ChannelProber (component)", function () {
     });
 
     describe("probe() orchestration (injected seams)", function () {
-        it("returns the first usable candidate: a sync failure releases the armed candidate and the pool resumes with the next one", async function () {
+        it("returns a usable candidate: one that fails its probe never wins, and a concurrent candidate that passes does", async function () {
             const candidates: ChannelId[] = ["channel-0", "channel-1"];
             const peerByChannel: Record<string, Address> = {
                 "channel-0": PEER0,
@@ -255,7 +271,9 @@ describe("ChannelProber (component)", function () {
                 expect(String(result.channelId)).to.equal("channel-1");
                 expect(result.peerAddress).to.equal(PEER1);
             }
-            expect(result.attempts).to.deep.equal([
+            // Candidates are probed concurrently now, so the attempt log is
+            // asserted by content rather than by a fixed interleaving.
+            expect(result.attempts).to.have.deep.members([
                 { channelId: "channel-0", stage: "rendezvous", outcome: "ok" },
                 {
                     channelId: "channel-0",
@@ -331,18 +349,27 @@ describe("ChannelProber (component)", function () {
             ]);
         });
 
-        it("enforces the single-armed-candidate invariant across concurrent probe() calls on one instance", async function () {
-            let releaseFirstSync: ((result: SyncResult) => void) | undefined;
+        it("probes concurrent candidates at once and never arms a channel while probing", async function () {
+            // Two candidates, concurrency 2. The first probe is held open;
+            // under the old serialized design nothing else could progress
+            // until it settled. Now the sibling probes and wins while the
+            // first is still in flight.
+            let releaseFirstProbe: ((result: SyncResult) => void) | undefined;
             const rendezvousAttempt: RendezvousAttemptFn = async (
                 channelId
             ) => ({
                 outcome: "verified",
                 peerAddress: String(channelId) === "A" ? PEER0 : PEER1
             });
-            const syncAttempt: SyncAttemptFn = (channelId) => {
+            const syncAttempt: SyncAttemptFn = (channelId, _p, _t, signal) => {
                 if (String(channelId) === "A") {
                     return new Promise<SyncResult>((resolve) => {
-                        releaseFirstSync = resolve;
+                        releaseFirstProbe = resolve;
+                        // Seam contract: settle when the signal aborts. The
+                        // real probe settles via its own timeout.
+                        signal.addEventListener("abort", () =>
+                            resolve({ outcome: "timeout" })
+                        );
                     });
                 }
                 return Promise.resolve<SyncResult>({ outcome: "synced" });
@@ -355,25 +382,23 @@ describe("ChannelProber (component)", function () {
                     logger: createLoggerForTest(),
                     events: double.events
                 },
-                { concurrency: 1, rendezvousAttempt, syncAttempt }
+                { concurrency: 2, rendezvousAttempt, syncAttempt }
             );
 
-            const first = prober.probe(["A"]);
-            await flush();
-            expect(releaseFirstSync).to.not.equal(undefined);
+            const result = await prober.probe(["A", "B"]);
 
-            let caught: unknown;
-            try {
-                await prober.probe(["B"]);
-            } catch (error) {
-                caught = error;
+            // B won without A's probe ever settling.
+            expect(result.status).to.equal("usable");
+            if (result.status === "usable") {
+                expect(String(result.channelId)).to.equal("B");
             }
-            expect(caught).to.be.instanceOf(Error);
-            expect((caught as Error).message).to.match(/already armed/);
+            // A's probe was genuinely in flight when B won - it only
+            // settled because the win aborted it.
+            expect(releaseFirstProbe).to.not.equal(undefined);
 
-            releaseFirstSync!({ outcome: "synced" });
-            const firstResult = await first;
-            expect(firstResult.status).to.equal("usable");
+            // Probing must never arm a channel - that is what makes running
+            // several at once safe. Arming happens once, later, on commit.
+            expect(double.connectCalls).to.deep.equal([]);
         });
     });
 
@@ -424,10 +449,10 @@ describe("ChannelProber (component)", function () {
                 expect(String(result.channelId)).to.equal(String(c1));
                 expect(result.peerAddress).to.equal(PEER1);
             }
-            expect(double.connectCalls.map(String)).to.deep.equal([String(c1)]);
-            // Every joined topic (winner and loser alike) is left again -
-            // arming happens through connectToChannel's own join, not the
-            // rendezvous topic.
+            // Probing never arms a channel, not even the winner - the
+            // coordinator arms it once, later, when it commits the join.
+            expect(double.connectCalls).to.deep.equal([]);
+            // Every joined topic (winner and loser alike) is left again.
             expect(double.joins).to.have.length(2);
             expect(double.leaves.slice().sort()).to.deep.equal(
                 double.joins.slice().sort()

@@ -122,6 +122,56 @@ class SpectateService extends ARpcService<SpectateServiceRpcMethods> {
     }
 
     /**
+     * Probe-only spectate: asks `peerAddress` to prove `channelId` and reports
+     * whether it did, WITHOUT applying anything to local state.
+     *
+     * This is what makes probing several candidates concurrently safe. The
+     * full `sync` path applies the payload to our local EVM and is therefore
+     * channel-scoped - two of those in flight would race the same state. A
+     * probe only does a targeted request/response plus a pure decode, so it
+     * touches no shared mutable state and N may run at once on one instance.
+     *
+     * Deliberately NOT punitive. `sync` blacklists a peer that fails to help,
+     * because there we asked it to fulfil a channel we are joining. Here we
+     * are shopping: a peer that cannot serve a channel we merely asked about
+     * is not misbehaving, it is just not a match - the same reasoning as a
+     * polite lobby decline.
+     */
+    public async probeChannel(
+        peerAddress: string,
+        channelId: ChannelId,
+        options: { timeoutMs?: number } = {}
+    ): Promise<boolean> {
+        const normalizedPeerAddress = getChecksumAddress(peerAddress);
+        const syncRequest: SyncRequest = {
+            channelId,
+            initTime: Clock.getTimeInSeconds(),
+            forkId: undefined,
+            blockHeight: undefined
+        };
+        const timeoutMs =
+            options.timeoutMs ??
+            this.p2pManager.stateManager.timeConfig.agreementTime * 1000;
+
+        try {
+            const { encodedSyncPayload } = await this.remoteRpc.spectateService
+                .onSpectateRequest(syncRequest)
+                .request(normalizedPeerAddress, { timeoutMs });
+            // A peer that answers with bytes that aren't a SyncPayload has not
+            // proved the channel. Decode is pure - nothing is persisted.
+            Codec.decode(encodedSyncPayload, Type.SyncPayload);
+            return true;
+        } catch (error) {
+            this.logger.debug("probeChannel - candidate not usable", {
+                peerAddress: normalizedPeerAddress,
+                channelId,
+                error: error instanceof Error ? error.message : String(error)
+            });
+            return false;
+        }
+    }
+
+    /**
      * Validate and apply a sync payload returned by `onSpectateRequest`. Was the
      * body of the old `onSpectateResponse` endpoint; the request now lives in
      * `sync`'s closure, so the channel is taken from our own `syncRequest`
