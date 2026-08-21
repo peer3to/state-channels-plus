@@ -25,7 +25,7 @@ export type DiscoveryEventMap = {
     ];
     /**
      * `ChannelProber` progress: one entry per candidate per phase
-     * ("rendezvous" | "sync"). `channelId` crosses as its string form (a
+     * ("rendezvous" | "probe"). `channelId` crosses as its string form (a
      * `ChannelId`/`BytesLike` is not itself structured-clone-safe in every
      * representation).
      */

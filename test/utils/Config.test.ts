@@ -82,11 +82,6 @@ describe("config env parsing", () => {
         ]);
     });
 
-    it("defaults LOBBY_MAX_PARALLELISM to 1", () => {
-        const cfg = createConfig({});
-        expect(cfg.LOBBY_MAX_PARALLELISM).to.equal(1);
-    });
-
     it("parses LOBBY_INTENT_HOLD_MS from env (number)", () => {
         process.env.LOBBY_INTENT_HOLD_MS = "1234";
 

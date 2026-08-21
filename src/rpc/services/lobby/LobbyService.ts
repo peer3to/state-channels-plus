@@ -89,10 +89,9 @@ export default class LobbyService extends ARpcService<
      */
     private readonly knownPeers = new Set<string>();
     /**
-     * Local bookkeeping only, mirrors the old LobbyClient's boundChannelId:
-     * set ONLY when we (the acceptor) accept an inbound intent on our own
-     * OPEN ad, cleared on release/expiry. Publishing an OPEN ad never sets
-     * this by itself.
+     * Local bookkeeping only: set ONLY when we (the acceptor) accept an
+     * inbound intent on our own OPEN ad, cleared on release/expiry.
+     * Publishing an OPEN ad never sets this by itself.
      */
     private boundOpenChannelId: string | undefined;
     /**
@@ -236,8 +235,8 @@ export default class LobbyService extends ARpcService<
         const hexTopic = this.topic.toString("hex");
         const topic = this.topic;
         // Withdraw every ad we've published so peers we leave behind don't
-        // keep stale ads visible until TTL. Unlike the old standalone lobby,
-        // leaving this topic does NOT tear down the underlying shared-swarm
+        // keep stale ads visible until TTL. Because the lobby rides the
+        // shared swarm, leaving this topic does NOT tear down the underlying
         // connection (it may still be in use for something else) - there is
         // no "transport closed" signal to drop these on, so we announce the
         // withdrawal ourselves instead.
@@ -699,8 +698,8 @@ export default class LobbyService extends ARpcService<
     }
 
     /**
-     * Connection-scoped freshness (the strongest tier, mirroring the old
-     * LobbyClient's drop-on-disconnect): drops every ad from `peerAddress`
+     * Connection-scoped freshness (the strongest tier): drops every ad
+     * from `peerAddress`
      * once it is no longer reachable. `onDisconnection` (like
      * `handshakeCompleted`) fires for ANY unexpected close on this
      * P2PManager, not just a lobby peer's - re-checking reachability via

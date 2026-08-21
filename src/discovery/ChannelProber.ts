@@ -1,39 +1,32 @@
 import { Buffer } from "buffer";
 
-import { Status } from "@/types";
 import type { Address, ChannelId } from "@/types/types";
 import type { Logger } from "@/utils";
 import { addressesEqual } from "@/utils/address";
 import { config } from "@/utils/config";
 import type { EventBus } from "@/events/EventBus";
 
-// DEVIATION (approved) — one shared SDK/P2P instance, not one per candidate.
-// The original ask was a fixed pool of separate SDK/P2P instances (each
-// owning one direct spectate attempt) so up to `concurrency` candidates could
-// be probed truly in parallel. Running N `p2pSetup` instances in one process
-// is unsafe today: `HolepunchRelay.init()` overwrites a static singleton,
-// `Holepunch.setupSwarm()` strips the swarm's existing "connection" listener
-// (a second instance on a shared swarm steals the first's), and `p2pSetup` ->
-// `createConfig()` mutates a module-level config singleton. One shared
-// Hyperswarm was also explicitly wanted so the same peer dedupes to one
-// physical connection - which argues for one instance, not many, anyway.
+// ONE SHARED INSTANCE, NOT ONE PER CANDIDATE. Probing several candidates at
+// once does not need several SDK/P2P instances. Spectate is a targeted
+// request/response - `onSpectateRequest` carries the channelId in its payload
+// and returns the proof as the RPC response, not as channel broadcast - so
+// asking a peer to prove a channel needs no channel-scoped state, no
+// promotion into the broadcast set, and no second instance. One shared
+// Hyperswarm is also what dedupes a peer to a single physical connection,
+// which argues for one instance rather than many.
 //
-// DEVIATION (approved) — concurrency lives in rendezvous, not in sync. A
+// PROBING NEVER ARMS A CHANNEL, WHICH IS WHY IT PARALLELIZES. A
 // `StateManager` holds exactly one active channel: `channelId`/`status` and
 // the cascaded `disputeManager`/`eventSyncService`/`stateChannelEventListener`
 // scoping are single mutable fields (`StateManager.setChannelId`), and
 // `P2PManager.onHandshakeCompleted` auto-fires `spectateService.sync` keyed
-// off whatever `channelId` happens to be set at that moment. Two candidates
-// can't both be "armed" (connected + syncing) on one instance without racing
-// that state. So probing splits into a PARALLEL, stateless rendezvous phase
-// (join up to `concurrency` candidate topics on the shared swarm, wait for a
-// verified peer - this never touches `StateManager`, which is exactly why it
-// stays safe under fan-out) and a SERIALIZED, stateful sync phase (leave
-// every other joined topic first, then arm exactly one candidate via the
-// existing `connectToChannel` -> wait-for-`SYNCED` path). Do not "optimize"
-// this by arming a channel during rendezvous - `onHandshakeCompleted` only
-// auto-syncs once a channel is armed and OPEN, so staying unarmed during
-// rendezvous is what keeps concurrent topic joins safe.
+// off whatever `channelId` happens to be set at that moment. Anything that
+// arms a channel is therefore single-at-a-time. Probing sidesteps that
+// entirely: `SpectateService.probeChannel` validates a peer's proof WITHOUT
+// applying it, so it is a round-trip plus a pure decode and touches no shared
+// mutable state. Arming happens exactly once, later, when the coordinator
+// commits the join on the winner. Do not "optimize" this by arming during
+// probing - that would reintroduce the serialization this avoids.
 //
 // ATTRIBUTION — hyperswarm leaves `PeerInfo.topics` empty for an inbound
 // connection, so a verified handshake can't be attributed to "the candidate
@@ -43,7 +36,7 @@ import type { EventBus } from "@/events/EventBus";
 // rendezvous'd (`StateManager.getOnChainParticipantUnion`, which takes an
 // explicit `channelId` and never touches the shared instance state).
 
-export type ProbeStage = "rendezvous" | "sync";
+export type ProbeStage = "rendezvous" | "probe";
 
 export type ProbeAttempt = {
     channelId: ChannelId;
@@ -69,8 +62,8 @@ export type RendezvousResult =
     | { outcome: "aborted" }
     | { outcome: "error"; reason: string };
 
-export type SyncResult =
-    | { outcome: "synced" }
+export type ProbeOutcome =
+    | { outcome: "proven" }
     | { outcome: "timeout" }
     | { outcome: "error"; reason: string };
 
@@ -90,23 +83,21 @@ export type RendezvousAttemptFn = (
  * moment - the orchestrator guarantees no rendezvous is in flight while this
  * runs) and wait for the existing spectate/sync path to reach `SYNCED`.
  */
-export type SyncAttemptFn = (
+export type ProbeAttemptFn = (
     channelId: ChannelId,
     peerAddress: Address,
     timeoutMs: number,
     signal: AbortSignal
-) => Promise<SyncResult>;
+) => Promise<ProbeOutcome>;
 
 /**
  * The narrow slice of `LocalP2pSigner` the default rendezvous/sync
  * implementations need - a real `LocalP2pSigner` satisfies this
  * structurally, and a test can hand in a minimal real object (no mocking
  * framework, no spies) when it also injects its own
- * `rendezvousAttempt`/`syncAttempt` and never exercises the defaults.
+ * `rendezvousAttempt`/`probeAttempt` and never exercises the defaults.
  */
 export type ChannelProberSigner = {
-    connectToChannel(channelId: ChannelId): Promise<void>;
-    getChannelStatus(): Promise<Status>;
     p2pManager: {
         holepunch: {
             join(topic: Buffer): Promise<void>;
@@ -143,8 +134,8 @@ export type ChannelProberOptions = {
     timeoutMs?: number;
     /** Test seam - see {@link RendezvousAttemptFn}. Defaults to the real Holepunch/chain-backed rendezvous. */
     rendezvousAttempt?: RendezvousAttemptFn;
-    /** Test seam - see {@link SyncAttemptFn}. Defaults to the real connect/sync path. */
-    syncAttempt?: SyncAttemptFn;
+    /** Test seam - see {@link ProbeAttemptFn}. Defaults to the real connect/sync path. */
+    probeAttempt?: ProbeAttemptFn;
 };
 
 /**
@@ -160,7 +151,7 @@ export class ChannelProber {
     private readonly concurrency: number;
     private readonly timeoutMs: number;
     private readonly rendezvousAttempt: RendezvousAttemptFn;
-    private readonly syncAttempt: SyncAttemptFn;
+    private readonly probeAttempt: ProbeAttemptFn;
 
     constructor(deps: ChannelProberDeps, options: ChannelProberOptions = {}) {
         this.signer = deps.signer;
@@ -178,10 +169,10 @@ export class ChannelProber {
             options.rendezvousAttempt ??
             ((channelId, timeoutMs, signal) =>
                 this.defaultRendezvousAttempt(channelId, timeoutMs, signal));
-        this.syncAttempt =
-            options.syncAttempt ??
+        this.probeAttempt =
+            options.probeAttempt ??
             ((channelId, peerAddress, timeoutMs, signal) =>
-                this.defaultSyncAttempt(
+                this.defaultProbeAttempt(
                     channelId,
                     peerAddress,
                     timeoutMs,
@@ -260,7 +251,7 @@ export class ChannelProber {
                     // mutates local state, so siblings keep probing
                     // concurrently and the first candidate to prove itself
                     // wins outright.
-                    const usable = await this.runSync(
+                    const usable = await this.runProbe(
                         channelId,
                         result.peerAddress,
                         controller.signal,
@@ -327,25 +318,25 @@ export class ChannelProber {
      * armed - see the invariant on `armed`) and waits for the existing
      * spectate/sync path to confirm `SYNCED` against `peerAddress`.
      */
-    private async runSync(
+    private async runProbe(
         channelId: ChannelId,
         peerAddress: Address,
         signal: AbortSignal,
         record: (attempt: ProbeAttempt) => void
     ): Promise<boolean> {
-        const result = await this.syncAttempt(
+        const result = await this.probeAttempt(
             channelId,
             peerAddress,
             this.timeoutMs,
             signal
         );
-        if (result.outcome === "synced") {
-            record({ channelId, stage: "sync", outcome: "ok" });
+        if (result.outcome === "proven") {
+            record({ channelId, stage: "probe", outcome: "ok" });
             return true;
         }
         record({
             channelId,
-            stage: "sync",
+            stage: "probe",
             outcome: result.outcome,
             reason: result.outcome === "error" ? result.reason : undefined
         });
@@ -446,23 +437,18 @@ export class ChannelProber {
     }
 
     /**
-     * Arms `channelId` via the existing `connectToChannel` and waits for the
-     * existing spectate/sync path to reach `SYNCED`, bounded by `timeoutMs`
-     * and `signal`. Leaves no listener/timer behind on any exit path.
-     */
-    /**
      * Probe-only: asks the verified peer to prove the channel and reports
      * whether it did. Deliberately does NOT arm the channel (no
      * connectToChannel, no channelId set on StateManager) - that is what
      * makes several of these safe to run at once. Arming happens exactly
      * once, later, when the coordinator commits a join on the winner.
      */
-    private async defaultSyncAttempt(
+    private async defaultProbeAttempt(
         channelId: ChannelId,
         peerAddress: Address,
         timeoutMs: number,
         _signal: AbortSignal
-    ): Promise<SyncResult> {
+    ): Promise<ProbeOutcome> {
         try {
             const usable =
                 await this.signer.p2pManager.localRpc.spectateService.probeChannel(
@@ -470,66 +456,12 @@ export class ChannelProber {
                     channelId,
                     { timeoutMs }
                 );
-            return usable ? { outcome: "synced" } : { outcome: "timeout" };
+            return usable ? { outcome: "proven" } : { outcome: "timeout" };
         } catch (error) {
             return {
                 outcome: "error",
                 reason: error instanceof Error ? error.message : String(error)
             };
         }
-    }
-    private waitForSyncedOrTimeout(
-        timeoutMs: number,
-        signal: AbortSignal
-    ): Promise<SyncResult> {
-        return new Promise<SyncResult>((resolve) => {
-            let settled = false;
-            const finish = (result: SyncResult): void => {
-                if (settled) return;
-                settled = true;
-                unsubscribe();
-                clearTimeout(timer);
-                signal.removeEventListener("abort", onAbort);
-                resolve(result);
-            };
-
-            const unsubscribe = this.signer.p2pManager.stateManager.events.on(
-                "p2pEventHooks",
-                "onStatusChanged",
-                (_oldStatus, newStatus) => {
-                    if (newStatus >= Status.SYNCED) {
-                        finish({ outcome: "synced" });
-                    }
-                }
-            );
-
-            const onAbort = (): void => finish({ outcome: "timeout" });
-            signal.addEventListener("abort", onAbort);
-
-            const timer = setTimeout(
-                () => finish({ outcome: "timeout" }),
-                timeoutMs
-            );
-
-            this.signer
-                .getChannelStatus()
-                .then((current) => {
-                    if (current >= Status.SYNCED) finish({ outcome: "synced" });
-                })
-                .catch((error) => {
-                    // Left subscribed: a subsequent real onStatusChanged
-                    // transition still resolves this correctly, and the
-                    // timeout/abort above is the backstop if it never comes.
-                    this.logger.warn(
-                        "ChannelProber: getChannelStatus check failed",
-                        {
-                            error:
-                                error instanceof Error
-                                    ? error.message
-                                    : String(error)
-                        }
-                    );
-                });
-        });
     }
 }

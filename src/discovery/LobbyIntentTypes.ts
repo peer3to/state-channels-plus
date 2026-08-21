@@ -9,19 +9,12 @@
 
 export type IntentDeclineReason = "busy" | "full" | "terms" | "policy";
 
-export type RequestIntentParams = {
-    encodedAd: string;
-    amount: string /* uint256 dec */;
-};
-
 export type RequestIntentResult = {
     accepted: boolean;
     reason?: IntentDeclineReason;
     holdMs?: number;
     channelId?: string;
 };
-
-export type ReleaseIntentParams = { adId: string };
 
 // releaseIntent is ACK'd, never fire-and-forget.
 export type ReleaseIntentResult = { released: boolean };

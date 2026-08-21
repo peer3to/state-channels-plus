@@ -10,8 +10,8 @@ import {
     type ChannelProberSigner,
     type RendezvousAttemptFn,
     type RendezvousResult,
-    type SyncAttemptFn,
-    type SyncResult
+    type ProbeAttemptFn,
+    type ProbeOutcome
 } from "@/discovery/ChannelProber";
 
 function createLoggerForTest() {
@@ -104,12 +104,6 @@ function makeSignerDouble(
     const connectCalls: ChannelId[] = [];
     const probeCalls: { peerAddress: string; channelId: string }[] = [];
     const signer: ChannelProberSigner = {
-        connectToChannel: async (channelId) => {
-            connectCalls.push(channelId);
-            await overrides.connectToChannel?.(channelId);
-        },
-        getChannelStatus:
-            overrides.getChannelStatus ?? (async () => Status.NOT_OPENED),
         p2pManager: {
             holepunch: {
                 join: async (topic) => {
@@ -158,7 +152,7 @@ describe("ChannelProber (component)", function () {
                 {
                     concurrency: 2,
                     rendezvousAttempt: gated.fn,
-                    syncAttempt: async () => ({ outcome: "timeout" })
+                    probeAttempt: async () => ({ outcome: "timeout" })
                 }
             );
 
@@ -215,7 +209,7 @@ describe("ChannelProber (component)", function () {
                 {
                     concurrency: 3,
                     rendezvousAttempt: gated.fn,
-                    syncAttempt: async () => ({ outcome: "synced" })
+                    probeAttempt: async () => ({ outcome: "proven" })
                 }
             );
 
@@ -241,9 +235,9 @@ describe("ChannelProber (component)", function () {
                 "channel-0": PEER0,
                 "channel-1": PEER1
             };
-            const syncOutcomeByChannel: Record<string, SyncResult> = {
+            const probeOutcomeByChannel: Record<string, ProbeOutcome> = {
                 "channel-0": { outcome: "timeout" },
-                "channel-1": { outcome: "synced" }
+                "channel-1": { outcome: "proven" }
             };
             const rendezvousAttempt: RendezvousAttemptFn = async (
                 channelId
@@ -251,8 +245,8 @@ describe("ChannelProber (component)", function () {
                 outcome: "verified",
                 peerAddress: peerByChannel[String(channelId)]
             });
-            const syncAttempt: SyncAttemptFn = async (channelId) =>
-                syncOutcomeByChannel[String(channelId)];
+            const probeAttempt: ProbeAttemptFn = async (channelId) =>
+                probeOutcomeByChannel[String(channelId)];
 
             const double = makeSignerDouble();
             const prober = new ChannelProber(
@@ -261,7 +255,7 @@ describe("ChannelProber (component)", function () {
                     logger: createLoggerForTest(),
                     events: double.events
                 },
-                { concurrency: 2, rendezvousAttempt, syncAttempt }
+                { concurrency: 2, rendezvousAttempt, probeAttempt }
             );
 
             const result = await prober.probe(candidates);
@@ -277,12 +271,12 @@ describe("ChannelProber (component)", function () {
                 { channelId: "channel-0", stage: "rendezvous", outcome: "ok" },
                 {
                     channelId: "channel-0",
-                    stage: "sync",
+                    stage: "probe",
                     outcome: "timeout",
                     reason: undefined
                 },
                 { channelId: "channel-1", stage: "rendezvous", outcome: "ok" },
-                { channelId: "channel-1", stage: "sync", outcome: "ok" }
+                { channelId: "channel-1", stage: "probe", outcome: "ok" }
             ]);
         });
 
@@ -301,7 +295,7 @@ describe("ChannelProber (component)", function () {
                 {
                     concurrency: 2,
                     rendezvousAttempt,
-                    syncAttempt: async () => ({ outcome: "synced" })
+                    probeAttempt: async () => ({ outcome: "proven" })
                 }
             );
 
@@ -333,7 +327,7 @@ describe("ChannelProber (component)", function () {
                 {
                     concurrency: 1,
                     rendezvousAttempt: async () => ({ outcome: "timeout" }),
-                    syncAttempt: async () => ({ outcome: "synced" })
+                    probeAttempt: async () => ({ outcome: "proven" })
                 }
             );
 
@@ -354,16 +348,21 @@ describe("ChannelProber (component)", function () {
             // under the old serialized design nothing else could progress
             // until it settled. Now the sibling probes and wins while the
             // first is still in flight.
-            let releaseFirstProbe: ((result: SyncResult) => void) | undefined;
+            let releaseFirstProbe: ((result: ProbeOutcome) => void) | undefined;
             const rendezvousAttempt: RendezvousAttemptFn = async (
                 channelId
             ) => ({
                 outcome: "verified",
                 peerAddress: String(channelId) === "A" ? PEER0 : PEER1
             });
-            const syncAttempt: SyncAttemptFn = (channelId, _p, _t, signal) => {
+            const probeAttempt: ProbeAttemptFn = (
+                channelId,
+                _p,
+                _t,
+                signal
+            ) => {
                 if (String(channelId) === "A") {
-                    return new Promise<SyncResult>((resolve) => {
+                    return new Promise<ProbeOutcome>((resolve) => {
                         releaseFirstProbe = resolve;
                         // Seam contract: settle when the signal aborts. The
                         // real probe settles via its own timeout.
@@ -372,7 +371,7 @@ describe("ChannelProber (component)", function () {
                         );
                     });
                 }
-                return Promise.resolve<SyncResult>({ outcome: "synced" });
+                return Promise.resolve<ProbeOutcome>({ outcome: "proven" });
             };
 
             const double = makeSignerDouble();
@@ -382,7 +381,7 @@ describe("ChannelProber (component)", function () {
                     logger: createLoggerForTest(),
                     events: double.events
                 },
-                { concurrency: 2, rendezvousAttempt, syncAttempt }
+                { concurrency: 2, rendezvousAttempt, probeAttempt }
             );
 
             const result = await prober.probe(["A", "B"]);
