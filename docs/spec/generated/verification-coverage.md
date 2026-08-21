@@ -8,7 +8,7 @@ A permutation counts as tested only when an exact repository test declaration is
 
 - Specification IDs with test evidence: **82/241** (34%)
 - Test IDs (planned permutations) evidenced: **498/4241** (12%)
-- Test files with verification reports: **122/122** (100%)
+- Test files with verification reports: **121/122** (99%)
 - Test declarations covering at least one test ID: **301/810** (37%)
 - Assigned test IDs with exactly one owning test: **498/498** (100%)
 - Test files excluded as out of scope (`@spec-test-coverage-ignore`): 13
@@ -3941,7 +3941,9 @@ Every planned test permutation — specification black-box plans and implementat
 
 Repository test files containing executable declarations that have no maintained report at `verification/tests/<path>.md`. Fixtures, harness code, and configuration need no reports.
 
-None.
+| Test file |
+| --- |
+| [test/cache/SignerRecoveryCache.test.ts](../../../test/cache/SignerRecoveryCache.test.ts) |
 
 ## Tests not referenced in verification reports
 

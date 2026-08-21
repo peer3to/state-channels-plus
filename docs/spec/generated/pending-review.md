@@ -4,8 +4,8 @@
 > its content hash with `SPEC_REVIEWER="Name" node docs/spec/tools/review.js <file...>`.
 > Any later edit invalidates the record automatically (the file returns to pending as stale).
 
-- Verified (current): **3/516** (1%)
-- Pending (never reviewed): **513**
+- Verified (current): **6/515** (1%)
+- Pending (never reviewed): **509**
 - Stale (edited since review): **0**
 
 ## Stale — edited since engineer review
@@ -14,12 +14,9 @@ None.
 
 ## Pending — never reviewed
 
-### specification (52)
+### specification (49)
 
-- [specification/disputes/dispute-processing.md](../specification/disputes/dispute-processing.md)
-- [specification/disputes/fraud-proofs.md](../specification/disputes/fraud-proofs.md)
 - [specification/disputes/README.md](../specification/disputes/README.md)
-- [specification/disputes/state-proofs.md](../specification/disputes/state-proofs.md)
 - [specification/enforcement/admission-and-funds.md](../specification/enforcement/admission-and-funds.md)
 - [specification/enforcement/contracts.md](../specification/enforcement/contracts.md)
 - [specification/enforcement/dispute-window.md](../specification/enforcement/dispute-window.md)
@@ -409,13 +406,12 @@ None.
 - [implementation/views/security/data-availability.md](../implementation/views/security/data-availability.md)
 - [implementation/views/security/trust-model.md](../implementation/views/security/trust-model.md)
 
-### verification (124)
+### verification (123)
 
 - [verification/open-questions.md](../verification/open-questions.md)
 - [verification/README.md](../verification/README.md)
 - [verification/tests/test/browser/run-p2p-webrtc-e2e.mjs.md](../verification/tests/test/browser/run-p2p-webrtc-e2e.mjs.md)
 - [verification/tests/test/browser/run-worker-contract-executor.mjs.md](../verification/tests/test/browser/run-worker-contract-executor.mjs.md)
-- [verification/tests/test/cache/SignerRecoveryCache.test.ts.md](../verification/tests/test/cache/SignerRecoveryCache.test.ts.md)
 - [verification/tests/test/Clock.test.ts.md](../verification/tests/test/Clock.test.ts.md)
 - [verification/tests/test/e2e/disputeValidation/balanceInvariant.test.ts.md](../verification/tests/test/e2e/disputeValidation/balanceInvariant.test.ts.md)
 - [verification/tests/test/e2e/disputeValidation/disputeInputFields/disputeAuditingDataHash.test.ts.md](../verification/tests/test/e2e/disputeValidation/disputeInputFields/disputeAuditingDataHash.test.ts.md)
@@ -538,8 +534,11 @@ None.
 
 ## Verified — current
 
-### specification (3)
+### specification (6)
 
 - [specification/block-progression/block-processing.md](../specification/block-progression/block-processing.md) — Luka, 2026-08-14
 - [specification/block-progression/README.md](../specification/block-progression/README.md) — Luka, 2026-08-14
-- [specification/disputes/disputes.md](../specification/disputes/disputes.md) — Luka, 2026-08-14
+- [specification/disputes/dispute-processing.md](../specification/disputes/dispute-processing.md) — Eva, 2026-08-21
+- [specification/disputes/disputes.md](../specification/disputes/disputes.md) — Eva, 2026-08-21
+- [specification/disputes/fraud-proofs.md](../specification/disputes/fraud-proofs.md) — Eva, 2026-08-21
+- [specification/disputes/state-proofs.md](../specification/disputes/state-proofs.md) — Eva, 2026-08-21

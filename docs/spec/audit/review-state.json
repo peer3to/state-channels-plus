@@ -11,7 +11,22 @@
     },
     "specification/disputes/disputes.md": {
         "hash": "875484483426f6fb",
-        "reviewer": "Luka",
-        "date": "2026-08-14"
+        "reviewer": "Eva",
+        "date": "2026-08-21"
+    },
+    "specification/disputes/dispute-processing.md": {
+        "hash": "7321e02644049623",
+        "reviewer": "Eva",
+        "date": "2026-08-21"
+    },
+    "specification/disputes/fraud-proofs.md": {
+        "hash": "8eec96d9f6c8be5c",
+        "reviewer": "Eva",
+        "date": "2026-08-21"
+    },
+    "specification/disputes/state-proofs.md": {
+        "hash": "938744d816ba0630",
+        "reviewer": "Eva",
+        "date": "2026-08-21"
     }
 }
