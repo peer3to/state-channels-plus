@@ -22,6 +22,7 @@ export class TestIsolatedRuntimeBackend {
     preparationDelayMs = 0;
     preparationStatusIntervalMs = 0;
     preparationFailuresRemaining = 0;
+    startFailuresRemaining = 0;
     exitClassification: {
         resource: string;
         limit: number;
@@ -56,6 +57,10 @@ export class TestIsolatedRuntimeBackend {
 
     async start(handle: unknown) {
         this.calls.push({ operation: "start", value: handle });
+        if (this.startFailuresRemaining > 0) {
+            this.startFailuresRemaining -= 1;
+            throw new Error("test isolated runtime start failed");
+        }
         const stdin = new PassThrough();
         const stdout = new PassThrough();
         const stderr = new PassThrough();

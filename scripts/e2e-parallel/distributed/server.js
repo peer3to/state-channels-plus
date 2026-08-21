@@ -602,6 +602,14 @@ async function main(options = {}) {
                 await handleAuthorizationAdmin(connection, message);
                 return;
             }
+            if (
+                (message.kind === "RUN_COMPLETE" ||
+                    message.kind === "CANCEL" ||
+                    message.kind === "RELEASE") &&
+                manager.active !== connection
+            ) {
+                return;
+            }
             manager.assertActive(connection);
             if (message.kind === "WORKSPACE_OFFER") {
                 if (connection.environment) {
@@ -982,17 +990,30 @@ async function main(options = {}) {
                 return;
             }
             if (connection.environment) connection.environmentFailed = true;
+            const failureKind = connection.workerStarted
+                ? "WORKER_ERROR"
+                : "PREPARATION_ERROR";
+            audit.append({
+                action: "environment-failure",
+                accepted: false,
+                callerFingerprint: fingerprint(connection.peerId),
+                environmentKey: connection.environmentKey,
+                failureCode: failureKind,
+                reason: error.message
+            });
+            let failureReported = true;
             await connection.peer
-                .send(
-                    connection.workerStarted
-                        ? "WORKER_ERROR"
-                        : "PREPARATION_ERROR",
-                    {
-                        message: error.message
-                    }
-                )
-                .catch(() => {});
-            await closeConnection(connection);
+                .send(failureKind, { message: error.message })
+                .catch(() => {
+                    failureReported = false;
+                });
+            await releaseLease(connection);
+            if (!failureReported) {
+                await closeConnection(
+                    connection,
+                    "failed to report lease failure"
+                );
+            }
         }
     }
 

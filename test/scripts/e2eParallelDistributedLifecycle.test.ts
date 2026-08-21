@@ -756,6 +756,46 @@ describe("distributed worker pool lifecycle", function () {
         }
     });
 
+    it("reports an unexpected preparation failure before reusing the connection", async function () {
+        const pool = await LeasePoolHarness.create();
+        const backend = new TestIsolatedRuntimeBackend();
+        backend.startFailuresRemaining = 1;
+        try {
+            const worker = await pool.startServer("worker-a", {
+                environmentBackend: backend
+            });
+            const orchestrator = await pool.startOrchestrator("start-failure");
+            await orchestrator.waitFor(worker.name, "LEASE_GRANTED");
+            await orchestrator.send(
+                worker.name,
+                "WORKSPACE_OFFER",
+                { manifest: workspaceManifest },
+                Buffer.from(JSON.stringify(sourceFiles))
+            );
+            const failure = await orchestrator.waitFor(
+                worker.name,
+                "PREPARATION_ERROR"
+            );
+            expect(failure.header.message).to.equal(
+                "test isolated runtime start failed"
+            );
+
+            const retry = orchestrator.checkpoint();
+            await orchestrator.send(worker.name, "LEASE_REQUEST", {
+                sessionId: "start-failure-retry"
+            });
+            await orchestrator.waitFor(worker.name, "LEASE_GRANTED", {
+                after: retry
+            });
+            await orchestrator.send(worker.name, "RELEASE");
+            await orchestrator.waitFor(worker.name, "LEASE_CLEAN", {
+                after: retry
+            });
+        } finally {
+            await pool.close();
+        }
+    });
+
     it("retains cached source after a recoverable preparation command failure", async function () {
         const pool = await LeasePoolHarness.create();
         const backend = new TestIsolatedRuntimeBackend();
