@@ -324,6 +324,7 @@ describe("distributed orchestrator logs", function () {
                 color: "",
                 label: "server-2",
                 capabilities: { slots: 1, workers: 4, memoryGb: 12 },
+                executionProfile: { workers: 2 },
                 stats: {
                     peakCpu: 0.9,
                     avgCpu: 0.6,
@@ -335,6 +336,7 @@ describe("distributed orchestrator logs", function () {
             17
         );
         expect(line).to.include("server-2");
+        expect(line).to.include("1 slots, 2 workers (max 4), 12GB");
         expect(line).to.include("17 tests");
         expect(line).to.include("cpu avg 60% / peak 90%");
         expect(line).to.include("mem peak 8.0GB / bound 10.0GB");

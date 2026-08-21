@@ -16,7 +16,7 @@ Options:
   -p, --allow-logdir-purge, --allowLogdirPurge, --purge
                                   Allow clearing an explicit dir outside logs/
       --slots <count>            Local warm E2E infrastructure slots (0 disables)
-  -w, --workers <count>          Local maximum concurrent test processes
+  -w, --workers <count>          Concurrent tests per local or remote worker
       --target-load <number>     Local maximum average load per CPU core
   -i, --interval <ms>            Local scheduler admission interval
       --mem-limit-gb <gb>        Local memory budget for test processes

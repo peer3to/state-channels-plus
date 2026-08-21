@@ -149,6 +149,10 @@ yarn test:parallel:distributed \
   --discovery-timeout 60000
 ```
 
+`-w N` / `--workers N` requests at most `N` concurrent test processes from
+each leased worker. The final summary prints that active limit in the existing
+capacity block and labels the worker's advertised maximum.
+
 The source archive contains tracked and non-ignored files from the test
 repository and every recursive `link:` or `file:` dependency. Their relative
 filesystem layout is preserved, so links such as

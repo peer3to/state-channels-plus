@@ -244,7 +244,16 @@ function recordWorkerFailure(
 }
 
 function formatWorkerSummary(worker, completed) {
-    const capacity = `${worker.capabilities.slots} slots, ${worker.capabilities.workers} workers, ${worker.capabilities.memoryGb}GB`;
+    const profile = worker.executionProfile || {};
+    const slots = profile.slots ?? worker.capabilities.slots;
+    const workers = profile.workers ?? worker.capabilities.workers;
+    const memoryGb =
+        profile.memoryBytes === undefined
+            ? worker.capabilities.memoryGb
+            : profile.memoryBytes / 1024 ** 3;
+    const capacity =
+        `${slots} slots, ${workers} workers ` +
+        `(max ${worker.capabilities.workers}), ${memoryGb}GB`;
     if (!worker.stats) {
         return `${workerName(worker)} (${capacity}) · ${completed} tests · resource stats unavailable`;
     }
@@ -520,6 +529,7 @@ async function runDistributed(options) {
             ) {
                 leaseHeader.executionProfile = options.executionProfile;
             }
+            worker.executionProfile = leaseHeader.executionProfile || {};
             await peer.send("LEASE_REQUEST", leaseHeader);
             resolveFirst();
         } catch (error) {
