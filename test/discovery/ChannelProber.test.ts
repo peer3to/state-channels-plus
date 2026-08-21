@@ -129,8 +129,11 @@ function makeSignerDouble(
             },
             stateManager: {
                 events,
-                getOnChainParticipantUnion:
-                    overrides.getOnChainParticipantUnion ?? (async () => [])
+                membershipService: {
+                    getOnChainParticipantUnion:
+                        overrides.getOnChainParticipantUnion ??
+                        (async () => [])
+                }
             }
         }
     };

@@ -114,9 +114,11 @@ export type ChannelProberSigner = {
         };
         stateManager: {
             events: EventBus;
-            getOnChainParticipantUnion(
-                channelId: ChannelId
-            ): Promise<Address[]>;
+            membershipService: {
+                getOnChainParticipantUnion(
+                    channelId: ChannelId
+                ): Promise<Address[]>;
+            };
         };
     };
 };
@@ -428,7 +430,7 @@ export class ChannelProber {
         peerAddress: Address
     ): Promise<boolean> {
         const participants =
-            await this.signer.p2pManager.stateManager.getOnChainParticipantUnion(
+            await this.signer.p2pManager.stateManager.membershipService.getOnChainParticipantUnion(
                 channelId
             );
         return participants.some((participant) =>

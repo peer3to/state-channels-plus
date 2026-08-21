@@ -188,12 +188,12 @@ class P2PManager<TCustomRpc extends MainRpcService = MainRpcService>
         if (!transport) return;
 
         const isChannelOpenedStatus =
-            stateManager.getStatus() === Status.OPENED;
+            stateManager.status === Status.OPENED;
         let isPeerParticipant: boolean;
         try {
             isPeerParticipant =
                 await stateManager.diamondStateMachine.localDiamondContract.canParticipateInDisputes(
-                    stateManager.getChannelId(),
+                    stateManager.channelId,
                     peerAddress
                 );
         } catch (error) {
@@ -223,7 +223,7 @@ class P2PManager<TCustomRpc extends MainRpcService = MainRpcService>
                 );
                 this.localRpc.spectateService.sync(
                     peerAddress,
-                    stateManager.getChannelId()
+                    stateManager.channelId
                 );
             } else {
                 this.logger.debug(
@@ -253,7 +253,7 @@ class P2PManager<TCustomRpc extends MainRpcService = MainRpcService>
         if (stateManager.isDisposed) return;
         if (this.pendingChannelMembershipTransports.size === 0) return;
 
-        const channelId = stateManager.getChannelId();
+        const channelId = stateManager.channelId;
         const localDiamondContract =
             stateManager.diamondStateMachine.localDiamondContract;
 
@@ -300,7 +300,7 @@ class P2PManager<TCustomRpc extends MainRpcService = MainRpcService>
                 // via its own timeout fallback.
                 stateManager.p2pEventHooks.onConnection?.(
                     peerAddress,
-                    stateManager.getStatus() === Status.OPENED
+                    stateManager.status === Status.OPENED
                 );
             }
         }
