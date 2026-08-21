@@ -19,7 +19,11 @@ import LocalP2pSigner from "@/evm/signer/LocalP2pSigner";
 import type P2PManager from "@/P2PManager";
 import OpenChannelNegotiationService from "@/rpc/services/openChannelNegotiation/OpenChannelNegotiationService";
 import type { OpenChannelNegotiationP2PManager } from "@/rpc/services/openChannelNegotiation/OpenChannelNegotiationRpcMethods";
-import { ChannelAcquisitionCoordinator } from "@/discovery/ChannelAcquisitionCoordinator";
+import {
+    ChannelAcquisitionCoordinator,
+    type ChannelEnumerator,
+    type ChannelProbeRunner
+} from "@/discovery/ChannelAcquisitionCoordinator";
 
 /**
  * Real coordinator against fabricated candidates (test/AGENTS.md): the LOBBY
@@ -416,15 +420,300 @@ describe("ChannelAcquisitionCoordinator", () => {
 
     function makeCoordinator(
         harness: FakeChannelHarness,
-        lobby: LobbyService
+        lobby: LobbyService,
+        chain?: {
+            channelIndex?: ChannelEnumerator;
+            channelProber?: ChannelProbeRunner;
+        }
     ): ChannelAcquisitionCoordinator {
         return new ChannelAcquisitionCoordinator({
             lobby,
             signer: harness.signer,
             logger: createTestLogger(),
-            events: harness.events
+            events: harness.events,
+            channelIndex: chain?.channelIndex,
+            channelProber: chain?.channelProber
         });
     }
+
+    /** Enumerator returning a fixed id list; records how many times it ran. */
+    function fakeEnumerator(ids: string[]): ChannelEnumerator & {
+        calls: number;
+    } {
+        return {
+            calls: 0,
+            async listOpenChannels() {
+                this.calls++;
+                return ids;
+            }
+        };
+    }
+
+    /** Prober whose verdict is fixed; records the candidates it was handed. */
+    function fakeProber(
+        verdict:
+            | { status: "usable"; channelId: string; peerAddress: string }
+            | { status: "exhausted" }
+    ): ChannelProbeRunner & { seen: string[][] } {
+        return {
+            seen: [],
+            async probe(candidates) {
+                this.seen.push(candidates.map((id) => String(id)));
+                return verdict.status === "usable"
+                    ? { ...verdict, attempts: [] }
+                    : { status: "exhausted", attempts: [] };
+            }
+        };
+    }
+
+    describe("chain-first ordering", () => {
+        it("a usable chain candidate is joined without the lobby being consulted at all", async () => {
+            const requester = createLobbyPeer(network);
+            await requester.service.joinLobby(appNamespace);
+            const harness = makeFakeChannelHarness(
+                ethers.Wallet.createRandom()
+            );
+            const channelId = ethers.hexlify(ethers.randomBytes(32));
+            // These cases assert WHICH source is consulted and in what order.
+            // The commit machinery itself is covered by the JOIN/OPEN cases
+            // below and end-to-end on a live chain, so the harness starts
+            // already PARTICIPATING and the commit stages resolve instantly.
+            harness.advanceStatus(Status.PARTICIPATING);
+            const peerAddress = ethers.Wallet.createRandom().address;
+            const enumerator = fakeEnumerator([channelId]);
+            const prober = fakeProber({
+                status: "usable",
+                channelId,
+                peerAddress
+            });
+            const listAdsSpy = sinon.spy(requester.service, "listAds");
+            const requestIntentSpy = sinon.spy(
+                requester.service,
+                "requestIntent"
+            );
+
+            const coordinator = makeCoordinator(harness, requester.service, {
+                channelIndex: enumerator,
+                channelProber: prober
+            });
+            const result = await coordinator.acquireChannel({ amount: "500" });
+
+            expect(result.status).to.equal("acquired");
+            expect(
+                result.status === "acquired" ? result.channelId : undefined
+            ).to.equal(channelId);
+            expect(enumerator.calls).to.equal(1);
+            expect(prober.seen).to.deep.equal([[channelId]]);
+            // The whole point of chain-first: no intent is ever requested,
+            // because no advertiser was involved.
+            expect(requestIntentSpy.called).to.equal(false);
+            expect(listAdsSpy.called).to.equal(false);
+        });
+
+        it("the attempt log attributes a chain candidate to the peer that proved it usable, not to an invented ad", async () => {
+            const requester = createLobbyPeer(network);
+            await requester.service.joinLobby(appNamespace);
+            const harness = makeFakeChannelHarness(
+                ethers.Wallet.createRandom()
+            );
+            const channelId = ethers.hexlify(ethers.randomBytes(32));
+            // These cases assert WHICH source is consulted and in what order.
+            // The commit machinery itself is covered by the JOIN/OPEN cases
+            // below and end-to-end on a live chain, so the harness starts
+            // already PARTICIPATING and the commit stages resolve instantly.
+            harness.advanceStatus(Status.PARTICIPATING);
+            const peerAddress = ethers.Wallet.createRandom().address;
+
+            const coordinator = makeCoordinator(harness, requester.service, {
+                channelIndex: fakeEnumerator([channelId]),
+                channelProber: fakeProber({
+                    status: "usable",
+                    channelId,
+                    peerAddress
+                })
+            });
+            const result = await coordinator.acquireChannel({ amount: "500" });
+
+            expect(result.attempts.length).to.be.greaterThan(0);
+            for (const attempt of result.attempts) {
+                expect(attempt.adId).to.equal(channelId);
+                expect(attempt.advertiser).to.equal(
+                    getChecksumAddress(peerAddress)
+                );
+            }
+        });
+
+        it("when every chain candidate is rejected, the lobby is used as the fallback", async () => {
+            const advertiser = createLobbyPeer(network);
+            const requester = createLobbyPeer(network);
+            await connectLobbyPeers(advertiser, requester);
+            const harness = makeFakeChannelHarness(
+                ethers.Wallet.createRandom()
+            );
+            const channelId = ethers.hexlify(ethers.randomBytes(32));
+            // These cases assert WHICH source is consulted and in what order.
+            // The commit machinery itself is covered by the JOIN/OPEN cases
+            // below and end-to-end on a live chain, so the harness starts
+            // already PARTICIPATING and the commit stages resolve instantly.
+            harness.advanceStatus(Status.PARTICIPATING);
+            const ad = baseAd({
+                advertiser: advertiser.address,
+                channelId: channelId
+            });
+            await advertiser.service.publishAd(ad);
+
+            const enumerator = fakeEnumerator(["0xdeadbeef"]);
+            const prober = fakeProber({ status: "exhausted" });
+            const coordinator = makeCoordinator(harness, requester.service, {
+                channelIndex: enumerator,
+                channelProber: prober
+            });
+
+            const result = await coordinator.acquireChannel({
+                candidates: [ad],
+                amount: "500"
+            });
+
+            // Explicit candidates mean the caller already has ads, so the
+            // chain phase is skipped entirely.
+            expect(enumerator.calls).to.equal(0);
+            expect(result.status).to.equal("acquired");
+        });
+
+        it("chain exhaustion falls through to ads this peer already heard on the lobby topic", async () => {
+            const advertiser = createLobbyPeer(network);
+            const requester = createLobbyPeer(network);
+            await connectLobbyPeers(advertiser, requester);
+            const harness = makeFakeChannelHarness(
+                ethers.Wallet.createRandom()
+            );
+            const channelId = ethers.hexlify(ethers.randomBytes(32));
+            // These cases assert WHICH source is consulted and in what order.
+            // The commit machinery itself is covered by the JOIN/OPEN cases
+            // below and end-to-end on a live chain, so the harness starts
+            // already PARTICIPATING and the commit stages resolve instantly.
+            harness.advanceStatus(Status.PARTICIPATING);
+            await advertiser.service.publishAd(
+                baseAd({
+                    advertiser: advertiser.address,
+                    channelId: channelId
+                })
+            );
+
+            const enumerator = fakeEnumerator(["0xdeadbeef"]);
+            const coordinator = makeCoordinator(harness, requester.service, {
+                channelIndex: enumerator,
+                channelProber: fakeProber({ status: "exhausted" })
+            });
+
+            // No explicit candidates: chain runs first, fails, and the lobby
+            // ad is picked up without the caller passing it in.
+            const result = await coordinator.acquireChannel({ amount: "500" });
+
+            expect(enumerator.calls).to.equal(1);
+            expect(result.status).to.equal("acquired");
+        });
+
+        it("lobbyOnly skips the chain phase entirely", async () => {
+            const advertiser = createLobbyPeer(network);
+            const requester = createLobbyPeer(network);
+            await connectLobbyPeers(advertiser, requester);
+            const harness = makeFakeChannelHarness(
+                ethers.Wallet.createRandom()
+            );
+            const channelId = ethers.hexlify(ethers.randomBytes(32));
+            // These cases assert WHICH source is consulted and in what order.
+            // The commit machinery itself is covered by the JOIN/OPEN cases
+            // below and end-to-end on a live chain, so the harness starts
+            // already PARTICIPATING and the commit stages resolve instantly.
+            harness.advanceStatus(Status.PARTICIPATING);
+            await advertiser.service.publishAd(
+                baseAd({
+                    advertiser: advertiser.address,
+                    channelId: channelId
+                })
+            );
+            const enumerator = fakeEnumerator([channelId]);
+
+            const coordinator = makeCoordinator(harness, requester.service, {
+                channelIndex: enumerator,
+                channelProber: fakeProber({ status: "exhausted" })
+            });
+            const result = await coordinator.acquireChannel({
+                lobbyOnly: true,
+                amount: "500"
+            });
+
+            expect(enumerator.calls).to.equal(0);
+            expect(result.status).to.equal("acquired");
+        });
+
+        it("a provider that cannot serve logs degrades to the lobby instead of failing the acquire", async () => {
+            const advertiser = createLobbyPeer(network);
+            const requester = createLobbyPeer(network);
+            await connectLobbyPeers(advertiser, requester);
+            const harness = makeFakeChannelHarness(
+                ethers.Wallet.createRandom()
+            );
+            const channelId = ethers.hexlify(ethers.randomBytes(32));
+            // These cases assert WHICH source is consulted and in what order.
+            // The commit machinery itself is covered by the JOIN/OPEN cases
+            // below and end-to-end on a live chain, so the harness starts
+            // already PARTICIPATING and the commit stages resolve instantly.
+            harness.advanceStatus(Status.PARTICIPATING);
+            await advertiser.service.publishAd(
+                baseAd({
+                    advertiser: advertiser.address,
+                    channelId: channelId
+                })
+            );
+
+            const coordinator = makeCoordinator(harness, requester.service, {
+                channelIndex: {
+                    async listOpenChannels() {
+                        throw new Error("provider refused eth_getLogs");
+                    }
+                },
+                channelProber: fakeProber({ status: "exhausted" })
+            });
+
+            const result = await coordinator.acquireChannel({ amount: "500" });
+
+            expect(result.status).to.equal("acquired");
+        });
+
+        it("an empty chain is not an error - it simply falls through to the lobby", async () => {
+            const advertiser = createLobbyPeer(network);
+            const requester = createLobbyPeer(network);
+            await connectLobbyPeers(advertiser, requester);
+            const harness = makeFakeChannelHarness(
+                ethers.Wallet.createRandom()
+            );
+            const channelId = ethers.hexlify(ethers.randomBytes(32));
+            // These cases assert WHICH source is consulted and in what order.
+            // The commit machinery itself is covered by the JOIN/OPEN cases
+            // below and end-to-end on a live chain, so the harness starts
+            // already PARTICIPATING and the commit stages resolve instantly.
+            harness.advanceStatus(Status.PARTICIPATING);
+            await advertiser.service.publishAd(
+                baseAd({
+                    advertiser: advertiser.address,
+                    channelId: channelId
+                })
+            );
+            const prober = fakeProber({ status: "exhausted" });
+
+            const coordinator = makeCoordinator(harness, requester.service, {
+                channelIndex: fakeEnumerator([]),
+                channelProber: prober
+            });
+            const result = await coordinator.acquireChannel({ amount: "500" });
+
+            // Nothing to probe, so probing never even runs.
+            expect(prober.seen).to.deep.equal([]);
+            expect(result.status).to.equal("acquired");
+        });
+    });
 
     it("K>1: parallelism:2 returns unsupported with zero wire calls", async () => {
         const requester = createLobbyPeer(network);

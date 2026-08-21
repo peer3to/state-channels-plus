@@ -262,13 +262,17 @@ class ClientP2pSigner implements Signer {
     }
 
     acquireChannel(options: AcquireOptions): Promise<AcquireResult> {
-        const candidates: string[] = options.candidates.map(
+        // Chain-first when the caller passes no ads: forward `undefined`
+        // rather than an empty array, so the host coordinator can tell
+        // "nothing to try" apart from "enumerate the chain yourself".
+        const candidates: string[] | undefined = options.candidates?.map(
             (ad) => encodeChannelAd(ad).encodedAd
         );
         return this.client.request<AcquireResult>(
             {
                 type: "acquireChannel",
                 candidates,
+                lobbyOnly: options.lobbyOnly,
                 parallelism: options.parallelism,
                 maxWinners: options.maxWinners,
                 deadlineMs: options.deadlineMs,

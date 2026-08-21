@@ -1,4 +1,5 @@
 import { Status } from "@/types";
+import type { ChannelId } from "@/types/types";
 import { config } from "@/utils/config";
 import { getChecksumAddress } from "@/utils/address";
 import type { Logger } from "@/utils/logging/Logger";
@@ -6,6 +7,8 @@ import type { EventBus } from "@/events/EventBus";
 import Clock from "@/Clock";
 import type LocalP2pSigner from "@/evm/signer/LocalP2pSigner";
 import type LobbyService from "@/rpc/services/lobby/LobbyService";
+import { ChannelIndex, type EnumerateOptions } from "@/discovery/ChannelIndex";
+import { ChannelProber, type ProbeResult } from "@/discovery/ChannelProber";
 import type { RequestIntentResult } from "@/discovery/LobbyIntentTypes";
 import { type IntentDeclineReason } from "@/discovery/LobbyIntentTypes";
 import {
@@ -40,7 +43,22 @@ export type AcquireAttempt = {
     reason?: IntentDeclineReason | string;
 };
 export type AcquireOptions = {
-    candidates: AcquireCandidates;
+    /**
+     * Explicit lobby ads to try. OPTIONAL: when omitted, discovery is
+     * chain-first - the chain is enumerated for open channels and those are
+     * probed directly, and the lobby is consulted only once every chain
+     * candidate has failed, timed out or been rejected. Passing candidates
+     * explicitly keeps the old lobby-only behaviour for callers that already
+     * hold ads (and for "open a NEW channel with this peer", which the chain
+     * cannot answer by definition).
+     */
+    candidates?: AcquireCandidates;
+    /**
+     * Skips the chain phase and goes straight to the lobby. Escape hatch for
+     * a caller that knows the chain has nothing useful (or wants to open a
+     * new channel); the default is chain-first.
+     */
+    lobbyOnly?: boolean;
     parallelism?: number; // K; only 1 is currently supported
     maxWinners?: number; // only 1 is currently supported
     deadlineMs?: number;
@@ -64,15 +82,49 @@ export type AcquireResult =
           attempts: AcquireAttempt[];
       };
 
+/**
+ * The capability this coordinator needs from chain enumeration - a real
+ * `ChannelIndex` satisfies it structurally, and a test can hand in a plain
+ * object without a mocking framework.
+ */
+export type ChannelEnumerator = {
+    listOpenChannels(opts?: EnumerateOptions): Promise<ChannelId[]>;
+};
+
+/** The capability this coordinator needs from probing. See {@link ChannelEnumerator}. */
+export type ChannelProbeRunner = {
+    probe(candidates: ChannelId[]): Promise<ProbeResult>;
+};
+
 export type ChannelAcquisitionCoordinatorDeps = {
     lobby: LobbyService;
     signer: LocalP2pSigner;
     logger: Logger;
     events: EventBus;
+    /** Test seam. Defaults to a ChannelIndex over the signer's provider/contract. */
+    channelIndex?: ChannelEnumerator;
+    /** Test seam. Defaults to a ChannelProber over the signer. */
+    channelProber?: ChannelProbeRunner;
 };
 
 /** One candidate resolved to a concrete adId. */
 type Candidate = { adId: AdId; ad: ChannelAdStruct };
+
+/**
+ * The only thing a commit path needs from whatever produced the candidate:
+ * labels for the per-attempt report. Chain-discovered candidates have no ad,
+ * so the commit paths take this instead of a `Candidate` - fabricating a
+ * synthetic `ChannelAdStruct` just to satisfy a signature would put a
+ * made-up ad on a fund-relevant path, which is exactly what the "ads are
+ * hints, never authority" rule exists to prevent.
+ */
+type AttemptReporting = { adId: AdId; advertiser: string; kind: AdKind };
+
+const reportingFor = (candidate: Candidate): AttemptReporting => ({
+    adId: candidate.adId,
+    advertiser: candidate.ad.advertiser,
+    kind: candidate.ad.kind
+});
 
 /** Distinguishes a per-stage timeout from any other stage failure. */
 class StageTimeoutError extends Error {
@@ -103,6 +155,14 @@ export class ChannelAcquisitionCoordinator {
     private readonly signer: LocalP2pSigner;
     private readonly logger: Logger;
     private readonly events: EventBus;
+    // Chain-first discovery. Both are constructed on first use and reused for
+    // the lifetime of the coordinator: ChannelIndex carries incremental
+    // ingest state across scans, and rebuilding the prober per call would
+    // throw away nothing useful but cost an extra allocation per acquire.
+    private readonly channelIndexOverride?: ChannelEnumerator;
+    private readonly channelProberOverride?: ChannelProbeRunner;
+    private channelIndexInstance?: ChannelEnumerator;
+    private channelProberInstance?: ChannelProbeRunner;
 
     constructor(deps: ChannelAcquisitionCoordinatorDeps) {
         this.lobby = deps.lobby;
@@ -111,6 +171,42 @@ export class ChannelAcquisitionCoordinator {
             component: "ChannelAcquisitionCoordinator"
         });
         this.events = deps.events;
+        this.channelIndexOverride = deps.channelIndex;
+        this.channelProberOverride = deps.channelProber;
+    }
+
+    /** Lazily built over the signer's provider/contract; injectable for tests. */
+    private getChannelIndex(): ChannelEnumerator {
+        if (this.channelIndexOverride) return this.channelIndexOverride;
+        if (!this.channelIndexInstance) {
+            const stateManager = this.signer.p2pManager.stateManager;
+            const provider = stateManager.signer.provider;
+            if (!provider) {
+                throw new Error(
+                    "ChannelAcquisitionCoordinator: chain-first discovery needs a provider on the signer"
+                );
+            }
+            this.channelIndexInstance = new ChannelIndex({
+                provider,
+                stateChannelManagerContract:
+                    stateManager.stateChannelManagerContract,
+                logger: this.logger
+            });
+        }
+        return this.channelIndexInstance;
+    }
+
+    /** Lazily built over the signer; injectable for tests. */
+    private getChannelProber(): ChannelProbeRunner {
+        if (this.channelProberOverride) return this.channelProberOverride;
+        if (!this.channelProberInstance) {
+            this.channelProberInstance = new ChannelProber({
+                signer: this.signer,
+                logger: this.logger,
+                events: this.events
+            });
+        }
+        return this.channelProberInstance;
     }
 
     public async acquireChannel(
@@ -197,7 +293,37 @@ export class ChannelAcquisitionCoordinator {
             ]);
         };
 
-        const pool = sortByDeclines(this.resolveCandidates(options.candidates));
+        // CHAIN FIRST. Existing channels are discovered from chain and probed
+        // directly; the lobby is fallback infrastructure, not a dependency
+        // for every peer that wants to join. Skipped when the caller passed
+        // explicit ads (it already has candidates) or asked for lobbyOnly.
+        if (!options.lobbyOnly && options.candidates === undefined) {
+            const chain = await this.attemptChainCandidates(
+                stakeAmountNumber,
+                remainingDeadlineMs,
+                record
+            );
+            if (chain.status === "acquired") {
+                return {
+                    status: "acquired",
+                    channelId: chain.channelId,
+                    attempts
+                };
+            }
+            if (chain.status === "deadline") {
+                return { status: "deadline", attempts };
+            }
+            // Every chain candidate failed/timed out/was rejected - fall
+            // through to the lobby, which is where peers looking to open a
+            // NEW channel are found.
+        }
+
+        // The lobby phase. Explicit candidates win; otherwise use whatever
+        // ads this peer has already heard on the lobby topic.
+        const lobbyCandidates =
+            options.candidates ??
+            this.lobby.listAds().map((stored) => stored.ad);
+        const pool = sortByDeclines(this.resolveCandidates(lobbyCandidates));
         let poolIndex = 0;
 
         // MIXED-POOL SAFE (fix): a capability-absent OPEN candidate is a
@@ -250,6 +376,92 @@ export class ChannelAcquisitionCoordinator {
                     break;
             }
         }
+    }
+
+    /**
+     * The chain-first phase: enumerate open channels from chain, probe them
+     * directly, and commit a JOIN on the first one that proves usable.
+     *
+     * A candidate counts as usable only when the probe's spectate/sync
+     * completes and confirms a live peer - "a socket connected" is not
+     * enough. The probe leaves that channel connected and synced, so
+     * commitJoin's own connect/sync stages resolve immediately and only the
+     * confirm stage does real work.
+     *
+     * Enumeration or probing failing is never fatal: it degrades to the
+     * lobby, which is the whole point of the ordering.
+     */
+    private async attemptChainCandidates(
+        stakeAmountNumber: number,
+        remainingDeadlineMs: () => number,
+        record: (attempt: AcquireAttempt) => void
+    ): Promise<
+        | { status: "acquired"; channelId: string }
+        | { status: "exhausted" | "deadline" }
+    > {
+        if (remainingDeadlineMs() <= 0) return { status: "deadline" };
+
+        let candidates: ChannelId[];
+        try {
+            candidates = await this.getChannelIndex().listOpenChannels();
+        } catch (error) {
+            // A provider that can't serve logs must not sink the acquire -
+            // the lobby path may still succeed.
+            this.logger.warn(
+                "Chain enumeration failed; falling back to lobby",
+                {
+                    error:
+                        error instanceof Error ? error.message : String(error)
+                }
+            );
+            return { status: "exhausted" };
+        }
+
+        if (candidates.length === 0) {
+            this.logger.debug("Chain enumeration returned no open channels");
+            return { status: "exhausted" };
+        }
+
+        let probed;
+        try {
+            probed = await this.getChannelProber().probe(candidates);
+        } catch (error) {
+            this.logger.warn("Channel probing failed; falling back to lobby", {
+                error: error instanceof Error ? error.message : String(error)
+            });
+            return { status: "exhausted" };
+        }
+
+        if (probed.status !== "usable") {
+            this.logger.debug(
+                "No chain candidate proved usable; falling back to lobby",
+                { candidates: candidates.length }
+            );
+            return { status: "exhausted" };
+        }
+
+        if (remainingDeadlineMs() <= 0) return { status: "deadline" };
+
+        // Report chain candidates against the peer that actually proved the
+        // channel usable. There is no ad here, so the adId slot carries the
+        // channelId - the attempt log stays readable without inventing one.
+        const committed = await this.commitJoin(
+            {
+                adId: String(probed.channelId),
+                advertiser: getChecksumAddress(String(probed.peerAddress)),
+                kind: AdKind.JOIN
+            },
+            String(probed.channelId),
+            stakeAmountNumber,
+            remainingDeadlineMs,
+            record
+        );
+        if (committed.status === "acquired") {
+            return { status: "acquired", channelId: String(probed.channelId) };
+        }
+        return {
+            status: committed.status === "deadline" ? "deadline" : "exhausted"
+        };
     }
 
     /** Resolves the caller's explicit candidate array into concrete {adId, ad} pairs. */
@@ -374,7 +586,7 @@ export class ChannelAcquisitionCoordinator {
                       record
                   )
                 : await this.commitJoin(
-                      candidate,
+                      reportingFor(candidate),
                       channelId,
                       stakeAmountNumber,
                       remainingDeadlineMs,
@@ -422,15 +634,13 @@ export class ChannelAcquisitionCoordinator {
 
     /** COMMIT — JOIN: connectToChannel -> wait for sync -> collectJoinChannelConfirmation -> joinChannel -> wait for PARTICIPATING. */
     private async commitJoin(
-        candidate: Candidate,
+        reporting: AttemptReporting,
         channelId: string,
         stakeAmountNumber: number,
         remainingDeadlineMs: () => number,
         record: (attempt: AcquireAttempt) => void
     ): Promise<{ status: "acquired" | "failed" | "deadline" }> {
-        const { adId, ad } = candidate;
-        const advertiser = ad.advertiser;
-        const kind = ad.kind;
+        const { adId, advertiser, kind } = reporting;
 
         const connected = await this.runStage(
             "connect",

@@ -635,14 +635,17 @@ export async function startP2pRuntimeHost<
                     case "acquireChannel": {
                         if (!runtimeHandle)
                             throw new Error("Runtime is not ready");
-                        const candidates: AcquireCandidates =
-                            request.candidates.map((encodedAd) =>
+                        // Preserve the absent/empty distinction across the
+                        // port: absent selects chain-first discovery.
+                        const candidates: AcquireCandidates | undefined =
+                            request.candidates?.map((encodedAd) =>
                                 decodeChannelAd(encodedAd)
                             );
                         result =
                             await runtimeHandle.stateManager.p2pManager.p2pSigner.acquireChannel(
                                 {
                                     candidates,
+                                    lobbyOnly: request.lobbyOnly,
                                     parallelism: request.parallelism,
                                     maxWinners: request.maxWinners,
                                     deadlineMs: request.deadlineMs,

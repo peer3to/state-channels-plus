@@ -154,8 +154,14 @@ export interface ListAdsRequest extends RuntimeRequest<"listAds"> {
 
 export interface AcquireChannelRequest
     extends RuntimeRequest<"acquireChannel"> {
-    /** ABI-encoded candidate ads (F5 - no function ever crosses the port). */
-    candidates: string[];
+    /**
+     * ABI-encoded candidate ads (F5 - no function ever crosses the port).
+     * Optional: absent means "no explicit ads", which selects chain-first
+     * discovery on the host side.
+     */
+    candidates?: string[];
+    /** Skips the chain phase and goes straight to the lobby. */
+    lobbyOnly?: boolean;
     parallelism?: number;
     maxWinners?: number;
     deadlineMs?: number;
