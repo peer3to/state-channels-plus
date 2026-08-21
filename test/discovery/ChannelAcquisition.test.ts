@@ -295,7 +295,7 @@ function makeFakeChannelHarness(
             logger: createTestLogger(),
             signerAddress: wallet.address,
             signer: wallet,
-            getChannelId: () => new Uint8Array(32),
+            channelId: new Uint8Array(32),
             timeConfig: { agreementTime: 1 },
             diamondStateMachine: {
                 localDiamondContract: { isChannelOpen: isChannelOpenStub }

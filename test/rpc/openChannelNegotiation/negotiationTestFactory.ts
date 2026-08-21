@@ -60,7 +60,7 @@ export function makeNegotiationService(
         stateManager: {
             logger: createLogger({}, {}, { level: "error" }),
             signerAddress: meAddress,
-            getChannelId: () => channelId,
+            channelId,
             diamondStateMachine: {
                 localDiamondContract: {
                     isChannelOpen: isChannelOpenStub

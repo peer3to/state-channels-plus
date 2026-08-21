@@ -52,7 +52,7 @@ function createP2pManagerStub(): P2PManager {
             }
         },
         stateManager: {
-            getChannelId: () => "test-channel",
+            channelId: "test-channel",
             forkId: 0,
             timeConfig: { agreementTime: 1 },
             timeoutManager: {
