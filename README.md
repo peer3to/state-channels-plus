@@ -223,7 +223,7 @@ Workers continue to require the shared worker-set secret for discovery and
 mutual authentication. They additionally authorize the authenticated Noise
 transport public key. Start migration with unlisted orchestrators allowed (the
 default). Print the persistent orchestrator public key with
-`yarn distributed:admin identity`, then bootstrap it on a new worker by passing
+`yarn distributed:identity`, then bootstrap it on a new worker by passing
 that key to the worker server's repeatable `--admin-key` option. Admin
 list/add/remove operations apply to every worker discovered before the deadline
 unless `--worker` selects one verified worker identity. Changes apply only to
@@ -236,7 +236,7 @@ Use that persistent admin identity to discover workers and manage their
 authorization stores over the authenticated distributed transport:
 
 ```shell
-yarn distributed:admin identity
+yarn distributed:identity
 yarn distributed:admin workers --discovery-timeout 10000
 yarn distributed:admin authorization-list --discovery-timeout 10000
 yarn distributed:admin authorization-add --discovery-timeout 10000 \

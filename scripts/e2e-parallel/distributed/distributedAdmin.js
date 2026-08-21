@@ -13,7 +13,6 @@ const { loadOrchestratorKeyPair } = require("./orchestratorIdentity");
 const { assertPublicKey, validateNote } = require("./authorizationStore");
 
 const COMMANDS = new Set([
-    "identity",
     "workers",
     "authorization-list",
     "authorization-add",
@@ -24,7 +23,6 @@ function usage() {
     return `Usage: yarn distributed:admin <command> [options]
 
 Commands:
-  identity                         Print this orchestrator's public key
   workers                          Discover authorized workers and print their identities
   authorization-list              List authorization entries on one worker
   authorization-add               Add an orchestrator or admin key
@@ -141,9 +139,6 @@ function authorizationRequest(options, workerId) {
 async function runAdmin(options, dependencies = {}) {
     const keyPair =
         options.keyPair || loadOrchestratorKeyPair(options.stateDir);
-    if (options.command === "identity") {
-        return { publicKey: keyPair.publicKey.toString("hex") };
-    }
     const poolSecret = options.poolSecret || process.env.SCP_TEST_POOL_SECRET;
     const keys = derivePoolKeys(poolSecret);
     const pool = await createPool({
@@ -328,13 +323,9 @@ async function main(argv = process.argv) {
         return;
     }
     const result = await runAdmin(options);
-    if (options.command === "identity") {
-        console.log(result.publicKey);
-    } else {
-        console.log(JSON.stringify(result, null, 2));
-        if (result.results?.some((entry) => !entry.accepted)) {
-            process.exitCode = 1;
-        }
+    console.log(JSON.stringify(result, null, 2));
+    if (result.results?.some((entry) => !entry.accepted)) {
+        process.exitCode = 1;
     }
 }
 

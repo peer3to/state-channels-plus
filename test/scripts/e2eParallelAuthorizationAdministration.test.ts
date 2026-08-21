@@ -22,6 +22,33 @@ const {
 } = require("../../scripts/e2e-parallel/distributed/distributedAdmin.js");
 
 describe("distributed authorization administration", function () {
+    it("prints the persistent orchestrator identity through its own CLI", function () {
+        const root = fs.mkdtempSync(
+            path.join(os.tmpdir(), "distributed-identity-")
+        );
+        try {
+            const identityCli = path.resolve(
+                "scripts/e2e-parallel/distributed/distributedIdentity.js"
+            );
+            const publicKey = execFileSync(
+                process.execPath,
+                [identityCli, "--state-dir", root],
+                { encoding: "utf8" }
+            ).trim();
+            expect(publicKey).to.equal(
+                loadOrchestratorKeyPair(root).publicKey.toString("hex")
+            );
+        } finally {
+            fs.rmSync(root, { recursive: true, force: true });
+        }
+    });
+
+    it("keeps identity inspection out of the admin command namespace", function () {
+        expect(() =>
+            parseAdminArgs(["node", "distributedAdmin.js", "identity"])
+        ).to.throw("Unknown distributed admin command: identity");
+    });
+
     it("persists an added ordinary key and its bounded operator note", function () {
         const root = fs.mkdtempSync(
             path.join(os.tmpdir(), "authorization-admin-")
