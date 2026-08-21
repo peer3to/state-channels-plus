@@ -1,8 +1,7 @@
 /* eslint-disable no-console */
 require("dotenv").config({ quiet: true });
-const fs = require("fs");
 const path = require("path");
-const { fork } = require("child_process");
+const os = require("os");
 const { DEFAULTS, parseServerArgs } = require("./serverArgParser");
 const { acquireHostLock } = require("./hostLock");
 const { acquireWorkspaceLock } = require("./workspaceLock");
@@ -21,25 +20,18 @@ const {
     shortConnectionHash
 } = require("./connectionLifecycle");
 const { WorkerLeaseManager } = require("./workerLeaseManager");
-const { LeaseRuntime } = require("./leaseRuntime");
-const { receiveBundle } = require("./artifactTransfer");
-const { extractRuntimeBundle } = require("./runtimeExtractor");
-const { WorkerAttemptSpool } = require("./workerAttemptSpool");
-const {
-    prepareWorkspace,
-    selectPrepareScript
-} = require("./workspacePreparation");
-const { buildWorkerEnvironment } = require("./remoteEnvironment");
 const { loadWorkerKeyPair } = require("./workerIdentity");
+const { EnvironmentCache, deriveEnvironmentKey } = require("./workspaceCache");
+const { IsolatedEnvironmentManager } = require("./isolatedEnvironment");
 const {
-    inspectWorkspace,
-    removeDeletedFiles,
-    commitSourceManifest,
-    markPrepared
-} = require("./workspaceCache");
+    profileSummary,
+    resolveExecutionProfile
+} = require("./executionProfile");
+const { AuthorizationStore, fingerprint } = require("./authorizationStore");
+const { WorkerAuditLog } = require("./auditLog");
+const { shouldTransferAttemptEvidence } = require("./artifactSelection");
+const { BoundedArtifactAssembler } = require("./failureArtifacts");
 
-const BABY_BLUE = "\x1b[38;5;117m";
-const RESET = "\x1b[0m";
 const SHUTDOWN_TIMEOUT_MS = 5000;
 const INFRA_PROCESS_LOG_CHUNK_BYTES = 512 * 1024;
 
@@ -53,16 +45,12 @@ function progressElapsedMs(connection, now = Date.now()) {
     return Math.max(0, now - startedAt);
 }
 
-function shouldTransferAttemptLog(result) {
-    return (
-        result.code !== 0 ||
-        Boolean(result.infrastructureFailure) ||
-        (result.reduced?.starveCount || 0) > 0
-    );
-}
-
-function logOrchestratorRequest(message) {
-    console.log(`${BABY_BLUE}${message}${RESET}`);
+function requireTransportPublicKey(info) {
+    const peerId = info?.publicKey?.toString("hex");
+    if (!/^[a-f0-9]{64}$/.test(peerId || "")) {
+        throw new Error("Authenticated transport key is required");
+    }
+    return peerId;
 }
 
 function sendStatusMessage(connection, status) {
@@ -70,13 +58,14 @@ function sendStatusMessage(connection, status) {
 }
 
 function sendToWorker(connection, message) {
-    const worker = connection.worker;
-    if (!worker?.connected) return;
-    worker.send(message, (error) => {
-        if (error && error.code !== "ERR_IPC_CHANNEL_CLOSED") {
-            console.error(`Worker IPC failed: ${error.message}`);
-        }
-    });
+    if (!connection.environment || connection.environment.state !== "ready") {
+        return;
+    }
+    connection.environment
+        .send("WORKER_MESSAGE", { message })
+        .catch((error) =>
+            console.error(`Environment control failed: ${error.message}`)
+        );
 }
 
 function acknowledgeLoglessAttempt(connection, requestId, logTransferred) {
@@ -99,8 +88,64 @@ async function main(options = {}) {
     ) {
         throw new Error("allowSharedHost requires an explicit unique workRoot");
     }
+    const allocatableCpu = Math.max(
+        0.01,
+        os.cpus().length - config.supervisorCpuReserve
+    );
+    const allocatableMemoryBytes = Math.max(
+        1,
+        os.totalmem() - config.supervisorMemoryReserveBytes
+    );
+    if (config.cpuLimit > allocatableCpu) {
+        throw new Error(
+            `Worker CPU limit ${config.cpuLimit} leaves less than the configured supervisor reserve`
+        );
+    }
+    if (config.memLimitGb * 1024 ** 3 > allocatableMemoryBytes) {
+        throw new Error(
+            `Worker memory limit ${config.memLimitGb}GB leaves less than the configured supervisor reserve`
+        );
+    }
     const keys = derivePoolKeys(process.env.SCP_TEST_POOL_SECRET);
     const hostLock = acquireHostLock(config);
+    const authorization = new AuthorizationStore(config.workRoot, {
+        authorizedPublicKeys: config.authorizedPublicKeys,
+        adminPublicKeys: config.adminPublicKeys
+    });
+    const audit = new WorkerAuditLog(config.workRoot);
+    const environmentCache = new EnvironmentCache(config.workRoot, config);
+    const environmentManager = await IsolatedEnvironmentManager.create({
+        workRoot: config.workRoot,
+        runnerImage: config.runnerImage,
+        executionBackend: config.executionBackend,
+        backend: config.environmentBackend,
+        backendName: config.environmentBackendName,
+        deniedPrivateCidrs: config.deniedPrivateCidrs,
+        volumeDriver: config.volumeDriver,
+        trustedRoot: path.resolve(__dirname, "../../..")
+    });
+    audit.append({
+        action: "cache-configuration",
+        accepted: true,
+        backend: environmentManager.capabilities().backend,
+        cacheBudgets: {
+            maxCachedEnvironments: environmentCache.maxCachedEnvironments,
+            maxCacheDiskBytes: environmentCache.maxCacheDiskBytes,
+            maxEnvironmentDiskBytes: environmentCache.maxEnvironmentDiskBytes
+        },
+        workerGeneration: environmentManager.generation
+    });
+    environmentCache.onEvict = async (entry) => {
+        await environmentManager.evict(entry.environmentKey);
+        audit.append({
+            action: "cache-eviction",
+            accepted: true,
+            environmentKey: entry.environmentKey,
+            resource: "diskBytes",
+            reason: `measured-or-reserved-bytes:${entry.bytes}`
+        });
+    };
+    await environmentManager.recoverOrphans();
     const connections = new Set();
     const connectionsByPeerId = new Map();
     const manager = new WorkerLeaseManager({
@@ -108,7 +153,7 @@ async function main(options = {}) {
         onGrant(connection) {
             connection.peer
                 .send("LEASE_GRANTED", {
-                    capabilities: capabilities(config)
+                    capabilities: capabilities(config, environmentManager)
                 })
                 .catch(() => {});
         },
@@ -144,6 +189,82 @@ async function main(options = {}) {
         return sendStatusMessage(connection, status);
     }
 
+    function executionProfiles() {
+        const memoryBytes = Math.max(
+            1,
+            Math.floor(config.memLimitGb * 1024 ** 3)
+        );
+        const defaults = {
+            schedulerTickMs: config.schedulerTickMs,
+            workers: config.workers,
+            slots: config.slots,
+            cpu: config.cpuLimit,
+            memoryBytes,
+            diskBytes: config.diskLimitBytes,
+            pidsLimit: config.pidsLimit,
+            targetLoad: config.targetLoad
+        };
+        return { defaults, ceilings: { ...defaults } };
+    }
+
+    async function handleAuthorizationAdmin(connection, message) {
+        const requestId = message.header.requestId;
+        const targetWorker = message.header.targetWorker;
+        let accepted = false;
+        let decisionReason = "accepted";
+        let response;
+        try {
+            if (targetWorker !== pool.publicKey.toString("hex")) {
+                throw new Error("Authorization request targets another worker");
+            }
+            if (connection.authorizationRole !== "admin") {
+                throw new Error("Admin authorization is required");
+            }
+            if (message.kind === "AUTHORIZATION_LIST") {
+                response = { entries: authorization.list() };
+            } else if (message.kind === "AUTHORIZATION_ADD") {
+                response = authorization.add(
+                    message.header.publicKey,
+                    message.header.note || "",
+                    message.header.role || "orchestrator"
+                );
+            } else {
+                response = authorization.remove(message.header.publicKey);
+            }
+            accepted = true;
+            await connection.peer.send("AUTHORIZATION_RESULT", {
+                requestId,
+                accepted,
+                message: "ok",
+                entries: response.entries || [response]
+            });
+        } catch (error) {
+            decisionReason = error.message;
+            await connection.peer.send("AUTHORIZATION_RESULT", {
+                requestId,
+                accepted,
+                message: error.message,
+                entries: []
+            });
+        }
+        audit.append({
+            action: message.kind,
+            accepted,
+            callerFingerprint: fingerprint(connection.peerId),
+            targetWorker,
+            targetFingerprint: /^[a-f0-9]{64}$/.test(
+                message.header.publicKey || ""
+            )
+                ? fingerprint(message.header.publicKey)
+                : undefined,
+            targetRole:
+                message.kind === "AUTHORIZATION_ADD"
+                    ? message.header.role || "orchestrator"
+                    : undefined,
+            reason: decisionReason
+        });
+    }
+
     const shutdown = async (code = 0) => {
         if (shuttingDown) return;
         shuttingDown = true;
@@ -162,14 +283,36 @@ async function main(options = {}) {
     };
 
     async function releaseLease(connection) {
-        const result = await manager.release(connection, async () =>
-            connection.runtime?.cleanup()
-        );
-        if (!result.faulted) return true;
-        await connection.peer
-            .send("FAULTED", { message: result.message })
-            .catch(() => {});
-        return false;
+        if (connection.releasePromise) return connection.releasePromise;
+        if (manager.active !== connection && !connection.runtime) return true;
+        connection.releasePromise = (async () => {
+            const result = await manager.release(connection, async () =>
+                connection.runtime?.cleanup()
+            );
+            connection.runtime = null;
+            connection.environment = null;
+            connection.environmentKey = null;
+            connection.workspaceOffer = null;
+            connection.sourceTransfer = null;
+            connection.artifactTransfer = null;
+            connection.prepared = false;
+            connection.workerStarted = false;
+            connection.workerReady = false;
+            connection.workerComplete = null;
+            connection.resolveWorkerComplete = null;
+            connection.environmentFailed = false;
+            connection.environmentFailureReported = false;
+            if (!result.faulted) return true;
+            await connection.peer
+                .send("FAULTED", { message: result.message })
+                .catch(() => {});
+            return false;
+        })();
+        try {
+            return await connection.releasePromise;
+        } finally {
+            connection.releasePromise = null;
+        }
     }
 
     async function closeConnection(
@@ -179,6 +322,14 @@ async function main(options = {}) {
         if (connection.closing) return;
         connection.closing = true;
         connections.delete(connection);
+        if (connection.authenticated) {
+            audit.append({
+                action: "disconnect",
+                accepted: true,
+                callerFingerprint: fingerprint(connection.peerId),
+                sessionId: connection.sessionId
+            });
+        }
         if (connectionsByPeerId.get(connection.peerId) === connection) {
             connectionsByPeerId.delete(connection.peerId);
         }
@@ -199,7 +350,13 @@ async function main(options = {}) {
             closeStream(stream, "worker server is shutting down");
             return;
         }
-        const peerId = info?.publicKey?.toString("hex");
+        let peerId;
+        try {
+            peerId = requireTransportPublicKey(info);
+        } catch (error) {
+            closeStream(stream, error.message);
+            return;
+        }
         const peer = new ProtocolPeer(stream);
         peer.on("protocolError", (error) =>
             console.log(
@@ -219,12 +376,34 @@ async function main(options = {}) {
         };
         connections.add(connection);
         try {
-            await authenticateServer(
+            const authentication = await authenticateServer(
                 peer,
                 keys.authKey,
-                { local: pool.publicKey },
+                { local: pool.publicKey, remote: info?.publicKey },
                 DISCOVERY_AUTH_TIMEOUT_MS
             );
+            const authenticatedKey =
+                authentication.remotePublicKey.toString("hex");
+            const admission = authorization.authorize(
+                authenticatedKey,
+                config.allowUnlistedOrchestrators
+            );
+            audit.append({
+                action: "connection",
+                accepted: admission.accepted,
+                authorizationMode: admission.mode,
+                callerFingerprint: fingerprint(authenticatedKey),
+                unlistedTransportKey:
+                    admission.mode === "shared-secret-migration"
+                        ? authenticatedKey
+                        : undefined,
+                connectionId: shortConnectionHash(connection.connectionHash)
+            });
+            if (!admission.accepted) {
+                throw new Error("Orchestrator transport key is not authorized");
+            }
+            connection.peerId = authenticatedKey;
+            connection.authorizationRole = admission.role;
             connection.authenticated = true;
             const existing = peerId ? connectionsByPeerId.get(peerId) : null;
             if (existing) {
@@ -259,7 +438,7 @@ async function main(options = {}) {
             }
             await peer.send("SERVER_READY", {
                 name: config.name,
-                capabilities: capabilities(config)
+                capabilities: capabilities(config, environmentManager)
             });
             console.log("Orchestrator connected and authenticated");
             peer.on("message", (message) => {
@@ -316,6 +495,47 @@ async function main(options = {}) {
             }
             if (message.kind === "LEASE_REQUEST") {
                 connection.sessionId = message.header.sessionId;
+                connection.allocationDetailsNegotiated = Boolean(
+                    message.header.executionProfile ||
+                        message.header.extensions?.resourceAllocationDetails
+                );
+                const { defaults, ceilings } = executionProfiles();
+                try {
+                    connection.requestedProfile =
+                        message.header.executionProfile || {};
+                    connection.executionProfile = resolveExecutionProfile(
+                        defaults,
+                        ceilings,
+                        connection.requestedProfile
+                    );
+                } catch (error) {
+                    if (error.code !== "RESOURCE_ALLOCATION_REJECTED") {
+                        throw error;
+                    }
+                    audit.append({
+                        action: "lease-request",
+                        accepted: false,
+                        callerFingerprint: fingerprint(connection.peerId),
+                        sessionId: connection.sessionId,
+                        failureCode: error.code,
+                        resource: error.resource,
+                        requestedProfile: connection.requestedProfile
+                    });
+                    await connection.peer.send(
+                        connection.allocationDetailsNegotiated
+                            ? "RESOURCE_ALLOCATION_REJECTED"
+                            : "PREPARATION_ERROR",
+                        connection.allocationDetailsNegotiated
+                            ? {
+                                  resource: error.resource,
+                                  requested: error.requested,
+                                  permitted: error.permitted,
+                                  message: error.message
+                              }
+                            : { message: "Worker resource allocation refused" }
+                    );
+                    return;
+                }
                 const response = manager.request(connection);
                 if (response.kind === "LEASE_GRANTED") {
                     connection.leaseStartedAt = Date.now();
@@ -328,11 +548,30 @@ async function main(options = {}) {
                 if (response.kind !== "LEASE_GRANTED") {
                     await connection.peer.send(response.kind, response);
                 }
+                audit.append({
+                    action: "lease-request",
+                    accepted: response.kind === "LEASE_GRANTED",
+                    callerFingerprint: fingerprint(connection.peerId),
+                    sessionId: connection.sessionId,
+                    requestedProfile: connection.requestedProfile,
+                    resolvedProfile: profileSummary(
+                        connection.executionProfile
+                    ),
+                    reason: response.kind
+                });
+                return;
+            }
+            if (
+                message.kind === "AUTHORIZATION_LIST" ||
+                message.kind === "AUTHORIZATION_ADD" ||
+                message.kind === "AUTHORIZATION_REMOVE"
+            ) {
+                await handleAuthorizationAdmin(connection, message);
                 return;
             }
             manager.assertActive(connection);
             if (message.kind === "WORKSPACE_OFFER") {
-                if (connection.runtime) {
+                if (connection.environment) {
                     throw new Error(
                         "Workspace offer is invalid after preparation has started"
                     );
@@ -351,15 +590,125 @@ async function main(options = {}) {
                 ) {
                     throw new Error("Invalid source file manifest");
                 }
-                connection.runtime = new LeaseRuntime(config.workRoot);
-                connection.runtime.holdLock(
-                    acquireWorkspaceLock(config.workRoot, manifest.workspaceId)
+                const environmentKey = deriveEnvironmentKey(
+                    connection.peerId,
+                    manifest.workspaceId
                 );
-                connection.workspaceOffer = {
-                    manifest,
-                    cache: await inspectWorkspace(config.workRoot, manifest)
+                const reservation = await environmentCache.reserve(
+                    environmentKey,
+                    connection.executionProfile.diskBytes
+                );
+                audit.append({
+                    action: "environment-allocation",
+                    accepted: true,
+                    callerFingerprint: fingerprint(connection.peerId),
+                    environmentKey,
+                    backend: environmentManager.capabilities().backend,
+                    cacheBytes: reservation.measuredBytes,
+                    resolvedProfile: profileSummary(
+                        connection.executionProfile
+                    ),
+                    reason: reservation.evicted.length
+                        ? `evicted:${reservation.evicted.join(",")}`
+                        : "within-cache-budget"
+                });
+                let lock;
+                let environment;
+                try {
+                    lock = acquireWorkspaceLock(
+                        config.workRoot,
+                        environmentKey
+                    );
+                    environment = await environmentManager.allocate({
+                        environmentKey,
+                        orchestratorPublicKey: connection.peerId,
+                        profile: connection.executionProfile
+                    });
+                } catch (error) {
+                    lock?.release();
+                    environmentCache.beginStop(environmentKey);
+                    environmentCache.release(environmentKey);
+                    throw error;
+                }
+                connection.environment = environment;
+                connection.environmentKey = environmentKey;
+                const onEnvironmentFrame = (frame) =>
+                    handleEnvironmentFrame(connection, frame).catch((error) =>
+                        handleEnvironmentFailure(connection, error)
+                    );
+                const onEnvironmentFailure = (error) =>
+                    handleEnvironmentFailure(connection, error);
+                const onResourceLimit = (failure) =>
+                    handleEnvironmentFrame(connection, {
+                        kind: "RESOURCE_LIMIT_EXCEEDED",
+                        payload: failure,
+                        body: Buffer.alloc(0)
+                    }).catch((error) =>
+                        handleEnvironmentFailure(connection, error)
+                    );
+                let cleaned = false;
+                connection.runtime = {
+                    listeners: {
+                        frame: onEnvironmentFrame,
+                        failure: onEnvironmentFailure,
+                        resourceLimit: onResourceLimit
+                    },
+                    async cleanup() {
+                        if (cleaned) return;
+                        cleaned = true;
+                        environment.off("frame", onEnvironmentFrame);
+                        environment.off("failure", onEnvironmentFailure);
+                        environment.off("resourceLimit", onResourceLimit);
+                        environmentCache.beginStop(environmentKey);
+                        let detached = false;
+                        try {
+                            if (connection.environmentFailed) {
+                                await environment.destroy();
+                            } else {
+                                await environment.stop();
+                                environmentManager.markClean(environment);
+                            }
+                            detached = true;
+                        } catch (error) {
+                            environmentManager.block(environmentKey, error);
+                            audit.append({
+                                action: "environment-failure",
+                                accepted: false,
+                                callerFingerprint: fingerprint(
+                                    connection.peerId
+                                ),
+                                environmentKey,
+                                failureCode: "DETACH_UNCONFIRMED"
+                            });
+                        } finally {
+                            lock.release();
+                            environmentCache.release(environmentKey);
+                        }
+                        if (connection.environmentFailed && detached) {
+                            environmentCache.invalidate(environmentKey);
+                        }
+                    }
                 };
-                const { changed, deleted } = connection.workspaceOffer.cache;
+                environment.on("frame", onEnvironmentFrame);
+                environment.on("failure", onEnvironmentFailure);
+                environment.on("resourceLimit", onResourceLimit);
+                await environment.start();
+                environmentManager.writeMetadata(environment, true);
+                await environment.send("ENVIRONMENT_SETUP", {
+                    environmentKey,
+                    orchestratorPublicKey: connection.peerId,
+                    profile: profileSummary(connection.executionProfile),
+                    limits: {
+                        maxCompressedBytes: config.maxCompressedBytes,
+                        maxExpandedBytes: config.maxExpandedBytes,
+                        maxAttemptSpoolBytes: config.maxAttemptSpoolBytes
+                    }
+                });
+                const needed = environment.waitFor("WORKSPACE_NEED", 30000);
+                await environment.send("WORKSPACE_OFFER", { manifest });
+                const need = (await needed).payload;
+                connection.workspaceOffer = { manifest, need };
+                const { changed, deleted } = need;
                 await connection.peer.send(
                     "WORKSPACE_NEED",
                     {},
@@ -376,123 +725,62 @@ async function main(options = {}) {
                 );
             } else if (message.kind === "BUNDLE_META") {
                 console.log("Receiving source workspace");
-                if (!connection.workspaceOffer || !connection.runtime) {
+                if (!connection.workspaceOffer || !connection.environment) {
                     throw new Error(
                         "Workspace offer is required before transfer"
                     );
                 }
-                const archivePath = path.join(
-                    connection.runtime.root,
-                    "runtime.tgz"
-                );
-                receiveBundle(
-                    connection.peer,
-                    archivePath,
-                    config,
-                    async (deltaManifest) => {
-                        const { manifest, cache } = connection.workspaceOffer;
-                        console.log(
-                            `Source received: ${deltaManifest.fileCount} changed file(s), applying`
-                        );
-                        await reportStatus(
-                            connection,
-                            deltaManifest.fileCount
-                                ? `Applying ${deltaManifest.fileCount} changed source files`
-                                : "Using cached source workspace"
-                        );
-                        const workspaceRoot = cache.workspace;
-                        fs.mkdirSync(workspaceRoot, { recursive: true });
-                        removeDeletedFiles(workspaceRoot, cache.deleted);
-                        await extractRuntimeBundle(
-                            archivePath,
-                            workspaceRoot,
-                            deltaManifest,
-                            config,
-                            manifest.files.filter((entry) =>
-                                cache.changed.includes(entry.path)
-                            )
-                        );
-                        commitSourceManifest(cache, manifest);
-                        console.log(
-                            "Source verified; installing and preparing workspace"
-                        );
-                        const projectRoot = path.join(
-                            workspaceRoot,
-                            manifest.rootProjectPath
-                        );
-                        if (!cache.prepared || cache.changed.length) {
-                            await prepareWorkspace(workspaceRoot, manifest, {
-                                workRoot: config.workRoot,
-                                runtime: connection.runtime,
-                                env: {},
-                                shouldInstall(repository) {
-                                    const prefix = `${repository.path}/`;
-                                    const dependencyFiles = new Set([
-                                        `${prefix}package.json`,
-                                        `${prefix}pnpm-lock.yaml`,
-                                        `${prefix}yarn.lock`,
-                                        `${prefix}package-lock.json`
-                                    ]);
-                                    return (
-                                        cache.preparationChanged ||
-                                        !fs.existsSync(
-                                            path.join(
-                                                workspaceRoot,
-                                                repository.path,
-                                                "node_modules"
-                                            )
-                                        ) ||
-                                        cache.changed.some((entry) =>
-                                            dependencyFiles.has(entry)
-                                        )
-                                    );
-                                },
-                                selectPrepareScript: (repository) =>
-                                    selectPrepareScript(repository, cache),
-                                onStage(status) {
-                                    reportStatus(connection, status).catch(
-                                        () => {}
-                                    );
-                                },
-                                onOutput(stream, data) {
-                                    const target =
-                                        stream === "stderr"
-                                            ? process.stderr
-                                            : process.stdout;
-                                    target.write(data);
-                                    connection.peer
-                                        .send("INFRA_LOG", { stream }, data)
-                                        .catch(() => {});
-                                }
-                            });
-                            markPrepared(cache, manifest);
-                        } else {
-                            console.log(
-                                "Source and prepared workspace unchanged; skipping install and build"
-                            );
-                        }
-                        manager.markRunning(connection);
-                        connection.prepared = {
-                            workspaceRoot,
-                            projectRoot,
-                            manifest
-                        };
-                        console.log(
-                            "Workspace prepared; waiting for run configuration"
-                        );
-                        await reportStatus(
-                            connection,
-                            "Workspace prepared; waiting to start tests"
-                        );
+                connection.sourceTransfer = {
+                    manifest: message.header.manifest,
+                    sequence: 0,
+                    bytes: 0
+                };
+                await connection.environment.send("SOURCE_BEGIN", {
+                    manifest: message.header.manifest
+                });
+            } else if (message.kind === "BUNDLE_CHUNK") {
+                const transfer = connection.sourceTransfer;
+                if (
+                    !transfer ||
+                    message.header.sequence !== transfer.sequence++
+                ) {
+                    throw new Error("Out-of-order source chunk");
+                }
+                transfer.bytes += message.body.length;
+                if (transfer.bytes > config.maxCompressedBytes) {
+                    throw new Error("Compressed bundle limit exceeded");
+                }
+                await connection.environment.send(
+                    "SOURCE_CHUNK",
+                    {
+                        sequence: message.header.sequence
                     },
-                    message,
-                    (error) =>
-                        console.error(
-                            `Workspace preparation failed: ${error.stack || error}`
-                        )
+                    message.body
+                );
+            } else if (message.kind === "BUNDLE_END") {
+                const transfer = connection.sourceTransfer;
+                if (!transfer || transfer.bytes !== message.header.byteCount) {
+                    throw new Error("Invalid source transfer completion");
+                }
+                const prepared = connection.environment.waitForActivity(
+                    "PREPARED",
+                    config.preparationInactivityTimeoutMs
+                );
+                await connection.environment.send("SOURCE_COMPLETE", {
+                    byteCount: message.header.byteCount,
+                    sha256: message.header.sha256
+                });
+                await prepared;
+                connection.sourceTransfer = null;
+                connection.prepared = true;
+                manager.markRunning(connection);
+                await connection.peer.send("PREPARED");
+                await reportStatus(
+                    connection,
+                    "Workspace prepared; waiting to start tests"
                 );
             } else if (message.kind === "RUN_CONFIG") {
-                if (!connection.prepared || connection.worker) {
+                if (!connection.prepared || connection.workerStarted) {
                     throw new Error(
                         "RUN_CONFIG is invalid in the current lease state"
                     );
@@ -501,13 +789,38 @@ async function main(options = {}) {
                     await closeConnection(connection);
                     return;
                 }
-                spawnWorker(
-                    connection,
-                    connection.prepared.workspaceRoot,
-                    connection.prepared.projectRoot,
-                    connection.prepared.manifest,
-                    message.header
+                connection.resourceDetailsNegotiated = Boolean(
+                    message.header.extensions?.resourceLimitDetails
                 );
+                connection.runtimeMetadataNegotiated = Boolean(
+                    message.header.extensions?.isolatedRuntimeMetadata
+                );
+                audit.append({
+                    action: "task-execution-request",
+                    accepted: true,
+                    callerFingerprint: fingerprint(connection.peerId),
+                    sessionId: connection.sessionId,
+                    environmentKey: connection.environmentKey,
+                    resolvedProfile: profileSummary(connection.executionProfile)
+                });
+                connection.workerStarted = true;
+                connection.workerComplete = new Promise((resolve) => {
+                    connection.resolveWorkerComplete = resolve;
+                });
+                const profile = connection.executionProfile;
+                await connection.environment.send("RUN_CONFIG", {
+                    config: {
+                        slotCount: profile.slots,
+                        concurrencyCap: profile.workers,
+                        schedulerTickMs: profile.schedulerTickMs,
+                        targetLoad: profile.targetLoad,
+                        memBoundGb: profile.memoryBytes / 1024 ** 3,
+                        maxAttemptSpoolBytes: config.maxAttemptSpoolBytes,
+                        heartbeatTimeoutMs: config.heartbeatTimeoutMs,
+                        taskCount: message.header.taskCount,
+                        baseEnv: message.header.baseEnv || {}
+                    }
+                });
                 connection.runStartedAt = Date.now();
                 manager.updateProgress(connection, {
                     completedTasks: 0,
@@ -552,14 +865,26 @@ async function main(options = {}) {
                 // not be reported as a startup failure.
                 connection.stopRequested = true;
                 await reportStatus(connection, "Cleaning completed lease");
-                sendToWorker(connection, { kind: message.kind });
-                if (message.kind === "RUN_COMPLETE") {
+                if (connection.workerStarted) {
+                    sendToWorker(connection, { kind: message.kind });
+                }
+                if (
+                    message.kind === "RUN_COMPLETE" &&
+                    connection.workerStarted
+                ) {
                     const stats = await connection.workerComplete;
                     if (stats) {
                         await connection.peer.send("WORKER_STATS", { stats });
                     }
                 }
                 const reusable = await releaseLease(connection);
+                audit.append({
+                    action: "lease-outcome",
+                    accepted: reusable,
+                    callerFingerprint: fingerprint(connection.peerId),
+                    sessionId: connection.sessionId,
+                    reason: reusable ? "clean" : "faulted"
+                });
                 if (reusable) {
                     await connection.peer.send("LEASE_CLEAN");
                     console.log(
@@ -569,9 +894,66 @@ async function main(options = {}) {
             }
         } catch (error) {
             console.error(`Lease failed: ${error.stack || error}`);
+            if (error.code === "RESOURCE_ALLOCATION_REJECTED") {
+                audit.append({
+                    action: "environment-allocation",
+                    accepted: false,
+                    callerFingerprint: fingerprint(connection.peerId),
+                    environmentKey: connection.environmentKey,
+                    failureCode: error.code,
+                    resource: error.resource,
+                    requestedProfile: connection.executionProfile
+                        ? profileSummary(connection.executionProfile)
+                        : undefined,
+                    reason: error.message
+                });
+                await connection.peer
+                    .send(
+                        connection.allocationDetailsNegotiated
+                            ? "RESOURCE_ALLOCATION_REJECTED"
+                            : "PREPARATION_ERROR",
+                        connection.allocationDetailsNegotiated
+                            ? {
+                                  resource: error.resource,
+                                  requested: error.requested,
+                                  permitted: error.permitted,
+                                  message: error.message
+                              }
+                            : { message: "Worker resource allocation refused" }
+                    )
+                    .catch(() => {});
+                await releaseLease(connection);
+                return;
+            }
+            if (error.code === "RECOVERABLE_PREPARATION_FAILURE") {
+                audit.append({
+                    action: "environment-failure",
+                    accepted: false,
+                    callerFingerprint: fingerprint(connection.peerId),
+                    environmentKey: connection.environmentKey,
+                    failureCode: "PREPARATION_ERROR",
+                    reason: "recoverable-preparation-command-failure"
+                });
+                await connection.peer
+                    .send("PREPARATION_ERROR", { message: error.message })
+                    .catch(() => {});
+                await releaseLease(connection);
+                return;
+            }
+            if (error.code === "ISOLATED_INACTIVITY_TIMEOUT") {
+                connection.environmentFailed = true;
+                await connection.peer
+                    .send("PREPARATION_ERROR", { message: error.message })
+                    .catch(() => {});
+                await releaseLease(connection);
+                return;
+            }
+            if (connection.environment) connection.environmentFailed = true;
             await connection.peer
                 .send(
-                    connection.worker ? "WORKER_ERROR" : "PREPARATION_ERROR",
+                    connection.workerStarted
+                        ? "WORKER_ERROR"
+                        : "PREPARATION_ERROR",
                     {
                         message: error.message
                     }
@@ -581,193 +963,299 @@ async function main(options = {}) {
         }
     }
 
-    function spawnWorker(
-        connection,
-        workspaceRoot,
-        projectRoot,
-        manifest,
-        runConfig
-    ) {
-        if (
-            path.isAbsolute(manifest.runnerEntry) ||
-            manifest.runnerEntry.split(/[\\/]+/).includes("..")
-        ) {
-            throw new Error(
-                "Distributed worker entry must be a safe relative path"
-            );
-        }
-        const entry = path.join(workspaceRoot, manifest.runnerEntry);
-        if (!fs.existsSync(entry)) {
-            throw new Error(`Distributed worker entry is missing: ${entry}`);
-        }
-        const worker = fork(entry, [], {
-            cwd: projectRoot,
-            env: buildWorkerEnvironment(process.env),
-            // The child keeps the workspace lock alive if this server exits
-            // abruptly; the descriptor itself is intentionally unused.
-            stdio: [
-                "ignore",
-                "pipe",
-                "pipe",
-                "ipc",
-                ...connection.runtime.inheritedFileDescriptors()
-            ],
-            detached: process.platform !== "win32"
+    async function transferAttemptArtifacts(connection, message, manifest) {
+        const assembler = new BoundedArtifactAssembler(
+            manifest,
+            config.maxAttemptSpoolBytes,
+            config.maxAttemptSpoolBytes
+        );
+        const transfer = {
+            requestId: message.requestId,
+            assignment: message.assignment,
+            assembler
+        };
+        connection.artifactTransfer = transfer;
+        transfer.complete = new Promise((resolve) => {
+            transfer.resolve = resolve;
         });
-        connection.worker = worker;
-        connection.workerReady = false;
-        connection.stopRequested = false;
-        connection.workerComplete = new Promise((resolve) => {
-            connection.resolveWorkerComplete = resolve;
+        await connection.environment.send("ARTIFACT_REQUEST", {
+            requestId: message.requestId,
+            names: manifest.map((entry) => entry.name),
+            chunkBytes: 64 * 1024
         });
-        connection.runtime.addChild(worker);
-        worker.on("error", (error) => {
-            if (error.code !== "ERR_IPC_CHANNEL_CLOSED") {
-                console.error(`Test worker process failed: ${error.message}`);
-            }
+        const artifactBytes = manifest.reduce(
+            (total, entry) => total + entry.bytes,
+            0
+        );
+        const timeoutMs = Math.max(
+            config.artifactTransferTimeoutMs,
+            Math.ceil(artifactBytes / (64 * 1024)) * 1000
+        );
+        let timeout;
+        let onFailure;
+        const failed = new Promise((_, reject) => {
+            onFailure = reject;
+            connection.environment.once("failure", onFailure);
         });
-        worker.on("exit", (code, signal) => {
-            connection.resolveWorkerComplete?.(null);
-            connection.worker = null;
-            console.log(
-                `Test worker exited (${code === null ? signal : `code ${code}`})`
-            );
-            if (
-                !connection.closing &&
-                !connection.stopRequested &&
-                !connection.workerReady
-            ) {
-                connection.peer
-                    .send("WORKER_ERROR", {
-                        message: `Test worker exited before becoming ready (${code === null ? signal : `code ${code}`})`
-                    })
-                    .catch(() => {});
-            }
-        });
-        worker.stdout.on("data", (data) => {
-            process.stdout.write(data);
-            connection.peer
-                .send("INFRA_LOG", { stream: "stdout" }, data)
-                .catch(() => {});
-        });
-        worker.stderr.on("data", (data) => {
-            process.stderr.write(data);
-            connection.peer
-                .send("INFRA_LOG", { stream: "stderr" }, data)
-                .catch(() => {});
-        });
-        worker.on("message", (message) => {
-            handleWorkerMessage(message).catch((error) => {
-                if (connection.closing) return;
-                console.error(
-                    `Test worker message failed: ${error.stack || error}`
-                );
-                connection.peer
-                    .send("WORKER_ERROR", { message: error.message })
-                    .catch(() => {});
-                closeConnection(connection).catch(() => {});
-            });
-        });
-
-        async function handleWorkerMessage(message) {
-            if (message.kind === "WORKER_READY") {
-                connection.workerReady = true;
-                await reportStatus(connection, "Ready");
-                await connection.peer.send("WORKER_READY");
-            } else if (message.kind === "TASK_REQUEST") {
-                await connection.peer.send("TASK_REQUEST", {
-                    requestId: message.requestId
-                });
-            } else if (message.kind === "ATTEMPT_READY") {
-                const logTransferred = shouldTransferAttemptLog(message.result);
-                if (logTransferred) {
-                    const spool = WorkerAttemptSpool.openExisting(
-                        message.spoolPath
-                    );
-                    await spool.send(connection.peer, {
-                        taskId: message.assignment.taskId,
-                        attemptId: message.assignment.attemptId,
-                        requestId: message.requestId
-                    });
-                }
-                await connection.peer.send("ATTEMPT_RESULT", {
-                    requestId: message.requestId,
-                    assignment: message.assignment,
-                    result: message.result,
-                    logTransferred
-                });
-                acknowledgeLoglessAttempt(
-                    connection,
-                    message.requestId,
-                    logTransferred
-                );
-            } else if (message.kind === "INFRA_PROCESS_DIAGNOSTIC") {
-                const log = Buffer.from(message.log);
-                const chunkCount = Math.max(
-                    1,
-                    Math.ceil(log.length / INFRA_PROCESS_LOG_CHUNK_BYTES)
-                );
-                for (let sequence = 0; sequence < chunkCount; sequence++) {
-                    const offset = sequence * INFRA_PROCESS_LOG_CHUNK_BYTES;
-                    await connection.peer.send(
-                        "INFRA_PROCESS_LOG",
-                        {
-                            processKind: message.processKind,
-                            slotId: message.slotId,
-                            trigger: message.trigger,
-                            processFailure: message.processFailure,
-                            uploadId: message.uploadId,
-                            sequence,
-                            chunkCount
-                        },
-                        log.subarray(
-                            offset,
-                            Math.min(
-                                log.length,
-                                offset + INFRA_PROCESS_LOG_CHUNK_BYTES
-                            )
+        const timedOut = new Promise((_, reject) => {
+            timeout = setTimeout(
+                () =>
+                    reject(
+                        new Error(
+                            `Attempt artifact transfer timed out after ${timeoutMs}ms`
                         )
-                    );
-                }
-                sendToWorker(connection, {
-                    kind: "RESPONSE",
-                    requestId: message.requestId,
-                    value: true
-                });
-            } else if (message.kind === "WORKER_ERROR") {
-                logOrchestratorRequest(
-                    "Reporting worker failure to orchestrator"
-                );
-                if (message.stats) {
-                    await connection.peer.send("WORKER_STATS", {
-                        stats: message.stats
-                    });
-                }
-                await connection.peer.send("WORKER_ERROR", {
-                    message: message.message
-                });
-            } else if (message.kind === "WORKER_COMPLETE") {
-                connection.resolveWorkerComplete?.(message.stats);
-                worker.send({ kind: "WORKER_COMPLETE_ACK" });
-            }
-        }
-        worker.send({
-            kind: "START",
-            config: {
-                projectRoot,
-                infraLogDir: path.join(connection.runtime.root, "infra"),
-                spoolRoot: path.join(connection.runtime.root, "spool"),
-                slotCount: config.slots,
-                concurrencyCap: config.workers,
-                schedulerTickMs: config.schedulerTickMs,
-                targetLoad: config.targetLoad,
-                memBoundGb: config.memLimitGb,
-                maxAttemptSpoolBytes: config.maxAttemptSpoolBytes,
-                heartbeatTimeoutMs: config.heartbeatTimeoutMs,
-                taskCount: runConfig.taskCount,
-                baseEnv: runConfig.baseEnv || {}
-            }
+                    ),
+                timeoutMs
+            );
         });
+        try {
+            await Promise.race([transfer.complete, failed, timedOut]);
+        } finally {
+            clearTimeout(timeout);
+            connection.environment.off("failure", onFailure);
+        }
+        const completed = assembler.complete();
+        await connection.peer.send("LOG_END", {
+            taskId: message.assignment.taskId,
+            attemptId: message.assignment.attemptId,
+            requestId: message.requestId,
+            sequence: completed.sequence,
+            byteCount: completed.byteCount,
+            sha256: completed.sha256
+        });
+        connection.artifactTransfer = null;
+    }
+
+    async function handleWorkerMessage(
+        connection,
+        message,
+        artifactManifest = []
+    ) {
+        if (message.kind === "WORKER_READY") {
+            connection.workerReady = true;
+            await reportStatus(connection, "Ready");
+            await connection.peer.send("WORKER_READY");
+        } else if (message.kind === "TASK_REQUEST") {
+            await connection.peer.send("TASK_REQUEST", {
+                requestId: message.requestId
+            });
+        } else if (message.kind === "ATTEMPT_READY") {
+            const logTransferred = shouldTransferAttemptEvidence(
+                message.result
+            );
+            if (logTransferred) {
+                await transferAttemptArtifacts(
+                    connection,
+                    message,
+                    artifactManifest
+                );
+            }
+            await connection.peer.send("ATTEMPT_RESULT", {
+                requestId: message.requestId,
+                assignment: message.assignment,
+                result: message.result,
+                logTransferred,
+                isolatedRuntime: connection.runtimeMetadataNegotiated
+                    ? environmentManager.capabilities()
+                    : undefined
+            });
+            await connection.environment.send("ARTIFACT_COMMITTED", {
+                requestId: message.requestId
+            });
+        } else if (message.kind === "INFRA_PROCESS_DIAGNOSTIC") {
+            const log = Buffer.from(message.log);
+            const chunkCount = Math.max(
+                1,
+                Math.ceil(log.length / INFRA_PROCESS_LOG_CHUNK_BYTES)
+            );
+            for (let sequence = 0; sequence < chunkCount; sequence++) {
+                const offset = sequence * INFRA_PROCESS_LOG_CHUNK_BYTES;
+                await connection.peer.send(
+                    "INFRA_PROCESS_LOG",
+                    {
+                        processKind: message.processKind,
+                        slotId: message.slotId,
+                        trigger: message.trigger,
+                        processFailure: message.processFailure,
+                        uploadId: message.uploadId,
+                        sequence,
+                        chunkCount
+                    },
+                    log.subarray(
+                        offset,
+                        Math.min(
+                            log.length,
+                            offset + INFRA_PROCESS_LOG_CHUNK_BYTES
+                        )
+                    )
+                );
+            }
+            sendToWorker(connection, {
+                kind: "RESPONSE",
+                requestId: message.requestId,
+                value: true
+            });
+        } else if (message.kind === "INFRA_LOG") {
+            await connection.peer.send(
+                "INFRA_LOG",
+                { stream: message.stream },
+                message.body || Buffer.alloc(0)
+            );
+        } else if (message.kind === "WORKER_ERROR") {
+            if (message.stats) {
+                await connection.peer.send("WORKER_STATS", {
+                    stats: message.stats
+                });
+            }
+            await connection.peer.send("WORKER_ERROR", {
+                message: message.message
+            });
+        } else if (message.kind === "WORKER_COMPLETE") {
+            connection.resolveWorkerComplete?.(message.stats);
+            sendToWorker(connection, { kind: "WORKER_COMPLETE_ACK" });
+        } else if (message.kind === "ISOLATED_WORKER_EXIT") {
+            connection.resolveWorkerComplete?.(null);
+            if (connection.closing || connection.stopRequested) return;
+            if (!connection.workerReady) {
+                const error = new Error(
+                    `Test worker exited before becoming ready (${message.code ?? message.signal})`
+                );
+                error.code = "ISOLATED_WORKER_EXIT";
+                await handleEnvironmentFailure(connection, error);
+                return;
+            }
+            const classification = await connection.environment?.classifyExit();
+            if (classification) {
+                if (!connection.environment.claimResourceFailureReport()) {
+                    return;
+                }
+                await handleResourceLimit(connection, classification);
+                return;
+            }
+            const error = new Error(
+                `Test worker exited unexpectedly (${message.code ?? message.signal})`
+            );
+            error.code = "ISOLATED_WORKER_EXIT";
+            await handleEnvironmentFailure(connection, error);
+        }
+    }
+
+    async function handleResourceLimit(connection, failure) {
+        audit.append({
+            action: "environment-failure",
+            accepted: false,
+            callerFingerprint: fingerprint(connection.peerId),
+            environmentKey: connection.environmentKey,
+            failureCode: "RESOURCE_LIMIT_EXCEEDED",
+            resource: failure.resource
+        });
+        if (connection.resourceDetailsNegotiated) {
+            await connection.peer.send("RESOURCE_LIMIT_EXCEEDED", failure);
+        } else {
+            await connection.peer.send("WORKER_ERROR", {
+                message: `Isolated worker exceeded its ${failure.resource} limit`
+            });
+        }
+        connection.environmentFailed = true;
+        await releaseLease(connection);
+    }
+
+    async function handleEnvironmentFrame(connection, frame) {
+        if (frame.kind === "STATUS") {
+            await reportStatus(connection, frame.payload.status);
+        } else if (frame.kind === "WORKER_EVENT") {
+            await handleWorkerMessage(
+                connection,
+                {
+                    ...frame.payload.message,
+                    body: frame.body
+                },
+                frame.payload.artifactManifest || []
+            );
+        } else if (frame.kind === "ARTIFACT_CHUNK") {
+            const transfer = connection.artifactTransfer;
+            if (
+                !transfer ||
+                transfer.requestId !== frame.payload.requestId ||
+                frame.payload.sequence !== transfer.assembler.sequence
+            ) {
+                throw new Error("Out-of-order guest artifact chunk");
+            }
+            transfer.assembler.accept(
+                frame.payload.name,
+                frame.payload.sequence,
+                frame.body
+            );
+            await connection.peer.send(
+                "LOG_CHUNK",
+                {
+                    taskId: transfer.assignment.taskId,
+                    attemptId: transfer.assignment.attemptId,
+                    requestId: transfer.requestId,
+                    stream: frame.payload.name,
+                    sequence: frame.payload.sequence
+                },
+                frame.body
+            );
+        } else if (frame.kind === "ARTIFACT_COMPLETE") {
+            connection.artifactTransfer?.resolve();
+        } else if (frame.kind === "RESOURCE_LIMIT_EXCEEDED") {
+            await handleResourceLimit(connection, frame.payload);
+        } else if (frame.kind === "PREPARATION_FAILED") {
+            // The active preparation waiter turns this into a recoverable lease
+            // failure while preserving the stopped identity cache.
+        } else if (frame.kind === "ERROR") {
+            throw new Error(frame.payload.message);
+        }
+    }
+
+    async function handleEnvironmentFailure(connection, error) {
+        if (connection.closing || connection.environmentFailureReported) return;
+        connection.environmentFailureReported = true;
+        audit.append({
+            action: "environment-failure",
+            accepted: false,
+            callerFingerprint: fingerprint(connection.peerId),
+            environmentKey: connection.environmentKey,
+            failureCode: "WORKER_ERROR",
+            reason: "isolated-environment-failure"
+        });
+        const diagnostics = await connection.environment
+            ?.diagnostics()
+            .catch(() => "Isolated environment diagnostics are unavailable");
+        if (diagnostics) {
+            await connection.peer
+                .send(
+                    "INFRA_PROCESS_LOG",
+                    {
+                        processKind: "isolated-runtime",
+                        trigger: "isolated environment failed",
+                        processFailure: "isolated environment failure",
+                        uploadId: `isolated-${Date.now()}`,
+                        sequence: 0,
+                        chunkCount: 1
+                    },
+                    Buffer.from(diagnostics).subarray(0, 64 * 1024)
+                )
+                .catch(() => {});
+        }
+        const unexpectedRuntimeFailure = new Set([
+            "ISOLATED_CONTROL_PROTOCOL",
+            "ISOLATED_ENVIRONMENT_EXIT"
+        ]).has(error.code);
+        await connection.peer
+            .send(
+                connection.workerStarted || unexpectedRuntimeFailure
+                    ? "WORKER_ERROR"
+                    : "PREPARATION_ERROR",
+                {
+                    message:
+                        "Isolated environment failed; see infrastructure log"
+                }
+            )
+            .catch(() => {});
+        connection.environmentFailed = true;
+        await releaseLease(connection);
     }
 
     const handleSignal = (code) => {
@@ -797,16 +1285,29 @@ async function main(options = {}) {
         `Worker ${config.name} ready on topic ${keys.workerTopic.toString("hex").slice(0, 12)} ` +
             `(peer ${pool.publicKey.toString("hex").slice(0, 12)})`
     );
-    return { pool, manager, shutdown };
+    return { pool, manager, environmentManager, shutdown };
 }
 
-function capabilities(config) {
+function capabilities(config, environmentManager) {
+    const runtime = environmentManager?.capabilities() || {
+        backend: "unresolved",
+        isolation: null
+    };
     return {
         distributedProtocol: DISTRIBUTED_PROTOCOL_VERSION,
         slots: config.slots,
         workers: config.workers,
         memoryGb: config.memLimitGb,
-        heartbeatTimeoutMs: config.heartbeatTimeoutMs
+        heartbeatTimeoutMs: config.heartbeatTimeoutMs,
+        isolatedRuntime: runtime,
+        extensions: {
+            executionProfile: true,
+            resourceAllocationDetails: true,
+            resourceLimitDetails: true,
+            isolatedRuntimeMetadata: true,
+            authorizationAdministration: true,
+            authorizationRoleManagement: true
+        }
     };
 }
 
@@ -823,5 +1324,6 @@ module.exports = {
     capabilities,
     isRoutineDiscoveryFailure,
     progressElapsedMs,
-    shouldTransferAttemptLog
+    requireTransportPublicKey,
+    shouldTransferAttemptEvidence
 };

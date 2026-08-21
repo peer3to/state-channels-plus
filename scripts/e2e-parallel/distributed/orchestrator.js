@@ -87,6 +87,22 @@ function workerFaultStatus(worker, status, target = process.stderr) {
     target.write(`${ERROR_RED}[${worker.label}] ${status}${RESET}\n`);
 }
 
+function ingestAttemptLogMessage(logStore, key, message) {
+    if (message.kind === "LOG_CHUNK") {
+        logStore.append(
+            key,
+            message.header.sequence,
+            message.body,
+            message.header.stream
+        );
+        return null;
+    }
+    if (message.kind === "LOG_END") {
+        return logStore.commit(key, message.header);
+    }
+    throw new Error(`Unsupported attempt log message: ${message.kind}`);
+}
+
 function formatBusyStatus(status) {
     const progress = status.totalTasks
         ? `; progress ${status.completedTasks}/${status.totalTasks}`
@@ -390,7 +406,7 @@ async function runDistributed(options) {
             await authenticateClient(
                 peer,
                 keys.authKey,
-                { local: pool.publicKey },
+                { local: pool.publicKey, remote: info?.publicKey },
                 DISCOVERY_AUTH_TIMEOUT_MS
             );
             const ready = await waitForMessage(
@@ -492,7 +508,19 @@ async function runDistributed(options) {
                 );
             });
             peer.once("close", () => retireWorker(worker));
-            await peer.send("LEASE_REQUEST", { sessionId });
+            const leaseHeader = { sessionId };
+            if (
+                ready.header.capabilities.extensions?.resourceAllocationDetails
+            ) {
+                leaseHeader.extensions = { resourceAllocationDetails: true };
+            }
+            if (
+                ready.header.capabilities.extensions?.executionProfile &&
+                options.executionProfile
+            ) {
+                leaseHeader.executionProfile = options.executionProfile;
+            }
+            await peer.send("LEASE_REQUEST", leaseHeader);
             resolveFirst();
         } catch (error) {
             await pool.yieldFailedOutgoingDial(stream, info, error);
@@ -537,9 +565,19 @@ async function runDistributed(options) {
             console.log(
                 `${workerName(worker)} prepared the workspace; starting test worker`
             );
+            const runExtensions = {};
+            if (worker.capabilities.extensions?.resourceLimitDetails) {
+                runExtensions.resourceLimitDetails = true;
+            }
+            if (worker.capabilities.extensions?.isolatedRuntimeMetadata) {
+                runExtensions.isolatedRuntimeMetadata = true;
+            }
             await worker.peer.send("RUN_CONFIG", {
                 baseEnv: options.baseEnv,
-                taskCount: options.tasks.length
+                taskCount: options.tasks.length,
+                extensions: Object.keys(runExtensions).length
+                    ? runExtensions
+                    : undefined
             });
         } else if (message.kind === "BUSY") {
             workerStatus(worker, formatBusyStatus(message.header));
@@ -584,16 +622,16 @@ async function runDistributed(options) {
                 assignment: wireAssignment
             });
         } else if (message.kind === "LOG_CHUNK") {
-            logStore.append(
+            ingestAttemptLogMessage(
+                logStore,
                 `${worker.id}:${message.header.attemptId}`,
-                message.header.sequence,
-                message.body,
-                message.header.stream
+                message
             );
         } else if (message.kind === "LOG_END") {
-            const output = logStore.commit(
+            const output = ingestAttemptLogMessage(
+                logStore,
                 `${worker.id}:${message.header.attemptId}`,
-                message.header
+                message
             );
             committedOutput.set(message.header.attemptId, output);
             await worker.peer.send("LOG_COMMITTED", {
@@ -695,6 +733,31 @@ async function runDistributed(options) {
                 );
             }
             retireWorker(worker, "workspace preparation failed");
+        } else if (message.kind === "RESOURCE_ALLOCATION_REJECTED") {
+            const error = new Error(
+                `Worker ${workerName(worker)} refused ${message.header.resource}: ${message.header.message}`
+            );
+            worker.failure = error;
+            fs.appendFileSync(
+                logStore.infrastructurePath(worker.id, worker.label),
+                `${error.message}\n`
+            );
+            workerStatus(worker, error.message, process.stderr);
+            retireWorker(worker, "resource allocation rejected");
+        } else if (message.kind === "RESOURCE_LIMIT_EXCEEDED") {
+            const error = new Error(
+                `Worker ${workerName(worker)} exceeded ${message.header.resource} limit ${message.header.limit} during ${message.header.phase || "execution"}`
+            );
+            worker.failure = error;
+            fs.appendFileSync(
+                logStore.infrastructurePath(worker.id, worker.label),
+                `${error.message}\n`
+            );
+            workerFaultStatus(worker, error.message);
+            retireWorker(
+                worker,
+                "isolated environment resource limit exceeded"
+            );
         } else if (message.kind === "WORKER_ERROR") {
             const error = new Error(
                 `Worker ${workerName(worker)} failed: ${message.header.message}`
@@ -835,6 +898,7 @@ module.exports = {
     createHeartbeatMonitor,
     formatBusyStatus,
     formatWorkerSummary,
+    ingestAttemptLogMessage,
     isRoutineDiscoveryFailure,
     promoteAttemptLog,
     promoteStarvationAttemptLog,

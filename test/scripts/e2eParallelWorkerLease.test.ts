@@ -8,14 +8,14 @@ const {
     WorkerLeaseManager
 } = require("../../scripts/e2e-parallel/distributed/workerLeaseManager.js");
 const {
-    LeaseRuntime
-} = require("../../scripts/e2e-parallel/distributed/leaseRuntime.js");
-const {
     acquireHostLock
 } = require("../../scripts/e2e-parallel/distributed/hostLock.js");
 const {
     acquireWorkspaceLock
 } = require("../../scripts/e2e-parallel/distributed/workspaceLock.js");
+const {
+    deriveEnvironmentKey
+} = require("../../scripts/e2e-parallel/distributed/workspaceCache.js");
 const {
     progressElapsedMs
 } = require("../../scripts/e2e-parallel/distributed/server.js");
@@ -180,20 +180,6 @@ describe("distributed worker lease", function () {
         ).to.throw("Invalid worker progress");
     });
 
-    it("removes the complete lease tree and makes cleanup idempotent", async function () {
-        const root = fs.mkdtempSync(
-            path.join(os.tmpdir(), "lease-runtime-test-")
-        );
-        try {
-            const runtime = new LeaseRuntime(root);
-            fs.writeFileSync(path.join(runtime.root, "side-effect"), "data");
-            await Promise.all([runtime.cleanup(), runtime.cleanup()]);
-            expect(fs.existsSync(runtime.root)).to.equal(false);
-        } finally {
-            fs.rmSync(root, { recursive: true, force: true });
-        }
-    });
-
     it("uses an OS-held host lock and allows the explicit bypass", function () {
         if (process.platform !== "darwin" && process.platform !== "linux")
             this.skip();
@@ -215,22 +201,20 @@ describe("distributed worker lease", function () {
         fs.rmSync(lockPath, { force: true });
     });
 
-    it("holds workspace ownership until lease cleanup", async function () {
+    it("locks identical source independently for two orchestrator identities", function () {
         if (process.platform !== "darwin" && process.platform !== "linux")
             this.skip();
         const root = fs.mkdtempSync(
-            path.join(os.tmpdir(), "workspace-lock-test-")
+            path.join(os.tmpdir(), "environment-lock-test-")
         );
         const workspaceId = "a".repeat(64);
+        const firstKey = deriveEnvironmentKey("1".repeat(64), workspaceId);
+        const secondKey = deriveEnvironmentKey("2".repeat(64), workspaceId);
         try {
-            const runtime = new LeaseRuntime(root);
-            runtime.holdLock(acquireWorkspaceLock(root, workspaceId));
-            expect(() => acquireWorkspaceLock(root, workspaceId)).to.throw(
-                /already owned/
-            );
-            await runtime.cleanup();
-            const next = acquireWorkspaceLock(root, workspaceId);
-            next.release();
+            const first = acquireWorkspaceLock(root, firstKey);
+            const second = acquireWorkspaceLock(root, secondKey);
+            first.release();
+            second.release();
         } finally {
             fs.rmSync(root, { recursive: true, force: true });
         }

@@ -238,6 +238,7 @@ async function main(options = {}) {
                         )
                     ),
                     discoveryTimeoutMs: cli.discoveryTimeoutMs,
+                    executionProfile: cli.executionProfile,
                     signal: distributedCancellation.signal,
                     baseEnv: buildRemoteEnvironment(
                         process.env,

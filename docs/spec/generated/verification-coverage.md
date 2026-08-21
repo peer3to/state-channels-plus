@@ -11,7 +11,7 @@ A permutation counts as tested only when an exact repository test declaration is
 - Test files with verification reports: **133/144** (92%)
 - Test declarations covering at least one test ID: **441/1166** (38%)
 - Assigned test IDs with exactly one owning test: **723/723** (100%)
-- Test files excluded as out of scope (`@spec-test-coverage-ignore`): 13
+- Test files excluded as out of scope (`@spec-test-coverage-ignore`): 18
 
 ## Contents
 

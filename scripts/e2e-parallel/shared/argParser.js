@@ -20,6 +20,9 @@ Options:
       --target-load <number>     Local maximum average load per CPU core
   -i, --interval <ms>            Local scheduler admission interval
       --mem-limit-gb <gb>        Local memory budget for test processes
+      --cpu-limit <count>        Distributed worker CPU request
+      --disk-limit-bytes <bytes> Distributed environment disk request
+      --pids-limit <count>       Distributed environment process limit
       --sdk-thread               Run the SDK host in a worker thread
       --no-sdk-thread            Run the SDK host on the main thread
       --vm-thread                Run the VM executor in a worker thread
@@ -68,6 +71,9 @@ function parseCliArgs(argv) {
         schedulerTickMs: undefined,
         // Memory budget in GiB; undefined → totalmem × MEM_LIMIT_FRACTION.
         memLimitGb: undefined,
+        cpuLimit: undefined,
+        diskLimitBytes: undefined,
+        pidsLimit: undefined,
         // Thread-mode toggles: undefined = fall back to env/default.
         sdkThread: undefined,
         vmThread: undefined,
@@ -270,6 +276,56 @@ function parseCliArgs(argv) {
             continue;
         }
 
+        if (arg === "--cpu-limit") {
+            const v = takeNumber(argv[i + 1], Number.parseFloat);
+            if (v !== undefined) {
+                options.cpuLimit = v;
+                options.distributedOptionsProvided = true;
+                i++;
+            }
+            continue;
+        }
+        if (arg.startsWith("--cpu-limit=")) {
+            const v = takeNumber(arg.split("=")[1], Number.parseFloat);
+            if (v !== undefined) {
+                options.cpuLimit = v;
+                options.distributedOptionsProvided = true;
+            }
+            continue;
+        }
+        if (arg === "--disk-limit-bytes" || arg === "--pids-limit") {
+            const v = takeNumber(argv[i + 1], (raw) =>
+                Number.parseInt(raw, 10)
+            );
+            if (v !== undefined) {
+                options[
+                    arg === "--disk-limit-bytes"
+                        ? "diskLimitBytes"
+                        : "pidsLimit"
+                ] = v;
+                options.distributedOptionsProvided = true;
+                i++;
+            }
+            continue;
+        }
+        if (
+            arg.startsWith("--disk-limit-bytes=") ||
+            arg.startsWith("--pids-limit=")
+        ) {
+            const v = takeNumber(arg.split("=")[1], (raw) =>
+                Number.parseInt(raw, 10)
+            );
+            if (v !== undefined) {
+                options[
+                    arg.startsWith("--disk-limit-bytes=")
+                        ? "diskLimitBytes"
+                        : "pidsLimit"
+                ] = v;
+                options.distributedOptionsProvided = true;
+            }
+            continue;
+        }
+
         if (arg === "--sdk-thread") {
             options.sdkThread = true;
             continue;
@@ -322,12 +378,21 @@ function parseCliArgs(argv) {
     if (!options.distributed && options.distributedOptionsProvided) {
         throw new Error("Distributed-only options require --distributed");
     }
-    if (options.distributed && options.localCapacityOptionsProvided.length) {
-        const flags = [...new Set(options.localCapacityOptionsProvided)].join(
-            ", "
-        );
-        throw new Error(
-            `${flags} configure only local execution; pass the corresponding flags to test:parallel:server`
+    if (options.distributed) {
+        options.executionProfile = Object.fromEntries(
+            Object.entries({
+                schedulerTickMs: options.schedulerTickMs,
+                workers: options.workers,
+                slots: options.slots,
+                cpu: options.cpuLimit,
+                memoryBytes:
+                    options.memLimitGb === undefined
+                        ? undefined
+                        : Math.floor(options.memLimitGb * 1024 ** 3),
+                diskBytes: options.diskLimitBytes,
+                pidsLimit: options.pidsLimit,
+                targetLoad: options.targetLoad
+            }).filter(([, value]) => value !== undefined)
         );
     }
 

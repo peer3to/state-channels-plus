@@ -37,7 +37,7 @@ const {
 } = require("../../scripts/e2e-parallel/distributed/orchestrator.js");
 const {
     acknowledgeLoglessAttempt,
-    shouldTransferAttemptLog
+    shouldTransferAttemptEvidence
 } = require("../../scripts/e2e-parallel/distributed/server.js");
 
 describe("distributed orchestrator logs", function () {
@@ -70,16 +70,16 @@ describe("distributed orchestrator logs", function () {
     });
 
     it("transfers attempt logs for failures and starvation", function () {
-        expect(shouldTransferAttemptLog({ code: 0 })).to.equal(false);
-        expect(shouldTransferAttemptLog({ code: 1 })).to.equal(true);
+        expect(shouldTransferAttemptEvidence({ code: 0 })).to.equal(false);
+        expect(shouldTransferAttemptEvidence({ code: 1 })).to.equal(true);
         expect(
-            shouldTransferAttemptLog({
+            shouldTransferAttemptEvidence({
                 code: 0,
                 reduced: { starveCount: 1 }
             })
         ).to.equal(true);
         expect(
-            shouldTransferAttemptLog({
+            shouldTransferAttemptEvidence({
                 code: 0,
                 infrastructureFailure: "output spool failed"
             })
@@ -89,18 +89,22 @@ describe("distributed orchestrator logs", function () {
     it("acknowledges a successful attempt without waiting for a log", function () {
         const sent: Array<Record<string, unknown>> = [];
         const connection = {
-            worker: {
-                connected: true,
-                send(message: Record<string, unknown>, done: () => void) {
-                    sent.push(message);
-                    done();
+            environment: {
+                state: "ready",
+                async send(kind: string, payload: Record<string, unknown>) {
+                    sent.push({ kind, payload });
                 }
             }
         };
         acknowledgeLoglessAttempt(connection, 17, false);
         acknowledgeLoglessAttempt(connection, 18, true);
         expect(sent).to.deep.equal([
-            { kind: "RESPONSE", requestId: 17, value: true }
+            {
+                kind: "WORKER_MESSAGE",
+                payload: {
+                    message: { kind: "RESPONSE", requestId: 17, value: true }
+                }
+            }
         ]);
     });
 
@@ -127,6 +131,35 @@ describe("distributed orchestrator logs", function () {
                 deployMs: 4,
                 found: true
             });
+            spool.remove();
+        } finally {
+            fs.rmSync(root, { recursive: true, force: true });
+        }
+    });
+
+    it("reads attempt spool chunks in chronological stream order", function () {
+        const root = fs.mkdtempSync(path.join(os.tmpdir(), "spool-order-"));
+        try {
+            const spool = new WorkerAttemptSpool(
+                path.join(root, "attempt.spool"),
+                1024 * 1024
+            );
+            spool.write("stdout", "before");
+            spool.write("stderr", "between");
+            spool.write("stdout", "after");
+            expect(
+                [...spool.readRecords(4)].map(
+                    (record: { stream: string; body: Buffer }) =>
+                        `${record.stream}:${record.body.toString()}`
+                )
+            ).to.deep.equal([
+                "stdout:befo",
+                "stdout:re",
+                "stderr:betw",
+                "stderr:een",
+                "stdout:afte",
+                "stdout:r"
+            ]);
             spool.remove();
         } finally {
             fs.rmSync(root, { recursive: true, force: true });

@@ -7,18 +7,23 @@ import path from "path";
 // CommonJS dev scripts for the parallel e2e runner. We test the
 // destructive-tooling guards: a mis-resolved / symlinked log dir must never
 // wipe the working tree.
-const { getHelpText, parseCliArgs } =
-    require("../../scripts/e2e-parallel/shared/argParser.js") as {
-        getHelpText: () => string;
-        parseCliArgs: (argv: string[]) => {
-            logDir: string;
-            logDirProvided: boolean;
-            help: boolean;
-            e2eOnly: boolean;
-            testPattern?: string;
-            schedulerTickMs?: number;
-        };
-    };
+type ParsedCliArgs = {
+    logDir: string;
+    logDirProvided: boolean;
+    help: boolean;
+    e2eOnly: boolean;
+    testPattern?: string;
+    schedulerTickMs?: number;
+    distributed: boolean;
+    discoveryTimeoutMs: number;
+    forwardEnv: string[];
+    executionProfile: Record<string, number>;
+};
+const argParser: {
+    getHelpText: () => string;
+    parseCliArgs: (argv: string[]) => ParsedCliArgs;
+} = require("../../scripts/e2e-parallel/shared/argParser.js");
+const { getHelpText, parseCliArgs } = argParser;
 const {
     colorize,
     countStarvation,
@@ -131,38 +136,41 @@ describe("e2e-parallel argParser - logDir validation", function () {
                 "--forward-env",
                 "CI"
             )
-        ) as unknown as {
-            distributed: boolean;
-            discoveryTimeoutMs: number;
-            forwardEnv: string[];
-        };
+        );
         expect(parsed.distributed).to.equal(true);
         expect(parsed.discoveryTimeoutMs).to.equal(2500);
         expect(parsed.forwardEnv).to.deep.equal(["CI"]);
 
-        const defaults = parseCliArgs(argv()) as unknown as {
-            discoveryTimeoutMs: number;
-        };
+        const defaults = parseCliArgs(argv());
         expect(defaults.discoveryTimeoutMs).to.equal(30000);
         expect(() => parseCliArgs(argv("--forward-env", "CI"))).to.throw(
             /require --distributed/
         );
     });
 
-    it("rejects local capacity flags in distributed mode", function () {
-        for (const [flag, value] of [
-            ["--slots", "2"],
-            ["--workers", "3"],
-            ["--target-load", "0.5"],
-            ["--interval", "250"],
-            ["--mem-limit-gb", "4"]
-        ]) {
-            expect(() =>
-                parseCliArgs(argv("--distributed", flag, value))
-            ).to.throw(
-                new RegExp(`${flag}.*test:parallel:server`.replace("-", "\\-"))
-            );
-        }
+    it("turns distributed capacity flags into an execution profile", function () {
+        const parsed = parseCliArgs(
+            argv(
+                "--distributed",
+                "--slots",
+                "2",
+                "--workers",
+                "3",
+                "--target-load",
+                "0.5",
+                "--interval",
+                "250",
+                "--mem-limit-gb",
+                "4"
+            )
+        );
+        expect(parsed.executionProfile).to.deep.equal({
+            schedulerTickMs: 250,
+            workers: 3,
+            slots: 2,
+            memoryBytes: 4 * 1024 ** 3,
+            targetLoad: 0.5
+        });
     });
 
     it("does not resolve local capacity for a distributed dry run", async function () {

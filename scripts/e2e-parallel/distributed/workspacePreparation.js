@@ -1,37 +1,14 @@
 const fs = require("fs");
 const path = require("path");
-const { spawn } = require("child_process");
 const { buildWorkerEnvironment } = require("./remoteEnvironment");
 
 function run(command, args, options) {
-    return new Promise((resolve, reject) => {
-        const child = spawn(command, args, {
-            cwd: options.cwd,
-            env: options.env,
-            // Inherit workspace-lock descriptors so an abruptly killed server
-            // cannot release ownership while this detached child still writes.
-            stdio: [
-                "ignore",
-                "pipe",
-                "pipe",
-                ...options.runtime.inheritedFileDescriptors()
-            ],
-            detached: process.platform !== "win32"
-        });
-        options.runtime.addChild(child);
-        child.stdout.on("data", (data) => options.onOutput("stdout", data));
-        child.stderr.on("data", (data) => options.onOutput("stderr", data));
-        child.once("error", reject);
-        child.once("exit", (code, signal) => {
-            if (code === 0) resolve();
-            else
-                reject(
-                    new Error(
-                        `${command} ${args.join(" ")} failed (${code ?? signal})`
-                    )
-                );
-        });
-    });
+    if (!options.commandRunner) {
+        throw new Error(
+            "Workspace preparation requires an isolated command runner"
+        );
+    }
+    return options.commandRunner.run(command, args, options);
 }
 
 async function nativeModulesLoad(repository, cwd, options, env) {
@@ -74,7 +51,8 @@ function selectPrepareScript(repository, cache) {
 }
 
 async function prepareWorkspace(workspaceRoot, manifest, options) {
-    const storeDir = path.join(options.workRoot, "pnpm-store");
+    const storeDir = options.storeDir;
+    if (!storeDir) throw new Error("Isolated package store is required");
     fs.mkdirSync(storeDir, { recursive: true });
     const env = {
         ...buildWorkerEnvironment(process.env),
@@ -109,6 +87,9 @@ async function prepareWorkspace(workspaceRoot, manifest, options) {
                     "install",
                     "--store-dir",
                     storeDir,
+                    ...(repository.hasYarnLock && !repository.hasPnpmLock
+                        ? ["--shamefully-hoist"]
+                        : []),
                     repository.hasPnpmLock
                         ? "--frozen-lockfile"
                         : repository.hasYarnLock
