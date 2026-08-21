@@ -302,8 +302,18 @@ function makeFakeChannelHarness(
             },
             refreshOpenedStatusFromChain: refreshStub,
             setChannelId: setChannelIdStub,
+            // `LocalP2pSigner.getChannelStatus()` reads the StateManager
+            // `status` getter, so this has to be a live getter over the
+            // mutable local - a snapshot would freeze at NOT_OPENED and every
+            // status wait would time out.
+            get status() {
+                return status;
+            },
             getChannelStatus: () => Promise.resolve(status),
-            joinChannel: joinChannelStub
+            // joinChannel moved off StateManager into MembershipService.
+            membershipService: {
+                joinChannel: joinChannelStub
+            }
         },
         localRpc,
         remoteRpc: {

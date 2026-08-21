@@ -402,12 +402,23 @@ describe("JoinChannel signature requests", function () {
         expect(
             await h.control(nonUnionSigner).query.getStatus().request()
         ).to.equal(Status.SYNCED);
-        expect(
+        // The spectator is not dispute-eligible for this channel, so it is
+        // deliberately not in `openConnections` - that set is the channel
+        // broadcast/cleanup set, not "is this peer reachable". What this
+        // assertion actually cares about is that the failed threshold
+        // request tore nothing down, so assert reachability directly: a
+        // targeted RPC routes by address through `ProfileManager` and never
+        // needed promotion.
+        let spectatorReachesJoiner = true;
+        try {
             await h
                 .control(nonUnionSigner)
-                .query.isConnectedTo(joiner.address)
-                .request()
-        ).to.equal(true);
+                .query.getStatus()
+                .request(joiner.address);
+        } catch {
+            spectatorReachesJoiner = false;
+        }
+        expect(spectatorReachesJoiner).to.equal(true);
         expect(
             await h
                 .control(h.getPeer(0))
