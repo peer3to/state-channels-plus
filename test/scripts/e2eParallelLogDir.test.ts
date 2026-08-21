@@ -26,6 +26,7 @@ const argParser: {
 const { getHelpText, parseCliArgs } = argParser;
 const {
     colorize,
+    cleanupNonErrorLogs,
     countStarvation,
     getStarvationSummary,
     parseTimings,
@@ -37,6 +38,7 @@ const {
     summaryCounts
 } = require("../../scripts/e2e-parallel/shared/logging.js") as {
     colorize: (color: string, text: string) => string;
+    cleanupNonErrorLogs: (dirPath: string, allow: boolean) => void;
     countStarvation: (text: string) => number;
     getStarvationSummary: (tasks: Array<Record<string, unknown>>) => {
         recovered: Array<Record<string, unknown>>;
@@ -282,6 +284,51 @@ describe("e2e-parallel logging - purge guards", function () {
             (fs as unknown as { rmSync: typeof fs.rmSync }).rmSync = realRm;
         }
         expect(removed).to.have.lengthOf(0);
+    });
+
+    it("keeps failed infrastructure diagnostics while removing normal worker logs", function () {
+        const root = fs.mkdtempSync(path.join(os.tmpdir(), "log-cleanup-"));
+        const successfulRoot = fs.mkdtempSync(
+            path.join(os.tmpdir(), "successful-log-cleanup-")
+        );
+        try {
+            const infrastructure = path.join(root, "infra");
+            const successfulInfrastructure = path.join(successfulRoot, "infra");
+            fs.mkdirSync(path.join(infrastructure, "server-1"), {
+                recursive: true
+            });
+            fs.mkdirSync(successfulInfrastructure, { recursive: true });
+            fs.writeFileSync(
+                path.join(infrastructure, "server-1", "worker.ansi"),
+                "worker failure"
+            );
+            fs.writeFileSync(
+                path.join(infrastructure, "isolated-runtime.ansi"),
+                "runtime failure"
+            );
+            fs.writeFileSync(path.join(infrastructure, ".failure"), "");
+            fs.writeFileSync(
+                path.join(successfulInfrastructure, "worker.ansi"),
+                "normal worker"
+            );
+            fs.writeFileSync(path.join(root, "passing.ansi"), "passing");
+            fs.writeFileSync(path.join(root, "error_failed.ansi"), "failed");
+
+            cleanupNonErrorLogs(root, true);
+            cleanupNonErrorLogs(successfulRoot, true);
+
+            expect(fs.existsSync(infrastructure)).to.equal(true);
+            expect(fs.existsSync(successfulInfrastructure)).to.equal(false);
+            expect(fs.existsSync(path.join(root, "passing.ansi"))).to.equal(
+                false
+            );
+            expect(
+                fs.existsSync(path.join(root, "error_failed.ansi"))
+            ).to.equal(true);
+        } finally {
+            fs.rmSync(root, { recursive: true, force: true });
+            fs.rmSync(successfulRoot, { recursive: true, force: true });
+        }
     });
 
     it("a symlinked dir whose real target is a dangerous root is flagged, not treated as safe", function () {

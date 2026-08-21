@@ -251,7 +251,11 @@ function cleanupNonErrorLogs(logDir, allowLogdirPurge) {
     if (!fs.existsSync(resolved)) return;
     for (const entry of fs.readdirSync(resolved)) {
         if (entry.startsWith("error_")) continue;
-        fs.rmSync(path.join(resolved, entry), { recursive: true, force: true });
+        const target = path.join(resolved, entry);
+        if (entry === "infra" && fs.existsSync(path.join(target, ".failure"))) {
+            continue;
+        }
+        fs.rmSync(target, { recursive: true, force: true });
     }
 }
 

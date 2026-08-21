@@ -461,6 +461,45 @@ describe("distributed orchestrator logs", function () {
         }
     });
 
+    it("writes isolated worker exits as persistent runtime diagnostics", function () {
+        const root = fs.mkdtempSync(
+            path.join(os.tmpdir(), "orchestrator-runtime-log-")
+        );
+        try {
+            const store = new OrchestratorLogStore(root);
+            const runtimePath = store.writeInfrastructureProcessChunk(
+                "worker-id",
+                "worker-one",
+                "isolated-runtime",
+                undefined,
+                "isolated environment failed",
+                "Test worker exited unexpectedly (1)",
+                "runtime-upload",
+                0,
+                1,
+                Buffer.from(
+                    '{"status":"running","exitCode":0,"oomKilled":false}'
+                )
+            );
+
+            expect(runtimePath).to.equal(
+                path.join(root, "infra", "isolated-runtime.ansi")
+            );
+            expect(
+                fs.existsSync(path.join(root, "infra", ".failure"))
+            ).to.equal(true);
+            const runtime = fs.readFileSync(runtimePath, "utf8");
+            expect(runtime).to.include("=== worker-one ===");
+            expect(runtime).to.include(
+                "process failure: Test worker exited unexpectedly (1)"
+            );
+            expect(runtime).to.include('"oomKilled":false');
+            expect(runtime).not.to.include("slot undefined");
+        } finally {
+            fs.rmSync(root, { recursive: true, force: true });
+        }
+    });
+
     it("rejects duplicate sequences, bad checksums, and hostile worker paths", function () {
         const root = fs.mkdtempSync(
             path.join(os.tmpdir(), "orchestrator-log-")

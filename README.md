@@ -302,7 +302,10 @@ and cleanup. Use repeatable `--forward-env
 orchestrator environment are never forwarded. Stop a server with SIGINT or
 SIGTERM. Canonical task and failure logs remain on the orchestrator under
 `logs/run-N/`, including `error_*.ansi` files and worker infrastructure
-diagnostics.
+diagnostics. If a discovery server, Hardhat node, or isolated worker fails,
+`logs/run-N/infra/` is retained with the process diagnostic and the affected
+worker's streamed output. Successful-run infrastructure logs are removed by
+the normal end-of-run cleanup.
 
 Dial diagnostics include the Noise handshake hash for each stream. Close lines
 state whether this application closed the stream, Hyperswarm reported duplicate

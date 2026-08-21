@@ -1263,7 +1263,7 @@ async function main(options = {}) {
                     {
                         processKind: "isolated-runtime",
                         trigger: "isolated environment failed",
-                        processFailure: "isolated environment failure",
+                        processFailure: error.message,
                         uploadId: `isolated-${Date.now()}`,
                         sequence: 0,
                         chunkCount: 1
