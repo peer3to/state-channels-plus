@@ -13,6 +13,7 @@ import ProfileManager from "@/ProfileManager";
 import Holepunch from "@/Holepunch";
 import { ethers } from "ethers";
 import { DebugProxy, getChecksumAddress, LocalDiscoveryServer } from "@/utils";
+import { addressesEqual } from "@/utils/address";
 import type { Logger } from "@/utils";
 import { Buffer } from "buffer";
 import { config, isNodeRuntime } from "@/utils/config";
@@ -205,10 +206,41 @@ class P2PManager<TCustomRpc extends MainRpcService = MainRpcService>
         }
         if (stateManager.isDisposed) return;
 
+        // Promotion asks "is this peer in the channel conversation", which is
+        // the on-chain participant union - participants plus peers whose join
+        // is on-chain but not yet finalized. `canParticipateInDisputes` is a
+        // NARROWER, later-forming property: it derives eligibility from the
+        // latest inbound message block hash, so at genesis (height 0, before
+        // any inbound block exists) it is false even for a founding
+        // participant. Gating promotion on it stalled the channel at h=0 -
+        // neither peer promoted the other, so blocks never broadcast and
+        // finalization sat at sigs=1 of union=2. Both checks are unforgeable
+        // on-chain reads; the union is simply the right question for
+        // membership, and it is what attribution elsewhere already uses.
+        let isChannelParticipant: boolean;
+        try {
+            const union =
+                await stateManager.membershipService.getOnChainParticipantUnion(
+                    stateManager.channelId
+                );
+            isChannelParticipant = union.some((participant) =>
+                addressesEqual(participant, peerAddress)
+            );
+        } catch (error) {
+            if (stateManager.isDisposed) {
+                this.logger.debug(
+                    "Skipping finalized handshake after state manager disposal"
+                );
+                return;
+            }
+            throw error;
+        }
+        if (stateManager.isDisposed) return;
+
         // Only treat the transport as an "open connection" after handshake is
-        // final, and only once it resolves as a dispute participant - see the
+        // final, and only once it resolves as a channel participant - see the
         // method comment for the deferred (never speculative) fallback.
-        if (isPeerParticipant) {
+        if (isChannelParticipant) {
             this.addConnection(transport);
         } else {
             this.pendingChannelMembershipTransports.add(transport);
