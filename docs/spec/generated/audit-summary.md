@@ -24,7 +24,7 @@ Detailed statements, source evidence, design analysis, and test mappings remain 
 - Current security-accepted paths: **0/243** (0%)
 - Final ready paths: **0/243** (0%)
 - Source files assigned to implementation subjects: **238/258** (92%)
-- Test declarations mapped or explicitly ignored: **712/1437** (50%)
+- Test declarations mapped or explicitly ignored: **711/1436** (50%)
 - Open questions: 38
 - Active findings: 17
 - Strict blocking items: 5269

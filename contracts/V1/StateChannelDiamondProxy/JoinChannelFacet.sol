@@ -44,14 +44,16 @@ contract JoinChannelFacet is StateChannelCommon {
         // Check deadline
         require(jc.deadlineTimestamp >= block.timestamp, RaceConditionJoinChannelExpired());
         StateSnapshot memory currentSnapshot = getStateSnapshot(channelId);
-        require(expectedForkId == currentSnapshot.forkId, RaceConditionSnapshotForkMismatch());
+        require(
+            expectedForkId == currentSnapshot.forkId,
+            RaceConditionSnapshotForkMismatch(currentSnapshot.forkId, expectedForkId)
+        );
         require(
             expectedSnapshotHash == keccak256(abi.encode(currentSnapshot)), RaceConditionJoinChannelSnapshotMismatch()
         );
 
-        address[] memory participantUnion = UtilityFacet(utilityFacetAddress).concatAddressArraysNoDuplicates(
-            getSnapshotParticipants(channelId), getPendingParticipants(channelId)
-        );
+        address[] memory participantUnion = UtilityFacet(utilityFacetAddress)
+            .concatAddressArraysNoDuplicates(getSnapshotParticipants(channelId), getPendingParticipants(channelId));
         bool isExistingParticipant =
             UtilityFacet(utilityFacetAddress).isAddressInArray(participantUnion, jc.participant);
         if (isTopUp) {
@@ -75,9 +77,8 @@ contract JoinChannelFacet is StateChannelCommon {
 
         // Check threshold from the current eligibility set
         address[] memory thresholdParticipants = getOnChainThresholdSet(channelId);
-        (bool isValid,) = UtilityFacet(utilityFacetAddress).verifyThresholdSigned(
-            thresholdParticipants, sjc.encodedJoinChannel, joinChannelConfirmation.signatures
-        );
+        (bool isValid,) = UtilityFacet(utilityFacetAddress)
+            .verifyThresholdSigned(thresholdParticipants, sjc.encodedJoinChannel, joinChannelConfirmation.signatures);
         require(isValid, ErrorJoinChannelInvalidSignature());
 
         // Deposit funds

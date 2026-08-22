@@ -39,13 +39,13 @@ error ErrorWithdrawalFailed();
 error CantWithdrawMoreThanDeposits();
 
 //Dispute errors
-error ErrorDisputerNotMsgSender();
+error ErrorDisputerNotMsgSender(address expectedDisputer, address actualSender);
 error ErrorLinkingPreviousBlock();
 error ErrorDisputeChallengePeriodExpired();
-error ErrorDisputeAlreadyPosted();
-error ErrorCantParticipateInDispute();
-error ErrorAuditingDataHashMismatch();
-error ErrorDisputePostedAuditingDataMismatch();
+error ErrorDisputeAlreadyPosted(bytes32 forkId, address disputer);
+error ErrorCantParticipateInDispute(bytes32 channelId, address participant);
+error ErrorAuditingDataHashMismatch(bytes32 expectedAuditingDataHash, bytes32 providedAuditingDataHash);
+error ErrorDisputePostedAuditingDataMismatch(bool expectedPostedAuditingData, bool actualPostedAuditingData);
 
 //Reduce errors
 error ErrorNoDisputesProvided();
@@ -81,7 +81,7 @@ error ErrorDisputeInboundMessageBlocksInvalid(
     uint256 submittedBlockCount,
     uint8 failureReason
 );
-error ErrorInvalidLatestState();
+error ErrorInvalidLatestState(bytes32 expectedStateMachineStateHash, bytes32 actualStateMachineStateHash);
 
 //FraudProofs
 error ErrorInvalidFraudProof(address slashedParticipant, address expectedParticipant);
@@ -96,23 +96,29 @@ error ErrorInvalidStateSnapshotHash();
 //Race conditions
 error RaceConditionChannelAlreadyOpen();
 error RaceConditionBlockCalldataTimestampTooLate();
-error RaceConditionSnapshotForkMismatch();
+error RaceConditionSnapshotForkMismatch(bytes32 currentForkId, bytes32 submittedForkId);
 error RaceConditionBlockHeightTooOld();
 error RaceConditionJoinChannelExpired();
 error RaceConditionDisputeEvidencePeriodExpired();
 error RaceConditionDisputeKillPeriodNotExpired();
 error RaceConditionDisputeKillPeriodExpired();
 error RaceConditionDisputeAlreadyReduced();
-error RaceConditionReductionExpectationDoesntMatch();
+error RaceConditionReductionExpectationDoesntMatch(bytes32 expectedReducedForkId, bytes32 actualReducedForkId);
 error RaceConditionDisputeAuditingRequired();
-error RaceConditionDisputeTimeoutCalldataPosted();
-error RaceConditionDisputeTimeoutPreviousBlockProducerPostedCalldataMismatch();
-error RaceConditionDisputeTimeoutNotMinTimestamp();
-error RaceConditionDisputeTimeoutWindowCreatedTooEarly();
+error RaceConditionDisputeTimeoutCalldataPosted(
+    bytes32 forkId, uint256 blockHeight, address participant, bytes32 blockCalldataCommitment
+);
+error RaceConditionDisputeTimeoutPreviousBlockProducerPostedCalldataMismatch(
+    address previousBlockProducer, uint256 blockHeight, bool expectedPostedCalldata, bool actualPostedCalldata
+);
+error RaceConditionDisputeTimeoutNotMinTimestamp(uint256 minTimestamp, uint256 currentTimestamp);
+error RaceConditionDisputeTimeoutWindowCreatedTooEarly(uint256 windowCreationTimestamp, uint256 minTimestamp);
 error RaceConditionUnexpectedBlockCalldataPosted();
 error RaceConditionGenesisTimestampNotAvailable();
 error RaceConditionOnChainSlashes();
 error RaceConditionJoinChannelSnapshotMismatch();
-error RaceConditionPendingInboundNotConsumed();
+error RaceConditionPendingInboundNotConsumed(
+    bytes32 submittedInboundMessageBlockHash, bytes32 onChainInboundMessageBlockHash
+);
 error RaceConditionForceInboundJoinForkDisputed();
-error ErrorDisputeThrottled();
+error ErrorDisputeThrottled(address disputer, uint256 throttleExpiry, uint256 currentTimestamp);

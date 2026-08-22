@@ -49,7 +49,10 @@ contract StateSnapshotFacet is StateChannelCommon {
 
         StateSnapshot storage currentStateSnapshot = stateSnapshots[channelId];
         StateSnapshot memory newStateSnapshot = milestoneSnapshots[milestoneSnapshots.length - 1];
-        require(currentStateSnapshot.forkId == newStateSnapshot.forkId, RaceConditionSnapshotForkMismatch());
+        require(
+            currentStateSnapshot.forkId == newStateSnapshot.forkId,
+            RaceConditionSnapshotForkMismatch(currentStateSnapshot.forkId, newStateSnapshot.forkId)
+        );
         require(
             UtilityFacet(utilityFacetAddress).isSnapshotNewer(newStateSnapshot, currentStateSnapshot),
             RaceConditionBlockHeightTooOld()
@@ -61,7 +64,10 @@ contract StateSnapshotFacet is StateChannelCommon {
         require(
             newStateSnapshot.snapshotData.latestInboundMessageBlockHash
                 == channelBalances[channelId].latestInboundMessageBlockHash,
-            RaceConditionPendingInboundNotConsumed()
+            RaceConditionPendingInboundNotConsumed(
+                newStateSnapshot.snapshotData.latestInboundMessageBlockHash,
+                channelBalances[channelId].latestInboundMessageBlockHash
+            )
         );
 
         _updateStateSnapshot(channelId, currentStateSnapshot, newStateSnapshot, outboundMessageBlocks, true);
@@ -113,9 +119,8 @@ contract StateSnapshotFacet is StateChannelCommon {
         StateSnapshot[] memory milestoneSnapshots,
         StateSnapshot memory thresholdStateSnapshot
     ) internal returns (bool) {
-        bool isValid = StateChannelManagerProxy(address(this)).verifyMilestones(
-            forkId, milestoneProofs, milestoneSnapshots, thresholdStateSnapshot
-        );
+        bool isValid = StateChannelManagerProxy(address(this))
+            .verifyMilestones(forkId, milestoneProofs, milestoneSnapshots, thresholdStateSnapshot);
         return isValid;
     }
 

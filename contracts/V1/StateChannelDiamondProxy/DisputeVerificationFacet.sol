@@ -85,11 +85,8 @@ contract DisputeVerificationFacet is StateChannelCommon {
                 for (uint256 j = 0; j < disputeData.onChainSlashes.length; j++) {
                     if (disputeData.onChainSlashes[j].timestamp > disputeWindowExpirationTimestamp) continue;
                     address participant = disputeData.onChainSlashes[j].participant;
-                    if (
-                        !UtilityFacet(utilityFacetAddress).inParticipantUnion(
-                            participant, snapshotParticipants, pendingParticipants
-                        )
-                    ) {
+                    if (!UtilityFacet(utilityFacetAddress)
+                            .inParticipantUnion(participant, snapshotParticipants, pendingParticipants)) {
                         continue;
                     }
                     bool alreadySlashed = false;
@@ -189,7 +186,7 @@ contract DisputeVerificationFacet is StateChannelCommon {
         require(disputes.length > 0, ErrorNoDisputesProvided());
         bytes32 channelId = disputes[0].input.channelId;
         bytes32 forkId = disputes[0].input.forkId;
-        require(canParticipateInDisputes(channelId, msg.sender), ErrorCantParticipateInDispute());
+        require(canParticipateInDisputes(channelId, msg.sender), ErrorCantParticipateInDispute(channelId, msg.sender));
         DisputeData storage disputeData = disputeData[channelId];
         DisputeWindow storage disputeWindow = disputeData.disputeWindowMap[disputes[0].input.forkId];
         //require all disputes are part of commitment
@@ -244,7 +241,7 @@ contract DisputeVerificationFacet is StateChannelCommon {
         if (disputeWindow.reducedResult.forkId != bytes32(0)) {
             require(
                 disputeWindow.reducedResult.forkId == expectedReducedForkId,
-                RaceConditionReductionExpectationDoesntMatch()
+                RaceConditionReductionExpectationDoesntMatch(expectedReducedForkId, disputeWindow.reducedResult.forkId)
             );
             return;
         }
@@ -262,7 +259,10 @@ contract DisputeVerificationFacet is StateChannelCommon {
         // compute the new forkId
         bytes32 winningForkId = keccak256(abi.encode(snapshotData));
 
-        require(winningForkId == expectedReducedForkId, RaceConditionReductionExpectationDoesntMatch());
+        require(
+            winningForkId == expectedReducedForkId,
+            RaceConditionReductionExpectationDoesntMatch(expectedReducedForkId, winningForkId)
+        );
 
         // commit reduced result (enforces kill period expiration inside)
         _commitToDisputeReducedResult(channelId, disputeWindow, winningForkId, block.timestamp - getEvidenceTime());
@@ -292,13 +292,13 @@ contract DisputeVerificationFacet is StateChannelCommon {
             );
         }
         //verify encodedStateMachineState linked to snapshot
+        bytes32 actualStateMachineStateHash = keccak256(encodedStateMachineState);
         require(
-            latestStateSnapshot.snapshotData.stateMachineStateHash == keccak256(encodedStateMachineState),
-            ErrorInvalidLatestState()
+            latestStateSnapshot.snapshotData.stateMachineStateHash == actualStateMachineStateHash,
+            ErrorInvalidLatestState(latestStateSnapshot.snapshotData.stateMachineStateHash, actualStateMachineStateHash)
         );
         //verify inbound message blocks
-        (bool inboundMessageBlocksValid, bytes32 runningInboundHash, uint256 breakIndex, uint8 failureReason) =
-        _verifyInboundMessageBlocks(
+        (bool inboundMessageBlocksValid, bytes32 runningInboundHash, uint256 breakIndex, uint8 failureReason) = _verifyInboundMessageBlocks(
             latestStateSnapshot.snapshotData.latestInboundMessageBlockHash,
             reducedOutput.latestInboundMessageBlockHash,
             inboundMessageBlocks
@@ -317,9 +317,8 @@ contract DisputeVerificationFacet is StateChannelCommon {
 
         address[] memory removals = reducedOutput.selfRemovals;
         if (reducedOutput.timeout.participant != address(0) && reducedOutput.slashedParticipants.length == 0) {
-            removals = UtilityFacet(utilityFacetAddress).insertIntoAddressArrayNoDuplicates(
-                removals, reducedOutput.timeout.participant
-            );
+            removals = UtilityFacet(utilityFacetAddress)
+                .insertIntoAddressArrayNoDuplicates(removals, reducedOutput.timeout.participant);
         }
 
         DisputeOutputState memory outputState = generateDisputeOutputState(
@@ -486,12 +485,10 @@ contract DisputeVerificationFacet is StateChannelCommon {
         console.log("BALANCE 4.1 - snapshotData.totalDeposits:", snapshotData.totalDeposits.amount);
         console.log("BALANCE 4.2 - stateMachineBalance:", stateMachineBalance.amount);
         console.log("BALANCE 4.3 - snapshotData.totalWithdrawals:", snapshotData.totalWithdrawals.amount);
-        if (
-            !stateMachineImplementation.areBalancesEqual(
+        if (!stateMachineImplementation.areBalancesEqual(
                 snapshotData.totalDeposits,
                 stateMachineImplementation.addBalance(snapshotData.totalWithdrawals, stateMachineBalance)
-            )
-        ) return false;
+            )) return false;
         console.log("BALANCE 5");
         return true;
     }

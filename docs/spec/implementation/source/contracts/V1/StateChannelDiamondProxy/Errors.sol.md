@@ -25,6 +25,12 @@ classification.
 ## Key design decisions
 
 1. **Errors are protocol signals:** client race handling keys on these names — renaming is a breaking protocol change, not a refactor.
+2. **Arguments carry the comparison, not just the verdict:** an error that rejects a submission
+   populates the value the caller supplied alongside the value the contract required, so the
+   off-chain log reconstructs the on-chain state at the point of failure without a follow-up
+   chain read. Adding arguments changes the error selector but not its name, so name-keyed
+   client handling is unaffected; the decoded argument names come from the error's own ABI, so
+   no client-side decoder is added per error.
 
 ## Inputs, outputs, state, and side effects
 
@@ -54,6 +60,10 @@ claims complete conformance for a requirement that depends on other files.
 - Operation semantics per the owning protocol documents; composition rules per [contracts.md](../../../../../specification/enforcement/contracts.md).
 - `ErrorTopUpBalanceParticipantSlashed(address)` identifies the explicit top-up eligibility
   rejection required by [`REQ-ENFADM-2-K6K9SP`](../../../../../specification/enforcement/admission-and-funds.md#req-enfadm-2-k6k9sp).
+- Argument-carrying errors on the dispute-upload, reduction and snapshot paths name their
+  operands `expected*`/`actual*` (or `current*`/`submitted*`) so the pair reads unambiguously
+  once decoded. Errors whose failure carries no operand — an empty-array guard, for example —
+  stay argument-less on purpose.
 
 ## Specification contradictions
 

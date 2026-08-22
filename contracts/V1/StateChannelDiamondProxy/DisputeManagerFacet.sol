@@ -9,7 +9,7 @@ import "./UtilityFacet.sol";
 contract DisputeManagerFacet is StateChannelCommon {
     function uploadDispute(DisputeConfirmation memory disputeConfirmation) public {
         Dispute memory dispute = abi.decode(disputeConfirmation.signedDispute.encodedDispute, (Dispute));
-        require(!dispute.postedAuditingData, ErrorDisputePostedAuditingDataMismatch());
+        require(!dispute.postedAuditingData, ErrorDisputePostedAuditingDataMismatch(false, dispute.postedAuditingData));
         _uploadDispute(disputeConfirmation);
     }
 
@@ -18,9 +18,12 @@ contract DisputeManagerFacet is StateChannelCommon {
         DisputeAuditingData memory disputeAuditingData
     ) public {
         Dispute memory dispute = abi.decode(disputeConfirmation.signedDispute.encodedDispute, (Dispute));
-        require(dispute.postedAuditingData, ErrorDisputePostedAuditingDataMismatch());
+        require(dispute.postedAuditingData, ErrorDisputePostedAuditingDataMismatch(true, dispute.postedAuditingData));
         bytes32 disputeAuditingDataHash = keccak256(abi.encode(disputeAuditingData));
-        require(dispute.input.disputeAuditingDataHash == disputeAuditingDataHash, ErrorAuditingDataHashMismatch());
+        require(
+            dispute.input.disputeAuditingDataHash == disputeAuditingDataHash,
+            ErrorAuditingDataHashMismatch(dispute.input.disputeAuditingDataHash, disputeAuditingDataHash)
+        );
         (bool isFinal, uint256 creationTimestamp) = _uploadDispute(disputeConfirmation);
 
         emit DisputeCommittedWithAuditingData(
@@ -40,8 +43,11 @@ contract DisputeManagerFacet is StateChannelCommon {
         returns (bool isFinal, uint256 disputeWindowCreationTimestamp)
     {
         Dispute memory dispute = abi.decode(disputeConfirmation.signedDispute.encodedDispute, (Dispute));
-        require(msg.sender == dispute.input.disputer, ErrorDisputerNotMsgSender());
-        require(canParticipateInDisputes(dispute.input.channelId, msg.sender), ErrorCantParticipateInDispute());
+        require(msg.sender == dispute.input.disputer, ErrorDisputerNotMsgSender(dispute.input.disputer, msg.sender));
+        require(
+            canParticipateInDisputes(dispute.input.channelId, msg.sender),
+            ErrorCantParticipateInDispute(dispute.input.channelId, msg.sender)
+        );
 
         // race condition checks
         _disputeRaceConditionCheck(dispute);
@@ -53,7 +59,10 @@ contract DisputeManagerFacet is StateChannelCommon {
         bool isThresholdFinal = _isDisputeThresholdFinal(disputeConfirmation);
 
         uint256 throttleExpiry = disputerThrottle[dispute.input.channelId][msg.sender];
-        require(throttleExpiry == 0 || block.timestamp >= throttleExpiry, ErrorDisputeThrottled());
+        require(
+            throttleExpiry == 0 || block.timestamp >= throttleExpiry,
+            ErrorDisputeThrottled(msg.sender, throttleExpiry, block.timestamp)
+        );
         disputerThrottle[dispute.input.channelId][msg.sender] = block.timestamp + getEvidenceTime();
 
         //check if dispute window is created/opened for the disputed fork, otherwise create/open it
@@ -71,7 +80,10 @@ contract DisputeManagerFacet is StateChannelCommon {
                 RaceConditionDisputeEvidencePeriodExpired()
             );
 
-            require(!_hadParticipantPostedEvidence(disputeWindow, dispute.input.disputer), ErrorDisputeAlreadyPosted());
+            require(
+                !_hadParticipantPostedEvidence(disputeWindow, dispute.input.disputer),
+                ErrorDisputeAlreadyPosted(forkId, dispute.input.disputer)
+            );
 
             disputeWindow.evidence.lastEvidenceSubmissionTimestamp = block.timestamp; // kill period recalculated from here
         }
@@ -117,7 +129,12 @@ contract DisputeManagerFacet is StateChannelCommon {
                 dispute.input.channelId, forkId, dispute.input.timeout.blockHeight, dispute.input.timeout.participant
             );
             if (found) {
-                revert RaceConditionDisputeTimeoutCalldataPosted();
+                revert RaceConditionDisputeTimeoutCalldataPosted(
+                    forkId,
+                    dispute.input.timeout.blockHeight,
+                    dispute.input.timeout.participant,
+                    blockCalldataCommitment
+                );
             }
 
             //check if previous block producer posted blockCalldata and if the expectation matches
@@ -129,17 +146,24 @@ contract DisputeManagerFacet is StateChannelCommon {
                     dispute.input.timeout.previousBlockProducer
                 );
                 if (found != dispute.input.timeout.previousBlockProducerPostedCalldata) {
-                    revert RaceConditionDisputeTimeoutPreviousBlockProducerPostedCalldataMismatch();
+                    revert RaceConditionDisputeTimeoutPreviousBlockProducerPostedCalldataMismatch(
+                        dispute.input.timeout.previousBlockProducer,
+                        dispute.input.timeout.blockHeight - 1,
+                        dispute.input.timeout.previousBlockProducerPostedCalldata,
+                        found
+                    );
                 }
             }
             if (block.timestamp < dispute.input.timeout.minTimeStamp) {
-                revert RaceConditionDisputeTimeoutNotMinTimestamp();
+                revert RaceConditionDisputeTimeoutNotMinTimestamp(dispute.input.timeout.minTimeStamp, block.timestamp);
             }
 
             uint256 windowCreationTimestamp =
                 disputeData[dispute.input.channelId].disputeWindowMap[forkId].evidence.creationTimestamp;
             if (windowCreationTimestamp != 0 && windowCreationTimestamp < dispute.input.timeout.minTimeStamp) {
-                revert RaceConditionDisputeTimeoutWindowCreatedTooEarly();
+                revert RaceConditionDisputeTimeoutWindowCreatedTooEarly(
+                    windowCreationTimestamp, dispute.input.timeout.minTimeStamp
+                );
             }
         }
     }
@@ -157,12 +181,10 @@ contract DisputeManagerFacet is StateChannelCommon {
         if (disputeConfirmation.signatures.length + 1 < thresholdSet.length) {
             return false;
         }
-        bytes[] memory signatures = UtilityFacet(utilityFacetAddress).insertBytesInByteArray(
-            disputeConfirmation.signedDispute.signature, disputeConfirmation.signatures
-        );
-        (bool isThresholdFinal,) = UtilityFacet(utilityFacetAddress).verifyThresholdSigned(
-            thresholdSet, disputeConfirmation.signedDispute.encodedDispute, signatures
-        );
+        bytes[] memory signatures = UtilityFacet(utilityFacetAddress)
+            .insertBytesInByteArray(disputeConfirmation.signedDispute.signature, disputeConfirmation.signatures);
+        (bool isThresholdFinal,) = UtilityFacet(utilityFacetAddress)
+            .verifyThresholdSigned(thresholdSet, disputeConfirmation.signedDispute.encodedDispute, signatures);
         return isThresholdFinal;
     }
 }
