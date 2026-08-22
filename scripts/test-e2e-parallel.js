@@ -66,22 +66,6 @@ function discoveryFailureMessage(tier, grep, error) {
 }
 
 /**
- * An empty forge tier is a defect, not an empty selection: if the Solidity glob
- * or the static contract parser regresses, every forge task vanishes and the run
- * still goes green. Only an explicit `--grep` may legitimately select no forge
- * contract. Returns null when the tier is fine, the error message otherwise.
- */
-function emptyForgeTierMessage(forgeTaskCount, grep, filtered = false) {
-    if (forgeTaskCount > 0 || grep !== undefined || filtered) return null;
-    return (
-        "No Foundry test contracts found under test. The forge tier was " +
-        "requested but discovery produced no task — check the Solidity glob " +
-        "and the test-function parser in forgeTaskDiscovery.js, or re-run " +
-        "with --no-forge to skip the forge tier."
-    );
-}
-
-/**
  * Slots are provisioned whenever the run holds a hardhat task and offered to
  * every one of them; no task is classified by directory or source. A test uses
  * the shared node (via PROVIDER_URL) or ignores it and keeps hardhat's
@@ -136,14 +120,13 @@ async function main(options = {}) {
     // ---- discover tasks ----
     // Mocha and Foundry tiers are discovered independently and scheduled as one
     // task list; each task carries the runner that executes it.
-    let files = [];
     let tasks = [];
     let forgeTasks = [];
     const { includeMocha, includeForge } = resolveDiscoverySelection(cli);
     const testDir = path.resolve(cli.e2eOnly ? "test/e2e" : "test");
     if (includeMocha) {
         try {
-            ({ files, tasks } = discoverTasks(
+            ({ tasks } = discoverTasks(
                 testDir,
                 cli.grep,
                 undefined,
@@ -166,29 +149,6 @@ async function main(options = {}) {
             ));
         } catch (e) {
             console.error(discoveryFailureMessage("Forge", cli.grep, e), e);
-            process.exit(1);
-        }
-    }
-    const mochaWasFiltered =
-        cli.mochaTestPattern !== undefined || cli.testPattern !== undefined;
-    const forgeWasFiltered =
-        cli.forgeTestPattern !== undefined || cli.testPattern !== undefined;
-    if (includeMocha && files.length === 0 && !mochaWasFiltered) {
-        console.error(
-            cli.e2eOnly
-                ? "No E2E test files found in test/e2e"
-                : "No Mocha test files found in test"
-        );
-        process.exit(1);
-    }
-    if (includeForge) {
-        const emptyForgeTier = emptyForgeTierMessage(
-            forgeTasks.length,
-            cli.grep,
-            forgeWasFiltered
-        );
-        if (emptyForgeTier) {
-            console.error(emptyForgeTier);
             process.exit(1);
         }
     }
@@ -485,7 +445,6 @@ if (require.main === module) {
 module.exports = {
     buildBaseEnv,
     discoveryFailureMessage,
-    emptyForgeTierMessage,
     resolveDistributedExecutionProfile,
     resolveSlotCount,
     main

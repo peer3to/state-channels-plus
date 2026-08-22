@@ -141,13 +141,21 @@ function sanitizeFileName(name) {
  * `--grep` RegExp against the full mocha title. Returns { files, tasks }; the
  * caller decides how to handle an empty result. Throws on an invalid grep.
  */
+const DEFAULT_MOCHA_TEST_PATTERN = "**/*.ts";
+
+function isMochaTestFile(filePath) {
+    return path.extname(filePath) === ".ts";
+}
+
 function discoverTasks(
     testDir,
     grep,
     e2eDir = path.resolve("test/e2e"),
-    testPattern = "**/*.test.ts"
+    testPattern = DEFAULT_MOCHA_TEST_PATTERN
 ) {
-    const files = globSync(path.join(testDir, testPattern));
+    const files = globSync(path.join(testDir, testPattern), { nodir: true })
+        .filter(isMochaTestFile)
+        .sort();
     const resolvedE2eDir = path.resolve(e2eDir);
     let tasks = [];
     for (const f of files) {
@@ -195,6 +203,7 @@ function discoverTasks(
 }
 
 module.exports = {
+    DEFAULT_MOCHA_TEST_PATTERN,
     getStringLiteralValue,
     isDescribeCallee,
     collectDescribeTitlesFromIt,

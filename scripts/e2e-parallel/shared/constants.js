@@ -1,7 +1,8 @@
 /* eslint-disable no-console */
 const DEFAULT_LOG_DIR = "./logs";
+const { resolveProjectHardhatCli } = require("./projectModules");
 
-const HARDHAT_CLI = require.resolve("hardhat/internal/cli/cli.js");
+const HARDHAT_CLI = resolveProjectHardhatCli();
 
 // 255-byte filename limit (Linux/APFS). markLogAsError prefixes "error_", so
 // reserve room for it plus the ".ansi" extension.

@@ -17,6 +17,18 @@ const IGNORED_FORGE_DIRS = [
     "**/cache_forge/**"
 ];
 
+function isFile(filePath) {
+    try {
+        return fs.statSync(filePath).isFile();
+    } catch {
+        return false;
+    }
+}
+
+function isForgeTestFile(filePath) {
+    return path.extname(filePath) === ".sol";
+}
+
 // Captures the `abstract` modifier, the contract name, the inheritance list
 // (everything between `is` and the opening brace), and the brace itself.
 const CONTRACT_DECLARATION =
@@ -207,7 +219,7 @@ function parseImports(source) {
 function declarationScope(filePath, cache = new Map(), loading = new Set()) {
     const absolute = path.resolve(filePath);
     if (cache.has(absolute)) return cache.get(absolute);
-    if (loading.has(absolute) || !fs.existsSync(absolute)) return new Map();
+    if (loading.has(absolute) || !isFile(absolute)) return new Map();
     loading.add(absolute);
 
     const rawSource = fs.readFileSync(absolute, "utf8");
@@ -225,7 +237,7 @@ function declarationScope(filePath, cache = new Map(), loading = new Set()) {
             projectRoot,
             remappings
         );
-        if (!importedPath || !fs.existsSync(importedPath)) continue;
+        if (!importedPath || !isFile(importedPath)) continue;
         const importedScope = declarationScope(importedPath, cache, loading);
         if (!imported.names) {
             for (const [name, declaration] of importedScope) {
@@ -326,8 +338,11 @@ function discoverForgeTasks(testDir, grep, options = {}) {
         );
     }
     const files = globSync(path.join(testDir, testPattern), {
-        ignore: IGNORED_FORGE_DIRS
-    }).sort();
+        ignore: IGNORED_FORGE_DIRS,
+        nodir: true
+    })
+        .filter(isForgeTestFile)
+        .sort();
     const discovered = files.flatMap((file) =>
         extractForgeTestContracts(file).map((contract) => ({ file, contract }))
     );

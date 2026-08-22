@@ -96,6 +96,11 @@ ordinary tasks, one task per test contract. A contract counts as a test contract
 when it declares a `test`, `invariant`, or `statefulFuzz` function, so harness
 and helper contracts sharing a file are left out.
 
+Without filename overrides, the runner discovers `test/**/*.ts` for Mocha and
+`test/**/*.sol` for Foundry. A repository may contain either tier or both. Each
+tier filters candidates by file type before parsing, including when a shared
+`--test-pattern` is supplied.
+
 ```shell
 yarn test:parallel --forge-only     # only the forge tier
 yarn test:parallel --no-forge       # only the Mocha tier
