@@ -30,7 +30,11 @@ async function nativeModulesLoad(repository, cwd, options, env) {
 }
 
 function selectPrepareScript(repository, cache) {
-    if (cache.preparationChanged || !repository.cachedPrepareScript) {
+    if (
+        !cache.prepared ||
+        cache.preparationChanged ||
+        !repository.cachedPrepareScript
+    ) {
         return repository.prepareScript;
     }
     const prefix = `${repository.path}/`;

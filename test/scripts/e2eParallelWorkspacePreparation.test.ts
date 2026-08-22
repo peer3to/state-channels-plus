@@ -31,6 +31,7 @@ describe("distributed workspace preparation", function () {
     it("reuses compiled contracts for non-contract source changes", function () {
         expect(
             selectPrepareScript(repository, {
+                prepared: true,
                 preparationChanged: false,
                 changed: ["state-channels-plus/src/index.ts"],
                 deleted: []
@@ -46,6 +47,7 @@ describe("distributed workspace preparation", function () {
         ]) {
             expect(
                 selectPrepareScript(repository, {
+                    prepared: true,
                     preparationChanged: false,
                     changed: [changed],
                     deleted: []
@@ -54,12 +56,25 @@ describe("distributed workspace preparation", function () {
         }
         expect(
             selectPrepareScript(repository, {
+                prepared: true,
                 preparationChanged: true,
                 changed: ["state-channels-plus/src/index.ts"],
                 deleted: []
             })
         ).to.equal("full");
     });
+
+    it("rebuilds contracts when the cached preparation did not complete", function () {
+        expect(
+            selectPrepareScript(repository, {
+                prepared: false,
+                preparationChanged: false,
+                changed: ["state-channels-plus/src/index.ts"],
+                deleted: []
+            })
+        ).to.equal("full");
+    });
+
     it("does not pass unrelated server secrets into uploaded code", function () {
         const env = buildWorkerEnvironment({
             PATH: "/bin",
