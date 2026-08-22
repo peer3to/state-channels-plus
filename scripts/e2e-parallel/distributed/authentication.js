@@ -62,6 +62,11 @@ async function authenticateClient(peer, authKey, keys, timeoutMs) {
     const challenge = await waitForMessage(peer, "AUTH_CHALLENGE", timeoutMs);
     const serverNonce = Buffer.from(challenge.header.nonce, "hex");
     const serverKey = Buffer.from(challenge.header.publicKey, "hex");
+    if (keys.remote && !serverKey.equals(keys.remote)) {
+        throw new Error(
+            "Authenticated server key does not match the Noise connection"
+        );
+    }
     const expectedServerProof = proof(
         authKey,
         "server",
@@ -92,6 +97,11 @@ async function authenticateServer(peer, authKey, keys, timeoutMs) {
     const hello = await waitForMessage(peer, "AUTH_HELLO", timeoutMs);
     const clientNonce = Buffer.from(hello.header.nonce, "hex");
     const clientKey = Buffer.from(hello.header.publicKey, "hex");
+    if (keys.remote && !clientKey.equals(keys.remote)) {
+        throw new Error(
+            "Authenticated orchestrator key does not match the Noise connection"
+        );
+    }
     const serverNonce = crypto.randomBytes(32);
     await peer.send("AUTH_CHALLENGE", {
         nonce: serverNonce.toString("hex"),

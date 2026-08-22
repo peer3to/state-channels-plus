@@ -77,7 +77,6 @@ describe("E2E: dispute validation / invalidStateProofAuditing", function () {
         // reduction must settle the fork without that participant.
         await h.dispute.resolveDisputeWait({
             forkId,
-            forkSettleTimeoutMs: 15000,
             // preDisputeSetupCalldataPath force-joins one non-harness wallet.
             syntheticOnChainParticipants: 1
         });

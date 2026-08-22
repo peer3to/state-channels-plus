@@ -1,6 +1,6 @@
 /* eslint-disable no-console */
 const path = require("path");
-const { DEFAULT_LOG_DIR } = require("./constants");
+const { DEFAULT_LOG_DIR, DEFAULT_FORGE_THREADS } = require("./constants");
 
 const HELP_TEXT = `Usage: yarn test:parallel [options]
 
@@ -10,16 +10,23 @@ Options:
   -h, --help                     Show this help and exit
   -g, --grep <regexp>            Run tests whose full Mocha title matches
       --test-pattern <glob>      Test filename glob relative to test/
-      --e2e-only                 Discover only tests under test/e2e
+      --e2e-only                 Discover only Mocha tests under test/e2e
+      --forge-only               Discover only Foundry (forge) test contracts
+      --no-forge                 Skip Foundry (forge) test contracts
+      --forge-threads <count>    Threads per forge task (default 1)
   -d, --log-dir, --logDir, --dir <path>
                                   Use and clear this exact log directory
   -p, --allow-logdir-purge, --allowLogdirPurge, --purge
                                   Allow clearing an explicit dir outside logs/
+      --keep-infra-logs          Keep infrastructure logs after the run
       --slots <count>            Local warm E2E infrastructure slots (0 disables)
-  -w, --workers <count>          Local maximum concurrent test processes
+  -w, --workers <count>          Concurrent tests per local or remote worker
       --target-load <number>     Local maximum average load per CPU core
   -i, --interval <ms>            Local scheduler admission interval
       --mem-limit-gb <gb>        Local memory budget for test processes
+      --cpu-limit <count>        Distributed worker CPU request
+      --disk-limit-bytes <bytes> Distributed environment disk request
+      --pids-limit <count>       Distributed environment process limit
       --sdk-thread               Run the SDK host in a worker thread
       --no-sdk-thread            Run the SDK host on the main thread
       --vm-thread                Run the VM executor in a worker thread
@@ -29,9 +36,11 @@ Options:
       --discovery-timeout <ms>   Time to wait for the first worker
       --forward-env <name>       Environment variable to forward (repeatable)
 
-By default all tests under test/ are discovered and logs are written to a new
-logs/run-N directory. Use --e2e-only only when the ordinary Mocha tier is not
-needed.`;
+By default all Mocha tests and all Foundry test contracts under test/ are
+discovered and logs are written to a new logs/run-N directory. Use --e2e-only
+only when the ordinary Mocha tier is not needed; it also drops the forge tier.
+Each forge task is pinned to one thread because the runner already parallelizes
+across tasks and forge would otherwise size its pool from the host core count.`;
 
 function getHelpText() {
     return HELP_TEXT;
@@ -52,10 +61,16 @@ function parseCliArgs(argv) {
         // otherwise each run gets a fresh DEFAULT_LOG_DIR/run-N.
         logDirProvided: false,
         allowLogdirPurge: false,
+        keepInfraLogs: false,
         grep: undefined,
         testPattern: undefined,
         help: false,
         e2eOnly: false,
+        // Foundry test contracts are discovered alongside Mocha tests by
+        // default; --no-forge drops them, --forge-only drops the Mocha tier.
+        forge: true,
+        forgeOnly: false,
+        forgeThreads: DEFAULT_FORGE_THREADS,
         dryRun: false,
         // Warm slot pool size; undefined → DEFAULT_SLOTS.
         slots: undefined,
@@ -68,6 +83,9 @@ function parseCliArgs(argv) {
         schedulerTickMs: undefined,
         // Memory budget in GiB; undefined → totalmem × MEM_LIMIT_FRACTION.
         memLimitGb: undefined,
+        cpuLimit: undefined,
+        diskLimitBytes: undefined,
+        pidsLimit: undefined,
         // Thread-mode toggles: undefined = fall back to env/default.
         sdkThread: undefined,
         vmThread: undefined,
@@ -122,6 +140,31 @@ function parseCliArgs(argv) {
             options.e2eOnly = true;
             continue;
         }
+        if (arg === "--forge-only") {
+            options.forgeOnly = true;
+            continue;
+        }
+        if (arg === "--no-forge") {
+            options.forge = false;
+            continue;
+        }
+        if (arg === "--forge-threads") {
+            const v = takeNumber(argv[i + 1], (s) => Number.parseInt(s, 10));
+            if (v === undefined)
+                throw new Error("--forge-threads requires a positive integer");
+            options.forgeThreads = v;
+            i++;
+            continue;
+        }
+        if (arg.startsWith("--forge-threads=")) {
+            const v = takeNumber(arg.split("=")[1], (s) =>
+                Number.parseInt(s, 10)
+            );
+            if (v === undefined)
+                throw new Error("--forge-threads requires a positive integer");
+            options.forgeThreads = v;
+            continue;
+        }
 
         if (
             arg === "--logDir" ||
@@ -165,6 +208,11 @@ function parseCliArgs(argv) {
             arg === "-p"
         ) {
             options.allowLogdirPurge = true;
+            continue;
+        }
+
+        if (arg === "--keep-infra-logs") {
+            options.keepInfraLogs = true;
             continue;
         }
 
@@ -270,6 +318,56 @@ function parseCliArgs(argv) {
             continue;
         }
 
+        if (arg === "--cpu-limit") {
+            const v = takeNumber(argv[i + 1], Number.parseFloat);
+            if (v !== undefined) {
+                options.cpuLimit = v;
+                options.distributedOptionsProvided = true;
+                i++;
+            }
+            continue;
+        }
+        if (arg.startsWith("--cpu-limit=")) {
+            const v = takeNumber(arg.split("=")[1], Number.parseFloat);
+            if (v !== undefined) {
+                options.cpuLimit = v;
+                options.distributedOptionsProvided = true;
+            }
+            continue;
+        }
+        if (arg === "--disk-limit-bytes" || arg === "--pids-limit") {
+            const v = takeNumber(argv[i + 1], (raw) =>
+                Number.parseInt(raw, 10)
+            );
+            if (v !== undefined) {
+                options[
+                    arg === "--disk-limit-bytes"
+                        ? "diskLimitBytes"
+                        : "pidsLimit"
+                ] = v;
+                options.distributedOptionsProvided = true;
+                i++;
+            }
+            continue;
+        }
+        if (
+            arg.startsWith("--disk-limit-bytes=") ||
+            arg.startsWith("--pids-limit=")
+        ) {
+            const v = takeNumber(arg.split("=")[1], (raw) =>
+                Number.parseInt(raw, 10)
+            );
+            if (v !== undefined) {
+                options[
+                    arg.startsWith("--disk-limit-bytes=")
+                        ? "diskLimitBytes"
+                        : "pidsLimit"
+                ] = v;
+                options.distributedOptionsProvided = true;
+            }
+            continue;
+        }
+
         if (arg === "--sdk-thread") {
             options.sdkThread = true;
             continue;
@@ -319,19 +417,45 @@ function parseCliArgs(argv) {
         throw new Error(`Unknown option: ${arg}`);
     }
 
+    if (options.forgeOnly && !options.forge) {
+        throw new Error("--forge-only conflicts with --no-forge");
+    }
+    if (options.forgeOnly && options.e2eOnly) {
+        throw new Error("--forge-only conflicts with --e2e-only");
+    }
     if (!options.distributed && options.distributedOptionsProvided) {
         throw new Error("Distributed-only options require --distributed");
     }
-    if (options.distributed && options.localCapacityOptionsProvided.length) {
-        const flags = [...new Set(options.localCapacityOptionsProvided)].join(
-            ", "
-        );
-        throw new Error(
-            `${flags} configure only local execution; pass the corresponding flags to test:parallel:server`
+    if (options.distributed) {
+        options.executionProfile = Object.fromEntries(
+            Object.entries({
+                schedulerTickMs: options.schedulerTickMs,
+                workers: options.workers,
+                slots: options.slots,
+                cpu: options.cpuLimit,
+                memoryBytes:
+                    options.memLimitGb === undefined
+                        ? undefined
+                        : Math.floor(options.memLimitGb * 1024 ** 3),
+                diskBytes: options.diskLimitBytes,
+                pidsLimit: options.pidsLimit,
+                targetLoad: options.targetLoad
+            }).filter(([, value]) => value !== undefined)
         );
     }
 
     return options;
 }
 
-module.exports = { getHelpText, parseCliArgs };
+/**
+ * Which discovery tiers a parsed CLI selects. `--e2e-only` narrows the Mocha
+ * tier to test/e2e and drops forge with it (forge contracts never live there).
+ */
+function resolveDiscoverySelection(options) {
+    return {
+        includeMocha: !options.forgeOnly,
+        includeForge: options.forge !== false && !options.e2eOnly
+    };
+}
+
+module.exports = { getHelpText, parseCliArgs, resolveDiscoverySelection };

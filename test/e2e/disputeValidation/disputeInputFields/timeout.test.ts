@@ -44,12 +44,10 @@ describe("E2E: dispute validation / disputeInputFields / timeout", function () {
         });
         await h.assert.storage.honestPeersStoredDisputeFraudProofDetached({
             disputeFraudProofType:
-                DisputeFraudProofType.TimeoutNotLinkedToLatestState,
-            timeoutMs: 10000
+                DisputeFraudProofType.TimeoutNotLinkedToLatestState
         });
         await h.dispute.resolveDisputeWait({
-            forkId: h.context.originalForkId!,
-            forkSettleTimeoutMs: 15000
+            forkId: h.context.originalForkId!
         });
     });
 
@@ -84,8 +82,7 @@ describe("E2E: dispute validation / disputeInputFields / timeout", function () {
 
         await h.assert.storage.honestPeersStoredDisputeFraudProofDetached({
             disputeFraudProofType:
-                DisputeFraudProofType.TimeoutParticipantNotNext,
-            timeoutMs: 10000
+                DisputeFraudProofType.TimeoutParticipantNotNext
         });
         await h.dispute.resolveDisputeWait({ forkId });
     });
@@ -146,7 +143,12 @@ describe("E2E: dispute validation / disputeInputFields / timeout", function () {
             h.contextApi.markAfkPeer({ afkPeerIndex: 2 });
 
             await h.tamper.plantFreshTimeoutForNextWriter(0);
-            await h.tamper.postTamperedDispute(0, () => {});
+            await h.tamper.postTamperedDispute(0, (dispute) => {
+                // This case tests the timeout predicate and its on-chain fraud
+                // proof. Post the already-constructed auditing data so the
+                // test does not also race the optional reconstruction path.
+                dispute.postedAuditingData = true;
+            });
             const maliciousAfterAction = [...h.context.maliciousPeerIndices];
             if (
                 maliciousAfterAction.length !== 1 ||
@@ -161,15 +163,11 @@ describe("E2E: dispute validation / disputeInputFields / timeout", function () {
                 mode: "atLeast"
             });
             await h.assert.storage.honestPeersStoredDisputeFraudProofDetached({
-                disputeFraudProofType: DisputeFraudProofType.TimeoutTooEarly,
-                timeoutMs: 10000
+                disputeFraudProofType: DisputeFraudProofType.TimeoutTooEarly
             });
 
             await h.assert.dispute.slashedOnChain(h.getPeer(0).address);
-            await h.dispute.resolveDisputeWait({
-                forkId,
-                forkSettleTimeoutMs: 15000
-            });
+            await h.dispute.resolveDisputeWait({ forkId });
         });
 
         it("valid timeout dispute → no TimeoutTooEarly fraud proof stored (false-positive guard)", async function () {
@@ -204,10 +202,7 @@ describe("E2E: dispute validation / disputeInputFields / timeout", function () {
                 }
             }
 
-            await h.dispute.resolveDisputeWait({
-                forkId: originalForkId,
-                forkSettleTimeoutMs: 15000
-            });
+            await h.dispute.resolveDisputeWait({ forkId: originalForkId });
         });
 
         it("forged TimeoutTooEarly against a legitimate timeout dispute → proof author slashed", async function () {
@@ -232,10 +227,7 @@ describe("E2E: dispute validation / disputeInputFields / timeout", function () {
 
             await h.assert.dispute.slashedOnChain(h.getPeer(0).address);
 
-            await h.dispute.resolveDisputeWait({
-                forkId,
-                forkSettleTimeoutMs: 15000
-            });
+            await h.dispute.resolveDisputeWait({ forkId });
         });
     });
 
@@ -307,8 +299,7 @@ describe("E2E: dispute validation / disputeInputFields / timeout", function () {
             waitForFinalization: false
         });
         await h.event.waitForPeers("onBlockCalldataPosted", [0, 1, 2, 3], 1, {
-            mode: "atLeast",
-            timeoutMs: 15000
+            mode: "atLeast"
         });
 
         // Construct the committed output for the same participant blamed by
@@ -327,13 +318,11 @@ describe("E2E: dispute validation / disputeInputFields / timeout", function () {
         });
 
         await h.event.waitForPeers("onDisputeKilled", [0, 1, 2], 1, {
-            mode: "atLeast",
-            timeoutMs: 25000
+            mode: "atLeast"
         });
         await h.assert.storage.honestPeersStoredDisputeFraudProofWait({
             disputeFraudProofType: DisputeFraudProofType.TimeoutCalldataPosted,
-            peerIndices: [0, 1, 2],
-            timeoutMs: 15000
+            peerIndices: [0, 1, 2]
         });
 
         const slashed = (

@@ -35,8 +35,7 @@ describe("E2E: dispute validation / disputeInputFields / latestStateSnapshotHash
                     await h.assert.storage.honestPeersStoredDisputeFraudProofDetached(
                         {
                             disputeFraudProofType:
-                                DisputeFraudProofType.DisputeInvalidStateProof,
-                            timeoutMs: 10000
+                                DisputeFraudProofType.DisputeInvalidStateProof
                         }
                     );
                     await h.dispute.resolveDisputeWait({ forkId });
@@ -71,8 +70,7 @@ describe("E2E: dispute validation / disputeInputFields / latestStateSnapshotHash
                     await h.assert.storage.honestPeersStoredDisputeFraudProofDetached(
                         {
                             disputeFraudProofType:
-                                DisputeFraudProofType.DisputeInvalidStateProof,
-                            timeoutMs: 10000
+                                DisputeFraudProofType.DisputeInvalidStateProof
                         }
                     );
                     await h.dispute.resolveDisputeWait({ forkId });
@@ -110,8 +108,7 @@ describe("E2E: dispute validation / disputeInputFields / latestStateSnapshotHash
                     await h.assert.storage.honestPeersStoredDisputeFraudProofDetached(
                         {
                             disputeFraudProofType:
-                                DisputeFraudProofType.DisputeInvalidStateProof,
-                            timeoutMs: 10000
+                                DisputeFraudProofType.DisputeInvalidStateProof
                         }
                     );
                     await h.dispute.resolveDisputeWait({ forkId });
@@ -148,8 +145,7 @@ describe("E2E: dispute validation / disputeInputFields / latestStateSnapshotHash
                     await h.assert.storage.honestPeersStoredDisputeFraudProofDetached(
                         {
                             disputeFraudProofType:
-                                DisputeFraudProofType.DisputeInvalidStateProof,
-                            timeoutMs: 15000
+                                DisputeFraudProofType.DisputeInvalidStateProof
                         }
                     );
                     await h.dispute.resolveDisputeWait({ forkId });
@@ -185,8 +181,7 @@ describe("E2E: dispute validation / disputeInputFields / latestStateSnapshotHash
                     await h.assert.storage.honestPeersStoredDisputeFraudProofDetached(
                         {
                             disputeFraudProofType:
-                                DisputeFraudProofType.DisputeInvalidStateProof,
-                            timeoutMs: 10000
+                                DisputeFraudProofType.DisputeInvalidStateProof
                         }
                     );
                     await h.dispute.resolveDisputeWait({ forkId });
@@ -224,8 +219,7 @@ describe("E2E: dispute validation / disputeInputFields / latestStateSnapshotHash
                     await h.assert.storage.honestPeersStoredDisputeFraudProofDetached(
                         {
                             disputeFraudProofType:
-                                DisputeFraudProofType.DisputeInvalidStateProof,
-                            timeoutMs: 15000
+                                DisputeFraudProofType.DisputeInvalidStateProof
                         }
                     );
                     await h.dispute.resolveDisputeWait({
@@ -262,8 +256,7 @@ describe("E2E: dispute validation / disputeInputFields / latestStateSnapshotHash
                     await h.assert.storage.honestPeersStoredDisputeFraudProofDetached(
                         {
                             disputeFraudProofType:
-                                DisputeFraudProofType.DisputeInvalidStateProof,
-                            timeoutMs: 10000
+                                DisputeFraudProofType.DisputeInvalidStateProof
                         }
                     );
                     await h.dispute.resolveDisputeWait({
@@ -326,8 +319,7 @@ describe("E2E: dispute validation / disputeInputFields / latestStateSnapshotHash
                     await h.assert.storage.honestPeersStoredDisputeFraudProofDetached(
                         {
                             disputeFraudProofType:
-                                DisputeFraudProofType.DisputeInvalidStateProof,
-                            timeoutMs: 15000
+                                DisputeFraudProofType.DisputeInvalidStateProof
                         }
                     );
                     await h.dispute.resolveDisputeWait({
@@ -373,8 +365,7 @@ describe("E2E: dispute validation / disputeInputFields / latestStateSnapshotHash
                     await h.assert.storage.honestPeersStoredDisputeFraudProofDetached(
                         {
                             disputeFraudProofType:
-                                DisputeFraudProofType.DisputeInvalidStateProof,
-                            timeoutMs: 15000
+                                DisputeFraudProofType.DisputeInvalidStateProof
                         }
                     );
                     await h.dispute.resolveDisputeWait({ forkId });

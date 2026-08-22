@@ -6,11 +6,18 @@ describe("E2E: Force Join Dispute", function () {
     it("should force an omitted join into the reduced fork and schedule the joiner as an author", async function () {
         const h = TestSession.getHarness();
 
-        await h.lifecycle.start(2, 2);
-
-        const joiner = await h.join.addSpectatorWait({
-            statusTimeoutMs: 5000,
-            statusTimeoutMessage: "Joiner did not reach SYNCED"
+        // Spectating is asynchronous to the channel: participants author on
+        // their own cadence and never wait for a joiner's spawn/sync. Spawn
+        // detached, produce the initial blocks immediately, and await SYNCED
+        // only right before the join needs it — by then the sync overlapped
+        // the transitions. A blocking spawn between blocks would idle past
+        // p2pTime + agreementTime and get the next block rejected (its
+        // timestamp is capped at prev + p2pTime).
+        await h.lifecycle.start(2, 0);
+        const joiner = await h.join.addSpectatorDetached();
+        await h.transition.advanceState({ count: 2, waitForPeers: [0, 1] });
+        await h.event.waitUntilPeerStatus(joiner.index, Status.SYNCED, {
+            timeoutMessage: "Joiner did not reach SYNCED"
         });
         await h.assert.sync.peersInSyncWait();
 
@@ -39,10 +46,7 @@ describe("E2E: Force Join Dispute", function () {
         await restoreInboundInclusion0();
         await restoreInboundInclusion1();
 
-        const { newForkId } = await h.dispute.resolveDisputeWait({
-            forkId,
-            forkSettleTimeoutMs: 15000
-        });
+        const { newForkId } = await h.dispute.resolveDisputeWait({ forkId });
 
         expect(
             await h.control(h.getPeer(joiner.index)).query.getStatus().request()

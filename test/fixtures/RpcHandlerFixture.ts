@@ -58,7 +58,7 @@ export class RpcHandlerFixture {
         await waitFor(async () => {
             const nonces = await this.receivedPingNonces(peerIndex);
             return nonces.filter((value) => value === nonce).length === count;
-        }, 5000);
+        }, this.harness.event.protocolEventTimeoutMs());
     }
 
     public async cleanup(): Promise<void> {

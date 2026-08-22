@@ -3,19 +3,20 @@ import { expect } from "chai";
 import fs from "fs";
 import os from "os";
 import path from "path";
+import { spawnSync } from "child_process";
 
 const {
     WorkerLeaseManager
 } = require("../../scripts/e2e-parallel/distributed/workerLeaseManager.js");
-const {
-    LeaseRuntime
-} = require("../../scripts/e2e-parallel/distributed/leaseRuntime.js");
 const {
     acquireHostLock
 } = require("../../scripts/e2e-parallel/distributed/hostLock.js");
 const {
     acquireWorkspaceLock
 } = require("../../scripts/e2e-parallel/distributed/workspaceLock.js");
+const {
+    deriveEnvironmentKey
+} = require("../../scripts/e2e-parallel/distributed/workspaceCache.js");
 const {
     progressElapsedMs
 } = require("../../scripts/e2e-parallel/distributed/server.js");
@@ -180,23 +181,7 @@ describe("distributed worker lease", function () {
         ).to.throw("Invalid worker progress");
     });
 
-    it("removes the complete lease tree and makes cleanup idempotent", async function () {
-        const root = fs.mkdtempSync(
-            path.join(os.tmpdir(), "lease-runtime-test-")
-        );
-        try {
-            const runtime = new LeaseRuntime(root);
-            fs.writeFileSync(path.join(runtime.root, "side-effect"), "data");
-            await Promise.all([runtime.cleanup(), runtime.cleanup()]);
-            expect(fs.existsSync(runtime.root)).to.equal(false);
-        } finally {
-            fs.rmSync(root, { recursive: true, force: true });
-        }
-    });
-
-    it("uses an OS-held host lock and allows the explicit bypass", function () {
-        if (process.platform !== "darwin" && process.platform !== "linux")
-            this.skip();
+    it("holds the host lock exclusively and allows the explicit bypass", function () {
         const lockPath = path.join("/tmp", `peer3-lock-test-${process.pid}`);
         const first = acquireHostLock({ lockPath, workRoot: "/tmp/root-a" });
         try {
@@ -215,22 +200,69 @@ describe("distributed worker lease", function () {
         fs.rmSync(lockPath, { force: true });
     });
 
-    it("holds workspace ownership until lease cleanup", async function () {
-        if (process.platform !== "darwin" && process.platform !== "linux")
-            this.skip();
+    it("reclaims a host lock whose owning process is gone", function () {
+        const lockPath = path.join(
+            os.tmpdir(),
+            `peer3-lock-stale-${process.pid}`
+        );
+        // spawnSync has reaped the child by the time it returns, so its pid
+        // names a process that is definitively gone.
+        const deadPid = spawnSync(process.execPath, ["-e", ""]).pid;
+        fs.writeFileSync(lockPath, String(deadPid));
+        try {
+            const reclaimed = acquireHostLock({ lockPath });
+            expect(fs.readFileSync(lockPath, "utf8")).to.equal(
+                String(process.pid)
+            );
+            reclaimed.release();
+            expect(fs.existsSync(lockPath)).to.equal(false);
+        } finally {
+            fs.rmSync(lockPath, { force: true });
+        }
+    });
+
+    it("reclaims a host lock whose owner cannot be read", function () {
+        const lockPath = path.join(
+            os.tmpdir(),
+            `peer3-lock-corrupt-${process.pid}`
+        );
+        fs.writeFileSync(lockPath, "not-a-pid");
+        try {
+            acquireHostLock({ lockPath }).release();
+            expect(fs.existsSync(lockPath)).to.equal(false);
+        } finally {
+            fs.rmSync(lockPath, { force: true });
+        }
+    });
+
+    it("refuses a host lock path that is a symbolic link", function () {
         const root = fs.mkdtempSync(
-            path.join(os.tmpdir(), "workspace-lock-test-")
+            path.join(os.tmpdir(), "host-lock-symlink-test-")
+        );
+        const lockPath = path.join(root, "host.lock");
+        fs.writeFileSync(path.join(root, "target"), "");
+        fs.symlinkSync(path.join(root, "target"), lockPath);
+        try {
+            expect(() => acquireHostLock({ lockPath })).to.throw(
+                /must not be a symbolic link/
+            );
+        } finally {
+            fs.rmSync(root, { recursive: true, force: true });
+        }
+    });
+
+    it("locks identical source independently for two orchestrator identities", function () {
+        const root = fs.mkdtempSync(
+            path.join(os.tmpdir(), "environment-lock-test-")
         );
         const workspaceId = "a".repeat(64);
+        const firstKey = deriveEnvironmentKey("1".repeat(64), workspaceId);
+        const secondKey = deriveEnvironmentKey("2".repeat(64), workspaceId);
         try {
-            const runtime = new LeaseRuntime(root);
-            runtime.holdLock(acquireWorkspaceLock(root, workspaceId));
-            expect(() => acquireWorkspaceLock(root, workspaceId)).to.throw(
-                /already owned/
-            );
-            await runtime.cleanup();
-            const next = acquireWorkspaceLock(root, workspaceId);
-            next.release();
+            const first = acquireWorkspaceLock(root, firstKey);
+            const second = acquireWorkspaceLock(root, secondKey);
+            first.release();
+            second.release();
         } finally {
             fs.rmSync(root, { recursive: true, force: true });
         }

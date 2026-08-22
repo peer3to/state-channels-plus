@@ -25,17 +25,14 @@ export class ByzantineActions<
     ) {}
 
     /**
-     * Submit a double-signed block (two blocks at same height with different
-     * content). The block is built, signed and broadcast host-side by the
-     * Byzantine RPC service; `forkId` is omitted to let the host use its live
-     * head fork unless a specific fork is requested.
+     * Submit a double-signed block (two blocks at the same height that differ
+     * only by timestamp). The block is built, signed and broadcast host-side
+     * by the Byzantine RPC service; `forkId` is omitted to let the host use its
+     * live head fork unless a specific fork is requested.
      */
     async submitDoubleSignBlock(
         peerIndex: number,
-        options?: {
-            forkId?: ForkId;
-            transactionData?: Bytes;
-        }
+        options?: { forkId?: ForkId }
     ): Promise<{
         conflictingBlockHash: string;
         conflictingBlockHeight: BlockHeight;
@@ -50,8 +47,7 @@ export class ByzantineActions<
         const result = await this.harness
             .control(peer)
             .byzantine.submitDoubleSignBlock({
-                forkId: options?.forkId,
-                transactionData: options?.transactionData
+                forkId: options?.forkId
             })
             .request();
 

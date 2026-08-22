@@ -6,6 +6,8 @@ import fs from "fs";
 import os from "os";
 import path from "path";
 import { setImmediate } from "node:timers";
+import { spawn } from "node:child_process";
+import * as tar from "tar";
 import { createSocketPair } from "../fixtures/distributed/testTransport";
 
 const {
@@ -38,14 +40,30 @@ const {
     discoveryConfigurations
 } = require("../../scripts/e2e-parallel/distributed/poolTransport.js");
 const {
+    EnvironmentFrameParser,
+    GUEST_KINDS,
+    HOST_KINDS,
+    encodeEnvironmentFrame
+} = require("../../scripts/e2e-parallel/distributed/environmentProtocol.js");
+const {
     formatBusyStatus,
     isRoutineDiscoveryFailure: isRoutineOrchestratorFailure
 } = require("../../scripts/e2e-parallel/distributed/orchestrator.js");
 const {
-    isRoutineDiscoveryFailure: isRoutineServerFailure
+    isRoutineDiscoveryFailure: isRoutineServerFailure,
+    requireTransportPublicKey
 } = require("../../scripts/e2e-parallel/distributed/server.js");
 
 describe("distributed protocol", function () {
+    it("rejects a server connection without an authenticated transport key", function () {
+        expect(() => requireTransportPublicKey({})).to.throw(
+            "Authenticated transport key is required"
+        );
+        expect(
+            requireTransportPublicKey({ publicKey: Buffer.alloc(32, 1) })
+        ).to.equal(Buffer.alloc(32, 1).toString("hex"));
+    });
+
     it("selects the lower authenticated Noise handshake hash", function () {
         const higher = { connectionHash: "f".repeat(64) };
         const lower = { connectionHash: "0".repeat(64) };
@@ -264,6 +282,39 @@ describe("distributed protocol", function () {
         }
     });
 
+    it("rejects a peer-claimed authentication key that differs from the Noise transport key", async function () {
+        const pair = await createSocketPair();
+        try {
+            const client = new ProtocolPeer(pair.client);
+            const server = new ProtocolPeer(pair.server);
+            const keys = derivePoolKeys("transport-binding");
+            const clientKey = crypto.randomBytes(32);
+            const claimedTransportKey = crypto.randomBytes(32);
+            const serverAuthentication = authenticateServer(
+                server,
+                keys.authKey,
+                {
+                    local: crypto.randomBytes(32),
+                    remote: claimedTransportKey
+                },
+                1000
+            );
+            await client.send("AUTH_HELLO", {
+                nonce: crypto.randomBytes(32).toString("hex"),
+                publicKey: clientKey.toString("hex")
+            });
+            let error: Error | undefined;
+            try {
+                await serverAuthentication;
+            } catch (caught) {
+                error = caught as Error;
+            }
+            expect(error?.message).to.include("Noise connection");
+        } finally {
+            await pair.close();
+        }
+    });
+
     it("closes a server that cannot prove pool membership", async function () {
         const pair = await createSocketPair();
         try {
@@ -465,6 +516,311 @@ describe("distributed protocol", function () {
             expect(error?.message).to.include("Invalid message kind");
         } finally {
             await pair.close();
+        }
+    });
+
+    it("parses bounded private environment frames without deserializing executable objects", async function () {
+        const parser = new EnvironmentFrameParser({
+            allowedKinds: GUEST_KINDS
+        });
+        const received = new Promise<{
+            kind: string;
+            payload: { message: { kind: string } };
+            body: Buffer;
+        }>((resolve) => parser.once("frame", resolve));
+        const frame = encodeEnvironmentFrame(
+            "WORKER_EVENT",
+            { message: { kind: "INFRA_LOG" } },
+            Buffer.from("data")
+        );
+        parser.consume(frame.subarray(0, 7));
+        parser.consume(frame.subarray(7));
+        const parsed = await received;
+        expect(parsed.kind).to.equal("WORKER_EVENT");
+        expect(parsed.payload.message.kind).to.equal("INFRA_LOG");
+        expect(parsed.body.toString()).to.equal("data");
+    });
+
+    it("rejects unknown, malformed, oversized, and version-mismatched environment frames", async function () {
+        const invalidFrames = [
+            Buffer.from(
+                `${JSON.stringify({ version: 1, kind: "SHELL", payload: {}, body: "" })}\n`
+            ),
+            Buffer.from("not-json\n"),
+            Buffer.from(
+                `${JSON.stringify({ version: 2, kind: "STATUS", payload: {}, body: "" })}\n`
+            ),
+            Buffer.from(
+                `${JSON.stringify({ version: 1, kind: "STATUS", payload: { status: "ready", command: "id" }, body: "" })}\n`
+            )
+        ];
+        for (const invalid of invalidFrames) {
+            const parser = new EnvironmentFrameParser({
+                allowedKinds: GUEST_KINDS
+            });
+            const error = new Promise<Error>((resolve) =>
+                parser.once("error", resolve)
+            );
+            parser.consume(invalid);
+            expect((await error).message).to.match(
+                /Unknown environment|Unknown STATUS|Unexpected token|version mismatch/
+            );
+        }
+        const oversized = new EnvironmentFrameParser({
+            allowedKinds: GUEST_KINDS,
+            maxFrameBytes: 4
+        });
+        const error = new Promise<Error>((resolve) =>
+            oversized.once("error", resolve)
+        );
+        oversized.consume(Buffer.from("12345"));
+        expect((await error).message).to.include("too large");
+    });
+
+    it("rejects out-of-order private environment messages before guest work starts", async function () {
+        const parser = new EnvironmentFrameParser({
+            allowedKinds: new Set(["SOURCE_CHUNK"]),
+            direction: "host"
+        });
+        const error = new Promise<Error>((resolve) =>
+            parser.once("error", resolve)
+        );
+        parser.consume(
+            Buffer.from(
+                `${JSON.stringify({ version: 1, kind: "SOURCE_CHUNK", payload: { sequence: 0 }, body: "" })}\n`
+            )
+        );
+        expect((await error).message).to.include("Out-of-order");
+    });
+
+    it("bounds each private frame without rejecting coalesced valid frames", function () {
+        const parser = new EnvironmentFrameParser({
+            allowedKinds: GUEST_KINDS,
+            maxFrameBytes: 80
+        });
+        const received: string[] = [];
+        parser.on("frame", (frame: { payload: { status: string } }) =>
+            received.push(frame.payload.status)
+        );
+        parser.consume(
+            Buffer.concat([
+                encodeEnvironmentFrame("STATUS", { status: "one" }),
+                encodeEnvironmentFrame("STATUS", { status: "two" })
+            ])
+        );
+        expect(received).to.deep.equal(["one", "two"]);
+    });
+
+    it("sends a large source manifest once while every source chunk stays bounded", function () {
+        const manifest = {
+            files: Array.from({ length: 6000 }, (_, index) => ({
+                path: `repository/source-${index.toString().padStart(5, "0")}-${"x".repeat(24)}.ts`,
+                sha256: "a".repeat(64)
+            }))
+        };
+        expect(Buffer.byteLength(JSON.stringify(manifest))).to.be.greaterThan(
+            512 * 1024
+        );
+        const frames = [
+            encodeEnvironmentFrame("TRUSTED_RUNNER", { version: 1 }),
+            encodeEnvironmentFrame("ENVIRONMENT_SETUP", {
+                environmentKey: "a".repeat(64),
+                orchestratorPublicKey: "b".repeat(64),
+                profile: {},
+                limits: {}
+            }),
+            encodeEnvironmentFrame("WORKSPACE_OFFER", { manifest: {} }),
+            encodeEnvironmentFrame("SOURCE_BEGIN", { manifest }),
+            encodeEnvironmentFrame(
+                "SOURCE_CHUNK",
+                { sequence: 0 },
+                Buffer.alloc(256 * 1024)
+            ),
+            encodeEnvironmentFrame("SOURCE_COMPLETE", {
+                byteCount: 256 * 1024,
+                sha256: "c".repeat(64)
+            })
+        ];
+        expect(frames.every((frame) => frame.length <= 1024 * 1024)).to.equal(
+            true
+        );
+        expect(frames[4].toString()).not.to.include("source-00000");
+        const parser = new EnvironmentFrameParser({
+            allowedKinds: HOST_KINDS,
+            direction: "host"
+        });
+        expect(() =>
+            frames.forEach((frame) => parser.consume(frame))
+        ).not.to.throw();
+    });
+
+    it("extracts a chunked source transfer with a manifest larger than 512 KiB", async function () {
+        const root = fs.mkdtempSync(
+            path.join(os.tmpdir(), "large-source-frame-")
+        );
+        const archiveRoot = path.join(root, "archive");
+        const archivePath = path.join(root, "source.tgz");
+        fs.mkdirSync(path.join(archiveRoot, "project"), { recursive: true });
+        const payload = crypto.randomBytes(600 * 1024);
+        fs.writeFileSync(
+            path.join(archiveRoot, "project", "payload.bin"),
+            payload
+        );
+        await tar.c(
+            { cwd: archiveRoot, file: archivePath, gzip: true, portable: true },
+            ["project/payload.bin"]
+        );
+        const archive = fs.readFileSync(archivePath);
+        const deltaManifest = {
+            version: 3,
+            packageManager: "pnpm",
+            archiveBytes: archive.length,
+            archiveSha256: crypto
+                .createHash("sha256")
+                .update(archive)
+                .digest("hex"),
+            expandedBytes: 600 * 1024,
+            fileCount: 1,
+            repositories: [],
+            padding: "x".repeat(540 * 1024)
+        };
+        expect(
+            Buffer.byteLength(JSON.stringify(deltaManifest))
+        ).to.be.greaterThan(512 * 1024);
+        const child = spawn(
+            process.execPath,
+            [path.resolve("scripts/e2e-parallel/distributed/isolatedGuest.js")],
+            {
+                env: {
+                    ...process.env,
+                    SCP_ISOLATED_ROOT: path.join(root, "guest")
+                },
+                stdio: ["pipe", "pipe", "pipe"]
+            }
+        );
+        const parser = new EnvironmentFrameParser({
+            allowedKinds: GUEST_KINDS
+        });
+        const received: Array<{
+            kind: string;
+            payload: Record<string, unknown>;
+        }> = [];
+        const notifications = new EventEmitter();
+        parser.on(
+            "frame",
+            (frame: { kind: string; payload: Record<string, unknown> }) => {
+                received.push(frame);
+                notifications.emit("frame", frame);
+            }
+        );
+        child.stdout.on("data", (chunk) => parser.consume(chunk));
+        const waitFrame = (kind: string) => {
+            const existing = received.find((frame) => frame.kind === kind);
+            if (existing) return Promise.resolve(existing);
+            return new Promise<{
+                kind: string;
+                payload: Record<string, unknown>;
+            }>((resolve, reject) => {
+                const timer = setTimeout(
+                    () => reject(new Error(`Timed out waiting for ${kind}`)),
+                    10000
+                );
+                const onFrame = (frame: {
+                    kind: string;
+                    payload: Record<string, unknown>;
+                }) => {
+                    if (frame.kind !== kind) return;
+                    clearTimeout(timer);
+                    notifications.off("frame", onFrame);
+                    resolve(frame);
+                };
+                notifications.on("frame", onFrame);
+            });
+        };
+        try {
+            await waitFrame("READY");
+            child.stdin.write(
+                encodeEnvironmentFrame("TRUSTED_RUNNER", { version: 1 })
+            );
+            child.stdin.write(
+                encodeEnvironmentFrame("ENVIRONMENT_SETUP", {
+                    environmentKey: "a".repeat(64),
+                    orchestratorPublicKey: "b".repeat(64),
+                    profile: { diskBytes: 2 * 1024 ** 2, pidsLimit: 64 },
+                    limits: {
+                        maxCompressedBytes: 2 * 1024 ** 2,
+                        maxExpandedBytes: 2 * 1024 ** 2,
+                        maxAttemptSpoolBytes: 1024
+                    }
+                })
+            );
+            child.stdin.write(
+                encodeEnvironmentFrame("WORKSPACE_OFFER", {
+                    manifest: {
+                        version: 3,
+                        packageManager: "pnpm",
+                        workspaceId: "c".repeat(64),
+                        sourceDigest: "d".repeat(64),
+                        rootProjectPath: "project",
+                        runnerEntry: "worker.js",
+                        repositories: [],
+                        files: [],
+                        fileCount: 0,
+                        expandedBytes: 0
+                    }
+                })
+            );
+            await waitFrame("WORKSPACE_NEED");
+            const begin = encodeEnvironmentFrame("SOURCE_BEGIN", {
+                manifest: deltaManifest
+            });
+            expect(begin.length).to.be.lessThan(1024 * 1024);
+            child.stdin.write(begin);
+            let sequence = 0;
+            for (
+                let offset = 0;
+                offset < archive.length;
+                offset += 256 * 1024
+            ) {
+                const frame = encodeEnvironmentFrame(
+                    "SOURCE_CHUNK",
+                    { sequence: sequence++ },
+                    archive.subarray(offset, offset + 256 * 1024)
+                );
+                expect(frame.length).to.be.lessThan(1024 * 1024);
+                child.stdin.write(frame);
+            }
+            child.stdin.write(
+                encodeEnvironmentFrame("SOURCE_COMPLETE", {
+                    byteCount: archive.length,
+                    sha256: deltaManifest.archiveSha256
+                })
+            );
+            await waitFrame("PREPARED");
+            const environmentKey = crypto
+                .createHash("sha256")
+                .update("b".repeat(64))
+                .update("\0")
+                .update("c".repeat(64))
+                .digest("hex");
+            expect(
+                fs.existsSync(
+                    path.join(
+                        root,
+                        "guest",
+                        "environments",
+                        environmentKey,
+                        "workspace",
+                        "project",
+                        "payload.bin"
+                    )
+                )
+            ).to.equal(true);
+            child.stdin.write(encodeEnvironmentFrame("STOP"));
+            await waitFrame("STOPPED");
+        } finally {
+            child.kill("SIGKILL");
+            fs.rmSync(root, { recursive: true, force: true });
         }
     });
 });

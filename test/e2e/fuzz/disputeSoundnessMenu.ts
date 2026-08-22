@@ -9,12 +9,6 @@ const MIN_PARTICIPANTS = 2;
 // raise to 2+ once the harness clock skew is fixed (see docs/reduced-fork-timestamp-mismatch.md).
 const MAX_DISPUTES = 1;
 
-const RESOLVE = {
-    forkSettleTimeoutMs: 15000,
-    disputesCommittedTimeoutMs: 15000
-};
-const SETTLE_WAIT = 30000;
-
 const survivorCount = (h: MathPeerTestHarness) =>
     h.getActiveHonestPeers().length;
 const disputesSoFar = (h: MathPeerTestHarness) =>
@@ -79,18 +73,15 @@ export const DISPUTE_SOUNDNESS_MENU: FuzzAction[] = [
                 `[fuzz]   attack=${attack.name} attacker=peer${attacker}`
             );
             await h.dispute.resolveDisputeWait({
-                ...RESOLVE,
                 forkId: forkBefore
             });
             // settle the new fork before continuing (see ATTACK_CATALOG D-12)
             await h.assert.snapshot.localSnapshotsChangedWait({
-                previousForkId: forkBefore,
-                timeoutMs: SETTLE_WAIT
+                previousForkId: forkBefore
             });
             const survivors = h.getActiveHonestPeers().map((p) => p.index);
             await h.assert.sync.peersInSyncWait({
-                peerIndices: survivors,
-                timeout: SETTLE_WAIT
+                peerIndices: survivors
             });
             await h.transition.advanceState({ waitForPeers: survivors });
         }

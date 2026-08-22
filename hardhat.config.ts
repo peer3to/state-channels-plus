@@ -2,6 +2,7 @@ import { HardhatUserConfig, task, types } from "hardhat/config";
 import "@nomicfoundation/hardhat-toolbox";
 import "@nomicfoundation/hardhat-foundry";
 import { TASK_TEST } from "hardhat/builtin-tasks/task-names";
+import "./tasks/forgeTest";
 
 // You need to export an object to set up your config
 // Go to https://hardhat.org/config/ to learn more

@@ -43,14 +43,21 @@ const MESSAGE_KINDS = new Set([
     "RUN_COMPLETE",
     "CANCEL",
     "RELEASE",
-    "LEASE_CLEAN"
+    "LEASE_CLEAN",
+    "RESOURCE_ALLOCATION_REJECTED",
+    "RESOURCE_LIMIT_EXCEEDED",
+    "AUTHORIZATION_LIST",
+    "AUTHORIZATION_ADD",
+    "AUTHORIZATION_REMOVE",
+    "AUTHORIZATION_POLICY_SET",
+    "AUTHORIZATION_RESULT"
 ]);
 const HEADER_FIELDS = {
     AUTH_HELLO: ["nonce", "publicKey"],
     AUTH_CHALLENGE: ["nonce", "publicKey", "proof"],
     AUTH_PROOF: ["proof"],
     SERVER_READY: ["name", "capabilities"],
-    LEASE_REQUEST: ["sessionId"],
+    LEASE_REQUEST: ["sessionId", "executionProfile", "extensions"],
     LEASE_GRANTED: ["capabilities"],
     FAULTED: ["message"],
     BUSY: [
@@ -65,7 +72,7 @@ const HEADER_FIELDS = {
     BUNDLE_META: ["manifest"],
     BUNDLE_CHUNK: ["sequence"],
     BUNDLE_END: ["byteCount", "sha256"],
-    RUN_CONFIG: ["baseEnv", "taskCount"],
+    RUN_CONFIG: ["baseEnv", "keepInfraLogs", "taskCount", "extensions"],
     RUN_PROGRESS: ["completedTasks", "totalTasks"],
     TASK_REQUEST: ["requestId"],
     TASK_ASSIGNMENT: ["requestId", "assignment"],
@@ -88,7 +95,13 @@ const HEADER_FIELDS = {
         "sha256"
     ],
     LOG_COMMITTED: ["requestId", "attemptId"],
-    ATTEMPT_RESULT: ["requestId", "assignment", "result", "logTransferred"],
+    ATTEMPT_RESULT: [
+        "requestId",
+        "assignment",
+        "result",
+        "logTransferred",
+        "isolatedRuntime"
+    ],
     INFRA_LOG: ["stream"],
     INFRA_PROCESS_LOG: [
         "processKind",
@@ -102,7 +115,35 @@ const HEADER_FIELDS = {
     WORKER_STATUS: ["status"],
     WORKER_STATS: ["stats"],
     PREPARATION_ERROR: ["message"],
-    WORKER_ERROR: ["message"]
+    WORKER_ERROR: ["message"],
+    RESOURCE_ALLOCATION_REJECTED: [
+        "resource",
+        "requested",
+        "permitted",
+        "message"
+    ],
+    RESOURCE_LIMIT_EXCEEDED: ["resource", "limit", "phase", "message"],
+    AUTHORIZATION_LIST: ["targetWorker", "requestId"],
+    AUTHORIZATION_ADD: [
+        "targetWorker",
+        "requestId",
+        "publicKey",
+        "note",
+        "role"
+    ],
+    AUTHORIZATION_REMOVE: ["targetWorker", "requestId", "publicKey"],
+    AUTHORIZATION_POLICY_SET: [
+        "targetWorker",
+        "requestId",
+        "publicKeyAuthorizationRequired"
+    ],
+    AUTHORIZATION_RESULT: [
+        "requestId",
+        "accepted",
+        "message",
+        "entries",
+        "authorizationPolicy"
+    ]
 };
 
 function validateHeader(kind, header) {

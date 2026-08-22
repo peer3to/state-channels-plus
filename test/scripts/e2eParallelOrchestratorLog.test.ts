@@ -37,7 +37,7 @@ const {
 } = require("../../scripts/e2e-parallel/distributed/orchestrator.js");
 const {
     acknowledgeLoglessAttempt,
-    shouldTransferAttemptLog
+    shouldTransferAttemptEvidence
 } = require("../../scripts/e2e-parallel/distributed/server.js");
 
 describe("distributed orchestrator logs", function () {
@@ -70,16 +70,16 @@ describe("distributed orchestrator logs", function () {
     });
 
     it("transfers attempt logs for failures and starvation", function () {
-        expect(shouldTransferAttemptLog({ code: 0 })).to.equal(false);
-        expect(shouldTransferAttemptLog({ code: 1 })).to.equal(true);
+        expect(shouldTransferAttemptEvidence({ code: 0 })).to.equal(false);
+        expect(shouldTransferAttemptEvidence({ code: 1 })).to.equal(true);
         expect(
-            shouldTransferAttemptLog({
+            shouldTransferAttemptEvidence({
                 code: 0,
                 reduced: { starveCount: 1 }
             })
         ).to.equal(true);
         expect(
-            shouldTransferAttemptLog({
+            shouldTransferAttemptEvidence({
                 code: 0,
                 infrastructureFailure: "output spool failed"
             })
@@ -89,18 +89,22 @@ describe("distributed orchestrator logs", function () {
     it("acknowledges a successful attempt without waiting for a log", function () {
         const sent: Array<Record<string, unknown>> = [];
         const connection = {
-            worker: {
-                connected: true,
-                send(message: Record<string, unknown>, done: () => void) {
-                    sent.push(message);
-                    done();
+            environment: {
+                state: "ready",
+                async send(kind: string, payload: Record<string, unknown>) {
+                    sent.push({ kind, payload });
                 }
             }
         };
         acknowledgeLoglessAttempt(connection, 17, false);
         acknowledgeLoglessAttempt(connection, 18, true);
         expect(sent).to.deep.equal([
-            { kind: "RESPONSE", requestId: 17, value: true }
+            {
+                kind: "WORKER_MESSAGE",
+                payload: {
+                    message: { kind: "RESPONSE", requestId: 17, value: true }
+                }
+            }
         ]);
     });
 
@@ -127,6 +131,35 @@ describe("distributed orchestrator logs", function () {
                 deployMs: 4,
                 found: true
             });
+            spool.remove();
+        } finally {
+            fs.rmSync(root, { recursive: true, force: true });
+        }
+    });
+
+    it("reads attempt spool chunks in chronological stream order", function () {
+        const root = fs.mkdtempSync(path.join(os.tmpdir(), "spool-order-"));
+        try {
+            const spool = new WorkerAttemptSpool(
+                path.join(root, "attempt.spool"),
+                1024 * 1024
+            );
+            spool.write("stdout", "before");
+            spool.write("stderr", "between");
+            spool.write("stdout", "after");
+            expect(
+                [...spool.readRecords(4)].map(
+                    (record: { stream: string; body: Buffer }) =>
+                        `${record.stream}:${record.body.toString()}`
+                )
+            ).to.deep.equal([
+                "stdout:befo",
+                "stdout:re",
+                "stderr:betw",
+                "stderr:een",
+                "stdout:afte",
+                "stdout:r"
+            ]);
             spool.remove();
         } finally {
             fs.rmSync(root, { recursive: true, force: true });
@@ -291,6 +324,7 @@ describe("distributed orchestrator logs", function () {
                 color: "",
                 label: "server-2",
                 capabilities: { slots: 1, workers: 4, memoryGb: 12 },
+                executionProfile: { workers: 2 },
                 stats: {
                     peakCpu: 0.9,
                     avgCpu: 0.6,
@@ -302,6 +336,7 @@ describe("distributed orchestrator logs", function () {
             17
         );
         expect(line).to.include("server-2");
+        expect(line).to.include("1 slots, 2 workers (max 4), 12GB");
         expect(line).to.include("17 tests");
         expect(line).to.include("cpu avg 60% / peak 90%");
         expect(line).to.include("mem peak 8.0GB / bound 10.0GB");
@@ -423,6 +458,72 @@ describe("distributed orchestrator logs", function () {
                 "trigger: hardhat process exited; process failure: slot 1 hardhat node exited (signal SIGKILL)"
             );
             expect(hardhat).to.include("hardhat fatal output");
+        } finally {
+            fs.rmSync(root, { recursive: true, force: true });
+        }
+    });
+
+    it("keeps successful hardhat output without marking infrastructure failed", function () {
+        const root = fs.mkdtempSync(
+            path.join(os.tmpdir(), "orchestrator-successful-process-log-")
+        );
+        try {
+            const store = new OrchestratorLogStore(root);
+            const hardhatPath = store.writeInfrastructureProcessSnapshot(
+                "worker-id",
+                "worker-one",
+                "hardhat",
+                0,
+                "run completed with --keep-infra-logs",
+                "",
+                Buffer.from("[mental-poker-precompile] success\n")
+            );
+
+            expect(fs.readFileSync(hardhatPath, "utf8")).to.include(
+                "[mental-poker-precompile] success"
+            );
+            expect(
+                fs.existsSync(path.join(root, "infra", ".failure"))
+            ).to.equal(false);
+        } finally {
+            fs.rmSync(root, { recursive: true, force: true });
+        }
+    });
+
+    it("writes isolated worker exits as persistent runtime diagnostics", function () {
+        const root = fs.mkdtempSync(
+            path.join(os.tmpdir(), "orchestrator-runtime-log-")
+        );
+        try {
+            const store = new OrchestratorLogStore(root);
+            const runtimePath = store.writeInfrastructureProcessChunk(
+                "worker-id",
+                "worker-one",
+                "isolated-runtime",
+                undefined,
+                "isolated environment failed",
+                "Test worker exited unexpectedly (1)",
+                "runtime-upload",
+                0,
+                1,
+                Buffer.from(
+                    '{"status":"running","exitCode":0,"oomKilled":false}'
+                )
+            );
+
+            expect(runtimePath).to.equal(
+                path.join(root, "infra", "isolated-runtime.ansi")
+            );
+            expect(
+                fs.existsSync(path.join(root, "infra", ".failure"))
+            ).to.equal(true);
+            const runtime = fs.readFileSync(runtimePath, "utf8");
+            expect(runtime).to.include("=== worker-one ===");
+            expect(runtime).to.include(
+                "process failure: Test worker exited unexpectedly (1)"
+            );
+            expect(runtime).to.include('"oomKilled":false');
+            expect(runtime).not.to.include("slot undefined");
         } finally {
             fs.rmSync(root, { recursive: true, force: true });
         }

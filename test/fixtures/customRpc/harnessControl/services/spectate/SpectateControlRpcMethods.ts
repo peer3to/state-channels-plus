@@ -90,6 +90,19 @@ export class SpectateControlRpcMethods extends ARpcMethods<
         return this.service.spectate.persistSyncPayload(payload);
     }
 
+    /** Run the live spectate multicall validation with encoded port-safe inputs. */
+    public async tryMulticallSnapshotUpdate(
+        encodedOnChainSnapshot: string,
+        encodedSyncPayload: string
+    ): Promise<boolean> {
+        return await this.service.spectate.tryMulticallSnapshotUpdate(
+            this.service.sm.channelId,
+            Codec.decode(encodedOnChainSnapshot, Type.StateSnapshot),
+            this.service.decodeSyncPayload(encodedSyncPayload),
+            []
+        );
+    }
+
     /** Store a block straight into storage (`justPersist`); returns its hash. */
     public storeBlockJustPersist(encodedSignedBlock: string): string {
         const block = Block.fromSignedBlock(

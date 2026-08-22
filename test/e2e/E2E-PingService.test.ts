@@ -43,7 +43,7 @@ describe("E2E: PingPongService (custom RPC)", function () {
                         .relayService.getReceivedRelayPingNonces()
                         .request()
                 ).includes("from-0"),
-            5000
+            harness.event.protocolEventTimeoutMs()
         );
 
         // --- Fire-and-forget: peer 1 pings peer 0 ---
@@ -65,7 +65,7 @@ describe("E2E: PingPongService (custom RPC)", function () {
                         .relayService.getReceivedRelayPingNonces()
                         .request()
                 ).includes("from-1"),
-            5000
+            harness.event.protocolEventTimeoutMs()
         );
 
         // --- Request/response: peer 0 asks peer 1 to sum and gets a value back ---
@@ -135,7 +135,7 @@ describe("E2E: PingPongService (custom RPC)", function () {
                         .pingService.getReceivedPongNonces()
                         .request()
                 ).includes("after-rejection"),
-            5000
+            harness.event.protocolEventTimeoutMs()
         );
     });
 
@@ -192,7 +192,7 @@ describe("E2E: PingPongService (custom RPC)", function () {
                         .pingService.getReceivedPingNonces()
                         .request()
                 ).includes("after-oversized-frame"),
-            5000
+            harness.event.protocolEventTimeoutMs()
         );
     });
 });

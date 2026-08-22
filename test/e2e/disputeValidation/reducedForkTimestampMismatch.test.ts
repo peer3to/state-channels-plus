@@ -6,11 +6,6 @@ import { MathTestSession as TestSession } from "@test/harness";
  */
 
 const TIME = { evidenceTime: 10 };
-const RESOLVE = {
-    forkSettleTimeoutMs: 90000,
-    disputesCommittedTimeoutMs: 30000
-};
-const WAIT = 45000;
 
 describe("E2E: dispute validation / reducedForkTimestampMismatch", function () {
     it("fork A→B→C: two reductions then sustained honest activity → all survivors stay in sync", async function () {
@@ -26,21 +21,17 @@ describe("E2E: dispute validation / reducedForkTimestampMismatch", function () {
         const attacker1 = (await h.query.getNextPeerToWrite()).index;
         await h.byzantine.submitInvalidStateTransitionBlock(attacker1);
         await h.dispute.resolveDisputeWait({
-            ...RESOLVE,
             forkId: forkBefore1
         });
         await h.assert.snapshot.localSnapshotsChangedWait({
-            previousForkId: forkBefore1,
-            timeoutMs: WAIT
+            previousForkId: forkBefore1
         });
         await h.assert.sync.peersInSyncWait({
-            peerIndices: survivors(),
-            timeout: WAIT
+            peerIndices: survivors()
         });
         await h.transition.advanceState({ waitForPeers: survivors() });
         await h.assert.sync.peersInSyncWait({
-            peerIndices: survivors(),
-            timeout: WAIT
+            peerIndices: survivors()
         });
 
         // reduction 2: fork B -> C
@@ -48,20 +39,17 @@ describe("E2E: dispute validation / reducedForkTimestampMismatch", function () {
         const attacker2 = (await h.query.getNextPeerToWrite()).index;
         await h.byzantine.submitInvalidStateTransitionBlock(attacker2);
         await h.dispute.resolveDisputeWait({
-            ...RESOLVE,
             forkId: forkBefore2
         });
         await h.assert.sync.peersInSyncWait({
-            peerIndices: survivors(),
-            timeout: WAIT
+            peerIndices: survivors()
         });
 
         // continued honest activity on the twice-reduced fork -> survivors stay in sync
         for (let k = 0; k < 6; k++) {
             await h.transition.advanceState({ waitForPeers: survivors() });
             await h.assert.sync.peersInSyncWait({
-                peerIndices: survivors(),
-                timeout: WAIT
+                peerIndices: survivors()
             });
         }
     });

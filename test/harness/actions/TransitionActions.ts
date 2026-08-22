@@ -161,7 +161,11 @@ export class TransitionActions<
         const expectedSnapshot = await this.requestPostSnapshot(options, true);
         if (!expectedSnapshot) return undefined;
 
-        const timeoutMs = options?.timeoutMs ?? 8000;
+        const timeoutMs =
+            options?.timeoutMs ??
+            this.harness.event.protocolEventTimeoutMs({
+                withFirstBlockGrace: true
+            });
         await this.harness.eventCountsBarrier.waitFor(
             async () => {
                 const honestPeers = this.harness.getHonestPeers();

@@ -230,7 +230,7 @@ function safeEmptyDir(dirPath, allowLogdirPurge) {
     }
 }
 
-function cleanupNonErrorLogs(logDir, allowLogdirPurge) {
+function cleanupNonErrorLogs(logDir, allowLogdirPurge, keepInfraLogs = false) {
     const resolved = path.resolve(logDir);
 
     if (isDangerousPurgeTarget(resolved)) {
@@ -251,7 +251,14 @@ function cleanupNonErrorLogs(logDir, allowLogdirPurge) {
     if (!fs.existsSync(resolved)) return;
     for (const entry of fs.readdirSync(resolved)) {
         if (entry.startsWith("error_")) continue;
-        fs.rmSync(path.join(resolved, entry), { recursive: true, force: true });
+        const target = path.join(resolved, entry);
+        if (
+            entry === "infra" &&
+            (keepInfraLogs || fs.existsSync(path.join(target, ".failure")))
+        ) {
+            continue;
+        }
+        fs.rmSync(target, { recursive: true, force: true });
     }
 }
 
@@ -261,6 +268,7 @@ function cleanupNonErrorLogs(logDir, allowLogdirPurge) {
 
 function runHeader({
     taskCount,
+    forgeTaskCount = 0,
     grep,
     e2eOnly,
     slotCount,
@@ -270,8 +278,12 @@ function runHeader({
     memBoundGb,
     concurrencyCap
 }) {
+    const mochaTier = e2eOnly ? "E2E" : "Mocha";
+    const composition = forgeTaskCount
+        ? `${taskCount - forgeTaskCount} ${mochaTier} + ${forgeTaskCount} forge`
+        : mochaTier;
     console.log(
-        `Running ${taskCount} ${e2eOnly ? "E2E" : "Mocha"} task(s)${grep ? ` matching --grep ${JSON.stringify(grep)}` : ""}`
+        `Running ${taskCount} task(s) [${composition}]${grep ? ` matching --grep ${JSON.stringify(grep)}` : ""}`
     );
     console.log(
         `  slots=${slotCount} vmThread=${threadModes.vmThread} sdkThread=${threadModes.sdkThread} targetLoad/core=${targetLoad} schedulerTickMs=${tickMs} memBound=${memBoundGb.toFixed(1)}GB concurrencyCap=${concurrencyCap}`
@@ -280,6 +292,8 @@ function runHeader({
 
 function dryRun({
     taskCount,
+    forgeTaskCount = 0,
+    forgeThreads,
     slotCount,
     threadModes,
     targetLoad,
@@ -289,6 +303,9 @@ function dryRun({
     tickMs
 }) {
     console.log(`\nDry-run (${taskCount} task(s)):`);
+    console.log(
+        `  forge tasks      : ${forgeTaskCount}${forgeTaskCount ? ` (${forgeThreads} thread(s) each)` : ""}`
+    );
     console.log(`  slots            : ${slotCount}`);
     console.log(`  vmThread         : ${threadModes.vmThread}`);
     console.log(`  sdkThread        : ${threadModes.sdkThread}`);

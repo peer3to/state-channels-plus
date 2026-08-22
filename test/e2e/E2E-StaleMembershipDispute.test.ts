@@ -1,5 +1,6 @@
 import { expect } from "chai";
 
+import { Status } from "@/types";
 import {
     DisputeFraudProofType,
     toSolidityDisputeFraudProofType
@@ -38,11 +39,12 @@ describe("E2E: stale-membership dispute", function () {
         ).to.include(h.getPeer(2).address.toLowerCase());
 
         // peer 2 leaves, then advance so the current previous snapshot excludes it
-        const leaverIndex = await h.transition.participantLeaveWait({
+        const leaverIndex = await h.transition.participantLeaveDetached({
             leaverIndex: 2
         });
         const leaver = h.getPeer(leaverIndex);
         await h.transition.advanceState({ count: 2, waitForPeers: [0, 1, 3] });
+        await h.event.waitUntilPeerStatus(leaverIndex, Status.SYNCED);
 
         const participants = await h
             .control(h.getPeer(0))
@@ -116,8 +118,7 @@ describe("E2E: stale-membership dispute", function () {
         await h.assert.storage.honestPeersStoredDisputeFraudProofWait({
             disputeFraudProofType:
                 DisputeFraudProofType.DisputeBlockAuthorNotParticipant,
-            peerIndices: [0, 1, 3],
-            timeoutMs: 15000
+            peerIndices: [0, 1, 3]
         });
 
         // exclusivity: the coordinate-binding proof fired, not a structural /

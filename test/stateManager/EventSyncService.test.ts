@@ -107,7 +107,7 @@ describe("EventSyncService", function () {
                         .control(h.getPeer(lagging))
                         .query.getLatestInboundMessageHash()
                         .request()) === inboundHead,
-                15000
+                h.event.protocolEventTimeoutMs()
             );
 
             const probe = await h

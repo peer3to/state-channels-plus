@@ -63,7 +63,7 @@ describe("E2E: Spectate Service", function () {
                             !!sm.p2pManager.localRpc.stub
                                 .capturedInitHandshakeTransport
                     ),
-                5000
+                harness.event.protocolEventTimeoutMs()
             );
 
             // Peer 0: send a request over the captured pre-handshake
@@ -85,7 +85,7 @@ describe("E2E: Spectate Service", function () {
                         .control(peer1)
                         .stub.wasSpectateGuardBlocked()
                         .request(),
-                2000
+                harness.event.protocolEventTimeoutMs()
             );
             expect(
                 await harness
@@ -110,16 +110,26 @@ describe("E2E: Spectate Service", function () {
                     .request()
             ).to.equal(true);
             await harness.network.connectPeers([1, 2]);
-            await waitFor(async () => {
-                const connected = await harness
-                    .control(peer1)
-                    .query.getConnectedPeerAddresses()
-                    .request();
-                return connected.some(
-                    (address) =>
-                        address.toLowerCase() === peer2.address.toLowerCase()
-                );
-            }, 5000);
+            await harness.connectionBarrier.waitFor(
+                async () => {
+                    const [peer1Connected, peer2Connected] = await Promise.all([
+                        harness
+                            .control(peer1)
+                            .query.isConnectedTo(peer2.address)
+                            .request(),
+                        harness
+                            .control(peer2)
+                            .query.isConnectedTo(peer1.address)
+                            .request()
+                    ]);
+                    return peer1Connected && peer2Connected;
+                },
+                {
+                    timeoutMs: harness.event.protocolEventTimeoutMs(),
+                    timeoutMessage:
+                        "Peers 1 and 2 did not establish a mutual transport after the blocked handshake was restored"
+                }
+            );
 
             const response = await harness
                 .control(peer2)
@@ -153,7 +163,7 @@ describe("E2E: Spectate Service", function () {
 
         it("spectate atomic persistence and setState", async function () {
             const h = TestSession.getHarness();
-            await h.lifecycle.start(3, 4, {
+            await h.lifecycle.start(3, 0, {
                 timeConfig: {
                     p2pTime: 5,
                     agreementTime: 3,
@@ -162,9 +172,18 @@ describe("E2E: Spectate Service", function () {
                 }
             });
 
-            const spectator = await h.join.addSpectatorWait();
+            const spectator = await h.join.addSpectatorDetached();
             const spectatorIndex = spectator.index;
             const participantIndices = [0, 1, 2];
+            await h.transition.advanceState({
+                count: 4,
+                waitForPeers: participantIndices,
+                waitForFinalization: true
+            });
+            await h.event.waitUntilPeerStatus(spectatorIndex, Status.SYNCED);
+            await h.assert.sync.peersInSyncWait({
+                peerIndices: participantIndices.concat(spectatorIndex)
+            });
             const forkId = h.activeForkId;
             expect(forkId).to.not.be.undefined;
 
@@ -311,7 +330,7 @@ describe("E2E: Spectate Service", function () {
 
         it("skips latest state persistence when local storage is already ahead", async function () {
             const h = TestSession.getHarness();
-            await h.lifecycle.start(3, 4, {
+            await h.lifecycle.start(3, 0, {
                 timeConfig: {
                     p2pTime: 5,
                     agreementTime: 3,
@@ -320,7 +339,13 @@ describe("E2E: Spectate Service", function () {
                 }
             });
 
-            const spectator = await h.join.addSpectatorWait();
+            const spectator = await h.join.addSpectatorDetached();
+            await h.transition.advanceState({
+                count: 4,
+                waitForPeers: [0, 1, 2],
+                waitForFinalization: true
+            });
+            await h.event.waitUntilPeerStatus(spectator.index, Status.SYNCED);
             const forkId = h.activeForkId;
             expect(forkId).to.not.be.undefined;
 
@@ -394,12 +419,13 @@ describe("E2E: Spectate Service", function () {
                 }
             });
 
+            const spectator = await h.join.addSpectatorDetached();
             await h.transition.advanceState({
                 count: 2,
+                waitForPeers: [0, 1, 2, 3],
                 waitForFinalization: true
             });
-
-            const spectator = await h.join.addSpectatorWait();
+            await h.event.waitUntilPeerStatus(spectator.index, Status.SYNCED);
             const spectatorIndex = spectator.index;
             const participantIndices = [0, 1, 2, 3];
             const forkId = h.activeForkId;
@@ -417,15 +443,19 @@ describe("E2E: Spectate Service", function () {
                 : -1;
 
             await h.network.disconnectPeer(spectatorIndex);
-            await h.transition.participantLeaveWait({
+            const leaverIndex = await h.transition.participantLeaveDetached({
                 waitForPeers: participantIndices,
                 waitForFinalization: true
             });
+            const remainingParticipantIndices = participantIndices.filter(
+                (peerIndex) => peerIndex !== leaverIndex
+            );
             await h.transition.advanceState({
                 count: 3,
-                waitForPeers: participantIndices,
+                waitForPeers: remainingParticipantIndices,
                 waitForFinalization: true
             });
+            await h.event.waitUntilPeerStatus(leaverIndex, Status.SYNCED);
 
             const sourcePeer = await h.peerWithHighestBlock(forkId!);
             const sourceLatestBlock = await h
@@ -589,12 +619,15 @@ describe("E2E: Spectate Service", function () {
                 .filter((peerIndex) => peerIndex !== maliciousPeerIndex);
             await h.scenario.disputeWithReduction({
                 maliciousPeerIndex,
-                honestPeerIndices,
-                forkSettleTimeoutMs: 15000,
-                disputesCommittedTimeoutMs: 10000
+                honestPeerIndices
             });
 
-            await h.transition.postSnapshot({ peerIndex: 0 });
+            // Post from an honest peer: when the rotation makes peer 0 the
+            // malicious writer, the slashed peer 0 never reduces and has no
+            // genesis for the reduced fork to post from.
+            await h.transition.postSnapshot({
+                peerIndex: honestPeerIndices[0]
+            });
             await h.transition.sequenceFromHonestPeers([
                 (c) => c.add(2),
                 (c) => c.add(2),
@@ -604,12 +637,9 @@ describe("E2E: Spectate Service", function () {
                 peerIndices: honestPeerIndices
             });
 
-            await h.join.addSpectatorWait();
-            await h.assert.sync.peersInSyncWait({
-                peerIndices: honestPeerIndices.concat(5)
-            });
-
+            const spectator = await h.join.addSpectatorDetached();
             await h.transition.fromHonestPeersOnly((c) => c.add(2));
+            await h.event.waitUntilPeerStatus(spectator.index, Status.SYNCED);
             await h.assert.sync.peersInSyncWait({
                 peerIndices: honestPeerIndices.concat(5)
             });
@@ -646,9 +676,13 @@ describe("E2E: Spectate Service", function () {
                 }
             });
 
-            await h.transition.advanceState({ count: 4 });
             //  peer index 4 is spectator
-            await h.join.addSpectatorWait();
+            const spectator = await h.join.addSpectatorDetached();
+            await h.transition.advanceState({
+                count: 4,
+                waitForPeers: [0, 1, 2, 3]
+            });
+            await h.event.waitUntilPeerStatus(spectator.index, Status.SYNCED);
             await h.assert.sync.peersInSyncWait({
                 peerIndices: [0, 1, 2, 3, 4]
             });
@@ -746,8 +780,7 @@ describe("E2E: Spectate Service", function () {
 
             const { newForkId } = await h.dispute.resolveDisputeWait({
                 forkId,
-                honestPeerIndices,
-                forkSettleTimeoutMs: 15000
+                honestPeerIndices
             });
 
             const joinerPeer = h.getPeer(joiner.index);
@@ -798,12 +831,25 @@ describe("E2E: Spectate Service", function () {
 
         it("joinChannel before forceInboundJoin → both joiners participate", async function () {
             const h = TestSession.getHarness();
-            await h.lifecycle.start(3, 2, {
+            await h.lifecycle.start(3, 0, {
                 timeConfig: concurrentTimeConfig
             });
 
-            const joinerA = await h.join.addSpectatorWait();
-            const joinerB = await h.join.addSpectatorWait();
+            // Spectating is asynchronous to the channel: participants author
+            // on their own cadence and never wait for joiners to spawn/sync.
+            // Spawn both detached, produce the initial blocks immediately,
+            // and await SYNCED only right before the joins need it. Blocking
+            // spawns between blocks would idle past p2pTime + agreementTime
+            // and the post-promotion block would be rejected by the original
+            // participants while the joiners accept it, splitting the fork.
+            const joinerA = await h.join.addSpectatorDetached();
+            const joinerB = await h.join.addSpectatorDetached();
+            await h.transition.advanceState({
+                count: 2,
+                waitForPeers: [0, 1, 2]
+            });
+            await h.event.waitUntilPeerStatus(joinerA.index, Status.SYNCED);
+            await h.event.waitUntilPeerStatus(joinerB.index, Status.SYNCED);
             await h.assert.sync.peersInSyncWait();
 
             await h.join.joinChannelWait({ joiner: joinerA });
@@ -842,12 +888,18 @@ describe("E2E: Spectate Service", function () {
 
         it("forceInboundJoin before joinChannel → joinChannel reverts ErrorJoinChannelInvalidSignature (pending participant did not sign confirmation)", async function () {
             const h = TestSession.getHarness();
-            await h.lifecycle.start(3, 2, {
+            await h.lifecycle.start(3, 0, {
                 timeConfig: concurrentTimeConfig
             });
 
-            const joinerA = await h.join.addSpectatorWait();
-            const joinerB = await h.join.addSpectatorWait();
+            const joinerA = await h.join.addSpectatorDetached();
+            const joinerB = await h.join.addSpectatorDetached();
+            await h.transition.advanceState({
+                count: 2,
+                waitForPeers: [0, 1, 2]
+            });
+            await h.event.waitUntilPeerStatus(joinerA.index, Status.SYNCED);
+            await h.event.waitUntilPeerStatus(joinerB.index, Status.SYNCED);
             await h.assert.sync.peersInSyncWait();
 
             // joinerA pre-signs its confirmation while pending is empty.
@@ -893,7 +945,7 @@ describe("E2E: Spectate Service", function () {
         // handling).
         it("survives dispute on reduced fork", async function () {
             const h = TestSession.getHarness();
-            await h.lifecycle.start(3, 2, {
+            await h.lifecycle.start(3, 0, {
                 timeConfig: {
                     p2pTime: 2,
                     agreementTime: 4,
@@ -902,7 +954,12 @@ describe("E2E: Spectate Service", function () {
                 }
             });
 
-            const spectator = await h.join.addSpectatorWait();
+            const spectator = await h.join.addSpectatorDetached();
+            await h.transition.advanceState({
+                count: 2,
+                waitForPeers: [0, 1, 2]
+            });
+            await h.event.waitUntilPeerStatus(spectator.index, Status.SYNCED);
             await h.assert.sync.participantCount({
                 expectedCount: 3,
                 peerIndex: spectator.index
@@ -959,14 +1016,12 @@ describe("E2E: Spectate Service", function () {
 
             await h.dispute.resolveDisputeWait({
                 forkId: originalForkId,
-                forkSettleTimeoutMs: 15000,
                 honestPeerIndices: remainingPeerIndices,
                 assertMaliciousRemoved: false
             });
 
             await h.assert.snapshot.localSnapshotsChangedWait({
-                previousForkId: originalForkId,
-                timeoutMs: 15000
+                previousForkId: originalForkId
             });
 
             const onChainParticipants = await h.channelManager.getParticipants(
@@ -1050,7 +1105,7 @@ describe("E2E: Spectate Service", function () {
             // (the deduped second call never produced a second request).
             await waitFor(
                 async () => (await h.rpcStub.getSpectateRequestCount(1)) >= 1,
-                5000
+                h.event.protocolEventTimeoutMs()
             );
             expect(await h.rpcStub.getSpectateRequestCount(1)).to.equal(
                 1,
@@ -1087,7 +1142,7 @@ describe("E2E: Spectate Service", function () {
                         .control(responder)
                         .query.isBlacklisted(requester.address)
                         .request(),
-                10000
+                h.event.protocolEventTimeoutMs()
             );
             await waitFor(
                 async () =>
@@ -1095,7 +1150,7 @@ describe("E2E: Spectate Service", function () {
                         .control(requester)
                         .query.isBlacklisted(responder.address)
                         .request(),
-                10000
+                h.event.protocolEventTimeoutMs()
             );
         });
     });
@@ -1169,7 +1224,7 @@ describe("E2E: Spectate Service", function () {
         }
         it("pins the sync payload to the exact leave-block height while the responder is ahead", async function () {
             const h = TestSession.getHarness();
-            await h.lifecycle.start(4, 1, {
+            await h.lifecycle.start(4, 0, {
                 timeConfig: {
                     p2pTime: 5,
                     agreementTime: 10,
@@ -1183,7 +1238,13 @@ describe("E2E: Spectate Service", function () {
 
             // the requester must be genuinely behind the leave, so cut it
             // before the leave block is produced
-            const requester = await h.join.addSpectatorWait();
+            const requester = await h.join.addSpectatorDetached();
+            await h.transition.advanceState({
+                count: 1,
+                waitForPeers: participantIndices,
+                waitForFinalization: true
+            });
+            await h.event.waitUntilPeerStatus(requester.index, Status.SYNCED);
             await h.network.disconnectPeer(requester.index);
             const requesterHeightBefore =
                 (await h

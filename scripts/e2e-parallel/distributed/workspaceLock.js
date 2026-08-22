@@ -3,12 +3,12 @@ const path = require("path");
 const { acquireOsFileLock } = require("./hostLock");
 const { workspacePaths } = require("./workspaceCache");
 
-function acquireWorkspaceLock(workRoot, workspaceId) {
-    const workspace = workspacePaths(workRoot, workspaceId);
+function acquireWorkspaceLock(workRoot, environmentKey) {
+    const workspace = workspacePaths(workRoot, environmentKey);
     fs.mkdirSync(workspace.root, { recursive: true });
     return acquireOsFileLock(
         path.join(workspace.root, "workspace.lock"),
-        `Workspace ${workspaceId} is already owned by another worker server`
+        `Environment ${environmentKey} is already owned by another worker server`
     );
 }
 

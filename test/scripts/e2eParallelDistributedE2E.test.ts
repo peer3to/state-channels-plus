@@ -5,6 +5,9 @@ import fs from "fs";
 import os from "os";
 import path from "path";
 import WebSocket from "ws";
+import { waitFor } from "../utils/waitFor";
+import { LeasePoolHarness } from "../fixtures/distributed/leasePool";
+import { TestIsolatedRuntimeBackend } from "../fixtures/distributed/isolatedRuntimeBackend";
 import {
     createLocalDhtNetwork,
     createSocketPair,
@@ -19,15 +22,6 @@ const {
     authenticateClient,
     authenticateServer
 } = require("../../scripts/e2e-parallel/distributed/authentication.js");
-const {
-    WorkerLeaseManager
-} = require("../../scripts/e2e-parallel/distributed/workerLeaseManager.js");
-const {
-    WorkerAttemptSpool
-} = require("../../scripts/e2e-parallel/distributed/workerAttemptSpool.js");
-const {
-    OrchestratorLogStore
-} = require("../../scripts/e2e-parallel/distributed/orchestratorLogStore.js");
 const {
     receiveBundle,
     sendBundle
@@ -49,6 +43,74 @@ const { runTask } = require("../../scripts/e2e-parallel/shared/runTask.js");
 const { startDiscoveryRegistry } = require("../utils/nodeInfra.js");
 
 describe("distributed parallel runner", function () {
+    it("routes source preparation and worker startup through the assigned environment backend", async function () {
+        const pool = await LeasePoolHarness.create();
+        const backend = new TestIsolatedRuntimeBackend();
+        const emptyDigest = crypto.createHash("sha256").digest("hex");
+        const manifest = {
+            version: 3,
+            packageManager: "pnpm",
+            workspaceId: "9".repeat(64),
+            sourceDigest: "source",
+            rootProjectPath: ".",
+            repositories: [],
+            files: [
+                {
+                    path: "identity.txt",
+                    bytes: 8,
+                    sha256: "8".repeat(64),
+                    mode: 420
+                }
+            ],
+            fileCount: 1,
+            expandedBytes: 8
+        };
+        try {
+            const worker = await pool.startServer("worker-a", {
+                environmentBackend: backend
+            });
+            const orchestrator = await pool.startOrchestrator("run-one");
+            await orchestrator.waitFor(worker.name, "LEASE_GRANTED");
+            await orchestrator.send(
+                worker.name,
+                "WORKSPACE_OFFER",
+                { manifest },
+                Buffer.from(JSON.stringify(manifest.files))
+            );
+            await orchestrator.waitFor(worker.name, "WORKSPACE_NEED");
+            await orchestrator.send(worker.name, "BUNDLE_META", {
+                manifest: {
+                    ...manifest,
+                    fileCount: 0,
+                    expandedBytes: 0,
+                    archiveBytes: 0,
+                    archiveSha256: emptyDigest
+                }
+            });
+            await orchestrator.send(worker.name, "BUNDLE_END", {
+                byteCount: 0,
+                sha256: emptyDigest
+            });
+            await orchestrator.waitFor(worker.name, "PREPARED");
+            await orchestrator.send(worker.name, "RUN_CONFIG", {
+                baseEnv: {},
+                taskCount: 1
+            });
+            await orchestrator.waitFor(worker.name, "WORKER_READY");
+
+            const kinds = backend.frameKinds();
+            expect(kinds).to.include.members([
+                "WORKSPACE_OFFER",
+                "SOURCE_COMPLETE",
+                "RUN_CONFIG"
+            ]);
+            await orchestrator.send(worker.name, "RELEASE");
+            await orchestrator.waitFor(worker.name, "LEASE_CLEAN");
+        } finally {
+            await pool.close();
+        }
+    });
+
     it("records the discovery server lifecycle before closing its log", async function () {
         const root = fs.mkdtempSync(
             path.join(os.tmpdir(), "discovery-lifecycle-")
@@ -74,6 +136,14 @@ describe("distributed parallel runner", function () {
             });
             client.close();
             await new Promise<void>((resolve) => client.once("close", resolve));
+            await waitFor(
+                () =>
+                    fs.existsSync(logPath) &&
+                    fs
+                        .readFileSync(logPath, "utf8")
+                        .includes("connection 1 closed with code"),
+                TEST_DISTRIBUTED_CONNECTION_TIMEOUT_MS
+            );
             discovery.stop();
             const exit = await discovery.exited;
             await discovery.logClosed;
@@ -664,88 +734,6 @@ describe("distributed parallel runner", function () {
 
             expect((await failure).message).to.equal("pnpm install failed");
             await new Promise((resolve) => setTimeout(resolve, 25));
-        } finally {
-            await pair.close();
-            fs.rmSync(root, { recursive: true, force: true });
-        }
-    });
-
-    it("moves an authenticated attempt log over a real socket and releases the lease", async function () {
-        const pair = await createSocketPair();
-        const root = fs.mkdtempSync(
-            path.join(os.tmpdir(), "distributed-wire-")
-        );
-        try {
-            const client = new ProtocolPeer(pair.client);
-            const server = new ProtocolPeer(pair.server);
-            const keys = derivePoolKeys(`fixture-${process.pid}`);
-            await Promise.all([
-                authenticateClient(
-                    client,
-                    keys.authKey,
-                    { local: crypto.randomBytes(32) },
-                    1000
-                ),
-                authenticateServer(
-                    server,
-                    keys.authKey,
-                    { local: crypto.randomBytes(32) },
-                    1000
-                )
-            ]);
-
-            const connection = { sessionId: "orchestrator" };
-            const leases = new WorkerLeaseManager();
-            expect(leases.request(connection).kind).to.equal("LEASE_GRANTED");
-            leases.markRunning(connection);
-
-            const received = path.join(root, "attempt.ansi");
-            const store = new OrchestratorLogStore(root);
-            store.begin("attempt", received);
-            let resolveCommitted!: () => void;
-            const committed = new Promise<void>(
-                (resolve) => (resolveCommitted = resolve)
-            );
-            server.on(
-                "message",
-                (message: {
-                    kind: string;
-                    header: Record<string, unknown>;
-                    body: Buffer;
-                }) => {
-                    if (message.kind === "LOG_CHUNK") {
-                        store.append(
-                            "attempt",
-                            message.header.sequence as number,
-                            message.body,
-                            message.header.stream
-                        );
-                    } else if (message.kind === "LOG_END") {
-                        store.commit("attempt", message.header);
-                        resolveCommitted();
-                    }
-                }
-            );
-
-            const spool = new WorkerAttemptSpool(
-                path.join(root, "attempt.spool"),
-                1024
-            );
-            spool.write("stdout", Buffer.from("pass\n"));
-            spool.write(
-                "stderr",
-                Buffer.from("\u001b[31mdiagnostic\u001b[0m\n")
-            );
-            await spool.send(client, { taskId: "1", attemptId: "1" }, 4);
-            await committed;
-            expect(fs.readFileSync(received, "utf8")).to.equal(
-                "pass\n\u001b[31mdiagnostic\u001b[0m\n"
-            );
-            await leases.release(connection, async () => spool.remove());
-            expect(leases.state).to.equal("idle");
-            expect(fs.existsSync(path.join(root, "attempt.spool"))).to.equal(
-                false
-            );
         } finally {
             await pair.close();
             fs.rmSync(root, { recursive: true, force: true });

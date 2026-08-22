@@ -110,7 +110,12 @@ describe("Unit: DisputeManager", function () {
                     };
                 },
                 { forkId },
-                { timeoutMs: 30000 }
+                {
+                    timeoutMs:
+                        h.event.protocolEventTimeoutMs({
+                            withFirstBlockGrace: true
+                        }) * 2
+                }
             );
 
             // the pre-first-block boundary: latestBlockHeight is -1
@@ -184,7 +189,12 @@ describe("Unit: DisputeManager", function () {
                     };
                 },
                 { forkId },
-                { timeoutMs: 30000 }
+                {
+                    timeoutMs:
+                        h.event.protocolEventTimeoutMs({
+                            withFirstBlockGrace: true
+                        }) * 2
+                }
             );
 
             // premise - the chain event never landed, so the store head is
@@ -225,7 +235,6 @@ describe("Unit: DisputeManager", function () {
             await h.byzantine.submitInvalidStateTransitionBlock(attacker);
             const { newForkId } = await h.dispute.resolveDisputeWait({
                 forkId,
-                forkSettleTimeoutMs: 20000,
                 // the pending joiner the reduce admits is not one of the peers
                 syntheticOnChainParticipants: 1
             });
@@ -329,7 +338,12 @@ describe("Unit: DisputeManager", function () {
                     };
                 },
                 { forkId },
-                { timeoutMs: 30000 }
+                {
+                    timeoutMs:
+                        h.event.protocolEventTimeoutMs({
+                            withFirstBlockGrace: true
+                        }) * 2
+                }
             );
 
             expect(r.verified).to.equal(true);
@@ -666,7 +680,12 @@ describe("Unit: DisputeManager", function () {
                         };
                     },
                     { forkId },
-                    { timeoutMs: 30000 }
+                    {
+                        timeoutMs:
+                            h.event.protocolEventTimeoutMs({
+                                withFirstBlockGrace: true
+                            }) * 2
+                    }
                 );
                 await laggingCtl.stub.restoreChainLogQueries().request();
 
@@ -744,7 +763,12 @@ describe("Unit: DisputeManager", function () {
                     return sm.storage.disputes.didIDispute(args.forkId);
                 },
                 { forkId },
-                { timeoutMs: 30000 }
+                {
+                    timeoutMs:
+                        h.event.protocolEventTimeoutMs({
+                            withFirstBlockGrace: true
+                        }) * 2
+                }
             );
 
             const [submission] = await probe.submissions();
@@ -780,7 +804,12 @@ describe("Unit: DisputeManager", function () {
                     return sm.storage.disputes.didIDispute(args.forkId);
                 },
                 { forkId },
-                { timeoutMs: 30000 }
+                {
+                    timeoutMs:
+                        h.event.protocolEventTimeoutMs({
+                            withFirstBlockGrace: true
+                        }) * 2
+                }
             );
 
             const [submission] = await probe.submissions();
@@ -819,7 +848,12 @@ describe("Unit: DisputeManager", function () {
                     return sm.storage.disputes.didIDispute(args.forkId);
                 },
                 { forkId },
-                { timeoutMs: 30000 }
+                {
+                    timeoutMs:
+                        h.event.protocolEventTimeoutMs({
+                            withFirstBlockGrace: true
+                        }) * 2
+                }
             );
 
             const [submission] = await probe.submissions();
@@ -861,7 +895,12 @@ describe("Unit: DisputeManager", function () {
                     return sm.storage.disputes.didIDispute(args.forkId);
                 },
                 { forkId },
-                { timeoutMs: 30000 }
+                {
+                    timeoutMs:
+                        h.event.protocolEventTimeoutMs({
+                            withFirstBlockGrace: true
+                        }) * 2
+                }
             );
 
             const [submission] = await probe.submissions();
@@ -921,7 +960,12 @@ describe("Unit: DisputeManager", function () {
                     };
                 },
                 { forkId },
-                { timeoutMs: 30000 }
+                {
+                    timeoutMs:
+                        h.event.protocolEventTimeoutMs({
+                            withFirstBlockGrace: true
+                        }) * 2
+                }
             );
 
             // the handler consumes the error -> no rejection, marker cleared
@@ -960,7 +1004,12 @@ describe("Unit: DisputeManager", function () {
                     };
                 },
                 { forkId },
-                { timeoutMs: 30000 }
+                {
+                    timeoutMs:
+                        h.event.protocolEventTimeoutMs({
+                            withFirstBlockGrace: true
+                        }) * 2
+                }
             );
 
             expect(r.rejected).to.equal("");
@@ -995,7 +1044,12 @@ describe("Unit: DisputeManager", function () {
                     };
                 },
                 { forkId },
-                { timeoutMs: 30000 }
+                {
+                    timeoutMs:
+                        h.event.protocolEventTimeoutMs({
+                            withFirstBlockGrace: true
+                        }) * 2
+                }
             );
 
             // this handler rethrows -> the caller sees the custom error, and
@@ -1034,7 +1088,12 @@ describe("Unit: DisputeManager", function () {
                     };
                 },
                 { forkId },
-                { timeoutMs: 30000 }
+                {
+                    timeoutMs:
+                        h.event.protocolEventTimeoutMs({
+                            withFirstBlockGrace: true
+                        }) * 2
+                }
             );
 
             // the rethrow skips the storeDisputedFork(false) in the catch, so
@@ -1070,7 +1129,12 @@ describe("Unit: DisputeManager", function () {
                     };
                 },
                 { forkId },
-                { timeoutMs: 30000 }
+                {
+                    timeoutMs:
+                        h.event.protocolEventTimeoutMs({
+                            withFirstBlockGrace: true
+                        }) * 2
+                }
             );
 
             // no handler matches -> logged, swallowed, marker cleared
@@ -1103,7 +1167,12 @@ describe("Unit: DisputeManager", function () {
                     };
                 },
                 { forkId },
-                { timeoutMs: 30000 }
+                {
+                    timeoutMs:
+                        h.event.protocolEventTimeoutMs({
+                            withFirstBlockGrace: true
+                        }) * 2
+                }
             );
 
             // the marker was already stored true here, so the catch's
@@ -1171,7 +1240,12 @@ describe("Unit: DisputeManager", function () {
                     };
                 },
                 { forkId },
-                { timeoutMs: 30000 }
+                {
+                    timeoutMs:
+                        h.event.protocolEventTimeoutMs({
+                            withFirstBlockGrace: true
+                        }) * 2
+                }
             );
             await probe.waitUntilHeld();
 
@@ -1198,7 +1272,12 @@ describe("Unit: DisputeManager", function () {
                     };
                 },
                 { forkId },
-                { timeoutMs: 30000 }
+                {
+                    timeoutMs:
+                        h.event.protocolEventTimeoutMs({
+                            withFirstBlockGrace: true
+                        }) * 2
+                }
             );
             await h.rpcStub.waitUntilDisputeMutexContended(peer.index);
             // still parked -> the waiter reached no upload of its own
@@ -1255,7 +1334,12 @@ describe("Unit: DisputeManager", function () {
                     };
                 },
                 { forkId },
-                { timeoutMs: 30000 }
+                {
+                    timeoutMs:
+                        h.event.protocolEventTimeoutMs({
+                            withFirstBlockGrace: true
+                        }) * 2
+                }
             );
 
             // the "No dispute fraud proof found" throw is inside killDispute's
@@ -1303,7 +1387,12 @@ describe("Unit: DisputeManager", function () {
                     return { threw };
                 },
                 {},
-                { timeoutMs: 30000 }
+                {
+                    timeoutMs:
+                        h.event.protocolEventTimeoutMs({
+                            withFirstBlockGrace: true
+                        }) * 2
+                }
             );
 
             expect(r.threw).to.equal("");
@@ -1343,7 +1432,12 @@ describe("Unit: DisputeManager", function () {
                         return { threw };
                     },
                     {},
-                    { timeoutMs: 30000 }
+                    {
+                        timeoutMs:
+                            h.event.protocolEventTimeoutMs({
+                                withFirstBlockGrace: true
+                            }) * 2
+                    }
                 );
 
                 expect(r.threw).to.equal("");
@@ -1381,7 +1475,12 @@ describe("Unit: DisputeManager", function () {
                         return { threw };
                     },
                     {},
-                    { timeoutMs: 30000 }
+                    {
+                        timeoutMs:
+                            h.event.protocolEventTimeoutMs({
+                                withFirstBlockGrace: true
+                            }) * 2
+                    }
                 );
 
                 // logged and swallowed; no handler matches, nothing resent
@@ -1419,7 +1518,12 @@ describe("Unit: DisputeManager", function () {
                     };
                 },
                 {},
-                { timeoutMs: 30000 }
+                {
+                    timeoutMs:
+                        h.event.protocolEventTimeoutMs({
+                            withFirstBlockGrace: true
+                        }) * 2
+                }
             );
 
             expect(r.proofCount).to.equal(1);
@@ -1455,7 +1559,12 @@ describe("Unit: DisputeManager", function () {
                         return { hadProof: true };
                     },
                     {},
-                    { timeoutMs: 30000 }
+                    {
+                        timeoutMs:
+                            h.event.protocolEventTimeoutMs({
+                                withFirstBlockGrace: true
+                            }) * 2
+                    }
                 );
             const first = kill();
             await probe.waitUntilHeld(1);
@@ -1509,7 +1618,12 @@ describe("Unit: DisputeManager", function () {
                     };
                 },
                 { forkId },
-                { timeoutMs: 30000 }
+                {
+                    timeoutMs:
+                        h.event.protocolEventTimeoutMs({
+                            withFirstBlockGrace: true
+                        }) * 2
+                }
             );
             // the park is scoped to constructDispute, so this pins that call
             await hold.waitUntilParked();

@@ -109,8 +109,7 @@ describe("E2E: dispute validation / inbound run gap", function () {
         // the disputed fork resolves for everyone, the lagging peer included
         await h.assert.sync.forkChangedWait({
             originalForkId: forkId,
-            honestPeerIndices: [disputerIndex, laggingIndex],
-            timeoutMs: 20000
+            honestPeerIndices: [disputerIndex, laggingIndex]
         });
 
         // the audit recovered the missing log instead of throwing on it
@@ -173,8 +172,7 @@ describe("E2E: dispute validation / inbound run gap", function () {
         // the healthy auditor reduces the disputed fork
         await h.assert.sync.forkChangedWait({
             originalForkId: forkId,
-            honestPeerIndices: [disputerIndex],
-            timeoutMs: 20000
+            honestPeerIndices: [disputerIndex]
         });
 
         // nothing threw, and abstaining is not an accusation
@@ -200,8 +198,7 @@ describe("E2E: dispute validation / inbound run gap", function () {
 
         await h.assert.sync.forkChangedWait({
             originalForkId: forkId,
-            honestPeerIndices: [laggingIndex],
-            timeoutMs: 20000
+            honestPeerIndices: [laggingIndex]
         });
     });
 
@@ -247,8 +244,7 @@ describe("E2E: dispute validation / inbound run gap", function () {
 
         await h.assert.sync.forkChangedWait({
             originalForkId: forkId,
-            honestPeerIndices: [finalAuthorIndex],
-            timeoutMs: 20000
+            honestPeerIndices: [finalAuthorIndex]
         });
 
         expect(
@@ -268,8 +264,7 @@ describe("E2E: dispute validation / inbound run gap", function () {
 
         await h.assert.sync.forkChangedWait({
             originalForkId: forkId,
-            honestPeerIndices: [laggingIndex],
-            timeoutMs: 20000
+            honestPeerIndices: [laggingIndex]
         });
 
         // the deferred reduce must derive the final dispute's own output, not
@@ -341,8 +336,7 @@ describe("E2E: dispute validation / inbound run gap", function () {
         // every peer that is not the attacker converges on the reduced fork
         await h.assert.sync.forkChangedWait({
             originalForkId: forkId,
-            honestPeerIndices: [laggingIndex, 2, 3],
-            timeoutMs: 25000
+            honestPeerIndices: [laggingIndex, 2, 3]
         });
     });
 });

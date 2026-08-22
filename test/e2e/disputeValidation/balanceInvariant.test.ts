@@ -61,8 +61,7 @@ describe("E2E: dispute validation / balanceInvariant", function () {
         await h.assert.storage.honestPeersStoredDisputeFraudProofWait({
             disputeFraudProofType:
                 DisputeFraudProofType.DisputeInvalidBalanceInvariant,
-            peerIndices: [0, 1],
-            timeoutMs: 10000
+            peerIndices: [0, 1]
         });
         await h.event.waitForPeers("onDisputeKilled", [0, 1], 1, {
             mode: "atLeast"

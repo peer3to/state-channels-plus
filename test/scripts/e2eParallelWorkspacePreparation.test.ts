@@ -12,6 +12,9 @@ const {
     prepareWorkspace,
     selectPrepareScript
 } = require("../../scripts/e2e-parallel/distributed/workspacePreparation.js");
+const {
+    IsolatedGuestCommandRunner
+} = require("../../scripts/e2e-parallel/distributed/isolatedGuestCommandRunner.js");
 
 describe("distributed workspace preparation", function () {
     const repository = {
@@ -28,6 +31,7 @@ describe("distributed workspace preparation", function () {
     it("reuses compiled contracts for non-contract source changes", function () {
         expect(
             selectPrepareScript(repository, {
+                prepared: true,
                 preparationChanged: false,
                 changed: ["state-channels-plus/src/index.ts"],
                 deleted: []
@@ -43,6 +47,7 @@ describe("distributed workspace preparation", function () {
         ]) {
             expect(
                 selectPrepareScript(repository, {
+                    prepared: true,
                     preparationChanged: false,
                     changed: [changed],
                     deleted: []
@@ -51,12 +56,25 @@ describe("distributed workspace preparation", function () {
         }
         expect(
             selectPrepareScript(repository, {
+                prepared: true,
                 preparationChanged: true,
                 changed: ["state-channels-plus/src/index.ts"],
                 deleted: []
             })
         ).to.equal("full");
     });
+
+    it("rebuilds contracts when the cached preparation did not complete", function () {
+        expect(
+            selectPrepareScript(repository, {
+                prepared: false,
+                preparationChanged: false,
+                changed: ["state-channels-plus/src/index.ts"],
+                deleted: []
+            })
+        ).to.equal("full");
+    });
+
     it("does not pass unrelated server secrets into uploaded code", function () {
         const env = buildWorkerEnvironment({
             PATH: "/bin",
@@ -67,22 +85,35 @@ describe("distributed workspace preparation", function () {
         expect(env).to.deep.equal({ PATH: "/bin", HOME: "/tmp/home" });
     });
 
+    it("reports activity while an isolated preparation command is silent", async function () {
+        const stages: string[] = [];
+        const runner = new IsolatedGuestCommandRunner({
+            keepaliveIntervalMs: 10
+        });
+        await runner.run(
+            process.execPath,
+            ["-e", "setTimeout(() => process.exit(0), 60)"],
+            {
+                cwd: process.cwd(),
+                env: process.env,
+                onOutput() {},
+                onStage(stage: string) {
+                    stages.push(stage);
+                }
+            }
+        );
+        expect(stages.length).to.be.greaterThan(0);
+        expect(stages[0]).to.include("Still running");
+    });
+
     it("rebuilds missing native modules once and fails the preparation loudly", async function () {
         const root = fs.mkdtempSync(
             path.join(os.tmpdir(), "workspace-native-")
         );
         const workspace = path.join(root, "workspace");
-        const bin = path.join(root, "bin");
-        const calls = path.join(root, "calls.jsonl");
+        const calls: Array<{ command: string; args: string[] }> = [];
         try {
             fs.mkdirSync(path.join(workspace, "project"), { recursive: true });
-            fs.mkdirSync(bin);
-            const pnpm = path.join(bin, "pnpm");
-            fs.writeFileSync(
-                pnpm,
-                `#!${process.execPath}\nconst fs=require("fs"); fs.appendFileSync(process.env.CALLS, JSON.stringify({args:process.argv.slice(2)})+"\\n");\n`
-            );
-            fs.chmodSync(pnpm, 0o755);
             let failure: Error | null = null;
             try {
                 await prepareWorkspace(
@@ -102,18 +133,17 @@ describe("distributed workspace preparation", function () {
                         ]
                     },
                     {
-                        workRoot: path.join(root, "worker"),
-                        runtime: {
-                            addChild() {},
-                            inheritedFileDescriptors() {
-                                return [];
+                        storeDir: path.join(root, "store"),
+                        commandRunner: {
+                            async run(command: string, args: string[]) {
+                                calls.push({ command, args });
+                                if (command === "node") {
+                                    throw new Error("native module missing");
+                                }
                             }
                         },
                         shouldInstall: () => false,
-                        env: {
-                            PATH: `${bin}${path.delimiter}${process.env.PATH}`,
-                            CALLS: calls
-                        },
+                        env: {},
                         onOutput() {}
                     }
                 );
@@ -124,13 +154,25 @@ describe("distributed workspace preparation", function () {
                 "Native modules failed to load after rebuild in project"
             );
             expect(failure?.message).to.include("scp-missing-native-module");
-            const recorded = fs
-                .readFileSync(calls, "utf8")
-                .trim()
-                .split("\n")
-                .map((line) => JSON.parse(line));
-            expect(recorded.map((entry) => entry.args)).to.deep.equal([
-                ["rebuild", "scp-missing-native-module"]
+            expect(calls).to.deep.equal([
+                {
+                    command: "node",
+                    args: [
+                        "-e",
+                        'for (const name of ["scp-missing-native-module"]) require(name)'
+                    ]
+                },
+                {
+                    command: "pnpm",
+                    args: ["rebuild", "scp-missing-native-module"]
+                },
+                {
+                    command: "node",
+                    args: [
+                        "-e",
+                        'for (const name of ["scp-missing-native-module"]) require(name)'
+                    ]
+                }
             ]);
         } finally {
             fs.rmSync(root, { recursive: true, force: true });
@@ -142,19 +184,15 @@ describe("distributed workspace preparation", function () {
             path.join(os.tmpdir(), "workspace-prepare-")
         );
         const workspace = path.join(root, "workspace");
-        const bin = path.join(root, "bin");
-        const calls = path.join(root, "calls.jsonl");
+        const recorded: Array<{
+            command: string;
+            cwd: string;
+            args: string[];
+            husky: string;
+        }> = [];
         try {
             fs.mkdirSync(path.join(workspace, "linked"), { recursive: true });
             fs.mkdirSync(path.join(workspace, "project"), { recursive: true });
-            fs.mkdirSync(bin);
-            const pnpm = path.join(bin, "pnpm");
-            fs.writeFileSync(
-                pnpm,
-                `#!${process.execPath}\nconst fs=require("fs"); fs.appendFileSync(process.env.CALLS, JSON.stringify({cwd:process.cwd(),args:process.argv.slice(2),husky:process.env.HUSKY})+"\\n");\n`
-            );
-            fs.chmodSync(pnpm, 0o755);
-            const children = new Set<unknown>();
             const stages: string[] = [];
             await prepareWorkspace(
                 workspace,
@@ -177,30 +215,31 @@ describe("distributed workspace preparation", function () {
                     ]
                 },
                 {
-                    workRoot: path.join(root, "worker"),
-                    runtime: {
-                        addChild(child: unknown) {
-                            children.add(child);
-                        },
-                        inheritedFileDescriptors() {
-                            return [];
+                    storeDir: path.join(root, "store"),
+                    commandRunner: {
+                        async run(
+                            command: string,
+                            args: string[],
+                            options: {
+                                cwd: string;
+                                env: Record<string, string>;
+                            }
+                        ) {
+                            recorded.push({
+                                command,
+                                cwd: options.cwd,
+                                args,
+                                husky: options.env.HUSKY
+                            });
                         }
                     },
-                    env: {
-                        PATH: `${bin}${path.delimiter}${process.env.PATH}`,
-                        CALLS: calls
-                    },
+                    env: {},
                     onStage(stage: string) {
                         stages.push(stage);
                     },
                     onOutput() {}
                 }
             );
-            const recorded = fs
-                .readFileSync(calls, "utf8")
-                .trim()
-                .split("\n")
-                .map((line) => JSON.parse(line));
             expect(
                 recorded.map((entry) => path.basename(entry.cwd))
             ).to.deep.equal([
@@ -219,6 +258,7 @@ describe("distributed workspace preparation", function () {
             ]);
             expect(recorded[0].args).to.include("--no-frozen-lockfile");
             expect(recorded[3].args).to.include("--frozen-lockfile");
+            expect(recorded[3].args).to.include("--shamefully-hoist");
             expect(recorded[0].args).not.to.include(
                 "--config.dangerously-allow-all-builds=true"
             );
@@ -230,10 +270,7 @@ describe("distributed workspace preparation", function () {
             expect(recorded.every((entry) => entry.husky === "0")).to.equal(
                 true
             );
-            expect(
-                fs.existsSync(path.join(root, "worker", "pnpm-store"))
-            ).to.equal(true);
-            expect(children.size).to.equal(5);
+            expect(fs.existsSync(path.join(root, "store"))).to.equal(true);
             expect(stages).to.deep.equal([
                 "Installing dependencies for linked",
                 "Building linked",

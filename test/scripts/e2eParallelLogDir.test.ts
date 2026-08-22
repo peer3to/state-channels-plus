@@ -7,20 +7,27 @@ import path from "path";
 // CommonJS dev scripts for the parallel e2e runner. We test the
 // destructive-tooling guards: a mis-resolved / symlinked log dir must never
 // wipe the working tree.
-const { getHelpText, parseCliArgs } =
-    require("../../scripts/e2e-parallel/shared/argParser.js") as {
-        getHelpText: () => string;
-        parseCliArgs: (argv: string[]) => {
-            logDir: string;
-            logDirProvided: boolean;
-            help: boolean;
-            e2eOnly: boolean;
-            testPattern?: string;
-            schedulerTickMs?: number;
-        };
-    };
+type ParsedCliArgs = {
+    logDir: string;
+    logDirProvided: boolean;
+    keepInfraLogs: boolean;
+    help: boolean;
+    e2eOnly: boolean;
+    testPattern?: string;
+    schedulerTickMs?: number;
+    distributed: boolean;
+    discoveryTimeoutMs: number;
+    forwardEnv: string[];
+    executionProfile: Record<string, number>;
+};
+const argParser: {
+    getHelpText: () => string;
+    parseCliArgs: (argv: string[]) => ParsedCliArgs;
+} = require("../../scripts/e2e-parallel/shared/argParser.js");
+const { getHelpText, parseCliArgs } = argParser;
 const {
     colorize,
+    cleanupNonErrorLogs,
     countStarvation,
     getStarvationSummary,
     parseTimings,
@@ -32,6 +39,11 @@ const {
     summaryCounts
 } = require("../../scripts/e2e-parallel/shared/logging.js") as {
     colorize: (color: string, text: string) => string;
+    cleanupNonErrorLogs: (
+        dirPath: string,
+        allow: boolean,
+        keepInfraLogs?: boolean
+    ) => void;
     countStarvation: (text: string) => number;
     getStarvationSummary: (tasks: Array<Record<string, unknown>>) => {
         recovered: Array<Record<string, unknown>>;
@@ -104,6 +116,7 @@ describe("e2e-parallel argParser - logDir validation", function () {
             "--e2e-only",
             "--log-dir",
             "--allow-logdir-purge",
+            "--keep-infra-logs",
             "--slots",
             "--workers",
             "--target-load",
@@ -116,7 +129,10 @@ describe("e2e-parallel argParser - logDir validation", function () {
             "--dry-run",
             "--distributed",
             "--discovery-timeout",
-            "--forward-env"
+            "--forward-env",
+            "--forge-only",
+            "--no-forge",
+            "--forge-threads"
         ]) {
             expect(help).to.include(option);
         }
@@ -131,38 +147,41 @@ describe("e2e-parallel argParser - logDir validation", function () {
                 "--forward-env",
                 "CI"
             )
-        ) as unknown as {
-            distributed: boolean;
-            discoveryTimeoutMs: number;
-            forwardEnv: string[];
-        };
+        );
         expect(parsed.distributed).to.equal(true);
         expect(parsed.discoveryTimeoutMs).to.equal(2500);
         expect(parsed.forwardEnv).to.deep.equal(["CI"]);
 
-        const defaults = parseCliArgs(argv()) as unknown as {
-            discoveryTimeoutMs: number;
-        };
+        const defaults = parseCliArgs(argv());
         expect(defaults.discoveryTimeoutMs).to.equal(30000);
         expect(() => parseCliArgs(argv("--forward-env", "CI"))).to.throw(
             /require --distributed/
         );
     });
 
-    it("rejects local capacity flags in distributed mode", function () {
-        for (const [flag, value] of [
-            ["--slots", "2"],
-            ["--workers", "3"],
-            ["--target-load", "0.5"],
-            ["--interval", "250"],
-            ["--mem-limit-gb", "4"]
-        ]) {
-            expect(() =>
-                parseCliArgs(argv("--distributed", flag, value))
-            ).to.throw(
-                new RegExp(`${flag}.*test:parallel:server`.replace("-", "\\-"))
-            );
-        }
+    it("turns distributed capacity flags into an execution profile", function () {
+        const parsed = parseCliArgs(
+            argv(
+                "--distributed",
+                "--slots",
+                "2",
+                "--workers",
+                "3",
+                "--target-load",
+                "0.5",
+                "--interval",
+                "250",
+                "--mem-limit-gb",
+                "4"
+            )
+        );
+        expect(parsed.executionProfile).to.deep.equal({
+            schedulerTickMs: 250,
+            workers: 3,
+            slots: 2,
+            memoryBytes: 4 * 1024 ** 3,
+            targetLoad: 0.5
+        });
     });
 
     it("does not resolve local capacity for a distributed dry run", async function () {
@@ -183,7 +202,7 @@ describe("e2e-parallel argParser - logDir validation", function () {
         }
         expect(lines).to.have.length(1);
         expect(lines[0]).to.match(
-            /^Distributed dry run: \d+ task\(s\); capacity is configured by test:parallel:server$/
+            /^Distributed dry run: \d+ task\(s\) \(\d+ forge\); capacity is configured by test:parallel:server$/
         );
         expect(lines[0]).to.not.include("slots=");
     });
@@ -202,6 +221,13 @@ describe("e2e-parallel argParser - logDir validation", function () {
     it("runs all Mocha tests by default and supports --e2e-only", function () {
         expect(parseCliArgs(argv()).e2eOnly).to.equal(false);
         expect(parseCliArgs(argv("--e2e-only")).e2eOnly).to.equal(true);
+    });
+
+    it("keeps infrastructure logs only when requested", function () {
+        expect(parseCliArgs(argv()).keepInfraLogs).to.equal(false);
+        expect(parseCliArgs(argv("--keep-infra-logs")).keepInfraLogs).to.equal(
+            true
+        );
     });
 
     it("rejects an empty --logDir= value (falls back to default, not provided)", function () {
@@ -274,6 +300,79 @@ describe("e2e-parallel logging - purge guards", function () {
             (fs as unknown as { rmSync: typeof fs.rmSync }).rmSync = realRm;
         }
         expect(removed).to.have.lengthOf(0);
+    });
+
+    it("keeps failed infrastructure diagnostics while removing normal worker logs", function () {
+        const root = fs.mkdtempSync(path.join(os.tmpdir(), "log-cleanup-"));
+        const successfulRoot = fs.mkdtempSync(
+            path.join(os.tmpdir(), "successful-log-cleanup-")
+        );
+        try {
+            const infrastructure = path.join(root, "infra");
+            const successfulInfrastructure = path.join(successfulRoot, "infra");
+            fs.mkdirSync(path.join(infrastructure, "server-1"), {
+                recursive: true
+            });
+            fs.mkdirSync(successfulInfrastructure, { recursive: true });
+            fs.writeFileSync(
+                path.join(infrastructure, "server-1", "worker.ansi"),
+                "worker failure"
+            );
+            fs.writeFileSync(
+                path.join(infrastructure, "isolated-runtime.ansi"),
+                "runtime failure"
+            );
+            fs.writeFileSync(path.join(infrastructure, ".failure"), "");
+            fs.writeFileSync(
+                path.join(successfulInfrastructure, "worker.ansi"),
+                "normal worker"
+            );
+            fs.writeFileSync(path.join(root, "passing.ansi"), "passing");
+            fs.writeFileSync(path.join(root, "error_failed.ansi"), "failed");
+
+            cleanupNonErrorLogs(root, true);
+            cleanupNonErrorLogs(successfulRoot, true);
+
+            expect(fs.existsSync(infrastructure)).to.equal(true);
+            expect(fs.existsSync(successfulInfrastructure)).to.equal(false);
+            expect(fs.existsSync(path.join(root, "passing.ansi"))).to.equal(
+                false
+            );
+            expect(
+                fs.existsSync(path.join(root, "error_failed.ansi"))
+            ).to.equal(true);
+        } finally {
+            fs.rmSync(root, { recursive: true, force: true });
+            fs.rmSync(successfulRoot, { recursive: true, force: true });
+        }
+    });
+
+    it("keeps successful infrastructure logs when requested", function () {
+        const root = fs.mkdtempSync(
+            path.join(os.tmpdir(), "kept-infra-log-cleanup-")
+        );
+        try {
+            const infrastructure = path.join(root, "infra");
+            fs.mkdirSync(infrastructure, { recursive: true });
+            fs.writeFileSync(
+                path.join(infrastructure, "hardhat-node.ansi"),
+                "normal infrastructure"
+            );
+            fs.writeFileSync(path.join(root, "passing.ansi"), "passing");
+            fs.writeFileSync(path.join(root, "error_failed.ansi"), "failed");
+
+            cleanupNonErrorLogs(root, true, true);
+
+            expect(fs.existsSync(infrastructure)).to.equal(true);
+            expect(fs.existsSync(path.join(root, "passing.ansi"))).to.equal(
+                false
+            );
+            expect(
+                fs.existsSync(path.join(root, "error_failed.ansi"))
+            ).to.equal(true);
+        } finally {
+            fs.rmSync(root, { recursive: true, force: true });
+        }
     });
 
     it("a symlinked dir whose real target is a dangerous root is flagged, not treated as safe", function () {

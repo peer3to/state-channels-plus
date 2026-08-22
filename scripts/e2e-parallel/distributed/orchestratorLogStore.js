@@ -6,8 +6,10 @@ const { assertContained } = require("../shared/paths");
 const RESULT_OUTPUT_TAIL_BYTES = 4 * 1024 * 1024;
 const INFRA_PROCESS_FILES = {
     discovery: "discovery-server.ansi",
-    hardhat: "hardhat-node.ansi"
+    hardhat: "hardhat-node.ansi",
+    "isolated-runtime": "isolated-runtime.ansi"
 };
+const INFRASTRUCTURE_FAILURE_MARKER = ".failure";
 
 function appendTail(chunks, body) {
     chunks.push(body);
@@ -97,16 +99,26 @@ class OrchestratorLogStore {
             reasons,
             body: Buffer.from(body)
         });
-        const filePath = containedPath(this.runDir, "infra", fileName);
+        const infrastructureDir = containedPath(this.runDir, "infra");
+        const filePath = containedPath(infrastructureDir, fileName);
         fs.mkdirSync(path.dirname(filePath), { recursive: true });
+        if (processFailure) {
+            fs.writeFileSync(
+                containedPath(infrastructureDir, INFRASTRUCTURE_FAILURE_MARKER),
+                ""
+            );
+        }
         const sections = [...this.infrastructureProcessSnapshots.values()]
             .filter((snapshot) => snapshot.processKind === processKind)
             .sort(
                 (left, right) =>
                     left.worker.localeCompare(right.worker) ||
-                    left.slotId - right.slotId
+                    (left.slotId ?? -1) - (right.slotId ?? -1)
             )
             .map((snapshot) => {
+                const scope = Number.isInteger(snapshot.slotId)
+                    ? `${snapshot.worker} slot ${snapshot.slotId}`
+                    : snapshot.worker;
                 const reasonsText = snapshot.reasons
                     .map(
                         (reason) =>
@@ -115,7 +127,7 @@ class OrchestratorLogStore {
                     .join("\n");
                 return Buffer.concat([
                     Buffer.from(
-                        `=== ${snapshot.worker} slot ${snapshot.slotId} ===\n${reasonsText}\n--- ${snapshot.processKind} output ---\n`
+                        `=== ${scope} ===\n${reasonsText}\n--- ${snapshot.processKind} output ---\n`
                     ),
                     snapshot.body,
                     Buffer.from("\n")

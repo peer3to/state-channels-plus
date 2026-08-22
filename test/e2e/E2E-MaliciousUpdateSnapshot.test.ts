@@ -261,7 +261,7 @@ describe("E2E: Malicious updateSnapshot", function () {
         // Wait for abort.
         await waitFor(
             () => h.control(spectator).stub.wasSpectateAbortCalled().request(),
-            5000
+            h.event.protocolEventTimeoutMs()
         );
         expect(
             await h.control(spectator).stub.wasSpectateAbortCalled().request()

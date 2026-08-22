@@ -584,9 +584,14 @@ export class LocalDiscoveryServer {
             onConnection: (ws: WebSocket) => {
                 // Accepted a direct connection from another peer
                 ws.once("message", (message: Buffer) => {
+                    // A peer retrying a failed connection can deliver its
+                    // ready frame while the session tears down; starting a
+                    // handshake then runs against disposed runtimes (Clock,
+                    // state managers).
                     if (
+                        this._cleanupRequested ||
                         message.toString() !==
-                        LOCAL_TRANSPORT_CLIENT_READY_MESSAGE
+                            LOCAL_TRANSPORT_CLIENT_READY_MESSAGE
                     ) {
                         ws.close();
                         return;

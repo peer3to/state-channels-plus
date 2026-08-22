@@ -17,6 +17,7 @@ import {
     slotAccountIndex,
     slotDeployerIndex
 } from "@test/harness/core/slotAccounts";
+import { protocolEventTimeoutMs } from "@test/harness/core/testTimeConfig";
 import MathStateMachineArtifact from "../../artifacts/contracts/V1/examples/MathStateMachine/MathStateMachine.sol/MathStateMachine.json";
 import MathConsumerFacetArtifact from "../../artifacts/contracts/V1/examples/MathStateMachine/MathConsumerFacet.sol/MathConsumerFacet.json";
 import { deployFullStack } from "../../scripts/V1/deploy";
@@ -32,12 +33,23 @@ import type {
 import {
     startDiscoveryRegistry,
     startHardhatNode,
+    waitForHardhatNode,
     type DiscoveryHandle,
     type NodeHandle
 } from "@test/utils/nodeInfra";
 
 let hardhatNodeUrl = process.env.HARDHAT_NODE_URL;
 let localDiscoveryRegistryUrl = process.env.LOCAL_DISCOVERY_REGISTRY_URL;
+
+const TEST_TIME_CONFIG = {
+    p2pTime: 1,
+    agreementTime: 10,
+    chainFallbackTime: 2,
+    evidenceTime: 2
+};
+const TEST_PROTOCOL_TIMEOUT_MS = protocolEventTimeoutMs(TEST_TIME_CONFIG, {
+    withFirstBlockGrace: true
+});
 const DEFAULT_HARDHAT_MNEMONIC =
     "test test test test test test test test test test test junk";
 
@@ -47,18 +59,6 @@ const PING_PONG_MANIFEST = path.resolve(
 );
 
 type PingPeer = P2pInstance<MathStateMachine, PingPongRpc>;
-
-async function waitForNode(url: string): Promise<void> {
-    const provider = new ethers.JsonRpcProvider(url);
-    await waitFor(async () => {
-        try {
-            await provider.getBlockNumber();
-            return true;
-        } catch {
-            return false;
-        }
-    }, 30_000);
-}
 
 function walletAt(
     index: number,
@@ -95,7 +95,7 @@ describe("E2E: custom RPC request/response over the runtime port", function () {
 
     before(async function () {
         if (hardhatNodeUrl) {
-            await waitForNode(hardhatNodeUrl);
+            await waitForHardhatNode(hardhatNodeUrl);
         } else {
             nodeHandle = await startHardhatNode();
             hardhatNodeUrl = nodeHandle.url;
@@ -139,12 +139,7 @@ describe("E2E: custom RPC request/response over the runtime port", function () {
             consumerFacetArtifact: MathConsumerFacetArtifact as any,
             stateMachineArgs: [5_000_000],
             consumerFacetArgs: [],
-            timeConfig: {
-                p2pTime: 1,
-                agreementTime: 10,
-                chainFallbackTime: 2,
-                evidenceTime: 2
-            },
+            timeConfig: TEST_TIME_CONFIG,
             disputeExecutionGasLimit: 1_000_000
         });
 
@@ -238,13 +233,13 @@ describe("E2E: custom RPC request/response over the runtime port", function () {
                 connectedTo
                     .get(peer1Address)
                     ?.has(peer0Address.toLowerCase()) === true,
-            20_000
+            TEST_PROTOCOL_TIMEOUT_MS
         );
 
         // --- Self-call (no target): runs on the peer's own host (loopback) ---
         const sumSelf: SumResponse = await peer0.hostRpc.pingService
             .sum(1, 2, "sum-self-0")
-            .request({ timeoutMs: 5000 });
+            .request({ timeoutMs: TEST_PROTOCOL_TIMEOUT_MS });
         expect(sumSelf.sum).to.equal(3);
         expect(sumSelf.nonce).to.equal("sum-self-0");
         expect(sumSelf.requester?.toLowerCase()).to.equal(
@@ -254,7 +249,9 @@ describe("E2E: custom RPC request/response over the runtime port", function () {
         // --- Request/response: peer0 -> peer1 ---
         const sum0: SumResponse = await peer0.hostRpc.pingService
             .sum(20, 22, "sum-from-0")
-            .request(peer1Address, { timeoutMs: 5000 });
+            .request(peer1Address, {
+                timeoutMs: TEST_PROTOCOL_TIMEOUT_MS
+            });
         expect(sum0.sum).to.equal(42);
         expect(sum0.nonce).to.equal("sum-from-0");
         expect(sum0.requester?.toLowerCase()).to.equal(
@@ -264,7 +261,9 @@ describe("E2E: custom RPC request/response over the runtime port", function () {
         // --- Request/response: peer1 -> peer0 ---
         const sum1: SumResponse = await peer1.hostRpc.pingService
             .sum(4, 7, "sum-from-1")
-            .request(peer0Address, { timeoutMs: 5000 });
+            .request(peer0Address, {
+                timeoutMs: TEST_PROTOCOL_TIMEOUT_MS
+            });
         expect(sum1.sum).to.equal(11);
         expect(sum1.nonce).to.equal("sum-from-1");
         expect(sum1.requester?.toLowerCase()).to.equal(
@@ -279,7 +278,9 @@ describe("E2E: custom RPC request/response over the runtime port", function () {
         try {
             await peer0.hostRpc.pingService
                 .fail("intentional-request-failure")
-                .request(peer1Address, { timeoutMs: 5000 });
+                .request(peer1Address, {
+                    timeoutMs: TEST_PROTOCOL_TIMEOUT_MS
+                });
         } catch (error) {
             requestError = error;
         }

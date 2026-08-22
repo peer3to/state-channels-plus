@@ -56,6 +56,47 @@ describe("distributed worker scheduler", function () {
         );
     });
 
+    it("selects Docker by default and supports explicit unsafe host execution", function () {
+        expect(
+            parseServerArgs(["node", "server.js"], {
+                SCP_TEST_WORKER_NAME: "server-1"
+            }).executionBackend
+        ).to.equal("docker");
+        expect(
+            parseServerArgs(
+                ["node", "server.js", "--execution-backend", "unsafe-host"],
+                { SCP_TEST_WORKER_NAME: "server-1" }
+            ).executionBackend
+        ).to.equal("unsafe-host");
+        expect(() =>
+            parseServerArgs(
+                ["node", "server.js", "--execution-backend", "unknown"],
+                { SCP_TEST_WORKER_NAME: "server-1" }
+            )
+        ).to.throw("either docker or unsafe-host");
+    });
+
+    it("marks explicit authorization-policy startup overrides", function () {
+        expect(
+            parseServerArgs(
+                ["node", "server.js", "--deny-unlisted-orchestrators"],
+                { SCP_TEST_WORKER_NAME: "server-1" }
+            )
+        ).to.include({
+            allowUnlistedOrchestrators: false,
+            authorizationPolicyProvided: true
+        });
+        expect(
+            parseServerArgs(
+                ["node", "server.js", "--allow-unlisted-orchestrators"],
+                { SCP_TEST_WORKER_NAME: "server-1" }
+            )
+        ).to.include({
+            allowUnlistedOrchestrators: true,
+            authorizationPolicyProvided: true
+        });
+    });
+
     it("requires a unique work root when host sharing is enabled", function () {
         expect(() =>
             parseServerArgs(["node", "server.js", "--allow-shared-host"], {

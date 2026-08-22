@@ -10,21 +10,20 @@
 
 ## Overview
 
-Two regression tests for the responder side of spectate sync, driving
-`spectate.generateSyncPayload` through the harness control RPC on a real 4-peer channel while the
-observer's reduction entry points and incoming dispute-committed events are held. The first stages
-a dispute commitment that is on-chain but genuinely missing from local storage and pins that
-`generateSyncPayload` recovers it (via the same
-`EventSyncService.loadSynchronizedWindowCommitments` owner reduction uses) instead of throwing —
-the oracles verify the gap was real before the call and that afterwards every window commitment
-resolves to a stored confirmation, with the held events and frozen reduction ruling out any other
-recovery path. The second suppresses every dispute event so the local mirror still reports the
-fork undisputed while the chain says it is, and asserts the payload walk takes the disputed flag
-from the chain: the call returns `null` rather than proving a disputed, already-reducible fork as
-the tip. The suite does not exercise the planned obligation permutations for this component — the
-requester verification chain ([`UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT`](../../../../implementation/source/src/rpc/services/spectate/SpectateService.ts.md#unit-test-spectate-service-1-sjbyct)) and responder target proving
-([`UNIT-TEST-SPECTATE-SERVICE-2-CHK2PD`](../../../../implementation/source/src/rpc/services/spectate/SpectateService.ts.md#unit-test-spectate-service-2-chk2pd)) — so no test IDs are assigned here; both scenarios sit outside
-those tables.
+Five regression tests drive `SpectateService` through the harness control RPC on real multi-peer
+channels. Two cover snapshot races. The first prepares a same-fork proof, lands its exact target
+snapshot before requester validation, verifies that newly generated same-fork payloads carry an
+empty pre-genesis outbound segment, and confirms that the original proof still synchronizes the
+requester. The second forces the simulated update to return
+`RaceConditionBlockHeightTooOld` after the exact target snapshot has landed and confirms that the
+benign race is accepted.
+
+The other three cover responder recovery and refusal while dispute events are held: an on-chain
+commitment missing from local storage is recovered before proof generation; an unreadable dispute
+window returns `null` without throwing or producing a fraud proof; and a fork that only the chain
+knows is disputed is declined instead of being proved as the tip. These responder recovery cases
+remain unassigned because the current component tables cover target selection and payload
+validation, not event-recovery of dispute-window inputs.
 
 ## Tests and covered test IDs
 
@@ -33,7 +32,10 @@ test ID may be assigned to at most one test across the whole tree; static analys
 duplicate assignments, and tests with no assigned ID are listed in the verification-coverage
 report but are kept here.
 
-| Test declaration                                                                                                                                                                                              | Covers |
-| ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------ |
-| [`Unit: SpectateService > generateSyncPayload > committed dispute missing locally → recovers before generating the payload`](../../../../../../test/unit/SpectateService.test.ts#L12) (line 12)               | —      |
-| [`Unit: SpectateService > generateSyncPayload > all dispute events suppressed → still declines the disputed fork instead of proving it`](../../../../../../test/unit/SpectateService.test.ts#L162) (line 162) | —      |
+| Test declaration                                                                                                                                                                                              | Covers                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
+| ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| [`Unit: SpectateService > applySyncResponse > the same-fork target snapshot lands before validation → accepts the proof`](../../../../../../test/unit/SpectateService.test.ts#L9) (line 9)                    | [`UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P13`](../../../../implementation/source/src/rpc/services/spectate/SpectateService.ts.md#unit-test-spectate-service-1-sjbyct.p13), [`UNIT-TEST-SPECTATE-SERVICE-2-CHK2PD.P8`](../../../../implementation/source/src/rpc/services/spectate/SpectateService.ts.md#unit-test-spectate-service-2-chk2pd.p8), [`REQ-SPC-1-H10R5K.T1.P6`](../../../../implementation/views/architecture/sdk/rpc/spectate.md#req-spc-1-h10r5k.t1.p6) |
+| [`Unit: SpectateService > tryMulticallSnapshotUpdate > the exact target snapshot lands first → accepts the benign height race`](../../../../../../test/unit/SpectateService.test.ts#L102) (line 102)          | [`UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P14`](../../../../implementation/source/src/rpc/services/spectate/SpectateService.ts.md#unit-test-spectate-service-1-sjbyct.p14)                                                                                                                                                                                                                                                                                             |
+| [`Unit: SpectateService > generateSyncPayload > committed dispute missing locally → recovers before generating the payload`](../../../../../../test/unit/SpectateService.test.ts#L158) (line 158)             | —                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
+| [`Unit: SpectateService > generateSyncPayload > dispute window unavailable → payload refused, no throw`](../../../../../../test/unit/SpectateService.test.ts#L304) (line 304)                                 | —                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
+| [`Unit: SpectateService > generateSyncPayload > all dispute events suppressed → still declines the disputed fork instead of proving it`](../../../../../../test/unit/SpectateService.test.ts#L357) (line 357) | —                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |

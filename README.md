@@ -86,6 +86,45 @@ Compile the contracts and run tests
 yarn testc
 ```
 
+### Foundry tests
+
+Foundry test contracts are discovered alongside the Mocha tests and scheduled as
+ordinary tasks, one task per test contract. A contract counts as a test contract
+when it declares a `test`, `invariant`, or `statefulFuzz` function, so harness
+and helper contracts sharing a file are left out.
+
+```shell
+yarn test:parallel --forge-only     # only the forge tier
+yarn test:parallel --no-forge       # only the Mocha tier
+yarn test:parallel --forge-threads 2
+```
+
+Each forge task runs on a single thread. `forge test` otherwise sizes its thread
+pool from the logical core count, which inside a CPU-limited container is still
+the host's count, so unpinned tasks oversubscribe the host. The runner already
+parallelizes across tasks. `--e2e-only` selects the Mocha end-to-end tier and
+drops the forge tier with it.
+
+Forge tasks need no Hardhat node, so they take neither a warm slot nor a funded
+account partition. Local runs build the contracts once before scheduling;
+distributed runs rely on the worker's prepare script for that.
+
+Forge tasks run through the Hardhat CLI like every other task. A forge task's
+arguments invoke the `forge-test` Hardhat task in `tasks/forgeTest.ts`, which
+shells out to `forge test --match-contract <contract> --threads <count>`,
+streams its output through, and passes its exit code on. It does not depend on
+the compile task, so no task recompiles.
+
+The indirection is what makes the tier work on a distributed worker: a worker
+executes tasks with its own copy of the runner, taken from the checkout that
+started `yarn test:parallel:server`, while only the project sources are synced
+to it. `hardhat.config.ts` is a synced project source, so a task registered
+there reaches every worker without any worker-side update.
+
+```shell
+yarn hardhat forge-test --match-contract '^UtilityFacetTest$'
+```
+
 ### Distributed parallel tests
 
 The worker and orchestrator can run on different devices. They do not need a
@@ -99,20 +138,46 @@ every device:
 SCP_TEST_POOL_SECRET=<the-same-random-secret-on-every-device>
 ```
 
-Both runner entry points load `.env` automatically. On the worker device,
-check out this SDK version, install its dependencies, and start the persistent
-server:
+Both runner entry points load `.env` automatically. On a manually provisioned
+worker, install dependencies and build the runner image from
+`scripts/e2e-parallel/distributed/runner-image.Dockerfile` with a digest-pinned
+`NODE_IMAGE`. Configure either its immutable local image ID or a published
+repository digest:
 
 ```shell
-pnpm install
-pnpm test:parallel:server --name worker-one
+yarn
+export SCP_TEST_RUNNER_IMAGE='sha256:<local-image-id>'
+yarn test:parallel:server --name worker-one
 ```
 
-Each server controls its own capacity. It uses the same defaults as the local
-parallel runner: one infrastructure slot, up to 40 test processes, and one
-admission attempt every 1000 ms. Use `--slots <count>`, `-w <count>`, and
-`-i <ms>` on the server command to override them for that device. The
-orchestrator does not set worker capacity or timing.
+The Docker volume driver must enforce the `size` option. The Linux service
+account also needs permission to create Docker bridge networks and install the
+per-environment `DOCKER-USER` firewall chain. The container runs as UID 10001
+with a read-only base filesystem, all capabilities dropped, no new privileges,
+no host networking, no Docker socket, and one quota-backed identity volume.
+When user-namespace remapping is active, a fixed trusted initializer gives the
+mapped runner user ownership of only that new volume. The initializer has no
+network, a read-only root, and only `CHOWN`; it exits before any orchestrator
+payload is accepted. Trusted runner files are then streamed into the volume as
+the non-root runner user.
+Linux blocks the worker host, link-local ranges, RFC1918 ranges, and each
+`--deny-private-cidr` while allowing public egress. Docker Desktop retains the
+filesystem/process/resource boundary but reports a reduced network guarantee;
+do not use it as a shared hardened worker.
+
+Each server's startup CPU, memory, disk, process, slot, worker, load, and
+interval values are both its defaults and its current hard ceilings. An
+orchestrator may request smaller per-run values with the corresponding
+distributed command flags. The worker rejects an oversized request before
+creating a container; it never silently clamps it. A retained container updates
+its CPU, memory, and process limits before reuse. Its volume quota is fixed:
+smaller disk requests are valid upper bounds, while a request above the volume's
+original quota is rejected.
+The worker uses `--execution-backend docker` by default and fails closed when
+Docker is unavailable. Trusted local development can explicitly select the old
+host behavior with `--execution-backend unsafe-host`; it is reported as having
+no isolation. Unsafe-host workspaces remain identity-keyed under the selected
+work root so restart recovery can reuse clean state and remove dirty state.
 
 On the orchestrator device, start with a small smoke run from the project being
 tested:
@@ -123,12 +188,17 @@ yarn test:parallel:distributed \
   --discovery-timeout 60000
 ```
 
+`-w N` / `--workers N` requests at most `N` concurrent test processes from
+each leased worker. The final summary prints that active limit in the existing
+capacity block and labels the worker's advertised maximum.
+
 The source archive contains tracked and non-ignored files from the test
 repository and every recursive `link:` or `file:` dependency. Their relative
 filesystem layout is preserved, so links such as
-`poker -> ../state-channels-plus` resolve after extraction. The
-worker installs each repository with pnpm, using a persistent pnpm store, then
-builds linked repositories before the test repository.
+`poker -> ../state-channels-plus` resolve after extraction. The host forwards
+archive chunks as data and never extracts them. The trusted guest runner
+verifies and extracts source, installs each repository with pnpm, provisions test
+infrastructure, and executes every task inside the same isolated environment.
 
 #### Distributed storage and cleanup
 
@@ -138,49 +208,38 @@ explicit work root, its layout is:
 
 ```text
 temp/distributed-worker/
-├── pnpm-store/
-├── workspaces/
-│   └── <project-id>/
+├── environments/
+│   └── <orchestrator-and-workspace-key>/
 │       ├── workspace.lock
-│       ├── source-manifest.json
-│       ├── prepared.json
-│       └── workspace/
-└── leases/
-    └── lease-*/
-        ├── runtime.tgz
-        ├── infra/
-        └── spool/
+│       └── cache-allocation.json
+└── host-state/
+    ├── authorization.json
+    ├── audit/worker-audit.jsonl
+    └── environments/<environment-key>.json
 ```
 
 - The per-user runtime directory under the OS temporary directory contains the
   one host-scoped `server-v8.lock` file outside the worker root. The directory
   is private to the current user and the lock refuses symbolic links. Its
-  OS-held lock prevents servers using different clones or `--work-root` values
-  from oversubscribing the same machine. The file may remain after shutdown,
-  but its lock is released.
-- `pnpm-store/` is the persistent dependency cache shared by later runs.
-- `workspaces/<project-id>/` is the persistent reconstructed source tree. It
-  keeps `node_modules`, generated files, and successful build output.
-- `workspace.lock` is held across synchronization, preparation, testing, and
-  cleanup. Preparation and test children inherit it, so another server cannot
-  mutate the same workspace after an abrupt parent-process exit.
-- `source-manifest.json` records source hashes and cached file metadata. Before
-  each run, the worker checks the cached files on disk, re-hashes anything
-  whose size or modification time drifted, and asks the orchestrator only for
-  changed files and deletion paths.
-- `prepared.json` records the last source version that installed and built
-  successfully. An unchanged prepared workspace skips upload, installation,
-  and build. Source-only changes reuse `node_modules`; package or lockfile
-  changes rerun pnpm installation.
-- `leases/lease-*` is one temporary orchestrator lease.
-- `runtime.tgz` contains only source files missing or changed in the persistent
-  workspace. A first run contains every source file; an unchanged run contains
-  no source files.
-- A poker-contracts workspace has sibling `poker-contracts/` and
-  `state-channels-plus/` directories inside its persistent `workspace/`.
-- `infra/` contains temporary Hardhat and discovery infrastructure data.
-- `spool/` temporarily holds test stdout and stderr before it is committed to
-  the orchestrator.
+  OS-held lock prevents servers using different clones or work roots from
+  oversubscribing the same machine.
+- The host derives an environment key from the authenticated orchestrator
+  transport key and workspace identity. Two identities with identical source
+  never share a volume, package store, workspace, runner glue, logs, or locks.
+- The Docker volume contains the trusted runner copy, source manifest,
+  prepared workspace, package store, build output, infrastructure data, and
+  attempt spool. The worker refreshes and verifies only the trusted runner on
+  every start. Source, dependencies, and build artifacts persist between
+  leases; transient logs and spools are pruned after selected evidence is
+  acknowledged.
+- Containers stop at lease end, so idle identities reserve disk only. The same
+  identity restarts its stopped container and volume. Count and disk budgets
+  evict only least-recently-used idle identities.
+- Host metadata marks an environment dirty before preparation or execution and
+  clears it only after Docker confirms stop/detach. Restart recovery stops
+  orphans, retains clean idle caches, and destroys only a dirty identity.
+- The host audit and authorization files are mode 0600 and are never mounted
+  into a guest.
 
 The orchestrator manifests the source once, then creates an isolated delta
 archive only when a worker requests changed files. Each delta is removed after
@@ -188,16 +247,10 @@ that transfer. The temporary `distributed-transfer/` directory is deleted when
 the distributed command finishes or fails. Canonical summaries and test logs
 stay under `logs/run-N/`.
 
-The worker deletes the complete `leases/lease-*` tree when the run completes,
-fails, is cancelled, or loses its orchestrator. This removes the received
-delta archive, infrastructure data, and spooled output. The worker root remains
-with empty `leases/`, `pnpm-store/`, and prepared `workspaces/` so later runs can
-reuse them.
-
 Use `--work-root <path>` to replace the default root completely:
 
 ```shell
-pnpm test:parallel:server \
+yarn test:parallel:server \
   --name worker-one \
   --work-root /your/chosen/directory
 ```
@@ -208,6 +261,75 @@ local storage. `--allow-shared-host` requires an explicit, unique `--work-root`;
 do not share one work root between worker servers. Real
 distributed runs do not store package data in random OS temporary directories.
 Unit tests may use OS temporary directories and remove them during teardown.
+
+Workers continue to require the shared worker-set secret for discovery and
+mutual authentication. They additionally authorize the authenticated Noise
+transport public key. Start migration with unlisted orchestrators allowed (the
+default). Print the persistent orchestrator public key with
+`yarn distributed:identity`, then bootstrap it on a new worker by passing
+that key to the worker server's repeatable `--admin-key` option. Admin
+list/add/remove and policy operations apply to every worker discovered before
+the deadline unless `--worker` selects one verified worker identity. Changes
+apply only to future connection admission. A removed identity keeps its current
+lease but cannot reconnect. Migration admissions record the full unlisted public
+transport key in the host audit log so an operator can copy it into the
+allowlist; ordinary allowlisted admissions record only the fingerprint.
+
+Use that persistent admin identity to discover workers and manage their
+authorization stores over the authenticated distributed transport:
+
+```shell
+yarn distributed:identity
+yarn distributed:admin workers --discovery-timeout 10000
+yarn distributed:admin authorization-list --discovery-timeout 10000
+yarn distributed:admin authorization-add --discovery-timeout 10000 \
+  --public-key <orchestrator-public-key> --role orchestrator --note "CI runner"
+yarn distributed:admin authorization-add --discovery-timeout 10000 \
+  --public-key <admin-public-key> --role admin --note "backup operator"
+yarn distributed:admin authorization-remove --discovery-timeout 10000 \
+  --public-key <public-key>
+yarn distributed:admin authorization-policy-set --discovery-timeout 10000 \
+  --require-public-key on
+yarn distributed:admin authorization-policy-set --discovery-timeout 10000 \
+  --require-public-key off
+```
+
+Omitting `--worker` is the pool-wide form: the command waits for the discovery
+deadline and reports one result per discovered worker. To target one worker,
+pass `--worker <worker-public-key>`, using the full verified identity returned
+by `workers`, not its short log fingerprint. These commands use
+`SCP_TEST_POOL_SECRET` from the local `.env` and the same
+`temp/distributed-orchestrator` identity as normal distributed runs.
+The `workers` result includes `authorizationPolicy.publicKeyAuthorizationRequired`
+for every discovered worker.
+
+The shared secret is always required for discovery and mutual authentication.
+On a new worker, any identity that proves knowledge of that secret is admitted
+through migration mode. `authorization-policy-set --require-public-key on`
+requires the authenticated orchestrator public key to be in the authorization
+store; `off` restores migration admission. The setting is persisted under the
+worker's host state and survives restarts. The startup flags
+`--deny-unlisted-orchestrators` and `--allow-unlisted-orchestrators` explicitly
+override the persisted setting. Bootstrap an admin and add every expected
+orchestrator before enabling strict admission.
+
+Inspect host-only audit state without entering a guest:
+
+```shell
+yarn test:parallel:server:admin audit-show --work-root /worker/root
+yarn test:parallel:server:admin audit-export --work-root /worker/root --output ./audit.jsonl
+yarn test:parallel:server:admin authorization-list --work-root /worker/root
+```
+
+The Docker boundary checks are explicit operator commands, outside normal test
+discovery. Use a unique disposable work root. The full integration command is
+Linux-only and additionally requires `SCP_DISPOSABLE_DOCKER_HOST=1`:
+
+```shell
+yarn test:parallel:docker:self-check --work-root /tmp/peer3-self-check
+SCP_DISPOSABLE_DOCKER_HOST=1 yarn test:parallel:docker:integration --work-root /tmp/peer3-integration
+yarn test:parallel:docker:benchmark --work-root /tmp/peer3-benchmark
+```
 
 After the smoke run, remove `--test-pattern` to run the whole suite. The worker
 reports ready, busy, and queued states and remains announced for later runs.
@@ -223,7 +345,10 @@ and cleanup. Use repeatable `--forward-env
 orchestrator environment are never forwarded. Stop a server with SIGINT or
 SIGTERM. Canonical task and failure logs remain on the orchestrator under
 `logs/run-N/`, including `error_*.ansi` files and worker infrastructure
-diagnostics.
+diagnostics. If a discovery server, Hardhat node, or isolated worker fails,
+`logs/run-N/infra/` is retained with the process diagnostic and the affected
+worker's streamed output. Successful-run infrastructure logs are removed by
+the normal end-of-run cleanup.
 
 Dial diagnostics include the Noise handshake hash for each stream. Close lines
 state whether this application closed the stream, Hyperswarm reported duplicate

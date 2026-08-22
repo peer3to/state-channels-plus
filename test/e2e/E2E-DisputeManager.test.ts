@@ -51,7 +51,6 @@ describe("E2E: Dispute Manager", function () {
             });
             await h.dispute.resolveDisputeWait({
                 forkId: h.activeForkId!,
-                forkSettleTimeoutMs: 20000,
                 syntheticOnChainParticipants: 1
             });
 
@@ -109,8 +108,7 @@ describe("E2E: Dispute Manager", function () {
             await h.assert.dispute.initiatedAndCommitedWait({
                 peersIndices: disputers,
                 expectedCount: disputers.length,
-                initiatedWithAuditingData: true, // the calldata upload we wanted
-                timeoutMs: 30000
+                initiatedWithAuditingData: true // the calldata upload we wanted
             });
 
             // after commit every honest peer runs a fire-and-forget reduction to
@@ -122,7 +120,6 @@ describe("E2E: Dispute Manager", function () {
             await h.dispute.resolveDisputeWait({
                 forkId: h.activeForkId!,
                 honestPeerIndices: disputers,
-                forkSettleTimeoutMs: 25000,
                 assertMaliciousRemoved: false,
                 syntheticOnChainParticipants: 1
             });
@@ -155,10 +152,7 @@ describe("E2E: Dispute Manager", function () {
                     DisputeFraudProofType.InvalidDisputeReason
             });
 
-            await h.dispute.resolveDisputeWait({
-                forkId,
-                forkSettleTimeoutMs: 15000
-            });
+            await h.dispute.resolveDisputeWait({ forkId });
         });
 
         it("should reject dispute when auditing data is partial and state proof invalid", async function () {
@@ -191,17 +185,14 @@ describe("E2E: Dispute Manager", function () {
             );
 
             await h.event.waitForPeers("onDisputeKilled", [0], 1, {
-                mode: "atLeast",
-                timeoutMs: 25000
+                mode: "atLeast"
             });
             await h.assert.storage.honestPeersStoredDisputeFraudProofDetached({
                 disputeFraudProofType:
-                    DisputeFraudProofType.DisputeInvalidStateProof,
-                timeoutMs: 15000
+                    DisputeFraudProofType.DisputeInvalidStateProof
             });
             await h.dispute.resolveDisputeWait({
                 forkId,
-                forkSettleTimeoutMs: 15000,
                 syntheticOnChainParticipants: 1
             });
         });
@@ -220,10 +211,7 @@ describe("E2E: Dispute Manager", function () {
                 disputeFraudProofType:
                     DisputeFraudProofType.DisputeInvalidStateProof
             });
-            await h.dispute.resolveDisputeWait({
-                forkId,
-                forkSettleTimeoutMs: 20000
-            });
+            await h.dispute.resolveDisputeWait({ forkId });
         });
     });
 
@@ -308,8 +296,7 @@ describe("E2E: Dispute Manager", function () {
             }
             await h.assert.storage.storedDisputeConfirmationsWait({
                 peerIndices: [missedPeerIndex],
-                forkId: disputedForkId,
-                timeoutMs: 10000
+                forkId: disputedForkId
             });
 
             for (const peerIndex of connectedPeerIndices) {
@@ -340,7 +327,7 @@ describe("E2E: Dispute Manager", function () {
                 "onStateSnapshotUpdated",
                 connectedPeerIndices,
                 1,
-                { mode: "atLeast", timeoutMs: 20000 }
+                { mode: "atLeast" }
             );
 
             const hostErrors = await h.quiesceHosts();

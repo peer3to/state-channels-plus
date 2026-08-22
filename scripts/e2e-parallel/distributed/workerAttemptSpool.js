@@ -1,4 +1,3 @@
-const crypto = require("crypto");
 const fs = require("fs");
 const path = require("path");
 
@@ -50,72 +49,52 @@ class WorkerAttemptSpool {
         fs.closeSync(this.fd);
     }
 
-    async send(peer, header, chunkBytes = 64 * 1024) {
+    *readRecords(chunkBytes = 64 * 1024) {
         this.close();
-        let sequence = 0;
-        let outputBytes = 0;
-        const hash = crypto.createHash("sha256");
-        let pending = Buffer.alloc(0);
-        let streamName = null;
-        let remaining = 0;
-        for await (const input of fs.createReadStream(this.filePath, {
-            highWaterMark: chunkBytes
-        })) {
-            pending = pending.length ? Buffer.concat([pending, input]) : input;
-            while (pending.length) {
-                if (remaining === 0) {
-                    if (pending.length < 5) break;
-                    streamName = STREAM_NAMES[pending.readUInt8(0)];
-                    remaining = pending.readUInt32BE(1);
-                    pending = pending.subarray(5);
-                    if (!streamName) throw new Error("Corrupt attempt spool");
+        const fd = fs.openSync(this.filePath, "r");
+        const header = Buffer.allocUnsafe(5);
+        let position = 0;
+        try {
+            while (position < this.bytes) {
+                if (fs.readSync(fd, header, 0, 5, position) !== 5) {
+                    throw new Error("Corrupt attempt spool");
                 }
-                if (!pending.length) break;
-                const length = Math.min(remaining, pending.length, chunkBytes);
-                const chunk = pending.subarray(0, length);
-                pending = pending.subarray(length);
-                remaining -= length;
-                hash.update(chunk);
-                outputBytes += chunk.length;
-                await peer.send(
-                    "LOG_CHUNK",
-                    {
-                        ...header,
-                        stream: streamName,
-                        sequence: sequence++
-                    },
-                    chunk
-                );
+                const stream = STREAM_NAMES[header.readUInt8(0)];
+                const length = header.readUInt32BE(1);
+                position += 5;
+                if (!stream || position + length > this.bytes) {
+                    throw new Error("Corrupt attempt spool");
+                }
+                let remaining = length;
+                while (remaining > 0) {
+                    const body = Buffer.allocUnsafe(
+                        Math.min(remaining, chunkBytes)
+                    );
+                    const read = fs.readSync(
+                        fd,
+                        body,
+                        0,
+                        body.length,
+                        position
+                    );
+                    if (read !== body.length) {
+                        throw new Error("Corrupt attempt spool");
+                    }
+                    position += read;
+                    remaining -= read;
+                    yield { stream, body };
+                }
             }
+        } finally {
+            fs.closeSync(fd);
         }
-        if (pending.length || remaining !== 0)
-            throw new Error("Corrupt attempt spool");
-        await peer.send("LOG_END", {
-            ...header,
-            sequence,
-            byteCount: outputBytes,
-            sha256: hash.digest("hex")
-        });
-        return { byteCount: outputBytes, sequence };
     }
 
     readOutput() {
         this.close();
         const output = { stdout: "", stderr: "" };
-        const contents = fs.readFileSync(this.filePath);
-        let offset = 0;
-        while (offset < contents.length) {
-            if (offset + 5 > contents.length)
-                throw new Error("Corrupt attempt spool");
-            const stream = STREAM_NAMES[contents.readUInt8(offset)];
-            const length = contents.readUInt32BE(offset + 1);
-            offset += 5;
-            if (!stream || offset + length > contents.length)
-                throw new Error("Corrupt attempt spool");
-            output[stream] += contents
-                .subarray(offset, offset + length)
-                .toString();
-            offset += length;
+        for (const record of this.readRecords()) {
+            output[record.stream] += record.body.toString();
         }
         return output;
     }

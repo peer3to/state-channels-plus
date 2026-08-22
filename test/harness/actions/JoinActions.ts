@@ -53,7 +53,8 @@ export class JoinActions<
     }
 
     /** Add a spectator without waiting for sync (lets a test install host-side
-     * stubs before sync starts). Prefer {@link addSpectatorWait}. */
+     * stubs before sync starts). Prefer {@link addSpectatorDetached} when the
+     * channel will keep authoring. */
     async addSpectator(
         options?: AddPeerOptions
     ): Promise<TestPeer<TCustomRpc>> {

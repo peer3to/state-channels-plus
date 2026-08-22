@@ -31,13 +31,11 @@ describe("E2E: dispute validation / inboundHash", function () {
             initiatedWithAuditingData: false
         });
         await h.event.waitForPeers("onDisputeKilled", [0], 1, {
-            mode: "atLeast",
-            timeoutMs: 10000
+            mode: "atLeast"
         });
         await h.assert.storage.honestPeersStoredDisputeFraudProofDetached({
             disputeFraudProofType:
-                DisputeFraudProofType.DisputeInboundHashNotInChain,
-            timeoutMs: 10000
+                DisputeFraudProofType.DisputeInboundHashNotInChain
         });
         await h.dispute.resolveDisputeWait({ forkId });
     });
@@ -60,13 +58,11 @@ describe("E2E: dispute validation / inboundHash", function () {
             initiatedWithAuditingData: false
         });
         await h.event.waitForPeers("onDisputeKilled", [0], 1, {
-            mode: "atLeast",
-            timeoutMs: 10000
+            mode: "atLeast"
         });
         await h.assert.storage.honestPeersStoredDisputeFraudProofDetached({
             disputeFraudProofType:
-                DisputeFraudProofType.DisputeInboundHashNotInChain,
-            timeoutMs: 10000
+                DisputeFraudProofType.DisputeInboundHashNotInChain
         });
         await h.dispute.resolveDisputeWait({ forkId });
     });
@@ -144,13 +140,9 @@ describe("E2E: dispute validation / inboundHash", function () {
         });
         await h.assert.storage.honestPeersStoredDisputeFraudProofDetached({
             disputeFraudProofType:
-                DisputeFraudProofType.DisputeInboundAnchorBehindLatestState,
-            timeoutMs: 10000
+                DisputeFraudProofType.DisputeInboundAnchorBehindLatestState
         });
-        await h.dispute.resolveDisputeWait({
-            forkId,
-            forkSettleTimeoutMs: 15000
-        });
+        await h.dispute.resolveDisputeWait({ forkId });
     });
 
     // the false-slash tripwire for the proof above: an honest peer whose
@@ -205,10 +197,7 @@ describe("E2E: dispute validation / inboundHash", function () {
             peersIndices: [laggingIndex],
             expectedCount: 1
         });
-        await h.dispute.resolveDisputeWait({
-            forkId,
-            forkSettleTimeoutMs: 20000
-        });
+        await h.dispute.resolveDisputeWait({ forkId });
 
         // no auditor found fraud in the honest disputer's anchor
         for (const peer of h.peers) {

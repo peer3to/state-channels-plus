@@ -299,7 +299,8 @@ export class PeerTestHarness<
         this.syncCoordinator = new SyncCoordinator<TCustomRpc>(
             this.logger,
             this.eventCountsBarrier,
-            (peer) => this.control(peer)
+            (peer) => this.control(peer),
+            this.event.protocolEventTimeoutMs({ withFirstBlockGrace: true })
         );
 
         // Resolve node + discovery before any chain work: use what the runner

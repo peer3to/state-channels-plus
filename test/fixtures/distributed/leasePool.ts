@@ -1,3 +1,4 @@
+// @spec-test-coverage-ignore: shared distributed-worker fixture exercised by developer tooling tests
 import { EventEmitter } from "events";
 import fs from "fs";
 import os from "os";
@@ -31,7 +32,22 @@ type LeaseEvent = {
     label: string;
     kind: string;
     header: Record<string, unknown>;
+    body?: Buffer;
 };
+
+type ExecutionProfileRequest = Partial<
+    Record<
+        | "schedulerTickMs"
+        | "workers"
+        | "slots"
+        | "cpu"
+        | "memoryBytes"
+        | "diskBytes"
+        | "pidsLimit"
+        | "targetLoad",
+        number
+    >
+>;
 
 type LeaseConnection = {
     workerId: string;
@@ -40,7 +56,11 @@ type LeaseConnection = {
         close: () => void;
         on: (event: string, listener: (message: LeaseEvent) => void) => void;
         once: (event: string, listener: () => void) => void;
-        send: (kind: string, header?: Record<string, unknown>) => Promise<void>;
+        send: (
+            kind: string,
+            header?: Record<string, unknown>,
+            body?: Buffer
+        ) => Promise<void>;
     };
     connected: boolean;
     heartbeat: NodeJS.Timeout;
@@ -48,6 +68,7 @@ type LeaseConnection = {
 
 type LeaseWorkerServer = {
     name: string;
+    workerId: string;
     manager: {
         active: unknown;
         markRunning: (connection: unknown) => void;
@@ -62,6 +83,10 @@ type LeaseWorkerServer = {
         updateStatus: (connection: unknown, status: string) => void;
     };
     connectionCount: () => number;
+    environmentManager: {
+        environments: Map<string, EventEmitter>;
+    };
+    workRoot: string;
     shutdown: () => Promise<void>;
 };
 
@@ -85,9 +110,11 @@ export class LeaseOrchestrator {
     private constructor(
         pool: LeaseOrchestrator["pool"],
         private readonly sessionId: string,
-        private readonly authKey: Buffer
+        private readonly authKey: Buffer,
+        private readonly executionProfile?: ExecutionProfileRequest
     ) {
         this.pool = pool;
+        this.notifications.on("error", () => {});
     }
 
     static async create(options: {
@@ -95,18 +122,22 @@ export class LeaseOrchestrator {
         poolSecret: string;
         sessionId: string;
         refreshIntervalMs?: number;
+        keyPair?: { publicKey: Buffer; secretKey: Buffer };
+        executionProfile?: ExecutionProfileRequest;
     }): Promise<LeaseOrchestrator> {
         const keys = derivePoolKeys(options.poolSecret);
         const pool = await createPool({
             announceTopics: [keys.orchestratorTopic],
             lookupTopics: [keys.workerTopic],
             dht: options.dht,
-            refreshIntervalMs: options.refreshIntervalMs || 25
+            refreshIntervalMs: options.refreshIntervalMs || 25,
+            keyPair: options.keyPair
         });
         const orchestrator = new LeaseOrchestrator(
             pool,
             options.sessionId,
-            keys.authKey
+            keys.authKey,
+            options.executionProfile
         );
         pool.onConnection((stream: unknown, info: { publicKey?: Buffer }) => {
             orchestrator.connect(stream, info).catch((error: Error) => {
@@ -120,6 +151,10 @@ export class LeaseOrchestrator {
         return this.sequence;
     }
 
+    publicKey(): string {
+        return this.pool.publicKey.toString("hex");
+    }
+
     connectedWorkerCount(): number {
         return [...this.connections.values()].filter(
             (connection) => connection.connected
@@ -128,6 +163,24 @@ export class LeaseOrchestrator {
 
     received(label: string, kind: string, after = 0): boolean {
         return this.events.some(
+            (event) =>
+                event.sequence > after &&
+                event.label === label &&
+                event.kind === kind
+        );
+    }
+
+    count(label: string, kind: string, after = 0): number {
+        return this.events.filter(
+            (event) =>
+                event.sequence > after &&
+                event.label === label &&
+                event.kind === kind
+        ).length;
+    }
+
+    messages(label: string, kind: string, after = 0): LeaseEvent[] {
+        return this.events.filter(
             (event) =>
                 event.sequence > after &&
                 event.label === label &&
@@ -176,12 +229,17 @@ export class LeaseOrchestrator {
         });
     }
 
-    send(label: string, kind: string): Promise<void> {
+    send(
+        label: string,
+        kind: string,
+        header: Record<string, unknown> = {},
+        body?: Buffer
+    ): Promise<void> {
         const connection = [...this.connections.values()].find(
             (entry) => entry.connected && entry.label === label
         );
         if (!connection) throw new Error(`No connection to ${label}`);
-        return connection.peer.send(kind);
+        return connection.peer.send(kind, header, body);
     }
 
     async close(): Promise<void> {
@@ -230,7 +288,8 @@ export class LeaseOrchestrator {
                 workerId,
                 label: connection.label,
                 kind: message.kind,
-                header: message.header
+                header: message.header,
+                body: message.body
             };
             this.events.push(event);
             this.notifications.emit("event", event);
@@ -248,7 +307,10 @@ export class LeaseOrchestrator {
             this.events.push(event);
             this.notifications.emit("event", event);
         });
-        await peer.send("LEASE_REQUEST", { sessionId: this.sessionId });
+        await peer.send("LEASE_REQUEST", {
+            sessionId: this.sessionId,
+            executionProfile: this.executionProfile
+        });
     }
 }
 
@@ -257,6 +319,12 @@ export async function startLeaseWorkerServer(options: {
     name: string;
     poolSecret: string;
     workRoot: string;
+    environmentBackend?: unknown;
+    authorizedPublicKeys?: string[];
+    adminPublicKeys?: string[];
+    allowUnlistedOrchestrators?: boolean;
+    preparationInactivityTimeoutMs?: number;
+    artifactTransferTimeoutMs?: number;
 }): Promise<{
     manager: {
         active: unknown;
@@ -272,6 +340,10 @@ export async function startLeaseWorkerServer(options: {
         updateStatus: (connection: unknown, status: string) => void;
     };
     connectionCount: () => number;
+    environmentManager: {
+        environments: Map<string, EventEmitter>;
+    };
+    workerId: string;
     shutdown: () => Promise<void>;
 }> {
     process.env.SCP_TEST_POOL_SECRET = options.poolSecret;
@@ -281,10 +353,24 @@ export async function startLeaseWorkerServer(options: {
         workRoot: options.workRoot,
         dht: options.dht,
         allowSharedHost: true,
-        heartbeatTimeoutMs: 1000
+        executionBackend: "unsafe-host",
+        environmentBackend: options.environmentBackend,
+        environmentBackendName: options.environmentBackend ? "test" : undefined,
+        authorizedPublicKeys: options.authorizedPublicKeys || [],
+        adminPublicKeys: options.adminPublicKeys || [],
+        allowUnlistedOrchestrators: options.allowUnlistedOrchestrators ?? true,
+        heartbeatTimeoutMs: 1000,
+        preparationInactivityTimeoutMs:
+            options.preparationInactivityTimeoutMs ??
+            DEFAULTS.preparationInactivityTimeoutMs,
+        artifactTransferTimeoutMs:
+            options.artifactTransferTimeoutMs ??
+            DEFAULTS.artifactTransferTimeoutMs
     });
     return {
         manager: server.manager,
+        environmentManager: server.environmentManager,
+        workerId: server.pool.publicKey.toString("hex"),
         shutdown: server.shutdown,
         connectionCount: () => server.pool.swarm.connections.size
     };
@@ -312,14 +398,32 @@ export class LeasePoolHarness {
         );
     }
 
-    async startServer(name: string): Promise<LeaseWorkerServer> {
+    async startServer(
+        name: string,
+        options: {
+            environmentBackend?: unknown;
+            authorizedPublicKeys?: string[];
+            adminPublicKeys?: string[];
+            allowUnlistedOrchestrators?: boolean;
+            preparationInactivityTimeoutMs?: number;
+            artifactTransferTimeoutMs?: number;
+        } = {}
+    ): Promise<LeaseWorkerServer> {
         const server = {
             name,
+            workRoot: path.join(this.root, name),
             ...(await startLeaseWorkerServer({
                 dht: this.network.createNode(),
                 name,
                 poolSecret: this.poolSecret,
-                workRoot: path.join(this.root, name)
+                workRoot: path.join(this.root, name),
+                environmentBackend: options.environmentBackend,
+                authorizedPublicKeys: options.authorizedPublicKeys,
+                adminPublicKeys: options.adminPublicKeys,
+                allowUnlistedOrchestrators: options.allowUnlistedOrchestrators,
+                preparationInactivityTimeoutMs:
+                    options.preparationInactivityTimeoutMs,
+                artifactTransferTimeoutMs: options.artifactTransferTimeoutMs
             }))
         };
         this.servers.push(server);
@@ -332,11 +436,19 @@ export class LeasePoolHarness {
         if (index >= 0) this.servers.splice(index, 1);
     }
 
-    async startOrchestrator(sessionId: string): Promise<LeaseOrchestrator> {
+    async startOrchestrator(
+        sessionId: string,
+        options: {
+            keyPair?: { publicKey: Buffer; secretKey: Buffer };
+            executionProfile?: ExecutionProfileRequest;
+        } = {}
+    ): Promise<LeaseOrchestrator> {
         const orchestrator = await LeaseOrchestrator.create({
             dht: this.network.createNode(),
             poolSecret: this.poolSecret,
-            sessionId
+            sessionId,
+            keyPair: options.keyPair,
+            executionProfile: options.executionProfile
         });
         this.orchestrators.push(orchestrator);
         return orchestrator;

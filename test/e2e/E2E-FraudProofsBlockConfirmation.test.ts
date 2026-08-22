@@ -134,7 +134,7 @@ describe("E2E: Block Fraud Proofs", function () {
                     .control(observer)
                     .query.getBlockByHash(block1!.hash)
                     .request()) !== null,
-            5000
+            h.event.protocolEventTimeoutMs()
         );
 
         // Re-deliver block2 from the chain (as an event re-read would) — it
@@ -155,7 +155,7 @@ describe("E2E: Block Fraud Proofs", function () {
                     .control(observer)
                     .query.getBlockByHash(block2!.hash)
                     .request()) !== null,
-            5000
+            h.event.protocolEventTimeoutMs()
         );
 
         const storedBlock2 = await h
@@ -251,7 +251,7 @@ describe("E2E: Block Fraud Proofs", function () {
                         .query.getBlockByHash(block!.hash)
                         .request()
                 )?.onChainTimestamp === expectedTimestamp,
-            5000
+            h.event.protocolEventTimeoutMs()
         );
         expect(
             Number(
@@ -320,7 +320,7 @@ describe("E2E: Block Fraud Proofs", function () {
                     .control(observer)
                     .query.isBlacklisted(h.getPeer(1).address)
                     .request(),
-            5000
+            h.event.protocolEventTimeoutMs()
         );
         const storedBlock = await h
             .control(observer)
@@ -590,8 +590,7 @@ describe("E2E: Block Fraud Proofs", function () {
             honestPeers.map((peer) =>
                 h.event.waitForBlockConfirmationProcessed({
                     peerIndex: peer.index,
-                    blockHash: invalidBlock.hash,
-                    timeoutMs: 10000
+                    blockHash: invalidBlock.hash
                 })
             )
         );

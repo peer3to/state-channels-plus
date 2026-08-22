@@ -103,10 +103,15 @@ describe("E2E: Participant Lifecycle", function () {
 
             await h.lifecycle.start(2);
 
-            const spectator = await h.join.addSpectatorWait({
-                statusTimeoutMs: 5000,
+            const spectator = await h.join.addSpectatorDetached({
                 statusTimeoutMessage: "Spectator did not reach SYNCED status"
             });
+            await h.transition.advanceState({
+                count: 1,
+                waitForPeers: [0, 1],
+                waitForFinalization: true
+            });
+            await h.event.waitUntilPeerStatus(spectator.index, Status.SYNCED);
             await h.assert.sync.peersInSyncWait({ peerIndices: [0, 1, 2] });
 
             const prepared = await h.join.buildJoinChannelConfirmation({
@@ -161,7 +166,13 @@ describe("E2E: Participant Lifecycle", function () {
         it("preserves a landed pending join when the same confirmation is retried", async function () {
             const h = TestSession.getHarness();
             await h.lifecycle.start(2);
-            const spectator = await h.join.addSpectatorWait();
+            const spectator = await h.join.addSpectatorDetached();
+            await h.transition.advanceState({
+                count: 1,
+                waitForPeers: [0, 1],
+                waitForFinalization: true
+            });
+            await h.event.waitUntilPeerStatus(spectator.index, Status.SYNCED);
             await h.assert.sync.peersInSyncWait();
             const prepared = await h.join.buildJoinChannelConfirmation({
                 joiner: spectator,

@@ -107,7 +107,12 @@ describe("EventBus (worker + main thread)", function () {
                     unsubscribe();
                 }),
             {},
-            { timeoutMs: 30000 }
+            {
+                timeoutMs:
+                    h.event.protocolEventTimeoutMs({
+                        withFirstBlockGrace: true
+                    }) * 2
+            }
         );
 
         await h.transition.increment(1);
@@ -343,7 +348,12 @@ describe("EventBus (worker + main thread)", function () {
                 }
             },
             {},
-            { timeoutMs: 30000 }
+            {
+                timeoutMs:
+                    h.event.protocolEventTimeoutMs({
+                        withFirstBlockGrace: true
+                    }) * 2
+            }
         );
 
         await h.transition.increment(1);
@@ -444,7 +454,12 @@ describe("EventBus (worker + main thread)", function () {
                     );
                 }),
             {},
-            { timeoutMs: 60000 }
+            {
+                timeoutMs:
+                    h.event.protocolEventTimeoutMs({
+                        withFirstBlockGrace: true
+                    }) * 3
+            }
         );
         const mainDelivery = new Promise<number>((resolve) => {
             const unsubscribe = peer.p2pInstance.events.on(
@@ -500,7 +515,12 @@ describe("EventBus (worker + main thread)", function () {
                     });
                 }),
             {},
-            { timeoutMs: 30000 }
+            {
+                timeoutMs:
+                    h.event.protocolEventTimeoutMs({
+                        withFirstBlockGrace: true
+                    }) * 2
+            }
         );
 
         await h.transition.increment(1);
@@ -570,7 +590,12 @@ describe("EventBus (worker + main thread)", function () {
                     resolve({ workerDeliveries, producerError });
                 }),
             { fenceAddress },
-            { timeoutMs: 30000 }
+            {
+                timeoutMs:
+                    h.event.protocolEventTimeoutMs({
+                        withFirstBlockGrace: true
+                    }) * 2
+            }
         );
 
         expect(result.workerDeliveries).to.equal(2);
@@ -714,7 +739,12 @@ describe("EventBus (worker + main thread)", function () {
                     );
                 }),
             { fenceAddress },
-            { timeoutMs: 60000 }
+            {
+                timeoutMs:
+                    h.event.protocolEventTimeoutMs({
+                        withFirstBlockGrace: true
+                    }) * 3
+            }
         );
 
         await h.transition.increment(1);
@@ -767,7 +797,12 @@ describe("EventBus (worker + main thread)", function () {
                     return true;
                 },
                 {},
-                { timeoutMs: 30000 }
+                {
+                    timeoutMs:
+                        standalone.event.protocolEventTimeoutMs({
+                            withFirstBlockGrace: true
+                        }) * 2
+                }
             );
             await peer.p2pInstance.dispose();
             await new Promise((resolve) => setTimeout(resolve, 1500));
@@ -801,7 +836,12 @@ describe("EventBus (worker + main thread)", function () {
                 };
             },
             {},
-            { timeoutMs: 30000 }
+            {
+                timeoutMs:
+                    h.event.protocolEventTimeoutMs({
+                        withFirstBlockGrace: true
+                    }) * 2
+            }
         );
 
         // The root ran while the p2p layer was still alive; teardown followed.
@@ -837,7 +877,12 @@ describe("EventBus (worker + main thread)", function () {
                 };
             },
             {},
-            { timeoutMs: 30000 }
+            {
+                timeoutMs:
+                    h.event.protocolEventTimeoutMs({
+                        withFirstBlockGrace: true
+                    }) * 2
+            }
         );
 
         // The rejection surfaced, and only after the runtime was torn down.

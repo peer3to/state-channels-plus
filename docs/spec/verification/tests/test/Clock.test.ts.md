@@ -20,10 +20,9 @@ replacement with a destroyed provider throws without taking ownership and a late
 recovers, and racing inits with two distinct providers settle on exactly one owner that still
 serves reads. Oracles are `ownsProvider` booleans and live `blockNumber` reads after each
 transition. Out of scope: chain-time estimation accuracy, skew bounds, and deadline semantics
-(`REQ-TIME-*`), which this suite does not measure. No test IDs are assignable: the Clock
-implementation report defines no component test obligations, and each atomized `REQ-TIME-*`
-permutation still needs a chain-time semantics oracle (authority over wall clocks, skew bounds,
-or deadline behavior) that this initialization-lifecycle suite never measures.
+(`REQ-TIME-*`), which this suite does not measure. The four tests map to the initialization and
+handover component permutations. The make-before-break case in which reads continue while a
+replacement synchronization is still pending remains unassigned.
 
 ## Tests and covered test IDs
 
@@ -32,9 +31,9 @@ test ID may be assigned to at most one test across the whole tree; static analys
 duplicate assignments, and tests with no assigned ID are listed in the verification-coverage
 report but are kept here.
 
-| Test declaration                                                                                                                      | Covers |
-| ------------------------------------------------------------------------------------------------------------------------------------- | ------ |
-| [`Clock > initializes idempotently when real-provider calls overlap`](../../../../../test/Clock.test.ts#L14) (line 14)                | —      |
-| [`Clock > re-initializes when a different provider arrives`](../../../../../test/Clock.test.ts#L30) (line 30)                         | —      |
-| [`Clock > recovers with a live provider after a failed replacement`](../../../../../test/Clock.test.ts#L43) (line 43)                 | —      |
-| [`Clock > settles overlapping different-provider initializations on one live owner`](../../../../../test/Clock.test.ts#L64) (line 64) | —      |
+| Test declaration                                                                                                                      | Covers                                                                                                      |
+| ------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------- |
+| [`Clock > initializes idempotently when real-provider calls overlap`](../../../../../test/Clock.test.ts#L14) (line 14)                | [`UNIT-TEST-CLOCK-1-6K546K.P1`](../../../implementation/source/src/Clock.ts.md#unit-test-clock-1-6k546k.p1) |
+| [`Clock > re-initializes when a different provider arrives`](../../../../../test/Clock.test.ts#L30) (line 30)                         | [`UNIT-TEST-CLOCK-1-6K546K.P2`](../../../implementation/source/src/Clock.ts.md#unit-test-clock-1-6k546k.p2) |
+| [`Clock > recovers with a live provider after a failed replacement`](../../../../../test/Clock.test.ts#L43) (line 43)                 | [`UNIT-TEST-CLOCK-1-6K546K.P3`](../../../implementation/source/src/Clock.ts.md#unit-test-clock-1-6k546k.p3) |
+| [`Clock > settles overlapping different-provider initializations on one live owner`](../../../../../test/Clock.test.ts#L64) (line 64) | [`UNIT-TEST-CLOCK-1-6K546K.P5`](../../../implementation/source/src/Clock.ts.md#unit-test-clock-1-6k546k.p5) |

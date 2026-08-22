@@ -843,7 +843,12 @@ describe("Unit: DisputeValidationService", function () {
                 .dispute.probeDisputeInboundHashSources(
                     Codec.encode(dispute, Type.Dispute) as string
                 )
-                .request({ timeoutMs: 30000 });
+                .request({
+                    timeoutMs:
+                        h.event.protocolEventTimeoutMs({
+                            withFirstBlockGrace: true
+                        }) * 2
+                });
             expect(sources).to.deep.equal({ local: false, rpc: true });
 
             const run = await h.dispute.auditDispute(1, dispute, auditingData);
@@ -1380,8 +1385,7 @@ describe("Unit: DisputeValidationService", function () {
                 waitForFinalization: false
             });
             await h.event.waitForPeers("onBlockCalldataPosted", [0, 1, 2], 1, {
-                mode: "atLeast",
-                timeoutMs: 25000
+                mode: "atLeast"
             });
             await h
                 .control(h.getPeer(3))
@@ -1494,8 +1498,7 @@ describe("Unit: DisputeValidationService", function () {
                 waitForFinalization: false
             });
             await h.event.waitForPeers("onBlockCalldataPosted", [0, 1, 2], 1, {
-                mode: "atLeast",
-                timeoutMs: 25000
+                mode: "atLeast"
             });
             await h
                 .control(h.getPeer(3))
@@ -1562,8 +1565,7 @@ describe("Unit: DisputeValidationService", function () {
                 waitForFinalization: false
             });
             await h.event.waitForPeers("onBlockCalldataPosted", [0, 1, 2], 1, {
-                mode: "atLeast",
-                timeoutMs: 25000
+                mode: "atLeast"
             });
             await h
                 .control(h.getPeer(3))
@@ -1659,7 +1661,7 @@ describe("Unit: DisputeValidationService", function () {
             await h
                 .control(h.getPeer(1))
                 .stub.waitForHeldOnChainSlashesQuery()
-                .request({ timeoutMs: 15000 });
+                .request({ timeoutMs: h.event.protocolEventTimeoutMs() });
 
             // real state moves while the audit is parked mid-flight
             await h.transition.advanceState({ count: 2 });

@@ -27,6 +27,16 @@ const DEFAULT_STREAM_CHILD_OUTPUT = false;
 const DEFAULT_SLOTS = 1;
 
 // ---------------------------------------------------------------------------
+// Forge tier
+// ---------------------------------------------------------------------------
+// `forge test` sizes its thread pool from the logical core count, and inside a
+// CPU-limited container that count is still the host's — so an unpinned forge
+// task oversubscribes the host many times over (several tasks per worker, many
+// workers). The runner already parallelizes across tasks, so pin each task to a
+// single thread. `--threads 0` means "use logical cores", so it is never valid.
+const DEFAULT_FORGE_THREADS = 1;
+
+// ---------------------------------------------------------------------------
 // Scheduler (load + memory gated, no cost model)
 // ---------------------------------------------------------------------------
 // One admission attempt per tick; CPU load is a ~1min average so it can only
@@ -53,6 +63,7 @@ module.exports = {
     MAX_SLOTS_FROM_POOL,
     DEFAULT_STREAM_CHILD_OUTPUT,
     DEFAULT_SLOTS,
+    DEFAULT_FORGE_THREADS,
     SCHEDULER_TICK_MS,
     TARGET_LOAD_PER_CORE,
     MEM_LIMIT_FRACTION,

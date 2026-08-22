@@ -88,7 +88,7 @@ describe("Unit: ReductionExecutor", function () {
                         },
                         { forkId }
                     ),
-                25000
+                h.event.protocolEventTimeoutMs()
             );
 
             // drive the executor directly: ReductionManager.tryReduce returns
@@ -108,7 +108,12 @@ describe("Unit: ReductionExecutor", function () {
                     return { threw, forkIdAfter: String(sm.forkId) };
                 },
                 { forkId },
-                { timeoutMs: 40000 }
+                {
+                    timeoutMs:
+                        h.event.protocolEventTimeoutMs({
+                            withFirstBlockGrace: true
+                        }) * 2
+                }
             );
 
             // the regression: this used to throw out of the executor, and
@@ -138,8 +143,7 @@ describe("Unit: ReductionExecutor", function () {
             await held.release();
             await h.assert.sync.forkChangedWait({
                 originalForkId: forkId,
-                honestPeerIndices: [laggingIndex],
-                timeoutMs: 25000
+                honestPeerIndices: [laggingIndex]
             });
         });
 
@@ -200,7 +204,7 @@ describe("Unit: ReductionExecutor", function () {
                         },
                         { forkId }
                     ),
-                20000
+                h.event.protocolEventTimeoutMs()
             );
 
         /** Drive the executor directly - a deferred attempt never settles. */
@@ -222,7 +226,12 @@ describe("Unit: ReductionExecutor", function () {
                     return { threw, forkIdAfter: String(sm.forkId) };
                 },
                 { forkId },
-                { timeoutMs: 40000 }
+                {
+                    timeoutMs:
+                        h.event.protocolEventTimeoutMs({
+                            withFirstBlockGrace: true
+                        }) * 2
+                }
             );
 
         it("unreadable dispute window → the attempt defers instead of aborting", async function () {
@@ -388,7 +397,7 @@ describe("Unit: ReductionExecutor", function () {
                         },
                         { forkId }
                     ),
-                20000
+                h.event.protocolEventTimeoutMs()
             );
 
             const outcome = await h.execOnHost(

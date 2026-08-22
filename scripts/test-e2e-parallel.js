@@ -15,9 +15,18 @@ const {
 
 const {
     getHelpText,
-    parseCliArgs
+    parseCliArgs,
+    resolveDiscoverySelection
 } = require("./e2e-parallel/shared/argParser");
 const { discoverTasks } = require("./e2e-parallel/shared/taskDiscovery");
+const {
+    discoverForgeTasks
+} = require("./e2e-parallel/shared/forgeTaskDiscovery");
+const {
+    countForgeTasks,
+    forgeBuildFailure,
+    requiresChainSlot
+} = require("./e2e-parallel/shared/taskRunners");
 const {
     resolveThreadModes,
     runScheduler
@@ -42,6 +51,47 @@ const { runDistributed } = require("./e2e-parallel/distributed/orchestrator");
 
 // Module-level teardown ref so main().catch can tear down infra on any throw.
 let _teardown = () => {};
+
+/**
+ * Name what actually failed during discovery. A bad `--grep` compiles to a
+ * SyntaxError; anything else came from the tier's own discovery (a broken glob,
+ * an unreadable file, forge thread validation) and must not be reported as a
+ * grep problem.
+ */
+function discoveryFailureMessage(tier, grep, error) {
+    if (grep !== undefined && error instanceof SyntaxError) {
+        return `Invalid --grep RegExp: ${JSON.stringify(grep)}`;
+    }
+    return `${tier} test discovery failed: ${error.message}`;
+}
+
+/**
+ * An empty forge tier is a defect, not an empty selection: if the Solidity glob
+ * or the static contract parser regresses, every forge task vanishes and the run
+ * still goes green. Only an explicit `--grep` may legitimately select no forge
+ * contract. Returns null when the tier is fine, the error message otherwise.
+ */
+function emptyForgeTierMessage(forgeTaskCount, grep) {
+    if (forgeTaskCount > 0 || grep !== undefined) return null;
+    return (
+        "No Foundry test contracts found under test. The forge tier was " +
+        "requested but discovery produced no task — check the Solidity glob " +
+        "and the test-function parser in forgeTaskDiscovery.js, or re-run " +
+        "with --no-forge to skip the forge tier."
+    );
+}
+
+/**
+ * Slots are provisioned whenever the run holds a hardhat task and offered to
+ * every one of them; no task is classified by directory or source. A test uses
+ * the shared node (via PROVIDER_URL) or ignores it and keeps hardhat's
+ * in-process network. A run made only of forge tasks has nothing to offer a
+ * slot to, so it skips the hardhat node and discovery server entirely.
+ */
+function resolveSlotCount(tasks, requestedSlotCount, maxSlots) {
+    if (!tasks.some(requiresChainSlot)) return 0;
+    return Math.min(requestedSlotCount, maxSlots);
+}
 
 // Build the env every test child inherits (log level, thread modes, etc.).
 function buildBaseEnv(threadModes) {
@@ -79,21 +129,39 @@ async function main(options = {}) {
     }
 
     // ---- discover tasks ----
-    let files;
-    let tasks;
+    // Mocha and Foundry tiers are discovered independently and scheduled as one
+    // task list; each task carries the runner that executes it.
+    let files = [];
+    let tasks = [];
+    let forgeTasks = [];
+    const { includeMocha, includeForge } = resolveDiscoverySelection(cli);
     const testDir = path.resolve(cli.e2eOnly ? "test/e2e" : "test");
-    try {
-        ({ files, tasks } = discoverTasks(
-            testDir,
-            cli.grep,
-            undefined,
-            cli.testPattern
-        ));
-    } catch (e) {
-        console.error(`Invalid --grep RegExp: ${cli.grep}`, e);
-        process.exit(1);
+    if (includeMocha) {
+        try {
+            ({ files, tasks } = discoverTasks(
+                testDir,
+                cli.grep,
+                undefined,
+                cli.testPattern
+            ));
+        } catch (e) {
+            console.error(discoveryFailureMessage("Mocha", cli.grep, e), e);
+            process.exit(1);
+        }
     }
-    if (files.length === 0) {
+    if (includeForge) {
+        try {
+            ({ tasks: forgeTasks } = discoverForgeTasks(
+                path.resolve("test"),
+                cli.grep,
+                { threads: cli.forgeThreads }
+            ));
+        } catch (e) {
+            console.error(discoveryFailureMessage("Forge", cli.grep, e), e);
+            process.exit(1);
+        }
+    }
+    if (includeMocha && files.length === 0) {
         console.error(
             cli.e2eOnly
                 ? "No E2E test files found in test/e2e"
@@ -101,22 +169,34 @@ async function main(options = {}) {
         );
         process.exit(1);
     }
+    if (includeForge) {
+        const emptyForgeTier = emptyForgeTierMessage(
+            forgeTasks.length,
+            cli.grep
+        );
+        if (emptyForgeTier) {
+            console.error(emptyForgeTier);
+            process.exit(1);
+        }
+    }
+    tasks = [...tasks, ...forgeTasks];
     if (tasks.length === 0) {
         console.error(
             cli.grep
-                ? `No ${cli.e2eOnly ? "E2E" : "Mocha"} tests matched --grep ${JSON.stringify(cli.grep)}`
+                ? `No ${cli.forgeOnly ? "forge" : cli.e2eOnly ? "E2E" : "Mocha"} tests matched --grep ${JSON.stringify(cli.grep)}`
                 : "No implemented tests found"
         );
         process.exit(1);
     }
 
     // ---- resolve config ----
-    // Slots are provisioned unconditionally and offered to every task; no
-    // task is classified by directory or source. A test uses the shared node
-    // (via PROVIDER_URL) or ignores it and keeps hardhat's in-process network.
     const requestedSlotCount = cli.slots ?? DEFAULT_SLOTS;
-    const slotCount = Math.min(requestedSlotCount, MAX_SLOTS_FROM_POOL);
-    if (requestedSlotCount > slotCount) {
+    const slotCount = resolveSlotCount(
+        tasks,
+        requestedSlotCount,
+        MAX_SLOTS_FROM_POOL
+    );
+    if (slotCount > 0 && requestedSlotCount > slotCount) {
         console.log(
             `slots clamped to ${slotCount} (account pool allows ${MAX_SLOTS_FROM_POOL})`
         );
@@ -134,12 +214,14 @@ async function main(options = {}) {
     if (cli.dryRun) {
         if (cli.distributed) {
             console.log(
-                `Distributed dry run: ${tasks.length} task(s); capacity is configured by test:parallel:server`
+                `Distributed dry run: ${tasks.length} task(s) (${forgeTasks.length} forge); capacity is configured by test:parallel:server`
             );
             return;
         }
         logging.dryRun({
             taskCount: tasks.length,
+            forgeTaskCount: forgeTasks.length,
+            forgeThreads: cli.forgeThreads,
             slotCount,
             threadModes,
             targetLoad,
@@ -154,6 +236,7 @@ async function main(options = {}) {
     if (!cli.distributed) {
         logging.runHeader({
             taskCount: tasks.length,
+            forgeTaskCount: forgeTasks.length,
             grep: cli.grep,
             e2eOnly: cli.e2eOnly,
             slotCount,
@@ -163,6 +246,17 @@ async function main(options = {}) {
             memBoundGb,
             concurrencyCap
         });
+    }
+
+    // Distributed workers build in their prepare script; the local path builds
+    // once here so concurrent forge tasks never race on a cold via_ir build.
+    if (!cli.distributed && countForgeTasks(tasks) > 0) {
+        console.log("Warming the Foundry build before the forge tier...");
+        const buildFailure = forgeBuildFailure();
+        if (buildFailure) {
+            console.error(buildFailure.message);
+            process.exit(1);
+        }
     }
 
     // Default: a fresh run-N dir per run (./logs/run-0, ./logs/run-1, ...)
@@ -238,6 +332,8 @@ async function main(options = {}) {
                         )
                     ),
                     discoveryTimeoutMs: cli.discoveryTimeoutMs,
+                    executionProfile: cli.executionProfile,
+                    keepInfraLogs: cli.keepInfraLogs,
                     signal: distributedCancellation.signal,
                     baseEnv: buildRemoteEnvironment(
                         process.env,
@@ -280,7 +376,11 @@ async function main(options = {}) {
                     memBoundGb: stats.memBoundGb,
                     workers: stats.workers
                 });
-                logging.cleanupNonErrorLogs(logDir, cli.allowLogdirPurge);
+                logging.cleanupNonErrorLogs(
+                    logDir,
+                    cli.allowLogdirPurge,
+                    cli.keepInfraLogs
+                );
                 process.exitCode = stats.failed.length ? 1 : 0;
                 return;
             } finally {
@@ -336,11 +436,19 @@ async function main(options = {}) {
         });
 
         if (stats.failed.length > 0) {
-            logging.cleanupNonErrorLogs(logDir, cli.allowLogdirPurge);
+            logging.cleanupNonErrorLogs(
+                logDir,
+                cli.allowLogdirPurge,
+                cli.keepInfraLogs
+            );
             process.exitCode = 1;
             return;
         }
-        logging.cleanupNonErrorLogs(logDir, cli.allowLogdirPurge);
+        logging.cleanupNonErrorLogs(
+            logDir,
+            cli.allowLogdirPurge,
+            cli.keepInfraLogs
+        );
     } finally {
         teardown();
     }
@@ -354,4 +462,10 @@ if (require.main === module) {
     });
 }
 
-module.exports = { buildBaseEnv, main };
+module.exports = {
+    buildBaseEnv,
+    discoveryFailureMessage,
+    emptyForgeTierMessage,
+    resolveSlotCount,
+    main
+};

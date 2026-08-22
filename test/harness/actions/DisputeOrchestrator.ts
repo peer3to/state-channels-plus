@@ -103,8 +103,14 @@ export class DisputeOrchestrator<
                         : undefined
                 )
                 // audits replay blocks + several staticCalls; the default RPC
-                // budget is sized for quick reads
-                .request({ timeoutMs: 60_000 })
+                // budget is sized for quick reads, so allow three complete
+                // protocol windows for the host-side audit
+                .request({
+                    timeoutMs:
+                        this.harness.event.protocolEventTimeoutMs({
+                            withFirstBlockGrace: true
+                        }) * 3
+                })
         );
     }
 
