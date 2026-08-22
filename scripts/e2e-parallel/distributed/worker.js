@@ -2,17 +2,13 @@
 const fs = require("fs");
 const path = require("path");
 const { WorkerScheduler } = require("../shared/workerScheduler");
-const {
-    AccountPartitionPool,
-    accountPartitionFor
-} = require("../shared/accountPartitionPool");
+const { TaskResourcePool } = require("../shared/taskResources");
 const { WorkerAttemptSpool } = require("./workerAttemptSpool");
 const { fromWireTask } = require("./taskWire");
 const { liveTaskChildren, runTask } = require("../shared/runTask");
 const { ResourceGate } = require("../shared/resourceGate");
 const { HARDHAT_CLI } = require("../shared/constants");
-const { requiresChainSlot } = require("../shared/taskRunners");
-const { buildSlotEnv, holdReason } = require("../shared/scheduling");
+const { holdReason } = require("../shared/scheduling");
 const logging = require("../shared/logging");
 const { reduceAttemptOutput } = require("../shared/taskCoordinator");
 const {
@@ -169,8 +165,10 @@ async function start(config) {
     for (const node of infra.nodes) {
         monitorInfrastructureProcess("hardhat", node);
     }
-    let slotSequence = 0;
-    const accountPartitions = new AccountPartitionPool();
+    const taskResources = new TaskResourcePool({
+        baseEnv: config.baseEnv,
+        slots
+    });
     resources = new ResourceGate({
         testPids: () =>
             [...liveTaskChildren]
@@ -215,15 +213,8 @@ async function start(config) {
         runTask: async (assignment) => {
             const task = fromWireTask(assignment.task, config.projectRoot);
             // Forge brings its own EVM: no warm slot, no funded partition.
-            const needsChain = requiresChainSlot(task);
-            let accountPartition = null;
-            let slot = null;
-            if (needsChain) {
-                accountPartition = accountPartitions.acquire();
-                slot = slots.length
-                    ? slots[slotSequence++ % slots.length]
-                    : null;
-            }
+            const execution = taskResources.acquire(task);
+            const { needsChain, accountPartition, slot } = execution;
             const spoolPath = path.join(
                 config.spoolRoot,
                 `${assignment.attemptId}.spool`
@@ -254,24 +245,14 @@ async function start(config) {
                 result = await runTask(
                     process.execPath,
                     [HARDHAT_CLI, ...task.args],
-                    needsChain
-                        ? {
-                              ...config.baseEnv,
-                              ...buildSlotEnv(
-                                  slot,
-                                  accountPartitionFor(slot, accountPartition)
-                              )
-                          }
-                        : { ...config.baseEnv },
+                    execution.env,
                     task.label,
                     spool,
                     cancellation.signal,
                     { captureOutput: false }
                 );
             } finally {
-                if (accountPartition !== null) {
-                    accountPartitions.release(accountPartition);
-                }
+                execution.release();
             }
             const { stdout: _stdout, stderr: _stderr, ...wireResult } = result;
             const output = spool.readOutput();

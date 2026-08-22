@@ -1,17 +1,13 @@
 const fs = require("fs");
 const path = require("path");
 const { globSync } = require("glob");
-const { DEFAULT_FORGE_THREADS } = require("./constants");
+const { DEFAULT_FORGE_THREADS, FORGE_TEST_TASK } = require("./forgeConfig");
 const { escapeRegex, sanitizeFileName } = require("./taskDiscovery");
 const { TASK_RUNNERS } = require("./taskRunners");
 
 // Foundry test contracts are not confined to `*.t.sol` in this repo, so the
 // glob has to cover every Solidity file under the test tree.
 const DEFAULT_FORGE_TEST_PATTERN = "**/*.sol";
-
-// The Hardhat task that shells out to forge. Keep in sync with the task name
-// registered in tasks/forgeTest.ts.
-const FORGE_TEST_TASK = "forge-test";
 
 // Vendored sources and build output are never our test contracts.
 const IGNORED_FORGE_DIRS = [
@@ -67,6 +63,52 @@ function stripSolidityNoise(source) {
     return out;
 }
 
+/** Drop comments while preserving import string literals. */
+function stripSolidityComments(source) {
+    let out = "";
+    let index = 0;
+    while (index < source.length) {
+        const pair = source.slice(index, index + 2);
+        if (pair === "//") {
+            const end = source.indexOf("\n", index);
+            index = end === -1 ? source.length : end;
+            out += "\n";
+            continue;
+        }
+        if (pair === "/*") {
+            const end = source.indexOf("*/", index + 2);
+            const removed = source.slice(
+                index,
+                end === -1 ? source.length : end + 2
+            );
+            out += removed.replace(/[^\n]/g, " ");
+            index = end === -1 ? source.length : end + 2;
+            continue;
+        }
+        const char = source[index];
+        if (char === '"' || char === "'") {
+            const quote = char;
+            out += char;
+            index++;
+            while (index < source.length) {
+                out += source[index];
+                if (source[index] === "\\") {
+                    index++;
+                    if (index < source.length) out += source[index];
+                } else if (source[index] === quote) {
+                    index++;
+                    break;
+                }
+                index++;
+            }
+            continue;
+        }
+        out += char;
+        index++;
+    }
+    return out;
+}
+
 /** Body of the block that opens at `openIndex`, without the braces. */
 function blockBody(source, openIndex) {
     let depth = 0;
@@ -91,12 +133,13 @@ function parseBaseNames(clause) {
 }
 
 /** Every contract declared in one file, in source order, keyed by name. */
-function parseContractDeclarations(source) {
+function parseContractDeclarations(source, filePath) {
     const declarations = new Map();
     for (const match of source.matchAll(CONTRACT_DECLARATION)) {
         const openIndex = match.index + match[0].length - 1;
         declarations.set(match[2], {
             name: match[2],
+            id: `${filePath}:${match[2]}`,
             isAbstract: Boolean(match[1]),
             bases: parseBaseNames(match[3]),
             declaresTest: TEST_FUNCTION.test(blockBody(source, openIndex))
@@ -105,14 +148,109 @@ function parseContractDeclarations(source) {
     return declarations;
 }
 
+function findProjectRoot(filePath) {
+    let current = path.dirname(path.resolve(filePath));
+    while (true) {
+        if (fs.existsSync(path.join(current, "foundry.toml"))) return current;
+        const parent = path.dirname(current);
+        if (parent === current) return undefined;
+        current = parent;
+    }
+}
+
+function foundryRemappings(projectRoot) {
+    if (!projectRoot) return [];
+    const source = fs.readFileSync(
+        path.join(projectRoot, "foundry.toml"),
+        "utf8"
+    );
+    const remappings = source.match(/remappings\s*=\s*\[([\s\S]*?)\]/)?.[1];
+    if (!remappings) return [];
+    return [...remappings.matchAll(/["']([^"'=]+)=([^"']+)["']/g)].map(
+        ([, prefix, target]) => ({ prefix, target })
+    );
+}
+
+function resolveImportPath(importPath, importingFile, projectRoot, remappings) {
+    if (importPath.startsWith(".")) {
+        return path.resolve(path.dirname(importingFile), importPath);
+    }
+    for (const { prefix, target } of remappings) {
+        if (importPath.startsWith(prefix)) {
+            return path.resolve(
+                projectRoot,
+                target,
+                importPath.slice(prefix.length)
+            );
+        }
+    }
+    return projectRoot ? path.resolve(projectRoot, importPath) : undefined;
+}
+
+function parseImports(source) {
+    const imports = [];
+    const clean = stripSolidityComments(source);
+    const pattern =
+        /\bimport\s+(?:\{([^}]*)\}\s+from\s+)?["']([^"']+)["']\s*;/g;
+    for (const match of clean.matchAll(pattern)) {
+        const names = match[1]
+            ? match[1].split(",").map((entry) => {
+                  const [imported, local] = entry.trim().split(/\s+as\s+/);
+                  return { imported, local: local || imported };
+              })
+            : null;
+        imports.push({ names, source: match[2] });
+    }
+    return imports;
+}
+
+function declarationScope(filePath, cache = new Map(), loading = new Set()) {
+    const absolute = path.resolve(filePath);
+    if (cache.has(absolute)) return cache.get(absolute);
+    if (loading.has(absolute) || !fs.existsSync(absolute)) return new Map();
+    loading.add(absolute);
+
+    const rawSource = fs.readFileSync(absolute, "utf8");
+    const own = parseContractDeclarations(
+        stripSolidityNoise(rawSource),
+        absolute
+    );
+    const scope = new Map(own);
+    const projectRoot = findProjectRoot(absolute);
+    const remappings = foundryRemappings(projectRoot);
+    for (const imported of parseImports(rawSource)) {
+        const importedPath = resolveImportPath(
+            imported.source,
+            absolute,
+            projectRoot,
+            remappings
+        );
+        if (!importedPath || !fs.existsSync(importedPath)) continue;
+        const importedScope = declarationScope(importedPath, cache, loading);
+        if (!imported.names) {
+            for (const [name, declaration] of importedScope) {
+                if (!scope.has(name)) scope.set(name, declaration);
+            }
+            continue;
+        }
+        for (const { imported: importedName, local } of imported.names) {
+            const declaration = importedScope.get(importedName);
+            if (declaration) scope.set(local, declaration);
+        }
+    }
+    loading.delete(absolute);
+    cache.set(absolute, scope);
+    return scope;
+}
+
 /**
- * Whether a contract owns a test function, directly or through a base declared
- * in the same file. Resolution stops at the file boundary — an imported base is
- * invisible here — and `seen` guards against a malformed cyclic `is` clause.
+ * Whether a contract owns a test function, directly or through a visible base.
+ * Imported declarations are part of the scope, and `seen` guards against a
+ * malformed cyclic `is` clause.
  */
 function inheritsTestFunction(declaration, declarations, seen = new Set()) {
-    if (!declaration || seen.has(declaration.name)) return false;
-    seen.add(declaration.name);
+    if (!declaration || seen.has(declaration.id)) return false;
+    seen.add(declaration.id);
     if (declaration.declaresTest) return true;
     return declaration.bases.some((base) =>
         inheritsTestFunction(declarations.get(base), declarations, seen)
@@ -120,8 +258,8 @@ function inheritsTestFunction(declaration, declarations, seen = new Set()) {
 }
 
 /**
- * A contract is a forge test contract iff it declares — or inherits from a base
- * in the same file — at least one test function. Selecting by base class is
+ * A contract is a forge test contract iff it declares or inherits at least one
+ * test function. Selecting by base class is
  * unreliable (bases in this repo are both `Test` and `DiamondHarness`), and
  * harness/helper contracts share files with real test contracts. Abstract
  * contracts are never run by forge, but their test functions still make every
@@ -129,8 +267,9 @@ function inheritsTestFunction(declaration, declarations, seen = new Set()) {
  */
 function extractForgeTestContracts(filePath) {
     const source = stripSolidityNoise(fs.readFileSync(filePath, "utf8"));
-    const declarations = parseContractDeclarations(source);
-    return [...declarations.values()]
+    const ownDeclarations = parseContractDeclarations(source, filePath);
+    const declarations = declarationScope(filePath);
+    return [...ownDeclarations.values()]
         .filter(
             (declaration) =>
                 !declaration.isAbstract &&

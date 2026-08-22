@@ -71,8 +71,8 @@ function discoveryFailureMessage(tier, grep, error) {
  * still goes green. Only an explicit `--grep` may legitimately select no forge
  * contract. Returns null when the tier is fine, the error message otherwise.
  */
-function emptyForgeTierMessage(forgeTaskCount, grep) {
-    if (forgeTaskCount > 0 || grep !== undefined) return null;
+function emptyForgeTierMessage(forgeTaskCount, grep, filtered = false) {
+    if (forgeTaskCount > 0 || grep !== undefined || filtered) return null;
     return (
         "No Foundry test contracts found under test. The forge tier was " +
         "requested but discovery produced no task — check the Solidity glob " +
@@ -91,6 +91,11 @@ function emptyForgeTierMessage(forgeTaskCount, grep) {
 function resolveSlotCount(tasks, requestedSlotCount, maxSlots) {
     if (!tasks.some(requiresChainSlot)) return 0;
     return Math.min(requestedSlotCount, maxSlots);
+}
+
+function resolveDistributedExecutionProfile(profile, slotCount) {
+    if (slotCount !== 0) return profile;
+    return { ...profile, slots: 0 };
 }
 
 // Build the env every test child inherits (log level, thread modes, etc.).
@@ -142,7 +147,7 @@ async function main(options = {}) {
                 testDir,
                 cli.grep,
                 undefined,
-                cli.testPattern
+                cli.mochaTestPattern ?? cli.testPattern
             ));
         } catch (e) {
             console.error(discoveryFailureMessage("Mocha", cli.grep, e), e);
@@ -154,14 +159,21 @@ async function main(options = {}) {
             ({ tasks: forgeTasks } = discoverForgeTasks(
                 path.resolve("test"),
                 cli.grep,
-                { threads: cli.forgeThreads }
+                {
+                    threads: cli.forgeThreads,
+                    testPattern: cli.forgeTestPattern ?? cli.testPattern
+                }
             ));
         } catch (e) {
             console.error(discoveryFailureMessage("Forge", cli.grep, e), e);
             process.exit(1);
         }
     }
-    if (includeMocha && files.length === 0) {
+    const mochaWasFiltered =
+        cli.mochaTestPattern !== undefined || cli.testPattern !== undefined;
+    const forgeWasFiltered =
+        cli.forgeTestPattern !== undefined || cli.testPattern !== undefined;
+    if (includeMocha && files.length === 0 && !mochaWasFiltered) {
         console.error(
             cli.e2eOnly
                 ? "No E2E test files found in test/e2e"
@@ -172,7 +184,8 @@ async function main(options = {}) {
     if (includeForge) {
         const emptyForgeTier = emptyForgeTierMessage(
             forgeTasks.length,
-            cli.grep
+            cli.grep,
+            forgeWasFiltered
         );
         if (emptyForgeTier) {
             console.error(emptyForgeTier);
@@ -213,8 +226,12 @@ async function main(options = {}) {
 
     if (cli.dryRun) {
         if (cli.distributed) {
+            const profile = resolveDistributedExecutionProfile(
+                cli.executionProfile,
+                slotCount
+            );
             console.log(
-                `Distributed dry run: ${tasks.length} task(s) (${forgeTasks.length} forge); capacity is configured by test:parallel:server`
+                `Distributed dry run: ${tasks.length} task(s) (${forgeTasks.length} forge); slots=${profile?.slots ?? "worker default"}; remaining capacity is configured by test:parallel:server`
             );
             return;
         }
@@ -332,7 +349,10 @@ async function main(options = {}) {
                         )
                     ),
                     discoveryTimeoutMs: cli.discoveryTimeoutMs,
-                    executionProfile: cli.executionProfile,
+                    executionProfile: resolveDistributedExecutionProfile(
+                        cli.executionProfile,
+                        slotCount
+                    ),
                     keepInfraLogs: cli.keepInfraLogs,
                     signal: distributedCancellation.signal,
                     baseEnv: buildRemoteEnvironment(
@@ -466,6 +486,7 @@ module.exports = {
     buildBaseEnv,
     discoveryFailureMessage,
     emptyForgeTierMessage,
+    resolveDistributedExecutionProfile,
     resolveSlotCount,
     main
 };

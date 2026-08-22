@@ -53,6 +53,57 @@ async function rssByPid(pids, options = {}) {
     }
 }
 
+async function rssByProcessTree(rootPids, options = {}) {
+    const roots = [...new Set(rootPids.filter(Boolean))];
+    if (!roots.length) return new Map();
+    try {
+        const run = options.execFile || execFileAsync;
+        const result = await run("ps", ["-axo", "pid=,ppid=,rss="]);
+        const output = typeof result === "string" ? result : result.stdout;
+        const processes = output
+            .split("\n")
+            .map((line) => line.trim().split(/\s+/).map(Number))
+            .filter(
+                ([pid, ppid, rss]) =>
+                    Number.isInteger(pid) &&
+                    Number.isInteger(ppid) &&
+                    Number.isFinite(rss)
+            )
+            .map(([pid, ppid, rss]) => ({
+                pid,
+                ppid,
+                rssGb: rss / 1024 / 1024
+            }));
+        const byPid = new Map(
+            processes.map((process) => [process.pid, process])
+        );
+        const rootSet = new Set(roots);
+        const totals = new Map(roots.map((root) => [root, 0]));
+        for (const process of processes) {
+            let current = process.pid;
+            const seen = new Set();
+            while (!rootSet.has(current) && !seen.has(current)) {
+                seen.add(current);
+                const parent = byPid.get(current);
+                if (!parent) break;
+                current = parent.ppid;
+            }
+            if (rootSet.has(current)) {
+                totals.set(current, totals.get(current) + process.rssGb);
+            }
+        }
+        return totals;
+    } catch (error) {
+        if (!warnedAboutPs) {
+            warnedAboutPs = true;
+            (options.warn || console.warn)(
+                `Unable to sample process-tree RSS with ps; using system memory: ${error.message}`
+            );
+        }
+        return null;
+    }
+}
+
 async function rssGbForPids(pids, options = {}) {
     const samples = await rssByPid(pids, options);
     if (!samples) return systemOccupiedGb();
@@ -96,7 +147,7 @@ class ResourceGate {
 
         const testPids = this.testPids();
         const infraPids = this.infraPids();
-        const samples = await rssByPid(
+        const samples = await rssByProcessTree(
             [...testPids, ...infraPids],
             this.sampleOptions
         );
@@ -160,6 +211,7 @@ module.exports = {
     resetResourceGateWarnings,
     ResourceGate,
     rssByPid,
+    rssByProcessTree,
     rssGbForPids,
     systemOccupiedGb
 };

@@ -19,6 +19,7 @@ export class TestIsolatedRuntimeBackend {
     artifactOutput = { stdout: Buffer.alloc(0), stderr: Buffer.alloc(0) };
     artifactChunks: Array<{ name: "stdout" | "stderr"; body: Buffer }> = [];
     completeArtifactTransfer = true;
+    artifactTransferDelayMs = 0;
     preparationDelayMs = 0;
     preparationStatusIntervalMs = 0;
     preparationFailuresRemaining = 0;
@@ -170,17 +171,18 @@ export class TestIsolatedRuntimeBackend {
                     if (!names || requestId === undefined) {
                         throw new Error("Missing test artifact request");
                     }
-                    let sequence = 0;
-                    const chunks = this.artifactChunks.length
-                        ? this.artifactChunks.filter((entry) =>
-                              names.includes(entry.name)
-                          )
-                        : names.map((name) => ({
-                              name,
-                              body: this.artifactOutput[name]
-                          }));
-                    for (const { name, body } of chunks) {
-                        if (body.length) {
+                    const respond = () => {
+                        let sequence = 0;
+                        const chunks = this.artifactChunks.length
+                            ? this.artifactChunks.filter((entry) =>
+                                  names.includes(entry.name)
+                              )
+                            : names.map((name) => ({
+                                  name,
+                                  body: this.artifactOutput[name]
+                              }));
+                        for (const { name, body } of chunks) {
+                            if (!body.length) continue;
                             stdout.write(
                                 encodeEnvironmentFrame(
                                     "ARTIFACT_CHUNK",
@@ -193,15 +195,18 @@ export class TestIsolatedRuntimeBackend {
                                 )
                             );
                         }
-                    }
-                    if (this.completeArtifactTransfer) {
-                        stdout.write(
-                            encodeEnvironmentFrame("ARTIFACT_COMPLETE", {
-                                requestId,
-                                sequence
-                            })
-                        );
-                    }
+                        if (this.completeArtifactTransfer) {
+                            stdout.write(
+                                encodeEnvironmentFrame("ARTIFACT_COMPLETE", {
+                                    requestId,
+                                    sequence
+                                })
+                            );
+                        }
+                    };
+                    if (this.artifactTransferDelayMs) {
+                        setTimeout(respond, this.artifactTransferDelayMs);
+                    } else respond();
                 }
                 if (frame.kind === "STOP") {
                     stdout.write(encodeEnvironmentFrame("STOPPED"));

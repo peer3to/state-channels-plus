@@ -33,8 +33,11 @@ For usage in other projects, install from npm:
 yarn add @peer3/state-channels-plus
 ```
 
-For usage in this repository, install local dependencies and build the SDK:
+For usage in this repository, install Foundry `v1.2.3`, initialize the pinned
+Solidity dependencies, install local dependencies, and build the SDK:
 ```shell
+foundryup --install v1.2.3
+git submodule update --init --recursive
 yarn && yarn build
 ```
 
@@ -97,13 +100,16 @@ and helper contracts sharing a file are left out.
 yarn test:parallel --forge-only     # only the forge tier
 yarn test:parallel --no-forge       # only the Mocha tier
 yarn test:parallel --forge-threads 2
+yarn test:parallel --test-pattern 'V1/**' # filter both tiers
 ```
 
-Each forge task runs on a single thread. `forge test` otherwise sizes its thread
-pool from the logical core count, which inside a CPU-limited container is still
-the host's count, so unpinned tasks oversubscribe the host. The runner already
-parallelizes across tasks. `--e2e-only` selects the Mocha end-to-end tier and
-drops the forge tier with it.
+Each forge task uses one thread by default. `forge test` otherwise sizes its
+thread pool from the logical core count, which inside a CPU-limited container is
+still the host's count, so unpinned tasks oversubscribe the host. The runner
+already parallelizes across tasks. Use `--forge-threads` to override the
+default. `--e2e-only` selects the Mocha end-to-end tier and drops the forge tier
+with it. Use `--mocha-test-pattern` or `--forge-test-pattern` when only one
+tier needs a filename filter.
 
 Forge tasks need no Hardhat node, so they take neither a warm slot nor a funded
 account partition. Local runs build the contracts once before scheduling;

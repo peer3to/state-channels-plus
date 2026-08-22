@@ -1,6 +1,6 @@
 // @spec-test-coverage-ignore: developer test-orchestration tooling; not protocol behavior, no specification or implementation IDs apply
 import { expect } from "chai";
-import { execFileSync } from "child_process";
+import { execFileSync, spawnSync } from "child_process";
 import fs from "fs";
 import os from "os";
 import path from "path";
@@ -24,9 +24,10 @@ const { FORGE_TEST_TASK, extractForgeTestContracts, discoverForgeTasks } =
             options?: { threads?: number; testPattern?: string }
         ) => { files: string[]; tasks: ParallelTask[] };
     };
-const { DEFAULT_FORGE_THREADS } =
-    require("../../scripts/e2e-parallel/shared/constants.js") as {
+const { DEFAULT_FORGE_THREADS, FORGE_BIN } =
+    require("../../scripts/e2e-parallel/shared/forgeConfig.js") as {
         DEFAULT_FORGE_THREADS: number;
+        FORGE_BIN: string;
     };
 const { discoverTasks } =
     require("../../scripts/e2e-parallel/shared/taskDiscovery.js") as {
@@ -58,7 +59,7 @@ const { toWireTask, fromWireTask } =
             task: {
                 label: string;
                 logName: string;
-                runner: string;
+                runner?: string;
                 args: string[];
             },
             projectRoot: string
@@ -71,6 +72,10 @@ const { parseCliArgs, resolveDiscoverySelection } =
             forgeOnly: boolean;
             forgeThreads: number;
             e2eOnly: boolean;
+            testPattern?: string;
+            mochaTestPattern?: string;
+            forgeTestPattern?: string;
+            executionProfile?: { slots?: number };
         };
         resolveDiscoverySelection: (options: {
             forge?: boolean;
@@ -78,27 +83,48 @@ const { parseCliArgs, resolveDiscoverySelection } =
             e2eOnly?: boolean;
         }) => { includeMocha: boolean; includeForge: boolean };
     };
-const { discoveryFailureMessage, emptyForgeTierMessage, resolveSlotCount } =
-    require("../../scripts/test-e2e-parallel.js") as {
-        discoveryFailureMessage: (
-            tier: string,
-            grep: string | undefined,
-            error: Error
-        ) => string;
-        emptyForgeTierMessage: (
-            forgeTaskCount: number,
-            grep?: string
-        ) => string | null;
-        resolveSlotCount: (
-            tasks: { runner?: string }[],
-            requestedSlotCount: number,
-            maxSlots: number
-        ) => number;
-    };
+const {
+    discoveryFailureMessage,
+    emptyForgeTierMessage,
+    resolveDistributedExecutionProfile,
+    resolveSlotCount
+} = require("../../scripts/test-e2e-parallel.js") as {
+    discoveryFailureMessage: (
+        tier: string,
+        grep: string | undefined,
+        error: Error
+    ) => string;
+    emptyForgeTierMessage: (
+        forgeTaskCount: number,
+        grep?: string,
+        filtered?: boolean
+    ) => string | null;
+    resolveDistributedExecutionProfile: (
+        profile: Record<string, number> | undefined,
+        slotCount: number
+    ) => Record<string, number> | undefined;
+    resolveSlotCount: (
+        tasks: { runner?: string }[],
+        requestedSlotCount: number,
+        maxSlots: number
+    ) => number;
+};
 const { reduceAttemptOutput, validateReducedAttempt } =
     require("../../scripts/e2e-parallel/shared/taskCoordinator.js") as {
         reduceAttemptOutput: (stdout: string, stderr: string) => unknown;
         validateReducedAttempt: (reduced: unknown) => unknown;
+    };
+const { runForge } =
+    require("../../scripts/e2e-parallel/shared/forgeRunner.js") as {
+        runForge: (
+            args: string[],
+            cwd: string,
+            options: {
+                env: NodeJS.ProcessEnv;
+                stdio: "ignore";
+                stderr: { write: (message: string) => void };
+            }
+        ) => Promise<number>;
     };
 
 const REPO_TEST_DIR = path.resolve(__dirname, "..");
@@ -159,6 +185,22 @@ contract HelperBase {
 contract PlainHelper is HelperBase {}
 `;
 
+const IMPORTED_TEST_BASE_SOURCE = `// SPDX-License-Identifier: MIT
+pragma solidity 0.8.34;
+
+abstract contract ImportedCases {
+    function test_inheritedAcrossFiles() public {}
+}
+`;
+
+const IMPORTING_TEST_SOURCE = `// SPDX-License-Identifier: MIT
+pragma solidity 0.8.34;
+
+import {ImportedCases} from "./ImportedCases.sol";
+
+contract ImportedCasesTest is ImportedCases {}
+`;
+
 const MODERN_PREFIX_SOURCE = `// SPDX-License-Identifier: MIT
 pragma solidity 0.8.34;
 
@@ -172,31 +214,21 @@ contract InvariantCases {
 `;
 
 const REPO_ROOT = path.resolve(__dirname, "..", "..");
-const FORGE_CACHE_FILE = path.join(
-    REPO_ROOT,
-    "cache_forge",
-    "solidity-files-cache.json"
-);
-
-// `forge test --list` builds whenever artifacts are stale, so the parity check
-// only runs where the build is already warm — a distributed worker (its prepare
-// script runs `forge build`) or a local run that warmed the forge tier.
-function forgeArtifactsAreWarm() {
-    return (
-        fs.existsSync(FORGE_CACHE_FILE) &&
-        fs.existsSync(path.join(REPO_ROOT, "out"))
-    );
-}
-
-/**
- * The forge tasks are Hardhat CLI arguments, so discovery and the Hardhat task
- * have to agree on the task and parameter names across the JS/TS boundary.
- */
-function forgeTaskSource() {
-    return fs.readFileSync(
-        path.join(REPO_ROOT, "tasks", "forgeTest.ts"),
-        "utf8"
-    );
+function warmForgeArtifacts() {
+    const result = spawnSync(FORGE_BIN, ["build"], {
+        cwd: REPO_ROOT,
+        encoding: "utf8"
+    });
+    if (result.error) {
+        throw new Error(
+            `Foundry ${FORGE_BIN} is required for discovery parity: ${result.error.message}`
+        );
+    }
+    if (result.status !== 0) {
+        throw new Error(
+            `Foundry warm build failed before discovery parity (${result.status ?? result.signal}): ${result.stderr}`
+        );
+    }
 }
 
 /** Contract names foundry itself reports, flattened across its per-file map. */
@@ -212,6 +244,46 @@ function forgeListedContracts() {
         Record<string, string[]>
     >;
     return Object.values(byFile).flatMap((contracts) => Object.keys(contracts));
+}
+
+async function runForgeFixture(script?: string) {
+    fs.mkdirSync(path.join(REPO_ROOT, "temp"), { recursive: true });
+    const root = fs.mkdtempSync(
+        path.join(REPO_ROOT, "temp", "forge-task-bin-")
+    );
+    const argsFile = path.join(root, "args.txt");
+    if (script !== undefined) {
+        const executable = path.join(root, "forge");
+        fs.writeFileSync(executable, `#!/bin/sh\n${script}\n`);
+        fs.chmodSync(executable, 0o755);
+    }
+    const errors: string[] = [];
+    const status = await runForge(
+        ["test", "--match-contract", "^SampleTest$", "--threads", "2"],
+        REPO_ROOT,
+        {
+            env: {
+                ...process.env,
+                PATH: root,
+                FORGE_ARGS_FILE: argsFile
+            },
+            stdio: "ignore",
+            stderr: { write: (message: string) => errors.push(message) }
+        }
+    );
+    return { root, argsFile, status, errors };
+}
+
+function runParallelDryEntry(args: string[]) {
+    return spawnSync(
+        process.execPath,
+        [path.join(REPO_ROOT, "scripts", "test-e2e-parallel.js"), ...args],
+        {
+            cwd: REPO_ROOT,
+            encoding: "utf8",
+            env: { ...process.env, PATH: "" }
+        }
+    );
 }
 
 describe("parallel forge task discovery", function () {
@@ -265,6 +337,28 @@ describe("parallel forge task discovery", function () {
             fs.writeFileSync(file, INHERITED_TEST_SOURCE);
             expect(extractForgeTestContracts(file)).to.deep.equal([
                 "InheritingTest"
+            ]);
+        } finally {
+            fs.rmSync(root, { recursive: true, force: true });
+        }
+    });
+
+    it("selects a concrete contract whose tests come from an imported abstract base", function () {
+        const root = fs.mkdtempSync(
+            path.join(os.tmpdir(), "forge-import-inherit-")
+        );
+        try {
+            fs.writeFileSync(
+                path.join(root, "ImportedCases.sol"),
+                IMPORTED_TEST_BASE_SOURCE
+            );
+            fs.writeFileSync(
+                path.join(root, "ImportedCases.t.sol"),
+                IMPORTING_TEST_SOURCE
+            );
+            const { tasks } = discoverForgeTasks(root);
+            expect(tasks.map((task) => task.fullTitle)).to.deep.equal([
+                "ImportedCasesTest"
             ]);
         } finally {
             fs.rmSync(root, { recursive: true, force: true });
@@ -349,14 +443,8 @@ describe("parallel forge task discovery", function () {
     });
 
     it("finds exactly the test contracts foundry itself lists for the repository", function () {
-        if (!forgeArtifactsAreWarm()) this.skip();
-        let listed: string[] = [];
-        try {
-            listed = forgeListedContracts();
-        } catch {
-            // No usable forge binary here; the forge tier cannot run anyway.
-            this.skip();
-        }
+        warmForgeArtifacts();
+        const listed = forgeListedContracts();
         const { tasks } = discoverForgeTasks(REPO_TEST_DIR);
         expect(tasks.map((task) => task.fullTitle).sort()).to.deep.equal(
             listed.sort()
@@ -436,18 +524,6 @@ describe("parallel forge task discovery", function () {
         ).to.equal(true);
     });
 
-    it("uses the hardhat task name that tasks/forgeTest.ts registers", function () {
-        expect(forgeTaskSource()).to.match(
-            new RegExp(`task\\(\\s*"${FORGE_TEST_TASK}"`)
-        );
-    });
-
-    it("declares the forge-test parameters the discovered arguments pass", function () {
-        const source = forgeTaskSource();
-        expect(source).to.match(/addParam\(\s*"matchContract"/);
-        expect(source).to.match(/addOptionalParam\(\s*"threads"/);
-    });
-
     it("pins every forge task to one thread by default", function () {
         expect(DEFAULT_FORGE_THREADS).to.equal(1);
         const { tasks } = discoverForgeTasks(REPO_TEST_DIR);
@@ -471,6 +547,58 @@ describe("parallel forge task discovery", function () {
         expect(() =>
             discoverForgeTasks(REPO_TEST_DIR, undefined, { threads: 0 })
         ).to.throw(/positive integer/);
+    });
+});
+
+describe("forge task runner", function () {
+    it("runs the configured forge binary with the selected contract and threads", async function () {
+        const run = await runForgeFixture(
+            'printf "%s\\n" "$@" > "$FORGE_ARGS_FILE"; exit 0'
+        );
+        try {
+            expect(run.status).to.equal(0);
+            expect(
+                fs.readFileSync(run.argsFile, "utf8").trim().split("\n")
+            ).to.deep.equal([
+                "test",
+                "--match-contract",
+                "^SampleTest$",
+                "--threads",
+                "2"
+            ]);
+        } finally {
+            fs.rmSync(run.root, { recursive: true, force: true });
+        }
+    });
+
+    it("fails when the forge executable is missing", async function () {
+        const run = await runForgeFixture();
+        try {
+            expect(run.status).to.equal(1);
+            expect(run.errors.join("\n")).to.include(
+                "Could not run `forge test"
+            );
+        } finally {
+            fs.rmSync(run.root, { recursive: true, force: true });
+        }
+    });
+
+    it("passes a nonzero forge exit through as a runner failure", async function () {
+        const run = await runForgeFixture("exit 7");
+        try {
+            expect(run.status).to.equal(7);
+        } finally {
+            fs.rmSync(run.root, { recursive: true, force: true });
+        }
+    });
+
+    it("turns a forge signal exit into a runner failure", async function () {
+        const run = await runForgeFixture("kill -TERM $$");
+        try {
+            expect(run.status).to.equal(1);
+        } finally {
+            fs.rmSync(run.root, { recursive: true, force: true });
+        }
     });
 });
 
@@ -553,7 +681,6 @@ describe("parallel task runner wire protocol", function () {
                 {
                     label: "test:logic.test.ts:runs",
                     logName: "logic__runs",
-                    runner: undefined as unknown as string,
                     args: ["test", "--no-compile"]
                 },
                 root
@@ -640,6 +767,152 @@ describe("parallel forge tier selection", function () {
             /positive integer/
         );
     });
+
+    it("rejects partial, decimal, negative, missing, and nonnumeric forge thread values", function () {
+        expect(() => parseCliArgs(argv("--forge-threads", "1.5"))).to.throw(
+            /positive integer/
+        );
+        expect(() => parseCliArgs(argv("--forge-threads=2junk"))).to.throw(
+            /positive integer/
+        );
+        expect(() => parseCliArgs(argv("--forge-threads", "-2"))).to.throw(
+            /positive integer/
+        );
+        expect(() => parseCliArgs(argv("--forge-threads"))).to.throw(
+            /positive integer/
+        );
+        expect(() => parseCliArgs(argv("--forge-threads=nope"))).to.throw(
+            /positive integer/
+        );
+    });
+
+    it("applies the shared test pattern to both tiers", function () {
+        const parsed = parseCliArgs(argv("--test-pattern", "focused/**"));
+        expect(parsed.testPattern).to.equal("focused/**");
+        expect(parsed.mochaTestPattern).to.equal(undefined);
+        expect(parsed.forgeTestPattern).to.equal(undefined);
+    });
+
+    it("parses independent Mocha and forge test patterns", function () {
+        const parsed = parseCliArgs(
+            argv(
+                "--mocha-test-pattern=unit/**",
+                "--forge-test-pattern",
+                "V1/**/*.sol"
+            )
+        );
+        expect(parsed.mochaTestPattern).to.equal("unit/**");
+        expect(parsed.forgeTestPattern).to.equal("V1/**/*.sol");
+    });
+
+    it("uses one shared filename pattern for effective Mocha and forge discovery", function () {
+        const root = fs.mkdtempSync(path.join(os.tmpdir(), "shared-pattern-"));
+        try {
+            fs.writeFileSync(
+                path.join(root, "Chosen.test.ts"),
+                'it("chosen", function () {});'
+            );
+            fs.writeFileSync(
+                path.join(root, "Other.test.ts"),
+                'it("other", function () {});'
+            );
+            fs.writeFileSync(
+                path.join(root, "Chosen.t.sol"),
+                TEST_CONTRACT_SOURCE
+            );
+            fs.writeFileSync(
+                path.join(root, "Other.t.sol"),
+                TEST_CONTRACT_SOURCE.split("SampleTest").join("OtherTest")
+            );
+            const parsed = parseCliArgs(
+                argv("--test-pattern", "Chosen.{test.ts,t.sol}")
+            );
+            const mocha = discoverTasks(
+                root,
+                undefined,
+                undefined,
+                parsed.mochaTestPattern ?? parsed.testPattern
+            );
+            const forge = discoverForgeTasks(root, undefined, {
+                testPattern: parsed.forgeTestPattern ?? parsed.testPattern
+            });
+            expect(mocha.tasks.map((task) => task.fullTitle)).to.deep.equal([
+                "chosen"
+            ]);
+            expect(forge.tasks.map((task) => task.fullTitle)).to.deep.equal([
+                "SampleTest"
+            ]);
+        } finally {
+            fs.rmSync(root, { recursive: true, force: true });
+        }
+    });
+
+    it("keeps tier-specific filename patterns independent", function () {
+        const parsed = parseCliArgs(
+            argv(
+                "--mocha-test-pattern",
+                "unit/**/*.test.ts",
+                "--forge-test-pattern=V1/**/*.sol"
+            )
+        );
+        expect(parsed.mochaTestPattern).to.equal("unit/**/*.test.ts");
+        expect(parsed.forgeTestPattern).to.equal("V1/**/*.sol");
+    });
+
+    it("forces zero distributed slots for a forge-only entry", function () {
+        const parsed = parseCliArgs(argv("--distributed", "--forge-only"));
+        expect(parsed.executionProfile).to.deep.equal({ slots: 0 });
+        expect(
+            resolveDistributedExecutionProfile(parsed.executionProfile, 0)
+        ).to.deep.equal({ slots: 0 });
+    });
+
+    it("leaves distributed slots unset for Mocha-only entries", function () {
+        const noForge = parseCliArgs(argv("--distributed", "--no-forge"));
+        const e2eOnly = parseCliArgs(argv("--distributed", "--e2e-only"));
+        expect(noForge.executionProfile).to.deep.equal({});
+        expect(e2eOnly.executionProfile).to.deep.equal({});
+        expect(resolveDiscoverySelection(noForge).includeForge).to.equal(false);
+        expect(resolveDiscoverySelection(e2eOnly).includeForge).to.equal(false);
+    });
+
+    it("runs the distributed --no-forge entry without invoking Foundry", function () {
+        const result = runParallelDryEntry([
+            "--distributed",
+            "--dry-run",
+            "--no-forge",
+            "--test-pattern",
+            "scripts/e2eParallelForgeTasks.test.ts"
+        ]);
+        expect(result.status, result.stderr).to.equal(0);
+        expect(result.stdout).to.include("0 forge");
+        expect(result.stdout).to.include("slots=worker default");
+    });
+
+    it("runs the distributed --e2e-only entry without invoking Foundry", function () {
+        const result = runParallelDryEntry([
+            "--distributed",
+            "--dry-run",
+            "--e2e-only",
+            "--test-pattern",
+            "E2E-FirstBlockTimestampGrace.test.ts"
+        ]);
+        expect(result.status, result.stderr).to.equal(0);
+        expect(result.stdout).to.include("0 forge");
+    });
+
+    it("runs the distributed --forge-only entry with zero slots", function () {
+        const result = runParallelDryEntry([
+            "--distributed",
+            "--dry-run",
+            "--forge-only",
+            "--forge-test-pattern",
+            "V1/StateChannelDiamondProxy/UtilityFacet.t.sol"
+        ]);
+        expect(result.status, result.stderr).to.equal(0);
+        expect(result.stdout).to.include("1 forge");
+        expect(result.stdout).to.include("slots=0");
+    });
 });
 
 describe("parallel forge tier guards", function () {
@@ -651,6 +924,10 @@ describe("parallel forge tier guards", function () {
 
     it("accepts an empty forge tier when --grep narrows the selection", function () {
         expect(emptyForgeTierMessage(0, "^NothingMatchesThis$")).to.equal(null);
+    });
+
+    it("accepts an empty forge tier when a filename pattern narrows the selection", function () {
+        expect(emptyForgeTierMessage(0, undefined, true)).to.equal(null);
     });
 
     it("accepts a forge tier that discovered test contracts", function () {

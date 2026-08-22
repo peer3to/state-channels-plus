@@ -1,20 +1,31 @@
 // @spec-test-coverage-ignore: developer test-orchestration tooling; not protocol behavior, no specification or implementation IDs apply
 import { expect } from "chai";
+import { fork } from "child_process";
+import fs from "fs";
+import path from "path";
 
 const {
     WorkerScheduler
 } = require("../../scripts/e2e-parallel/shared/workerScheduler.js");
+const {
+    runScheduler
+} = require("../../scripts/e2e-parallel/local/scheduler.js");
 const {
     AccountPartitionPool,
     accountPartitionFor
 } = require("../../scripts/e2e-parallel/shared/accountPartitionPool.js");
 const {
     resetResourceGateWarnings,
-    ResourceGate
+    ResourceGate,
+    rssByPid,
+    rssByProcessTree
 } = require("../../scripts/e2e-parallel/shared/resourceGate.js");
 const {
     buildSlotEnv
 } = require("../../scripts/e2e-parallel/shared/scheduling.js");
+const {
+    TaskResourcePool
+} = require("../../scripts/e2e-parallel/shared/taskResources.js");
 const {
     DEFAULTS: SERVER_DEFAULTS,
     parseServerArgs
@@ -171,6 +182,51 @@ describe("distributed worker scheduler", function () {
         expect(warnings).to.have.length(1);
     });
 
+    it("accounts for a tracked task's memory-owning grandchild", async function () {
+        const child = fork(
+            path.join(__dirname, "fixtures", "resourceTreeChild.js"),
+            [],
+            { stdio: ["ignore", "ignore", "ignore", "ipc"] }
+        );
+        try {
+            const sample = await new Promise<{
+                parentRssKb: number;
+                grandchildPid: number;
+                grandchildRssKb: number;
+            }>((resolve, reject) => {
+                child.once("message", (message) =>
+                    resolve(
+                        message as {
+                            parentRssKb: number;
+                            grandchildPid: number;
+                            grandchildRssKb: number;
+                        }
+                    )
+                );
+                child.once("error", reject);
+            });
+            expect(sample.grandchildRssKb).to.be.greaterThan(64 * 1024);
+            const execFile = async (_command: string, args: string[]) => ({
+                stdout: args.includes("-axo")
+                    ? [
+                          `${child.pid} ${process.pid} ${sample.parentRssKb}`,
+                          `${sample.grandchildPid} ${child.pid} ${sample.grandchildRssKb}`
+                      ].join("\n")
+                    : `${child.pid} ${sample.parentRssKb}\n`
+            });
+            const direct = await rssByPid([child.pid], { execFile });
+            const tree = await rssByProcessTree([child.pid], { execFile });
+            expect(tree.get(child.pid)).to.be.greaterThan(
+                direct.get(child.pid) + 0.03
+            );
+        } finally {
+            child.send("stop");
+            if (child.exitCode === null) {
+                await new Promise((resolve) => child.once("exit", resolve));
+            }
+        }
+    });
+
     it("builds the same complete slot environment for every scheduler", function () {
         expect(
             buildSlotEnv(
@@ -194,6 +250,139 @@ describe("distributed worker scheduler", function () {
             E2E_INTERVAL_MINING: undefined,
             E2E_SLOT_INDEX: "0"
         });
+    });
+
+    it("runs mixed local tasks without giving forge a slot or account partition", async function () {
+        const logDir = path.join(
+            process.cwd(),
+            "logs",
+            `scheduler-test-${process.pid}`
+        );
+        const calls: Array<{
+            label: string;
+            env: Record<string, string | undefined>;
+        }> = [];
+        const tasks = [
+            {
+                label: "forge:first",
+                logName: "forge-first",
+                runner: "forge",
+                args: ["forge-test"]
+            },
+            {
+                label: "hardhat:fails",
+                logName: "hardhat-fails",
+                runner: "hardhat",
+                args: ["test"]
+            },
+            {
+                label: "hardhat:after-failure",
+                logName: "hardhat-after-failure",
+                runner: "hardhat",
+                args: ["test"]
+            }
+        ];
+        const resourceGate = {
+            cpuUtil: 0,
+            occupiedGb: 0,
+            allows: async () => true,
+            stats: () => ({
+                peakCpu: 0,
+                avgCpu: 0,
+                cpuSampleCount: 1,
+                peakOccupiedGb: 0,
+                avgPerTestGb: 0,
+                memorySampleCount: 1,
+                memBoundGb: 10
+            })
+        };
+        try {
+            const result = await runScheduler({
+                tasks,
+                slots: [
+                    { id: 1, nodeUrl: "node-1", discoveryUrl: "d-1" },
+                    { id: 2, nodeUrl: "node-2", discoveryUrl: "d-2" }
+                ],
+                slotCount: 2,
+                concurrencyCap: 1,
+                targetLoad: 1,
+                memBoundGb: 10,
+                baseEnv: { BASE_ONLY: "yes" },
+                logDir,
+                infraPids: () => [],
+                tickMs: 1,
+                accountPartitions: new AccountPartitionPool(1),
+                resourceGate,
+                runTaskImpl: async (
+                    _cmd: string,
+                    _args: string[],
+                    env: Record<string, string | undefined>,
+                    label: string
+                ) => {
+                    calls.push({ label, env });
+                    return {
+                        code: label === "hardhat:fails" ? 1 : 0,
+                        label,
+                        stdout: "",
+                        stderr: "",
+                        durationMs: 1
+                    };
+                }
+            });
+            expect(result.completed).to.equal(3);
+            expect(result.failed).to.have.length(1);
+            expect(calls[0]).to.deep.equal({
+                label: "forge:first",
+                env: { BASE_ONLY: "yes" }
+            });
+            expect(calls[1].env).to.include({
+                BASE_ONLY: "yes",
+                PROVIDER_URL: "node-1",
+                E2E_SLOT_INDEX: "0"
+            });
+            expect(calls[2].env).to.include({
+                BASE_ONLY: "yes",
+                PROVIDER_URL: "node-2",
+                E2E_SLOT_INDEX: "0"
+            });
+        } finally {
+            fs.rmSync(logDir, { recursive: true, force: true });
+        }
+    });
+
+    it("releases distributed task resources after either failure or cancellation", function () {
+        const pool = new TaskResourcePool({
+            baseEnv: { BASE_ONLY: "yes" },
+            slots: [
+                { id: 1, nodeUrl: "node-1", discoveryUrl: "d-1" },
+                { id: 2, nodeUrl: "node-2", discoveryUrl: "d-2" }
+            ],
+            accountPartitions: new AccountPartitionPool(1)
+        });
+        const forge = pool.acquire({ runner: "forge" });
+        expect(forge).to.include({
+            needsChain: false,
+            accountPartition: null,
+            slot: null
+        });
+        expect(forge.env).to.deep.equal({ BASE_ONLY: "yes" });
+        forge.release();
+
+        const failed = pool.acquire({ runner: "hardhat" });
+        expect(failed.slot.id).to.equal(1);
+        expect(failed.accountPartition).to.equal(0);
+        expect(failed.env).to.include({
+            BASE_ONLY: "yes",
+            PROVIDER_URL: "node-1",
+            LOCAL_DISCOVERY_REGISTRY_URL: "d-1",
+            E2E_SLOT_INDEX: "0"
+        });
+        failed.release();
+
+        const cancelled = pool.acquire({ runner: "hardhat" });
+        expect(cancelled.slot.id).to.equal(2);
+        expect(cancelled.accountPartition).to.equal(0);
+        cancelled.release();
     });
 
     it("keeps capacity alive after no work and accepts a nudge", async function () {

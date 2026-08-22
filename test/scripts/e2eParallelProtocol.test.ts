@@ -660,15 +660,48 @@ describe("distributed protocol", function () {
         );
         const archiveRoot = path.join(root, "archive");
         const archivePath = path.join(root, "source.tgz");
+        const guestRoot = path.join(root, "guest");
+        const environmentKey = crypto
+            .createHash("sha256")
+            .update("b".repeat(64))
+            .update("\0")
+            .update("c".repeat(64))
+            .digest("hex");
+        const environmentRoot = path.join(
+            guestRoot,
+            "environments",
+            environmentKey
+        );
+        fs.mkdirSync(path.join(environmentRoot, "workspace"), {
+            recursive: true
+        });
+        fs.writeFileSync(
+            path.join(environmentRoot, "source-manifest.json"),
+            JSON.stringify({ sourceDigest: "d".repeat(64), files: [] })
+        );
+        fs.writeFileSync(
+            path.join(environmentRoot, "prepared.json"),
+            JSON.stringify({
+                sourceDigest: "d".repeat(64),
+                preparationVersion: 2
+            })
+        );
         fs.mkdirSync(path.join(archiveRoot, "project"), { recursive: true });
         const payload = crypto.randomBytes(600 * 1024);
+        const packageJson = Buffer.from(
+            JSON.stringify({ name: "large-source-frame", version: "1.0.0" })
+        );
         fs.writeFileSync(
             path.join(archiveRoot, "project", "payload.bin"),
             payload
         );
+        fs.writeFileSync(
+            path.join(archiveRoot, "project", "package.json"),
+            packageJson
+        );
         await tar.c(
             { cwd: archiveRoot, file: archivePath, gzip: true, portable: true },
-            ["project/payload.bin"]
+            ["project/payload.bin", "project/package.json"]
         );
         const archive = fs.readFileSync(archivePath);
         const deltaManifest = {
@@ -679,8 +712,8 @@ describe("distributed protocol", function () {
                 .createHash("sha256")
                 .update(archive)
                 .digest("hex"),
-            expandedBytes: 600 * 1024,
-            fileCount: 1,
+            expandedBytes: payload.length + packageJson.length,
+            fileCount: 2,
             repositories: [],
             padding: "x".repeat(540 * 1024)
         };
@@ -693,7 +726,7 @@ describe("distributed protocol", function () {
             {
                 env: {
                     ...process.env,
-                    SCP_ISOLATED_ROOT: path.join(root, "guest")
+                    SCP_ISOLATED_ROOT: guestRoot
                 },
                 stdio: ["pipe", "pipe", "pipe"]
             }
@@ -762,8 +795,20 @@ describe("distributed protocol", function () {
                         workspaceId: "c".repeat(64),
                         sourceDigest: "d".repeat(64),
                         rootProjectPath: "project",
-                        runnerEntry: "worker.js",
-                        repositories: [],
+                        runnerEntry:
+                            "project/scripts/e2e-parallel/distributed/worker.js",
+                        repositories: [
+                            {
+                                path: "project",
+                                name: "large-source-frame",
+                                prepareScript: null,
+                                cachedPrepareScript: null,
+                                contractCompileInputs: [],
+                                verifyNativeModules: [],
+                                hasPnpmLock: false,
+                                hasYarnLock: false
+                            }
+                        ],
                         files: [],
                         fileCount: 0,
                         expandedBytes: 0
@@ -797,12 +842,6 @@ describe("distributed protocol", function () {
                 })
             );
             await waitFrame("PREPARED");
-            const environmentKey = crypto
-                .createHash("sha256")
-                .update("b".repeat(64))
-                .update("\0")
-                .update("c".repeat(64))
-                .digest("hex");
             expect(
                 fs.existsSync(
                     path.join(

@@ -10,9 +10,7 @@ const http = require("http");
 const net = require("net");
 const path = require("path");
 
-const HARDHAT_CLI = require.resolve("hardhat/internal/cli/cli.js", {
-    paths: [process.cwd()]
-});
+const HARDHAT_CLI = require.resolve("hardhat/internal/cli/cli.js");
 const PROJECT_ROOT = process.cwd();
 const runtimeRoot = path.join(__dirname, "..", "..");
 const discoveryScriptFrom = (root) =>

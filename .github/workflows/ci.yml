@@ -10,8 +10,8 @@ on:
       - dispute
 
 jobs:
-  test:
-    runs-on: ubuntu-latest
+  host-lock-windows:
+    runs-on: windows-latest
 
     steps:
       - name: Checkout repository
@@ -26,8 +26,31 @@ jobs:
       - name: Install dependencies
         run: yarn
 
+      - name: Run host-lock process tests
+        run: yarn test:parallel --no-forge --slots 0 --test-pattern scripts/e2eParallelWorkerLease.test.ts --grep "host lock|one process recover|releases in one process|pid-file"
+
+  test:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+        with:
+          submodules: recursive
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: 20
+          cache: "yarn"
+
+      - name: Install dependencies
+        run: yarn
+
       - name: Install Foundry
         uses: foundry-rs/foundry-toolchain@v1
+        with:
+          version: v1.2.3
 
       - name: Compile
         run: yarn compile
@@ -78,4 +101,3 @@ jobs:
       - name: Deploy to GitHub Pages
         uses: actions/deploy-pages@v4
         
-

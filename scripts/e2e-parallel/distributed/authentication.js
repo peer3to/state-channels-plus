@@ -4,8 +4,12 @@ const { PROTOCOL_VERSION, waitForMessage } = require("./protocol");
 const DISCOVERY_AUTH_TIMEOUT_MS = 5000;
 
 function isDiscoveryAuthenticationFailure(error) {
-    return /^(Connection closed|Timed out) waiting for AUTH_(HELLO|CHALLENGE|PROOF|OK)$/.test(
-        error?.message || ""
+    const message = error?.message || "";
+    return (
+        message === "Protocol stream is closed" ||
+        /^(Connection closed|Timed out) waiting for AUTH_(HELLO|CHALLENGE|PROOF|OK)$/.test(
+            message
+        )
     );
 }
 

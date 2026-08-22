@@ -7,7 +7,7 @@ function acquireWorkspaceLock(workRoot, environmentKey) {
     const workspace = workspacePaths(workRoot, environmentKey);
     fs.mkdirSync(workspace.root, { recursive: true });
     return acquireOsFileLock(
-        path.join(workspace.root, "workspace.lock"),
+        path.join(workspace.root, "workspace"),
         `Environment ${environmentKey} is already owned by another worker server`
     );
 }

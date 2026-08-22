@@ -334,7 +334,15 @@ async function runAdmin(options, dependencies = {}) {
             if (options.worker) finish(null, outcome);
             else peer.close("distributed admin operation completed");
         } catch (error) {
-            await pool.yieldFailedOutgoingDial(stream, info, error);
+            const retryingReverseDial =
+                !workers.has(workerId) &&
+                (await pool.yieldFailedOutgoingDial(stream, info, error));
+            if (retryingReverseDial) {
+                peer.close(
+                    `distributed admin is waiting for a reverse dial after: ${error.message}`
+                );
+                return;
+            }
             if (options.worker === workerId) finish(error);
             else if (!options.worker && workerId) {
                 outcomes.set(workerId, {

@@ -1,9 +1,7 @@
 /* eslint-disable no-console */
 const DEFAULT_LOG_DIR = "./logs";
 
-const HARDHAT_CLI = require.resolve("hardhat/internal/cli/cli.js", {
-    paths: [process.cwd()]
-});
+const HARDHAT_CLI = require.resolve("hardhat/internal/cli/cli.js");
 
 // 255-byte filename limit (Linux/APFS). markLogAsError prefixes "error_", so
 // reserve room for it plus the ".ansi" extension.
@@ -25,16 +23,6 @@ const DEFAULT_STREAM_CHILD_OUTPUT = false;
 // scheduling and assigned round-robin to tests. --slots overrides; --slots 0
 // means no pool (every test self-provisions its own in-process slot).
 const DEFAULT_SLOTS = 1;
-
-// ---------------------------------------------------------------------------
-// Forge tier
-// ---------------------------------------------------------------------------
-// `forge test` sizes its thread pool from the logical core count, and inside a
-// CPU-limited container that count is still the host's — so an unpinned forge
-// task oversubscribes the host many times over (several tasks per worker, many
-// workers). The runner already parallelizes across tasks, so pin each task to a
-// single thread. `--threads 0` means "use logical cores", so it is never valid.
-const DEFAULT_FORGE_THREADS = 1;
 
 // ---------------------------------------------------------------------------
 // Scheduler (load + memory gated, no cost model)
@@ -63,7 +51,6 @@ module.exports = {
     MAX_SLOTS_FROM_POOL,
     DEFAULT_STREAM_CHILD_OUTPUT,
     DEFAULT_SLOTS,
-    DEFAULT_FORGE_THREADS,
     SCHEDULER_TICK_MS,
     TARGET_LOAD_PER_CORE,
     MEM_LIMIT_FRACTION,

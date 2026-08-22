@@ -325,7 +325,7 @@ async function main(options = {}) {
             connection.environmentKey = null;
             connection.workspaceOffer = null;
             connection.sourceTransfer = null;
-            connection.artifactTransfer = null;
+            connection.artifactTransfers = null;
             connection.prepared = false;
             connection.workerStarted = false;
             connection.workerReady = false;
@@ -1029,14 +1029,13 @@ async function main(options = {}) {
             assignment: message.assignment,
             assembler
         };
-        connection.artifactTransfer = transfer;
+        connection.artifactTransfers ??= new Map();
+        if (connection.artifactTransfers.has(message.requestId)) {
+            throw new Error("Attempt artifact transfer is already active");
+        }
+        connection.artifactTransfers.set(message.requestId, transfer);
         transfer.complete = new Promise((resolve) => {
             transfer.resolve = resolve;
-        });
-        await connection.environment.send("ARTIFACT_REQUEST", {
-            requestId: message.requestId,
-            names: manifest.map((entry) => entry.name),
-            chunkBytes: 64 * 1024
         });
         const artifactBytes = manifest.reduce(
             (total, entry) => total + entry.bytes,
@@ -1064,21 +1063,26 @@ async function main(options = {}) {
             );
         });
         try {
+            await connection.environment.send("ARTIFACT_REQUEST", {
+                requestId: message.requestId,
+                names: manifest.map((entry) => entry.name),
+                chunkBytes: 64 * 1024
+            });
             await Promise.race([transfer.complete, failed, timedOut]);
+            const completed = assembler.complete();
+            await connection.peer.send("LOG_END", {
+                taskId: message.assignment.taskId,
+                attemptId: message.assignment.attemptId,
+                requestId: message.requestId,
+                sequence: completed.sequence,
+                byteCount: completed.byteCount,
+                sha256: completed.sha256
+            });
         } finally {
             clearTimeout(timeout);
             connection.environment.off("failure", onFailure);
+            connection.artifactTransfers.delete(message.requestId);
         }
-        const completed = assembler.complete();
-        await connection.peer.send("LOG_END", {
-            taskId: message.assignment.taskId,
-            attemptId: message.assignment.attemptId,
-            requestId: message.requestId,
-            sequence: completed.sequence,
-            byteCount: completed.byteCount,
-            sha256: completed.sha256
-        });
-        connection.artifactTransfer = null;
     }
 
     async function handleWorkerMessage(
@@ -1228,13 +1232,18 @@ async function main(options = {}) {
                 frame.payload.artifactManifest || []
             );
         } else if (frame.kind === "ARTIFACT_CHUNK") {
-            const transfer = connection.artifactTransfer;
+            const transfer = connection.artifactTransfers?.get(
+                frame.payload.requestId
+            );
             if (
                 !transfer ||
                 transfer.requestId !== frame.payload.requestId ||
                 frame.payload.sequence !== transfer.assembler.sequence
             ) {
-                throw new Error("Out-of-order guest artifact chunk");
+                throw new Error(
+                    `Out-of-order guest artifact chunk for request ${frame.payload.requestId}: ` +
+                        `received ${frame.payload.sequence}, expected ${transfer?.assembler.sequence ?? "no active transfer"}`
+                );
             }
             transfer.assembler.accept(
                 frame.payload.name,
@@ -1253,7 +1262,9 @@ async function main(options = {}) {
                 frame.body
             );
         } else if (frame.kind === "ARTIFACT_COMPLETE") {
-            connection.artifactTransfer?.resolve();
+            connection.artifactTransfers
+                ?.get(frame.payload.requestId)
+                ?.resolve();
         } else if (frame.kind === "RESOURCE_LIMIT_EXCEEDED") {
             await handleResourceLimit(connection, frame.payload);
         } else if (frame.kind === "PREPARATION_FAILED") {

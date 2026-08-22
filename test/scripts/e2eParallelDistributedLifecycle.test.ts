@@ -862,6 +862,105 @@ describe("distributed worker pool lifecycle", function () {
         }
     });
 
+    it("keeps concurrent attempt artifact transfers isolated by request", async function () {
+        const pool = await LeasePoolHarness.create();
+        const backend = new TestIsolatedRuntimeBackend();
+        backend.artifactTransferDelayMs = 10;
+        try {
+            const worker = await pool.startServer("worker-a", {
+                environmentBackend: backend
+            });
+            const orchestrator = await pool.startOrchestrator("artifacts");
+            await orchestrator.waitFor(worker.name, "LEASE_GRANTED");
+            await orchestrator.send(
+                worker.name,
+                "WORKSPACE_OFFER",
+                { manifest: workspaceManifest },
+                Buffer.from(JSON.stringify(sourceFiles))
+            );
+            await orchestrator.waitFor(worker.name, "WORKSPACE_NEED");
+            await orchestrator.send(worker.name, "BUNDLE_META", {
+                manifest: {
+                    ...workspaceManifest,
+                    fileCount: 0,
+                    expandedBytes: 0,
+                    archiveBytes: 0,
+                    archiveSha256: emptySourceSha256
+                }
+            });
+            await orchestrator.send(worker.name, "BUNDLE_END", {
+                byteCount: 0,
+                sha256: emptySourceSha256
+            });
+            await orchestrator.waitFor(worker.name, "PREPARED");
+            await orchestrator.send(worker.name, "RUN_CONFIG", {
+                baseEnv: {},
+                taskCount: 2
+            });
+            await orchestrator.waitFor(worker.name, "WORKER_READY");
+
+            const evidence = Buffer.from("failed attempt\n");
+            backend.artifactOutput = {
+                stdout: evidence,
+                stderr: Buffer.alloc(0)
+            };
+            const manifest = [
+                {
+                    name: "stdout",
+                    bytes: evidence.length,
+                    sha256: crypto
+                        .createHash("sha256")
+                        .update(evidence)
+                        .digest("hex")
+                },
+                {
+                    name: "stderr",
+                    bytes: 0,
+                    sha256: crypto
+                        .createHash("sha256")
+                        .update(Buffer.alloc(0))
+                        .digest("hex")
+                }
+            ];
+            const taskFlow = orchestrator.checkpoint();
+            for (const requestId of [41, 42]) {
+                backend.emitWorkerEvent(
+                    {
+                        kind: "ATTEMPT_READY",
+                        requestId,
+                        assignment: {
+                            taskId: `task-${requestId}`,
+                            attemptId: `attempt-${requestId}`
+                        },
+                        result: { code: 1, reduced: { starveCount: 0 } }
+                    },
+                    manifest
+                );
+            }
+
+            await Promise.all(
+                [41, 42].map((requestId) =>
+                    orchestrator.waitFor(worker.name, "ATTEMPT_RESULT", {
+                        after: taskFlow,
+                        predicate: (event) =>
+                            event.header.requestId === requestId
+                    })
+                )
+            );
+            expect(
+                orchestrator.count(worker.name, "LOG_END", taskFlow)
+            ).to.equal(2);
+            expect(
+                orchestrator.count(worker.name, "ATTEMPT_RESULT", taskFlow)
+            ).to.equal(2);
+
+            await orchestrator.send(worker.name, "RELEASE");
+            await orchestrator.waitFor(worker.name, "LEASE_CLEAN");
+        } finally {
+            await pool.close();
+        }
+    });
+
     it("times out a stalled artifact transfer and grants a later lease", async function () {
         const pool = await LeasePoolHarness.create();
         const backend = new TestIsolatedRuntimeBackend();

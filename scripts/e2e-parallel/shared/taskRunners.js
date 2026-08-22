@@ -1,4 +1,5 @@
 const { spawnSync } = require("child_process");
+const { FORGE_BIN } = require("./forgeConfig");
 
 // Which tier a discovered task belongs to. Every task carries one. This is a
 // scheduling discriminator, not a spawn selector: both tiers are spawned
@@ -7,10 +8,6 @@ const { spawnSync } = require("child_process");
 // checkout while only the project sources are synced, so the Hardhat CLI is the
 // one spawn point the orchestrator can extend.
 const TASK_RUNNERS = { HARDHAT: "hardhat", FORGE: "forge" };
-
-// Resolved from PATH, never an absolute host path: a distributed worker runs
-// the forge binary installed inside its own container.
-const FORGE_BIN = "forge";
 
 const KNOWN_TASK_RUNNERS = new Set(Object.values(TASK_RUNNERS));
 

@@ -1,5 +1,6 @@
 // @spec-test-coverage-ignore: developer test-orchestration tooling; not protocol behavior, no specification or implementation IDs apply
 import { expect } from "chai";
+import { spawnSync } from "child_process";
 import fs from "fs";
 import os from "os";
 import path from "path";
@@ -113,6 +114,8 @@ describe("e2e-parallel argParser - logDir validation", function () {
             "--help",
             "--grep",
             "--test-pattern",
+            "--mocha-test-pattern",
+            "--forge-test-pattern",
             "--e2e-only",
             "--log-dir",
             "--allow-logdir-purge",
@@ -135,6 +138,97 @@ describe("e2e-parallel argParser - logDir validation", function () {
             "--forge-threads"
         ]) {
             expect(help).to.include(option);
+        }
+    });
+
+    it("runs the packed tools with production dependencies only", function () {
+        const repoRoot = path.resolve(__dirname, "..", "..");
+        fs.mkdirSync(path.join(repoRoot, "temp"), { recursive: true });
+        const root = fs.mkdtempSync(
+            path.join(repoRoot, "temp", "packed-runner-")
+        );
+        const archive = path.join(root, "state-channels-plus.tgz");
+        const consumer = path.join(root, "consumer");
+        fs.mkdirSync(consumer);
+        fs.writeFileSync(
+            path.join(consumer, "package.json"),
+            JSON.stringify({
+                private: true,
+                dependencies: {
+                    "@peer3/state-channels-plus": `file:${archive}`
+                }
+            })
+        );
+
+        try {
+            const packed = spawnSync("yarn", ["pack", "--filename", archive], {
+                cwd: repoRoot,
+                encoding: "utf8"
+            });
+            expect(packed.status, packed.stderr || packed.stdout).to.equal(0);
+
+            const installed = spawnSync(
+                "pnpm",
+                [
+                    "install",
+                    "--prod",
+                    "--prefer-offline",
+                    "--ignore-scripts",
+                    "--package-import-method=hardlink"
+                ],
+                {
+                    cwd: consumer,
+                    encoding: "utf8"
+                }
+            );
+            expect(
+                installed.status,
+                `${installed.stdout}\n${installed.stderr}`
+            ).to.equal(0);
+
+            const resolveTool = (name: string) => {
+                const resolved = spawnSync(
+                    process.execPath,
+                    [
+                        "-e",
+                        `process.stdout.write(require.resolve(${JSON.stringify(name)}))`
+                    ],
+                    { cwd: consumer, encoding: "utf8" }
+                );
+                expect(
+                    resolved.status,
+                    resolved.stderr || resolved.stdout
+                ).to.equal(0);
+                return resolved.stdout;
+            };
+
+            const runner = spawnSync(
+                process.execPath,
+                [
+                    resolveTool("@peer3/state-channels-plus/test-parallel"),
+                    "--help"
+                ],
+                { cwd: consumer, encoding: "utf8" }
+            );
+            expect(runner.status, runner.stderr || runner.stdout).to.equal(0);
+            expect(runner.stdout).to.include("Usage:");
+
+            const server = spawnSync(
+                process.execPath,
+                [
+                    resolveTool(
+                        "@peer3/state-channels-plus/test-parallel-server"
+                    ),
+                    "--not-a-real-option"
+                ],
+                { cwd: consumer, encoding: "utf8" }
+            );
+            expect(server.status).to.not.equal(0);
+            expect(`${server.stdout}\n${server.stderr}`).to.not.include(
+                "MODULE_NOT_FOUND"
+            );
+        } finally {
+            fs.rmSync(root, { recursive: true, force: true });
         }
     });
 
@@ -202,9 +296,8 @@ describe("e2e-parallel argParser - logDir validation", function () {
         }
         expect(lines).to.have.length(1);
         expect(lines[0]).to.match(
-            /^Distributed dry run: \d+ task\(s\) \(\d+ forge\); capacity is configured by test:parallel:server$/
+            /^Distributed dry run: \d+ task\(s\) \(\d+ forge\); slots=worker default; remaining capacity is configured by test:parallel:server$/
         );
-        expect(lines[0]).to.not.include("slots=");
     });
 
     it("accepts a consumer test filename pattern", function () {
