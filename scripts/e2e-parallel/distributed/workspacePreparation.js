@@ -44,7 +44,7 @@ function hasContractCompileChanges(repository, cache) {
 }
 
 function selectPrepareScript(repository, cache, repositories = [repository]) {
-    if (cache.preparationChanged) {
+    if (cache.preparationChanged || cache.contractPreparationChanged) {
         return repository.prepareScript;
     }
     const prefix = `${repository.path}/`;

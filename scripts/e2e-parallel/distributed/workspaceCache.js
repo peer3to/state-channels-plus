@@ -55,6 +55,38 @@ function readJson(filePath, fallback) {
     }
 }
 
+function contractPreparationDigest(manifest) {
+    const inputs = (manifest.repositories || []).map((repository) => {
+        const prefix = `${repository.path}/`;
+        const compileInputs = repository.contractCompileInputs || [];
+        const files = manifest.files
+            .filter((entry) =>
+                compileInputs.some((input) => {
+                    const target = `${prefix}${input}`;
+                    return (
+                        entry.path === target ||
+                        (input.endsWith("/") && entry.path.startsWith(target))
+                    );
+                })
+            )
+            .map(({ path: filePath, bytes, sha256, mode }) => ({
+                path: filePath,
+                bytes,
+                sha256,
+                mode
+            }));
+        return {
+            path: repository.path,
+            contractCompileInputs: compileInputs,
+            files
+        };
+    });
+    return crypto
+        .createHash("sha256")
+        .update(JSON.stringify(inputs))
+        .digest("hex");
+}
+
 function diffSourceFiles(previousFiles, nextFiles) {
     const previous = new Map(
         (previousFiles || []).map((entry) => [entry.path, entry])
@@ -112,6 +144,8 @@ async function inspectWorkspace(workRoot, manifest, orchestratorPublicKey) {
         if (digest !== entry.sha256) changed.add(entry.path);
     }
     const prepared = readJson(paths.preparedState, null);
+    const currentContractPreparationDigest =
+        contractPreparationDigest(manifest);
     return {
         ...paths,
         changed: [...changed].sort(),
@@ -121,6 +155,9 @@ async function inspectWorkspace(workRoot, manifest, orchestratorPublicKey) {
             prepared?.preparationVersion === PREPARATION_VERSION,
         preparationChanged:
             prepared?.preparationVersion !== PREPARATION_VERSION,
+        contractPreparationChanged:
+            prepared?.contractPreparationDigest !==
+            currentContractPreparationDigest,
         environmentKey
     };
 }
@@ -387,7 +424,8 @@ function markPrepared(cache, manifest) {
         cache.preparedState,
         JSON.stringify({
             sourceDigest: manifest.sourceDigest,
-            preparationVersion: PREPARATION_VERSION
+            preparationVersion: PREPARATION_VERSION,
+            contractPreparationDigest: contractPreparationDigest(manifest)
         })
     );
 }

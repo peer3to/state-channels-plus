@@ -356,6 +356,90 @@ describe("distributed workspace cache", function () {
         }
     });
 
+    it("tracks contract preparation independently from source-only changes", async function () {
+        const root = fs.mkdtempSync(path.join(os.tmpdir(), "workspace-cache-"));
+        const file = (filePath: string, contents: string) => ({
+            path: filePath,
+            bytes: contents.length,
+            sha256: crypto.createHash("sha256").update(contents).digest("hex"),
+            mode: 420
+        });
+        const contract = file("repo/contracts/Channel.sol", "contract A {}");
+        const source = file("repo/src/index.ts", "export const value = 1;");
+        const manifest = {
+            workspaceId: "5".repeat(64),
+            sourceDigest: "source-five",
+            repositories: [
+                {
+                    path: "repo",
+                    contractCompileInputs: ["contracts/"]
+                }
+            ],
+            files: [contract, source]
+        };
+        try {
+            const cache = await inspectWorkspace(
+                root,
+                manifest,
+                orchestratorPublicKey
+            );
+            fs.mkdirSync(path.join(cache.workspace, "repo/contracts"), {
+                recursive: true
+            });
+            fs.mkdirSync(path.join(cache.workspace, "repo/src"), {
+                recursive: true
+            });
+            fs.writeFileSync(
+                path.join(cache.workspace, contract.path),
+                "contract A {}"
+            );
+            fs.writeFileSync(
+                path.join(cache.workspace, source.path),
+                "export const value = 1;"
+            );
+            commitSourceManifest(cache, manifest);
+            markPrepared(cache, manifest);
+
+            const sourceOnly = await inspectWorkspace(
+                root,
+                {
+                    ...manifest,
+                    sourceDigest: "source-six",
+                    files: [
+                        contract,
+                        file("repo/src/index.ts", "export const value = 2;")
+                    ]
+                },
+                orchestratorPublicKey
+            );
+            expect(sourceOnly.contractPreparationChanged).to.equal(false);
+
+            const changedContract = file(
+                "repo/contracts/Channel.sol",
+                "contract B {}"
+            );
+            const changedManifest = {
+                ...manifest,
+                sourceDigest: "source-seven",
+                files: [changedContract, source]
+            };
+            fs.writeFileSync(
+                path.join(cache.workspace, changedContract.path),
+                "contract B {}"
+            );
+            commitSourceManifest(cache, changedManifest);
+            const contractChanged = await inspectWorkspace(
+                root,
+                changedManifest,
+                orchestratorPublicKey
+            );
+            expect(contractChanged.changed).to.deep.equal([]);
+            expect(contractChanged.contractPreparationChanged).to.equal(true);
+        } finally {
+            fs.rmSync(root, { recursive: true, force: true });
+        }
+    });
+
     it("normalizes a relative worker root before building cached paths", async function () {
         const relativeRoot = path.relative(
             process.cwd(),

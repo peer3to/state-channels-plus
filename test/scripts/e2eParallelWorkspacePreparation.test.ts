@@ -33,6 +33,7 @@ describe("distributed workspace preparation", function () {
             selectPrepareScript(repository, {
                 prepared: false,
                 preparationChanged: false,
+                contractPreparationChanged: false,
                 changed: ["state-channels-plus/src/index.ts"],
                 deleted: []
             })
@@ -64,11 +65,12 @@ describe("distributed workspace preparation", function () {
         ).to.equal("full");
     });
 
-    it("rebuilds contracts when the cached preparation did not complete", function () {
+    it("rebuilds contracts when the cached contract preparation did not complete", function () {
         expect(
             selectPrepareScript(repository, {
                 prepared: false,
-                preparationChanged: true,
+                preparationChanged: false,
+                contractPreparationChanged: true,
                 changed: ["state-channels-plus/src/index.ts"],
                 deleted: []
             })
@@ -235,6 +237,7 @@ describe("distributed workspace preparation", function () {
                 {
                     prepared: false,
                     preparationChanged: false,
+                    contractPreparationChanged: false,
                     changed: ["state-channels-plus/test/utils/nodeInfra.js"],
                     deleted: []
                 }
