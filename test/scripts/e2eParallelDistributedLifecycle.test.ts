@@ -195,6 +195,67 @@ describe("distributed worker pool lifecycle", function () {
         }
     });
 
+    it("cancels active preparation when its orchestrator disconnects", async function () {
+        const pool = await LeasePoolHarness.create();
+        const backend = new TestIsolatedRuntimeBackend();
+        backend.preparationDelayMs = 200;
+        backend.preparationStatusIntervalMs = 10;
+        backend.stopDelayMs = 75;
+        try {
+            const worker = await pool.startServer("worker-a", {
+                environmentBackend: backend
+            });
+            const first = await pool.startOrchestrator("preparing-run");
+            await first.waitFor(worker.name, "LEASE_GRANTED");
+            await first.send(
+                worker.name,
+                "WORKSPACE_OFFER",
+                { manifest: workspaceManifest },
+                Buffer.from(JSON.stringify(sourceFiles))
+            );
+            await first.waitFor(worker.name, "WORKSPACE_NEED");
+            await first.send(worker.name, "BUNDLE_META", {
+                manifest: {
+                    ...workspaceManifest,
+                    fileCount: 0,
+                    expandedBytes: 0,
+                    archiveBytes: 0,
+                    archiveSha256: emptySourceSha256
+                }
+            });
+            await first.send(worker.name, "BUNDLE_END", {
+                byteCount: 0,
+                sha256: emptySourceSha256
+            });
+            await first.waitFor(worker.name, "WORKER_STATUS", {
+                predicate: (event) => event.header.status === "preparing"
+            });
+
+            const second = await pool.startOrchestrator("next-run");
+            await second.waitFor(worker.name, "BUSY");
+            await pool.closeOrchestrator(first);
+            const cleaning = await second.waitFor(worker.name, "BUSY", {
+                predicate: (event) =>
+                    event.header.status === "Cleaning disconnected lease"
+            });
+            await second.waitFor(worker.name, "LEASE_GRANTED", {
+                after: cleaning.sequence
+            });
+            expect(
+                second
+                    .messages(worker.name, "BUSY", cleaning.sequence)
+                    .some((event) => event.header.status === "preparing")
+            ).to.equal(false);
+
+            await second.send(worker.name, "RELEASE");
+            await second.waitFor(worker.name, "LEASE_CLEAN", {
+                after: cleaning.sequence
+            });
+        } finally {
+            await pool.close();
+        }
+    });
+
     it("grants a new orchestrator immediately after the previous run finishes", async function () {
         const pool = await LeasePoolHarness.create();
         try {

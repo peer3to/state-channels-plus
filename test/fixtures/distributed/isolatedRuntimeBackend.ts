@@ -22,6 +22,7 @@ export class TestIsolatedRuntimeBackend {
     artifactTransferDelayMs = 0;
     preparationDelayMs = 0;
     preparationStatusIntervalMs = 0;
+    stopDelayMs = 0;
     preparationFailuresRemaining = 0;
     startFailuresRemaining = 0;
     exitClassification: {
@@ -209,7 +210,10 @@ export class TestIsolatedRuntimeBackend {
                     } else respond();
                 }
                 if (frame.kind === "STOP") {
-                    stdout.write(encodeEnvironmentFrame("STOPPED"));
+                    const stop = () =>
+                        stdout.write(encodeEnvironmentFrame("STOPPED"));
+                    if (this.stopDelayMs) setTimeout(stop, this.stopDelayMs);
+                    else stop();
                 }
             }
         );

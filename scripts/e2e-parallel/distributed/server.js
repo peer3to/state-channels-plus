@@ -352,6 +352,7 @@ async function main(options = {}) {
     ) {
         if (connection.closing) return;
         connection.closing = true;
+        connection.stopRequested = true;
         connections.delete(connection);
         if (connection.authenticated) {
             audit.append({
@@ -366,6 +367,7 @@ async function main(options = {}) {
         }
         clearInterval(connection.heartbeat);
         if (manager.active === connection) {
+            manager.updateStatus(connection, "Cleaning disconnected lease");
             const reusable = await releaseLease(connection);
             console.log(
                 reusable
@@ -517,6 +519,7 @@ async function main(options = {}) {
 
     async function handleMessage(connection, message) {
         try {
+            if (connection.closing) return;
             if (shuttingDown) {
                 await closeConnection(connection);
                 return;
@@ -812,6 +815,7 @@ async function main(options = {}) {
                     sha256: message.header.sha256
                 });
                 await prepared;
+                if (connection.closing) return;
                 connection.sourceTransfer = null;
                 connection.prepared = true;
                 manager.markRunning(connection);
@@ -1220,6 +1224,7 @@ async function main(options = {}) {
     }
 
     async function handleEnvironmentFrame(connection, frame) {
+        if (connection.closing) return;
         if (frame.kind === "STATUS") {
             await reportStatus(connection, frame.payload.status);
         } else if (frame.kind === "WORKER_EVENT") {
