@@ -33,6 +33,7 @@ function acquireOsFileLock(lockPath, contentionMessage, options = {}) {
         mode: options.mode
     });
     rejectSymlink(lockPath);
+    migrateLegacyPidLock(lockPath, contentionMessage);
     let releaseLock;
     try {
         releaseLock = lockfile.lockSync(lockPath, {
@@ -54,6 +55,53 @@ function acquireOsFileLock(lockPath, contentionMessage, options = {}) {
             releaseLock();
         }
     };
+}
+
+function migrateLegacyPidLock(lockPath, contentionMessage) {
+    const legacyPath = `${lockPath}.lock`;
+    let stats;
+    try {
+        stats = fs.lstatSync(legacyPath);
+    } catch (error) {
+        if (error.code === "ENOENT") return;
+        throw error;
+    }
+    if (stats.isDirectory()) return;
+    if (!stats.isFile()) {
+        throw new Error(`Unsupported host lock type: ${legacyPath}`);
+    }
+
+    let ownerPid;
+    try {
+        const contents = fs.readFileSync(legacyPath, "utf8");
+        const parsed = Number.parseInt(contents.trim(), 10);
+        if (Number.isInteger(parsed) && parsed > 0) ownerPid = parsed;
+    } catch (error) {
+        if (error.code === "ENOENT" || error.code === "EISDIR") return;
+        throw error;
+    }
+    if (ownerPid === undefined) {
+        throw new Error(
+            `Legacy host lock requires cleanup after its previous owner stops: ${legacyPath}`
+        );
+    }
+    if (isProcessAlive(ownerPid)) {
+        throw new Error(contentionMessage);
+    }
+    try {
+        fs.unlinkSync(legacyPath);
+    } catch (error) {
+        if (error.code !== "ENOENT" && error.code !== "EISDIR") throw error;
+    }
+}
+
+function isProcessAlive(pid) {
+    try {
+        process.kill(pid, 0);
+        return true;
+    } catch (error) {
+        return error.code === "EPERM";
+    }
 }
 
 function rejectSymlink(lockPath) {

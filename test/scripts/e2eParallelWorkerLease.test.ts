@@ -331,6 +331,53 @@ describe("distributed worker lease", function () {
         }
     });
 
+    it("migrates a stale legacy pid lock into the heartbeat lock", function () {
+        const lockPath = path.join(
+            os.tmpdir(),
+            `peer3-lock-legacy-stale-${process.pid}`
+        );
+        fs.writeFileSync(`${lockPath}.lock`, "2147483647");
+        try {
+            const lock = acquireHostLock({ lockPath });
+            expect(fs.statSync(`${lockPath}.lock`).isDirectory()).to.equal(
+                true
+            );
+            lock.release();
+        } finally {
+            fs.rmSync(`${lockPath}.lock`, { recursive: true, force: true });
+        }
+    });
+
+    it("honors a live owner in the legacy pid lock", function () {
+        const lockPath = path.join(
+            os.tmpdir(),
+            `peer3-lock-legacy-live-${process.pid}`
+        );
+        fs.writeFileSync(`${lockPath}.lock`, String(process.pid));
+        try {
+            expect(() => acquireHostLock({ lockPath })).to.throw(
+                "Another test:parallel:server owns this host"
+            );
+        } finally {
+            fs.rmSync(`${lockPath}.lock`, { force: true });
+        }
+    });
+
+    it("fails closed for an ambiguous legacy file lock", function () {
+        const lockPath = path.join(
+            os.tmpdir(),
+            `peer3-lock-legacy-ambiguous-${process.pid}`
+        );
+        fs.writeFileSync(`${lockPath}.lock`, "");
+        try {
+            expect(() => acquireHostLock({ lockPath })).to.throw(
+                "requires cleanup after its previous owner stops"
+            );
+        } finally {
+            fs.rmSync(`${lockPath}.lock`, { force: true });
+        }
+    });
+
     it("refuses a symbolic lock path", function () {
         const root = fs.mkdtempSync(
             path.join(os.tmpdir(), "host-lock-symlink-test-")
