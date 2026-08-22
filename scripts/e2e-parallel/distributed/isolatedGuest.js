@@ -162,7 +162,11 @@ async function completeSource(payload) {
                     );
                 },
                 selectPrepareScript: (repository) =>
-                    selectPrepareScript(repository, cache),
+                    selectPrepareScript(
+                        repository,
+                        cache,
+                        manifest.repositories
+                    ),
                 onStage(status) {
                     send("STATUS", { status });
                 },

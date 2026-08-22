@@ -638,6 +638,74 @@ describe("parallel task runner classification", function () {
         }
     });
 
+    it("loads copied node infrastructure from the compiled package layout", function () {
+        const root = fs.mkdtempSync(path.join(os.tmpdir(), "node-infra-dist-"));
+        const packageRoot = path.join(root, "state-channels-plus");
+        const callerRoot = path.join(root, "caller");
+        const copiedNodeInfra = path.join(
+            packageRoot,
+            "dist",
+            "test",
+            "utils",
+            "nodeInfra.js"
+        );
+        const copiedProjectModules = path.join(
+            packageRoot,
+            "scripts",
+            "e2e-parallel",
+            "shared",
+            "projectModules.js"
+        );
+        const discoveryScript = path.join(
+            packageRoot,
+            "scripts",
+            "infra",
+            "local-discovery-registry.js"
+        );
+        const hardhatCli = path.join(
+            callerRoot,
+            "node_modules",
+            "hardhat",
+            "internal",
+            "cli",
+            "cli.js"
+        );
+        const previousCwd = process.cwd();
+        try {
+            for (const filePath of [
+                copiedNodeInfra,
+                copiedProjectModules,
+                discoveryScript,
+                hardhatCli
+            ]) {
+                fs.mkdirSync(path.dirname(filePath), { recursive: true });
+            }
+            fs.copyFileSync(
+                path.join(REPO_ROOT, "test", "utils", "nodeInfra.js"),
+                copiedNodeInfra
+            );
+            fs.copyFileSync(
+                path.join(
+                    REPO_ROOT,
+                    "scripts",
+                    "e2e-parallel",
+                    "shared",
+                    "projectModules.js"
+                ),
+                copiedProjectModules
+            );
+            fs.writeFileSync(discoveryScript, "");
+            fs.writeFileSync(hardhatCli, "");
+            process.chdir(callerRoot);
+
+            expect(() => require(copiedNodeInfra)).not.to.throw();
+        } finally {
+            process.chdir(previousCwd);
+            delete require.cache[copiedNodeInfra];
+            fs.rmSync(root, { recursive: true, force: true });
+        }
+    });
+
     it("treats a task without a runner as a hardhat task", function () {
         expect(requiresChainSlot({})).to.equal(true);
     });

@@ -9,18 +9,24 @@ const fs = require("fs");
 const http = require("http");
 const net = require("net");
 const path = require("path");
-const {
-    resolveProjectHardhatCli
-} = require("../../scripts/e2e-parallel/shared/projectModules");
 
 const PROJECT_ROOT = process.cwd();
-const HARDHAT_CLI = resolveProjectHardhatCli(PROJECT_ROOT);
 const runtimeRoot = path.join(__dirname, "..", "..");
 const discoveryScriptFrom = (root) =>
     path.join(root, "scripts", "infra", "local-discovery-registry.js");
 const PACKAGE_ROOT = fs.existsSync(discoveryScriptFrom(runtimeRoot))
     ? runtimeRoot
     : path.join(runtimeRoot, "..");
+const { resolveProjectHardhatCli } = require(
+    path.join(
+        PACKAGE_ROOT,
+        "scripts",
+        "e2e-parallel",
+        "shared",
+        "projectModules"
+    )
+);
+const HARDHAT_CLI = resolveProjectHardhatCli(PROJECT_ROOT);
 const DISCOVERY_SCRIPT = path.join(
     PACKAGE_ROOT,
     "scripts",

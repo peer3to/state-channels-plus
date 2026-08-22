@@ -31,7 +31,7 @@ describe("distributed workspace preparation", function () {
     it("reuses compiled contracts for non-contract source changes", function () {
         expect(
             selectPrepareScript(repository, {
-                prepared: true,
+                prepared: false,
                 preparationChanged: false,
                 changed: ["state-channels-plus/src/index.ts"],
                 deleted: []
@@ -68,7 +68,7 @@ describe("distributed workspace preparation", function () {
         expect(
             selectPrepareScript(repository, {
                 prepared: false,
-                preparationChanged: false,
+                preparationChanged: true,
                 changed: ["state-channels-plus/src/index.ts"],
                 deleted: []
             })
@@ -177,6 +177,93 @@ describe("distributed workspace preparation", function () {
         } finally {
             fs.rmSync(root, { recursive: true, force: true });
         }
+    });
+
+    it("does not build a linked repository with no source changes", async function () {
+        const root = fs.mkdtempSync(
+            path.join(os.tmpdir(), "workspace-unchanged-")
+        );
+        const workspace = path.join(root, "workspace");
+        const calls: Array<{ command: string; args: string[] }> = [];
+        try {
+            fs.mkdirSync(path.join(workspace, "poker-contracts"), {
+                recursive: true
+            });
+            await prepareWorkspace(
+                workspace,
+                {
+                    repositories: [
+                        {
+                            path: "poker-contracts",
+                            name: "poker-contracts",
+                            prepareScript: "compile",
+                            hasPnpmLock: true,
+                            hasYarnLock: false,
+                            verifyNativeModules: []
+                        }
+                    ]
+                },
+                {
+                    storeDir: path.join(root, "store"),
+                    commandRunner: {
+                        async run(command: string, args: string[]) {
+                            calls.push({ command, args });
+                        }
+                    },
+                    shouldInstall: () => false,
+                    selectPrepareScript: () => null,
+                    env: {},
+                    onOutput() {}
+                }
+            );
+
+            expect(calls).to.deep.equal([]);
+        } finally {
+            fs.rmSync(root, { recursive: true, force: true });
+        }
+    });
+
+    it("skips an unchanged linked repository after another repository changes", function () {
+        expect(
+            selectPrepareScript(
+                {
+                    path: "poker-contracts",
+                    prepareScript: "compile",
+                    cachedPrepareScript: null,
+                    contractCompileInputs: []
+                },
+                {
+                    prepared: false,
+                    preparationChanged: false,
+                    changed: ["state-channels-plus/test/utils/nodeInfra.js"],
+                    deleted: []
+                }
+            )
+        ).to.equal(null);
+    });
+
+    it("rebuilds a consumer when linked contract inputs change", function () {
+        const linked = repository;
+        const consumer = {
+            path: "poker-contracts",
+            prepareScript: "compile",
+            cachedPrepareScript: null,
+            contractCompileInputs: []
+        };
+        expect(
+            selectPrepareScript(
+                consumer,
+                {
+                    prepared: false,
+                    preparationChanged: false,
+                    changed: [
+                        "state-channels-plus/contracts/V1/AStateMachine.sol"
+                    ],
+                    deleted: []
+                },
+                [linked, consumer]
+            )
+        ).to.equal("compile");
     });
 
     it("installs and prepares linked repositories in dependency order", async function () {
