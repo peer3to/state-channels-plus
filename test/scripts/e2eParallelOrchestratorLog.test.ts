@@ -463,6 +463,33 @@ describe("distributed orchestrator logs", function () {
         }
     });
 
+    it("keeps successful hardhat output without marking infrastructure failed", function () {
+        const root = fs.mkdtempSync(
+            path.join(os.tmpdir(), "orchestrator-successful-process-log-")
+        );
+        try {
+            const store = new OrchestratorLogStore(root);
+            const hardhatPath = store.writeInfrastructureProcessSnapshot(
+                "worker-id",
+                "worker-one",
+                "hardhat",
+                0,
+                "run completed with --keep-infra-logs",
+                "",
+                Buffer.from("[mental-poker-precompile] success\n")
+            );
+
+            expect(fs.readFileSync(hardhatPath, "utf8")).to.include(
+                "[mental-poker-precompile] success"
+            );
+            expect(
+                fs.existsSync(path.join(root, "infra", ".failure"))
+            ).to.equal(false);
+        } finally {
+            fs.rmSync(root, { recursive: true, force: true });
+        }
+    });
+
     it("writes isolated worker exits as persistent runtime diagnostics", function () {
         const root = fs.mkdtempSync(
             path.join(os.tmpdir(), "orchestrator-runtime-log-")

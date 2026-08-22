@@ -239,6 +239,7 @@ async function main(options = {}) {
                     ),
                     discoveryTimeoutMs: cli.discoveryTimeoutMs,
                     executionProfile: cli.executionProfile,
+                    keepInfraLogs: cli.keepInfraLogs,
                     signal: distributedCancellation.signal,
                     baseEnv: buildRemoteEnvironment(
                         process.env,
@@ -281,7 +282,11 @@ async function main(options = {}) {
                     memBoundGb: stats.memBoundGb,
                     workers: stats.workers
                 });
-                logging.cleanupNonErrorLogs(logDir, cli.allowLogdirPurge);
+                logging.cleanupNonErrorLogs(
+                    logDir,
+                    cli.allowLogdirPurge,
+                    cli.keepInfraLogs
+                );
                 process.exitCode = stats.failed.length ? 1 : 0;
                 return;
             } finally {
@@ -337,11 +342,19 @@ async function main(options = {}) {
         });
 
         if (stats.failed.length > 0) {
-            logging.cleanupNonErrorLogs(logDir, cli.allowLogdirPurge);
+            logging.cleanupNonErrorLogs(
+                logDir,
+                cli.allowLogdirPurge,
+                cli.keepInfraLogs
+            );
             process.exitCode = 1;
             return;
         }
-        logging.cleanupNonErrorLogs(logDir, cli.allowLogdirPurge);
+        logging.cleanupNonErrorLogs(
+            logDir,
+            cli.allowLogdirPurge,
+            cli.keepInfraLogs
+        );
     } finally {
         teardown();
     }

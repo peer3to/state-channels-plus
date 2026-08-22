@@ -230,7 +230,7 @@ function safeEmptyDir(dirPath, allowLogdirPurge) {
     }
 }
 
-function cleanupNonErrorLogs(logDir, allowLogdirPurge) {
+function cleanupNonErrorLogs(logDir, allowLogdirPurge, keepInfraLogs = false) {
     const resolved = path.resolve(logDir);
 
     if (isDangerousPurgeTarget(resolved)) {
@@ -252,7 +252,10 @@ function cleanupNonErrorLogs(logDir, allowLogdirPurge) {
     for (const entry of fs.readdirSync(resolved)) {
         if (entry.startsWith("error_")) continue;
         const target = path.join(resolved, entry);
-        if (entry === "infra" && fs.existsSync(path.join(target, ".failure"))) {
+        if (
+            entry === "infra" &&
+            (keepInfraLogs || fs.existsSync(path.join(target, ".failure")))
+        ) {
             continue;
         }
         fs.rmSync(target, { recursive: true, force: true });

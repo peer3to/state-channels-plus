@@ -15,6 +15,7 @@ Options:
                                   Use and clear this exact log directory
   -p, --allow-logdir-purge, --allowLogdirPurge, --purge
                                   Allow clearing an explicit dir outside logs/
+      --keep-infra-logs          Keep infrastructure logs after the run
       --slots <count>            Local warm E2E infrastructure slots (0 disables)
   -w, --workers <count>          Concurrent tests per local or remote worker
       --target-load <number>     Local maximum average load per CPU core
@@ -55,6 +56,7 @@ function parseCliArgs(argv) {
         // otherwise each run gets a fresh DEFAULT_LOG_DIR/run-N.
         logDirProvided: false,
         allowLogdirPurge: false,
+        keepInfraLogs: false,
         grep: undefined,
         testPattern: undefined,
         help: false,
@@ -171,6 +173,11 @@ function parseCliArgs(argv) {
             arg === "-p"
         ) {
             options.allowLogdirPurge = true;
+            continue;
+        }
+
+        if (arg === "--keep-infra-logs") {
+            options.keepInfraLogs = true;
             continue;
         }
 

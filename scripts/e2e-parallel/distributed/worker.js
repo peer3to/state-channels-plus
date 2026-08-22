@@ -49,9 +49,10 @@ function sendToServer(message) {
     });
 }
 
-async function reportInfrastructureProcessFailure(
+async function reportInfrastructureProcessLog(
     processKind,
     processHandle,
+    trigger,
     processFailure
 ) {
     let log = "";
@@ -66,10 +67,31 @@ async function reportInfrastructureProcessFailure(
         uploadId: `${process.pid}-${infrastructureUploadId++}`,
         processKind,
         slotId: processHandle.slotId,
-        trigger: `${processKind} process exited`,
+        trigger,
         processFailure,
         log
     });
+}
+
+async function reportInfrastructureLogs() {
+    await Promise.all([
+        ...infra.nodes.map((node) =>
+            reportInfrastructureProcessLog(
+                "hardhat",
+                node,
+                "run completed with --keep-infra-logs",
+                ""
+            )
+        ),
+        ...infra.discoveries.map((discovery) =>
+            reportInfrastructureProcessLog(
+                "discovery",
+                discovery,
+                "run completed with --keep-infra-logs",
+                ""
+            )
+        )
+    ]);
 }
 
 function monitorInfrastructureProcess(processKind, processHandle) {
@@ -81,9 +103,10 @@ function monitorInfrastructureProcess(processKind, processHandle) {
         cancellation.abort();
         await processHandle.logClosed;
         try {
-            await reportInfrastructureProcessFailure(
+            await reportInfrastructureProcessLog(
                 processKind,
                 processHandle,
+                `${processKind} process exited`,
                 reason
             );
         } catch (error) {
@@ -262,12 +285,16 @@ async function start(config) {
 async function stop(exitCode = 0, reportStats = false) {
     scheduler?.stop();
     cancellation.abort();
-    rejectPending(new Error("Distributed worker stopped"));
     if (reportStats && process.connected) {
+        if (configuration?.keepInfraLogs) {
+            await reportInfrastructureLogs();
+        }
+        rejectPending(new Error("Distributed worker stopped"));
         completionExitCode = exitCode;
         process.send({ kind: "WORKER_COMPLETE", stats: resources?.stats() });
         return;
     }
+    rejectPending(new Error("Distributed worker stopped"));
     finishStop(exitCode);
 }
 

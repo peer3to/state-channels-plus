@@ -10,6 +10,7 @@ import path from "path";
 type ParsedCliArgs = {
     logDir: string;
     logDirProvided: boolean;
+    keepInfraLogs: boolean;
     help: boolean;
     e2eOnly: boolean;
     testPattern?: string;
@@ -38,7 +39,11 @@ const {
     summaryCounts
 } = require("../../scripts/e2e-parallel/shared/logging.js") as {
     colorize: (color: string, text: string) => string;
-    cleanupNonErrorLogs: (dirPath: string, allow: boolean) => void;
+    cleanupNonErrorLogs: (
+        dirPath: string,
+        allow: boolean,
+        keepInfraLogs?: boolean
+    ) => void;
     countStarvation: (text: string) => number;
     getStarvationSummary: (tasks: Array<Record<string, unknown>>) => {
         recovered: Array<Record<string, unknown>>;
@@ -111,6 +116,7 @@ describe("e2e-parallel argParser - logDir validation", function () {
             "--e2e-only",
             "--log-dir",
             "--allow-logdir-purge",
+            "--keep-infra-logs",
             "--slots",
             "--workers",
             "--target-load",
@@ -212,6 +218,13 @@ describe("e2e-parallel argParser - logDir validation", function () {
     it("runs all Mocha tests by default and supports --e2e-only", function () {
         expect(parseCliArgs(argv()).e2eOnly).to.equal(false);
         expect(parseCliArgs(argv("--e2e-only")).e2eOnly).to.equal(true);
+    });
+
+    it("keeps infrastructure logs only when requested", function () {
+        expect(parseCliArgs(argv()).keepInfraLogs).to.equal(false);
+        expect(parseCliArgs(argv("--keep-infra-logs")).keepInfraLogs).to.equal(
+            true
+        );
     });
 
     it("rejects an empty --logDir= value (falls back to default, not provided)", function () {
@@ -328,6 +341,34 @@ describe("e2e-parallel logging - purge guards", function () {
         } finally {
             fs.rmSync(root, { recursive: true, force: true });
             fs.rmSync(successfulRoot, { recursive: true, force: true });
+        }
+    });
+
+    it("keeps successful infrastructure logs when requested", function () {
+        const root = fs.mkdtempSync(
+            path.join(os.tmpdir(), "kept-infra-log-cleanup-")
+        );
+        try {
+            const infrastructure = path.join(root, "infra");
+            fs.mkdirSync(infrastructure, { recursive: true });
+            fs.writeFileSync(
+                path.join(infrastructure, "hardhat-node.ansi"),
+                "normal infrastructure"
+            );
+            fs.writeFileSync(path.join(root, "passing.ansi"), "passing");
+            fs.writeFileSync(path.join(root, "error_failed.ansi"), "failed");
+
+            cleanupNonErrorLogs(root, true, true);
+
+            expect(fs.existsSync(infrastructure)).to.equal(true);
+            expect(fs.existsSync(path.join(root, "passing.ansi"))).to.equal(
+                false
+            );
+            expect(
+                fs.existsSync(path.join(root, "error_failed.ansi"))
+            ).to.equal(true);
+        } finally {
+            fs.rmSync(root, { recursive: true, force: true });
         }
     });
 

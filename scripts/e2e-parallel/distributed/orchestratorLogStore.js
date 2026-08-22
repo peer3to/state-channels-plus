@@ -102,10 +102,12 @@ class OrchestratorLogStore {
         const infrastructureDir = containedPath(this.runDir, "infra");
         const filePath = containedPath(infrastructureDir, fileName);
         fs.mkdirSync(path.dirname(filePath), { recursive: true });
-        fs.writeFileSync(
-            containedPath(infrastructureDir, INFRASTRUCTURE_FAILURE_MARKER),
-            ""
-        );
+        if (processFailure) {
+            fs.writeFileSync(
+                containedPath(infrastructureDir, INFRASTRUCTURE_FAILURE_MARKER),
+                ""
+            );
+        }
         const sections = [...this.infrastructureProcessSnapshots.values()]
             .filter((snapshot) => snapshot.processKind === processKind)
             .sort(

@@ -858,6 +858,7 @@ async function main(options = {}) {
                         memBoundGb: profile.memoryBytes / 1024 ** 3,
                         maxAttemptSpoolBytes: config.maxAttemptSpoolBytes,
                         heartbeatTimeoutMs: config.heartbeatTimeoutMs,
+                        keepInfraLogs: message.header.keepInfraLogs === true,
                         taskCount: message.header.taskCount,
                         baseEnv: message.header.baseEnv || {}
                     }

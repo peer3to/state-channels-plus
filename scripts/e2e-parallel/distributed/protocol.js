@@ -72,7 +72,7 @@ const HEADER_FIELDS = {
     BUNDLE_META: ["manifest"],
     BUNDLE_CHUNK: ["sequence"],
     BUNDLE_END: ["byteCount", "sha256"],
-    RUN_CONFIG: ["baseEnv", "taskCount", "extensions"],
+    RUN_CONFIG: ["baseEnv", "keepInfraLogs", "taskCount", "extensions"],
     RUN_PROGRESS: ["completedTasks", "totalTasks"],
     TASK_REQUEST: ["requestId"],
     TASK_ASSIGNMENT: ["requestId", "assignment"],

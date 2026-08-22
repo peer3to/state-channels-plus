@@ -584,6 +584,7 @@ async function runDistributed(options) {
             }
             await worker.peer.send("RUN_CONFIG", {
                 baseEnv: options.baseEnv,
+                keepInfraLogs: options.keepInfraLogs,
                 taskCount: options.tasks.length,
                 extensions: Object.keys(runExtensions).length
                     ? runExtensions
