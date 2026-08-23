@@ -80,24 +80,19 @@ contract LocalDiamond is StateChannelManagerProxy {
         // Store the genesis state snapshot
         stateSnapshots[channelId] = stateSnapshot;
 
-        // Initialize channel balance with zero values
+        // ChannelOpened follows InboundMessagesProcessed in the open
+        // transaction. Keep the finalized genesis deposit total instead of
+        // resetting the local mirror back to zero.
         Balance memory zeroBalance = stateMachineImplementation.getZeroBalance();
         ChannelBalance storage channelBalance = channelBalances[channelId];
 
-        channelBalance.totalDeposits = zeroBalance;
+        channelBalance.totalDeposits = stateSnapshot.snapshotData.totalDeposits;
         channelBalance.totalWithdrawals = zeroBalance;
 
         bytes32 inboundMessageBlockHash = stateSnapshot.snapshotData.latestInboundMessageBlockHash;
         channelBalance.latestInboundMessageBlockHash = inboundMessageBlockHash;
         channelBalance.latestInboundMessageBlockHeight = stateSnapshot.snapshotData.latestInboundMessageBlockHeight;
         channelBalance.latestOutboundMessageBlockHeight = stateSnapshot.snapshotData.latestOutboundMessageBlockHeight;
-        if (inboundMessageBlockHash != bytes32(0)) {
-            MessageBlock memory snapshotInboundBlock;
-            snapshotInboundBlock.previousBlockHash = bytes32(0);
-            snapshotInboundBlock.blockHeight = stateSnapshot.snapshotData.latestInboundMessageBlockHeight;
-            snapshotInboundBlock.totalBalance = stateSnapshot.snapshotData.totalDeposits;
-            snapshotInboundBlock.timestamp = stateSnapshot.timestamp;
-        }
     }
 
     // Called by StateSnapshotUpdated event

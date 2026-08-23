@@ -50,10 +50,12 @@ They are implementation evidence under this subject, not independent specificati
 
 ## Source inventory
 
-The detailed reports above currently own the source analysis. This table remains empty until those claims are consolidated and audited; generated source coverage continues to expose missing or duplicate ownership.
+The table starts the source-level consolidation with local block production. Generated source
+coverage continues to expose the remaining missing or duplicate ownership.
 
-| Source file | Specification IDs |
-| ----------- | ----------------- |
+| Source file                                                                                                          | Specification IDs                                                                                                                                                                                                                    |
+| -------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| [src/stateManager/block/BlockProductionService.ts](../../source/src/stateManager/block/BlockProductionService.ts.md) | [`INV-BLOCK-PIPE-1-1AB2ME`](../../../specification/block-progression/block-processing.md#inv-block-pipe-1-1ab2me), [`REQ-BLOCK-PIPE-6-XQ0RTT`](../../../specification/block-progression/block-processing.md#req-block-pipe-6-xq0rtt) |
 
 ## Conformance traceability
 

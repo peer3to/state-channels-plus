@@ -4,17 +4,20 @@
 > its content hash with `SPEC_REVIEWER="Name" node docs/spec/tools/review.js <file...>`.
 > Any later edit invalidates the record automatically (the file returns to pending as stale).
 
-- Verified (current): **40/527** (8%)
-- Pending (never reviewed): **462**
-- Stale (edited since review): **25**
+- Verified (current): **37/530** (7%)
+- Pending (never reviewed): **465**
+- Stale (edited since review): **28**
 
 ## Stale — edited since engineer review
 
-### specification (4)
+### specification (7)
 
+- [specification/block-progression/block-processing.md](../specification/block-progression/block-processing.md) — Luka, 2026-08-18
 - [specification/disputes/disputes.md](../specification/disputes/disputes.md) — Luka, 2026-08-14
 - [specification/security/trust-model.md](../specification/security/trust-model.md) — Luke Fishman, 2026-08-18
 - [specification/storage/durability.md](../specification/storage/durability.md) — Luke Fishman, 2026-08-17
+- [specification/storage/message-blocks.md](../specification/storage/message-blocks.md) — Luke Fishman, 2026-08-17
+- [specification/storage/queue.md](../specification/storage/queue.md) — Luke Fishman, 2026-08-17
 - [specification/storage/README.md](../specification/storage/README.md) — Luke Fishman, 2026-08-17
 
 ### implementation (9)
@@ -86,7 +89,7 @@
 - [specification/settlement/lifecycle.md](../specification/settlement/lifecycle.md)
 - [specification/settlement/README.md](../specification/settlement/README.md)
 
-### implementation (315)
+### implementation (316)
 
 - [implementation/open-questions.md](../implementation/open-questions.md)
 - [implementation/README.md](../implementation/README.md)
@@ -253,8 +256,9 @@
 - [implementation/source/src/rpc/services/WebRTCSetup/WebRTCSetupRpcMethods.ts.md](../implementation/source/src/rpc/services/WebRTCSetup/WebRTCSetupRpcMethods.ts.md)
 - [implementation/source/src/rpc/services/WebRTCSetup/WebRTCSetupService.ts.md](../implementation/source/src/rpc/services/WebRTCSetup/WebRTCSetupService.ts.md)
 - [implementation/source/src/StateChannelEventListener.ts.md](../implementation/source/src/StateChannelEventListener.ts.md)
+- [implementation/source/src/stateManager/block/BlockProductionService.ts.md](../implementation/source/src/stateManager/block/BlockProductionService.ts.md)
 - [implementation/source/src/stateManager/BlockQueueManager.ts.md](../implementation/source/src/stateManager/BlockQueueManager.ts.md)
-- [implementation/source/src/stateManager/DisputeValidationService.ts.md](../implementation/source/src/stateManager/DisputeValidationService.ts.md)
+- [implementation/source/src/stateManager/dispute/DisputeValidationService.ts.md](../implementation/source/src/stateManager/dispute/DisputeValidationService.ts.md)
 - [implementation/source/src/stateManager/EventSyncService.ts.md](../implementation/source/src/stateManager/EventSyncService.ts.md)
 - [implementation/source/src/stateManager/index.ts.md](../implementation/source/src/stateManager/index.ts.md)
 - [implementation/source/src/stateManager/README.md](../implementation/source/src/stateManager/README.md)
@@ -404,7 +408,7 @@
 - [implementation/views/security/data-availability.md](../implementation/views/security/data-availability.md)
 - [implementation/views/security/trust-model.md](../implementation/views/security/trust-model.md)
 
-### verification (110)
+### verification (112)
 
 - [verification/open-questions.md](../verification/open-questions.md)
 - [verification/README.md](../verification/README.md)
@@ -420,6 +424,7 @@
 - [verification/tests/test/e2e/disputeValidation/disputeInputFields/selfRemoval.test.ts.md](../verification/tests/test/e2e/disputeValidation/disputeInputFields/selfRemoval.test.ts.md)
 - [verification/tests/test/e2e/disputeValidation/disputeInputFields/timeout.test.ts.md](../verification/tests/test/e2e/disputeValidation/disputeInputFields/timeout.test.ts.md)
 - [verification/tests/test/e2e/disputeValidation/futureBlock.test.ts.md](../verification/tests/test/e2e/disputeValidation/futureBlock.test.ts.md)
+- [verification/tests/test/e2e/disputeValidation/inboundAnchorAvailability.test.ts.md](../verification/tests/test/e2e/disputeValidation/inboundAnchorAvailability.test.ts.md)
 - [verification/tests/test/e2e/disputeValidation/inboundHash.test.ts.md](../verification/tests/test/e2e/disputeValidation/inboundHash.test.ts.md)
 - [verification/tests/test/e2e/disputeValidation/invalidStateProofAuditing.test.ts.md](../verification/tests/test/e2e/disputeValidation/invalidStateProofAuditing.test.ts.md)
 - [verification/tests/test/e2e/disputeValidation/invalidStateProofGenesisLinkage.test.ts.md](../verification/tests/test/e2e/disputeValidation/invalidStateProofGenesisLinkage.test.ts.md)
@@ -491,6 +496,7 @@
 - [verification/tests/test/storage/StateSnapshotStorage.test.ts.md](../verification/tests/test/storage/StateSnapshotStorage.test.ts.md)
 - [verification/tests/test/storage/Storage.test.ts.md](../verification/tests/test/storage/Storage.test.ts.md)
 - [verification/tests/test/unit/AgreementManager.test.ts.md](../verification/tests/test/unit/AgreementManager.test.ts.md)
+- [verification/tests/test/unit/BlockProductionService.test.ts.md](../verification/tests/test/unit/BlockProductionService.test.ts.md)
 - [verification/tests/test/unit/DeploymentCache.test.ts.md](../verification/tests/test/unit/DeploymentCache.test.ts.md)
 - [verification/tests/test/unit/DisputeManager.test.ts.md](../verification/tests/test/unit/DisputeManager.test.ts.md)
 - [verification/tests/test/unit/EventBarrier.test.ts.md](../verification/tests/test/unit/EventBarrier.test.ts.md)
@@ -519,9 +525,8 @@
 
 ## Verified — current
 
-### specification (14)
+### specification (11)
 
-- [specification/block-progression/block-processing.md](../specification/block-progression/block-processing.md) — Luka, 2026-08-18
 - [specification/block-progression/README.md](../specification/block-progression/README.md) — Luka, 2026-08-14
 - [specification/peer-communication/rpc.md](../specification/peer-communication/rpc.md) — Luka, 2026-08-18
 - [specification/runtime/execution.md](../specification/runtime/execution.md) — Luka, 2026-08-18
@@ -530,10 +535,8 @@
 - [specification/storage/blocks.md](../specification/storage/blocks.md) — Luke Fishman, 2026-08-17
 - [specification/storage/calldata-and-timeouts.md](../specification/storage/calldata-and-timeouts.md) — Luke Fishman, 2026-08-17
 - [specification/storage/dispute-evidence.md](../specification/storage/dispute-evidence.md) — Luke Fishman, 2026-08-17
-- [specification/storage/message-blocks.md](../specification/storage/message-blocks.md) — Luke Fishman, 2026-08-17
 - [specification/storage/participant-changes.md](../specification/storage/participant-changes.md) — Luke Fishman, 2026-08-17
 - [specification/storage/progress-markers.md](../specification/storage/progress-markers.md) — Luke Fishman, 2026-08-17
-- [specification/storage/queue.md](../specification/storage/queue.md) — Luke Fishman, 2026-08-17
 - [specification/storage/snapshots-and-states.md](../specification/storage/snapshots-and-states.md) — Luke Fishman, 2026-08-17
 
 ### implementation (13)

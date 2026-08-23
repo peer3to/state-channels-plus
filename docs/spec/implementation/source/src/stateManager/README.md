@@ -8,7 +8,7 @@ _Pending authoring: shared responsibility, design decisions, assumptions, cross-
 ## Contents
 
 - [BlockQueueManager.ts](./BlockQueueManager.ts.md)
-- [DisputeValidationService.ts](./DisputeValidationService.ts.md)
+- [DisputeValidationService.ts](./dispute/DisputeValidationService.ts.md)
 - [EventSyncService.ts](./EventSyncService.ts.md)
 - [StateManager.ts](./StateManager.ts.md)
 - [ValidationService.ts](./ValidationService.ts.md)

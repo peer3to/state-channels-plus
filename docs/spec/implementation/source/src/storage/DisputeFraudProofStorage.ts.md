@@ -83,4 +83,4 @@ Exact test evidence is mapped against these IDs in the verification test reports
 
 ## Related source reports
 
-- [DisputeValidationService](../stateManager/DisputeValidationService.ts.md) (producer), [DisputeManager](../disputeManager/DisputeManager.ts.md) (kill submitter).
+- [DisputeValidationService](../stateManager/dispute/DisputeValidationService.ts.md) (producer), [DisputeManager](../disputeManager/DisputeManager.ts.md) (kill submitter).
