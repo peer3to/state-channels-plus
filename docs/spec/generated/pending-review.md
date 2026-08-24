@@ -4,8 +4,8 @@
 > its content hash with `SPEC_REVIEWER="Name" node docs/spec/tools/review.js <file...>`.
 > Any later edit invalidates the record automatically (the file returns to pending as stale).
 
-- Verified (current): **6/515** (1%)
-- Pending (never reviewed): **509**
+- Verified (current): **7/515** (1%)
+- Pending (never reviewed): **508**
 - Stale (edited since review): **0**
 
 ## Stale — edited since engineer review
@@ -14,7 +14,7 @@ None.
 
 ## Pending — never reviewed
 
-### specification (49)
+### specification (48)
 
 - [specification/disputes/README.md](../specification/disputes/README.md)
 - [specification/enforcement/admission-and-funds.md](../specification/enforcement/admission-and-funds.md)
@@ -24,7 +24,6 @@ None.
 - [specification/enforcement/fraud-slashing.md](../specification/enforcement/fraud-slashing.md)
 - [specification/enforcement/local-mirror.md](../specification/enforcement/local-mirror.md)
 - [specification/enforcement/proof-verification.md](../specification/enforcement/proof-verification.md)
-- [specification/enforcement/README.md](../specification/enforcement/README.md)
 - [specification/enforcement/snapshot-adoption.md](../specification/enforcement/snapshot-adoption.md)
 - [specification/interactions.md](../specification/interactions.md)
 - [specification/open-questions.md](../specification/open-questions.md)
@@ -534,7 +533,7 @@ None.
 
 ## Verified — current
 
-### specification (6)
+### specification (7)
 
 - [specification/block-progression/block-processing.md](../specification/block-progression/block-processing.md) — Luka, 2026-08-14
 - [specification/block-progression/README.md](../specification/block-progression/README.md) — Luka, 2026-08-14
@@ -542,3 +541,4 @@ None.
 - [specification/disputes/disputes.md](../specification/disputes/disputes.md) — Eva, 2026-08-21
 - [specification/disputes/fraud-proofs.md](../specification/disputes/fraud-proofs.md) — Eva, 2026-08-21
 - [specification/disputes/state-proofs.md](../specification/disputes/state-proofs.md) — Eva, 2026-08-21
+- [specification/enforcement/README.md](../specification/enforcement/README.md) — Eva, 2026-08-22

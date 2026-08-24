@@ -28,5 +28,25 @@
         "hash": "938744d816ba0630",
         "reviewer": "Eva",
         "date": "2026-08-21"
+    },
+    "specification/enforcement/README.md": {
+        "hash": "8eb8ab795aeecc08",
+        "reviewer": "Eva",
+        "date": "2026-08-22"
+    },
+    "specification/enforcement/admission-and-funds.md": {
+        "hash": "6fa2d93c66f34bd5",
+        "reviewer": "Eva",
+        "date": "2026-08-24"
+    },
+    "specification/enforcement/contracts.md": {
+        "hash": "21bd87f115ee18f3",
+        "reviewer": "Eva",
+        "date": "2026-08-24"
+    },
+    "specification/enforcement/dispute-window.md": {
+        "hash": "a8b478bc6c186c5a",
+        "reviewer": "Eva",
+        "date": "2026-08-24"
     }
 }
