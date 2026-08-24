@@ -4,8 +4,8 @@
 > its content hash with `SPEC_REVIEWER="Name" node docs/spec/tools/review.js <file...>`.
 > Any later edit invalidates the record automatically (the file returns to pending as stale).
 
-- Verified (current): **7/515** (1%)
-- Pending (never reviewed): **508**
+- Verified (current): **10/515** (2%)
+- Pending (never reviewed): **505**
 - Stale (edited since review): **0**
 
 ## Stale — edited since engineer review
@@ -14,12 +14,9 @@ None.
 
 ## Pending — never reviewed
 
-### specification (48)
+### specification (45)
 
 - [specification/disputes/README.md](../specification/disputes/README.md)
-- [specification/enforcement/admission-and-funds.md](../specification/enforcement/admission-and-funds.md)
-- [specification/enforcement/contracts.md](../specification/enforcement/contracts.md)
-- [specification/enforcement/dispute-window.md](../specification/enforcement/dispute-window.md)
 - [specification/enforcement/execution-and-consumer.md](../specification/enforcement/execution-and-consumer.md)
 - [specification/enforcement/fraud-slashing.md](../specification/enforcement/fraud-slashing.md)
 - [specification/enforcement/local-mirror.md](../specification/enforcement/local-mirror.md)
@@ -533,7 +530,7 @@ None.
 
 ## Verified — current
 
-### specification (7)
+### specification (10)
 
 - [specification/block-progression/block-processing.md](../specification/block-progression/block-processing.md) — Luka, 2026-08-14
 - [specification/block-progression/README.md](../specification/block-progression/README.md) — Luka, 2026-08-14
@@ -541,4 +538,7 @@ None.
 - [specification/disputes/disputes.md](../specification/disputes/disputes.md) — Eva, 2026-08-21
 - [specification/disputes/fraud-proofs.md](../specification/disputes/fraud-proofs.md) — Eva, 2026-08-21
 - [specification/disputes/state-proofs.md](../specification/disputes/state-proofs.md) — Eva, 2026-08-21
+- [specification/enforcement/admission-and-funds.md](../specification/enforcement/admission-and-funds.md) — Eva, 2026-08-24
+- [specification/enforcement/contracts.md](../specification/enforcement/contracts.md) — Eva, 2026-08-24
+- [specification/enforcement/dispute-window.md](../specification/enforcement/dispute-window.md) — Eva, 2026-08-24
 - [specification/enforcement/README.md](../specification/enforcement/README.md) — Eva, 2026-08-22
