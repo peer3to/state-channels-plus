@@ -48,5 +48,30 @@
         "hash": "a8b478bc6c186c5a",
         "reviewer": "Eva",
         "date": "2026-08-24"
+    },
+    "specification/enforcement/execution-and-consumer.md": {
+        "hash": "2354d38b62edbd83",
+        "reviewer": "Eva",
+        "date": "2026-08-25"
+    },
+    "specification/enforcement/fraud-slashing.md": {
+        "hash": "236596fb9abae6ae",
+        "reviewer": "Eva",
+        "date": "2026-08-25"
+    },
+    "specification/enforcement/local-mirror.md": {
+        "hash": "948515f537cfe51d",
+        "reviewer": "Eva",
+        "date": "2026-08-25"
+    },
+    "specification/enforcement/proof-verification.md": {
+        "hash": "e5e5a8199792552c",
+        "reviewer": "Eva",
+        "date": "2026-08-25"
+    },
+    "specification/enforcement/snapshot-adoption.md": {
+        "hash": "df0f927ca9e19132",
+        "reviewer": "Eva",
+        "date": "2026-08-25"
     }
 }
