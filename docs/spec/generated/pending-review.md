@@ -4,8 +4,8 @@
 > its content hash with `SPEC_REVIEWER="Name" node docs/spec/tools/review.js <file...>`.
 > Any later edit invalidates the record automatically (the file returns to pending as stale).
 
-- Verified (current): **10/515** (2%)
-- Pending (never reviewed): **505**
+- Verified (current): **15/515** (3%)
+- Pending (never reviewed): **500**
 - Stale (edited since review): **0**
 
 ## Stale — edited since engineer review
@@ -14,14 +14,9 @@ None.
 
 ## Pending — never reviewed
 
-### specification (45)
+### specification (40)
 
 - [specification/disputes/README.md](../specification/disputes/README.md)
-- [specification/enforcement/execution-and-consumer.md](../specification/enforcement/execution-and-consumer.md)
-- [specification/enforcement/fraud-slashing.md](../specification/enforcement/fraud-slashing.md)
-- [specification/enforcement/local-mirror.md](../specification/enforcement/local-mirror.md)
-- [specification/enforcement/proof-verification.md](../specification/enforcement/proof-verification.md)
-- [specification/enforcement/snapshot-adoption.md](../specification/enforcement/snapshot-adoption.md)
 - [specification/interactions.md](../specification/interactions.md)
 - [specification/open-questions.md](../specification/open-questions.md)
 - [specification/peer-communication/block-gossip.md](../specification/peer-communication/block-gossip.md)
@@ -530,7 +525,7 @@ None.
 
 ## Verified — current
 
-### specification (10)
+### specification (15)
 
 - [specification/block-progression/block-processing.md](../specification/block-progression/block-processing.md) — Luka, 2026-08-14
 - [specification/block-progression/README.md](../specification/block-progression/README.md) — Luka, 2026-08-14
@@ -541,4 +536,9 @@ None.
 - [specification/enforcement/admission-and-funds.md](../specification/enforcement/admission-and-funds.md) — Eva, 2026-08-24
 - [specification/enforcement/contracts.md](../specification/enforcement/contracts.md) — Eva, 2026-08-24
 - [specification/enforcement/dispute-window.md](../specification/enforcement/dispute-window.md) — Eva, 2026-08-24
+- [specification/enforcement/execution-and-consumer.md](../specification/enforcement/execution-and-consumer.md) — Eva, 2026-08-25
+- [specification/enforcement/fraud-slashing.md](../specification/enforcement/fraud-slashing.md) — Eva, 2026-08-25
+- [specification/enforcement/local-mirror.md](../specification/enforcement/local-mirror.md) — Eva, 2026-08-25
+- [specification/enforcement/proof-verification.md](../specification/enforcement/proof-verification.md) — Eva, 2026-08-25
 - [specification/enforcement/README.md](../specification/enforcement/README.md) — Eva, 2026-08-22
+- [specification/enforcement/snapshot-adoption.md](../specification/enforcement/snapshot-adoption.md) — Eva, 2026-08-25
