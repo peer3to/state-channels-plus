@@ -139,10 +139,10 @@ The block identity is `blockHash = keccak256(encodedBlock)` (ABI encoding of the
 Signing is an EIP-191 personal-message signature over the 32 raw bytes of `blockHash`
 (Block.sign).
 
-| Struct              | Meaning                                                                      |
-| ------------------- | ---------------------------------------------------------------------------- |
-| `SignedBlock`       | `encodedBlock` + the author's signature.                                     |
-| `BlockConfirmation` | A `SignedBlock` plus additional participants' signatures over the same hash. |
+| Struct              | Meaning                                                                                                                                                                                                                                                                                        |
+| ------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `SignedBlock`       | `encodedBlock` + the author's signature.                                                                                                                                                                                                                                                       |
+| `BlockConfirmation` | A `SignedBlock` plus additional confirmation signatures over the same hash — direct participant signatures and valid frozen selected-tower confirmations, each a distinct retained artifact ([`REQ-BLOCK-PIPE-11-DCHAJ2`](../block-progression/block-processing.md#req-block-pipe-11-dchaj2)). |
 
 Signing a block is a non-equivocating commitment to the block **and its entire ancestry** (the
 hash links make the ancestry part of what is signed). How signatures accumulate into finality —

@@ -41,6 +41,16 @@ For every affected behavior:
 4. update the current semantic/security assessment, findings, and questions in `audit/`; and
 5. allow changed graph fingerprints to make affected approvals stale until an engineer reapproves.
 
+**Specification-first staging.** New protocol behavior MAY land as a specification-only change
+before any implementation exists. Such a change updates only the specification layer (subjects,
+planned tests with exhaustive permutations, open questions, navigation) plus the audit assessment,
+which must record the staged scope as specified-but-not-implemented. It must not touch
+implementation or verification subjects, and the requirement-side gaps it adds to the generated
+reports are accepted as staged rather than rejected as new structural gaps. This stage exists so a
+protocol design is proposed, reviewed, and settled before implementation begins; the full
+same-change all-layers rule above applies from the first change that starts implementing a staged
+requirement.
+
 The three layers do NOT share a filesystem structure (review objective 46). The specification is
 organized by protocol system; the implementation mirrors the production tree under
 `implementation/source/` (one file report per `src/`/`contracts/` file, plus directory READMEs and

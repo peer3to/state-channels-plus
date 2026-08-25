@@ -4,8 +4,8 @@
 > its content hash with `SPEC_REVIEWER="Name" node docs/spec/tools/review.js <file...>`.
 > Any later edit invalidates the record automatically (the file returns to pending as stale).
 
-- Verified (current): **37/530** (7%)
-- Pending (never reviewed): **465**
+- Verified (current): **37/531** (7%)
+- Pending (never reviewed): **466**
 - Stale (edited since review): **28**
 
 ## Stale — edited since engineer review
@@ -49,7 +49,7 @@
 
 ## Pending — never reviewed
 
-### specification (37)
+### specification (38)
 
 - [specification/disputes/dispute-processing.md](../specification/disputes/dispute-processing.md)
 - [specification/disputes/fraud-proofs.md](../specification/disputes/fraud-proofs.md)
@@ -85,6 +85,7 @@
 - [specification/runtime/configuration.md](../specification/runtime/configuration.md)
 - [specification/runtime/README.md](../specification/runtime/README.md)
 - [specification/runtime/sdk.md](../specification/runtime/sdk.md)
+- [specification/runtime/watchtowers.md](../specification/runtime/watchtowers.md)
 - [specification/settlement/cross-layer-messages.md](../specification/settlement/cross-layer-messages.md)
 - [specification/settlement/lifecycle.md](../specification/settlement/lifecycle.md)
 - [specification/settlement/README.md](../specification/settlement/README.md)

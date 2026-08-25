@@ -154,6 +154,15 @@ each check `objective` or `subjective`).
   clock) is treated as `NOT_ENOUGH_TIME` under normal execution — the peer declines to build the
   p2p agreement on it and the fallback path takes over. This is explicitly fallible: a slow
   network or a skewed local clock produces the same observation as a late author.
+  Selected-tower exception: when the exact block passes every non-subjective validation and the
+  peer's frozen selected tower supplies a valid confirmation of it, the assigned peer skips only
+  this local arrival-window gate — it still runs every structural, signature, state-transition,
+  and objective timestamp check — and accepts the block rather than redoing the tower's timing
+  judgment ([`REQ-WT-4-PNMYMP`](../runtime/watchtowers.md#req-wt-4-pnmymp)).
+  Threshold exception (towers): a selected tower skips this arrival-window gate for a block that
+  already carries full threshold acceptance — every required participant accepted it, so the
+  tower accepts it too and stays in sync
+  ([`REQ-WT-4-PNMYMP`](../runtime/watchtowers.md#req-wt-4-pnmymp)).
 
 ### 5.2 Objective timestamp validity (fraud-provable)
 
@@ -212,6 +221,32 @@ timeout attempts from estimated chain time and waits out `minTimeStamp` before s
 claims are themselves fraud-provable (`TimeoutTooEarly`, `TimeoutCalldataPosted`, and the other
 `Timeout*` dispute fraud proofs — see [fraud-proofs.md](../disputes/fraud-proofs.md), and
 [disputes.md](../disputes/disputes.md) for timeout precedence in reduction).
+
+**Delegated watchtower evidence changes two timings only** (rules owned by
+[disputes.md §6.4](../disputes/disputes.md#64-delegated-watchtower-evidence)):
+
+- A valid `BlockConfirmationReceipt` credit counts as that participant's acknowledgement of the
+  exact block: it forfeits that participant's additional chain-fallback time exactly as its own
+  confirmation would, and it never creates a new timestamp anchor. Credits race the author's own
+  calldata submission, not a deadline comparator — the agreement deadline is the honest tower's
+  subjective signing cutoff under §5.1, never a consumer-verifiable condition on the signature
+  ([`REQ-WT-4-PNMYMP`](../runtime/watchtowers.md#req-wt-4-pnmymp)), and no deadline bounds when
+  the resulting signature must arrive. A valid selected-tower confirmation also switches off the
+  assigned peer's own §5.1 arrival-window gate for that exact block — only that subjective gate;
+  every objective check still applies: credits arriving first can complete the
+  confirmation threshold so the author skips calldata and the next author's deadline stays derived
+  from the block's own timestamp
+  ([`REQ-DIS-12-1ZN453`](../disputes/disputes.md#req-dis-12-1zn453)); once calldata is posted, it
+  supplies the normal new anchor, and a later signature forfeits the extra time of every participant it credits (its own for a participant signature, every credited eligible assigned participant for a tower signature) while uncredited participants keep theirs.
+- A timeout carrying a valid selected-tower `AfkAttestation` becomes eligible after the ordinary
+  deadline **without** the `chainFallbackTime` term, and the attestation waives the target's
+  calldata grace for that slot regardless of calldata order
+  ([`REQ-DIS-13-1WWHS0`](../disputes/disputes.md#req-dis-13-1wwhs0)). Every other timeout keeps
+  the full first-block grace plus peer-to-peer, agreement, and chain-fallback periods. The
+  agreement-time window doubles as the delegated-delivery reliability boundary: it should give an
+  honest tower a high probability of receiving the author's block in time without making timely
+  delivery a slashable guarantee
+  ([`REQ-WT-4-PNMYMP`](../runtime/watchtowers.md#req-wt-4-pnmymp)).
 
 **Open question:** the exact boundary comparisons of the `Timeout*` dispute-fraud-proof rules
 (inclusive vs. exclusive at `minTimeStamp`, and how `minTimeStamp` must be derived from the timed
