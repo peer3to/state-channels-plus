@@ -47,6 +47,9 @@ function selectPrepareScript(repository, cache, repositories = [repository]) {
     if (cache.preparationChanged || cache.contractPreparationChanged) {
         return repository.prepareScript;
     }
+    if (cache.prepared === false) {
+        return repository.cachedPrepareScript || repository.prepareScript;
+    }
     const prefix = `${repository.path}/`;
     const repositoryChanged = [...cache.changed, ...cache.deleted].some(
         (entry) => entry.startsWith(prefix)

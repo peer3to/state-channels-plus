@@ -122,9 +122,15 @@ describe("parallel Mocha task discovery", function () {
             path.join(testDir, "consumer.spec.ts"),
             'describe("consumer", () => { it("runs", () => {}); });'
         );
+        fs.writeFileSync(
+            path.join(testDir, "other.ts"),
+            'describe("other", () => { it("also runs", () => {}); });'
+        );
 
         try {
-            expect(discoverTasks(testDir).tasks).to.be.empty;
+            expect(
+                discoverTasks(testDir).tasks.map((task) => task.fullTitle)
+            ).to.deep.equal(["consumer runs", "other also runs"]);
             const { tasks } = discoverTasks(
                 testDir,
                 undefined,

@@ -1,6 +1,10 @@
 // @spec-test-coverage-ignore: developer test-orchestration tooling; not protocol behavior, no specification or implementation IDs apply
 import { expect } from "chai";
 import { EventEmitter } from "events";
+
+const {
+    waitForEnvironmentFrame
+} = require("./fixtures/environmentFrameWait.js");
 import crypto from "crypto";
 import fs from "fs";
 import os from "os";
@@ -654,6 +658,248 @@ describe("distributed protocol", function () {
         ).not.to.throw();
     });
 
+    it("settles a guest frame wait once and removes its listeners on success", async function () {
+        const notifications = new EventEmitter();
+        const child = new EventEmitter();
+        const waiting = waitForEnvironmentFrame(
+            [],
+            notifications,
+            child,
+            "PREPARED",
+            100
+        );
+        notifications.emit("frame", { kind: "PREPARED", payload: {} });
+        expect((await waiting).kind).to.equal("PREPARED");
+        expect(notifications.listenerCount("frame")).to.equal(0);
+        expect(child.listenerCount("exit")).to.equal(0);
+    });
+
+    it("reports an ERROR frame immediately while awaiting guest success", async function () {
+        const notifications = new EventEmitter();
+        const child = new EventEmitter();
+        const waiting = waitForEnvironmentFrame(
+            [],
+            notifications,
+            child,
+            "PREPARED",
+            100
+        );
+        notifications.emit("frame", {
+            kind: "ERROR",
+            payload: { message: "invalid runner repository" }
+        });
+        let failure: Error | null = null;
+        try {
+            await waiting;
+        } catch (error) {
+            failure = error as Error;
+        }
+        expect(failure?.message).to.equal("invalid runner repository");
+        expect(notifications.listenerCount("frame")).to.equal(0);
+    });
+
+    it("reports PREPARATION_FAILED immediately while awaiting guest success", async function () {
+        const notifications = new EventEmitter();
+        const child = new EventEmitter();
+        const waiting = waitForEnvironmentFrame(
+            [],
+            notifications,
+            child,
+            "PREPARED",
+            100
+        );
+        notifications.emit("frame", {
+            kind: "PREPARATION_FAILED",
+            payload: { message: "cached preparation failed" }
+        });
+        let failure: Error | null = null;
+        try {
+            await waiting;
+        } catch (error) {
+            failure = error as Error;
+        }
+        expect(failure?.message).to.equal("cached preparation failed");
+        expect(child.listenerCount("exit")).to.equal(0);
+    });
+
+    it("reports a guest child exit while awaiting a frame", async function () {
+        const notifications = new EventEmitter();
+        const child = new EventEmitter();
+        const waiting = waitForEnvironmentFrame(
+            [],
+            notifications,
+            child,
+            "PREPARED",
+            100
+        );
+        child.emit("exit", 1, null);
+        let failure: Error | null = null;
+        try {
+            await waiting;
+        } catch (error) {
+            failure = error as Error;
+        }
+        expect(failure?.message).to.include("Guest exited");
+        expect(notifications.listenerCount("frame")).to.equal(0);
+    });
+
+    it("times out a silent guest wait and removes its listeners", async function () {
+        const notifications = new EventEmitter();
+        const child = new EventEmitter();
+        let failure: Error | null = null;
+        try {
+            await waitForEnvironmentFrame(
+                [],
+                notifications,
+                child,
+                "PREPARED",
+                10
+            );
+        } catch (error) {
+            failure = error as Error;
+        }
+        expect(failure?.message).to.equal("Timed out waiting for PREPARED");
+        expect(notifications.listenerCount("frame")).to.equal(0);
+        expect(child.listenerCount("exit")).to.equal(0);
+    });
+
+    it("reports an invalid runner repository without waiting for the guest timeout", async function () {
+        const root = fs.mkdtempSync(
+            path.join(os.tmpdir(), "invalid-runner-repository-")
+        );
+        const archiveRoot = path.join(root, "archive");
+        const archivePath = path.join(root, "source.tgz");
+        const guestRoot = path.join(root, "guest");
+        fs.mkdirSync(path.join(archiveRoot, "project"), { recursive: true });
+        const packageJson = Buffer.from(
+            JSON.stringify({ name: "invalid-runner", version: "1.0.0" })
+        );
+        fs.writeFileSync(
+            path.join(archiveRoot, "project", "package.json"),
+            packageJson
+        );
+        await tar.c(
+            { cwd: archiveRoot, file: archivePath, gzip: true, portable: true },
+            ["project/package.json"]
+        );
+        const archive = fs.readFileSync(archivePath);
+        const archiveSha256 = crypto
+            .createHash("sha256")
+            .update(archive)
+            .digest("hex");
+        const child = spawn(
+            process.execPath,
+            [path.resolve("scripts/e2e-parallel/distributed/isolatedGuest.js")],
+            {
+                env: {
+                    ...process.env,
+                    SCP_ISOLATED_ROOT: guestRoot
+                },
+                stdio: ["pipe", "pipe", "pipe"]
+            }
+        );
+        const parser = new EnvironmentFrameParser({
+            allowedKinds: GUEST_KINDS
+        });
+        const received: Array<{
+            kind: string;
+            payload: Record<string, unknown>;
+        }> = [];
+        const notifications = new EventEmitter();
+        parser.on(
+            "frame",
+            (frame: { kind: string; payload: Record<string, unknown> }) => {
+                received.push(frame);
+                notifications.emit("frame", frame);
+            }
+        );
+        child.stdout.on("data", (chunk) => parser.consume(chunk));
+        const waitFrame = (kind: string) =>
+            waitForEnvironmentFrame(received, notifications, child, kind);
+        try {
+            await waitFrame("READY");
+            child.stdin.write(
+                encodeEnvironmentFrame("TRUSTED_RUNNER", { version: 1 })
+            );
+            child.stdin.write(
+                encodeEnvironmentFrame("ENVIRONMENT_SETUP", {
+                    environmentKey: "a".repeat(64),
+                    orchestratorPublicKey: "b".repeat(64),
+                    profile: { diskBytes: 1024 ** 2, pidsLimit: 64 },
+                    limits: {
+                        maxCompressedBytes: 1024 ** 2,
+                        maxExpandedBytes: 1024 ** 2,
+                        maxAttemptSpoolBytes: 1024
+                    }
+                })
+            );
+            child.stdin.write(
+                encodeEnvironmentFrame("WORKSPACE_OFFER", {
+                    manifest: {
+                        version: 3,
+                        packageManager: "pnpm",
+                        workspaceId: "c".repeat(64),
+                        sourceDigest: "d".repeat(64),
+                        rootProjectPath: "project",
+                        runnerEntry:
+                            "project/scripts/e2e-parallel/distributed/worker.js",
+                        repositories: [],
+                        files: [
+                            {
+                                path: "project/package.json",
+                                bytes: packageJson.length,
+                                sha256: crypto
+                                    .createHash("sha256")
+                                    .update(packageJson)
+                                    .digest("hex"),
+                                mode: 420
+                            }
+                        ],
+                        fileCount: 1,
+                        expandedBytes: packageJson.length
+                    }
+                })
+            );
+            await waitFrame("WORKSPACE_NEED");
+            child.stdin.write(
+                encodeEnvironmentFrame("SOURCE_BEGIN", {
+                    manifest: {
+                        version: 3,
+                        packageManager: "pnpm",
+                        archiveBytes: archive.length,
+                        archiveSha256,
+                        expandedBytes: packageJson.length,
+                        fileCount: 1,
+                        repositories: []
+                    }
+                })
+            );
+            child.stdin.write(
+                encodeEnvironmentFrame("SOURCE_CHUNK", { sequence: 0 }, archive)
+            );
+            child.stdin.write(
+                encodeEnvironmentFrame("SOURCE_COMPLETE", {
+                    byteCount: archive.length,
+                    sha256: archiveSha256
+                })
+            );
+            const startedAt = Date.now();
+            let failure: Error | null = null;
+            try {
+                await waitFrame("PREPARED");
+            } catch (error) {
+                failure = error as Error;
+            }
+            expect(failure?.message).to.include(
+                "Distributed runner repository is missing"
+            );
+            expect(Date.now() - startedAt).to.be.lessThan(2000);
+        } finally {
+            child.kill("SIGKILL");
+            fs.rmSync(root, { recursive: true, force: true });
+        }
+    });
+
     it("extracts a chunked source transfer with a manifest larger than 512 KiB", async function () {
         const root = fs.mkdtempSync(
             path.join(os.tmpdir(), "large-source-frame-")
@@ -747,29 +993,8 @@ describe("distributed protocol", function () {
             }
         );
         child.stdout.on("data", (chunk) => parser.consume(chunk));
-        const waitFrame = (kind: string) => {
-            const existing = received.find((frame) => frame.kind === kind);
-            if (existing) return Promise.resolve(existing);
-            return new Promise<{
-                kind: string;
-                payload: Record<string, unknown>;
-            }>((resolve, reject) => {
-                const timer = setTimeout(
-                    () => reject(new Error(`Timed out waiting for ${kind}`)),
-                    10000
-                );
-                const onFrame = (frame: {
-                    kind: string;
-                    payload: Record<string, unknown>;
-                }) => {
-                    if (frame.kind !== kind) return;
-                    clearTimeout(timer);
-                    notifications.off("frame", onFrame);
-                    resolve(frame);
-                };
-                notifications.on("frame", onFrame);
-            });
-        };
+        const waitFrame = (kind: string) =>
+            waitForEnvironmentFrame(received, notifications, child, kind);
         try {
             await waitFrame("READY");
             child.stdin.write(

@@ -21,6 +21,7 @@ export class TestIsolatedRuntimeBackend {
     completeArtifactTransfer = true;
     artifactTransferDelayMs = 0;
     preparationDelayMs = 0;
+    preparationFailureDelayMs = 0;
     preparationStatusIntervalMs = 0;
     stopDelayMs = 0;
     preparationFailuresRemaining = 0;
@@ -118,11 +119,15 @@ export class TestIsolatedRuntimeBackend {
                             container,
                             new Set(offeredFiles)
                         );
-                        stdout.write(
-                            encodeEnvironmentFrame("PREPARATION_FAILED", {
-                                message: "test preparation failed"
-                            })
-                        );
+                        const fail = () =>
+                            stdout.write(
+                                encodeEnvironmentFrame("PREPARATION_FAILED", {
+                                    message: "test preparation failed"
+                                })
+                            );
+                        if (this.preparationFailureDelayMs) {
+                            setTimeout(fail, this.preparationFailureDelayMs);
+                        } else fail();
                     } else {
                         const complete = () => {
                             this.preparedFiles.set(

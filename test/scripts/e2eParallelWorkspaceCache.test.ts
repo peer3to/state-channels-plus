@@ -400,18 +400,27 @@ describe("distributed workspace cache", function () {
             commitSourceManifest(cache, manifest);
             markPrepared(cache, manifest);
 
+            const changedSource = file(
+                "repo/src/index.ts",
+                "export const value = 2;"
+            );
+            const sourceOnlyManifest = {
+                ...manifest,
+                sourceDigest: "source-six",
+                files: [contract, changedSource]
+            };
+            fs.writeFileSync(
+                path.join(cache.workspace, changedSource.path),
+                "export const value = 2;"
+            );
+            commitSourceManifest(cache, sourceOnlyManifest);
             const sourceOnly = await inspectWorkspace(
                 root,
-                {
-                    ...manifest,
-                    sourceDigest: "source-six",
-                    files: [
-                        contract,
-                        file("repo/src/index.ts", "export const value = 2;")
-                    ]
-                },
+                sourceOnlyManifest,
                 orchestratorPublicKey
             );
+            expect(sourceOnly.changed).to.deep.equal([]);
+            expect(sourceOnly.prepared).to.equal(false);
             expect(sourceOnly.contractPreparationChanged).to.equal(false);
 
             const changedContract = file(
@@ -421,7 +430,7 @@ describe("distributed workspace cache", function () {
             const changedManifest = {
                 ...manifest,
                 sourceDigest: "source-seven",
-                files: [changedContract, source]
+                files: [changedContract, changedSource]
             };
             fs.writeFileSync(
                 path.join(cache.workspace, changedContract.path),

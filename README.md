@@ -224,16 +224,19 @@ temp/distributed-worker/
 │       ├── workspace.lock
 │       └── cache-allocation.json
 └── host-state/
+    ├── server.lock
     ├── authorization.json
     ├── audit/worker-audit.jsonl
     └── environments/<environment-key>.json
 ```
 
 - The per-user runtime directory under the OS temporary directory contains the
-  one host-scoped `server-v8.lock` file outside the worker root. The directory
-  is private to the current user and the lock refuses symbolic links. Its
-  OS-held lock prevents servers using different clones or work roots from
-  oversubscribing the same machine.
+  ordinary-mode host lock outside the worker root. Every server also owns
+  `<work-root>/host-state/server.lock`. Shared-host mode skips only the global
+  lock, so every concurrently running server must use a distinct resolved
+  `--work-root`. Lock records contain a live PID and ownership token; a paused
+  process never loses ownership, and stale-owner recovery cannot release a
+  successor's lock.
 - The host derives an environment key from the authenticated orchestrator
   transport key and workspace identity. Two identities with identical source
   never share a volume, package store, workspace, runner glue, logs, or locks.
@@ -268,8 +271,11 @@ yarn test:parallel:server \
 
 All worker-managed files then live under `/your/chosen/directory`; nothing is
 written to `temp/distributed-worker/`. Use an empty, writable directory on fast
-local storage. `--allow-shared-host` requires an explicit, unique `--work-root`;
-do not share one work root between worker servers. Real
+local storage. `--allow-shared-host` requires an explicit `--work-root`; startup
+locks that resolved root and rejects a second server with the exact conflicting
+path. Give every worker on the shared host a distinct root. A defense-in-depth
+workspace-lock error repeats this remedy if an older server bypasses startup
+ownership. Real
 distributed runs do not store package data in random OS temporary directories.
 Unit tests may use OS temporary directories and remove them during teardown.
 

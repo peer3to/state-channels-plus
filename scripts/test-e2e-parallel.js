@@ -65,6 +65,26 @@ function discoveryFailureMessage(tier, grep, error) {
     return `${tier} test discovery failed: ${error.message}`;
 }
 
+function validateDiscoveryResults(cli, selection, mocha, forge) {
+    if (cli.mochaTestPattern !== undefined && !selection.includeMocha) {
+        return `--mocha-test-pattern ${JSON.stringify(cli.mochaTestPattern)} conflicts with the selected tiers (--forge-only=${cli.forgeOnly}, --e2e-only=${cli.e2eOnly})`;
+    }
+    if (cli.forgeTestPattern !== undefined && !selection.includeForge) {
+        return `--forge-test-pattern ${JSON.stringify(cli.forgeTestPattern)} conflicts with the selected tiers (--no-forge=${!cli.forge}, --e2e-only=${cli.e2eOnly})`;
+    }
+    if (cli.mochaTestPattern !== undefined && mocha.preGrepTaskCount === 0) {
+        return `Mocha tier selected by --mocha-test-pattern ${JSON.stringify(cli.mochaTestPattern)} contains no runnable tests`;
+    }
+    if (cli.forgeTestPattern !== undefined && forge.preGrepTaskCount === 0) {
+        return `Forge tier selected by --forge-test-pattern ${JSON.stringify(cli.forgeTestPattern)} contains no runnable tests`;
+    }
+    const tasks = [...mocha.tasks, ...forge.tasks];
+    if (tasks.length > 0) return null;
+    return cli.grep
+        ? `No selected tests matched --grep ${JSON.stringify(cli.grep)}`
+        : "No implemented tests found";
+}
+
 /**
  * Slots are provisioned whenever the run holds a hardhat task and offered to
  * every one of them; no task is classified by directory or source. A test uses
@@ -120,18 +140,18 @@ async function main(options = {}) {
     // ---- discover tasks ----
     // Mocha and Foundry tiers are discovered independently and scheduled as one
     // task list; each task carries the runner that executes it.
-    let tasks = [];
-    let forgeTasks = [];
+    let mochaDiscovery = { tasks: [], preGrepTaskCount: 0 };
+    let forgeDiscovery = { tasks: [], preGrepTaskCount: 0 };
     const { includeMocha, includeForge } = resolveDiscoverySelection(cli);
     const testDir = path.resolve(cli.e2eOnly ? "test/e2e" : "test");
     if (includeMocha) {
         try {
-            ({ tasks } = discoverTasks(
+            mochaDiscovery = discoverTasks(
                 testDir,
                 cli.grep,
                 undefined,
                 cli.mochaTestPattern ?? cli.testPattern
-            ));
+            );
         } catch (e) {
             console.error(discoveryFailureMessage("Mocha", cli.grep, e), e);
             process.exit(1);
@@ -139,28 +159,31 @@ async function main(options = {}) {
     }
     if (includeForge) {
         try {
-            ({ tasks: forgeTasks } = discoverForgeTasks(
+            forgeDiscovery = discoverForgeTasks(
                 path.resolve("test"),
                 cli.grep,
                 {
                     threads: cli.forgeThreads,
                     testPattern: cli.forgeTestPattern ?? cli.testPattern
                 }
-            ));
+            );
         } catch (e) {
             console.error(discoveryFailureMessage("Forge", cli.grep, e), e);
             process.exit(1);
         }
     }
-    tasks = [...tasks, ...forgeTasks];
-    if (tasks.length === 0) {
-        console.error(
-            cli.grep
-                ? `No ${cli.forgeOnly ? "forge" : cli.e2eOnly ? "E2E" : "Mocha"} tests matched --grep ${JSON.stringify(cli.grep)}`
-                : "No implemented tests found"
-        );
+    const discoveryError = validateDiscoveryResults(
+        cli,
+        { includeMocha, includeForge },
+        mochaDiscovery,
+        forgeDiscovery
+    );
+    if (discoveryError) {
+        console.error(discoveryError);
         process.exit(1);
     }
+    const forgeTasks = forgeDiscovery.tasks;
+    const tasks = [...mochaDiscovery.tasks, ...forgeTasks];
 
     // ---- resolve config ----
     const requestedSlotCount = cli.slots ?? DEFAULT_SLOTS;
@@ -445,6 +468,7 @@ if (require.main === module) {
 module.exports = {
     buildBaseEnv,
     discoveryFailureMessage,
+    validateDiscoveryResults,
     resolveDistributedExecutionProfile,
     resolveSlotCount,
     main

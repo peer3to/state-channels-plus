@@ -22,7 +22,11 @@ const { FORGE_TEST_TASK, extractForgeTestContracts, discoverForgeTasks } =
             testDir: string,
             grep?: string,
             options?: { threads?: number; testPattern?: string }
-        ) => { files: string[]; tasks: ParallelTask[] };
+        ) => {
+            files: string[];
+            tasks: ParallelTask[];
+            preGrepTaskCount: number;
+        };
     };
 const { DEFAULT_FORGE_THREADS, FORGE_BIN } =
     require("../../scripts/e2e-parallel/shared/forgeConfig.js") as {
@@ -36,7 +40,11 @@ const { discoverTasks } =
             grep?: string,
             e2eDir?: string,
             testPattern?: string
-        ) => { files: string[]; tasks: ParallelTask[] };
+        ) => {
+            files: string[];
+            tasks: ParallelTask[];
+            preGrepTaskCount: number;
+        };
     };
 const { TASK_RUNNERS, requiresChainSlot, countForgeTasks } =
     require("../../scripts/e2e-parallel/shared/taskRunners.js") as {
@@ -85,6 +93,7 @@ const { parseCliArgs, resolveDiscoverySelection } =
     };
 const {
     discoveryFailureMessage,
+    validateDiscoveryResults,
     resolveDistributedExecutionProfile,
     resolveSlotCount
 } = require("../../scripts/test-e2e-parallel.js") as {
@@ -93,6 +102,12 @@ const {
         grep: string | undefined,
         error: Error
     ) => string;
+    validateDiscoveryResults: (
+        cli: Record<string, unknown>,
+        selection: { includeMocha: boolean; includeForge: boolean },
+        mocha: { tasks: unknown[]; preGrepTaskCount: number },
+        forge: { tasks: unknown[]; preGrepTaskCount: number }
+    ) => string | null;
     resolveDistributedExecutionProfile: (
         profile: Record<string, number> | undefined,
         slotCount: number
@@ -212,21 +227,47 @@ contract InvariantCases {
 `;
 
 const REPO_ROOT = path.resolve(__dirname, "..", "..");
-function warmForgeArtifacts() {
-    const result = spawnSync(FORGE_BIN, ["build"], {
-        cwd: REPO_ROOT,
-        encoding: "utf8"
-    });
-    if (result.error) {
-        throw new Error(
-            `Foundry ${FORGE_BIN} is required for discovery parity: ${result.error.message}`
-        );
+
+function newestFileMtime(root: string, include: (file: string) => boolean) {
+    if (!fs.existsSync(root)) return null;
+    let newest: number | null = null;
+    for (const entry of fs.readdirSync(root, { withFileTypes: true })) {
+        const target = path.join(root, entry.name);
+        if (entry.isDirectory()) {
+            const nested = newestFileMtime(target, include);
+            if (nested !== null) newest = Math.max(newest ?? nested, nested);
+        } else if (entry.isFile() && include(target)) {
+            const mtime = fs.statSync(target).mtimeMs;
+            newest = Math.max(newest ?? mtime, mtime);
+        }
     }
-    if (result.status !== 0) {
-        throw new Error(
-            `Foundry warm build failed before discovery parity (${result.status ?? result.signal}): ${result.stderr}`
+    return newest;
+}
+
+function hasWarmForgeArtifacts(
+    root = REPO_ROOT,
+    forgeAvailable = () =>
+        !spawnSync(FORGE_BIN, ["--version"], {
+            cwd: root,
+            stdio: "ignore"
+        }).error
+) {
+    if (!fs.existsSync(path.join(root, "cache_forge"))) return false;
+    const newestArtifact = newestFileMtime(path.join(root, "out"), () => true);
+    if (newestArtifact === null) return false;
+    const newestSource = ["contracts", "test"]
+        .map((directory) =>
+            newestFileMtime(path.join(root, directory), (file) =>
+                file.endsWith(".sol")
+            )
+        )
+        .filter((mtime): mtime is number => mtime !== null)
+        .reduce<number | null>(
+            (newest, mtime) => Math.max(newest ?? mtime, mtime),
+            null
         );
-    }
+    if (newestSource !== null && newestSource > newestArtifact) return false;
+    return forgeAvailable();
 }
 
 /** Contract names foundry itself reports, flattened across its per-file map. */
@@ -273,6 +314,16 @@ async function runForgeFixture(script?: string) {
 }
 
 function runParallelDryEntry(args: string[], cwd = REPO_ROOT) {
+    if (cwd !== REPO_ROOT) {
+        const hardhatRoot = path.join(cwd, "node_modules", "hardhat");
+        const hardhatCli = path.join(hardhatRoot, "internal", "cli", "cli.js");
+        fs.mkdirSync(path.dirname(hardhatCli), { recursive: true });
+        fs.writeFileSync(
+            path.join(hardhatRoot, "package.json"),
+            JSON.stringify({ name: "hardhat", version: "0.0.0" })
+        );
+        fs.writeFileSync(hardhatCli, "");
+    }
     return spawnSync(
         process.execPath,
         [path.join(REPO_ROOT, "scripts", "test-e2e-parallel.js"), ...args],
@@ -285,6 +336,66 @@ function runParallelDryEntry(args: string[], cwd = REPO_ROOT) {
 }
 
 describe("parallel forge task discovery", function () {
+    it("does not invoke Foundry when parity artifacts are cold", function () {
+        const root = fs.mkdtempSync(
+            path.join(os.tmpdir(), "cold-forge-parity-")
+        );
+        let probes = 0;
+        try {
+            expect(
+                hasWarmForgeArtifacts(root, () => {
+                    probes++;
+                    return true;
+                })
+            ).to.equal(false);
+            expect(probes).to.equal(0);
+        } finally {
+            fs.rmSync(root, { recursive: true, force: true });
+        }
+    });
+
+    it("runs parity only when warm artifacts and Foundry are present", function () {
+        const root = fs.mkdtempSync(
+            path.join(os.tmpdir(), "warm-forge-parity-")
+        );
+        try {
+            fs.mkdirSync(path.join(root, "out"));
+            fs.mkdirSync(path.join(root, "cache_forge"));
+            fs.writeFileSync(path.join(root, "out", "artifact.json"), "{}");
+            expect(hasWarmForgeArtifacts(root, () => true)).to.equal(true);
+            expect(hasWarmForgeArtifacts(root, () => false)).to.equal(false);
+        } finally {
+            fs.rmSync(root, { recursive: true, force: true });
+        }
+    });
+
+    it("skips parity when Solidity sources are newer than Forge artifacts", function () {
+        const root = fs.mkdtempSync(
+            path.join(os.tmpdir(), "stale-forge-parity-")
+        );
+        const artifact = path.join(root, "out", "artifact.json");
+        const source = path.join(root, "contracts", "Changed.sol");
+        let probes = 0;
+        try {
+            fs.mkdirSync(path.dirname(artifact), { recursive: true });
+            fs.mkdirSync(path.dirname(source), { recursive: true });
+            fs.mkdirSync(path.join(root, "cache_forge"));
+            fs.writeFileSync(artifact, "{}");
+            fs.writeFileSync(source, "contract Changed {}");
+            const old = new Date(Date.now() - 2000);
+            fs.utimesSync(artifact, old, old);
+            expect(
+                hasWarmForgeArtifacts(root, () => {
+                    probes++;
+                    return true;
+                })
+            ).to.equal(false);
+            expect(probes).to.equal(0);
+        } finally {
+            fs.rmSync(root, { recursive: true, force: true });
+        }
+    });
+
     it("discovers one task per Foundry test contract in the repository test tree", function () {
         const { tasks } = discoverForgeTasks(REPO_TEST_DIR);
         expect(tasks.map((task) => task.fullTitle)).to.have.members([
@@ -459,7 +570,7 @@ describe("parallel forge task discovery", function () {
     });
 
     it("finds exactly the test contracts foundry itself lists for the repository", function () {
-        warmForgeArtifacts();
+        if (!hasWarmForgeArtifacts()) this.skip();
         const listed = forgeListedContracts();
         const { tasks } = discoverForgeTasks(REPO_TEST_DIR);
         expect(tasks.map((task) => task.fullTitle).sort()).to.deep.equal(
@@ -1017,6 +1128,156 @@ describe("parallel forge tier selection", function () {
 });
 
 describe("parallel forge tier guards", function () {
+    it("rejects an explicit Forge pattern with no runnable contracts", function () {
+        const result = validateDiscoveryResults(
+            {
+                forgeTestPattern: "Empty.t.sol",
+                forge: true,
+                forgeOnly: false,
+                e2eOnly: false
+            },
+            { includeMocha: true, includeForge: true },
+            { tasks: [{ fullTitle: "mocha" }], preGrepTaskCount: 1 },
+            { tasks: [], preGrepTaskCount: 0 }
+        );
+        expect(result).to.equal(
+            'Forge tier selected by --forge-test-pattern "Empty.t.sol" contains no runnable tests'
+        );
+    });
+
+    it("rejects an explicit Mocha pattern with no runnable declarations", function () {
+        const result = validateDiscoveryResults(
+            {
+                mochaTestPattern: "Empty.test.ts",
+                forge: true,
+                forgeOnly: false,
+                e2eOnly: false
+            },
+            { includeMocha: true, includeForge: true },
+            { tasks: [], preGrepTaskCount: 0 },
+            { tasks: [{ fullTitle: "ForgeTest" }], preGrepTaskCount: 1 }
+        );
+        expect(result).to.equal(
+            'Mocha tier selected by --mocha-test-pattern "Empty.test.ts" contains no runnable tests'
+        );
+    });
+
+    it("rejects a tier-specific pattern when that tier is disabled", function () {
+        const result = validateDiscoveryResults(
+            {
+                forgeTestPattern: "V1/**/*.sol",
+                forge: false,
+                forgeOnly: false,
+                e2eOnly: false
+            },
+            { includeMocha: true, includeForge: false },
+            { tasks: [{ fullTitle: "mocha" }], preGrepTaskCount: 1 },
+            { tasks: [], preGrepTaskCount: 0 }
+        );
+        expect(result).to.include("conflicts with the selected tiers");
+    });
+
+    it("rejects a Mocha pattern combined with --forge-only", function () {
+        const result = validateDiscoveryResults(
+            {
+                mochaTestPattern: "unit/**/*.ts",
+                forge: true,
+                forgeOnly: true,
+                e2eOnly: false
+            },
+            { includeMocha: false, includeForge: true },
+            { tasks: [], preGrepTaskCount: 0 },
+            { tasks: [{ fullTitle: "ForgeTest" }], preGrepTaskCount: 1 }
+        );
+        expect(result).to.include("conflicts with the selected tiers");
+    });
+
+    it("allows grep to empty one matched tier when another tier still has work", function () {
+        const result = validateDiscoveryResults(
+            {
+                grep: "selected",
+                forge: true,
+                forgeOnly: false,
+                e2eOnly: false
+            },
+            { includeMocha: true, includeForge: true },
+            { tasks: [{ fullTitle: "selected" }], preGrepTaskCount: 1 },
+            { tasks: [], preGrepTaskCount: 1 }
+        );
+        expect(result).to.equal(null);
+    });
+
+    it("reports an all-zero post-grep selection", function () {
+        const result = validateDiscoveryResults(
+            {
+                grep: "absent",
+                forge: true,
+                forgeOnly: false,
+                e2eOnly: false
+            },
+            { includeMocha: true, includeForge: true },
+            { tasks: [], preGrepTaskCount: 1 },
+            { tasks: [], preGrepTaskCount: 1 }
+        );
+        expect(result).to.equal('No selected tests matched --grep "absent"');
+    });
+
+    it("fails a dry run when an explicit Forge file contains no runnable contract", function () {
+        const root = fs.mkdtempSync(
+            path.join(os.tmpdir(), "empty-forge-tier-")
+        );
+        try {
+            fs.mkdirSync(path.join(root, "test"));
+            fs.writeFileSync(
+                path.join(root, "test", "Mocha.test.ts"),
+                'it("runs", function () {});'
+            );
+            fs.writeFileSync(
+                path.join(root, "test", "Empty.t.sol"),
+                "contract EmptyHelper { function helper() public {} }"
+            );
+            const result = runParallelDryEntry(
+                ["--dry-run", "--forge-test-pattern", "Empty.t.sol"],
+                root
+            );
+            expect(result.status).to.equal(1);
+            expect(result.stderr).to.include(
+                "Forge tier selected by --forge-test-pattern"
+            );
+        } finally {
+            fs.rmSync(root, { recursive: true, force: true });
+        }
+    });
+
+    it("fails a dry run when a Forge pattern is combined with --no-forge", function () {
+        const root = fs.mkdtempSync(
+            path.join(os.tmpdir(), "disabled-forge-tier-")
+        );
+        try {
+            fs.mkdirSync(path.join(root, "test"));
+            fs.writeFileSync(
+                path.join(root, "test", "Mocha.test.ts"),
+                'it("runs", function () {});'
+            );
+            const result = runParallelDryEntry(
+                [
+                    "--distributed",
+                    "--dry-run",
+                    "--no-forge",
+                    "--forge-test-pattern",
+                    "V1/**/*.sol"
+                ],
+                root
+            );
+            expect(result.status).to.equal(1);
+            expect(result.stderr).to.include(
+                "conflicts with the selected tiers"
+            );
+        } finally {
+            fs.rmSync(root, { recursive: true, force: true });
+        }
+    });
+
     it("accepts a repository with only default Mocha tests", function () {
         const root = fs.mkdtempSync(path.join(os.tmpdir(), "mocha-only-"));
         try {

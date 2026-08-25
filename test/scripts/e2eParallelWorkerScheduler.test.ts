@@ -113,7 +113,7 @@ describe("distributed worker scheduler", function () {
             parseServerArgs(["node", "server.js", "--allow-shared-host"], {
                 SCP_TEST_WORKER_NAME: "server-1"
             })
-        ).to.throw("requires an explicit unique --work-root");
+        ).to.throw("requires an explicit --work-root");
         expect(
             parseServerArgs(
                 [

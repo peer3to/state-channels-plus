@@ -363,11 +363,12 @@ function discoverForgeTasks(testDir, grep, options = {}) {
         runner: TASK_RUNNERS.FORGE,
         isE2E: false
     }));
+    const preGrepTaskCount = tasks.length;
     if (grep) {
         const matcher = new RegExp(grep);
         tasks = tasks.filter((task) => matcher.test(task.fullTitle));
     }
-    return { files, tasks };
+    return { files, tasks, preGrepTaskCount };
 }
 
 module.exports = {

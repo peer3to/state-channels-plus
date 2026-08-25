@@ -40,6 +40,45 @@ describe("distributed workspace preparation", function () {
         ).to.equal("cached");
     });
 
+    it("retries an incomplete source-only preparation with no new source diff", function () {
+        expect(
+            selectPrepareScript(repository, {
+                prepared: false,
+                preparationChanged: false,
+                contractPreparationChanged: false,
+                changed: [],
+                deleted: []
+            })
+        ).to.equal("cached");
+    });
+
+    it("falls back to full preparation when an incomplete repository has no cached script", function () {
+        expect(
+            selectPrepareScript(
+                { ...repository, cachedPrepareScript: null },
+                {
+                    prepared: false,
+                    preparationChanged: false,
+                    contractPreparationChanged: false,
+                    changed: [],
+                    deleted: []
+                }
+            )
+        ).to.equal("full");
+    });
+
+    it("skips a complete unchanged repository", function () {
+        expect(
+            selectPrepareScript(repository, {
+                prepared: true,
+                preparationChanged: false,
+                contractPreparationChanged: false,
+                changed: [],
+                deleted: []
+            })
+        ).to.equal(null);
+    });
+
     it("recompiles when Solidity inputs change or preparation is stale", function () {
         for (const changed of [
             "state-channels-plus/contracts/Channel.sol",
@@ -235,7 +274,7 @@ describe("distributed workspace preparation", function () {
                     contractCompileInputs: []
                 },
                 {
-                    prepared: false,
+                    prepared: true,
                     preparationChanged: false,
                     contractPreparationChanged: false,
                     changed: ["state-channels-plus/test/utils/nodeInfra.js"],

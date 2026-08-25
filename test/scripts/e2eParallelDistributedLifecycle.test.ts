@@ -34,6 +34,161 @@ const emptySourceSha256 = crypto
     .digest("hex");
 
 describe("distributed worker pool lifecycle", function () {
+    it("refuses two shared-host servers on one resolved work root before discovery", async function () {
+        const pool = await LeasePoolHarness.create();
+        const root = fs.mkdtempSync(
+            path.join(os.tmpdir(), "lease-shared-root-")
+        );
+        try {
+            const first = await pool.startServer("worker-a", {
+                workRoot: root
+            });
+            expect(
+                fs.existsSync(path.join(root, "host-state", "server.lock"))
+            ).to.equal(true);
+            let failure: Error | null = null;
+            try {
+                await pool.startServer("worker-b", { workRoot: root });
+            } catch (error) {
+                failure = error as Error;
+            }
+            expect(failure?.message).to.include(root);
+            expect(failure?.message).to.include("different --work-root");
+
+            await pool.stopServer(first);
+            const replacement = await pool.startServer("worker-b", {
+                workRoot: root
+            });
+            expect(
+                fs.existsSync(path.join(root, "host-state", "server.lock"))
+            ).to.equal(true);
+            await pool.stopServer(replacement);
+        } finally {
+            await pool.close();
+            fs.rmSync(root, { recursive: true, force: true });
+        }
+    });
+
+    it("refuses ordinary then shared-host servers on one work root", async function () {
+        const pool = await LeasePoolHarness.create();
+        const root = fs.mkdtempSync(
+            path.join(os.tmpdir(), "lease-mixed-root-")
+        );
+        const globalLock = path.join(
+            os.tmpdir(),
+            `lease-global-a-${process.pid}-${Date.now()}`
+        );
+        try {
+            await pool.startServer("worker-a", {
+                workRoot: root,
+                allowSharedHost: false,
+                lockPath: globalLock
+            });
+            let failure: Error | null = null;
+            try {
+                await pool.startServer("worker-b", { workRoot: root });
+            } catch (error) {
+                failure = error as Error;
+            }
+            expect(failure?.message).to.include("different --work-root");
+        } finally {
+            await pool.close();
+            fs.rmSync(root, { recursive: true, force: true });
+            fs.rmSync(globalLock, { force: true });
+        }
+    });
+
+    it("refuses shared-host then ordinary servers on one work root", async function () {
+        const pool = await LeasePoolHarness.create();
+        const root = fs.mkdtempSync(
+            path.join(os.tmpdir(), "lease-reverse-root-")
+        );
+        const globalLock = path.join(
+            os.tmpdir(),
+            `lease-global-b-${process.pid}-${Date.now()}`
+        );
+        try {
+            await pool.startServer("worker-a", { workRoot: root });
+            let failure: Error | null = null;
+            try {
+                await pool.startServer("worker-b", {
+                    workRoot: root,
+                    allowSharedHost: false,
+                    lockPath: globalLock
+                });
+            } catch (error) {
+                failure = error as Error;
+            }
+            expect(failure?.message).to.include("different --work-root");
+        } finally {
+            await pool.close();
+            fs.rmSync(root, { recursive: true, force: true });
+            fs.rmSync(globalLock, { force: true });
+        }
+    });
+
+    it("runs shared-host servers concurrently when their work roots differ", async function () {
+        const pool = await LeasePoolHarness.create();
+        try {
+            const workerA = await pool.startServer("worker-a");
+            const workerB = await pool.startServer("worker-b");
+            const orchestrator = await pool.startOrchestrator("distinct-roots");
+            await Promise.all([
+                orchestrator.waitFor(workerA.name, "LEASE_GRANTED"),
+                orchestrator.waitFor(workerB.name, "LEASE_GRANTED")
+            ]);
+            expect(
+                fs.existsSync(
+                    path.join(workerA.workRoot, "host-state", "server.lock")
+                )
+            ).to.equal(true);
+            expect(
+                fs.existsSync(
+                    path.join(workerB.workRoot, "host-state", "server.lock")
+                )
+            ).to.equal(true);
+            await orchestrator.send(workerA.name, "RELEASE");
+            await orchestrator.send(workerB.name, "RELEASE");
+            await Promise.all([
+                orchestrator.waitFor(workerA.name, "LEASE_CLEAN"),
+                orchestrator.waitFor(workerB.name, "LEASE_CLEAN")
+            ]);
+        } finally {
+            await pool.close();
+        }
+    });
+
+    it("migrates a stopped legacy heartbeat lock after its grace period", async function () {
+        const pool = await LeasePoolHarness.create();
+        const root = fs.mkdtempSync(
+            path.join(os.tmpdir(), "legacy-server-lock-")
+        );
+        const lockPath = path.join(root, "host-state", "server.lock");
+        fs.mkdirSync(lockPath, { recursive: true });
+        try {
+            let liveFailure: Error | null = null;
+            try {
+                await pool.startServer("worker-a", { workRoot: root });
+            } catch (error) {
+                liveFailure = error as Error;
+            }
+            expect(liveFailure?.message).to.include(
+                "Another worker server owns work root"
+            );
+
+            const stale = new Date(Date.now() - 61000);
+            fs.utimesSync(lockPath, stale, stale);
+            const worker = await pool.startServer("worker-a", {
+                workRoot: root
+            });
+            expect(fs.statSync(lockPath).isFile()).to.equal(true);
+            await pool.stopServer(worker);
+        } finally {
+            await pool.close();
+            fs.rmSync(root, { recursive: true, force: true });
+        }
+    });
+
     it("deduplicates simultaneous bidirectional discovery into one lease", async function () {
         const pool = await LeasePoolHarness.create();
         try {
@@ -364,6 +519,20 @@ describe("distributed worker pool lifecycle", function () {
                 Buffer.from(JSON.stringify(sourceFiles))
             );
             await orchestrator.waitFor(worker.name, "WORKSPACE_NEED");
+            const environmentRoots = fs.readdirSync(
+                path.join(worker.workRoot, "environments")
+            );
+            expect(environmentRoots).to.have.length(1);
+            expect(
+                fs.existsSync(
+                    path.join(
+                        worker.workRoot,
+                        "environments",
+                        environmentRoots[0],
+                        "workspace.lock"
+                    )
+                )
+            ).to.equal(true);
             await orchestrator.send(worker.name, "BUNDLE_META", {
                 manifest: {
                     ...workspaceManifest,
@@ -860,7 +1029,21 @@ describe("distributed worker pool lifecycle", function () {
     it("retains cached source after a recoverable preparation command failure", async function () {
         const pool = await LeasePoolHarness.create();
         const backend = new TestIsolatedRuntimeBackend();
-        backend.preparationFailuresRemaining = 1;
+        const updatedManifest = {
+            ...workspaceManifest,
+            sourceDigest: "source-two",
+            fileCount: 2,
+            expandedBytes: 2
+        };
+        const updatedSourceFiles = [
+            sourceFiles[0],
+            {
+                path: "project/b.ts",
+                bytes: 1,
+                sha256: "c".repeat(64),
+                mode: 420
+            }
+        ];
         try {
             const worker = await pool.startServer("worker-a", {
                 environmentBackend: backend
@@ -887,6 +1070,45 @@ describe("distributed worker pool lifecycle", function () {
                 byteCount: 0,
                 sha256: emptySourceSha256
             });
+            await orchestrator.waitFor(worker.name, "PREPARED");
+            await orchestrator.send(worker.name, "RELEASE");
+            await orchestrator.waitFor(worker.name, "LEASE_CLEAN");
+
+            const update = orchestrator.checkpoint();
+            await orchestrator.send(worker.name, "LEASE_REQUEST", {
+                sessionId: "prepare-retry-update"
+            });
+            await orchestrator.waitFor(worker.name, "LEASE_GRANTED", {
+                after: update
+            });
+            await orchestrator.send(
+                worker.name,
+                "WORKSPACE_OFFER",
+                { manifest: updatedManifest },
+                Buffer.from(JSON.stringify(updatedSourceFiles))
+            );
+            const updateNeed = await orchestrator.waitFor(
+                worker.name,
+                "WORKSPACE_NEED",
+                { after: update }
+            );
+            expect(
+                JSON.parse(updateNeed.body!.toString()).changed
+            ).to.deep.equal(["project/b.ts"]);
+            backend.preparationFailuresRemaining = 1;
+            await orchestrator.send(worker.name, "BUNDLE_META", {
+                manifest: {
+                    ...updatedManifest,
+                    fileCount: 0,
+                    expandedBytes: 0,
+                    archiveBytes: 0,
+                    archiveSha256: emptySourceSha256
+                }
+            });
+            await orchestrator.send(worker.name, "BUNDLE_END", {
+                byteCount: 0,
+                sha256: emptySourceSha256
+            });
             await orchestrator.waitFor(worker.name, "PREPARATION_ERROR");
 
             const retry = orchestrator.checkpoint();
@@ -899,8 +1121,8 @@ describe("distributed worker pool lifecycle", function () {
             await orchestrator.send(
                 worker.name,
                 "WORKSPACE_OFFER",
-                { manifest: workspaceManifest },
-                Buffer.from(JSON.stringify(sourceFiles))
+                { manifest: updatedManifest },
+                Buffer.from(JSON.stringify(updatedSourceFiles))
             );
             const need = await orchestrator.waitFor(
                 worker.name,
@@ -914,6 +1136,30 @@ describe("distributed worker pool lifecycle", function () {
             expect(
                 backend.calls.filter((entry) => entry.operation === "destroy")
             ).to.have.length(0);
+            await orchestrator.send(worker.name, "BUNDLE_META", {
+                manifest: {
+                    ...updatedManifest,
+                    fileCount: 0,
+                    expandedBytes: 0,
+                    archiveBytes: 0,
+                    archiveSha256: emptySourceSha256
+                }
+            });
+            await orchestrator.send(worker.name, "BUNDLE_END", {
+                byteCount: 0,
+                sha256: emptySourceSha256
+            });
+            await orchestrator.waitFor(worker.name, "PREPARED", {
+                after: retry
+            });
+            expect(
+                backend.calls.filter(
+                    (entry) =>
+                        entry.operation === "frame" &&
+                        (entry.value as { kind?: string }).kind ===
+                            "SOURCE_COMPLETE"
+                )
+            ).to.have.length(3);
             await orchestrator.send(worker.name, "RELEASE");
             await orchestrator.waitFor(worker.name, "LEASE_CLEAN", {
                 after: retry
