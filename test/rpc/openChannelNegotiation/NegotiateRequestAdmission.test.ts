@@ -12,7 +12,7 @@ import {
 } from "./negotiationTestFactory";
 
 /**
- * D1: negotiateRequest consults the declarative AdmissionPolicy
+ * negotiateRequest consults the declarative AdmissionPolicy
  * between the existing busy check and the adoption block. A denied
  * request declines via the existing non-punitive abort("decline:<reason>")
  * wire path and leaves state byte-identical to before — no blacklist, no
@@ -43,7 +43,7 @@ function assertNoResidue(service: OpenChannelNegotiationService): void {
     expect(service.state.timeoutHandle, "timeoutHandle").to.be.undefined;
 }
 
-describe("OpenChannelNegotiationRpcMethods.negotiateRequest - admission policy (D1)", function () {
+describe("OpenChannelNegotiationRpcMethods.negotiateRequest - admission policy", function () {
     let clock: sinon.SinonFakeTimers;
 
     beforeEach(function () {
@@ -414,7 +414,7 @@ describe("OpenChannelNegotiationRpcMethods.negotiateRequest - admission policy (
     });
 });
 
-describe("OpenChannelNegotiationRpcMethods - setAdmissionPolicy unreachability (D1)", function () {
+describe("OpenChannelNegotiationRpcMethods - setAdmissionPolicy unreachability", function () {
     it("setAdmissionPolicy is not reachable from the RPC dispatcher", function () {
         const { service } = makeService(ME_ADDRESS);
         const peerWallet = Wallet.createRandom();

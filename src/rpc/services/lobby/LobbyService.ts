@@ -28,6 +28,7 @@ import type {
     RequestIntentResult
 } from "@/discovery/LobbyIntentTypes";
 import OpenChannelNegotiationService from "@/rpc/services/openChannelNegotiation/OpenChannelNegotiationService";
+import { getOptionalRpcService } from "@/utils/optionalRpcService";
 
 import LobbyRpcMethods, { type LobbyP2PManager } from "./LobbyRpcMethods";
 
@@ -88,12 +89,6 @@ export default class LobbyService extends ARpcService<
      * (that remains P2PManager.openConnections, untouched by this service).
      */
     private readonly knownPeers = new Set<string>();
-    /**
-     * Local bookkeeping only: set ONLY when we (the acceptor) accept an
-     * inbound intent on our own OPEN ad, cleared on release/expiry.
-     * Publishing an OPEN ad never sets this by itself.
-     */
-    private boundOpenChannelId: string | undefined;
     /**
      * A peer we're already handshake-connected to can send us "advertise"
      * before we've called our OWN joinLobby() - the guard only checks
@@ -530,7 +525,6 @@ export default class LobbyService extends ARpcService<
         // channelId + this hold) for the hold duration - and ONLY now, at
         // accept time, never at publish time.
         if (stored.ad.kind === AdKind.OPEN) {
-            this.boundOpenChannelId = stored.ad.channelId;
             this.applyOwnOpenAdStake(String(stored.ad.amount));
         }
 
@@ -563,9 +557,6 @@ export default class LobbyService extends ARpcService<
             current.adId === adId &&
             current.peerAddress === peerAddress;
         const released = isHolder && this.reservations.release(adId as AdId);
-        if (released) {
-            this.clearOpenBindingIfMatches(current!);
-        }
         return { released };
     }
 
@@ -601,21 +592,13 @@ export default class LobbyService extends ARpcService<
         negotiationService.setStakeAmount(stakeAmountNumber);
     }
 
-    /**
-     * Defensive capability check: OpenChannelNegotiationService is opt-in
-     * and never guaranteed on p2pManager.localRpc's static type - resolve
-     * it narrowly at runtime rather than reaching for it and risking a
-     * swallowed TypeError. Mirrors
-     * ChannelAcquisitionCoordinator.getNegotiationService.
-     */
+    /** Resolves the opt-in negotiation service, or undefined when none is wired. */
     private getNegotiationService(): OpenChannelNegotiationService | undefined {
-        const localRpc = this.p2pManager.localRpc as unknown as {
-            openChannelNegotiationService?: unknown;
-        };
-        return localRpc.openChannelNegotiationService instanceof
+        return getOptionalRpcService(
+            this.p2pManager.localRpc,
+            "openChannelNegotiationService",
             OpenChannelNegotiationService
-            ? localRpc.openChannelNegotiationService
-            : undefined;
+        );
     }
 
     /**
@@ -759,15 +742,12 @@ export default class LobbyService extends ARpcService<
         return { accepted: false, reason };
     }
 
-    /** Fired by LobbyReservations when a hold expires with no release/commit - clears our OPEN binding, if any. */
+    /** Fired by LobbyReservations when a hold expires with no release/commit. */
     private onReservationExpired(reservation: Reservation): void {
-        this.clearOpenBindingIfMatches(reservation);
+        this.logger.debug("Lobby intent hold expired", {
+            adId: reservation.adId,
+            peerAddress: reservation.peerAddress
+        });
     }
 
-    /** Clears boundOpenChannelId iff `reservation` was an OPEN-ad hold on it. */
-    private clearOpenBindingIfMatches(reservation: Reservation): void {
-        if (reservation.kind === AdKind.OPEN) {
-            this.boundOpenChannelId = undefined;
-        }
-    }
 }

@@ -1,7 +1,7 @@
 /**
  * Argument tuples for the `discovery` bus kind (lobby/ad/acquisition events).
- * Every field is a primitive/plain object — F5 requires structured-clone-able
- * payloads only (no BigInt, no Buffer, no functions, no class instances):
+ * Every field is a primitive/plain object — the runtime port requires
+ * structured-clone-able payloads only (no BigInt, no Buffer, no functions, no class instances):
  * ads cross as `encodedAd` hex strings, amounts as decimal strings.
  *
  * `intentResult` is emitted on the ACCEPTOR side — the peer that is

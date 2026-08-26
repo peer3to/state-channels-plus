@@ -21,8 +21,7 @@ import OpenChannelNegotiationService from "@/rpc/services/openChannelNegotiation
 import type { OpenChannelNegotiationP2PManager } from "@/rpc/services/openChannelNegotiation/OpenChannelNegotiationRpcMethods";
 import {
     ChannelAcquisitionCoordinator,
-    type ChannelEnumerator,
-    type ChannelProbeRunner
+    type ChannelEnumerator
 } from "@/discovery/ChannelAcquisitionCoordinator";
 
 /**
@@ -433,7 +432,6 @@ describe("ChannelAcquisitionCoordinator", () => {
         lobby: LobbyService,
         chain?: {
             channelIndex?: ChannelEnumerator;
-            channelProber?: ChannelProbeRunner;
         }
     ): ChannelAcquisitionCoordinator {
         return new ChannelAcquisitionCoordinator({
@@ -441,8 +439,7 @@ describe("ChannelAcquisitionCoordinator", () => {
             signer: harness.signer,
             logger: createTestLogger(),
             events: harness.events,
-            channelIndex: chain?.channelIndex,
-            channelProber: chain?.channelProber
+            channelIndex: chain?.channelIndex
         });
     }
 
@@ -455,23 +452,6 @@ describe("ChannelAcquisitionCoordinator", () => {
             async listOpenChannels() {
                 this.calls++;
                 return ids;
-            }
-        };
-    }
-
-    /** Prober whose verdict is fixed; records the candidates it was handed. */
-    function fakeProber(
-        verdict:
-            | { status: "usable"; channelId: string; peerAddress: string }
-            | { status: "exhausted" }
-    ): ChannelProbeRunner & { seen: string[][] } {
-        return {
-            seen: [],
-            async probe(candidates) {
-                this.seen.push(candidates.map((id) => String(id)));
-                return verdict.status === "usable"
-                    ? { ...verdict, attempts: [] }
-                    : { status: "exhausted", attempts: [] };
             }
         };
     }
@@ -491,11 +471,6 @@ describe("ChannelAcquisitionCoordinator", () => {
             harness.advanceStatus(Status.PARTICIPATING);
             const peerAddress = ethers.Wallet.createRandom().address;
             const enumerator = fakeEnumerator([channelId]);
-            const prober = fakeProber({
-                status: "usable",
-                channelId,
-                peerAddress
-            });
             const listAdsSpy = sinon.spy(requester.service, "listAds");
             const requestIntentSpy = sinon.spy(
                 requester.service,
@@ -504,7 +479,6 @@ describe("ChannelAcquisitionCoordinator", () => {
 
             const coordinator = makeCoordinator(harness, requester.service, {
                 channelIndex: enumerator,
-                channelProber: prober
             });
             const result = await coordinator.acquireChannel({ amount: "500" });
 
@@ -513,14 +487,13 @@ describe("ChannelAcquisitionCoordinator", () => {
                 result.status === "acquired" ? result.channelId : undefined
             ).to.equal(channelId);
             expect(enumerator.calls).to.equal(1);
-            expect(prober.seen).to.deep.equal([[channelId]]);
             // The whole point of chain-first: no intent is ever requested,
             // because no advertiser was involved.
             expect(requestIntentSpy.called).to.equal(false);
             expect(listAdsSpy.called).to.equal(false);
         });
 
-        it("the attempt log attributes a chain candidate to the peer that proved it usable, not to an invented ad", async () => {
+        it("the attempt log identifies a chain candidate by its channelId rather than an invented ad", async () => {
             const requester = createLobbyPeer(network);
             await requester.service.joinLobby(appNamespace);
             const harness = makeFakeChannelHarness(
@@ -532,24 +505,20 @@ describe("ChannelAcquisitionCoordinator", () => {
             // below and end-to-end on a live chain, so the harness starts
             // already PARTICIPATING and the commit stages resolve instantly.
             harness.advanceStatus(Status.PARTICIPATING);
-            const peerAddress = ethers.Wallet.createRandom().address;
 
             const coordinator = makeCoordinator(harness, requester.service, {
-                channelIndex: fakeEnumerator([channelId]),
-                channelProber: fakeProber({
-                    status: "usable",
-                    channelId,
-                    peerAddress
-                })
+                channelIndex: fakeEnumerator([channelId])
             });
             const result = await coordinator.acquireChannel({ amount: "500" });
 
+            // A chain-discovered candidate has no ad and no advertiser - it
+            // is a channelId we found on chain and tried to join. Both label
+            // slots carry the channelId rather than a fabricated ad, so
+            // nothing on a fund-relevant path is made up.
             expect(result.attempts.length).to.be.greaterThan(0);
             for (const attempt of result.attempts) {
                 expect(attempt.adId).to.equal(channelId);
-                expect(attempt.advertiser).to.equal(
-                    getChecksumAddress(peerAddress)
-                );
+                expect(attempt.advertiser).to.equal(channelId);
             }
         });
 
@@ -572,11 +541,9 @@ describe("ChannelAcquisitionCoordinator", () => {
             });
             await advertiser.service.publishAd(ad);
 
-            const enumerator = fakeEnumerator(["0xdeadbeef"]);
-            const prober = fakeProber({ status: "exhausted" });
+            const enumerator = fakeEnumerator([]);
             const coordinator = makeCoordinator(harness, requester.service, {
                 channelIndex: enumerator,
-                channelProber: prober
             });
 
             const result = await coordinator.acquireChannel({
@@ -610,10 +577,9 @@ describe("ChannelAcquisitionCoordinator", () => {
                 })
             );
 
-            const enumerator = fakeEnumerator(["0xdeadbeef"]);
+            const enumerator = fakeEnumerator([]);
             const coordinator = makeCoordinator(harness, requester.service, {
                 channelIndex: enumerator,
-                channelProber: fakeProber({ status: "exhausted" })
             });
 
             // No explicit candidates: chain runs first, fails, and the lobby
@@ -647,7 +613,6 @@ describe("ChannelAcquisitionCoordinator", () => {
 
             const coordinator = makeCoordinator(harness, requester.service, {
                 channelIndex: enumerator,
-                channelProber: fakeProber({ status: "exhausted" })
             });
             const result = await coordinator.acquireChannel({
                 lobbyOnly: true,
@@ -684,7 +649,6 @@ describe("ChannelAcquisitionCoordinator", () => {
                         throw new Error("provider refused eth_getLogs");
                     }
                 },
-                channelProber: fakeProber({ status: "exhausted" })
             });
 
             const result = await coordinator.acquireChannel({ amount: "500" });
@@ -711,16 +675,12 @@ describe("ChannelAcquisitionCoordinator", () => {
                     channelId: channelId
                 })
             );
-            const prober = fakeProber({ status: "exhausted" });
 
             const coordinator = makeCoordinator(harness, requester.service, {
                 channelIndex: fakeEnumerator([]),
-                channelProber: prober
             });
             const result = await coordinator.acquireChannel({ amount: "500" });
 
-            // Nothing to probe, so probing never even runs.
-            expect(prober.seen).to.deep.equal([]);
             expect(result.status).to.equal("acquired");
         });
     });

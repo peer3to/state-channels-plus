@@ -66,7 +66,7 @@ export default class OpenChannelNegotiationService extends ARpcService<
         myAmount: DEFAULT_JOIN_AMOUNT,
         channelOpened: false
     };
-    // Declarative admission policy consulted at negotiateRequest (D1). Never
+    // Declarative admission policy consulted at negotiateRequest. Never
     // settable from OpenChannelNegotiationRpcMethods — see setAdmissionPolicy.
     public admissionPolicy: AdmissionPolicy = DEFAULT_ADMISSION_POLICY;
 
@@ -517,7 +517,7 @@ export default class OpenChannelNegotiationService extends ARpcService<
      * resetNegotiation wipes our fresh round-2 state — a silent mutual
      * deadlock. The abort clears the partner's state first so their stale
      * message never arrives. The durable fix is a negotiation round counter
-     * (Phase-2 ADR candidate); do not build it here.
+     * (worth its own design note); do not build it here.
      */
     public resetForNewChannel(): void {
         const partner = this.state.negotiatingWith;

@@ -2,13 +2,13 @@ import { Status } from "@/types";
 import type { ChannelId } from "@/types/types";
 import { config } from "@/utils/config";
 import { getChecksumAddress } from "@/utils/address";
+import { deriveChannelTopic } from "@/utils/channelTopic";
 import type { Logger } from "@/utils/logging/Logger";
 import type { EventBus } from "@/events/EventBus";
 import Clock from "@/Clock";
 import type LocalP2pSigner from "@/evm/signer/LocalP2pSigner";
 import type LobbyService from "@/rpc/services/lobby/LobbyService";
 import { ChannelIndex, type EnumerateOptions } from "@/discovery/ChannelIndex";
-import { ChannelProber, type ProbeResult } from "@/discovery/ChannelProber";
 import type { RequestIntentResult } from "@/discovery/LobbyIntentTypes";
 import { type IntentDeclineReason } from "@/discovery/LobbyIntentTypes";
 import {
@@ -19,6 +19,7 @@ import {
     encodeChannelAd
 } from "@/discovery/ChannelAd";
 import OpenChannelNegotiationService from "@/rpc/services/openChannelNegotiation/OpenChannelNegotiationService";
+import { getOptionalRpcService } from "@/utils/optionalRpcService";
 import type { JoinChannelStruct } from "@typechain-types/contracts/V1/types/DataTypes";
 
 // This is the single-candidate acquisition
@@ -91,20 +92,19 @@ export type ChannelEnumerator = {
     listOpenChannels(opts?: EnumerateOptions): Promise<ChannelId[]>;
 };
 
-/** The capability this coordinator needs from probing. See {@link ChannelEnumerator}. */
-export type ChannelProbeRunner = {
-    probe(candidates: ChannelId[]): Promise<ProbeResult>;
-};
-
 export type ChannelAcquisitionCoordinatorDeps = {
-    lobby: LobbyService;
+    /**
+     * Optional. Chain-first discovery joins channels that already exist and
+     * needs nothing from the lobby, so a deployment that only wants to join
+     * existing channels does not have to wire one. Without a lobby the lobby
+     * phase is skipped and explicit ad candidates cannot be used.
+     */
+    lobby?: LobbyService;
     signer: LocalP2pSigner;
     logger: Logger;
     events: EventBus;
     /** Test seam. Defaults to a ChannelIndex over the signer's provider/contract. */
     channelIndex?: ChannelEnumerator;
-    /** Test seam. Defaults to a ChannelProber over the signer. */
-    channelProber?: ChannelProbeRunner;
 };
 
 /** One candidate resolved to a concrete adId. */
@@ -151,7 +151,7 @@ const JOIN_DEADLINE_BUFFER_SECONDS = 120;
  * WE-set stake/balance are the only chain-relevant truths this class acts on.
  */
 export class ChannelAcquisitionCoordinator {
-    private readonly lobby: LobbyService;
+    private readonly lobby: LobbyService | undefined;
     private readonly signer: LocalP2pSigner;
     private readonly logger: Logger;
     private readonly events: EventBus;
@@ -160,9 +160,7 @@ export class ChannelAcquisitionCoordinator {
     // ingest state across scans, and rebuilding the prober per call would
     // throw away nothing useful but cost an extra allocation per acquire.
     private readonly channelIndexOverride?: ChannelEnumerator;
-    private readonly channelProberOverride?: ChannelProbeRunner;
     private channelIndexInstance?: ChannelEnumerator;
-    private channelProberInstance?: ChannelProbeRunner;
 
     constructor(deps: ChannelAcquisitionCoordinatorDeps) {
         this.lobby = deps.lobby;
@@ -172,7 +170,6 @@ export class ChannelAcquisitionCoordinator {
         });
         this.events = deps.events;
         this.channelIndexOverride = deps.channelIndex;
-        this.channelProberOverride = deps.channelProber;
     }
 
     /** Lazily built over the signer's provider/contract; injectable for tests. */
@@ -194,19 +191,6 @@ export class ChannelAcquisitionCoordinator {
             });
         }
         return this.channelIndexInstance;
-    }
-
-    /** Lazily built over the signer; injectable for tests. */
-    private getChannelProber(): ChannelProbeRunner {
-        if (this.channelProberOverride) return this.channelProberOverride;
-        if (!this.channelProberInstance) {
-            this.channelProberInstance = new ChannelProber({
-                signer: this.signer,
-                logger: this.logger,
-                events: this.events
-            });
-        }
-        return this.channelProberInstance;
     }
 
     public async acquireChannel(
@@ -320,6 +304,15 @@ export class ChannelAcquisitionCoordinator {
 
         // The lobby phase. Explicit candidates win; otherwise use whatever
         // ads this peer has already heard on the lobby topic.
+        if (!this.lobby) {
+            // Nothing else to try: the lobby is where a peer looking to open
+            // a NEW channel is found, and explicit ads are negotiated through
+            // it too. Chain-first already had its turn above.
+            this.logger.debug(
+                "No lobby wired; chain-first discovery was the only source"
+            );
+            return { status: "exhausted", attempts };
+        }
         const lobbyCandidates =
             options.candidates ??
             this.lobby.listAds().map((stored) => stored.ad);
@@ -379,16 +372,29 @@ export class ChannelAcquisitionCoordinator {
     }
 
     /**
-     * The chain-first phase: enumerate open channels from chain, probe them
-     * directly, and commit a JOIN on the first one that proves usable.
+     * The chain-first phase: enumerate open channels from chain and try to
+     * join them, newest first, stopping at the first that works.
      *
-     * A candidate counts as usable only when the probe's spectate/sync
-     * completes and confirms a live peer - "a socket connected" is not
-     * enough. The probe leaves that channel connected and synced, so
-     * commitJoin's own connect/sync stages resolve immediately and only the
-     * confirm stage does real work.
+     * Each candidate goes through the ordinary channel path - connect,
+     * spectate/sync to SYNCED, then join - and a candidate either completes
+     * that path or it does not. There is no separate cheap probe stage
+     * beforehand. A probe could not establish that a peer holds valid,
+     * current channel state, so a candidate it approved still had to be
+     * disproved by the real path afterwards; and running discovery traffic
+     * through the spectate endpoint had two costs that only showed up under
+     * a real adversary. The responder promotes whoever asks into its channel
+     * broadcast set, so shopping N channels meant N peers broadcasting to a
+     * peer that never joined; and the responder blacklists when it cannot
+     * build a proof, which happens for transient local reasons like a
+     * dispute window it has not loaded yet, so shopping a channel that
+     * happened to be mid-dispute got an honest peer banned at the DHT level.
      *
-     * Enumeration or probing failing is never fatal: it degrades to the
+     * Attempts are serial, one channel armed at a time. `StateManager` holds
+     * exactly one active channel, so anything that arms a channel is
+     * single-at-a-time by construction. Running several candidates at once
+     * needs an instance each, which is the next step rather than this one.
+     *
+     * Enumeration or a failed candidate is never fatal: it degrades to the
      * lobby, which is the whole point of the ordering.
      */
     private async attemptChainCandidates(
@@ -422,46 +428,41 @@ export class ChannelAcquisitionCoordinator {
             return { status: "exhausted" };
         }
 
-        let probed;
-        try {
-            probed = await this.getChannelProber().probe(candidates);
-        } catch (error) {
-            this.logger.warn("Channel probing failed; falling back to lobby", {
-                error: error instanceof Error ? error.message : String(error)
-            });
-            return { status: "exhausted" };
-        }
+        for (const candidate of candidates) {
+            if (remainingDeadlineMs() <= 0) return { status: "deadline" };
 
-        if (probed.status !== "usable") {
-            this.logger.debug(
-                "No chain candidate proved usable; falling back to lobby",
-                { candidates: candidates.length }
+            const channelId = String(candidate);
+            // No ad exists for a chain-discovered candidate, so the adId slot
+            // carries the channelId - the attempt log stays readable without
+            // inventing an ad on a fund-relevant path.
+            const committed = await this.commitJoin(
+                {
+                    adId: channelId,
+                    advertiser: channelId,
+                    kind: AdKind.JOIN
+                },
+                channelId,
+                stakeAmountNumber,
+                remainingDeadlineMs,
+                record
             );
-            return { status: "exhausted" };
+            if (committed.status === "acquired") {
+                return { status: "acquired", channelId };
+            }
+            if (committed.status === "deadline") {
+                return { status: "deadline" };
+            }
+
+            // Leave the abandoned candidate's topic before trying the next
+            // one, so a failed attempt doesn't keep us subscribed to a
+            // channel we are not joining.
+            this.leaveChannelTopic(channelId);
         }
 
-        if (remainingDeadlineMs() <= 0) return { status: "deadline" };
-
-        // Report chain candidates against the peer that actually proved the
-        // channel usable. There is no ad here, so the adId slot carries the
-        // channelId - the attempt log stays readable without inventing one.
-        const committed = await this.commitJoin(
-            {
-                adId: String(probed.channelId),
-                advertiser: getChecksumAddress(String(probed.peerAddress)),
-                kind: AdKind.JOIN
-            },
-            String(probed.channelId),
-            stakeAmountNumber,
-            remainingDeadlineMs,
-            record
-        );
-        if (committed.status === "acquired") {
-            return { status: "acquired", channelId: String(probed.channelId) };
-        }
-        return {
-            status: committed.status === "deadline" ? "deadline" : "exhausted"
-        };
+        this.logger.debug("No chain candidate could be joined", {
+            candidates: candidates.length
+        });
+        return { status: "exhausted" };
     }
 
     /** Resolves the caller's explicit candidate array into concrete {adId, ad} pairs. */
@@ -494,7 +495,7 @@ export class ChannelAcquisitionCoordinator {
         const advertiser = ad.advertiser;
         const kind = ad.kind;
 
-        // SECURITY (F9 capability check), MIXED-POOL SAFE: an OPEN candidate
+        // SECURITY (capability check), MIXED-POOL SAFE: an OPEN candidate
         // on a node without the opt-in service is a per-candidate SKIP, not
         // a whole-acquire abort - never waste the peer's hold on a commit we
         // can't perform, but a JOIN candidate later in the SAME pool must
@@ -518,7 +519,7 @@ export class ChannelAcquisitionCoordinator {
 
         let intentResult: RequestIntentResult;
         try {
-            intentResult = await this.lobby.requestIntent({
+            intentResult = await this.requireLobby().requestIntent({
                 peerAddress: advertiser,
                 adId,
                 amount: decimalAmount
@@ -614,7 +615,7 @@ export class ChannelAcquisitionCoordinator {
         channelId: string
     ): Promise<void> {
         try {
-            await this.lobby.releaseIntent({
+            await this.requireLobby().releaseIntent({
                 peerAddress: candidate.ad.advertiser,
                 adId: candidate.adId
             });
@@ -922,25 +923,33 @@ export class ChannelAcquisitionCoordinator {
     }
 
     /**
-     * Defensive capability check: OpenChannelNegotiationService
-     * is opt-in and never guaranteed on p2pManager.localRpc's static type
-     * (MainRpcService doesn't declare it) - resolve it narrowly at runtime
-     * rather than reaching for it and risking a swallowed TypeError.
+     * The lobby, for a path that cannot run without one. Only reachable from
+     * the lobby phase, which `acquireChannel` skips entirely when no lobby is
+     * wired - so this never throws in practice; it is here so the non-null
+     * assumption is stated once rather than at each use.
      */
-    private getNegotiationService(): OpenChannelNegotiationService | undefined {
-        const localRpc = this.signer.p2pManager.localRpc as unknown as {
-            openChannelNegotiationService?: unknown;
-        };
-        return localRpc.openChannelNegotiationService instanceof
-            OpenChannelNegotiationService
-            ? localRpc.openChannelNegotiationService
-            : undefined;
+    private requireLobby(): LobbyService {
+        if (!this.lobby) {
+            throw new Error(
+                "ChannelAcquisitionCoordinator: the lobby phase requires a lobby service"
+            );
+        }
+        return this.lobby;
     }
 
-    /** Holepunch.leave for an abandoned candidate's channel topic - mirrors P2PManager.tryOpenConnectionToChannel's own topic derivation exactly. A no-op if we never joined (leave() checks its own tracked topic list). */
+    /** Resolves the opt-in negotiation service, or undefined when none is wired. */
+    private getNegotiationService(): OpenChannelNegotiationService | undefined {
+        return getOptionalRpcService(
+            this.signer.p2pManager.localRpc,
+            "openChannelNegotiationService",
+            OpenChannelNegotiationService
+        );
+    }
+
+    /** Holepunch.leave for an abandoned candidate's channel topic. A no-op if we never joined (leave() checks its own tracked topic list). */
     private leaveChannelTopic(channelId: string): void {
         if (config.DEBUG_LOCAL_TRANSPORT) return;
-        const topic = Buffer.alloc(32).fill(channelId);
+        const topic = deriveChannelTopic(channelId);
         this.signer.p2pManager.holepunch.leave(topic).catch((error) => {
             this.logger.warn("Failed to leave abandoned channel topic", {
                 error: error instanceof Error ? error.message : String(error)

@@ -16,8 +16,8 @@ export type AdmissionPolicy = {
     maxAmount?: string; // decimal string
     allow?: string[]; // addresses; empty/absent => no allow-list (allow all)
     deny?: string[]; // addresses; deny wins over allow
-    decisionTimeoutMs?: number; // reserved, Phase 2
-    onTimeout?: "deny" | "allow"; // reserved, Phase 2
+    decisionTimeoutMs?: number; // reserved, not consumed yet
+    onTimeout?: "deny" | "allow"; // reserved, not consumed yet
 };
 
 export type AdmissionRequestKind = "intent" | "negotiate" | "join";
@@ -58,8 +58,8 @@ function checksumList(addresses: string[] | undefined): Set<string> {
 
 /**
  * Pure evaluator: (policy, request) -> decision. No clock, no I/O, no logging.
- * decisionTimeoutMs/onTimeout are carried on the policy for Phase 2 but are
- * NOT consumed here.
+ * decisionTimeoutMs/onTimeout are carried on the policy for a future
+ * interactive mode but are NOT consumed here.
  *
  * Fails closed: any malformed input (bad address, non-integer amount) denies
  * with reason "policy" rather than throwing or silently allowing.
@@ -68,9 +68,9 @@ export function evaluateAdmission(
     policy: AdmissionPolicy,
     req: AdmissionRequest
 ): AdmissionDecision {
-    // TODO(Phase 2): arbitrate mode round-trips through the
-    // admissionRequested bus event / resolveAdmission. Layer 1 has no bus
-    // access, so it must never hang or silently allow — deny with "policy".
+    // TODO: arbitrate mode should round-trip through the admissionRequested
+    // bus event / resolveAdmission. This evaluator has no bus access, so it
+    // must never hang or silently allow — deny with "policy".
     if (policy.mode === "arbitrate") {
         return { allow: false, reason: "policy" };
     }

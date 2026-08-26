@@ -107,8 +107,8 @@ export class LobbyAdStore {
      * Validates and stores a received ad. `authenticatedPeer` is the
      * connection-authenticated lobby peer address — SECURITY: an ad whose
      * `advertiser` field differs from that address is rejected and never
-     * stored, regardless of what the frame body claims (decisions-final
-     * Phase-1 criterion 2 — validate on RECEIVE, never on send).
+     * stored, regardless of what the frame body claims — validation happens
+     * on RECEIVE, never on send.
      *
      * `encodedAd` is untrusted wire input: malformed/garbage bytes are
      * rejected with "malformed" rather than throwing.
@@ -230,7 +230,7 @@ export class LobbyAdStore {
         // after the purge physical == live, so the live gate is also the
         // physical gate and adsById.size can never exceed maxAds.
         //
-        // Residual (deferred, not mitigated here — Phase-2 gossip layer):
+        // Residual (deferred, not mitigated here — belongs to a gossip layer):
         // this only bounds cross-peer eviction and physical size. It does
         // NOT globally cap same-advertiser renewal, so N throwaway wallets
         // can each hold a long-lived slot ("slot squatting") without ever

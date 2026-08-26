@@ -17,6 +17,7 @@ import { addressesEqual } from "@/utils/address";
 import type { Logger } from "@/utils";
 import { Buffer } from "buffer";
 import { config, isNodeRuntime } from "@/utils/config";
+import { deriveChannelTopic } from "@/utils/channelTopic";
 import { Status } from "@/types";
 import { Address, ChannelId } from "./types/types";
 import { hasRpcService } from "./utils/ObjectChecks";
@@ -570,7 +571,7 @@ class P2PManager<TCustomRpc extends MainRpcService = MainRpcService>
             }
             return;
         }
-        const topic = Buffer.alloc(32).fill(channelId);
+        const topic = deriveChannelTopic(channelId);
         await this.holepunch.join(topic);
     }
     public addConnection(transport: ATransport) {

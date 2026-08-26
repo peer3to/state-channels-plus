@@ -138,7 +138,7 @@ export interface JoinLobbyRequest extends RuntimeRequest<"joinLobby"> {
 export type LeaveLobbyRequest = RuntimeRequest<"leaveLobby">;
 
 export interface PublishAdRequest extends RuntimeRequest<"publishAd"> {
-    /** ABI-encoded ChannelAdStruct (F5 - no BigInt crosses the port). */
+    /** ABI-encoded ChannelAdStruct - no BigInt crosses the port. */
     encodedAd: string;
 }
 
@@ -155,7 +155,7 @@ export interface ListAdsRequest extends RuntimeRequest<"listAds"> {
 export interface AcquireChannelRequest
     extends RuntimeRequest<"acquireChannel"> {
     /**
-     * ABI-encoded candidate ads (F5 - no function ever crosses the port).
+     * ABI-encoded candidate ads - no function ever crosses the port.
      * Optional: absent means "no explicit ads", which selects chain-first
      * discovery on the host side.
      */

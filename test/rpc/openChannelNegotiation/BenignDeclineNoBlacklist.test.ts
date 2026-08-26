@@ -15,7 +15,7 @@ import {
 } from "./negotiationTestFactory";
 
 /**
- * D2: the two benign openProposal rejections ("no negotiation in
+ * The two benign openProposal rejections ("no negotiation in
  * progress", "no negotiated amount") must decline via the non-punitive
  * abort wire path and reset cleanly, never blacklist. The three fraud-path
  * rejections (isLower, invalid lower signature, terms mismatch) must stay

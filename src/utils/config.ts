@@ -40,7 +40,7 @@ export type Config = {
     LOBBY_MAX_ADS_PER_PEER: number;
     LOBBY_MAX_OPEN_ADS_PER_PEER: number;
     LOBBY_INTENT_HOLD_MS: number;
-    // Phase 1 is K=1 only.
+    // Only one candidate is acquired at a time.
     LOBBY_COMMIT_CONNECT_TIMEOUT_MS: number;
     LOBBY_COMMIT_SYNC_TIMEOUT_MS: number;
     LOBBY_COMMIT_CONFIRM_TIMEOUT_MS: number;
@@ -49,11 +49,6 @@ export type Config = {
     DISCOVERY_SCAN_CHUNK_BLOCKS: number;
     DISCOVERY_SCAN_MAX_LOOKBACK_BLOCKS: number;
     DISCOVERY_SCAN_MAX_CANDIDATES: number;
-    // ChannelProber: rendezvous fan-out cap (concurrent topic joins) and the
-    // per-candidate timeout applied independently to each phase (rendezvous,
-    // then sync).
-    CHANNEL_PROBE_CONCURRENCY: number;
-    CHANNEL_PROBE_TIMEOUT_MS: number;
 };
 
 const DEFAULT_CONFIG: Config = {
@@ -91,9 +86,7 @@ const DEFAULT_CONFIG: Config = {
     LOBBY_COMMIT_CONFIRM_TIMEOUT_MS: 30000,
     DISCOVERY_SCAN_CHUNK_BLOCKS: 5_000,
     DISCOVERY_SCAN_MAX_LOOKBACK_BLOCKS: 100_000,
-    DISCOVERY_SCAN_MAX_CANDIDATES: 25,
-    CHANNEL_PROBE_CONCURRENCY: 5,
-    CHANNEL_PROBE_TIMEOUT_MS: 5000
+    DISCOVERY_SCAN_MAX_CANDIDATES: 25
 };
 
 export function isNodeRuntime() {

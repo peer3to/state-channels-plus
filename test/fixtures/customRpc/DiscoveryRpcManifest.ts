@@ -102,7 +102,7 @@ class NegotiationTestRpcMethods extends ARpcMethods {
     }
 
     /**
-     * Sets the NEGOTIATE-layer (D1) admission policy on this
+     * Sets the NEGOTIATE-layer admission policy on this
      * peer's `OpenChannelNegotiationService`. `OpenChannelNegotiationService
      * .setAdmissionPolicy` is deliberately a *Service* method, never exposed
      * on the production `OpenChannelNegotiationRpcMethods` ("never

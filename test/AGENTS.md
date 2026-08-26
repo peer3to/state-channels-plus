@@ -162,6 +162,61 @@ Don't add `as unknown as` at call sites to reach control services — route thro
   behind is a _paused in-flight call_ (release its resolver before the test
   ends).
 
+## Async join/spectate/leave — never block the authoring window
+
+Spectating, joining, and leave completion are asynchronous to the channel:
+remaining participants author blocks on their own cadence and never wait for a
+spectator to sync, a joiner to be admitted, or a leaver's on-chain exit to
+complete. Tests must model this. Once a block exists, the next block's timestamp
+is capped at `prev + p2pTime` while validators only accept it within
+`|now - blockTs| <= agreementTime` — so a blocking setup step placed between
+transitions burns the author's window and ends in a rejected block, a
+participant-timeout dispute, and a dead fork. Widening the timeConfig to fit the
+setup is not a fix; it hides the modeling error.
+
+- `addSpectatorDetached` is the default way to add a spectator.
+  `addSpectatorWait` is reserved for tests whose subject is the sync flow
+  itself and that schedule no state transitions while it blocks.
+- `addSpectatorDetached()` still returns only after the peer process is
+  created and connected. On an active fork, keep that returned promise without
+  awaiting it, produce the overlapping blocks, then await the peer and its
+  `SYNCED` status.
+- Need the spectator synced for a later step (e.g. `joinChannelWait`)? Keep
+  transitions flowing first, then await
+  `h.event.waitUntilPeerStatus(peer.index, Status.SYNCED)` immediately before
+  the step that needs it — by then the sync has overlapped the transitions.
+- `participantLeaveDetached` is the default when remaining participants will
+  author another block. Use `participantLeaveWait` only when completed exit or
+  the leaver's `SYNCED` status is the test subject and no later transition needs
+  the current authoring window. After a detached leave, keep the remaining
+  participants moving, then await the leaver's `SYNCED` status immediately
+  before the assertion or action that needs the completed exit.
+- An overlapping transition must wait only for the current participants. Do
+  not include a syncing spectator or exiting leaver in `waitForPeers`. After
+  its status wait completes, add a full sync barrier if the next assertion
+  needs every observer at the same head.
+- Treat every blocking `*Wait` in the join/spectate family the same way: place
+  it directly adjacent to the transition that depends on it, never stacked
+  behind other blocking setup inside the authoring window.
+- The scheduled-transition rule cuts both ways: multi-second setup with no
+  scheduled transition (e.g. before the first block) is fine — nothing is
+  waiting — but the height-0 participant timeout
+  (`p2p + agreement + chainFallback + evidence` after genesis) is still a hard
+  deadline for producing block 0.
+
+## Protocol wait budgets
+
+- Never increase a test's `timeConfig` to fix a flake unless the user explicitly
+  asks for that change. `timeConfig` is protocol input, not a test wait budget.
+  Diagnose and fix the ordering, detached-work, lifecycle, or event-barrier bug
+  that made the test depend on extra protocol time.
+- Do not hardcode timeout values for protocol, event, status, sync, dispute, or
+  snapshot waits. Omit the timeout when the action has a derived default, or use
+  `h.event.protocolEventTimeoutMs(...)` when a lower-level API requires one.
+- A fixed duration is allowed only when time is the test input or oracle, such
+  as testing timeout behavior, holding an absence window, or injecting a short
+  scheduling delay. Keep that reason clear at the call site.
+
 ## Chai comparators and contract-bearing objects
 
 `hardhat-chai-matchers` overwrites `.equal`/`.gt`/… and probes **both operands**

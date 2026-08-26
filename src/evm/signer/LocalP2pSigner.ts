@@ -21,6 +21,7 @@ import {
 } from "@/discovery/ChannelAcquisitionCoordinator";
 import { AdKind, type AdId, type ChannelAdStruct } from "@/discovery/ChannelAd";
 import LobbyService from "@/rpc/services/lobby/LobbyService";
+import { getOptionalRpcService } from "@/utils/optionalRpcService";
 
 /**
  * Signer used by the live p2p runtime state manager for channel-scoped
@@ -215,20 +216,13 @@ class LocalP2pSigner<TCustomRpc extends MainRpcService = MainRpcService>
     // longer owns any lobby networking state, it only forwards to
     // `p2pManager.localRpc.lobbyService` when the app has wired one in.
 
-    /**
-     * Defensive capability check for LobbyService - opt-in, same
-     * instanceof-narrowing pattern as
-     * ChannelAcquisitionCoordinator.getNegotiationService (LobbyService
-     * uses the same pattern itself to reach OpenChannelNegotiationService
-     * for the OPEN-ad-accepted stake set).
-     */
+    /** Resolves the opt-in lobby service, or undefined when none is wired. */
     private getLobbyService(): LobbyService | undefined {
-        const localRpc = this.p2pManager.localRpc as unknown as {
-            lobbyService?: unknown;
-        };
-        return localRpc.lobbyService instanceof LobbyService
-            ? localRpc.lobbyService
-            : undefined;
+        return getOptionalRpcService(
+            this.p2pManager.localRpc,
+            "lobbyService",
+            LobbyService
+        );
     }
 
     private requireLobbyService(): LobbyService {
@@ -274,10 +268,12 @@ class LocalP2pSigner<TCustomRpc extends MainRpcService = MainRpcService>
     public async acquireChannel(
         options: AcquireOptions
     ): Promise<AcquireResult> {
-        const lobbyService = this.requireLobbyService();
+        // Deliberately NOT requireLobbyService: chain-first discovery joins
+        // channels that already exist and never touches the lobby, so a
+        // consumer that only wants to join must not be forced to wire one.
         if (!this.acquisition) {
             this.acquisition = new ChannelAcquisitionCoordinator({
-                lobby: lobbyService,
+                lobby: this.getLobbyService(),
                 signer: this,
                 logger: this.logger,
                 events: this.p2pManager.stateManager.events

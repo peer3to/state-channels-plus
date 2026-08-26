@@ -188,7 +188,7 @@ describe("AdmissionPolicy", () => {
             expect(decision).to.deep.equal({ allow: false, reason: "policy" });
         });
 
-        it("arbitrate produces 'policy' in Phase 1 (no bus round-trip)", () => {
+        it("arbitrate produces 'policy' while there is no bus round-trip", () => {
             const decision = evaluateAdmission(
                 { mode: "arbitrate" },
                 baseRequest()
@@ -408,7 +408,7 @@ describe("AdmissionPolicy", () => {
         });
     });
 
-    describe("clone-safety (F5)", () => {
+    describe("clone-safety across the runtime port", () => {
         it("JSON.parse(JSON.stringify(policy)) round-trips to an identical policy", () => {
             const policy: AdmissionPolicy = {
                 mode: "arbitrate",
