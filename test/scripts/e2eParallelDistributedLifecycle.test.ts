@@ -13,6 +13,7 @@ const {
 const {
     ingestAttemptLogMessage
 } = require("../../scripts/e2e-parallel/distributed/orchestrator.js");
+const DHT = require("@hyperswarm/dht");
 
 const workspaceManifest = {
     version: 3,
@@ -406,6 +407,54 @@ describe("distributed worker pool lifecycle", function () {
             await second.waitFor(worker.name, "LEASE_CLEAN", {
                 after: cleaning.sequence
             });
+        } finally {
+            await pool.close();
+        }
+    });
+
+    it("releases an allocating environment when its orchestrator disconnects", async function () {
+        const pool = await LeasePoolHarness.create();
+        const backend = new TestIsolatedRuntimeBackend();
+        backend.creationDelayMs = 200;
+        const keyPair = DHT.keyPair(Buffer.alloc(32, 7));
+        try {
+            const worker = await pool.startServer("worker-a", {
+                environmentBackend: backend
+            });
+            const first = await pool.startOrchestrator("allocating-run", {
+                keyPair
+            });
+            await first.waitFor(worker.name, "LEASE_GRANTED");
+            await first.send(
+                worker.name,
+                "WORKSPACE_OFFER",
+                { manifest: workspaceManifest },
+                Buffer.from(JSON.stringify(sourceFiles))
+            );
+            await backend.firstCreateStarted;
+
+            const second = await pool.startOrchestrator("retry-run", {
+                keyPair
+            });
+            await second.waitFor(worker.name, "BUSY");
+            await pool.closeOrchestrator(first);
+            await second.waitFor(worker.name, "LEASE_GRANTED");
+            await second.send(
+                worker.name,
+                "WORKSPACE_OFFER",
+                { manifest: workspaceManifest },
+                Buffer.from(JSON.stringify(sourceFiles))
+            );
+            await second.waitFor(worker.name, "WORKSPACE_NEED");
+
+            expect(
+                backend.calls.filter((entry) => entry.operation === "create")
+            ).to.have.length(2);
+            expect(
+                backend.calls.filter((entry) => entry.operation === "destroy")
+            ).to.have.length(1);
+            await second.send(worker.name, "RELEASE");
+            await second.waitFor(worker.name, "LEASE_CLEAN");
         } finally {
             await pool.close();
         }

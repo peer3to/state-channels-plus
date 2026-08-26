@@ -97,6 +97,39 @@ describe("distributed isolated environment", function () {
         }
     });
 
+    it("contains a broken control pipe inside the failed environment", async function () {
+        const root = fs.mkdtempSync(
+            path.join(os.tmpdir(), "isolated-control-pipe-")
+        );
+        const backend = new TestIsolatedRuntimeBackend();
+        try {
+            const manager = await IsolatedEnvironmentManager.create({
+                workRoot: root,
+                backend,
+                backendName: "test"
+            });
+            const environment = await manager.allocate({
+                environmentKey: "e".repeat(64),
+                orchestratorPublicKey: "f".repeat(64),
+                profile
+            });
+            await environment.start();
+            const failure = new Promise<Error>((resolve) =>
+                environment.once("failure", resolve)
+            );
+            const brokenPipe = Object.assign(new Error("write EPIPE"), {
+                code: "EPIPE"
+            });
+            backend.controls[0].stdin.emit("error", brokenPipe);
+
+            expect(await failure).to.equal(brokenPipe);
+            expect(environment.state).to.equal("failed");
+            await environment.destroy();
+        } finally {
+            fs.rmSync(root, { recursive: true, force: true });
+        }
+    });
+
     it("updates retained runtime limits and rejects growth beyond its fixed disk quota", async function () {
         const root = fs.mkdtempSync(
             path.join(os.tmpdir(), "isolated-profile-update-")

@@ -20,6 +20,8 @@ export class TestIsolatedRuntimeBackend {
     artifactChunks: Array<{ name: "stdout" | "stderr"; body: Buffer }> = [];
     completeArtifactTransfer = true;
     artifactTransferDelayMs = 0;
+    creationDelayMs = 0;
+    readonly firstCreateStarted: Promise<void>;
     preparationDelayMs = 0;
     preparationFailureDelayMs = 0;
     preparationStatusIntervalMs = 0;
@@ -33,6 +35,13 @@ export class TestIsolatedRuntimeBackend {
         message: string;
     } | null = null;
     readonly preparedFiles = new Map<string, Set<string>>();
+    private resolveFirstCreateStarted!: () => void;
+
+    constructor() {
+        this.firstCreateStarted = new Promise(
+            (resolve) => (this.resolveFirstCreateStarted = resolve)
+        );
+    }
 
     async detect() {
         this.calls.push({ operation: "detect" });
@@ -41,6 +50,12 @@ export class TestIsolatedRuntimeBackend {
 
     async create(allocation: unknown) {
         this.calls.push({ operation: "create", value: allocation });
+        this.resolveFirstCreateStarted();
+        if (this.creationDelayMs) {
+            await new Promise((resolve) =>
+                setTimeout(resolve, this.creationDelayMs)
+            );
+        }
         const diskBytes =
             allocation &&
             typeof allocation === "object" &&

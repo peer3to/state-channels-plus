@@ -224,6 +224,142 @@ async function main(options = {}) {
         return { defaults, ceilings: { ...defaults } };
     }
 
+    function createWorkspaceRuntime(connection, environmentKey, manifest) {
+        let reserved = false;
+        let lock = null;
+        let environment = null;
+        let listeners = null;
+        let setupFailure = null;
+        let cleanupRequested = false;
+        let cleaned = false;
+        const runtime = {
+            listeners: null,
+            setup: null,
+            async cleanup() {
+                if (cleaned) return;
+                cleaned = true;
+                cleanupRequested = true;
+                await runtime.setup.catch(() => {});
+                if (listeners && environment) {
+                    environment.off("frame", listeners.frame);
+                    environment.off("failure", listeners.failure);
+                    environment.off("resourceLimit", listeners.resourceLimit);
+                }
+                if (reserved) environmentCache.beginStop(environmentKey);
+                let detached = false;
+                let destroyed = false;
+                try {
+                    if (environment) {
+                        if (
+                            setupFailure ||
+                            connection.environmentFailed ||
+                            environment.state === "created" ||
+                            environment.state === "failed"
+                        ) {
+                            await environment.destroy();
+                            destroyed = true;
+                        } else {
+                            await environment.stop();
+                            environmentManager.markClean(environment);
+                        }
+                    }
+                    detached = true;
+                } catch (error) {
+                    environmentManager.block(environmentKey, error);
+                    audit.append({
+                        action: "environment-failure",
+                        accepted: false,
+                        callerFingerprint: fingerprint(connection.peerId),
+                        environmentKey,
+                        failureCode: "DETACH_UNCONFIRMED"
+                    });
+                } finally {
+                    lock?.release();
+                    if (reserved) environmentCache.release(environmentKey);
+                }
+                if (destroyed && detached && reserved) {
+                    environmentCache.invalidate(environmentKey);
+                }
+            }
+        };
+        runtime.setup = (async () => {
+            const reservation = await environmentCache.reserve(
+                environmentKey,
+                connection.executionProfile.diskBytes
+            );
+            reserved = true;
+            audit.append({
+                action: "environment-allocation",
+                accepted: true,
+                callerFingerprint: fingerprint(connection.peerId),
+                environmentKey,
+                backend: environmentManager.capabilities().backend,
+                cacheBytes: reservation.measuredBytes,
+                resolvedProfile: profileSummary(connection.executionProfile),
+                reason: reservation.evicted.length
+                    ? `evicted:${reservation.evicted.join(",")}`
+                    : "within-cache-budget"
+            });
+            if (cleanupRequested) return null;
+            lock = acquireWorkspaceLock(config.workRoot, environmentKey);
+            if (cleanupRequested) return null;
+            environment = await environmentManager.allocate({
+                environmentKey,
+                orchestratorPublicKey: connection.peerId,
+                profile: connection.executionProfile
+            });
+            connection.environment = environment;
+            connection.environmentKey = environmentKey;
+            const onEnvironmentFrame = (frame) =>
+                handleEnvironmentFrame(connection, frame).catch((error) =>
+                    handleEnvironmentFailure(connection, error)
+                );
+            const onEnvironmentFailure = (error) =>
+                handleEnvironmentFailure(connection, error);
+            const onResourceLimit = (failure) =>
+                handleEnvironmentFrame(connection, {
+                    kind: "RESOURCE_LIMIT_EXCEEDED",
+                    payload: failure,
+                    body: Buffer.alloc(0)
+                }).catch((error) =>
+                    handleEnvironmentFailure(connection, error)
+                );
+            listeners = {
+                frame: onEnvironmentFrame,
+                failure: onEnvironmentFailure,
+                resourceLimit: onResourceLimit
+            };
+            runtime.listeners = listeners;
+            environment.on("frame", onEnvironmentFrame);
+            environment.on("failure", onEnvironmentFailure);
+            environment.on("resourceLimit", onResourceLimit);
+            if (cleanupRequested) return null;
+            await environment.start();
+            if (cleanupRequested) return null;
+            environmentManager.writeMetadata(environment, true);
+            await environment.send("ENVIRONMENT_SETUP", {
+                environmentKey,
+                orchestratorPublicKey: connection.peerId,
+                profile: profileSummary(connection.executionProfile),
+                limits: {
+                    maxCompressedBytes: config.maxCompressedBytes,
+                    maxExpandedBytes: config.maxExpandedBytes,
+                    maxAttemptSpoolBytes: config.maxAttemptSpoolBytes
+                }
+            });
+            if (cleanupRequested) return null;
+            const needed = environment.waitFor("WORKSPACE_NEED", 30000);
+            await environment.send("WORKSPACE_OFFER", { manifest });
+            const need = (await needed).payload;
+            if (cleanupRequested) return null;
+            return need;
+        })().catch((error) => {
+            setupFailure = error;
+            throw error;
+        });
+        return runtime;
+    }
+
     async function handleAuthorizationAdmin(connection, message) {
         const requestId = message.header.requestId;
         const targetWorker = message.header.targetWorker;
@@ -615,7 +751,7 @@ async function main(options = {}) {
             }
             manager.assertActive(connection);
             if (message.kind === "WORKSPACE_OFFER") {
-                if (connection.environment) {
+                if (connection.runtime) {
                     throw new Error(
                         "Workspace offer is invalid after preparation has started"
                     );
@@ -638,119 +774,15 @@ async function main(options = {}) {
                     connection.peerId,
                     manifest.workspaceId
                 );
-                const reservation = await environmentCache.reserve(
-                    environmentKey,
-                    connection.executionProfile.diskBytes
-                );
-                audit.append({
-                    action: "environment-allocation",
-                    accepted: true,
-                    callerFingerprint: fingerprint(connection.peerId),
-                    environmentKey,
-                    backend: environmentManager.capabilities().backend,
-                    cacheBytes: reservation.measuredBytes,
-                    resolvedProfile: profileSummary(
-                        connection.executionProfile
-                    ),
-                    reason: reservation.evicted.length
-                        ? `evicted:${reservation.evicted.join(",")}`
-                        : "within-cache-budget"
-                });
-                let lock;
-                let environment;
-                try {
-                    lock = acquireWorkspaceLock(
-                        config.workRoot,
-                        environmentKey
-                    );
-                    environment = await environmentManager.allocate({
-                        environmentKey,
-                        orchestratorPublicKey: connection.peerId,
-                        profile: connection.executionProfile
-                    });
-                } catch (error) {
-                    lock?.release();
-                    environmentCache.beginStop(environmentKey);
-                    environmentCache.release(environmentKey);
-                    throw error;
-                }
-                connection.environment = environment;
                 connection.environmentKey = environmentKey;
-                const onEnvironmentFrame = (frame) =>
-                    handleEnvironmentFrame(connection, frame).catch((error) =>
-                        handleEnvironmentFailure(connection, error)
-                    );
-                const onEnvironmentFailure = (error) =>
-                    handleEnvironmentFailure(connection, error);
-                const onResourceLimit = (failure) =>
-                    handleEnvironmentFrame(connection, {
-                        kind: "RESOURCE_LIMIT_EXCEEDED",
-                        payload: failure,
-                        body: Buffer.alloc(0)
-                    }).catch((error) =>
-                        handleEnvironmentFailure(connection, error)
-                    );
-                let cleaned = false;
-                connection.runtime = {
-                    listeners: {
-                        frame: onEnvironmentFrame,
-                        failure: onEnvironmentFailure,
-                        resourceLimit: onResourceLimit
-                    },
-                    async cleanup() {
-                        if (cleaned) return;
-                        cleaned = true;
-                        environment.off("frame", onEnvironmentFrame);
-                        environment.off("failure", onEnvironmentFailure);
-                        environment.off("resourceLimit", onResourceLimit);
-                        environmentCache.beginStop(environmentKey);
-                        let detached = false;
-                        try {
-                            if (connection.environmentFailed) {
-                                await environment.destroy();
-                            } else {
-                                await environment.stop();
-                                environmentManager.markClean(environment);
-                            }
-                            detached = true;
-                        } catch (error) {
-                            environmentManager.block(environmentKey, error);
-                            audit.append({
-                                action: "environment-failure",
-                                accepted: false,
-                                callerFingerprint: fingerprint(
-                                    connection.peerId
-                                ),
-                                environmentKey,
-                                failureCode: "DETACH_UNCONFIRMED"
-                            });
-                        } finally {
-                            lock.release();
-                            environmentCache.release(environmentKey);
-                        }
-                        if (connection.environmentFailed && detached) {
-                            environmentCache.invalidate(environmentKey);
-                        }
-                    }
-                };
-                environment.on("frame", onEnvironmentFrame);
-                environment.on("failure", onEnvironmentFailure);
-                environment.on("resourceLimit", onResourceLimit);
-                await environment.start();
-                environmentManager.writeMetadata(environment, true);
-                await environment.send("ENVIRONMENT_SETUP", {
+                const runtime = createWorkspaceRuntime(
+                    connection,
                     environmentKey,
-                    orchestratorPublicKey: connection.peerId,
-                    profile: profileSummary(connection.executionProfile),
-                    limits: {
-                        maxCompressedBytes: config.maxCompressedBytes,
-                        maxExpandedBytes: config.maxExpandedBytes,
-                        maxAttemptSpoolBytes: config.maxAttemptSpoolBytes
-                    }
-                });
-                const needed = environment.waitFor("WORKSPACE_NEED", 30000);
-                await environment.send("WORKSPACE_OFFER", { manifest });
-                const need = (await needed).payload;
+                    manifest
+                );
+                connection.runtime = runtime;
+                const need = await runtime.setup;
+                if (connection.closing || !need) return;
                 connection.workspaceOffer = { manifest, need };
                 const { changed, deleted } = need;
                 await connection.peer.send(

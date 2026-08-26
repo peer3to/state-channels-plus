@@ -177,8 +177,8 @@ describe("distributed protocol", function () {
             path.join(os.tmpdir(), "orchestrator-identity-")
         );
         try {
-            const first = loadOrchestratorKeyPair(stateDir);
-            const second = loadOrchestratorKeyPair(stateDir);
+            const first = loadOrchestratorKeyPair(stateDir, null);
+            const second = loadOrchestratorKeyPair(stateDir, null);
             expect(second.publicKey.equals(first.publicKey)).to.equal(true);
             expect(second.secretKey.equals(first.secretKey)).to.equal(true);
 
@@ -187,15 +187,39 @@ describe("distributed protocol", function () {
                 path.join(stateDir, "orchestrator-seed"),
                 "not-hex"
             );
-            const third = loadOrchestratorKeyPair(stateDir);
+            const third = loadOrchestratorKeyPair(stateDir, null);
             expect(third.publicKey.equals(first.publicKey)).to.equal(false);
             expect(
-                loadOrchestratorKeyPair(stateDir).publicKey.equals(
+                loadOrchestratorKeyPair(stateDir, null).publicKey.equals(
                     third.publicKey
                 )
             ).to.equal(true);
         } finally {
             fs.rmSync(stateDir, { recursive: true, force: true });
+        }
+    });
+
+    it("uses one explicit orchestrator seed across fresh state directories", function () {
+        const firstStateDir = fs.mkdtempSync(
+            path.join(os.tmpdir(), "orchestrator-explicit-seed-a-")
+        );
+        const secondStateDir = fs.mkdtempSync(
+            path.join(os.tmpdir(), "orchestrator-explicit-seed-b-")
+        );
+        const seed = "a".repeat(64);
+        try {
+            const first = loadOrchestratorKeyPair(firstStateDir, seed);
+            const second = loadOrchestratorKeyPair(secondStateDir, seed);
+            expect(second.publicKey.equals(first.publicKey)).to.equal(true);
+            expect(second.secretKey.equals(first.secretKey)).to.equal(true);
+            expect(fs.readdirSync(firstStateDir)).to.be.empty;
+            expect(fs.readdirSync(secondStateDir)).to.be.empty;
+            expect(() =>
+                loadOrchestratorKeyPair(firstStateDir, "not-a-seed")
+            ).to.throw("64-character lowercase hex");
+        } finally {
+            fs.rmSync(firstStateDir, { recursive: true, force: true });
+            fs.rmSync(secondStateDir, { recursive: true, force: true });
         }
     });
 

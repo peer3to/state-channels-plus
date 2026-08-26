@@ -957,6 +957,16 @@ class IsolatedEnvironment extends EventEmitter {
         this.control.stderr.on("data", (chunk) =>
             this.emit("diagnostic", chunk)
         );
+        this.control.stdin.on("error", (error) => {
+            if (
+                this.state !== "stopping" &&
+                this.state !== "stopped" &&
+                this.state !== "destroyed"
+            ) {
+                error.code ||= "ISOLATED_CONTROL_WRITE";
+                this.fail(error);
+            }
+        });
         this.parser.on("frame", (frame) => this.receive(frame));
         this.parser.on("error", (error) => {
             error.code = "ISOLATED_CONTROL_PROTOCOL";

@@ -11,29 +11,10 @@ on:
             - reopened
 
 concurrency:
-    group: distributed-test-pool-${{ github.ref }}
-    cancel-in-progress: true
+    group: distributed-test-pool
+    cancel-in-progress: false
 
 jobs:
-    host-lock-linux:
-        runs-on: ubuntu-latest
-
-        steps:
-            - name: Checkout repository
-              uses: actions/checkout@v4
-
-            - name: Set up Node.js
-              uses: actions/setup-node@v4
-              with:
-                  node-version: 20
-                  cache: "yarn"
-
-            - name: Install dependencies
-              run: yarn install --frozen-lockfile
-
-            - name: Run host-lock process tests
-              run: yarn test:parallel --no-forge --slots 0 --test-pattern scripts/e2eParallelWorkerLease.test.ts --grep "host lock|one process recover|releases in one process|pid-file"
-
     test:
         runs-on: ubuntu-latest
         timeout-minutes: 45
@@ -53,26 +34,24 @@ jobs:
             - name: Install dependencies
               run: yarn install --frozen-lockfile
 
-            - name: Install Foundry
-              uses: foundry-rs/foundry-toolchain@v1
-              with:
-                  version: v1.2.3
-
-            - name: Compile contracts and generate artifacts
-              run: yarn compile
-
-            - name: Check pool secret is present
+            - name: Check distributed pool secrets are present
               env:
                   SCP_TEST_POOL_SECRET: ${{ secrets.SCP_TEST_POOL_SECRET }}
+                  SCP_TEST_ORCHESTRATOR_SEED: ${{ secrets.SCP_TEST_ORCHESTRATOR_SEED }}
               run: |
                   if [ -z "$SCP_TEST_POOL_SECRET" ]; then
                     echo "::error::SCP_TEST_POOL_SECRET is not set. Set it with: gh secret set SCP_TEST_POOL_SECRET"
+                    exit 1
+                  fi
+                  if ! printf '%s' "$SCP_TEST_ORCHESTRATOR_SEED" | grep -Eq '^[a-f0-9]{64}$'; then
+                    echo "::error::SCP_TEST_ORCHESTRATOR_SEED must be a 64-character lowercase hex repository secret"
                     exit 1
                   fi
 
             - name: Run full test suite on the distributed pool
               env:
                   SCP_TEST_POOL_SECRET: ${{ secrets.SCP_TEST_POOL_SECRET }}
+                  SCP_TEST_ORCHESTRATOR_SEED: ${{ secrets.SCP_TEST_ORCHESTRATOR_SEED }}
               run: yarn test:parallel:distributed --discovery-timeout 300000
 
             - name: Upload run logs

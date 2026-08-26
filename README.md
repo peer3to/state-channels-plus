@@ -249,6 +249,11 @@ temp/distributed-worker/
 - Containers stop at lease end, so idle identities reserve disk only. The same
   identity restarts its stopped container and volume. Count and disk budgets
   evict only least-recently-used idle identities.
+- A connection owns its allocation and workspace lock from reservation through
+  cleanup. If the orchestrator disconnects during setup or transfer, the worker
+  finishes stopping or destroying that environment before granting the next
+  lease. A closed guest control pipe fails that environment, not the persistent
+  worker server.
 - Host metadata marks an environment dirty before preparation or execution and
   clears it only after Docker confirms stop/detach. Restart recovery stops
   orphans, retains clean idle caches, and destroys only a dirty identity.
@@ -291,6 +296,14 @@ apply only to future connection admission. A removed identity keeps its current
 lease but cannot reconnect. Migration admissions record the full unlisted public
 transport key in the host audit log so an operator can copy it into the
 allowlist; ordinary allowlisted admissions record only the fingerprint.
+
+The orchestrator normally stores its seed under
+`temp/distributed-orchestrator`. Stateless CI machines must instead provide a
+dedicated `SCP_TEST_ORCHESTRATOR_SEED` secret containing 64 lowercase hex
+characters. The same seed produces the same transport identity on every run,
+so each worker reuses one CI environment for the same workspace. Do not reuse
+`SCP_TEST_POOL_SECRET` as this seed. CI runs that share this identity must be
+serialized across the repository.
 
 Use that persistent admin identity to discover workers and manage their
 authorization stores over the authenticated distributed transport:
