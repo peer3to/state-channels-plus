@@ -33,6 +33,7 @@ const { shouldTransferAttemptEvidence } = require("./artifactSelection");
 const { BoundedArtifactAssembler } = require("./failureArtifacts");
 
 const SHUTDOWN_TIMEOUT_MS = 5000;
+const CLEANUP_SETUP_WARNING_MS = 60000;
 const INFRA_PROCESS_LOG_CHUNK_BYTES = 512 * 1024;
 
 function isRoutineDiscoveryFailure(error) {
@@ -232,14 +233,27 @@ async function main(options = {}) {
         let setupFailure = null;
         let cleanupRequested = false;
         let cleaned = false;
+        const setupCancellation = new AbortController();
         const runtime = {
-            listeners: null,
             setup: null,
             async cleanup() {
                 if (cleaned) return;
                 cleaned = true;
                 cleanupRequested = true;
-                await runtime.setup.catch(() => {});
+                setupCancellation.abort();
+                const setupWarning = setTimeout(
+                    () =>
+                        console.warn(
+                            `Environment cleanup is still waiting for setup after ${CLEANUP_SETUP_WARNING_MS}ms (${environmentKey})`
+                        ),
+                    CLEANUP_SETUP_WARNING_MS
+                );
+                setupWarning.unref();
+                try {
+                    await runtime.setup.catch(() => {});
+                } finally {
+                    clearTimeout(setupWarning);
+                }
                 if (listeners && environment) {
                     environment.off("frame", listeners.frame);
                     environment.off("failure", listeners.failure);
@@ -329,7 +343,6 @@ async function main(options = {}) {
                 failure: onEnvironmentFailure,
                 resourceLimit: onResourceLimit
             };
-            runtime.listeners = listeners;
             environment.on("frame", onEnvironmentFrame);
             environment.on("failure", onEnvironmentFailure);
             environment.on("resourceLimit", onResourceLimit);
@@ -348,9 +361,26 @@ async function main(options = {}) {
                 }
             });
             if (cleanupRequested) return null;
-            const needed = environment.waitFor("WORKSPACE_NEED", 30000);
-            await environment.send("WORKSPACE_OFFER", { manifest });
-            const need = (await needed).payload;
+            const needed = environment.waitFor(
+                "WORKSPACE_NEED",
+                30000,
+                setupCancellation.signal
+            );
+            let need;
+            try {
+                await environment.send("WORKSPACE_OFFER", { manifest });
+                need = (await needed).payload;
+            } catch (error) {
+                setupCancellation.abort();
+                await needed.catch(() => {});
+                if (
+                    cleanupRequested &&
+                    error.code === "ISOLATED_WAIT_ABORTED"
+                ) {
+                    return null;
+                }
+                throw error;
+            }
             if (cleanupRequested) return null;
             return need;
         })().catch((error) => {

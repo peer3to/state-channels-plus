@@ -54,6 +54,9 @@ const {
     isRoutineDiscoveryFailure: isRoutineOrchestratorFailure
 } = require("../../scripts/e2e-parallel/distributed/orchestrator.js");
 const {
+    waitForIdleMessage
+} = require("../../scripts/e2e-parallel/distributed/artifactTransfer.js");
+const {
     isRoutineDiscoveryFailure: isRoutineServerFailure,
     requireTransportPublicKey
 } = require("../../scripts/e2e-parallel/distributed/server.js");
@@ -109,6 +112,34 @@ describe("distributed protocol", function () {
             )
         ).to.equal("transport reported ECONNRESET; no local application close");
         expect(closeOwner(null, null)).to.include("no local application close");
+    });
+
+    it("keeps the workspace wait alive while the worker sends heartbeats", async function () {
+        const pair = await createSocketPair();
+        const sender = new ProtocolPeer(pair.client);
+        const receiver = new ProtocolPeer(pair.server);
+        try {
+            const waiting = waitForIdleMessage(
+                sender,
+                "WORKSPACE_NEED",
+                100,
+                new Set(["HEARTBEAT"])
+            );
+            setTimeout(() => receiver.send("HEARTBEAT"), 50);
+            setTimeout(
+                () =>
+                    receiver.send(
+                        "WORKSPACE_NEED",
+                        {},
+                        Buffer.from('{"changed":[],"deleted":[]}')
+                    ),
+                125
+            );
+
+            expect((await waiting).kind).to.equal("WORKSPACE_NEED");
+        } finally {
+            await pair.close();
+        }
     });
 
     it("tolerates a transport reset before protocol ownership is installed", function () {
@@ -177,8 +208,8 @@ describe("distributed protocol", function () {
             path.join(os.tmpdir(), "orchestrator-identity-")
         );
         try {
-            const first = loadOrchestratorKeyPair(stateDir, null);
-            const second = loadOrchestratorKeyPair(stateDir, null);
+            const first = loadOrchestratorKeyPair(stateDir);
+            const second = loadOrchestratorKeyPair(stateDir);
             expect(second.publicKey.equals(first.publicKey)).to.equal(true);
             expect(second.secretKey.equals(first.secretKey)).to.equal(true);
 
@@ -187,10 +218,10 @@ describe("distributed protocol", function () {
                 path.join(stateDir, "orchestrator-seed"),
                 "not-hex"
             );
-            const third = loadOrchestratorKeyPair(stateDir, null);
+            const third = loadOrchestratorKeyPair(stateDir);
             expect(third.publicKey.equals(first.publicKey)).to.equal(false);
             expect(
-                loadOrchestratorKeyPair(stateDir, null).publicKey.equals(
+                loadOrchestratorKeyPair(stateDir).publicKey.equals(
                     third.publicKey
                 )
             ).to.equal(true);

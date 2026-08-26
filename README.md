@@ -303,7 +303,11 @@ dedicated `SCP_TEST_ORCHESTRATOR_SEED` secret containing 64 lowercase hex
 characters. The same seed produces the same transport identity on every run,
 so each worker reuses one CI environment for the same workspace. Do not reuse
 `SCP_TEST_POOL_SECRET` as this seed. CI runs that share this identity must be
-serialized across the repository.
+serialized across the repository. GitHub keeps only one pending run in a
+concurrency group, so a newer PR update can cancel an older queued run. Re-run
+that cancelled check from the Actions tab. Host-lock process coverage runs as
+part of the canonical distributed suite; CI does not start a separate local
+host-lock job.
 
 Use that persistent admin identity to discover workers and manage their
 authorization stores over the authenticated distributed transport:

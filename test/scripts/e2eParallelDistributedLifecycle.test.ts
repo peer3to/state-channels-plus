@@ -460,6 +460,100 @@ describe("distributed worker pool lifecycle", function () {
         }
     });
 
+    it("cancels the workspace diff wait when its orchestrator disconnects", async function () {
+        const pool = await LeasePoolHarness.create();
+        const backend = new TestIsolatedRuntimeBackend();
+        backend.respondToWorkspaceOffer = false;
+        const keyPair = DHT.keyPair(Buffer.alloc(32, 8));
+        try {
+            const worker = await pool.startServer("worker-a", {
+                environmentBackend: backend
+            });
+            const first = await pool.startOrchestrator("waiting-run", {
+                keyPair
+            });
+            await first.waitFor(worker.name, "LEASE_GRANTED");
+            await first.send(
+                worker.name,
+                "WORKSPACE_OFFER",
+                { manifest: workspaceManifest },
+                Buffer.from(JSON.stringify(sourceFiles))
+            );
+            await backend.firstWorkspaceOfferReceived;
+
+            const second = await pool.startOrchestrator("next-run");
+            await second.waitFor(worker.name, "BUSY");
+            const disconnectedAt = Date.now();
+            await pool.closeOrchestrator(first);
+            await second.waitFor(worker.name, "LEASE_GRANTED");
+
+            expect(Date.now() - disconnectedAt).to.be.lessThan(2000);
+            expect(
+                backend.calls.filter((entry) => entry.operation === "stop")
+            ).to.have.length(1);
+            expect(
+                backend.calls.filter((entry) => entry.operation === "destroy")
+            ).to.be.empty;
+            await second.send(worker.name, "RELEASE");
+            await second.waitFor(worker.name, "LEASE_CLEAN");
+        } finally {
+            await pool.close();
+        }
+    });
+
+    it("reuses an environment after its orchestrator disconnects during start", async function () {
+        const pool = await LeasePoolHarness.create();
+        const backend = new TestIsolatedRuntimeBackend();
+        backend.startDelayMs = 200;
+        const keyPair = DHT.keyPair(Buffer.alloc(32, 9));
+        try {
+            const worker = await pool.startServer("worker-a", {
+                environmentBackend: backend
+            });
+            const first = await pool.startOrchestrator("starting-run", {
+                keyPair
+            });
+            await first.waitFor(worker.name, "LEASE_GRANTED");
+            await first.send(
+                worker.name,
+                "WORKSPACE_OFFER",
+                { manifest: workspaceManifest },
+                Buffer.from(JSON.stringify(sourceFiles))
+            );
+            await backend.firstStartStarted;
+
+            await pool.closeOrchestrator(first);
+            const second = await pool.startOrchestrator("retry-run", {
+                keyPair
+            });
+            await second.waitFor(worker.name, "LEASE_GRANTED");
+            await second.send(
+                worker.name,
+                "WORKSPACE_OFFER",
+                { manifest: workspaceManifest },
+                Buffer.from(JSON.stringify(sourceFiles))
+            );
+            await second.waitFor(worker.name, "WORKSPACE_NEED");
+
+            expect(
+                backend.calls.filter((entry) => entry.operation === "create")
+            ).to.have.length(1);
+            expect(
+                backend.calls.filter((entry) => entry.operation === "start")
+            ).to.have.length(2);
+            expect(
+                backend.calls.filter((entry) => entry.operation === "stop")
+            ).to.have.length(1);
+            expect(
+                backend.calls.filter((entry) => entry.operation === "destroy")
+            ).to.be.empty;
+            await second.send(worker.name, "RELEASE");
+            await second.waitFor(worker.name, "LEASE_CLEAN");
+        } finally {
+            await pool.close();
+        }
+    });
+
     it("grants a new orchestrator immediately after the previous run finishes", async function () {
         const pool = await LeasePoolHarness.create();
         try {

@@ -72,7 +72,7 @@ const { accountPartitionFor } =
             accountPartition: number
         ) => number;
     };
-const { buildBaseEnv, main } =
+const { buildBaseEnv, main, resolveDistributedOrchestratorKeyPair } =
     require("../../scripts/test-e2e-parallel.js") as {
         buildBaseEnv: (threadModes: {
             sdkThread: boolean;
@@ -83,6 +83,10 @@ const { buildBaseEnv, main } =
             dryRun?: boolean;
             distributed?: boolean;
         }) => Promise<void>;
+        resolveDistributedOrchestratorKeyPair: (
+            stateDir: string,
+            environment?: NodeJS.ProcessEnv
+        ) => { publicKey: Buffer; secretKey: Buffer };
     };
 
 const argv = (...args: string[]) => ["node", "runner", ...args];
@@ -103,6 +107,60 @@ describe("e2e-parallel argParser - logDir validation", function () {
 
     it("exports the runner entry point for package consumers", function () {
         expect(main).to.be.a("function");
+    });
+
+    it("reads the stable identity seed only at the distributed runner entry point", function () {
+        const persistentStateDir = fs.mkdtempSync(
+            path.join(os.tmpdir(), "distributed-runner-persistent-")
+        );
+        const explicitStateDir = fs.mkdtempSync(
+            path.join(os.tmpdir(), "distributed-runner-explicit-")
+        );
+        const secondExplicitStateDir = fs.mkdtempSync(
+            path.join(os.tmpdir(), "distributed-runner-explicit-2-")
+        );
+        const hadSeed = Object.prototype.hasOwnProperty.call(
+            process.env,
+            "SCP_TEST_ORCHESTRATOR_SEED"
+        );
+        const previousSeed = process.env.SCP_TEST_ORCHESTRATOR_SEED;
+        try {
+            delete process.env.SCP_TEST_ORCHESTRATOR_SEED;
+            const persistent =
+                resolveDistributedOrchestratorKeyPair(persistentStateDir);
+            expect(
+                resolveDistributedOrchestratorKeyPair(
+                    persistentStateDir
+                ).publicKey.equals(persistent.publicKey)
+            ).to.equal(true);
+
+            process.env.SCP_TEST_ORCHESTRATOR_SEED = "a".repeat(64);
+            const explicit =
+                resolveDistributedOrchestratorKeyPair(explicitStateDir);
+            expect(
+                resolveDistributedOrchestratorKeyPair(
+                    secondExplicitStateDir
+                ).publicKey.equals(explicit.publicKey)
+            ).to.equal(true);
+            expect(fs.readdirSync(explicitStateDir)).to.be.empty;
+
+            process.env.SCP_TEST_ORCHESTRATOR_SEED = "";
+            expect(() =>
+                resolveDistributedOrchestratorKeyPair(explicitStateDir)
+            ).to.throw("64-character lowercase hex");
+        } finally {
+            if (hadSeed) {
+                process.env.SCP_TEST_ORCHESTRATOR_SEED = previousSeed;
+            } else {
+                delete process.env.SCP_TEST_ORCHESTRATOR_SEED;
+            }
+            fs.rmSync(persistentStateDir, { recursive: true, force: true });
+            fs.rmSync(explicitStateDir, { recursive: true, force: true });
+            fs.rmSync(secondExplicitStateDir, {
+                recursive: true,
+                force: true
+            });
+        }
     });
 
     it("supports standard help flags and documents every option", function () {

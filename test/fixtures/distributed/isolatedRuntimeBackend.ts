@@ -22,6 +22,8 @@ export class TestIsolatedRuntimeBackend {
     artifactTransferDelayMs = 0;
     creationDelayMs = 0;
     readonly firstCreateStarted: Promise<void>;
+    readonly firstStartStarted: Promise<void>;
+    readonly firstWorkspaceOfferReceived: Promise<void>;
     preparationDelayMs = 0;
     preparationFailureDelayMs = 0;
     preparationStatusIntervalMs = 0;
@@ -35,11 +37,21 @@ export class TestIsolatedRuntimeBackend {
         message: string;
     } | null = null;
     readonly preparedFiles = new Map<string, Set<string>>();
+    respondToWorkspaceOffer = true;
+    startDelayMs = 0;
     private resolveFirstCreateStarted!: () => void;
+    private resolveFirstStartStarted!: () => void;
+    private resolveFirstWorkspaceOfferReceived!: () => void;
 
     constructor() {
         this.firstCreateStarted = new Promise(
             (resolve) => (this.resolveFirstCreateStarted = resolve)
+        );
+        this.firstStartStarted = new Promise(
+            (resolve) => (this.resolveFirstStartStarted = resolve)
+        );
+        this.firstWorkspaceOfferReceived = new Promise(
+            (resolve) => (this.resolveFirstWorkspaceOfferReceived = resolve)
         );
     }
 
@@ -75,6 +87,12 @@ export class TestIsolatedRuntimeBackend {
 
     async start(handle: unknown) {
         this.calls.push({ operation: "start", value: handle });
+        this.resolveFirstStartStarted();
+        if (this.startDelayMs) {
+            await new Promise((resolve) =>
+                setTimeout(resolve, this.startDelayMs)
+            );
+        }
         if (this.startFailuresRemaining > 0) {
             this.startFailuresRemaining -= 1;
             throw new Error("test isolated runtime start failed");
@@ -112,6 +130,8 @@ export class TestIsolatedRuntimeBackend {
             }) => {
                 this.calls.push({ operation: "frame", value: frame });
                 if (frame.kind === "WORKSPACE_OFFER") {
+                    this.resolveFirstWorkspaceOfferReceived();
+                    if (!this.respondToWorkspaceOffer) return;
                     const manifest = frame.payload.manifest;
                     if (!manifest)
                         throw new Error("Missing test workspace manifest");

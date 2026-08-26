@@ -17,10 +17,7 @@ function keyPairFromSeed(seedHex) {
 // a worker's next topic refresh find and dial the live orchestrator
 // immediately. One orchestrator run per machine at a time — two concurrent
 // runs would share the identity and confuse the servers' per-peer dedupe.
-function loadOrchestratorKeyPair(
-    stateDir,
-    seedHex = process.env.SCP_TEST_ORCHESTRATOR_SEED
-) {
+function loadOrchestratorKeyPair(stateDir, seedHex) {
     if (seedHex !== undefined && seedHex !== null) {
         return keyPairFromSeed(seedHex);
     }

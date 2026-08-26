@@ -102,6 +102,16 @@ function resolveDistributedExecutionProfile(profile, slotCount) {
     return { ...profile, slots: 0 };
 }
 
+function resolveDistributedOrchestratorKeyPair(
+    stateDir,
+    environment = process.env
+) {
+    return loadOrchestratorKeyPair(
+        stateDir,
+        environment.SCP_TEST_ORCHESTRATOR_SEED
+    );
+}
+
 // Build the env every test child inherits (log level, thread modes, etc.).
 function buildBaseEnv(threadModes) {
     return {
@@ -324,7 +334,7 @@ async function main(options = {}) {
                     manifest,
                     logDir,
                     poolSecret,
-                    keyPair: loadOrchestratorKeyPair(
+                    keyPair: resolveDistributedOrchestratorKeyPair(
                         path.join(
                             process.cwd(),
                             "temp",
@@ -470,6 +480,7 @@ module.exports = {
     discoveryFailureMessage,
     validateDiscoveryResults,
     resolveDistributedExecutionProfile,
+    resolveDistributedOrchestratorKeyPair,
     resolveSlotCount,
     main
 };
