@@ -16,8 +16,8 @@ concurrency:
     cancel-in-progress: true
 
 jobs:
-    host-lock-windows:
-        runs-on: windows-latest
+    host-lock-linux:
+        runs-on: ubuntu-latest
 
         steps:
             - name: Checkout repository
