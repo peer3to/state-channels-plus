@@ -165,6 +165,58 @@ describe("Unit: BlockProductionService", function () {
     });
 
     describe("playTransaction → guards", function () {
+        it("two same-peer submissions built for one height → only the winner authors", async function () {
+            const h = TestSession.getHarness();
+            await h.lifecycle.start(3, 1);
+            const forkId = h.activeForkId!;
+            const nextWriter = await h.query.getNextPeerToWrite();
+            const writer = h.peers[nextWriter.index];
+            const heightBefore = await h
+                .control(writer)
+                .query.getNextBlockHeight(forkId)
+                .request();
+
+            await h.execOnHost(writer, async (sm) => {
+                await sm.mutex.lock({ taskName: "holdSamePeerSubmissions" });
+            });
+
+            let mutexReleased = false;
+            try {
+                const first = writer.p2pInstance.p2pContractInstance.add(1);
+                const second = writer.p2pInstance.p2pContractInstance.add(2);
+
+                await writer.turnBarrier.waitFor(
+                    async () =>
+                        (await h.execOnHost(writer, (sm) => {
+                            const mutex = sm.mutex as unknown as {
+                                queue: unknown[];
+                            };
+                            return mutex.queue.length;
+                        })) >= 2,
+                    {
+                        timeoutMs: h.event.protocolEventTimeoutMs(),
+                        timeoutMessage:
+                            "same-peer transactions did not queue behind the state mutex"
+                    }
+                );
+                await h.execOnHost(writer, (sm) => sm.mutex.unlock());
+                mutexReleased = true;
+
+                await Promise.all([first, second]);
+            } finally {
+                if (!mutexReleased) {
+                    await h.execOnHost(writer, (sm) => sm.mutex.unlock());
+                }
+            }
+
+            expect(
+                await h
+                    .control(writer)
+                    .query.getNextBlockHeight(forkId)
+                    .request()
+            ).to.equal(heightBefore + 1);
+        });
+
         it("not my turn → throws instead of authoring", async function () {
             const h = TestSession.getHarness();
             await h.lifecycle.start(3, 1);

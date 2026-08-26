@@ -1,6 +1,7 @@
 /* eslint-disable no-console */
 const path = require("path");
-const { DEFAULT_LOG_DIR, DEFAULT_FORGE_THREADS } = require("./constants");
+const { DEFAULT_LOG_DIR } = require("./constants");
+const { DEFAULT_FORGE_THREADS } = require("./forgeConfig");
 
 const HELP_TEXT = `Usage: yarn test:parallel [options]
 
@@ -9,7 +10,11 @@ Run each discovered Mocha test in an independently scheduled process.
 Options:
   -h, --help                     Show this help and exit
   -g, --grep <regexp>            Run tests whose full Mocha title matches
-      --test-pattern <glob>      Test filename glob relative to test/
+      --test-pattern <glob>      Test filename glob for both test tiers
+      --mocha-test-pattern <glob>
+                                  Mocha filename glob relative to test/
+      --forge-test-pattern <glob>
+                                  Solidity filename glob relative to test/
       --e2e-only                 Discover only Mocha tests under test/e2e
       --forge-only               Discover only Foundry (forge) test contracts
       --no-forge                 Skip Foundry (forge) test contracts
@@ -39,8 +44,8 @@ Options:
 By default all Mocha tests and all Foundry test contracts under test/ are
 discovered and logs are written to a new logs/run-N directory. Use --e2e-only
 only when the ordinary Mocha tier is not needed; it also drops the forge tier.
-Each forge task is pinned to one thread because the runner already parallelizes
-across tasks and forge would otherwise size its pool from the host core count.`;
+Each forge task uses one thread by default because the runner already
+parallelizes across tasks. Override it with --forge-threads.`;
 
 function getHelpText() {
     return HELP_TEXT;
@@ -64,6 +69,8 @@ function parseCliArgs(argv) {
         keepInfraLogs: false,
         grep: undefined,
         testPattern: undefined,
+        mochaTestPattern: undefined,
+        forgeTestPattern: undefined,
         help: false,
         e2eOnly: false,
         // Foundry test contracts are discovered alongside Mocha tests by
@@ -136,6 +143,34 @@ function parseCliArgs(argv) {
             options.testPattern = arg.slice("--test-pattern=".length);
             continue;
         }
+        if (arg === "--mocha-test-pattern") {
+            const next = argv[i + 1];
+            if (!next || next.startsWith("-"))
+                throw new Error("--mocha-test-pattern requires a value");
+            options.mochaTestPattern = next;
+            i++;
+            continue;
+        }
+        if (arg.startsWith("--mocha-test-pattern=")) {
+            options.mochaTestPattern = arg.slice(
+                "--mocha-test-pattern=".length
+            );
+            continue;
+        }
+        if (arg === "--forge-test-pattern") {
+            const next = argv[i + 1];
+            if (!next || next.startsWith("-"))
+                throw new Error("--forge-test-pattern requires a value");
+            options.forgeTestPattern = next;
+            i++;
+            continue;
+        }
+        if (arg.startsWith("--forge-test-pattern=")) {
+            options.forgeTestPattern = arg.slice(
+                "--forge-test-pattern=".length
+            );
+            continue;
+        }
         if (arg === "--e2e-only") {
             options.e2eOnly = true;
             continue;
@@ -149,18 +184,17 @@ function parseCliArgs(argv) {
             continue;
         }
         if (arg === "--forge-threads") {
-            const v = takeNumber(argv[i + 1], (s) => Number.parseInt(s, 10));
-            if (v === undefined)
+            const raw = argv[i + 1];
+            const v = raw === undefined ? NaN : Number(raw);
+            if (!Number.isInteger(v) || v < 1)
                 throw new Error("--forge-threads requires a positive integer");
             options.forgeThreads = v;
             i++;
             continue;
         }
         if (arg.startsWith("--forge-threads=")) {
-            const v = takeNumber(arg.split("=")[1], (s) =>
-                Number.parseInt(s, 10)
-            );
-            if (v === undefined)
+            const v = Number(arg.slice("--forge-threads=".length));
+            if (!Number.isInteger(v) || v < 1)
                 throw new Error("--forge-threads requires a positive integer");
             options.forgeThreads = v;
             continue;
@@ -427,11 +461,12 @@ function parseCliArgs(argv) {
         throw new Error("Distributed-only options require --distributed");
     }
     if (options.distributed) {
+        const slots = options.forgeOnly ? 0 : options.slots;
         options.executionProfile = Object.fromEntries(
             Object.entries({
                 schedulerTickMs: options.schedulerTickMs,
                 workers: options.workers,
-                slots: options.slots,
+                slots,
                 cpu: options.cpuLimit,
                 memoryBytes:
                     options.memLimitGb === undefined

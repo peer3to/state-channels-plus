@@ -90,4 +90,4 @@ Exact test evidence is mapped against these IDs in the verification test reports
 
 ## Related source reports
 
-- [DisputeValidationService](../stateManager/DisputeValidationService.ts.md), [DisputeManager](../disputeManager/DisputeManager.ts.md), [ReductionManager](../stateManager/reduction/ReductionManager.ts.md), [IsForkDisputedService](../rpc/services/isForkDisputedService/IsForkDisputedService.ts.md).
+- [DisputeValidationService](../stateManager/dispute/DisputeValidationService.ts.md), [DisputeManager](../disputeManager/DisputeManager.ts.md), [ReductionManager](../stateManager/reduction/ReductionManager.ts.md), [IsForkDisputedService](../rpc/services/isForkDisputedService/IsForkDisputedService.ts.md).

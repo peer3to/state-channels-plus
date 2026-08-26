@@ -144,8 +144,12 @@ export class MessageBlockStorage {
         const { upperBlockHash, lowerBlockHash, limit } = options ?? {};
         const newestFirst: MessageBlockStruct[] = [];
         const startBlockHash = upperBlockHash ?? this.latestBlockHash;
-        if (!startBlockHash || startBlockHash == ZeroHash)
-            return { newestFirst };
+        if (!startBlockHash) return { newestFirst };
+        if (startBlockHash == ZeroHash) {
+            return lowerBlockHash && lowerBlockHash != ZeroHash
+                ? { newestFirst, missingBlockHash: lowerBlockHash }
+                : { newestFirst };
+        }
 
         let currentHash = startBlockHash;
         while (currentHash != ZeroHash) {
@@ -156,6 +160,13 @@ export class MessageBlockStorage {
             newestFirst.push(messageBlock);
             if (limit !== undefined && newestFirst.length >= limit) break;
             currentHash = messageBlock.previousBlockHash as Hash;
+        }
+        if (
+            lowerBlockHash &&
+            lowerBlockHash != ZeroHash &&
+            currentHash != lowerBlockHash
+        ) {
+            return { newestFirst, missingBlockHash: lowerBlockHash };
         }
         return { newestFirst };
     }

@@ -231,16 +231,58 @@ function aggregateWorkerStats(workers) {
     };
 }
 
-function recordWorkerFailure(
-    workerFailures,
-    quarantinedWorkers,
-    workerId,
-    limit = 2
-) {
-    const failures = (workerFailures.get(workerId) || 0) + 1;
-    workerFailures.set(workerId, failures);
-    if (failures >= limit) quarantinedWorkers.add(workerId);
-    return { failures, quarantined: quarantinedWorkers.has(workerId) };
+function recordWorkerFailure(workerStates, workerId, details = {}, limit = 2) {
+    const state = workerStates.get(workerId) || {
+        label: details.label || workerId,
+        failureKind: null,
+        failures: 0,
+        firstReason: null,
+        latestReason: null,
+        lastDisposition: null,
+        quarantined: false,
+        quarantineReported: false
+    };
+    state.label = details.label || state.label;
+    state.failureKind = details.kind || "worker-failure";
+    state.failures += 1;
+    state.firstReason ||= details.reason || state.failureKind;
+    state.latestReason = details.reason || state.failureKind;
+    state.lastDisposition = state.failureKind;
+    state.quarantined ||= state.failures >= limit;
+    workerStates.set(workerId, state);
+    return state;
+}
+
+function recordWorkerRetirement(workerStates, workerId, details = {}) {
+    const state = workerStates.get(workerId) || {
+        label: details.label || workerId,
+        failureKind: null,
+        failures: 0,
+        firstReason: null,
+        latestReason: null,
+        lastDisposition: null,
+        quarantined: false,
+        quarantineReported: false
+    };
+    state.label = details.label || state.label;
+    state.failureKind = details.kind || state.failureKind || "disconnected";
+    state.firstReason ||= details.reason || state.failureKind;
+    state.latestReason =
+        details.reason || state.latestReason || state.failureKind;
+    state.lastDisposition = details.disposition || state.failureKind;
+    workerStates.set(workerId, state);
+    return state;
+}
+
+function formatWorkerDispositions(workerStates) {
+    if (!workerStates.size) return "no worker disposition was recorded";
+    return [...workerStates.values()]
+        .sort((left, right) => left.label.localeCompare(right.label))
+        .map(
+            (state) =>
+                `${state.label}: ${state.lastDisposition || "unknown"} — ${state.latestReason || "no reason reported"}${state.quarantined ? " (quarantined)" : ""}`
+        )
+        .join("; ");
 }
 
 function formatWorkerSummary(worker, completed) {
@@ -293,8 +335,7 @@ async function runDistributed(options) {
     // Stable transport identity -> compatibility/failure disposition for
     // this run, so reconnecting the same host cannot reset its failure budget.
     const warnedIncompatibleWorkers = new Set();
-    const quarantinedWorkers = new Set();
-    const workerFailures = new Map();
+    const workerStates = new Map();
     const logStore = new OrchestratorLogStore(options.logDir);
     const committedOutput = new Map();
     let discoveryStartedAt = Date.now();
@@ -326,7 +367,7 @@ async function runDistributed(options) {
             () =>
                 completedReject(
                     new Error(
-                        `Lost all distributed workers; none reconnected within ${options.discoveryTimeoutMs}ms`
+                        `Lost all distributed workers; none reconnected within ${options.discoveryTimeoutMs}ms. Last dispositions: ${formatWorkerDispositions(workerStates)}`
                     )
                 ),
             options.discoveryTimeoutMs
@@ -406,11 +447,13 @@ async function runDistributed(options) {
         const workerId =
             info?.publicKey?.toString("hex") || crypto.randomUUID();
         const peer = new ProtocolPeer(stream);
-        peer.on("protocolError", (error) =>
+        let protocolFailure = null;
+        peer.on("protocolError", (error) => {
+            protocolFailure = error;
             console.log(
                 `[dial] protocol error from ${workerId.slice(0, 12)}: ${error.message}`
-            )
-        );
+            );
+        });
         try {
             await authenticateClient(
                 peer,
@@ -427,8 +470,11 @@ async function runDistributed(options) {
                 peer.close("orchestrator run finished during authentication");
                 return;
             }
-            if (quarantinedWorkers.has(workerId)) {
-                peer.close("worker is quarantined for this run");
+            const priorState = workerStates.get(workerId);
+            if (priorState?.quarantined) {
+                peer.close(
+                    `worker is quarantined for this run: ${priorState.latestReason}`
+                );
                 return;
             }
             if (
@@ -467,6 +513,12 @@ async function runDistributed(options) {
                 connectionHash: connectionHash(stream),
                 retired: false
             };
+            recordWorkerRetirement(workerStates, workerId, {
+                label: worker.label,
+                kind: "connected",
+                reason: "authenticated connection accepted",
+                disposition: "connected"
+            });
             worker.heartbeat = createHeartbeatMonitor(
                 peer,
                 worker.heartbeatTimeoutMs,
@@ -476,7 +528,11 @@ async function runDistributed(options) {
                     );
                     retireWorker(
                         worker,
-                        `worker heartbeat timed out after ${worker.heartbeatTimeoutMs}ms`
+                        `worker heartbeat timed out after ${worker.heartbeatTimeoutMs}ms`,
+                        {
+                            kind: "heartbeat timeout",
+                            reason: worker.failure.message
+                        }
                     );
                 }
             );
@@ -516,7 +572,18 @@ async function runDistributed(options) {
                     dropWorker(worker, error)
                 );
             });
-            peer.once("close", () => retireWorker(worker));
+            peer.once("close", () =>
+                retireWorker(
+                    worker,
+                    null,
+                    protocolFailure
+                        ? {
+                              kind: "protocol failure",
+                              reason: protocolFailure.message
+                          }
+                        : {}
+                )
+            );
             const leaseHeader = { sessionId };
             if (
                 ready.header.capabilities.extensions?.resourceAllocationDetails
@@ -602,10 +669,21 @@ async function runDistributed(options) {
                 `${error.message}\n`
             );
             workerFaultStatus(worker, `FAULTED: ${message.header.message}`);
-            quarantinedWorkers.add(worker.id);
+            const state = recordWorkerFailure(
+                workerStates,
+                worker.id,
+                {
+                    label: worker.label,
+                    kind: "faulted",
+                    reason: error.message
+                },
+                1
+            );
+            reportQuarantine(worker, state);
             retireWorker(
                 worker,
-                "worker server requires administrator restart"
+                "worker server requires administrator restart",
+                { kind: "faulted", reason: error.message }
             );
         } else if (message.kind === "WORKER_READY") {
             workerStatus(worker, "Ready");
@@ -731,19 +809,18 @@ async function runDistributed(options) {
                 `Preparation failed: ${message.header.message}`,
                 process.stderr
             );
-            const failure = recordWorkerFailure(
-                workerFailures,
-                quarantinedWorkers,
-                worker.id
-            );
+            const failure = recordWorkerFailure(workerStates, worker.id, {
+                label: worker.label,
+                kind: "workspace preparation failure",
+                reason: error.message
+            });
             if (failure.quarantined) {
-                workerStatus(
-                    worker,
-                    `Quarantined after ${failure.failures} workspace preparation failures`,
-                    process.stderr
-                );
+                reportQuarantine(worker, failure);
             }
-            retireWorker(worker, "workspace preparation failed");
+            retireWorker(worker, "workspace preparation failed", {
+                kind: "workspace preparation failure",
+                reason: error.message
+            });
         } else if (message.kind === "RESOURCE_ALLOCATION_REJECTED") {
             const error = new Error(
                 `Worker ${workerName(worker)} refused ${message.header.resource}: ${message.header.message}`
@@ -754,7 +831,10 @@ async function runDistributed(options) {
                 `${error.message}\n`
             );
             workerStatus(worker, error.message, process.stderr);
-            retireWorker(worker, "resource allocation rejected");
+            retireWorker(worker, "resource allocation rejected", {
+                kind: "resource allocation rejected",
+                reason: error.message
+            });
         } else if (message.kind === "RESOURCE_LIMIT_EXCEEDED") {
             const error = new Error(
                 `Worker ${workerName(worker)} exceeded ${message.header.resource} limit ${message.header.limit} during ${message.header.phase || "execution"}`
@@ -767,7 +847,8 @@ async function runDistributed(options) {
             workerFaultStatus(worker, error.message);
             retireWorker(
                 worker,
-                "isolated environment resource limit exceeded"
+                "isolated environment resource limit exceeded",
+                { kind: "resource limit exceeded", reason: error.message }
             );
         } else if (message.kind === "WORKER_ERROR") {
             const error = new Error(
@@ -783,19 +864,18 @@ async function runDistributed(options) {
                 `Failed: ${message.header.message}`,
                 process.stderr
             );
-            const failure = recordWorkerFailure(
-                workerFailures,
-                quarantinedWorkers,
-                worker.id
-            );
+            const failure = recordWorkerFailure(workerStates, worker.id, {
+                label: worker.label,
+                kind: "fatal worker failure",
+                reason: error.message
+            });
             if (failure.quarantined) {
-                workerStatus(
-                    worker,
-                    `Quarantined after ${failure.failures} fatal worker failures`,
-                    process.stderr
-                );
+                reportQuarantine(worker, failure);
             }
-            retireWorker(worker, "test worker reported a fatal error");
+            retireWorker(worker, "test worker reported a fatal error", {
+                kind: "fatal worker failure",
+                reason: error.message
+            });
         } else if (message.kind === "LEASE_CLEAN") {
             worker.clean = true;
             workerStatus(worker, "Lease cleaned; ready for another run");
@@ -805,12 +885,35 @@ async function runDistributed(options) {
 
     function dropWorker(worker, error) {
         worker.failure ||= error;
-        retireWorker(worker, `worker protocol failed: ${error.message}`);
+        retireWorker(worker, `worker protocol failed: ${error.message}`, {
+            kind: "protocol failure",
+            reason: error.message
+        });
     }
 
-    function retireWorker(worker, closeReason = null) {
+    function reportQuarantine(worker, state) {
+        if (state.quarantineReported) return;
+        state.quarantineReported = true;
+        workerStatus(
+            worker,
+            `Quarantined after ${state.failures} failure(s): ${state.latestReason}. Infrastructure log: ${logStore.infrastructurePath(worker.id, worker.label)}`,
+            process.stderr
+        );
+    }
+
+    function retireWorker(worker, closeReason = null, retirement = {}) {
         if (worker.retired) return;
         worker.retired = true;
+        recordWorkerRetirement(workerStates, worker.id, {
+            label: worker.label,
+            kind: retirement.kind || "connection closed",
+            reason:
+                retirement.reason ||
+                worker.failure?.message ||
+                closeReason ||
+                "connection closed",
+            disposition: retirement.disposition
+        });
         worker.heartbeat?.stop();
         for (const attemptId of worker.attemptPaths.keys()) {
             logStore.abort(`${worker.id}:${attemptId}`);
@@ -908,12 +1011,14 @@ module.exports = {
     createWorkerColorRegistry,
     createHeartbeatMonitor,
     formatBusyStatus,
+    formatWorkerDispositions,
     formatWorkerSummary,
     ingestAttemptLogMessage,
     isRoutineDiscoveryFailure,
     promoteAttemptLog,
     promoteStarvationAttemptLog,
     recordWorkerFailure,
+    recordWorkerRetirement,
     runDistributed,
     validateWorkerStats,
     workerFaultStatus

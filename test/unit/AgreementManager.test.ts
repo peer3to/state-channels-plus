@@ -975,8 +975,6 @@ describe("Unit: AgreementManager", function () {
                 const r = await readReduceData(h, lagging, forkId);
 
                 expect(r.disputeCount).to.be.greaterThan(0);
-                // it used to throw "Block hash ... not found in storage", which
-                // reached abort() through tryReduce -> failCompletion
                 expect(r.threw).to.equal("");
                 expect(r.blockCount).to.equal(null);
                 await held.release({ replay: false });

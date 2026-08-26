@@ -34,13 +34,27 @@ export default class BlockProductionService {
     // Used when authoring a block - Executes the transaction and returns a signed block
     public async playTransaction(
         tx: TransactionStruct
-    ): Promise<BlockConfirmationStruct> {
+    ): Promise<BlockConfirmationStruct | undefined> {
         const sm = this.stateManager;
         await sm.mutex.lock({ taskName: "playTransaction" });
         const message = await this.logPlayTransaction(tx);
         try {
             if (!sm.validationService.isChannelOpen(sm.forkId)) {
                 throw new Error("Channel not open");
+            }
+            const staleLocalBlock = this.getStaleLocalBlock(tx);
+            if (staleLocalBlock) {
+                this.logger.verbose(
+                    "Local submission lost a same-peer authoring race",
+                    {
+                        candidateHeight: Number(tx.header.transactionCnt),
+                        committedBlock: LoggerUtils.getBlockMetadata(
+                            staleLocalBlock,
+                            sm.storage
+                        )
+                    }
+                );
+                return undefined;
             }
             if (!(await this.isMyTurn())) {
                 throw new Error("NOT MY TURN: " + message);
@@ -132,6 +146,21 @@ export default class BlockProductionService {
         } finally {
             sm.mutex.unlock();
         }
+    }
+
+    private getStaleLocalBlock(tx: TransactionStruct): Block | undefined {
+        const sm = this.stateManager;
+        if (tx.header.forkId !== sm.forkId) return undefined;
+
+        const height = Number(tx.header.transactionCnt);
+        if (height >= sm.storage.blocks.getNextBlockHeight(sm.forkId)) {
+            return undefined;
+        }
+
+        const committedBlock = sm.storage.blocks.getBlock(sm.forkId, height);
+        return committedBlock?.author === sm.signerAddress
+            ? committedBlock
+            : undefined;
     }
 
     private async isMyTurn(): Promise<boolean> {

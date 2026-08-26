@@ -49,6 +49,15 @@ type ExecutionProfileRequest = Partial<
     >
 >;
 
+type LeaseServerConnection = {
+    sessionId: string;
+    peer: {
+        stream: {
+            write: (chunk: Buffer) => boolean;
+        };
+    };
+};
+
 type LeaseConnection = {
     workerId: string;
     label: string;
@@ -70,7 +79,7 @@ type LeaseWorkerServer = {
     name: string;
     workerId: string;
     manager: {
-        active: unknown;
+        active: LeaseServerConnection | null;
         markRunning: (connection: unknown) => void;
         updateProgress: (
             connection: unknown,
@@ -325,9 +334,11 @@ export async function startLeaseWorkerServer(options: {
     allowUnlistedOrchestrators?: boolean;
     preparationInactivityTimeoutMs?: number;
     artifactTransferTimeoutMs?: number;
+    allowSharedHost?: boolean;
+    lockPath?: string;
 }): Promise<{
     manager: {
-        active: unknown;
+        active: LeaseServerConnection | null;
         markRunning: (connection: unknown) => void;
         updateProgress: (
             connection: unknown,
@@ -352,7 +363,8 @@ export async function startLeaseWorkerServer(options: {
         name: options.name,
         workRoot: options.workRoot,
         dht: options.dht,
-        allowSharedHost: true,
+        allowSharedHost: options.allowSharedHost ?? true,
+        lockPath: options.lockPath,
         executionBackend: "unsafe-host",
         environmentBackend: options.environmentBackend,
         environmentBackendName: options.environmentBackend ? "test" : undefined,
@@ -398,6 +410,10 @@ export class LeasePoolHarness {
         );
     }
 
+    createOrchestratorDht(): unknown {
+        return this.network.createNode();
+    }
+
     async startServer(
         name: string,
         options: {
@@ -407,23 +423,29 @@ export class LeasePoolHarness {
             allowUnlistedOrchestrators?: boolean;
             preparationInactivityTimeoutMs?: number;
             artifactTransferTimeoutMs?: number;
+            allowSharedHost?: boolean;
+            lockPath?: string;
+            workRoot?: string;
         } = {}
     ): Promise<LeaseWorkerServer> {
+        const workRoot = options.workRoot || path.join(this.root, name);
         const server = {
             name,
-            workRoot: path.join(this.root, name),
+            workRoot,
             ...(await startLeaseWorkerServer({
                 dht: this.network.createNode(),
                 name,
                 poolSecret: this.poolSecret,
-                workRoot: path.join(this.root, name),
+                workRoot,
                 environmentBackend: options.environmentBackend,
                 authorizedPublicKeys: options.authorizedPublicKeys,
                 adminPublicKeys: options.adminPublicKeys,
                 allowUnlistedOrchestrators: options.allowUnlistedOrchestrators,
                 preparationInactivityTimeoutMs:
                     options.preparationInactivityTimeoutMs,
-                artifactTransferTimeoutMs: options.artifactTransferTimeoutMs
+                artifactTransferTimeoutMs: options.artifactTransferTimeoutMs,
+                allowSharedHost: options.allowSharedHost,
+                lockPath: options.lockPath
             }))
         };
         this.servers.push(server);

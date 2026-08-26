@@ -1,10 +1,10 @@
 /* eslint-disable no-console */
 const { HARDHAT_CLI, SCHEDULER_TICK_MS } = require("../shared/constants");
-const { requiresChainSlot } = require("../shared/taskRunners");
 const {
     AccountPartitionPool,
     accountPartitionFor
 } = require("../shared/accountPartitionPool");
+const { TaskResourcePool } = require("../shared/taskResources");
 const {
     cpuTimes,
     rssGbForPids,
@@ -13,7 +13,7 @@ const {
 const { liveTaskChildren, runTask } = require("../shared/runTask");
 const { TaskCoordinator } = require("../shared/taskCoordinator");
 const { WorkerScheduler } = require("../shared/workerScheduler");
-const { buildSlotEnv, holdReason } = require("../shared/scheduling");
+const { holdReason } = require("../shared/scheduling");
 const logging = require("../shared/logging");
 
 function resolveMode(flag, envVar, fallback) {
@@ -40,19 +40,27 @@ async function runScheduler({
     baseEnv,
     logDir,
     infraPids,
-    tickMs = SCHEDULER_TICK_MS
+    tickMs = SCHEDULER_TICK_MS,
+    runTaskImpl = runTask,
+    accountPartitions = new AccountPartitionPool(),
+    resourceGate
 }) {
-    let sequence = 0;
-    const accountPartitions = new AccountPartitionPool();
-    const resources = new ResourceGate({
-        testPids: () =>
-            [...liveTaskChildren]
-                .filter((child) => !child.killed && child.pid)
-                .map((child) => child.pid),
-        infraPids,
-        targetLoad,
-        memBoundGb
+    const taskResources = new TaskResourcePool({
+        baseEnv,
+        slots,
+        accountPartitions
     });
+    const resources =
+        resourceGate ||
+        new ResourceGate({
+            testPids: () =>
+                [...liveTaskChildren]
+                    .filter((child) => !child.killed && child.pid)
+                    .map((child) => child.pid),
+            infraPids,
+            targetLoad,
+            memBoundGb
+        });
     let rejectRun;
 
     let scheduler;
@@ -103,14 +111,8 @@ async function runScheduler({
         onError: (error) => rejectRun?.(error),
         runTask: async (assignment) => {
             // Forge brings its own EVM: no warm slot, no funded partition.
-            const needsChain = requiresChainSlot(assignment.task);
-            let account = null;
-            let slot = null;
-            if (needsChain) {
-                sequence++;
-                account = accountPartitions.acquire();
-                slot = slotCount > 0 ? slots[(sequence - 1) % slotCount] : null;
-            }
+            const execution = taskResources.acquire(assignment.task);
+            const { needsChain, accountPartition: account, slot } = execution;
             logging.admission({
                 seq: assignment.seq,
                 total: tasks.length,
@@ -129,23 +131,15 @@ async function runScheduler({
             });
             let attempt;
             try {
-                attempt = await runTask(
+                attempt = await runTaskImpl(
                     process.execPath,
                     [HARDHAT_CLI, ...assignment.task.args],
-                    needsChain
-                        ? {
-                              ...baseEnv,
-                              ...buildSlotEnv(
-                                  slot,
-                                  accountPartitionFor(slot, account)
-                              )
-                          }
-                        : { ...baseEnv },
+                    execution.env,
                     assignment.task.label,
                     logging.getLogPath(logDir, assignment.task.logName)
                 );
             } finally {
-                if (account !== null) accountPartitions.release(account);
+                execution.release();
             }
             const result = coordinator.completeAttempt("local", {
                 ...attempt,

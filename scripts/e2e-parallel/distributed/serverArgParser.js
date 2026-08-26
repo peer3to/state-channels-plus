@@ -144,7 +144,7 @@ function parseServerArgs(argv, env = process.env) {
     }
     if (result.allowSharedHost && !result.workRootProvided) {
         throw new Error(
-            "--allow-shared-host requires an explicit unique --work-root"
+            "--allow-shared-host requires an explicit --work-root; runtime ownership enforces that no other worker server uses the resolved root"
         );
     }
     if (!/^[a-z0-9-]{1,48}$/.test(result.name)) {

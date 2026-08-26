@@ -31,12 +31,52 @@ describe("distributed workspace preparation", function () {
     it("reuses compiled contracts for non-contract source changes", function () {
         expect(
             selectPrepareScript(repository, {
-                prepared: true,
+                prepared: false,
                 preparationChanged: false,
+                contractPreparationChanged: false,
                 changed: ["state-channels-plus/src/index.ts"],
                 deleted: []
             })
         ).to.equal("cached");
+    });
+
+    it("retries an incomplete source-only preparation with no new source diff", function () {
+        expect(
+            selectPrepareScript(repository, {
+                prepared: false,
+                preparationChanged: false,
+                contractPreparationChanged: false,
+                changed: [],
+                deleted: []
+            })
+        ).to.equal("cached");
+    });
+
+    it("falls back to full preparation when an incomplete repository has no cached script", function () {
+        expect(
+            selectPrepareScript(
+                { ...repository, cachedPrepareScript: null },
+                {
+                    prepared: false,
+                    preparationChanged: false,
+                    contractPreparationChanged: false,
+                    changed: [],
+                    deleted: []
+                }
+            )
+        ).to.equal("full");
+    });
+
+    it("skips a complete unchanged repository", function () {
+        expect(
+            selectPrepareScript(repository, {
+                prepared: true,
+                preparationChanged: false,
+                contractPreparationChanged: false,
+                changed: [],
+                deleted: []
+            })
+        ).to.equal(null);
     });
 
     it("recompiles when Solidity inputs change or preparation is stale", function () {
@@ -64,11 +104,12 @@ describe("distributed workspace preparation", function () {
         ).to.equal("full");
     });
 
-    it("rebuilds contracts when the cached preparation did not complete", function () {
+    it("rebuilds contracts when the cached contract preparation did not complete", function () {
         expect(
             selectPrepareScript(repository, {
                 prepared: false,
                 preparationChanged: false,
+                contractPreparationChanged: true,
                 changed: ["state-channels-plus/src/index.ts"],
                 deleted: []
             })
@@ -177,6 +218,94 @@ describe("distributed workspace preparation", function () {
         } finally {
             fs.rmSync(root, { recursive: true, force: true });
         }
+    });
+
+    it("does not build a linked repository with no source changes", async function () {
+        const root = fs.mkdtempSync(
+            path.join(os.tmpdir(), "workspace-unchanged-")
+        );
+        const workspace = path.join(root, "workspace");
+        const calls: Array<{ command: string; args: string[] }> = [];
+        try {
+            fs.mkdirSync(path.join(workspace, "poker-contracts"), {
+                recursive: true
+            });
+            await prepareWorkspace(
+                workspace,
+                {
+                    repositories: [
+                        {
+                            path: "poker-contracts",
+                            name: "poker-contracts",
+                            prepareScript: "compile",
+                            hasPnpmLock: true,
+                            hasYarnLock: false,
+                            verifyNativeModules: []
+                        }
+                    ]
+                },
+                {
+                    storeDir: path.join(root, "store"),
+                    commandRunner: {
+                        async run(command: string, args: string[]) {
+                            calls.push({ command, args });
+                        }
+                    },
+                    shouldInstall: () => false,
+                    selectPrepareScript: () => null,
+                    env: {},
+                    onOutput() {}
+                }
+            );
+
+            expect(calls).to.deep.equal([]);
+        } finally {
+            fs.rmSync(root, { recursive: true, force: true });
+        }
+    });
+
+    it("skips an unchanged linked repository after another repository changes", function () {
+        expect(
+            selectPrepareScript(
+                {
+                    path: "poker-contracts",
+                    prepareScript: "compile",
+                    cachedPrepareScript: null,
+                    contractCompileInputs: []
+                },
+                {
+                    prepared: true,
+                    preparationChanged: false,
+                    contractPreparationChanged: false,
+                    changed: ["state-channels-plus/test/utils/nodeInfra.js"],
+                    deleted: []
+                }
+            )
+        ).to.equal(null);
+    });
+
+    it("rebuilds a consumer when linked contract inputs change", function () {
+        const linked = repository;
+        const consumer = {
+            path: "poker-contracts",
+            prepareScript: "compile",
+            cachedPrepareScript: null,
+            contractCompileInputs: []
+        };
+        expect(
+            selectPrepareScript(
+                consumer,
+                {
+                    prepared: false,
+                    preparationChanged: false,
+                    changed: [
+                        "state-channels-plus/contracts/V1/AStateMachine.sol"
+                    ],
+                    deleted: []
+                },
+                [linked, consumer]
+            )
+        ).to.equal("compile");
     });
 
     it("installs and prepares linked repositories in dependency order", async function () {

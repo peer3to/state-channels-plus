@@ -424,6 +424,132 @@ describe("distributed parallel runner", function () {
         }
     });
 
+    it("reports every real worker failure cause after quarantine and protocol loss", async function () {
+        const pool = await LeasePoolHarness.create();
+        const root = fs.mkdtempSync(
+            path.join(os.tmpdir(), "distributed-failure-summary-")
+        );
+        const preparationBackend = new TestIsolatedRuntimeBackend();
+        const protocolBackend = new TestIsolatedRuntimeBackend();
+        const terminal: string[] = [];
+        const dialActivity: string[] = [];
+        const originalStderrWrite = process.stderr.write;
+        const originalConsoleLog = console.log;
+        preparationBackend.preparationFailuresRemaining = 2;
+        preparationBackend.preparationFailureDelayMs = 50;
+        protocolBackend.preparationDelayMs = 2000;
+        fs.writeFileSync(path.join(root, "source.txt"), "source");
+        const manifest = {
+            version: 3,
+            packageManager: "pnpm",
+            workspaceId: "a".repeat(64),
+            sourceDigest: crypto
+                .createHash("sha256")
+                .update("source")
+                .digest("hex"),
+            rootProjectPath: ".",
+            repositories: [],
+            files: [
+                {
+                    path: "source.txt",
+                    bytes: 6,
+                    sha256: crypto
+                        .createHash("sha256")
+                        .update("source")
+                        .digest("hex"),
+                    mode:
+                        fs.statSync(path.join(root, "source.txt")).mode & 0o777
+                }
+            ],
+            fileCount: 1,
+            expandedBytes: 6
+        };
+        Object.defineProperty(manifest, "localWorkspaceRoot", {
+            value: root,
+            enumerable: false
+        });
+        try {
+            const preparationWorker = await pool.startServer(
+                "quarantine-worker",
+                { environmentBackend: preparationBackend }
+            );
+            const protocolWorker = await pool.startServer("protocol-worker", {
+                environmentBackend: protocolBackend
+            });
+            process.stderr.write = ((chunk: string | Uint8Array) => {
+                terminal.push(Buffer.from(chunk).toString("utf8"));
+                return true;
+            }) as typeof process.stderr.write;
+            console.log = (...data: unknown[]) => {
+                const line = data.map(String).join(" ");
+                dialActivity.push(line);
+                originalConsoleLog(...data);
+            };
+
+            const run = runDistributed({
+                tasks: [{ label: "not-run", logName: "not-run" }],
+                projectRoot: root,
+                archivePath: path.join(root, "bundle.tgz"),
+                manifest,
+                logDir: path.join(root, "logs"),
+                poolSecret: pool.poolSecret,
+                discoveryTimeoutMs: 3000,
+                discoveryRefreshMs: 25,
+                baseEnv: {},
+                dht: pool.createOrchestratorDht()
+            });
+            await waitFor(
+                () =>
+                    preparationWorker.manager.active !== null &&
+                    protocolWorker.manager.active !== null,
+                TEST_DISTRIBUTED_CONNECTION_TIMEOUT_MS
+            );
+            const malformed = Buffer.alloc(5);
+            malformed.writeUInt32BE(1, 0);
+            protocolWorker.manager.active?.peer.stream.write(malformed);
+            await waitFor(
+                () =>
+                    dialActivity.some((line) =>
+                        line.includes(
+                            "protocol error from " +
+                                protocolWorker.workerId.slice(0, 12) +
+                                ": Malformed frame"
+                        )
+                    ),
+                TEST_DISTRIBUTED_CONNECTION_TIMEOUT_MS
+            );
+            await pool.stopServer(protocolWorker);
+
+            let failure: Error | null = null;
+            try {
+                await run;
+            } catch (error) {
+                failure = error as Error;
+            }
+            expect(failure?.message).to.include("quarantine-worker");
+            expect(failure?.message).to.include("test preparation failed");
+            expect(failure?.message).to.include("protocol-worker");
+            expect(failure?.message).to.include("Malformed frame");
+            const terminalOutput = terminal.join("");
+            expect(
+                terminalOutput.match(/Quarantined after 2 failure\(s\)/g)
+            ).to.have.lengthOf(1);
+            expect(terminalOutput).to.include("Infrastructure log:");
+            expect(
+                dialActivity.some(
+                    (line) =>
+                        line.includes("worker is quarantined for this run") &&
+                        line.includes("test preparation failed")
+                )
+            ).to.equal(true);
+        } finally {
+            process.stderr.write = originalStderrWrite;
+            console.log = originalConsoleLog;
+            await pool.close();
+            fs.rmSync(root, { recursive: true, force: true });
+        }
+    });
+
     it("kills infrastructure grandchildren after a test process exits", async function () {
         const root = fs.mkdtempSync(path.join(os.tmpdir(), "task-group-"));
         let grandchildPid: number | undefined;
