@@ -29,27 +29,44 @@ async function nativeModulesLoad(repository, cwd, options, env) {
     }
 }
 
-function selectPrepareScript(repository, cache) {
-    if (
-        !cache.prepared ||
-        cache.preparationChanged ||
-        !repository.cachedPrepareScript
-    ) {
-        return repository.prepareScript;
-    }
+function hasContractCompileChanges(repository, cache) {
     const prefix = `${repository.path}/`;
     const compileInputs = repository.contractCompileInputs || [];
-    const contractsChanged = [...cache.changed, ...cache.deleted].some(
-        (entry) =>
-            compileInputs.some((input) => {
-                const target = `${prefix}${input}`;
-                return (
-                    entry === target ||
-                    (input.endsWith("/") && entry.startsWith(target))
-                );
-            })
+    return [...cache.changed, ...cache.deleted].some((entry) =>
+        compileInputs.some((input) => {
+            const target = `${prefix}${input}`;
+            return (
+                entry === target ||
+                (input.endsWith("/") && entry.startsWith(target))
+            );
+        })
     );
-    return contractsChanged
+}
+
+function selectPrepareScript(repository, cache, repositories = [repository]) {
+    if (cache.preparationChanged || cache.contractPreparationChanged) {
+        return repository.prepareScript;
+    }
+    if (cache.prepared === false) {
+        return repository.cachedPrepareScript || repository.prepareScript;
+    }
+    const prefix = `${repository.path}/`;
+    const repositoryChanged = [...cache.changed, ...cache.deleted].some(
+        (entry) => entry.startsWith(prefix)
+    );
+    const repositoryIndex = repositories.findIndex(
+        (candidate) => candidate.path === repository.path
+    );
+    const dependencies = repositories.slice(
+        0,
+        repositoryIndex < 0 ? repositories.length : repositoryIndex + 1
+    );
+    const dependencyContractsChanged = dependencies.some((candidate) =>
+        hasContractCompileChanges(candidate, cache)
+    );
+    if (!repositoryChanged && !dependencyContractsChanged) return null;
+    if (!repository.cachedPrepareScript) return repository.prepareScript;
+    return hasContractCompileChanges(repository, cache)
         ? repository.prepareScript
         : repository.cachedPrepareScript;
 }
@@ -134,9 +151,9 @@ async function prepareWorkspace(workspaceRoot, manifest, options) {
                 );
             }
         }
-        const prepareScript =
-            options.selectPrepareScript?.(repository) ||
-            repository.prepareScript;
+        const prepareScript = options.selectPrepareScript
+            ? options.selectPrepareScript(repository)
+            : repository.prepareScript;
         if (prepareScript) {
             options.onStage?.(`Building ${repository.name}`);
             options.onOutput(

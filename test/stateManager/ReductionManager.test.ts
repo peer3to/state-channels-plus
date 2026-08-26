@@ -146,9 +146,12 @@ describe("ReductionManager", function () {
             const result = await h.execOnHost(
                 targetPeer,
                 async (sm, args) => {
-                    const contract = sm.stateChannelManagerContract;
-                    const original =
-                        contract.isKillPeriodExpired.bind(contract);
+                    const executor = sm.reductionManager[
+                        "reductionExecutor"
+                    ] as unknown as {
+                        tryReduceLocked(forkId: string): Promise<void>;
+                    };
+                    const original = executor.tryReduceLocked.bind(executor);
                     let activeCalls = 0;
                     let maximumActiveCalls = 0;
                     let totalCalls = 0;
@@ -161,7 +164,7 @@ describe("ReductionManager", function () {
                         markFirstEntered = resolve;
                     });
 
-                    contract.isKillPeriodExpired = (async (...parameters) => {
+                    executor.tryReduceLocked = async (attemptForkId) => {
                         totalCalls += 1;
                         activeCalls += 1;
                         maximumActiveCalls = Math.max(
@@ -173,11 +176,11 @@ describe("ReductionManager", function () {
                             await firstRelease;
                         }
                         try {
-                            return await original(...parameters);
+                            return await original(attemptForkId);
                         } finally {
                             activeCalls -= 1;
                         }
-                    }) as typeof contract.isKillPeriodExpired;
+                    };
 
                     try {
                         void sm.reductionManager
@@ -199,7 +202,7 @@ describe("ReductionManager", function () {
                         };
                     } finally {
                         releaseFirst();
-                        contract.isKillPeriodExpired = original;
+                        executor.tryReduceLocked = original;
                     }
                 },
                 { forkId }

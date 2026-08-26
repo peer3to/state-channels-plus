@@ -170,26 +170,27 @@ export default class JoinChannelService extends ARpcService<JoinChannelRpcMethod
         if (joinChannel.channelId !== sm.channelId) {
             throw new Error("requestJoinSignature: channel mismatch");
         }
-        const chainTime = await Clock.getBlockchainTime();
+        const [chainTime, rawSnapshot, thresholdParticipants] =
+            await Promise.all([
+                Clock.getBlockchainTime(),
+                sm.stateChannelManagerContract.getStateSnapshot(
+                    joinChannel.channelId
+                ),
+                sm.membershipService.getOnChainThresholdSet(
+                    String(joinChannel.channelId) as ChannelId
+                )
+            ]);
         if (Number(joinChannel.deadlineTimestamp) < chainTime.timestamp) {
             throw new Error("requestJoinSignature: join expired");
         }
 
-        const snapshot = StateSnapshot.from(
-            await sm.stateChannelManagerContract.getStateSnapshot(
-                joinChannel.channelId
-            )
-        );
+        const snapshot = StateSnapshot.from(rawSnapshot);
         if (String(snapshot.forkID) !== String(expectedForkId)) {
             throw new Error("requestJoinSignature: fork mismatch");
         }
         if (String(snapshot.hash) !== String(expectedSnapshotHash)) {
             throw new Error("requestJoinSignature: snapshot mismatch");
         }
-        const thresholdParticipants =
-            await sm.membershipService.getOnChainThresholdSet(
-                String(joinChannel.channelId) as ChannelId
-            );
         if (
             !thresholdParticipants.some((participant) =>
                 addressesEqual(participant, sm.signerAddress)

@@ -1,8 +1,29 @@
+import { expect } from "chai";
 import { Codec, Type, hash } from "@/utils";
 import { DisputeFraudProofType } from "@/types/sol-enums";
 import { MathTestSession as TestSession } from "@test/harness";
 
 describe("E2E: dispute validation / balanceInvariant", function () {
+    it("an honest dispute with nonzero genesis deposits passes the local balance invariant", async function () {
+        const h = TestSession.getHarness();
+        await h.scenario.preDisputeSetup();
+        await h.control(h.getPeer(0)).dispute.setForceExit(true).request();
+        const { dispute, auditingData } =
+            await h.dispute.fetchConstructedDispute(0);
+
+        expect(
+            BigInt(
+                auditingData.latestStateSnapshot.snapshotData.totalDeposits
+                    .amount
+            )
+        ).to.be.greaterThan(0n);
+
+        const run = await h.dispute.auditDispute(1, dispute);
+
+        expect(run).to.include({ outcome: "returned", isValid: true });
+        expect(run.disputeFraudProofCount).to.equal(0);
+    });
+
     it("peer 2 uploads a dispute whose committed snapshot breaks the balance invariant → DisputeInvalidBalanceInvariant", async function () {
         const h = TestSession.getHarness();
         await h.scenario.preDisputeSetup();
@@ -19,6 +40,9 @@ describe("E2E: dispute validation / balanceInvariant", function () {
                 }
             }
         }));
+        expect(
+            BigInt(forged.originalSnapshot.snapshotData.totalDeposits.amount)
+        ).to.be.greaterThan(0n);
 
         await h.tamper.postTamperedDispute(
             2,

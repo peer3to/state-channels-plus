@@ -1500,10 +1500,6 @@ describe("Unit: DisputeValidationService", function () {
             await h.event.waitForPeers("onBlockCalldataPosted", [0, 1, 2], 1, {
                 mode: "atLeast"
             });
-            await h
-                .control(h.getPeer(3))
-                .stub.restoreRejectIngestedConfirmations()
-                .request();
             const forkId = h.activeForkId!;
             for (const i of [0, 1, 2, 3]) {
                 await h.rpcStub.holdReductionRace(i);
@@ -1530,6 +1526,10 @@ describe("Unit: DisputeValidationService", function () {
                 calldataAuthor.address
             );
             const { dispute } = await h.dispute.fetchConstructedDispute(3);
+            await h
+                .control(h.getPeer(3))
+                .stub.restoreRejectIngestedConfirmations()
+                .request();
             expect(Number(dispute.input.timeout.blockHeight)).to.equal(2);
             expect(dispute.postedAuditingData).to.equal(false);
             dispute.input.timeout.isForced = true; // same deviation the e2e posts
@@ -1567,10 +1567,6 @@ describe("Unit: DisputeValidationService", function () {
             await h.event.waitForPeers("onBlockCalldataPosted", [0, 1, 2], 1, {
                 mode: "atLeast"
             });
-            await h
-                .control(h.getPeer(3))
-                .stub.restoreRejectIngestedConfirmations()
-                .request();
             const forkId = h.activeForkId!;
             for (const i of [0, 1, 2, 3]) {
                 await h.rpcStub.holdReductionRace(i);
@@ -1595,6 +1591,10 @@ describe("Unit: DisputeValidationService", function () {
                 calldataAuthor.address
             );
             const { dispute } = await h.dispute.fetchConstructedDispute(3);
+            await h
+                .control(h.getPeer(3))
+                .stub.restoreRejectIngestedConfirmations()
+                .request();
             expect(Number(dispute.input.timeout.blockHeight)).to.equal(2);
 
             // stale previous-block calldata on the auditor: its proof claims

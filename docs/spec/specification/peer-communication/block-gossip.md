@@ -39,7 +39,7 @@ gossip redundancy plus the recovery paths of [`REQ-BLOCK-PIPE-4-CF52J6`](../bloc
 1. The frame passes ingress dispatch and the authenticated-session gate ([rpc.md](./rpc.md)).
 2. The sender's proven identity is attached to the confirmation as source attribution — the
    attribution that intake preserves per [`REQ-BLOCK-PIPE-1-SS24D1`](../block-progression/block-processing.md#req-block-pipe-1-ss24d1) and the queue stores per
-   [`REQ-QSTORE-1-PS769J`](../storage/queue.md#req-qstore-1-ps769j).
+   <a id="req-qstore-1-ps769j"></a>`REQ-QSTORE-1-PS769J`.
 3. The attributed confirmation is handed to pipeline intake ([`REQ-IX-1-WTJ0D1`](../interactions.md#req-ix-1-wtj0d1)).
    Intake is the merge regime: unordered, duplicable, mutex-free ([`REQ-BLOCK-PIPE-5-WJ31RG`](../block-progression/block-processing.md#req-block-pipe-5-wj31rg)).
 4. The pipeline's verdict maps back to a communication-layer consequence: acceptable knowledge

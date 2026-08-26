@@ -515,7 +515,9 @@ remove the function and the challenge-period machinery it implies. If scaffoldin
 non-normative until the optimistic design is specified, and state explicitly that no current
 commit path can be challenged.
 
-## <a id="oq-43-hwrtnf"></a>OQ-43-HWRTNF — Delegated contest authorization
+<a id="oq-43-hwrtnf"></a>
+
+## OQ-43-HWRTNF — Delegated contest authorization
 
 The version-one watchtower ([`REQ-TRUST-4-KW24NF`](security/trust-model.md#req-trust-4-kw24nf))
 needs its contest authorization decided. Opening a dispute and contesting a timeout require
@@ -540,7 +542,9 @@ meanwhile. That points at alternative (b) — permissionless kill paths — rath
 The question stays open until watchtowers are designed; the supporting game theory is specified
 then, not now.
 
-## <a id="oq-44-3y5md7"></a>OQ-44-3Y5MD7 — Watchtower deployment shape
+<a id="oq-44-3y5md7"></a>
+
+## OQ-44-3Y5MD7 — Watchtower deployment shape
 
 The version-one watchtower ([`REQ-TRUST-4-KW24NF`](security/trust-model.md#req-trust-4-kw24nf))
 has its sub-assumptions specified but not its concrete shape. The direction under consideration is

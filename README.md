@@ -33,8 +33,11 @@ For usage in other projects, install from npm:
 yarn add @peer3/state-channels-plus
 ```
 
-For usage in this repository, install local dependencies and build the SDK:
+For usage in this repository, install Foundry `v1.2.3`, initialize the pinned
+Solidity dependencies, install local dependencies, and build the SDK:
 ```shell
+foundryup --install v1.2.3
+git submodule update --init --recursive
 yarn && yarn build
 ```
 
@@ -93,17 +96,25 @@ ordinary tasks, one task per test contract. A contract counts as a test contract
 when it declares a `test`, `invariant`, or `statefulFuzz` function, so harness
 and helper contracts sharing a file are left out.
 
+Without filename overrides, the runner discovers `test/**/*.ts` for Mocha and
+`test/**/*.sol` for Foundry. A repository may contain either tier or both. Each
+tier filters candidates by file type before parsing, including when a shared
+`--test-pattern` is supplied.
+
 ```shell
 yarn test:parallel --forge-only     # only the forge tier
 yarn test:parallel --no-forge       # only the Mocha tier
 yarn test:parallel --forge-threads 2
+yarn test:parallel --test-pattern 'V1/**' # filter both tiers
 ```
 
-Each forge task runs on a single thread. `forge test` otherwise sizes its thread
-pool from the logical core count, which inside a CPU-limited container is still
-the host's count, so unpinned tasks oversubscribe the host. The runner already
-parallelizes across tasks. `--e2e-only` selects the Mocha end-to-end tier and
-drops the forge tier with it.
+Each forge task uses one thread by default. `forge test` otherwise sizes its
+thread pool from the logical core count, which inside a CPU-limited container is
+still the host's count, so unpinned tasks oversubscribe the host. The runner
+already parallelizes across tasks. Use `--forge-threads` to override the
+default. `--e2e-only` selects the Mocha end-to-end tier and drops the forge tier
+with it. Use `--mocha-test-pattern` or `--forge-test-pattern` when only one
+tier needs a filename filter.
 
 Forge tasks need no Hardhat node, so they take neither a warm slot nor a funded
 account partition. Local runs build the contracts once before scheduling;
@@ -213,16 +224,19 @@ temp/distributed-worker/
 │       ├── workspace.lock
 │       └── cache-allocation.json
 └── host-state/
+    ├── server.lock
     ├── authorization.json
     ├── audit/worker-audit.jsonl
     └── environments/<environment-key>.json
 ```
 
 - The per-user runtime directory under the OS temporary directory contains the
-  one host-scoped `server-v8.lock` file outside the worker root. The directory
-  is private to the current user and the lock refuses symbolic links. Its
-  OS-held lock prevents servers using different clones or work roots from
-  oversubscribing the same machine.
+  ordinary-mode host lock outside the worker root. Every server also owns
+  `<work-root>/host-state/server.lock`. Shared-host mode skips only the global
+  lock, so every concurrently running server must use a distinct resolved
+  `--work-root`. Lock records contain a live PID and ownership token; a paused
+  process never loses ownership, and stale-owner recovery cannot release a
+  successor's lock.
 - The host derives an environment key from the authenticated orchestrator
   transport key and workspace identity. Two identities with identical source
   never share a volume, package store, workspace, runner glue, logs, or locks.
@@ -257,8 +271,11 @@ yarn test:parallel:server \
 
 All worker-managed files then live under `/your/chosen/directory`; nothing is
 written to `temp/distributed-worker/`. Use an empty, writable directory on fast
-local storage. `--allow-shared-host` requires an explicit, unique `--work-root`;
-do not share one work root between worker servers. Real
+local storage. `--allow-shared-host` requires an explicit `--work-root`; startup
+locks that resolved root and rejects a second server with the exact conflicting
+path. Give every worker on the shared host a distinct root. A defense-in-depth
+workspace-lock error repeats this remedy if an older server bypasses startup
+ownership. Real
 distributed runs do not store package data in random OS temporary directories.
 Unit tests may use OS temporary directories and remove them during teardown.
 

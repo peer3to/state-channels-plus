@@ -4,7 +4,7 @@ import { ethers } from "ethers";
 import ADiamondStateMachine from "@/ADiamondStateMachine";
 import Storage from "@/storage";
 import { Codec, isSubset, Logger, tryDecodeCustomError, Type } from "@/utils";
-import { Address, Bytes, Signature } from "@/types/types";
+import { Address, Bytes, Hash, Signature } from "@/types/types";
 
 import DisputeFraudProofService from "./DisputeFraudProofService";
 import {
@@ -166,7 +166,10 @@ export default class DisputeValidationService {
                 return true;
             }
         }
-        return await this.runStateProofBlocksThroughPipeline(dispute);
+        return await this.runStateProofBlocksThroughPipeline(
+            dispute,
+            onChainDisputeAuditingData?.latestStateSnapshot
+        );
     }
 
     public persistDisputeDataWithoutAudit(
@@ -273,7 +276,8 @@ export default class DisputeValidationService {
     }
 
     private async runStateProofBlocksThroughPipeline(
-        dispute: DisputeStruct
+        dispute: DisputeStruct,
+        postedLatestStateSnapshot?: StateSnapshotStruct
     ): Promise<boolean> {
         const unfinalizedBlocks =
             await this.diamondStateMachine.localDiamondContract.getUnfinalizedBlockConfirmationsFromStateProof(
@@ -321,13 +325,94 @@ export default class DisputeValidationService {
         });
         if (this.hasStoredDisputeFraudProof(dispute)) return false;
 
+        if (
+            await this.tryCreateDisputeInboundAnchorBehindLatestStateProof(
+                dispute,
+                postedLatestStateSnapshot
+            )
+        ) {
+            return false;
+        }
+
         return await this.continueOtherChecks(dispute);
+    }
+
+    private async tryCreateDisputeInboundAnchorBehindLatestStateProof(
+        dispute: DisputeStruct,
+        postedLatestStateSnapshot?: StateSnapshotStruct
+    ): Promise<boolean> {
+        const latestStateSnapshot =
+            postedLatestStateSnapshot ??
+            this.storage.stateSnapshots
+                .getStateSnapshotByHash(
+                    dispute.input.latestStateSnapshotHash as Hash
+                )
+                ?.toStruct();
+        if (!latestStateSnapshot) return false;
+
+        // the forward walk can never reach a
+        // lastInboundMessageBlockHeight below the pinned snapshot's
+        // -> objective fraud
+        const isInboundAnchorBehind =
+            await this.diamondStateMachine.localDiamondContract.isDisputeInboundAnchorBehindLatestState.staticCall(
+                dispute,
+                latestStateSnapshot
+            );
+        if (!isInboundAnchorBehind) return false;
+
+        this.logger.warn(
+            "Dispute lastInboundMessageBlockHeight is behind its pinned snapshot's latestInboundMessageBlockHeight",
+            {
+                dispute: LoggerUtils.getDisputeMetadata(dispute),
+                latestStateSnapshot: LoggerUtils.getSnapshotMetadata(
+                    StateSnapshot.from(latestStateSnapshot)
+                )
+            }
+        );
+        this.disputeFraudProofService.createDisputeInboundAnchorBehindLatestState(
+            dispute,
+            latestStateSnapshot
+        );
+        return true;
     }
 
     private async continueOtherChecks(
         dispute: DisputeStruct
     ): Promise<boolean> {
         const isValid = true;
+
+        let isCorrectLatestState: boolean | undefined;
+        if (
+            !dispute.postedAuditingData &&
+            !this.storage.stateSnapshots.getStateSnapshotByHash(
+                dispute.input.latestStateSnapshotHash as Hash
+            )
+        ) {
+            const genesisStateSnapshot =
+                this.storage.stateSnapshots.getGenesisSnapshotByForkId(
+                    dispute.input.forkId
+                );
+            if (!genesisStateSnapshot) {
+                this.logger.warn(
+                    "Skipping dispute audit: genesis state snapshot is unavailable",
+                    { dispute: LoggerUtils.getDisputeMetadata(dispute) }
+                );
+                return true;
+            }
+
+            isCorrectLatestState =
+                await this.stateChannelManagerContract.isCorrectLatestState.staticCall(
+                    dispute,
+                    genesisStateSnapshot.snapshotData
+                );
+            if (isCorrectLatestState) {
+                this.logger.warn(
+                    "Skipping dispute audit: pinned latest state snapshot is unavailable",
+                    { dispute: LoggerUtils.getDisputeMetadata(dispute) }
+                );
+                return true;
+            }
+        }
 
         const { isPartial, auditingData: disputeAuditingData } =
             await this.disputeManager.getAuditingData(
@@ -355,7 +440,7 @@ export default class DisputeValidationService {
         }
         // TODO move this check above and into its own fraud proof
         if (!dispute.postedAuditingData) {
-            const isCorrectLatestState =
+            isCorrectLatestState ??=
                 await this.stateChannelManagerContract.isCorrectLatestState.staticCall(
                     dispute,
                     disputeAuditingData.genesisStateSnapshotData
@@ -668,31 +753,6 @@ export default class DisputeValidationService {
         );
 
         if (!isInputLinked) {
-            const isInboundAnchorBehind =
-                await this.diamondStateMachine.localDiamondContract.isDisputeInboundAnchorBehindLatestState.staticCall(
-                    dispute,
-                    disputeAuditingData.latestStateSnapshot
-                );
-
-            if (isInboundAnchorBehind) {
-                // the forward walk can never reach a
-                // lastInboundMessageBlockHeight below the pinned snapshot's
-                // -> objective fraud
-                this.logger.warn(
-                    "Dispute lastInboundMessageBlockHeight is behind its pinned snapshot's latestInboundMessageBlockHeight",
-                    {
-                        dispute: LoggerUtils.getDisputeMetadata(dispute),
-                        auditingData:
-                            LoggerUtils.getAuditingMetadata(disputeAuditingData)
-                    }
-                );
-                this.disputeFraudProofService.createDisputeInboundAnchorBehindLatestState(
-                    dispute,
-                    disputeAuditingData.latestStateSnapshot
-                );
-                return false;
-            }
-
             // inboundMessageBlocks don't bridge the gap, or the snapshot isn't
             // linked to the latest block. no fraud proof matches -> skip the
             // output check rather than submit an unprovable one

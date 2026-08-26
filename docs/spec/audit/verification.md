@@ -86,6 +86,9 @@ its cases.
 
 ## What was already fixed
 
+- Local block-production coverage now holds two same-writer submissions behind the state mutex,
+  releases them together, and proves that only one block commits at the shared coordinate while a
+  current-height out-of-turn submission still fails.
 - Snapshot-race coverage now proves both sides of the pending-inbound gate: SDK preparation stands
   down without a transaction while the JOIN is unconsumed, consumed JOIN state advances on-chain,
   and calldata prepared before a concurrent inbound arrival reverts on-chain. Forced-inclusion

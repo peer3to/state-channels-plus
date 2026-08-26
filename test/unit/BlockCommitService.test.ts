@@ -117,8 +117,23 @@ describe("Unit: BlockCommitService", function () {
                     .control(h.getPeer(0))
                     .query.getNextBlockHeight(forkId)
                     .request()) - 1;
-            await h.join.joinChannelWait({ joiner });
-            await h.transition.advanceState({ count: 2 });
+            const prepared = await h.join.buildJoinChannelConfirmation({
+                joiner,
+                channelId: h.channelId
+            });
+            const joinPromise = joiner.p2pInstance.p2pSigner.joinChannel(
+                prepared.confirmation,
+                prepared.expectedSnapshotHash,
+                prepared.expectedForkId
+            );
+
+            // The join lands independently on-chain. Keep the live channel
+            // authoring while that happens instead of consuming its next
+            // authoring window in a blocking join wait.
+            await h.transition.advanceState({ count: 1 });
+            await joinPromise;
+            await h.assert.storage.honestPeersObserveInboundMessageWait();
+            await h.transition.advanceState({ count: 1 });
             await h.event.waitUntilPeerStatus(
                 joiner.index,
                 Status.PARTICIPATING
