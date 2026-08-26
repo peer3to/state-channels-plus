@@ -1,15 +1,14 @@
 name: CI - Distributed Test Suite
 
 on:
-    push:
-        branches:
-            - master
-            - dispute
     pull_request:
         branches:
             - master
             - dispute
-    workflow_dispatch:
+        types:
+            - opened
+            - synchronize
+            - reopened
 
 concurrency:
     group: distributed-test-pool-${{ github.ref }}
