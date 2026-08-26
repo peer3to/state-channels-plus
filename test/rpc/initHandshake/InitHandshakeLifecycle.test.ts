@@ -338,4 +338,83 @@ describe("E2E: Init Handshake lifecycle neutrality", function () {
             "becoming a participant must not retroactively promote a peer that never became one itself"
         ).to.equal(false);
     });
+
+    it("promotes a deferred peer once that peer joins, even though our own status never changes", async function () {
+        const h = TestSession.getHarness();
+        await h.lifecycle.start(2, 0, { autoConnect: false });
+        await h.rpc.connectPeers([0, 1]);
+        await h.event.waitUntilEventOccurs("onConnection", 5000, [0, 1]);
+
+        // The mirror of the stranger test above. Two spectators of peer0/
+        // peer1 that never accepted each OTHER, so neither promotes the
+        // other: `observer` defers `joiner`. Registered first so the later
+        // registration discovers it via the discovery registry's full
+        // known-peer reply rather than a broadcast race.
+        const observer = await h.join.addSpectatorWait();
+        const joiner = await h.join.addSpectatorWait();
+        const joinerAddress = joiner.address;
+
+        const isJoinerPromotedOnObserver = async () => {
+            const result = await h.execOnHost(
+                h.getPeer(observer.index),
+                (sm, args) => ({
+                    isOpenConnection: sm.p2pManager.openConnections.some(
+                        (transport) =>
+                            transport.peerAddress === args.joinerAddress
+                    )
+                }),
+                { joinerAddress }
+            );
+            return result.isOpenConnection;
+        };
+
+        const deadline = Date.now() + 5000;
+        let isCompleted = false;
+        while (Date.now() < deadline) {
+            isCompleted = await h.rpc.isHandshakeCompleted(
+                observer.index,
+                joinerAddress
+            );
+            if (isCompleted) break;
+            await new Promise((resolve) => setTimeout(resolve, 50));
+        }
+        expect(
+            isCompleted,
+            "the two spectators should complete a handshake with each other"
+        ).to.equal(true);
+
+        expect(
+            await isJoinerPromotedOnObserver(),
+            "a peer that is neither a participant nor an accepted spectator must be deferred"
+        ).to.equal(false);
+
+        const statusBefore = await h
+            .control(observer)
+            .query.getStatus()
+            .request();
+
+        // The joiner joins for real. That grows the on-chain participant
+        // union, but it is the JOINER's status that moves - the observer
+        // stays a plain spectator and its own status never changes. A
+        // re-evaluation driven only by our own status change has no trigger
+        // here, so the joiner would stay deferred forever.
+        await h.join.joinChannelWait({ joiner });
+
+        const promotionDeadline = Date.now() + 10000;
+        let isPromoted = false;
+        while (Date.now() < promotionDeadline) {
+            isPromoted = await isJoinerPromotedOnObserver();
+            if (isPromoted) break;
+            await new Promise((resolve) => setTimeout(resolve, 50));
+        }
+        expect(
+            isPromoted,
+            "a deferred peer that has now joined the channel must be promoted"
+        ).to.equal(true);
+
+        expect(
+            await h.control(observer).query.getStatus().request(),
+            "the observer's own status must not have moved - the promotion cannot have come from an onStatusChanged trigger"
+        ).to.equal(statusBefore);
+    });
 });

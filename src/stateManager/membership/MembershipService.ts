@@ -83,6 +83,12 @@ export default class MembershipService {
                 expectedForkId
             );
             await tx.wait();
+
+            // The join is now on chain, so peers that deferred a promotion
+            // decision about us can resolve it. Only we know this moment,
+            // and the peers that need it are precisely the ones whose own
+            // state is not changing - see P2PManager.announceChannelMembership.
+            sm.p2pManager.announceChannelMembership();
         } catch (error) {
             const custom = tryDecodeCustomError(error);
             if (custom?.name === "ErrorJoinChannelParticipantAlreadyExists") {
