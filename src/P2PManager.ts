@@ -257,6 +257,43 @@ class P2PManager<TCustomRpc extends MainRpcService = MainRpcService>
     }
 
     /**
+     * Tells every peer we have completed a handshake with that our own join
+     * has landed, so a peer that deferred a promotion decision about us can
+     * take it again.
+     *
+     * Called by `MembershipService` once the join transaction is mined, which
+     * is the only moment that actually matters. Status is not a usable
+     * trigger here: PENDING_PARTICIPANT is set when the join is *submitted*,
+     * so announcing then races the chain - the receiver looks, does not find
+     * us in the union yet, and has no reason to look again. A joiner also
+     * need never reach PARTICIPATING, so there is no later status to fall
+     * back on.
+     *
+     * This is the counterpart to the second trigger described on
+     * `reevaluatePendingChannelMembership`: only the joining peer knows the
+     * moment its join lands, and the peers that need to react are exactly
+     * the ones whose own state is not changing. Fire-and-forget - a peer
+     * that misses it is no worse off than before, and a peer that fakes it
+     * gains nothing, because the receiver re-reads the chain either way.
+     */
+    public announceChannelMembership(): void {
+        const channelId = this.stateManager.channelId;
+        for (const peerAddress of this.getHandshakeCompletedPeers()) {
+            try {
+                this.remoteRpc.joinChannelService
+                    .announceChannelMembership(channelId)
+                    .sendOne(peerAddress);
+            } catch (error) {
+                this.logger.debug("Failed to announce membership to a peer", {
+                    peerAddress,
+                    error:
+                        error instanceof Error ? error.message : String(error)
+                });
+            }
+        }
+    }
+
+    /**
      * The one question both promotion paths ask: "is this peer in the channel
      * conversation". That is the on-chain participant union - participants
      * plus peers whose join is on-chain but not yet finalized.
@@ -300,13 +337,18 @@ class P2PManager<TCustomRpc extends MainRpcService = MainRpcService>
      * never accepted) stays deferred, and joining a channel later does not
      * retroactively grant it broadcast rights.
      *
-     * KNOWN GAP: this is edge-triggered on our own status change only. A peer
-     * that defers someone and then never changes status itself (an idle
-     * spectator, or any existing participant while a newcomer joins) gets no
-     * further trigger, so the deferred peer is never re-checked. Covered by a
-     * failing test; the fix is a design decision, not a patch.
+     * Two things drive this, and the second is what makes it complete. Our
+     * own status changing covers "we advanced" (our open or join landed).
+     * That alone leaves a hole: membership also grows when a PEER joins,
+     * which moves that peer's status, not ours - so a peer that defers
+     * someone and then sits idle (a spectator, or any participant while a
+     * newcomer joins) would have no trigger left and would keep the joiner
+     * deferred forever. The joiner closes that itself by announcing its
+     * membership once its join lands, which lands here as the second
+     * trigger. The announcement is only a prompt to look again; what
+     * decides is the on-chain union read below.
      */
-    private async reevaluatePendingChannelMembership(): Promise<void> {
+    public async reevaluatePendingChannelMembership(): Promise<void> {
         const stateManager = this.stateManager;
         if (stateManager.isDisposed) return;
         if (this.pendingChannelMembershipTransports.size === 0) return;
