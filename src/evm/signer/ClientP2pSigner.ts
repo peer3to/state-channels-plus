@@ -19,6 +19,16 @@ import type { RuntimeRequester } from "../p2pRuntime/types";
 import NoopEventProvider from "./NoopEventProvider";
 import { Codec, Type } from "@/utils";
 import type { PreparedJoinChannelConfirmation } from "@/rpc/services";
+import {
+    encodeChannelAd,
+    type AdId,
+    type AdKind,
+    type ChannelAdStruct
+} from "@/discovery/ChannelAd";
+import type {
+    AcquireOptions,
+    AcquireResult
+} from "@/discovery/ChannelAcquisitionCoordinator";
 
 const UNSUPPORTED =
     "Operation not supported by the p2p runtime client signer. " +
@@ -209,6 +219,67 @@ class ClientP2pSigner implements Signer {
 
     getChannelStatus(): Promise<Status> {
         return this.client.request<Status>({ type: "getChannelStatus" });
+    }
+
+    // ---- Discovery facade --------------------------------------------------
+    // This class only forwards plain, structured-clone-able data across
+    // the port.
+
+    joinLobby(appNamespace?: string): Promise<{ topic: string }> {
+        return this.client.request<{ topic: string }>({
+            type: "joinLobby",
+            appNamespace
+        });
+    }
+
+    leaveLobby(): Promise<void> {
+        return this.client.request<void>({ type: "leaveLobby" });
+    }
+
+    publishAd(ad: ChannelAdStruct): Promise<{ adId: AdId }> {
+        const { encodedAd } = encodeChannelAd(ad);
+        return this.client.request<{ adId: AdId }>({
+            type: "publishAd",
+            encodedAd
+        });
+    }
+
+    withdrawAd(adId: AdId): Promise<void> {
+        return this.client.request<void>({ type: "withdrawAd", adId });
+    }
+
+    listAds(filter?: {
+        kind?: AdKind;
+        minAmount?: string;
+        maxAmount?: string;
+    }): Promise<{ encodedAds: string[] }> {
+        return this.client.request<{ encodedAds: string[] }>({
+            type: "listAds",
+            kind: filter?.kind,
+            minAmount: filter?.minAmount,
+            maxAmount: filter?.maxAmount
+        });
+    }
+
+    acquireChannel(options: AcquireOptions): Promise<AcquireResult> {
+        // Chain-first when the caller passes no ads: forward `undefined`
+        // rather than an empty array, so the host coordinator can tell
+        // "nothing to try" apart from "enumerate the chain yourself".
+        const candidates: string[] | undefined = options.candidates?.map(
+            (ad) => encodeChannelAd(ad).encodedAd
+        );
+        return this.client.request<AcquireResult>(
+            {
+                type: "acquireChannel",
+                candidates,
+                lobbyOnly: options.lobbyOnly,
+                parallelism: options.parallelism,
+                maxWinners: options.maxWinners,
+                deadlineMs: options.deadlineMs,
+                amount: options.amount
+            },
+            { timeoutMs: null }
+        );
     }
 }
 

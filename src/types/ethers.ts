@@ -124,6 +124,21 @@ bool previousBlockProducerPostedCalldata,
 bytes participantSignatureOnPreviousBlock
 )`;
 
+export const ChannelAdEthersType = `tuple(
+uint16 v,
+uint8 kind,
+bytes32 channelId,
+address advertiser,
+bytes32 app,
+uint64 seq,
+uint64 expiresAtMs,
+uint16 capacity,
+uint16 filled,
+uint256 amount,
+bytes data,
+bytes signature
+)`;
+
 export const DisputeAuditingDataEthersType = `tuple(
 ${SnapshotDataEthersType} genesisStateSnapshotData,
 ${StateSnapshotEthersType} latestStateSnapshot,

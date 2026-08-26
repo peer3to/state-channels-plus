@@ -6,7 +6,9 @@ import { createConfig } from "@/utils/config";
 const ENV_KEYS = [
     "HOLEPUNCH_RELAYER_URLS",
     "DEBUG_LOCAL_TRANSPORT",
-    "LOG_LEVEL"
+    "LOG_LEVEL",
+    "LOBBY_INTENT_HOLD_MS",
+    "LOBBY_MAX_ADS"
 ] as const;
 
 describe("config env parsing", () => {
@@ -78,5 +80,19 @@ describe("config env parsing", () => {
         expect(cfg.HOLEPUNCH_RELAYER_URLS).to.deep.equal([
             "wss://override.example/dht"
         ]);
+    });
+
+    it("parses LOBBY_INTENT_HOLD_MS from env (number)", () => {
+        process.env.LOBBY_INTENT_HOLD_MS = "1234";
+
+        const cfg = createConfig({});
+        expect(cfg.LOBBY_INTENT_HOLD_MS).to.equal(1234);
+    });
+
+    it("leaves LOBBY_MAX_ADS at its default when the env value is unparseable", () => {
+        process.env.LOBBY_MAX_ADS = "abc";
+
+        const cfg = createConfig({});
+        expect(cfg.LOBBY_MAX_ADS).to.equal(512);
     });
 });

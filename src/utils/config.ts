@@ -27,6 +27,33 @@ export type Config = {
     CRASH_LOG_UPLOAD_ENDPOINT: string;
     CRASH_LOG_API_TOKEN: string;
     CRASH_LOG_MAX_SIZE_MB: number;
+    // Lobby/discovery: LobbyService is an opt-in custom RPC service (wired
+    // by a custom RPC manifest, like OpenChannelNegotiationService) - there
+    // is no separate enable flag; these keys only tune the ad
+    // store/reservations/commit timeouts once wired.
+    // Empty => derive from the state-machine contract address.
+    LOBBY_APP_NAMESPACE: string;
+    LOBBY_TOPIC_VERSION: number;
+    LOBBY_AD_MAX_TTL_MS: number;
+    LOBBY_AD_MAX_DATA_BYTES: number;
+    LOBBY_MAX_ADS: number;
+    LOBBY_MAX_ADS_PER_PEER: number;
+    LOBBY_MAX_OPEN_ADS_PER_PEER: number;
+    LOBBY_INTENT_HOLD_MS: number;
+    // Phase 1 is K=1 only.
+    LOBBY_COMMIT_CONNECT_TIMEOUT_MS: number;
+    LOBBY_COMMIT_SYNC_TIMEOUT_MS: number;
+    LOBBY_COMMIT_CONFIRM_TIMEOUT_MS: number;
+    // Channel discovery (on-chain enumeration): bounds for ChannelIndex's
+    // newest-first backward log scan.
+    DISCOVERY_SCAN_CHUNK_BLOCKS: number;
+    DISCOVERY_SCAN_MAX_LOOKBACK_BLOCKS: number;
+    DISCOVERY_SCAN_MAX_CANDIDATES: number;
+    // ChannelProber: rendezvous fan-out cap (concurrent topic joins) and the
+    // per-candidate timeout applied independently to each phase (rendezvous,
+    // then sync).
+    CHANNEL_PROBE_CONCURRENCY: number;
+    CHANNEL_PROBE_TIMEOUT_MS: number;
 };
 
 const DEFAULT_CONFIG: Config = {
@@ -50,7 +77,23 @@ const DEFAULT_CONFIG: Config = {
     // Crash log collection is enabled when upload endpoint is configured.
     CRASH_LOG_UPLOAD_ENDPOINT: "",
     CRASH_LOG_API_TOKEN: "",
-    CRASH_LOG_MAX_SIZE_MB: 10
+    CRASH_LOG_MAX_SIZE_MB: 10,
+    LOBBY_APP_NAMESPACE: "",
+    LOBBY_TOPIC_VERSION: 1,
+    LOBBY_AD_MAX_TTL_MS: 300000,
+    LOBBY_AD_MAX_DATA_BYTES: 512,
+    LOBBY_MAX_ADS: 512,
+    LOBBY_MAX_ADS_PER_PEER: 4,
+    LOBBY_MAX_OPEN_ADS_PER_PEER: 1,
+    LOBBY_INTENT_HOLD_MS: 5000,
+    LOBBY_COMMIT_CONNECT_TIMEOUT_MS: 15000,
+    LOBBY_COMMIT_SYNC_TIMEOUT_MS: 15000,
+    LOBBY_COMMIT_CONFIRM_TIMEOUT_MS: 30000,
+    DISCOVERY_SCAN_CHUNK_BLOCKS: 5_000,
+    DISCOVERY_SCAN_MAX_LOOKBACK_BLOCKS: 100_000,
+    DISCOVERY_SCAN_MAX_CANDIDATES: 25,
+    CHANNEL_PROBE_CONCURRENCY: 5,
+    CHANNEL_PROBE_TIMEOUT_MS: 5000
 };
 
 export function isNodeRuntime() {

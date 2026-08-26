@@ -14,6 +14,13 @@ import type { Logger } from "@/utils";
 import type { ForkId, Hash } from "@/types/types";
 import type { PreparedJoinChannelConfirmation } from "@/rpc/services";
 import NoopEventProvider from "./NoopEventProvider";
+import {
+    ChannelAcquisitionCoordinator,
+    type AcquireOptions,
+    type AcquireResult
+} from "@/discovery/ChannelAcquisitionCoordinator";
+import { AdKind, type AdId, type ChannelAdStruct } from "@/discovery/ChannelAd";
+import LobbyService from "@/rpc/services/lobby/LobbyService";
 
 /**
  * Signer used by the live p2p runtime state manager for channel-scoped
@@ -29,6 +36,12 @@ class LocalP2pSigner<TCustomRpc extends MainRpcService = MainRpcService>
     logger: Logger;
     //local profile
     isLeader: boolean;
+    // OWNERSHIP — the lobby itself (LobbyService) lives on
+    // `p2pManager.localRpc` (opt-in, wired by the app's custom RPC
+    // manifest) and is disposed with the P2PManager it belongs to. This
+    // class only owns the acquisition coordinator, constructed lazily on
+    // the first acquireChannel().
+    private acquisition?: ChannelAcquisitionCoordinator;
 
     constructor(
         signer: Signer,
@@ -193,6 +206,92 @@ class LocalP2pSigner<TCustomRpc extends MainRpcService = MainRpcService>
 
     public async getChannelStatus(): Promise<Status> {
         return this.p2pManager.stateManager.status;
+    }
+
+    // ---- Discovery facade --------------------------------------------------
+    // This class only ever sees plain data crossing the port. The lobby
+    // itself is an opt-in custom RPC service (LobbyService) riding the SAME
+    // shared swarm/handshake stack as everything else - this class no
+    // longer owns any lobby networking state, it only forwards to
+    // `p2pManager.localRpc.lobbyService` when the app has wired one in.
+
+    /**
+     * Defensive capability check for LobbyService - opt-in, same
+     * instanceof-narrowing pattern as
+     * ChannelAcquisitionCoordinator.getNegotiationService (LobbyService
+     * uses the same pattern itself to reach OpenChannelNegotiationService
+     * for the OPEN-ad-accepted stake set).
+     */
+    private getLobbyService(): LobbyService | undefined {
+        const localRpc = this.p2pManager.localRpc as unknown as {
+            lobbyService?: unknown;
+        };
+        return localRpc.lobbyService instanceof LobbyService
+            ? localRpc.lobbyService
+            : undefined;
+    }
+
+    private requireLobbyService(): LobbyService {
+        const lobbyService = this.getLobbyService();
+        if (!lobbyService) {
+            throw new Error(
+                "Discovery lobby is not enabled; wire lobbyService via a custom RPC manifest to use it"
+            );
+        }
+        return lobbyService;
+    }
+
+    public async joinLobby(appNamespace?: string): Promise<{ topic: string }> {
+        return this.requireLobbyService().joinLobby(appNamespace);
+    }
+
+    public async leaveLobby(): Promise<void> {
+        const lobbyService = this.getLobbyService();
+        if (!lobbyService) return;
+        await lobbyService.leaveLobby();
+    }
+
+    public async publishAd(ad: ChannelAdStruct): Promise<{ adId: AdId }> {
+        return this.requireLobbyService().publishAd(ad);
+    }
+
+    public async withdrawAd(adId: AdId): Promise<void> {
+        await this.requireLobbyService().withdrawAd(adId);
+    }
+
+    public async listAds(filter?: {
+        kind?: AdKind;
+        minAmount?: string;
+        maxAmount?: string;
+    }): Promise<{ encodedAds: string[] }> {
+        return {
+            encodedAds: this.requireLobbyService()
+                .listAds(filter)
+                .map((stored) => stored.encodedAd)
+        };
+    }
+
+    public async acquireChannel(
+        options: AcquireOptions
+    ): Promise<AcquireResult> {
+        const lobbyService = this.requireLobbyService();
+        if (!this.acquisition) {
+            this.acquisition = new ChannelAcquisitionCoordinator({
+                lobby: lobbyService,
+                signer: this,
+                logger: this.logger,
+                events: this.p2pManager.stateManager.events
+            });
+        }
+        return this.acquisition.acquireChannel(options);
+    }
+
+    /** Disposes the lobby if one was ever wired/joined. A no-op otherwise. */
+    public async dispose(): Promise<void> {
+        this.acquisition = undefined;
+        const lobbyService = this.getLobbyService();
+        if (!lobbyService) return;
+        await lobbyService.dispose();
     }
 }
 

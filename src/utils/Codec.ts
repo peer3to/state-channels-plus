@@ -66,7 +66,8 @@ import {
     MessageBlockEthersType,
     BalanceEthersType,
     SignedBlockEthersType,
-    StateProofEthersType
+    StateProofEthersType,
+    ChannelAdEthersType
 } from "@/types";
 import {
     DisputeStruct,
@@ -75,6 +76,7 @@ import {
     StateProofStruct
 } from "@typechain-types/contracts/V1/types/DisputeTypes";
 import { Bytes, Timestamp } from "@/types/types";
+import type { ChannelAdStruct } from "@/discovery/ChannelAd";
 import { DisputeFraudProofType, FraudProofType } from "@/types/sol-enums";
 import { SyncPayloadEthersType } from "@/types";
 import type { SyncPayload } from "@/types";
@@ -151,7 +153,8 @@ type StructType =
     | BalanceStruct
     | SignedBlockStruct
     | StateProofStruct
-    | SyncPayload;
+    | SyncPayload
+    | ChannelAdStruct;
 
 // Enum for better autocomplete and type safety
 export enum Type {
@@ -175,7 +178,8 @@ export enum Type {
     Balance,
     SignedBlock,
     StateProof,
-    SyncPayload
+    SyncPayload,
+    ChannelAd
 }
 
 export class Codec {
@@ -206,6 +210,7 @@ export class Codec {
         [Type.SignedBlock, SignedBlockEthersType],
         [Type.StateProof, StateProofEthersType],
         [Type.SyncPayload, SyncPayloadEthersType],
+        [Type.ChannelAd, ChannelAdEthersType],
         // Fraud proofs
         [FraudProofType.BlockDoubleSign, BlockDoubleSignProofEthersType],
         [
@@ -427,6 +432,7 @@ export class Codec {
         encoded: Bytes,
         type: Type.StateProof
     ): StateProofStruct;
+    public static decode(encoded: Bytes, type: Type.ChannelAd): ChannelAdStruct;
     public static decode(
         encoded: Bytes,
         type: FraudProofType.BlockDoubleSign

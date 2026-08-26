@@ -14,6 +14,33 @@ import {
     type WebRTCMainThreadBridgeHandle
 } from "@/rpc/services/WebRTCSetup/connection/WebRTCMainThreadBridge";
 import { isWorkerRuntime } from "@/rpc/services/WebRTCSetup/connection/WebRTCProvider";
+import {
+    type AdId,
+    type AdKind,
+    type ChannelAdStruct
+} from "@/discovery/ChannelAd";
+import type {
+    AcquireOptions,
+    AcquireResult
+} from "@/discovery/ChannelAcquisitionCoordinator";
+
+/**
+ * Public discovery surface. Acquisition progress can be observed via
+ * `p2pInstance.events.on("discovery", "acquireStage", ...)`. Ad activity is
+ * observed the same way via the `discovery` bus's `ad`/`adExpired` events.
+ */
+export type DiscoveryFacade = {
+    joinLobby(opts?: { appNamespace?: string }): Promise<{ topic: string }>;
+    leaveLobby(): Promise<void>;
+    publishAd(ad: ChannelAdStruct): Promise<{ adId: AdId }>;
+    withdrawAd(adId: AdId): Promise<void>;
+    listAds(filter?: {
+        kind?: AdKind;
+        minAmount?: string;
+        maxAmount?: string;
+    }): Promise<{ encodedAds: string[] }>;
+    acquireChannel(options: AcquireOptions): Promise<AcquireResult>;
+};
 
 export default class P2pInstance<
     T extends AStateMachine,
@@ -40,6 +67,9 @@ export default class P2pInstance<
      * same bus shape the worker realm exposes on `stateManager.events`.
      */
     readonly events: EventBus;
+
+    /** Public discovery SDK surface - built over `p2pSigner`. */
+    readonly discovery: DiscoveryFacade;
 
     private webRTCBridgeHandle?: WebRTCMainThreadBridgeHandle;
     private readonly client: P2pRuntimeClient<T>;
@@ -79,6 +109,14 @@ export default class P2pInstance<
         this.logger = logger;
         this.events = client.events;
         this.hostRpc = createHostRpc<TCustomRpc>(client);
+        this.discovery = {
+            joinLobby: (opts) => this.p2pSigner.joinLobby(opts?.appNamespace),
+            leaveLobby: () => this.p2pSigner.leaveLobby(),
+            publishAd: (ad) => this.p2pSigner.publishAd(ad),
+            withdrawAd: (adId) => this.p2pSigner.withdrawAd(adId),
+            listAds: (filter) => this.p2pSigner.listAds(filter),
+            acquireChannel: (options) => this.p2pSigner.acquireChannel(options)
+        };
     }
 
     public async dispose() {

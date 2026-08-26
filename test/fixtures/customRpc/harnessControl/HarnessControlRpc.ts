@@ -12,6 +12,7 @@ import { ScenarioService } from "./services/scenario/ScenarioService";
 import { DisputeService } from "./services/dispute/DisputeService";
 import { TransitionService } from "./services/transition/TransitionService";
 import { BalanceService } from "./services/balance/BalanceService";
+import { PunishmentService } from "./services/punishment/PunishmentService";
 
 /**
  * Host-side harness-control RPC.
@@ -47,6 +48,7 @@ export class HarnessControlRpc extends MainRpcService {
     dispute: DisputeService;
     transition: TransitionService;
     balance: BalanceService;
+    punishment: PunishmentService;
 
     constructor(p2pManager: P2PManager<HarnessControlRpc>) {
         super(p2pManager);
@@ -61,6 +63,7 @@ export class HarnessControlRpc extends MainRpcService {
         this.dispute = new DisputeService(p2pManager, this.signer);
         this.transition = new TransitionService(p2pManager);
         this.balance = new BalanceService(p2pManager);
+        this.punishment = new PunishmentService(p2pManager);
     }
 }
 

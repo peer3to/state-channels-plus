@@ -1,5 +1,6 @@
 import type EventHandlerHooks from "@/eventHandlers/EventHandlerHooks";
 import type P2pEventHooks from "@/P2pEventHooks";
+import type { DiscoveryEventMap } from "@/events/DiscoveryEvents";
 
 /**
  * Argument tuples of every fire-and-forget (void-returning) hook. A hook that
@@ -32,6 +33,7 @@ export type BusEventMaps = {
     p2pEventHooks: VoidHookArgs<P2pEventHooks>;
     eventHandler: HookArgs<EventHandlerHooks>;
     contractEvents: Record<string, unknown[]>;
+    discovery: DiscoveryEventMap;
 };
 
 export type BusKind = keyof BusEventMaps;
