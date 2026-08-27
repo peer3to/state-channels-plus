@@ -7,6 +7,7 @@ _Pending authoring: shared responsibility, design decisions, assumptions, cross-
 
 ## Contents
 
+- [LogFlushBus.ts](./LogFlushBus.ts.md)
 - [LogUploader.ts](./LogUploader.ts.md)
 - [Logger.ts](./Logger.ts.md)
 - [axiosErrorUtils.ts](./axiosErrorUtils.ts.md)
@@ -14,6 +15,7 @@ _Pending authoring: shared responsibility, design decisions, assumptions, cross-
 - [createLoggerTypes.ts](./createLoggerTypes.ts.md)
 - [formatUtils.ts](./formatUtils.ts.md)
 - [index.ts](./index.ts.md)
+- [logControl.ts](./logControl.ts.md)
 - [logEncoder.ts](./logEncoder.ts.md)
 - [logStore.ts](./logStore.ts.md)
 - [node/](./node/README.md)
