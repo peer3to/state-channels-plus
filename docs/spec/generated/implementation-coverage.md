@@ -4,7 +4,7 @@
 
 ## Score
 
-- Specification IDs fully implemented (only `Covered` claims): **199/258** (77%)
+- Specification IDs fully implemented (only `Covered` claims): **199/259** (77%)
 - Source files with a file report: **238/258** (92%)
 
 ## Contents
@@ -71,6 +71,7 @@ the claiming conformance rows; an ID absent from every conformance table has no 
 | [`REQ-TRUST-4-KW24NF`](../specification/security/trust-model.md#req-trust-4-kw24nf) | Partial | [implementation/views/security/trust-model.md](../implementation/views/security/trust-model.md#conformance-traceability) |
 | [`REQ-UPG-1-MFBTZ1`](../specification/peer-communication/transport-upgrade.md#req-upg-1-mfbtz1) | Partial | [implementation/source/src/rpc/services/WebRTCSetup/WebRTCSetupService.ts.md](../implementation/source/src/rpc/services/WebRTCSetup/WebRTCSetupService.ts.md#conformance-traceability) |
 | [`REQ-WT-1-TXW328`](../specification/runtime/watchtowers.md#req-wt-1-txw328) | Not implemented (no conformance claim) | [specification/runtime/watchtowers.md](../specification/runtime/watchtowers.md#req-wt-1-txw328) (definition) |
+| [`REQ-WT-10-GNG79P`](../specification/runtime/watchtowers.md#req-wt-10-gng79p) | Not implemented (no conformance claim) | [specification/runtime/watchtowers.md](../specification/runtime/watchtowers.md#req-wt-10-gng79p) (definition) |
 | [`REQ-WT-2-HNZA3Y`](../specification/runtime/watchtowers.md#req-wt-2-hnza3y) | Not implemented (no conformance claim) | [specification/runtime/watchtowers.md](../specification/runtime/watchtowers.md#req-wt-2-hnza3y) (definition) |
 | [`REQ-WT-3-DT0GDX`](../specification/runtime/watchtowers.md#req-wt-3-dt0gdx) | Not implemented (no conformance claim) | [specification/runtime/watchtowers.md](../specification/runtime/watchtowers.md#req-wt-3-dt0gdx) (definition) |
 | [`REQ-WT-4-PNMYMP`](../specification/runtime/watchtowers.md#req-wt-4-pnmymp) | Not implemented (no conformance claim) | [specification/runtime/watchtowers.md](../specification/runtime/watchtowers.md#req-wt-4-pnmymp) (definition) |

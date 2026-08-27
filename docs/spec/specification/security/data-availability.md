@@ -43,6 +43,16 @@ assumption; alternatives that reduce them introduce new assumptions and are Futu
 
 ## 2. Block-calldata publication
 
+Calldata is publication and ordinary defense, never global branch priority: it defeats only
+**ordinary** timeouts, not a timeout carried by a valid restricted AFK block
+([`REQ-DIS-13-1WWHS0`](../disputes/disputes.md#req-dis-13-1wwhs0)); availability credits may
+replace it entirely at the availability threshold while finalizing nothing
+([`REQ-DIS-12-1ZN453`](../disputes/disputes.md#req-dis-12-1zn453)); and when the restricted AFK
+block itself is published through ordinary block calldata, the poster is its tower author, the
+bound bytes and restricted window still apply, and neither the represented participant's
+author-key posting slot nor any general tower transaction power is used. An on-chain timeout
+submission carries the complete AFK artifact even without a prior calldata post.
+
 **<a id="inv-da-1-ts7hx2"></a>`INV-DA-1-TS7HX2`.** A posted block-calldata commitment MUST be immutable for its key and binding: the
 commitment either matches the calldata-published signed block and posting timestamp, or it is
 objective evidence against the poster.

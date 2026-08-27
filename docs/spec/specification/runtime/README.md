@@ -55,7 +55,7 @@ operational limits. It hosts every other system without changing their observabl
 | [execution.md](./execution.md) | Runtime isolation and concurrency: transfer-safe boundaries, ownership/ordering, lifecycle convergence, platform equivalence. |
 | [sdk.md](./sdk.md) | Participant service architecture: coherent state, explicit ownership, ordered lifecycle, event fidelity, execution isolation. |
 | [configuration.md](./configuration.md) | Deployment configuration semantics: timing windows, limits, and their validation. |
-| [watchtowers.md](./watchtowers.md) | Selected watchtowers: optional permanently bonded participant→tower binding, delegated availability acknowledgements, AFK attestations, audited dispute approvals, delegated dispute representation, the three objective-equivocation classes, and the no-tower path. |
+| [watchtowers.md](./watchtowers.md) | Selected watchtowers: optional permanently bonded participant→tower binding, availability receipts separated from participant finality, the restricted AFK removal block, audited dispute approvals, delegated dispute representation, the disconnection-publication duty, the three objective-equivocation classes, and the no-tower path. |
 
 Durable storage and recovery were factored out into [System 9 — Storage](../storage/README.md),
 which nearly every system calls; this system consumes it like the others.

@@ -4,18 +4,14 @@
 > its content hash with `SPEC_REVIEWER="Name" node docs/spec/tools/review.js <file...>`.
 > Any later edit invalidates the record automatically (the file returns to pending as stale).
 
-- Verified (current): **37/531** (7%)
-- Pending (never reviewed): **466**
-- Stale (edited since review): **28**
+- Verified (current): **63/531** (12%)
+- Pending (never reviewed): **444**
+- Stale (edited since review): **24**
 
 ## Stale — edited since engineer review
 
-### specification (7)
+### specification (3)
 
-- [specification/block-progression/block-processing.md](../specification/block-progression/block-processing.md) — Luka, 2026-08-18
-- [specification/disputes/disputes.md](../specification/disputes/disputes.md) — Luka, 2026-08-14
-- [specification/security/trust-model.md](../specification/security/trust-model.md) — Luke Fishman, 2026-08-18
-- [specification/storage/durability.md](../specification/storage/durability.md) — Luke Fishman, 2026-08-17
 - [specification/storage/message-blocks.md](../specification/storage/message-blocks.md) — Luke Fishman, 2026-08-17
 - [specification/storage/queue.md](../specification/storage/queue.md) — Luke Fishman, 2026-08-17
 - [specification/storage/README.md](../specification/storage/README.md) — Luke Fishman, 2026-08-17
@@ -49,45 +45,23 @@
 
 ## Pending — never reviewed
 
-### specification (38)
+### specification (16)
 
-- [specification/disputes/dispute-processing.md](../specification/disputes/dispute-processing.md)
-- [specification/disputes/fraud-proofs.md](../specification/disputes/fraud-proofs.md)
-- [specification/disputes/README.md](../specification/disputes/README.md)
-- [specification/disputes/state-proofs.md](../specification/disputes/state-proofs.md)
 - [specification/enforcement/admission-and-funds.md](../specification/enforcement/admission-and-funds.md)
 - [specification/enforcement/contracts.md](../specification/enforcement/contracts.md)
 - [specification/enforcement/dispute-window.md](../specification/enforcement/dispute-window.md)
 - [specification/enforcement/execution-and-consumer.md](../specification/enforcement/execution-and-consumer.md)
 - [specification/enforcement/fraud-slashing.md](../specification/enforcement/fraud-slashing.md)
-- [specification/enforcement/local-mirror.md](../specification/enforcement/local-mirror.md)
-- [specification/enforcement/proof-verification.md](../specification/enforcement/proof-verification.md)
 - [specification/enforcement/README.md](../specification/enforcement/README.md)
-- [specification/enforcement/snapshot-adoption.md](../specification/enforcement/snapshot-adoption.md)
-- [specification/interactions.md](../specification/interactions.md)
-- [specification/open-questions.md](../specification/open-questions.md)
-- [specification/peer-communication/block-gossip.md](../specification/peer-communication/block-gossip.md)
 - [specification/peer-communication/channel-negotiation.md](../specification/peer-communication/channel-negotiation.md)
 - [specification/peer-communication/dispute-acknowledgment.md](../specification/peer-communication/dispute-acknowledgment.md)
 - [specification/peer-communication/handshake.md](../specification/peer-communication/handshake.md)
 - [specification/peer-communication/join-authorization.md](../specification/peer-communication/join-authorization.md)
 - [specification/peer-communication/README.md](../specification/peer-communication/README.md)
-- [specification/peer-communication/synchronization.md](../specification/peer-communication/synchronization.md)
 - [specification/peer-communication/transport-upgrade.md](../specification/peer-communication/transport-upgrade.md)
-- [specification/protocol-model/data-types.md](../specification/protocol-model/data-types.md)
-- [specification/protocol-model/finality.md](../specification/protocol-model/finality.md)
-- [specification/protocol-model/history-and-commitments.md](../specification/protocol-model/history-and-commitments.md)
-- [specification/protocol-model/identity.md](../specification/protocol-model/identity.md)
 - [specification/protocol-model/README.md](../specification/protocol-model/README.md)
-- [specification/protocol-model/state-machines.md](../specification/protocol-model/state-machines.md)
-- [specification/protocol-model/time.md](../specification/protocol-model/time.md)
-- [specification/README.md](../specification/README.md)
 - [specification/runtime/configuration.md](../specification/runtime/configuration.md)
-- [specification/runtime/README.md](../specification/runtime/README.md)
 - [specification/runtime/sdk.md](../specification/runtime/sdk.md)
-- [specification/runtime/watchtowers.md](../specification/runtime/watchtowers.md)
-- [specification/settlement/cross-layer-messages.md](../specification/settlement/cross-layer-messages.md)
-- [specification/settlement/lifecycle.md](../specification/settlement/lifecycle.md)
 - [specification/settlement/README.md](../specification/settlement/README.md)
 
 ### implementation (316)
@@ -526,19 +500,45 @@
 
 ## Verified — current
 
-### specification (11)
+### specification (37)
 
+- [specification/block-progression/block-processing.md](../specification/block-progression/block-processing.md) — Luka-watchtowers, 2026-08-27
 - [specification/block-progression/README.md](../specification/block-progression/README.md) — Luka, 2026-08-14
+- [specification/disputes/dispute-processing.md](../specification/disputes/dispute-processing.md) — Luka-watchtowers, 2026-08-27
+- [specification/disputes/disputes.md](../specification/disputes/disputes.md) — Luka-watchtowers, 2026-08-27
+- [specification/disputes/fraud-proofs.md](../specification/disputes/fraud-proofs.md) — Luka-watchtowers, 2026-08-27
+- [specification/disputes/README.md](../specification/disputes/README.md) — Luka-watchtowers, 2026-08-27
+- [specification/disputes/state-proofs.md](../specification/disputes/state-proofs.md) — Luka-watchtowers, 2026-08-27
+- [specification/enforcement/local-mirror.md](../specification/enforcement/local-mirror.md) — Luka-watchtowers, 2026-08-27
+- [specification/enforcement/proof-verification.md](../specification/enforcement/proof-verification.md) — Luka-watchtowers, 2026-08-27
+- [specification/enforcement/snapshot-adoption.md](../specification/enforcement/snapshot-adoption.md) — Luka-watchtowers, 2026-08-27
+- [specification/interactions.md](../specification/interactions.md) — Luka-watchtowers, 2026-08-27
+- [specification/open-questions.md](../specification/open-questions.md) — Luka-watchtowers, 2026-08-27
+- [specification/peer-communication/block-gossip.md](../specification/peer-communication/block-gossip.md) — Luka-watchtowers, 2026-08-27
 - [specification/peer-communication/rpc.md](../specification/peer-communication/rpc.md) — Luka, 2026-08-18
+- [specification/peer-communication/synchronization.md](../specification/peer-communication/synchronization.md) — Luka-watchtowers, 2026-08-27
+- [specification/protocol-model/data-types.md](../specification/protocol-model/data-types.md) — Luka-watchtowers, 2026-08-27
+- [specification/protocol-model/finality.md](../specification/protocol-model/finality.md) — Luka-watchtowers, 2026-08-27
+- [specification/protocol-model/history-and-commitments.md](../specification/protocol-model/history-and-commitments.md) — Luka-watchtowers, 2026-08-27
+- [specification/protocol-model/identity.md](../specification/protocol-model/identity.md) — Luka-watchtowers, 2026-08-27
+- [specification/protocol-model/state-machines.md](../specification/protocol-model/state-machines.md) — Luka-watchtowers, 2026-08-27
+- [specification/protocol-model/time.md](../specification/protocol-model/time.md) — Luka-watchtowers, 2026-08-27
+- [specification/README.md](../specification/README.md) — Luka-watchtowers, 2026-08-27
 - [specification/runtime/execution.md](../specification/runtime/execution.md) — Luka, 2026-08-18
-- [specification/security/data-availability.md](../specification/security/data-availability.md) — Luke Fishman, 2026-08-17
-- [specification/security/README.md](../specification/security/README.md) — Luke Fishman, 2026-08-18
+- [specification/runtime/README.md](../specification/runtime/README.md) — Luka-watchtowers, 2026-08-27
+- [specification/runtime/watchtowers.md](../specification/runtime/watchtowers.md) — Luka-watchtowers, 2026-08-27
+- [specification/security/data-availability.md](../specification/security/data-availability.md) — Luka-watchtowers, 2026-08-27
+- [specification/security/README.md](../specification/security/README.md) — Luka-watchtowers, 2026-08-27
+- [specification/security/trust-model.md](../specification/security/trust-model.md) — Luka-watchtowers, 2026-08-27
+- [specification/settlement/cross-layer-messages.md](../specification/settlement/cross-layer-messages.md) — Luka-watchtowers, 2026-08-27
+- [specification/settlement/lifecycle.md](../specification/settlement/lifecycle.md) — Luka-watchtowers, 2026-08-27
 - [specification/storage/blocks.md](../specification/storage/blocks.md) — Luke Fishman, 2026-08-17
 - [specification/storage/calldata-and-timeouts.md](../specification/storage/calldata-and-timeouts.md) — Luke Fishman, 2026-08-17
 - [specification/storage/dispute-evidence.md](../specification/storage/dispute-evidence.md) — Luke Fishman, 2026-08-17
+- [specification/storage/durability.md](../specification/storage/durability.md) — Luka-watchtowers, 2026-08-27
 - [specification/storage/participant-changes.md](../specification/storage/participant-changes.md) — Luke Fishman, 2026-08-17
 - [specification/storage/progress-markers.md](../specification/storage/progress-markers.md) — Luke Fishman, 2026-08-17
-- [specification/storage/snapshots-and-states.md](../specification/storage/snapshots-and-states.md) — Luke Fishman, 2026-08-17
+- [specification/storage/snapshots-and-states.md](../specification/storage/snapshots-and-states.md) — Luka-watchtowers, 2026-08-27
 
 ### implementation (13)
 

@@ -5,14 +5,14 @@
         "date": "2026-08-14"
     },
     "specification/block-progression/block-processing.md": {
-        "hash": "fd53f9992490eaaf",
-        "reviewer": "Luka",
-        "date": "2026-08-18"
+        "hash": "2bd8c66f6fe7eb9a",
+        "reviewer": "Luka-watchtowers",
+        "date": "2026-08-27"
     },
     "specification/disputes/disputes.md": {
-        "hash": "875484483426f6fb",
-        "reviewer": "Luka",
-        "date": "2026-08-14"
+        "hash": "767a2020a4601f57",
+        "reviewer": "Luka-watchtowers",
+        "date": "2026-08-27"
     },
     "specification/runtime/execution.md": {
         "hash": "479c60db3c451e18",
@@ -260,14 +260,14 @@
         "date": "2026-08-19"
     },
     "specification/security/trust-model.md": {
-        "hash": "8f388037ccb62930",
-        "reviewer": "Luke Fishman",
-        "date": "2026-08-18"
+        "hash": "7ade41c996c6903d",
+        "reviewer": "Luka-watchtowers",
+        "date": "2026-08-27"
     },
     "specification/security/data-availability.md": {
-        "hash": "acc09b2ccc137f2f",
-        "reviewer": "Luke Fishman",
-        "date": "2026-08-17"
+        "hash": "057b073828ac3a5b",
+        "reviewer": "Luka-watchtowers",
+        "date": "2026-08-27"
     },
     "specification/storage/message-blocks.md": {
         "hash": "e1fc68eb715acfde",
@@ -275,9 +275,9 @@
         "date": "2026-08-17"
     },
     "specification/storage/durability.md": {
-        "hash": "13de868cb7943190",
-        "reviewer": "Luke Fishman",
-        "date": "2026-08-17"
+        "hash": "f78a54d0da239200",
+        "reviewer": "Luka-watchtowers",
+        "date": "2026-08-27"
     },
     "specification/storage/queue.md": {
         "hash": "2f27b3ac15c1e6be",
@@ -290,9 +290,9 @@
         "date": "2026-08-17"
     },
     "specification/storage/snapshots-and-states.md": {
-        "hash": "323d01c512eb86a5",
-        "reviewer": "Luke Fishman",
-        "date": "2026-08-17"
+        "hash": "1092abcb22471795",
+        "reviewer": "Luka-watchtowers",
+        "date": "2026-08-27"
     },
     "specification/storage/blocks.md": {
         "hash": "1cae28b591ef9b61",
@@ -320,8 +320,118 @@
         "date": "2026-08-17"
     },
     "specification/security/README.md": {
-        "hash": "31e49a70f87524ae",
-        "reviewer": "Luke Fishman",
-        "date": "2026-08-18"
+        "hash": "5440e7ea1482e879",
+        "reviewer": "Luka-watchtowers",
+        "date": "2026-08-27"
+    },
+    "specification/runtime/watchtowers.md": {
+        "hash": "437ba2ff4c91811f",
+        "reviewer": "Luka-watchtowers",
+        "date": "2026-08-27"
+    },
+    "specification/README.md": {
+        "hash": "9e0395c7eb6b9836",
+        "reviewer": "Luka-watchtowers",
+        "date": "2026-08-27"
+    },
+    "specification/disputes/README.md": {
+        "hash": "049377f12c6e402c",
+        "reviewer": "Luka-watchtowers",
+        "date": "2026-08-27"
+    },
+    "specification/disputes/dispute-processing.md": {
+        "hash": "a306e6ff5d47ec5f",
+        "reviewer": "Luka-watchtowers",
+        "date": "2026-08-27"
+    },
+    "specification/disputes/fraud-proofs.md": {
+        "hash": "628aa93ff43d5849",
+        "reviewer": "Luka-watchtowers",
+        "date": "2026-08-27"
+    },
+    "specification/disputes/state-proofs.md": {
+        "hash": "dde1220f96296488",
+        "reviewer": "Luka-watchtowers",
+        "date": "2026-08-27"
+    },
+    "specification/enforcement/local-mirror.md": {
+        "hash": "6808bc60eaf525bf",
+        "reviewer": "Luka-watchtowers",
+        "date": "2026-08-27"
+    },
+    "specification/enforcement/proof-verification.md": {
+        "hash": "fcbf8e04e7587810",
+        "reviewer": "Luka-watchtowers",
+        "date": "2026-08-27"
+    },
+    "specification/enforcement/snapshot-adoption.md": {
+        "hash": "b0abe38c40e25676",
+        "reviewer": "Luka-watchtowers",
+        "date": "2026-08-27"
+    },
+    "specification/interactions.md": {
+        "hash": "53f2ecf4f4ac6877",
+        "reviewer": "Luka-watchtowers",
+        "date": "2026-08-27"
+    },
+    "specification/open-questions.md": {
+        "hash": "213b68307ca17c41",
+        "reviewer": "Luka-watchtowers",
+        "date": "2026-08-27"
+    },
+    "specification/peer-communication/block-gossip.md": {
+        "hash": "c9f1766f927cb388",
+        "reviewer": "Luka-watchtowers",
+        "date": "2026-08-27"
+    },
+    "specification/peer-communication/synchronization.md": {
+        "hash": "523651b69e78948f",
+        "reviewer": "Luka-watchtowers",
+        "date": "2026-08-27"
+    },
+    "specification/protocol-model/data-types.md": {
+        "hash": "e71da00698fdcf4b",
+        "reviewer": "Luka-watchtowers",
+        "date": "2026-08-27"
+    },
+    "specification/protocol-model/finality.md": {
+        "hash": "8153048afd90feef",
+        "reviewer": "Luka-watchtowers",
+        "date": "2026-08-27"
+    },
+    "specification/protocol-model/history-and-commitments.md": {
+        "hash": "d5feddec6c1fa6c3",
+        "reviewer": "Luka-watchtowers",
+        "date": "2026-08-27"
+    },
+    "specification/protocol-model/identity.md": {
+        "hash": "eb809fc3021ba620",
+        "reviewer": "Luka-watchtowers",
+        "date": "2026-08-27"
+    },
+    "specification/protocol-model/state-machines.md": {
+        "hash": "dbcaf7a288bab4a2",
+        "reviewer": "Luka-watchtowers",
+        "date": "2026-08-27"
+    },
+    "specification/protocol-model/time.md": {
+        "hash": "c6af2688d2e008e4",
+        "reviewer": "Luka-watchtowers",
+        "date": "2026-08-27"
+    },
+    "specification/runtime/README.md": {
+        "hash": "103ca72adad3446b",
+        "reviewer": "Luka-watchtowers",
+        "date": "2026-08-27"
+    },
+    "specification/settlement/cross-layer-messages.md": {
+        "hash": "cae07b18979ee196",
+        "reviewer": "Luka-watchtowers",
+        "date": "2026-08-27"
+    },
+    "specification/settlement/lifecycle.md": {
+        "hash": "e4f0fbbf1d2da9d0",
+        "reviewer": "Luka-watchtowers",
+        "date": "2026-08-27"
     }
 }

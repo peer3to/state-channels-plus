@@ -78,6 +78,15 @@ result that will be _acted on_ with on-chain consequences — needs chain confir
   eligibility, window existence and timing, calldata commitments for timeout claims, current
   snapshot before a submission — consult the mirror first and MUST fall back to the RPC view
   before the decision is acted on. The mirror optimizes the happy path; the chain decides.
+- **Checkpoint identity in preparations.** Dispute preparations, audits, and snapshot submissions
+  bind the checkpoint identity and chain event coordinate they were built against and re-read it
+  before submission; the contract rechecks atomically. A compatible advance requires new bridge
+  and context data and recomputation where inputs changed — never re-signing old block bytes —
+  and after a race the node re-observes and retries; stale checkpoint context alone proves no
+  dishonest disputer. Out-of-order or duplicate events never regress the base, and unknown
+  checkpoint data triggers authenticated recovery
+  ([`REQ-LIF-2-Z3Z9Y3`](../settlement/lifecycle.md#req-lif-2-z3z9y3),
+  [`OQ-50-YSDG8S`](../open-questions.md#oq-50-ysdg8s)).
 
 ## Requirements and invariants
 

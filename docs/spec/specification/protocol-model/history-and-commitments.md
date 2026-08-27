@@ -106,6 +106,12 @@ flowchart TB
   state alone, because participants, stream tips, and deposit/withdrawal totals are part of what
   is agreed.
 
+Normal and restricted blocks share this hierarchy unchanged: the tower-authored restricted AFK
+block ([`REQ-WT-3-DT0GDX`](../runtime/watchtowers.md#req-wt-3-dt0gdx)) occupies the represented
+participant's missed height, links to the same predecessor or genesis, and commits the removal
+result through the same snapshot fields. It is neither a new fork nor a control message outside
+history.
+
 The snapshot's non-state fields exist because state bytes alone are not enough to adjudicate:
 `participants` fixes the signer set the next block needs, the inbound/outbound tips fix which
 cross-layer messages are already accounted for, and `totalDeposits`/`totalWithdrawals` carry the
@@ -133,16 +139,28 @@ the previous block's hash or, when none exists on the fork, the previous snapsho
 on-chain check for height 0 compares against `keccak256(abi.encode(proof.previousStateSnapshot))`
 (fraud-proof verifier.\_hasInvalidTimestamp).
 
+**The checkpoint bridge.** A block stores a full **snapshot hash**; its successor links to
+`keccak256(encodedBlock)`, never to that snapshot hash. So when a settled checkpoint sits at a
+block height (say block 15 whose result commits the exact settled snapshot 15), continuing from
+it requires the authentic encoded block 15: its block hash is derived from the accepted
+settlement proof and persisted as checkpoint metadata, block 16 must link to that hash at height
+16, and state execution starts from snapshot 15. A foreign block 15, an equal participant set, an
+equal height, or a supplied state root alone cannot substitute. Genesis and successor-genesis
+bases use the existing genesis link rule; no block at height −1 is invented. The chain may trust
+a settled anchor without re-collecting its old votes, but the raw bridge and its continuation
+still pass their canonical commitment checks
+([`REQ-SP-4-NCSEX4`](../disputes/state-proofs.md#req-sp-4-ncsex4)).
+
 ### 3.3 Signatures over blocks
 
 The block identity is `blockHash = keccak256(encodedBlock)` (ABI encoding of the `Block` struct).
 Signing is an EIP-191 personal-message signature over the 32 raw bytes of `blockHash`
 (Block.sign).
 
-| Struct              | Meaning                                                                                                                                                                                                                                                                                        |
-| ------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `SignedBlock`       | `encodedBlock` + the author's signature.                                                                                                                                                                                                                                                       |
-| `BlockConfirmation` | A `SignedBlock` plus additional confirmation signatures over the same hash — direct participant signatures and valid frozen selected-tower confirmations, each a distinct retained artifact ([`REQ-BLOCK-PIPE-11-DCHAJ2`](../block-progression/block-processing.md#req-block-pipe-11-dchaj2)). |
+| Struct              | Meaning                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
+| ------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `SignedBlock`       | `encodedBlock` + the author's signature — the scheduled participant's key for an ordinary block, the frozen selected tower's key for the restricted AFK block; confirmations sign the same exact block either way. Inside a `BlockDoubleSignProof` only, the `SignedBlock`-shaped entries instead carry the accused participant's explicit signatures over their exact blocks — a scoped structural exception that widens no ordinary carrier semantics ([data-types.md §7.4](data-types.md#74-fraud-proofs)). |
+| `BlockConfirmation` | A `SignedBlock` plus additional confirmation signatures over the same hash — direct participant signatures and valid frozen selected-tower confirmations, each a distinct retained artifact ([`REQ-BLOCK-PIPE-11-DCHAJ2`](../block-progression/block-processing.md#req-block-pipe-11-dchaj2)).                                                                                                                                                                                                                 |
 
 Signing a block is a non-equivocating commitment to the block **and its entire ancestry** (the
 hash links make the ancestry part of what is signed). How signatures accumulate into finality —
@@ -190,9 +208,15 @@ Forks arise at channel opening (the first fork's genesis is produced by `openCha
 at dispute resolution: every completed dispute produces a canonical successor fork whose genesis
 snapshot is derived from the dispute's reduced result, with `originForkId` pointing at the
 disputed fork ([../protocol/disputes.md](../disputes/disputes.md)). Execution resumes from the
-successor fork at height 0. Within one fork, height and hash-linking make history linear;
-conflicting blocks at the same `(forkId, height)` are equivocation or invalid-transition
-evidence, not a fork.
+successor fork at height 0. Within one fork, height and hash-linking make history linear for
+honest signers; conflicting blocks at the same `(forkId, height)` are not a fork, and they are
+not automatically fraud either: the scheduled participant's normal block beside their frozen
+tower's restricted AFK block is a **legal alternative-history split**
+([`REQ-WT-3-DT0GDX`](../runtime/watchtowers.md#req-wt-3-dt0gdx)), while two distinct blocks each
+carrying an explicit signature that recovers to the same participant key — in any author or
+confirmation role — are double-sign evidence
+([`REQ-FP-2-CH4DA1`](../disputes/fraud-proofs.md#req-fp-2-ch4da1)), and a same-author extension
+of a committed predecessor is invalid-transition evidence.
 
 ## 5. Snapshots as the on-chain interface
 

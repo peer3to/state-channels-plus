@@ -267,6 +267,7 @@ Path equality is never evidence. A test counts only when its exact declaration i
 | [`REQ-UPG-2-WH7BC7`](../specification/peer-communication/transport-upgrade.md#req-upg-2-wh7bc7) | [specification/peer-communication/transport-upgrade.md](../specification/peer-communication/transport-upgrade.md#req-upg-2-wh7bc7) | [ProfileManager.ts](../implementation/source/src/ProfileManager.ts.md), [WebRTCSetupService.ts](../implementation/source/src/rpc/services/WebRTCSetup/WebRTCSetupService.ts.md), [WebRTCTransport.ts](../implementation/source/src/transport/WebRTCTransport.ts.md) | [E2E-InitHandshake.test.ts#L31](../../../test/e2e/E2E-InitHandshake.test.ts#L31) |
 | [`REQ-UPG-3-T1SRMS`](../specification/peer-communication/transport-upgrade.md#req-upg-3-t1srms) | [specification/peer-communication/transport-upgrade.md](../specification/peer-communication/transport-upgrade.md#req-upg-3-t1srms) | [WebRTCSetupService.ts](../implementation/source/src/rpc/services/WebRTCSetup/WebRTCSetupService.ts.md) | none — gap |
 | [`REQ-WT-1-TXW328`](../specification/runtime/watchtowers.md#req-wt-1-txw328) | [specification/runtime/watchtowers.md](../specification/runtime/watchtowers.md#req-wt-1-txw328) | none — gap | none — gap |
+| [`REQ-WT-10-GNG79P`](../specification/runtime/watchtowers.md#req-wt-10-gng79p) | [specification/runtime/watchtowers.md](../specification/runtime/watchtowers.md#req-wt-10-gng79p) | none — gap | none — gap |
 | [`REQ-WT-2-HNZA3Y`](../specification/runtime/watchtowers.md#req-wt-2-hnza3y) | [specification/runtime/watchtowers.md](../specification/runtime/watchtowers.md#req-wt-2-hnza3y) | none — gap | none — gap |
 | [`REQ-WT-3-DT0GDX`](../specification/runtime/watchtowers.md#req-wt-3-dt0gdx) | [specification/runtime/watchtowers.md](../specification/runtime/watchtowers.md#req-wt-3-dt0gdx) | none — gap | none — gap |
 | [`REQ-WT-4-PNMYMP`](../specification/runtime/watchtowers.md#req-wt-4-pnmymp) | [specification/runtime/watchtowers.md](../specification/runtime/watchtowers.md#req-wt-4-pnmymp) | none — gap | none — gap |
@@ -1019,7 +1020,7 @@ Only declarations mapped to at least one permutation appear here; the full inven
 | interactions.md | 8 | 3 | 0 |
 | peer-communication | 41 | 38 | 18 |
 | protocol-model | 40 | 37 | 4 |
-| runtime | 25 | 11 | 4 |
+| runtime | 26 | 11 | 4 |
 | security | 12 | 12 | 1 |
 | settlement | 25 | 25 | 8 |
 | storage | 25 | 21 | 14 |
