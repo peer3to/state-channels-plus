@@ -5,7 +5,7 @@ import { ethers, ZeroHash } from "ethers";
 import { MessageBlockStruct } from "@typechain-types/contracts/V1/types/DataTypes";
 
 // TypeChain types - Contract interfaces
-import { StateChannelManagerProxy } from "@typechain-types";
+import { StateChannelManagerInterface } from "@typechain-types";
 
 // Core components
 import AgreementManager from "../agreementManager/AgreementManager";
@@ -80,7 +80,7 @@ class StateManager<
     agreementManager: AgreementManager;
     stateChannelEventListener: StateChannelEventListener;
     disputeManager: DisputeManager;
-    stateChannelManagerContract: StateChannelManagerProxy;
+    stateChannelManagerContract: StateChannelManagerInterface;
     p2pManager: P2PManager<TCustomRpc>;
     timeConfig: TimeConfig;
     private _channelId: ChannelId = NULL;
@@ -125,7 +125,7 @@ class StateManager<
     constructor(
         signer: ethers.Signer,
         signerAddress: Address,
-        stateChannelManagerContract: StateChannelManagerProxy,
+        stateChannelManagerContract: StateChannelManagerInterface,
         diamondStateMachine: ADiamondStateMachine,
         timeConfig: TimeConfig,
         p2pEventHooks: P2pEventHooks,
@@ -149,7 +149,7 @@ class StateManager<
         this.timeConfig = timeConfig;
         this.stateChannelManagerContract = createEthersResultProxy(
             stateChannelManagerContract
-        ) as StateChannelManagerProxy;
+        ) as StateChannelManagerInterface;
         this.storage = storage;
 
         this.logger = logger.child({ component: "StateManager" });

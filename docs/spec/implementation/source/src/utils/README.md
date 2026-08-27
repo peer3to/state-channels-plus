@@ -32,6 +32,7 @@ _Pending authoring: shared responsibility, design decisions, assumptions, cross-
 - [evmErrorHandler.ts](./evmErrorHandler.ts.md)
 - [hash.ts](./hash.ts.md)
 - [index.ts](./index.ts.md)
+- [localDiamond.ts](./localDiamond.ts.md)
 - [logging/](./logging/README.md)
 - [moduleLoader/](./moduleLoader/README.md)
 - [node/](./node/README.md)

@@ -22,10 +22,23 @@
 The client-local mirror deployment: extends the proxy with event-driven storage-sync handlers
 and a zero consumer facet — the local half of dual execution. Never production-deployed.
 
+Because it derives from [StateChannelManagerProxy](./StateChannelManagerProxy.sol.md), its
+generated ABI carries only its own declarations plus the proxy's; every selector the proxy routes to
+a facet is answered by the fallback and absent from that ABI. Clients therefore bind it through the
+merged ABI in [localDiamond.ts](../../../src/utils/localDiamond.ts.md).
+
 ## Key design decisions
 
 1. **Event-replication entry points** (`on*` handlers) are how the client advances the mirror — replication, never local hypothesis ([`REQ-MIRROR-2-E9F3TM`](../../../../../specification/enforcement/local-mirror.md#req-mirror-2-e9f3tm)).
-2. **Channel-open event order preserves genesis deposits.** `InboundMessagesProcessed` is mirrored
+2. **`isBlockAuthentic` is declared here so the debug override still wins.** In production that
+   selector routes to [UtilityFacet](./UtilityFacet.sol.md); a declared function dispatches before
+   the fallback, so declaring a thin `public` entry point
+   ([#L442](../../../../../../../contracts/V1/StateChannelDiamondProxy/LocalDiamond.sol#L442))
+   keeps local deployments on this contract's `_isBlockAuthentic` override
+   ([#L446](../../../../../../../contracts/V1/StateChannelDiamondProxy/LocalDiamond.sol#L446)),
+   whose body and comment are unchanged. Without the declaration the mirror would answer with the
+   routed production implementation and lose its debug logging.
+3. **Channel-open event order preserves genesis deposits.** `InboundMessagesProcessed` is mirrored
    before `ChannelOpened`, so `onChannelOpened` retains the finalized snapshot deposit total instead
    of resetting the local balance mirror to zero.
 
@@ -90,3 +103,5 @@ Exact test evidence is mapped against these IDs in the verification test reports
 ## Related source reports
 
 - [StateChannelManagerProxy](./StateChannelManagerProxy.sol.md), [StateChannelCommon](./StateChannelCommon.sol.md).
+- [localDiamond.ts](../../../src/utils/localDiamond.ts.md) — the client binding that merges this contract's ABI with the routed one.
+- [UtilityFacet](./UtilityFacet.sol.md) — hosts the production `isBlockAuthentic` this contract deliberately shadows.

@@ -27,6 +27,15 @@ mismatch, inbound-hash validity).
 ## Key design decisions
 
 1. **Kill is the only commitment-removal path**, pairing with the window bookkeeping's swap-removal — the order perturbation input to [`OQ-4-JGDCNX`](../../../../../verification/open-questions.md#oq-4-jgdcnx) originates here.
+2. **Typed self-calls go through the manager interface, not the proxy contract.** The three
+   operations this facet reaches on `address(this)` — the dispute-window creation timestamp
+   ([#L479](../../../../../../../contracts/V1/StateChannelDiamondProxy/DisputeFraudProofFacet.sol#L479)), the state transition
+   ([#L638](../../../../../../../contracts/V1/StateChannelDiamondProxy/DisputeFraudProofFacet.sol#L638)) and the milestone finality check
+   ([#L792](../../../../../../../contracts/V1/StateChannelDiamondProxy/DisputeFraudProofFacet.sol#L792)) — are typed by
+   [StateChannelManagerInterface](../../StateChannelManagerInterface.sol.md). The calls are
+   unchanged; only the compile-time type is, which removes this facet's dependency on
+   [StateChannelManagerProxy](./StateChannelManagerProxy.sol.md) now that the proxy no longer
+   declares the routed functions.
 
 ## Inputs, outputs, state, and side effects
 

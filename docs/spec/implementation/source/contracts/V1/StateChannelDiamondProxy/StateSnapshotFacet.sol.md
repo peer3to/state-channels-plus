@@ -28,6 +28,11 @@ participant close with the treasury TODO, storage clears).
 ## Key design decisions
 
 1. **Coupled adoption+outbound processing in one revertible operation** — a failing consumer withdrawal reverts the whole advance rather than splitting value from state ([`REQ-ENFSNAP-1-FYN3BW`](../../../../../specification/enforcement/snapshot-adoption.md#req-enfsnap-1-fyn3bw)).
+2. **The state-proof self-call is typed by the manager interface.** Verification of the incoming
+   proof is reached on `address(this)` through
+   [StateChannelManagerInterface](../../StateChannelManagerInterface.sol.md)
+   ([#L122](../../../../../../../contracts/V1/StateChannelDiamondProxy/StateSnapshotFacet.sol#L122)) instead of the proxy contract type; the call itself is
+   unchanged, and this facet no longer imports the proxy.
 
 ## Inputs, outputs, state, and side effects
 

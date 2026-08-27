@@ -2,7 +2,7 @@ pragma solidity ^0.8.8;
 
 import "./StateChannelCommon.sol";
 import "../types/DataTypes.sol";
-import "./StateChannelManagerProxy.sol";
+import "./UtilityFacet.sol";
 import "./Errors.sol";
 
 contract StateSnapshotFacet is StateChannelCommon {
@@ -119,7 +119,7 @@ contract StateSnapshotFacet is StateChannelCommon {
         StateSnapshot[] memory milestoneSnapshots,
         StateSnapshot memory thresholdStateSnapshot
     ) internal returns (bool) {
-        bool isValid = StateChannelManagerProxy(address(this))
+        bool isValid = StateChannelManagerInterface(address(this))
             .verifyMilestones(forkId, milestoneProofs, milestoneSnapshots, thresholdStateSnapshot);
         return isValid;
     }

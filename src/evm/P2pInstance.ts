@@ -5,7 +5,7 @@ import { Logger } from "@/utils";
 import type StateManager from "@/stateManager/StateManager";
 import type ClientP2pSigner from "./signer/ClientP2pSigner";
 import type ClientChainSigner from "./signer/ClientChainSigner";
-import type { StateChannelManagerProxy } from "@typechain-types";
+import type { StateChannelManagerInterface } from "@typechain-types";
 import type P2pRuntimeClient from "./p2pRuntime/P2pRuntimeClient";
 import type { EventBus } from "@/events/EventBus";
 import { createHostRpc } from "./p2pRuntime/ClientHostRpc";
@@ -22,7 +22,7 @@ export default class P2pInstance<
     p2pContractInstance: T;
     p2pSigner: ClientP2pSigner;
     chainSigner: ClientChainSigner;
-    stateChannelManagerContract: StateChannelManagerProxy;
+    stateChannelManagerContract: StateChannelManagerInterface;
     logger: Logger;
 
     /**

@@ -2,7 +2,7 @@ import { expect } from "chai";
 import { ethers } from "hardhat";
 import { WebSocketProvider } from "ethers";
 import sinon from "sinon";
-import { StateChannelManagerProxy__factory } from "@typechain-types";
+import { StateChannelManagerInterface__factory } from "@typechain-types";
 
 import { resolveWebSocketProviderUrl } from "@/evm/p2pRuntime/RuntimeChainContext";
 import { startP2pRuntimeHost } from "@/evm/p2pRuntime/P2pRuntimeHost";
@@ -44,7 +44,7 @@ describe("RuntimeChainContext", () => {
         const scm = {
             address: ethers.Wallet.createRandom().address,
             abiJson:
-                StateChannelManagerProxy__factory.createInterface().formatJson()
+                StateChannelManagerInterface__factory.createInterface().formatJson()
         };
         const stateMachine = {
             address: ethers.Wallet.createRandom().address,
@@ -113,7 +113,7 @@ describe("RuntimeChainContext", () => {
         const scm = {
             address: ethers.Wallet.createRandom().address,
             abiJson:
-                StateChannelManagerProxy__factory.createInterface().formatJson()
+                StateChannelManagerInterface__factory.createInterface().formatJson()
         };
         const client = new P2pRuntimeClient(channel.port1, {
             signerAddress: signer.address,
@@ -174,7 +174,7 @@ describe("RuntimeChainContext", () => {
         const scm = {
             address: ethers.Wallet.createRandom().address,
             abiJson:
-                StateChannelManagerProxy__factory.createInterface().formatJson()
+                StateChannelManagerInterface__factory.createInterface().formatJson()
         };
         const client = new P2pRuntimeClient(channel.port1, {
             signerAddress: signer.address,

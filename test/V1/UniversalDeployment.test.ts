@@ -13,7 +13,7 @@ import MathConsumerFacetArtifact from "../../artifacts/contracts/V1/examples/Mat
 import { OpenChannelConfirmationStruct } from "@typechain-types/contracts/V1/StateChannelManagerInterface";
 import { createContractExecutorFactory } from "@/evm";
 import LocalContractExecutorSigner from "@/evm/signer/LocalContractExecutorSigner";
-import { LocalDiamond__factory } from "@typechain-types";
+import { connectLocalDiamond } from "@/utils/localDiamond";
 import { dispute } from "@test/factory";
 
 describe("Universal Deployment", () => {
@@ -74,7 +74,7 @@ describe("Universal Deployment", () => {
                 undefined,
                 12_000_000
             );
-            const contract = LocalDiamond__factory.connect(
+            const contract = connectLocalDiamond(
                 address.toString(),
                 localSigner
             );

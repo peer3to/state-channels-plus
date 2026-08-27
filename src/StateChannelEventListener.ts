@@ -1,4 +1,4 @@
-import { StateChannelManagerProxy } from "@typechain-types";
+import { StateChannelManagerInterface } from "@typechain-types";
 import { Filter, Log } from "ethers";
 
 import EventSyncService from "@/stateManager/eventSync/EventSyncService";
@@ -15,7 +15,7 @@ class StateChannelEventListener {
     private disposed = false;
 
     constructor(
-        private readonly stateChannelManagerContract: StateChannelManagerProxy,
+        private readonly stateChannelManagerContract: StateChannelManagerInterface,
         private readonly eventSyncService: EventSyncService,
         logger: Logger
     ) {

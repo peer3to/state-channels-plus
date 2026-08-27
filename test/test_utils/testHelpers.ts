@@ -1,6 +1,11 @@
-import { ethers, ContractTransactionResponse, AddressLike } from "ethers";
+// @spec-test-coverage-ignore: shared deployment helpers for test files; declares no runnable case, so no specification or implementation IDs apply
+import { ethers, AddressLike } from "ethers";
 import { HardhatEthersHelpers } from "hardhat/types/runtime";
-import { StateChannelManagerProxy, MathStateMachine } from "@typechain-types";
+import {
+    StateChannelManagerInterface,
+    StateChannelManagerInterface__factory,
+    MathStateMachine
+} from "@typechain-types";
 
 import {
     JoinChannelStruct,
@@ -78,13 +83,16 @@ export const createOpenChannelTestObject = (
     return oc;
 };
 
+/** Facet contract name -> deployed address of that facet behind the diamond. */
+export type DeployedFacetAddresses = Record<string, string>;
+
 export async function deployMathChannelProxyFixture(
     _ethers: typeof ethers & HardhatEthersHelpers
 ): Promise<{
-    mathChannelManager: StateChannelManagerProxy & {
-        deploymentTransaction(): ContractTransactionResponse;
-    };
+    mathChannelManager: StateChannelManagerInterface;
     mathInstance: MathStateMachine;
+    facetAddresses: DeployedFacetAddresses;
+    consumerFacetAddress: string;
 }> {
     // Facet configurations in constructor order
     const facetConfigs = [
@@ -141,9 +149,21 @@ export async function deployMathChannelProxyFixture(
         0
     );
 
+    // The proxy only implements a handful of selectors itself and routes the
+    // rest to facets, so bind the diamond's full surface at its address.
     return {
-        mathChannelManager: mathStateChannelContactInstance,
-        mathInstance: mathContactInstance
+        mathChannelManager: StateChannelManagerInterface__factory.connect(
+            await mathStateChannelContactInstance.getAddress(),
+            mathStateChannelContactInstance.runner
+        ),
+        mathInstance: mathContactInstance,
+        facetAddresses: Object.fromEntries(
+            facetConfigs.map((config, index) => [
+                config.name,
+                facetAddresses[index]
+            ])
+        ),
+        consumerFacetAddress: await mathConsumerFacet.getAddress()
     };
 }
 

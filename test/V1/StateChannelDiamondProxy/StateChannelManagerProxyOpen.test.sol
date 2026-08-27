@@ -1,13 +1,13 @@
 pragma solidity ^0.8.8;
 
 import {DiamondHarness} from "../harness/DiamondHarness.sol";
-import {StateChannelManagerProxy} from "../../../contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol";
+import {StateChannelManagerInterface} from "../../../contracts/V1/StateChannelManagerInterface.sol";
 import {ErrorDuplicateParticipant} from "../../../contracts/V1/StateChannelDiamondProxy/Errors.sol";
 import "../../../contracts/V1/types/DataTypes.sol";
 
 // test naming: test_<targetFunction>_<property>
 contract StateChannelManagerProxyOpenTest is DiamondHarness {
-    StateChannelManagerProxy internal diamond;
+    StateChannelManagerInterface internal diamond;
 
     uint256 internal constant SIGNER_PK = 0xA11CE;
     bytes32 internal constant CHANNEL_ID = keccak256("duplicate-participants");

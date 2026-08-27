@@ -1,3 +1,4 @@
+// @spec-test-coverage-ignore: browser app-worker driver for the WebRTC E2E page; evidence is mapped from run-p2p-webrtc-e2e.mjs
 // Must run before any EVM/stream import pulls in Node globals: this app worker
 // runs the SDK host inline in its own realm (like the SDK worker entry does).
 import "@/evm/p2pRuntime/worker/nodeGlobalsShim";
@@ -7,7 +8,7 @@ import { ethers, ContractFactory } from "ethers";
 import { EvmStateMachine } from "@/evm";
 import {
     MathStateMachine__factory,
-    StateChannelManagerProxy__factory
+    StateChannelManagerInterface__factory
 } from "@typechain-types";
 import MathStateMachineArtifact from "../../artifacts/contracts/V1/examples/MathStateMachine/MathStateMachine.sol/MathStateMachine.json";
 
@@ -60,7 +61,7 @@ self.onmessage = async (event) => {
         );
 
         const p2pInstance = await EvmStateMachine.p2pSetup(
-            StateChannelManagerProxy__factory.connect(
+            StateChannelManagerInterface__factory.connect(
                 scmAddress,
                 runtimeSigner
             ),

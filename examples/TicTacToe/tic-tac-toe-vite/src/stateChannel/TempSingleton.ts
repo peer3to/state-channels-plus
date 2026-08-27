@@ -3,7 +3,8 @@ import type { DataTypes, DisputeTypes } from "@peer3/state-channels-plus";
 import type {
     AddressLike,
     BigNumberish,
-    Signer
+    Signer,
+    StateChannelManagerInterface
 } from "@peer3/state-channels-plus";
 import {
     getDltContracts,
@@ -11,10 +12,7 @@ import {
     p2pSetup
 } from "./TicTacToeStateChannel";
 import type { TicTacToeRpc } from "./CustomRpc";
-import {
-    TicTacToeStateChannelManagerProxy,
-    TicTacToeStateMachine
-} from "./typechain-types";
+import { TicTacToeStateMachine } from "./typechain-types";
 //Singleton just for demo!
 class TempSingleton {
     private static instance: TempSingleton;
@@ -22,7 +20,7 @@ class TempSingleton {
     signer: Signer = getRandomSigner();
     p2pContract: TicTacToeStateMachine | undefined;
     p2pSigner: P2pSigner<TicTacToeRpc> | undefined;
-    stateChannelManagerContract: TicTacToeStateChannelManagerProxy | undefined;
+    stateChannelManagerContract: StateChannelManagerInterface | undefined;
     myBalance = 500;
     opponentBalance = 500;
     //game data

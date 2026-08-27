@@ -8,7 +8,7 @@ import "../types/MessageTypeHashes.sol";
 import "./Errors.sol";
 import "./utils/DisputeUtils.sol";
 import "./utils/BlockUtils.sol";
-import "./UtilityFacet.sol";
+import "./UtilityFacetInterface.sol";
 
 contract StateChannelCommon is StateChannelManagerStorage, StateChannelManagerEvents {
     function _getOnChainSlashedParticipantsUpToTimestamp(bytes32 channelId, uint256 timestamp)
@@ -62,8 +62,8 @@ contract StateChannelCommon is StateChannelManagerStorage, StateChannelManagerEv
     }
 
     function _getOnChainThresholdSet(bytes32 channelId) internal view virtual returns (address[] memory) {
-        return UtilityFacet(utilityFacetAddress).subtractAddressArrays(
-            UtilityFacet(utilityFacetAddress).concatAddressArraysNoDuplicates(
+        return UtilityFacetInterface(utilityFacetAddress).subtractAddressArrays(
+            UtilityFacetInterface(utilityFacetAddress).concatAddressArraysNoDuplicates(
                 _getSnapshotParticipants(channelId), _getPendingParticipants(channelId)
             ),
             _getOnChainSlashedParticipants(channelId)
@@ -99,7 +99,9 @@ contract StateChannelCommon is StateChannelManagerStorage, StateChannelManagerEv
             // check if current on-chain snapshot.fork == forkId
             if (
                 currentOnChainSnapshot.forkId == forkId
-                    && UtilityFacet(utilityFacetAddress).isGenesisSnapshotWithoutTimeCheck(currentOnChainSnapshot)
+                    && UtilityFacetInterface(utilityFacetAddress).isGenesisSnapshotWithoutTimeCheck(
+                        currentOnChainSnapshot
+                    )
             ) {
                 return (true, currentOnChainSnapshot.timestamp);
             }
@@ -137,7 +139,7 @@ contract StateChannelCommon is StateChannelManagerStorage, StateChannelManagerEv
             for (uint256 i = 0; i < inboundBlock.messages.length; i++) {
                 if (inboundBlock.messages[i].messageType == MESSAGE_TYPE_JOIN) {
                     JoinChannel memory joinChannel = abi.decode(inboundBlock.messages[i].data, (JoinChannel));
-                    pendingParticipants = UtilityFacet(utilityFacetAddress).insertIntoAddressArrayNoDuplicates(
+                    pendingParticipants = UtilityFacetInterface(utilityFacetAddress).insertIntoAddressArrayNoDuplicates(
                         pendingParticipants, joinChannel.participant
                     );
                 }
@@ -168,9 +170,9 @@ contract StateChannelCommon is StateChannelManagerStorage, StateChannelManagerEv
         address[] memory pendingParticipants =
             _derivePendingParticipantsFromInboundHash(channelId, latestInboundMessageBlockHash, bytes32(0));
 
-        address[] memory participants =
-            UtilityFacet(utilityFacetAddress).concatAddressArraysNoDuplicates(snapshotParticipants, pendingParticipants);
-        eligibleParticipants = UtilityFacet(utilityFacetAddress).subtractAddressArrays(
+        address[] memory participants = UtilityFacetInterface(utilityFacetAddress)
+            .concatAddressArraysNoDuplicates(snapshotParticipants, pendingParticipants);
+        eligibleParticipants = UtilityFacetInterface(utilityFacetAddress).subtractAddressArrays(
             participants, _getOnChainSlashedParticipants(channelId)
         );
         return eligibleParticipants;
@@ -182,6 +184,18 @@ contract StateChannelCommon is StateChannelManagerStorage, StateChannelManagerEv
 
     function _getChannelBalance(bytes32 channelId) internal view virtual returns (ChannelBalance memory) {
         return channelBalances[channelId];
+    }
+
+    function _isChannelOpen(bytes32 channelId) internal view virtual returns (bool, StateSnapshot memory) {
+        StateSnapshot memory snapshot = stateSnapshots[channelId];
+        bool isOpen = snapshot.snapshotData.participants.length > 0;
+        return (isOpen, snapshot);
+    }
+
+    function _isForkDisputed(bytes32 channelId, bytes32 forkId) internal view virtual returns (bool) {
+        DisputeData storage disputeData = disputeData[channelId];
+        DisputeWindow storage disputeWindow = disputeData.disputeWindowMap[forkId];
+        return disputeWindow.evidence.creationTimestamp != 0;
     }
 
     function _getStateMachineParticipants(bytes memory encodedState) internal virtual returns (address[] memory) {
@@ -302,10 +316,10 @@ contract StateChannelCommon is StateChannelManagerStorage, StateChannelManagerEv
 
     function _isBlockAuthentic(SignedBlock memory _block) internal view virtual returns (bool) {
         (bool decoded, Block memory decodedBlock) =
-            UtilityFacet(utilityFacetAddress).tryDecodeBlock(_block.encodedBlock);
+            UtilityFacetInterface(utilityFacetAddress).tryDecodeBlock(_block.encodedBlock);
         if (!decoded) return false;
         (address signer, bool isValid) =
-            UtilityFacet(utilityFacetAddress).retrieveSignerAddress(_block.encodedBlock, _block.signature);
+            UtilityFacetInterface(utilityFacetAddress).retrieveSignerAddress(_block.encodedBlock, _block.signature);
         if (signer != decodedBlock.transaction.header.participant || !isValid) {
             return false;
         }
@@ -556,7 +570,7 @@ contract StateChannelCommon is StateChannelManagerStorage, StateChannelManagerEv
         address[] memory eligibleParticipants = _deriveEligibleParticipantsFromInboundHash(
             channelId, channelBalances[channelId].latestInboundMessageBlockHash
         );
-        return UtilityFacet(utilityFacetAddress).isAddressInArray(eligibleParticipants, participant);
+        return UtilityFacetInterface(utilityFacetAddress).isAddressInArray(eligibleParticipants, participant);
     }
 
     function _isDisputeInboundHashValid(Dispute memory dispute) internal view returns (bool) {

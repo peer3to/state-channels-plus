@@ -1,7 +1,6 @@
 pragma solidity ^0.8.8;
 
 import "./StateChannelCommon.sol";
-import "./StateChannelManagerProxy.sol";
 import "./Errors.sol";
 import "./UtilityFacet.sol";
 
@@ -64,10 +63,7 @@ contract JoinChannelFacet is StateChannelCommon {
             );
         } else {
             require(!isExistingParticipant, ErrorJoinChannelParticipantAlreadyExists());
-            require(
-                !StateChannelManagerProxy(address(this)).isForkDisputed(channelId, expectedForkId),
-                RaceConditionForceInboundJoinForkDisputed()
-            );
+            require(!_isForkDisputed(channelId, expectedForkId), RaceConditionForceInboundJoinForkDisputed());
         }
 
         //verify original signature
@@ -84,6 +80,6 @@ contract JoinChannelFacet is StateChannelCommon {
         // Deposit funds
         JoinChannel[] memory jcs = new JoinChannel[](1);
         jcs[0] = jc;
-        StateChannelManagerProxy(address(this)).depositAssetsComposable(jcs, true);
+        StateChannelManagerInterface(address(this)).depositAssetsComposable(jcs, true);
     }
 }

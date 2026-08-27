@@ -24,7 +24,7 @@ import { deployFullStack } from "../../scripts/V1/deploy";
 import {
     MathStateMachine,
     MathStateMachine__factory,
-    StateChannelManagerProxy__factory
+    StateChannelManagerInterface__factory
 } from "@typechain-types";
 import type {
     PingPongRpc,
@@ -155,7 +155,7 @@ describe("E2E: custom RPC request/response over the runtime port", function () {
             selfAddress: string
         ): Promise<PingPeer> => {
             const runtimeSigner = runtimeWallet;
-            const scm = StateChannelManagerProxy__factory.connect(
+            const scm = StateChannelManagerInterface__factory.connect(
                 scmDeployment.address,
                 runtimeSigner
             );
@@ -214,7 +214,7 @@ describe("E2E: custom RPC request/response over the runtime port", function () {
         await peer0.hostRpc.network.connectToChannel(channelId).request();
         await peer1.hostRpc.network.connectToChannel(channelId).request();
 
-        const channelManager = StateChannelManagerProxy__factory.connect(
+        const channelManager = StateChannelManagerInterface__factory.connect(
             scmDeployment.address,
             deployerSigner
         );

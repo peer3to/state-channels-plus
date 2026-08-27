@@ -1,7 +1,9 @@
+// @spec-test-coverage-ignore: shared Foundry diamond deployment harness exercised by owning mapped test declarations
 pragma solidity ^0.8.8;
 
 import {Test} from "forge-std/Test.sol";
 import {StateChannelManagerProxy} from "../../../contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol";
+import {StateChannelManagerInterface} from "../../../contracts/V1/StateChannelManagerInterface.sol";
 import {DisputeManagerFacet} from "../../../contracts/V1/StateChannelDiamondProxy/DisputeManagerFacet.sol";
 import {DisputeVerificationFacet} from "../../../contracts/V1/StateChannelDiamondProxy/DisputeVerificationFacet.sol";
 import {FraudProofFacet} from "../../../contracts/V1/StateChannelDiamondProxy/FraudProofFacet.sol";
@@ -25,7 +27,9 @@ abstract contract DiamondHarness is Test {
     uint256 internal constant P2P_TIME = 100;
     uint256 internal constant SM_GAS_LIMIT = 3_000_000;
 
-    function deployDiamond() internal returns (StateChannelManagerProxy diamond) {
+    /// @dev Returns the diamond typed as its full external surface: the proxy
+    /// implements only a few selectors itself and routes the rest to facets.
+    function deployDiamond() internal returns (StateChannelManagerInterface diamond) {
         stateMachine = new MathStateMachine(SM_GAS_LIMIT);
         DisputeManagerFacet disputeManager = new DisputeManagerFacet();
         DisputeVerificationFacet disputeVerification = new DisputeVerificationFacet();
@@ -37,22 +41,26 @@ abstract contract DiamondHarness is Test {
         utilityFacet = new UtilityFacet();
         consumerFacet = new MathConsumerFacet();
 
-        diamond = new StateChannelManagerProxy(
-            address(stateMachine),
-            address(disputeManager),
-            address(disputeVerification),
-            address(fraudProofFacet),
-            address(disputeFraudProof),
-            address(stateSnapshot),
-            address(joinChannel),
-            address(stateProof),
-            address(utilityFacet),
-            address(consumerFacet),
-            P2P_TIME,
-            0, // agreementTime  -> contract default
-            0, // chainFallbackTime -> default
-            0, // evidenceTime -> default
-            0 // disputeExecutionGasLimit -> default
+        diamond = StateChannelManagerInterface(
+            address(
+                new StateChannelManagerProxy(
+                    address(stateMachine),
+                    address(disputeManager),
+                    address(disputeVerification),
+                    address(fraudProofFacet),
+                    address(disputeFraudProof),
+                    address(stateSnapshot),
+                    address(joinChannel),
+                    address(stateProof),
+                    address(utilityFacet),
+                    address(consumerFacet),
+                    P2P_TIME,
+                    0, // agreementTime  -> contract default
+                    0, // chainFallbackTime -> default
+                    0, // evidenceTime -> default
+                    0 // disputeExecutionGasLimit -> default
+                )
+            )
         );
     }
 

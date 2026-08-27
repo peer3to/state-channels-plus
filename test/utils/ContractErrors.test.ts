@@ -8,7 +8,7 @@ import {
 import { ethers as hre } from "hardhat";
 import { deployMathChannelProxyFixture } from "@test/test_utils/testHelpers";
 import * as factory from "@test/factory";
-import { StateChannelManagerProxy } from "@typechain-types";
+import { StateChannelManagerInterface } from "@typechain-types";
 import { artifacts, errorAbis } from "@/utils/GeneratedArtifacts";
 import { HardhatEthersSigner } from "@nomicfoundation/hardhat-ethers/signers";
 
@@ -117,7 +117,7 @@ describe("ContractCaller and ContractErrors", () => {
     });
 
     describe("Real contract calls", () => {
-        let mathChannelManager: StateChannelManagerProxy;
+        let mathChannelManager: StateChannelManagerInterface;
         let testSigner: HardhatEthersSigner;
 
         beforeEach(async () => {

@@ -13,7 +13,7 @@ import {
 import {
     MathStateMachine,
     MathStateMachine__factory,
-    StateChannelManagerProxy__factory
+    StateChannelManagerInterface__factory
 } from "@typechain-types";
 import { ContractFactory } from "ethers";
 import {
@@ -91,7 +91,7 @@ async function setupP2pInstance(options: {
     };
 
     return EvmStateMachine.p2pSetup(
-        StateChannelManagerProxy__factory.connect(
+        StateChannelManagerInterface__factory.connect(
             scmDeployment.address,
             runtimeSigner
         ),

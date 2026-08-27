@@ -20,6 +20,7 @@ export * from "./errorPeerAddress";
 export * from "./logging";
 export * from "./EthersResultProxy";
 export * from "./address";
+export * from "./localDiamond";
 
 export function sleep(ms: number): Promise<void> {
     return new Promise((resolve) => setTimeout(resolve, ms));

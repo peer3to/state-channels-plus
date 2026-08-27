@@ -208,19 +208,52 @@ methods }`. Never interleave a field declaration between methods. When adding a
   rejects). Must run on **both the calldata and non-calldata dispute paths**.
 - **Placement:** pure (no state) → free fn in `utils/DisputeUtils.sol` /
   `BlockUtils.sol` + a `LocalDiamond` forwarder. State-reading domain logic →
-  `public` on the owning facet (e.g. `StateProofFacet`) + a
-  `StateChannelManagerProxy` forwarder + a `StateChannelManagerInterface` decl;
-  TS calls `stateChannelManagerContract.<fn>.staticCall(...)`, other facets
+  `public` on the owning facet (e.g. `StateProofFacet`) + a routing entry (see
+  below) + a `StateChannelManagerInterface` decl; TS calls
+  `stateChannelManagerContract.<fn>.staticCall(...)`, other facets
   `delegatecall` the facet address (see `isCorrectLatestState`,
   `areSignedBlocksLinkedAndVerified`). Broadly-shared primitive → `internal`
   `_`-prefixed on `StateChannelCommon` (`_isBlockAuthentic`), plus a thin
-  `public` wrapper on `StateChannelManagerProxy` when TS or a test needs to call
-  it (`isBlockAuthentic`). Keep the internal `virtual` so `LocalDiamond` can
-  override it and the proxy wrapper still dispatches to the override.
+  `public` wrapper on `UtilityFacet` when TS or a test needs to call it
+  (`isBlockAuthentic`). Keep the internal `virtual` so `LocalDiamond` can
+  override it; `LocalDiamond` declares its own `public` entry point for the
+  override, because its declared functions dispatch before the fallback while
+  production routes the selector to `UtilityFacet`.
 - **Never put anything `public` on `StateChannelCommon`:** a `public` base fn (or
   `public` state var) is in every facet's ABI → its body and dispatcher entry are
   compiled into all of them, and external callers only ever reach the deployed
   `StateChannelManagerProxy`. `internal` is dead-code-eliminated to its callers.
+
+### The proxy routes by selector — it has no forwarders
+
+`StateChannelManagerProxy` must stay under the EIP-170 24,576-byte runtime
+limit, so it implements only what needs its own storage and composition (`open`,
+`postBlockCalldata`, the deposit/withdraw composables, `executeStateTransition`,
+`multicall`). Everything else reaches its facet through the fallback.
+
+- **A new externally callable facet function needs three edits**: the `public`
+  function on the facet, a `Facet.fn.selector` branch in the proxy's
+  `_facetForSelector`, and a declaration on `StateChannelManagerInterface`.
+  Never add a typed forwarder body to the proxy — an `abi.encodeCall` /
+  `abi.decode` pair per function is what pushed it over the limit.
+- **Selectors are always written `FacetType.functionName.selector`** so the
+  compiler derives them and a signature change updates the routing with it.
+  Nothing is hand-hashed.
+- **`StateChannelManagerInterface` is a caller-side typing artifact only** —
+  nothing implements it. It is the union of what the proxy implements and what
+  the proxy routes, and it carries `StateChannelManagerEvents`. TS binds it at
+  the proxy address (`StateChannelManagerInterface__factory.connect`); facets
+  doing typed self-calls cast `StateChannelManagerInterface(address(this))`.
+  Keep each declaration's state mutability identical to the facet's, since that
+  is what decides whether ethers sends a call or a transaction.
+  `LocalDiamond` callers use `connectLocalDiamond` / `LocalDiamondContract`
+  (`src/utils/localDiamond.ts`), which merges its own ABI with the routed one.
+- **A facet function that must stay off the diamond's external surface** (an
+  internal pipeline step such as `killDispute` or `runFraudProof`) gets no
+  routing entry, and an exclusion with a reason in
+  `test/fixtures/ProxySelectorRoutingFixture.ts`. That fixture drives
+  `SelectorRouting.test.ts`, which fails when a facet function has neither a
+  routing entry nor an exclusion.
 
 ### Platform-specific code (node / browser)
 

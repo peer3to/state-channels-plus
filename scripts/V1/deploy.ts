@@ -11,7 +11,10 @@ import StateChannelManagerProxyArtifact from "../../artifacts/contracts/V1/State
 import LocalDiamondArtifact from "../../artifacts/contracts/V1/StateChannelDiamondProxy/LocalDiamond.sol/LocalDiamond.json";
 import UtilityFacetArtifact from "../../artifacts/contracts/V1/StateChannelDiamondProxy/UtilityFacet.sol/UtilityFacet.json";
 
-import { StateChannelManagerProxy } from "@typechain-types/index";
+import {
+    StateChannelManagerInterface,
+    StateChannelManagerInterface__factory
+} from "@typechain-types/index";
 import { Artifact } from "hardhat/types";
 import { config } from "@/utils/config";
 import type { Address } from "@/types/types";
@@ -216,11 +219,11 @@ export async function deploy(
     // passes their addresses to skip the redeploy — only the proxy carries
     // timeConfig/gas-limit state.
     existingFacetAddresses?: string[]
-): Promise<{ address: string; contract: StateChannelManagerProxy }> {
+): Promise<{ address: string; contract: StateChannelManagerInterface }> {
     const facetAddresses =
         existingFacetAddresses ?? (await deployFacets(signer));
     const timeConfig = getTimeConfig(timeConfigOverrides);
-    return await deployArtifact<StateChannelManagerProxy>(
+    const { address } = await deployArtifact(
         StateChannelManagerProxyArtifact,
         signer,
         {
@@ -236,12 +239,18 @@ export async function deploy(
             ]
         }
     );
+    // The proxy artifact only carries the selectors the proxy implements itself;
+    // the rest are routed to facets, so bind the diamond's full surface here.
+    return {
+        address,
+        contract: StateChannelManagerInterface__factory.connect(address, signer)
+    };
 }
 
 export async function deployFullStack(
     signer: Signer,
     params: DeployFullStackParams
-): Promise<{ address: string; contract: StateChannelManagerProxy }> {
+): Promise<{ address: string; contract: StateChannelManagerInterface }> {
     const {
         stateMachineArtifact,
         consumerFacetArtifact,

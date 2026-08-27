@@ -1,7 +1,7 @@
 pragma solidity ^0.8.8;
 
 import {DiamondHarness} from "../harness/DiamondHarness.sol";
-import {StateChannelManagerProxy} from "../../../contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol";
+import {StateChannelManagerInterface} from "../../../contracts/V1/StateChannelManagerInterface.sol";
 import {DisputeFraudProofFacet} from "../../../contracts/V1/StateChannelDiamondProxy/DisputeFraudProofFacet.sol";
 import {DisputeVerificationFacet} from "../../../contracts/V1/StateChannelDiamondProxy/DisputeVerificationFacet.sol";
 import {StateProofFacet} from "../../../contracts/V1/StateChannelDiamondProxy/StateProofFacet.sol";
@@ -97,7 +97,7 @@ contract DisputeOutputStateHarness is DisputeVerificationFacet {
 
 // test naming: test_<targetFunction>_<property>
 contract DisputeVerificationFacetTest is DiamondHarness {
-    StateChannelManagerProxy internal diamond;
+    StateChannelManagerInterface internal diamond;
     InboundVerificationHarness internal verificationHarness;
     DisputeOutputStateHarness internal outputHarness;
 

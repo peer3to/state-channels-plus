@@ -4,8 +4,8 @@
 
 ## Score
 
-- Specification IDs fully implemented (only `Covered` claims): **199/243** (82%)
-- Source files with a file report: **238/258** (92%)
+- Specification IDs fully implemented (only `Covered` claims): **197/243** (81%)
+- Source files with a file report: **240/260** (92%)
 
 ## Contents
 
@@ -21,6 +21,7 @@ the claiming conformance rows; an ID absent from every conformance table has no 
 | Specification ID | Status | Claimed in |
 | --- | --- | --- |
 | [`INV-DIS-8-1GY6Q5`](../specification/disputes/disputes.md#inv-dis-8-1gy6q5) | Contradicts | [implementation/source/contracts/V1/StateChannelDiamondProxy/DisputeVerificationFacet.sol.md](../implementation/source/contracts/V1/StateChannelDiamondProxy/DisputeVerificationFacet.sol.md#conformance-traceability) |
+| [`INV-MIRROR-1-VAF778`](../specification/enforcement/local-mirror.md#inv-mirror-1-vaf778) | Partial | [implementation/source/src/utils/localDiamond.ts.md](../implementation/source/src/utils/localDiamond.ts.md#conformance-traceability) |
 | [`INV-RPC-1-SJS2T6`](../specification/peer-communication/rpc.md#inv-rpc-1-sjs2t6) | Partial | [implementation/views/architecture/rpc.md](../implementation/views/architecture/rpc.md#conformance-traceability)<br>[implementation/views/architecture/sdk/rpc/README.md](../implementation/views/architecture/sdk/rpc/README.md#11-canonical-requirement-ownership) |
 | [`INV-SM-1-J7BP6D`](../specification/protocol-model/state-machines.md#inv-sm-1-j7bp6d) | Partial | [implementation/views/concepts/state-machines.md](../implementation/views/concepts/state-machines.md#conformance-traceability) |
 | [`INV-SM-2-0FTJ2T`](../specification/protocol-model/state-machines.md#inv-sm-2-0ftj2t) | Partial | [implementation/views/concepts/state-machines.md](../implementation/views/concepts/state-machines.md#conformance-traceability) |
@@ -31,8 +32,9 @@ the claiming conformance rows; an ID absent from every conformance table has no 
 | [`REQ-CONFIG-1-PDHA8T`](../specification/runtime/configuration.md#req-config-1-pdha8t) | Partial | [implementation/views/operations/configuration.md](../implementation/views/operations/configuration.md#conformance-traceability) |
 | [`REQ-CONFIG-2-JA2SKN`](../specification/runtime/configuration.md#req-config-2-ja2skn) | Partial | [implementation/views/operations/configuration.md](../implementation/views/operations/configuration.md#conformance-traceability) |
 | [`REQ-CONFIG-3-J4H12F`](../specification/runtime/configuration.md#req-config-3-j4h12f) | Partial | [implementation/views/operations/configuration.md](../implementation/views/operations/configuration.md#conformance-traceability) |
-| [`REQ-CONTRACT-ARCH-4-FZ3CJE`](../specification/enforcement/contracts.md#req-contract-arch-4-fz3cje) | Contradicts | [implementation/source/contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol.md](../implementation/source/contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol.md#conformance-traceability) |
-| [`REQ-CONTRACT-ARCH-5-QT17P1`](../specification/enforcement/contracts.md#req-contract-arch-5-qt17p1) | Not implemented (no conformance claim) | [specification/enforcement/contracts.md](../specification/enforcement/contracts.md#req-contract-arch-5-qt17p1) (definition) |
+| [`REQ-CONTRACT-ARCH-1-9W5390`](../specification/enforcement/contracts.md#req-contract-arch-1-9w5390) | Partial | [implementation/source/src/utils/localDiamond.ts.md](../implementation/source/src/utils/localDiamond.ts.md#conformance-traceability) |
+| [`REQ-CONTRACT-ARCH-4-FZ3CJE`](../specification/enforcement/contracts.md#req-contract-arch-4-fz3cje) | Partial | [implementation/source/contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol.md](../implementation/source/contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol.md#conformance-traceability)<br>[implementation/source/contracts/V1/StateChannelDiamondProxy/UtilityFacetInterface.sol.md](../implementation/source/contracts/V1/StateChannelDiamondProxy/UtilityFacetInterface.sol.md#conformance-traceability) |
+| [`REQ-CONTRACT-ARCH-5-QT17P1`](../specification/enforcement/contracts.md#req-contract-arch-5-qt17p1) | Partial | [implementation/source/contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol.md](../implementation/source/contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol.md#conformance-traceability)<br>[implementation/source/contracts/V1/StateChannelManagerInterface.sol.md](../implementation/source/contracts/V1/StateChannelManagerInterface.sol.md#conformance-traceability) |
 | [`REQ-DIS-10-SAHJBN`](../specification/disputes/disputes.md#req-dis-10-sahjbn) | Partial | [implementation/source/src/stateManager/StateManager.ts.md](../implementation/source/src/stateManager/StateManager.ts.md#conformance-traceability) |
 | [`REQ-DISPUTE-PIPE-5-RZZB48`](../specification/disputes/dispute-processing.md#req-dispute-pipe-5-rzzb48) | Partial | [implementation/source/src/disputeManager/DisputeManager.ts.md](../implementation/source/src/disputeManager/DisputeManager.ts.md#conformance-traceability) |
 | [`REQ-GOSSIP-2-9PMMNH`](../specification/peer-communication/block-gossip.md#req-gossip-2-9pmmnh) | Partial | [implementation/source/src/rpc/services/stateTransition/StateTransitionRpcMethods.ts.md](../implementation/source/src/rpc/services/stateTransition/StateTransitionRpcMethods.ts.md#conformance-traceability) |

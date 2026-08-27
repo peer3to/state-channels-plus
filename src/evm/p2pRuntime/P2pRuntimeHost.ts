@@ -1,5 +1,5 @@
 import { ethers } from "ethers";
-import { StateChannelManagerProxy } from "@typechain-types";
+import { StateChannelManagerInterface } from "@typechain-types";
 
 import StateManager from "@/stateManager/StateManager";
 import EvmDiamondStateMachine from "@/evm/EvmDiamondStateMachine";
@@ -275,7 +275,7 @@ export async function startP2pRuntimeHost<
             payload.scm.address,
             JSON.parse(payload.scm.abiJson),
             chainSigner
-        ) as unknown as StateChannelManagerProxy;
+        ) as unknown as StateChannelManagerInterface;
         const stateMachineContract = new ethers.Contract(
             payload.stateMachine.address,
             JSON.parse(payload.stateMachine.abiJson),

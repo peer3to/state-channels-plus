@@ -16,7 +16,13 @@ import "../types/MessageTypeHashes.sol";
 import "./utils/GeneralUtils.sol";
 import "./UtilityFacet.sol";
 
-contract StateChannelManagerProxy is StateChannelManagerInterface, StateChannelCommon {
+/// @dev The proxy implements only the functions that need its own storage and
+/// composition (channel opening, calldata posting, the deposit/withdraw
+/// composables, multicall). Everything else is routed to a facet by selector in
+/// `_facetForSelector` and delegatecalled from the fallback, so the proxy pays a
+/// selector comparison instead of a typed forwarder body. The full external
+/// surface is declared on `StateChannelManagerInterface` for callers to bind.
+contract StateChannelManagerProxy is StateChannelCommon {
     // Default time values
     uint256 private constant DEFAULT_P2P_TIME = 15;
     uint256 private constant DEFAULT_AGREEMENT_TIME = 5;
@@ -59,13 +65,21 @@ contract StateChannelManagerProxy is StateChannelManagerInterface, StateChannelC
     }
 
     fallback() external {
-        bytes memory result = _delegatecall(consumerFacetAddress, msg.data);
+        bytes memory result = _delegatecall(_facetForSelector(msg.sig), msg.data);
         assembly ("memory-safe") {
             return(add(result, 0x20), mload(result))
         }
     }
 
     // ********** public/external functions **********
+
+    /// @notice Facet a call with `sig` is delegated to by the fallback.
+    /// @dev Selectors the proxy declares itself never reach the fallback, so they
+    ///     are not part of the routing table. Unknown selectors resolve to the
+    ///     consumer facet, which is the fallback of last resort.
+    function facetAddressForSelector(bytes4 sig) public view returns (address) {
+        return _facetForSelector(sig);
+    }
 
     /**
      * Posting calldata is lightweight, since it persists a single hash/commitment.
@@ -75,7 +89,7 @@ contract StateChannelManagerProxy is StateChannelManagerInterface, StateChannelC
      *     If the msg.sender provides junk(an invalid SignedBlock), a fraud proof can slash the msg.sender, by verifying the junk data against the commitment.
      *     If msg.sender is not part of the channel, other peers will ignore emitted events and commitments. The sender will still pay tx fees on-chain.
      */
-    function postBlockCalldata(SignedBlock memory signedBlock, uint256 maxTimestamp) public override {
+    function postBlockCalldata(SignedBlock memory signedBlock, uint256 maxTimestamp) public {
         //Time is the only race condition we need to take into account
         require(block.timestamp <= maxTimestamp, RaceConditionBlockCalldataTimestampTooLate());
         bytes32 commitment = keccak256(abi.encode(signedBlock, block.timestamp));
@@ -102,10 +116,10 @@ contract StateChannelManagerProxy is StateChannelManagerInterface, StateChannelC
 
     // ********** Consumer Facet Delegation Functions **********
 
-    function open(OpenChannelConfirmation calldata openChannelConfirmation) public virtual override {
+    function open(OpenChannelConfirmation calldata openChannelConfirmation) public virtual {
         OpenChannel memory openChannelData = abi.decode(openChannelConfirmation.encodedOpenChannel, (OpenChannel));
         require(openChannelData.channelId != bytes32(0), ErrorInvalidJoinChannel());
-        (bool isOpen,) = isChannelOpen(openChannelData.channelId);
+        (bool isOpen,) = _isChannelOpen(openChannelData.channelId);
         require(!isOpen, RaceConditionChannelAlreadyOpen());
 
         // reject duplicate participants
@@ -179,109 +193,6 @@ contract StateChannelManagerProxy is StateChannelManagerInterface, StateChannelC
         emit ChannelOpened(openChannelData.channelId, genesisStateSnapshot, genesisState);
     }
 
-    function uploadDispute(DisputeConfirmation memory disputeConfirmation) public override {
-        _delegatecall(
-            disputeManagerFacetAddress, abi.encodeCall(DisputeManagerFacet.uploadDispute, (disputeConfirmation))
-        );
-    }
-
-    function uploadDisputeWithCalldata(
-        DisputeConfirmation memory disputeConfirmation,
-        DisputeAuditingData memory disputeAuditingData
-    ) public override {
-        _delegatecall(
-            disputeManagerFacetAddress,
-            abi.encodeCall(DisputeManagerFacet.uploadDisputeWithCalldata, (disputeConfirmation, disputeAuditingData))
-        );
-    }
-
-    function challengeDisputeReduction(
-        Dispute[] memory disputes,
-        StateSnapshot memory latestStateSnapshot,
-        bytes memory encodedStateMachineState,
-        MessageBlock[] memory inboundMessageBlocks
-    ) public override {
-        _delegatecall(
-            disputeVerificationFacetAddress,
-            abi.encodeCall(
-                DisputeVerificationFacet.challengeDisputeReduction,
-                (disputes, latestStateSnapshot, encodedStateMachineState, inboundMessageBlocks)
-            )
-        );
-    }
-
-    function applyDisputeFraudProofs(DisputeFraudProof[] memory proofs) public override {
-        _delegatecall(
-            disputeFraudProofFacetAddress, abi.encodeCall(DisputeFraudProofFacet.applyDisputeFraudProofs, (proofs))
-        );
-    }
-
-    function validateTimeoutCalldataPostedProof(TimeoutCalldataPosted memory proof, Dispute memory dispute)
-        public
-        override
-        returns (bool)
-    {
-        bytes memory result = _delegatecall(
-            disputeFraudProofFacetAddress,
-            abi.encodeCall(DisputeFraudProofFacet.validateTimeoutCalldataPostedProof, (proof, dispute))
-        );
-        return abi.decode(result, (bool));
-    }
-
-    function updateStateSnapshotFork(
-        bytes32 channelId,
-        StateSnapshot memory newStateSnapshot,
-        MessageBlock[] memory outboundMessageBlocks
-    ) public override {
-        _delegatecall(
-            stateSnapshotFacetAddress,
-            abi.encodeCall(
-                StateSnapshotFacet.updateStateSnapshotFork, (channelId, newStateSnapshot, outboundMessageBlocks)
-            )
-        );
-    }
-
-    function updateStateSnapshotSameFork(
-        bytes32 channelId,
-        MilestoneProof[] memory milestoneProofs,
-        StateSnapshot[] memory milestoneSnapshots,
-        MessageBlock[] memory outboundMessageBlocks
-    ) public override {
-        _delegatecall(
-            stateSnapshotFacetAddress,
-            abi.encodeCall(
-                StateSnapshotFacet.updateStateSnapshotSameFork,
-                (channelId, milestoneProofs, milestoneSnapshots, outboundMessageBlocks)
-            )
-        );
-    }
-
-    function joinChannel(
-        JoinChannelConfirmation memory joinChannelConfirmations,
-        bytes32 expectedSnapshotHash,
-        bytes32 expectedForkId
-    ) public override {
-        _delegatecall(
-            joinChannelFacetAddress,
-            abi.encodeCall(
-                JoinChannelFacet.joinChannel, (joinChannelConfirmations, expectedSnapshotHash, expectedForkId)
-            )
-        );
-    }
-
-    function topUpBalance(
-        JoinChannelConfirmation memory joinChannelConfirmations,
-        bytes32 expectedSnapshotHash,
-        bytes32 expectedForkId
-    ) public override {
-        _delegatecall(
-            joinChannelFacetAddress,
-            abi.encodeCall(
-                JoinChannelFacet.topUpBalance, (joinChannelConfirmations, expectedSnapshotHash, expectedForkId)
-            )
-        );
-    }
-
     // ********** public/external DIAMOND functions **********
 
     // @dev Callable only by diamond facets - performs the deposit of the specific assets by interpreting `joinChannel` - returns bool success
@@ -329,7 +240,7 @@ contract StateChannelManagerProxy is StateChannelManagerInterface, StateChannelC
     }
 
     /// @dev Callable only by diamond facets - performs the withdrawal of the specific assets by interpreting `exitChannel` - returns bool success
-    function withdrawAssetsComposable(ExitChannel memory exitChannel) public virtual override onlySelf returns (bool) {
+    function withdrawAssetsComposable(ExitChannel memory exitChannel) public virtual onlySelf returns (bool) {
         bytes memory result =
             _delegatecall(consumerFacetAddress, abi.encodeCall(AConsumerFacet.withdraw, (exitChannel)));
         return abi.decode(result, (bool));
@@ -337,7 +248,6 @@ contract StateChannelManagerProxy is StateChannelManagerInterface, StateChannelC
 
     function executeStateTransition(bytes32 channelId, bytes memory encodedState, Transaction memory _tx)
         public
-        override
         onlySelf
         returns (bool, bytes memory encodedModifiedState, Message[] memory outboundMessages)
     {
@@ -351,263 +261,7 @@ contract StateChannelManagerProxy is StateChannelManagerInterface, StateChannelC
         return (success, stateMachineImplementation.getState(), outboundMessages);
     }
 
-    function applyFraudProofs(
-        FraudProof[] memory fraudProofs,
-        FraudProofVerificationContext memory fraudProofVerificationContext //TODO - think is it safe to expose this - currently I don't see any issue
-    ) public {
-        _delegatecall(
-            fraudProofFacetAddress,
-            abi.encodeCall(FraudProofFacet.applyFraudProofs, (fraudProofs, fraudProofVerificationContext))
-        );
-    }
-
-    function hasInvalidTimestamp(InvalidTimestampProof memory proof) public returns (bool) {
-        bytes memory result =
-            _delegatecall(fraudProofFacetAddress, abi.encodeCall(FraudProofFacet.hasInvalidTimestamp, (proof)));
-        return abi.decode(result, (bool));
-    }
-
-    function isLastMilestoneFinalByEveryone(Dispute memory dispute) public returns (bool isFinal) {
-        bytes memory result = _delegatecall(
-            disputeFraudProofFacetAddress,
-            abi.encodeCall(DisputeFraudProofFacet.isLastMilestoneFinalByEveryone, (dispute))
-        );
-        return abi.decode(result, (bool));
-    }
-
-    function hasStateProofHeaderMismatch(Dispute memory dispute) public returns (bool) {
-        bytes memory result = _delegatecall(
-            disputeFraudProofFacetAddress, abi.encodeCall(DisputeFraudProofFacet.hasStateProofHeaderMismatch, (dispute))
-        );
-        return abi.decode(result, (bool));
-    }
-
-    function isDisputeInboundHashValid(Dispute memory dispute) public returns (bool) {
-        bytes memory result = _delegatecall(
-            disputeFraudProofFacetAddress, abi.encodeCall(DisputeFraudProofFacet.isDisputeInboundHashValid, (dispute))
-        );
-        return abi.decode(result, (bool));
-    }
-
-    function getParticipants(bytes32 channelId)
-        public
-        view
-        override(StateChannelManagerInterface)
-        returns (address[] memory)
-    {
-        return _getSnapshotParticipants(channelId);
-    }
-
-    function getP2pTime() public view override(StateChannelManagerInterface) returns (uint256) {
-        return _getP2pTime();
-    }
-
-    function getAgreementTime() public view override(StateChannelManagerInterface) returns (uint256) {
-        return _getAgreementTime();
-    }
-
-    function getChainFallbackTime() public view override(StateChannelManagerInterface) returns (uint256) {
-        return _getChainFallbackTime();
-    }
-
-    function getEvidenceTime() public view override(StateChannelManagerInterface) returns (uint256) {
-        return _getEvidenceTime();
-    }
-
-    function getGasLimit() public view returns (uint256) {
-        return _getGasLimit();
-    }
-
-    function getAllTimes()
-        public
-        view
-        override(StateChannelManagerInterface)
-        returns (uint256, uint256, uint256, uint256)
-    {
-        return _getAllTimes();
-    }
-
-    function getBlockCallDataCommitment(bytes32 channelId, bytes32 forkId, uint256 blockHeight, address participant)
-        public
-        view
-        override(StateChannelManagerInterface)
-        returns (bool found, bytes32 blockCalldataCommitment)
-    {
-        return _getBlockCallDataCommitment(channelId, forkId, blockHeight, participant);
-    }
-
-    function hasInboundMessageBlock(bytes32 channelId, bytes32 messageBlockHash)
-        public
-        view
-        override(StateChannelManagerInterface)
-        returns (bool)
-    {
-        return _hasInboundMessageBlock(channelId, messageBlockHash);
-    }
-
-    function getOnChainSlashedParticipantsUpToTimestamp(bytes32 channelId, uint256 timestamp)
-        public
-        view
-        returns (address[] memory)
-    {
-        return _getOnChainSlashedParticipantsUpToTimestamp(channelId, timestamp);
-    }
-
-    function getOnChainSlashedParticipants(bytes32 channelId) public view returns (address[] memory) {
-        return _getOnChainSlashedParticipants(channelId);
-    }
-
-    function isParticipantSlashedOnChain(bytes32 channelId, address participant) public view returns (bool) {
-        return _isParticipantSlashedOnChain(channelId, participant);
-    }
-
-    function getOnChainThresholdSet(bytes32 channelId) public view returns (address[] memory) {
-        return _getOnChainThresholdSet(channelId);
-    }
-
-    function getSnapshotParticipants(bytes32 channelId) public view returns (address[] memory) {
-        return _getSnapshotParticipants(channelId);
-    }
-
-    function getPendingParticipants(bytes32 channelId) public view returns (address[] memory) {
-        return _getPendingParticipants(channelId);
-    }
-
-    function getStateSnapshot(bytes32 channelId) public view returns (StateSnapshot memory) {
-        return _getStateSnapshot(channelId);
-    }
-
-    function getChannelBalance(bytes32 channelId) public view returns (ChannelBalance memory) {
-        return _getChannelBalance(channelId);
-    }
-
-    function isBlockAuthentic(SignedBlock memory _block) public view returns (bool) {
-        return _isBlockAuthentic(_block);
-    }
-
-    function canParticipateInDisputes(bytes32 channelId, address participant) public view returns (bool) {
-        return _canParticipateInDisputes(channelId, participant);
-    }
-
-    function verifyStateProof(Dispute memory dispute, DisputeAuditingData memory disputeAuditingData)
-        public
-        virtual
-        override(StateChannelManagerInterface)
-        returns (bool)
-    {
-        bytes memory result = _delegatecall(
-            stateProofFacetAddress, abi.encodeCall(StateProofFacet.verifyStateProof, (dispute, disputeAuditingData))
-        );
-        return abi.decode(result, (bool));
-    }
-
-    function isCorrectLatestState(Dispute memory dispute, SnapshotData memory genesisStateSnapshotData)
-        public
-        virtual
-        override(StateChannelManagerInterface)
-        returns (bool)
-    {
-        bytes memory result = _delegatecall(
-            stateProofFacetAddress,
-            abi.encodeCall(StateProofFacet.isCorrectLatestState, (dispute, genesisStateSnapshotData))
-        );
-        return abi.decode(result, (bool));
-    }
-
-    function areSignedBlocksLinkedAndVerified(SignedBlock[] memory signedBlocks)
-        public
-        virtual
-        override(StateChannelManagerInterface)
-        returns (bool)
-    {
-        bytes memory result = _delegatecall(
-            stateProofFacetAddress, abi.encodeCall(StateProofFacet.areSignedBlocksLinkedAndVerified, (signedBlocks))
-        );
-        return abi.decode(result, (bool));
-    }
-
-    function isInvalidBlockStructureInStateProof(StateProof memory stateProof, uint256 blockIndex)
-        public
-        override(StateChannelManagerInterface)
-        returns (bool)
-    {
-        bytes memory result = _delegatecall(
-            stateProofFacetAddress,
-            abi.encodeCall(StateProofFacet.isInvalidBlockStructureInStateProof, (stateProof, blockIndex))
-        );
-        return abi.decode(result, (bool));
-    }
-
-    function findFirstInvalidBlockStructureInStateProof(StateProof memory stateProof)
-        public
-        override(StateChannelManagerInterface)
-        returns (bool found, uint256 blockIndex)
-    {
-        bytes memory result = _delegatecall(
-            stateProofFacetAddress,
-            abi.encodeCall(StateProofFacet.findFirstInvalidBlockStructureInStateProof, (stateProof))
-        );
-        return abi.decode(result, (bool, uint256));
-    }
-
-    function verifyMilestones(
-        bytes32 forkId,
-        MilestoneProof[] memory milestoneProofs,
-        StateSnapshot[] memory milestoneSnapshots,
-        StateSnapshot memory thresholdStateSnapshot
-    ) public override(StateChannelManagerInterface) returns (bool isValid) {
-        bytes memory result = _delegatecall(
-            stateProofFacetAddress,
-            abi.encodeCall(
-                StateProofFacet.verifyMilestones, (forkId, milestoneProofs, milestoneSnapshots, thresholdStateSnapshot)
-            )
-        );
-        return abi.decode(result, (bool));
-    }
-
-    function isMilestoneFinal(
-        bytes32 forkId,
-        SnapshotData memory thresholdSnapshotData,
-        MilestoneProof memory milestone
-    ) public override(StateChannelManagerInterface) returns (bool isFinal, bytes32 finalizedSnapshotHash) {
-        bytes memory result = _delegatecall(
-            stateProofFacetAddress,
-            abi.encodeCall(StateProofFacet.isMilestoneFinal, (forkId, thresholdSnapshotData, milestone))
-        );
-        return abi.decode(result, (bool, bytes32));
-    }
-
-    function isGenesisSnapshotWithoutTimeCheck(StateSnapshot memory snapshot)
-        public
-        view
-        override(StateChannelManagerInterface)
-        returns (bool)
-    {
-        return UtilityFacet(utilityFacetAddress).isGenesisSnapshotWithoutTimeCheck(snapshot);
-    }
-
-    function isSnapshotNewer(StateSnapshot memory newSnapshot, StateSnapshot memory currentSnapshot)
-        public
-        view
-        override(StateChannelManagerInterface)
-        returns (bool)
-    {
-        return UtilityFacet(utilityFacetAddress).isSnapshotNewer(newSnapshot, currentSnapshot);
-    }
-
-    function isChannelOpen(bytes32 channelId) public view override returns (bool, StateSnapshot memory) {
-        StateSnapshot memory snapshot = stateSnapshots[channelId];
-        bool isOpen = snapshot.snapshotData.participants.length > 0;
-        return (isOpen, snapshot);
-    }
-
-    function isForkDisputed(bytes32 channelId, bytes32 forkId) public view override returns (bool) {
-        DisputeData storage disputeData = disputeData[channelId];
-        DisputeWindow storage disputeWindow = disputeData.disputeWindowMap[forkId];
-        return disputeWindow.evidence.creationTimestamp != 0;
-    }
-
-    function multicall(bytes[] calldata calls) external override returns (bytes[] memory results) {
+    function multicall(bytes[] calldata calls) external returns (bytes[] memory results) {
         results = new bytes[](calls.length);
         for (uint256 i = 0; i < calls.length; i++) {
             (bool success, bytes memory result) = address(this).delegatecall(calls[i]);
@@ -621,143 +275,83 @@ contract StateChannelManagerProxy is StateChannelManagerInterface, StateChannelC
         }
     }
 
-    function getWindowCommitments(bytes32 channelId, bytes32 forkId)
-        public
-        view
-        returns (bytes32[] memory disputeCommitments)
-    {
-        DisputeData storage _disputeData = disputeData[channelId];
-        DisputeWindow storage disputeWindow = _disputeData.disputeWindowMap[forkId];
-        return disputeWindow.evidence.disputeCommitments;
-    }
-
-    function getDisputeWindowCreationTimestamp(bytes32 channelId, bytes32 forkId)
-        public
-        view
-        returns (uint256 creationTimestamp)
-    {
-        DisputeData storage _disputeData = disputeData[channelId];
-        DisputeWindow storage disputeWindow = _disputeData.disputeWindowMap[forkId];
-        return disputeWindow.evidence.creationTimestamp;
-    }
-
-    function getReducedResult(bytes32 channelId, bytes32 forkId)
-        public
-        view
-        returns (bytes32 reducedForkId, uint256 timestamp, address reducer)
-    {
-        DisputeData storage _disputeData = disputeData[channelId];
-        DisputeWindow storage disputeWindow = _disputeData.disputeWindowMap[forkId];
-        DisputeWindowReducedResult storage reducedResult = disputeWindow.reducedResult;
-        return (reducedResult.forkId, reducedResult.timestamp, reducedResult.reducer);
-    }
-
-    function reduce(Dispute[] memory disputes) public override returns (ReduceOutput memory reducedOutput) {
-        bytes memory result =
-            _delegatecall(disputeVerificationFacetAddress, abi.encodeCall(DisputeVerificationFacet.reduce, (disputes)));
-        return abi.decode(result, (ReduceOutput));
-    }
-
-    function reduceOutputToSnapshotData(
-        bytes32 forkId,
-        ReduceOutput memory reducedOutput,
-        StateSnapshot memory latestStateSnapshot,
-        bytes memory encodedStateMachineState,
-        MessageBlock[] memory inboundMessageBlocks
-    ) public override returns (SnapshotData memory, bytes memory, MessageBlock memory) {
-        bytes memory result = _delegatecall(
-            disputeVerificationFacetAddress,
-            abi.encodeCall(
-                DisputeVerificationFacet.reduceOutputToSnapshotData,
-                (forkId, reducedOutput, latestStateSnapshot, encodedStateMachineState, inboundMessageBlocks)
-            )
-        );
-        return abi.decode(result, (SnapshotData, bytes, MessageBlock));
-    }
-
-    function reduceAndFinalize(
-        Dispute[] memory disputes,
-        StateSnapshot memory stateSnapshot,
-        bytes memory encodedStateMachineState,
-        MessageBlock[] memory inboundMessageBlocks,
-        bytes32 expectedReducedForkId
-    ) public override {
-        _delegatecall(
-            disputeVerificationFacetAddress,
-            abi.encodeCall(
-                DisputeVerificationFacet.reduceAndFinalize,
-                (disputes, stateSnapshot, encodedStateMachineState, inboundMessageBlocks, expectedReducedForkId)
-            )
-        );
-    }
-
     // ********** private/internal functions **********
 
-    function isKillPeriodExpired(bytes32 channelId, bytes32 forkId)
-        public
-        view
-        returns (bool windowExists, bool isExpired, uint256 killPeriodEnd, uint256 blockTimestamp)
-    {
-        DisputeData storage _disputeData = disputeData[channelId];
-        DisputeWindow storage disputeWindow = _disputeData.disputeWindowMap[forkId];
-        windowExists = _isDisputeWidnowCreated(disputeWindow);
-        (isExpired, killPeriodEnd) = _isKillPeriodExpired(disputeWindow, _getEvidenceTime());
-        return (windowExists, isExpired, killPeriodEnd, block.timestamp);
-    }
+    /// @dev Selector routing table. Selectors are derived by the compiler from the
+    ///     facet function types, so a signature change updates the routing with it -
+    ///     nothing here is hand-hashed. The state-changing facets come first so
+    ///     on-chain calls pay the fewest comparisons; the utility views are read
+    ///     off-chain. Unknown selectors keep the historical behaviour of falling
+    ///     through to the consumer facet.
+    function _facetForSelector(bytes4 sig) internal view returns (address) {
+        if (
+            sig == DisputeManagerFacet.uploadDispute.selector
+                || sig == DisputeManagerFacet.uploadDisputeWithCalldata.selector
+        ) return disputeManagerFacetAddress;
 
-    function isReduceChallengePeriodExpired(bytes32 channelId, bytes32 forkId) public view returns (bool) {
-        DisputeData storage _disputeData = disputeData[channelId];
-        DisputeWindow storage disputeWindow = _disputeData.disputeWindowMap[forkId];
-        return _isReduceChallengePeriodExpired(disputeWindow, _getEvidenceTime());
-    }
+        if (
+            sig == DisputeVerificationFacet.challengeDisputeReduction.selector
+                || sig == DisputeVerificationFacet.reduce.selector
+                || sig == DisputeVerificationFacet.reduceOutputToSnapshotData.selector
+                || sig == DisputeVerificationFacet.reduceAndFinalize.selector
+                || sig == DisputeVerificationFacet.verifyBalanceInvariantCheckSnapshot.selector
+        ) return disputeVerificationFacetAddress;
 
-    function getDisputeWindows(bytes32 channelId, bytes32[] memory forkIds)
-        public
-        view
-        returns (DisputeWindow[] memory)
-    {
-        DisputeWindow[] memory disputeWindows = new DisputeWindow[](forkIds.length);
-        DisputeData storage disputeData = disputeData[channelId];
-        for (uint256 i = 0; i < forkIds.length; i++) {
-            disputeWindows[i] = disputeData.disputeWindowMap[forkIds[i]];
-        }
-        return disputeWindows;
-    }
+        if (
+            sig == FraudProofFacet.applyFraudProofs.selector
+                || sig == FraudProofFacet.hasInvalidTimestamp.selector
+        ) return fraudProofFacetAddress;
 
-    function verifyOutboundMessageBlocks(
-        MessageBlock[] memory outboundMessageBlocks,
-        SnapshotData memory lowerSnapshot,
-        SnapshotData memory upperSnapshot
-    ) public view returns (bool) {
-        return _verifyOutboundMessageBlocks(outboundMessageBlocks, lowerSnapshot, upperSnapshot);
-    }
+        if (
+            sig == DisputeFraudProofFacet.applyDisputeFraudProofs.selector
+                || sig == DisputeFraudProofFacet.validateTimeoutCalldataPostedProof.selector
+                || sig == DisputeFraudProofFacet.isLastMilestoneFinalByEveryone.selector
+                || sig == DisputeFraudProofFacet.hasStateProofHeaderMismatch.selector
+                || sig == DisputeFraudProofFacet.isDisputeInboundHashValid.selector
+        ) return disputeFraudProofFacetAddress;
 
-    function pruneOutboundMessageBlocks(MessageBlock[] memory outboundMessageBlocks, bytes32 lowerHash)
-        public
-        pure
-        returns (MessageBlock[] memory)
-    {
-        return _pruneOutboundMessageBlocks(outboundMessageBlocks, lowerHash);
-    }
+        if (
+            sig == StateSnapshotFacet.updateStateSnapshotFork.selector
+                || sig == StateSnapshotFacet.updateStateSnapshotSameFork.selector
+        ) return stateSnapshotFacetAddress;
 
-    // Data provided from the latestStateSnapshot
-    function verifyBalanceInvariantCheckSnapshot(
-        bytes32 channelId,
-        SnapshotData memory snapshotData,
-        bytes memory encodedStateMachineState
-    ) public returns (bool) {
-        // Encode the function selector and arguments
-        bytes memory data = abi.encodeCall(
-            DisputeVerificationFacet.verifyBalanceInvariantCheckSnapshot,
-            (channelId, snapshotData, encodedStateMachineState)
-        );
-        // Perform the low-level call with a gas limit
-        (bool success, bytes memory returnData) = disputeVerificationFacetAddress.delegatecall(data);
-        if (!success) {
-            assembly ("memory-safe") {
-                revert(add(returnData, 0x20), mload(returnData))
-            }
-        }
-        return abi.decode(returnData, (bool));
+        if (
+            sig == JoinChannelFacet.joinChannel.selector || sig == JoinChannelFacet.topUpBalance.selector
+        ) return joinChannelFacetAddress;
+
+        if (
+            sig == StateProofFacet.verifyStateProof.selector || sig == StateProofFacet.isCorrectLatestState.selector
+                || sig == StateProofFacet.areSignedBlocksLinkedAndVerified.selector
+                || sig == StateProofFacet.isInvalidBlockStructureInStateProof.selector
+                || sig == StateProofFacet.findFirstInvalidBlockStructureInStateProof.selector
+                || sig == StateProofFacet.verifyMilestones.selector || sig == StateProofFacet.isMilestoneFinal.selector
+        ) return stateProofFacetAddress;
+
+        if (
+            sig == UtilityFacet.getParticipants.selector || sig == UtilityFacet.getSnapshotParticipants.selector
+                || sig == UtilityFacet.getPendingParticipants.selector
+                || sig == UtilityFacet.getOnChainSlashedParticipants.selector
+                || sig == UtilityFacet.getOnChainSlashedParticipantsUpToTimestamp.selector
+                || sig == UtilityFacet.isParticipantSlashedOnChain.selector
+                || sig == UtilityFacet.getOnChainThresholdSet.selector
+                || sig == UtilityFacet.canParticipateInDisputes.selector || sig == UtilityFacet.getStateSnapshot.selector
+                || sig == UtilityFacet.getChannelBalance.selector || sig == UtilityFacet.isChannelOpen.selector
+                || sig == UtilityFacet.isForkDisputed.selector || sig == UtilityFacet.getP2pTime.selector
+                || sig == UtilityFacet.getAgreementTime.selector || sig == UtilityFacet.getChainFallbackTime.selector
+                || sig == UtilityFacet.getEvidenceTime.selector || sig == UtilityFacet.getGasLimit.selector
+                || sig == UtilityFacet.getAllTimes.selector || sig == UtilityFacet.getBlockCallDataCommitment.selector
+                || sig == UtilityFacet.hasInboundMessageBlock.selector || sig == UtilityFacet.isBlockAuthentic.selector
+                || sig == UtilityFacet.getWindowCommitments.selector
+                || sig == UtilityFacet.getDisputeWindowCreationTimestamp.selector
+                || sig == UtilityFacet.getReducedResult.selector || sig == UtilityFacet.isKillPeriodExpired.selector
+                || sig == UtilityFacet.isReduceChallengePeriodExpired.selector
+                || sig == UtilityFacet.getDisputeWindows.selector
+                || sig == UtilityFacet.verifyOutboundMessageBlocks.selector
+                || sig == UtilityFacet.pruneOutboundMessageBlocks.selector
+                || sig == UtilityFacet.isGenesisSnapshotWithoutTimeCheck.selector
+                || sig == UtilityFacet.isSnapshotNewer.selector
+        ) return utilityFacetAddress;
+
+        return consumerFacetAddress;
     }
 }

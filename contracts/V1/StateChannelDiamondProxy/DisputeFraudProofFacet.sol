@@ -1,9 +1,9 @@
 pragma solidity ^0.8.8;
 
 import "./StateChannelCommon.sol";
-import "./StateChannelManagerProxy.sol";
 import "./DisputeVerificationFacet.sol";
 import "./StateProofFacet.sol";
+import "./FraudProofFacet.sol";
 import "./Errors.sol";
 import "../types/DisputeFraudProofTypes.sol";
 import "./utils/DisputeUtils.sol";
@@ -476,7 +476,7 @@ contract DisputeFraudProofFacet is StateChannelCommon {
         // check is timeout set
         if (dispute.input.timeout.participant == address(0)) return _invalid();
 
-        uint256 timeoutTimestamp = StateChannelManagerProxy(address(this)).getDisputeWindowCreationTimestamp(
+        uint256 timeoutTimestamp = StateChannelManagerInterface(address(this)).getDisputeWindowCreationTimestamp(
             dispute.input.channelId, dispute.input.forkId
         );
         uint256 previousTimestamp;
@@ -635,7 +635,7 @@ contract DisputeFraudProofFacet is StateChannelCommon {
         bool isSuccess;
         bytes memory encodedModifiedState;
         Message[] memory outboundMessages;
-        (isSuccess, encodedModifiedState, outboundMessages) = StateChannelManagerProxy(address(this))
+        (isSuccess, encodedModifiedState, outboundMessages) = StateChannelManagerInterface(address(this))
             .executeStateTransition(
             dispute.input.channelId, timeoutCalldataPostedProof.latestStateStateMachineState, _block.transaction
         );
@@ -789,7 +789,7 @@ contract DisputeFraudProofFacet is StateChannelCommon {
         SnapshotData memory thresholdSnapshotData = stateSnapshots[dispute.input.channelId].snapshotData;
         thresholdSnapshotData.participants = expectedParticipants;
 
-        (isFinal,) = StateChannelManagerProxy(address(this)).isMilestoneFinal(
+        (isFinal,) = StateChannelManagerInterface(address(this)).isMilestoneFinal(
             dispute.input.forkId, thresholdSnapshotData, lastMilestone
         );
     }
