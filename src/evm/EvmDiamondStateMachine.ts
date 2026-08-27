@@ -487,6 +487,10 @@ class EvmDiamondStateMachine extends ADiamondStateMachine {
             ? new ethers.Wallet(trimmedSignerSecret).address
             : ethers.Wallet.fromPhrase(trimmedSignerSecret).address;
 
+        // a caller-supplied logger stays the caller's to dispose; one made here
+        // is registered on this realm's bus and owns process crash hooks, so the
+        // instance has to give it back
+        const ownsLogger = !options?.peerLogger;
         const logger =
             options?.peerLogger ||
             createLogger(
@@ -495,103 +499,121 @@ class EvmDiamondStateMachine extends ADiamondStateMachine {
                 { attachErrorListener: true }
             );
 
-        // Main-thread description of the app contract (rebuilt by the client).
-        const stateMachine: SerializedContract = {
-            address: (
-                await stateMachineContractInstance.getAddress()
-            ).toString(),
-            abiJson: stateMachineContractInstance.interface.formatJson()
-        };
-
-        const scm: SerializedContract = {
-            address: (
-                await deployedStateChannelContractInstance.getAddress()
-            ).toString(),
-            abiJson: deployedStateChannelContractInstance.interface.formatJson()
-        };
-        const clientProvider =
-            deployedStateChannelContractInstance.runner?.provider;
-        if (!clientProvider) {
-            throw new Error(
-                "p2pSetup requires the state channel manager to have a provider"
-            );
-        }
-
-        const payload: SetupPayload = {
-            config: activeConfig,
-            scm,
-            stateMachine,
-            signerSecret: runtimeSignerSecret,
-            peerId: options?.peerId,
-            customRpcManifest: options?.customRpcManifest,
-            customPrecompiles: options?.customPrecompiles
-        };
-
-        let clientPort: RuntimePort;
-        let onClose: (() => void) | undefined;
-
-        if (activeConfig.RUN_SDK_IN_THREAD) {
-            const { localPort, transferablePort } = createTransferableChannel();
-            const worker = createP2pRuntimeWorker();
-            const bootstrap: WorkerBootstrapMessage = {
-                type: "connect",
-                payload,
-                port: transferablePort
-            };
-            worker.postMessage(bootstrap, [transferablePort]);
-            clientPort = localPort;
-            onClose = () => worker.shutdown();
-        } else {
-            const channel = createRuntimeChannel();
-            clientPort = channel.port1;
-            void startP2pRuntimeHost(channel.port2, payload, {
-                handlerExecutionContext: options?.handlerExecutionContext
-            }).catch((error) => {
-                logger.error("Inline runtime host failed", { error });
-            });
-        }
-
-        const client = new P2pRuntimeClient<T>(clientPort, {
-            signerAddress: resolvedSignerAddress,
-            stateMachine,
-            scm,
-            provider: clientProvider,
-            logger,
-            onClose
-        });
-
-        const deployBridgeSigner = new DeploymentBridgeSigner(
-            client,
-            resolvedSignerAddress
-        );
-        // Deploy two independent local state machine instances:
-        //  - one drives the replicated channel state (EvmDiamondStateMachine)
-        //  - one is embedded in the LocalDiamond for dispute execution
-        // They must be separate so dispute replay never clobbers live state.
-        const localStateMachineAddress =
-            await deployStateMachine(deployBridgeSigner);
-        const diamondStateMachineAddress =
-            await deployStateMachine(deployBridgeSigner);
+        // a setup that never returns an instance has nobody to hand the
+        // logger to: dispose it here or it stays on the realm bus forever
         try {
-            await client.request<void>({
-                type: "deployComplete",
-                localStateMachineAddress: localStateMachineAddress.toString(),
-                diamondStateMachineAddress:
-                    diamondStateMachineAddress.toString()
+            // Main-thread description of the app contract (rebuilt by the client).
+            const stateMachine: SerializedContract = {
+                address: (
+                    await stateMachineContractInstance.getAddress()
+                ).toString(),
+                abiJson: stateMachineContractInstance.interface.formatJson()
+            };
+
+            const scm: SerializedContract = {
+                address: (
+                    await deployedStateChannelContractInstance.getAddress()
+                ).toString(),
+                abiJson:
+                    deployedStateChannelContractInstance.interface.formatJson()
+            };
+            const clientProvider =
+                deployedStateChannelContractInstance.runner?.provider;
+            if (!clientProvider) {
+                throw new Error(
+                    "p2pSetup requires the state channel manager to have a provider"
+                );
+            }
+
+            const payload: SetupPayload = {
+                config: activeConfig,
+                scm,
+                stateMachine,
+                signerSecret: runtimeSignerSecret,
+                peerId: options?.peerId,
+                customRpcManifest: options?.customRpcManifest,
+                customPrecompiles: options?.customPrecompiles
+            };
+
+            let clientPort: RuntimePort;
+            let onClose: (() => void) | undefined;
+
+            if (activeConfig.RUN_SDK_IN_THREAD) {
+                const { localPort, transferablePort } =
+                    createTransferableChannel();
+                const worker = createP2pRuntimeWorker();
+                const bootstrap: WorkerBootstrapMessage = {
+                    type: "connect",
+                    payload,
+                    port: transferablePort
+                };
+                worker.postMessage(bootstrap, [transferablePort]);
+                clientPort = localPort;
+                onClose = () => worker.shutdown();
+            } else {
+                const channel = createRuntimeChannel();
+                clientPort = channel.port1;
+                void startP2pRuntimeHost(channel.port2, payload, {
+                    handlerExecutionContext: options?.handlerExecutionContext,
+                    // same realm, no port -> the app's logger follows the host's channel
+                    contextFollower: logger
+                }).catch((error) => {
+                    logger.error("Inline runtime host failed", { error });
+                });
+            }
+
+            const client = new P2pRuntimeClient<T>(clientPort, {
+                signerAddress: resolvedSignerAddress,
+                stateMachine,
+                scm,
+                provider: clientProvider,
+                logger,
+                onClose,
+                // only a threaded host is a separate realm with its own bus
+                openLogControlPort: activeConfig.RUN_SDK_IN_THREAD
             });
-            await client.ready;
+
+            const deployBridgeSigner = new DeploymentBridgeSigner(
+                client,
+                resolvedSignerAddress
+            );
+            // Deploy two independent local state machine instances:
+            //  - one drives the replicated channel state (EvmDiamondStateMachine)
+            //  - one is embedded in the LocalDiamond for dispute execution
+            // They must be separate so dispute replay never clobbers live state.
+            const localStateMachineAddress =
+                await deployStateMachine(deployBridgeSigner);
+            const diamondStateMachineAddress =
+                await deployStateMachine(deployBridgeSigner);
+            try {
+                await client.request<void>({
+                    type: "deployComplete",
+                    localStateMachineAddress:
+                        localStateMachineAddress.toString(),
+                    diamondStateMachineAddress:
+                        diamondStateMachineAddress.toString()
+                });
+                await client.ready;
+            } catch (error) {
+                await client.dispose();
+                throw error;
+            }
+
+            const p2pInstance = new P2pInstance<T, TCustomRpc>(
+                client,
+                logger,
+                ownsLogger
+            );
+            // On the main thread the surfaced WebRTC bridge port has no further
+            // worker nesting to bubble up to, so wire it to the local
+            // RTCPeerConnection here; inside a worker it stays on
+            // p2pInstance.webRTCBridgePort for the consumer app to bubble up.
+            p2pInstance.installMainThreadBridgeIfOnMainThread();
+            return p2pInstance;
         } catch (error) {
-            await client.dispose();
+            if (ownsLogger) logger.dispose();
             throw error;
         }
-
-        const p2pInstance = new P2pInstance<T, TCustomRpc>(client, logger);
-        // On the main thread the surfaced WebRTC bridge port has no further
-        // worker nesting to bubble up to, so wire it to the local
-        // RTCPeerConnection here; inside a worker it stays on
-        // p2pInstance.webRTCBridgePort for the consumer app to bubble up.
-        p2pInstance.installMainThreadBridgeIfOnMainThread();
-        return p2pInstance;
     }
 }
 

@@ -24,6 +24,7 @@ export default class P2pInstance<
     chainSigner: ClientChainSigner;
     stateChannelManagerContract: StateChannelManagerProxy;
     logger: Logger;
+    private readonly ownsLogger: boolean;
 
     /**
      * Typed mirror of the host's `remoteRpc`. Calls are forwarded over the
@@ -70,7 +71,12 @@ export default class P2pInstance<
         });
     }
 
-    constructor(client: P2pRuntimeClient<T>, logger: Logger) {
+    constructor(
+        client: P2pRuntimeClient<T>,
+        logger: Logger,
+        ownsLogger = false
+    ) {
+        this.ownsLogger = ownsLogger;
         this.client = client;
         this.p2pContractInstance = client.contract;
         this.p2pSigner = client.signer;
@@ -91,6 +97,10 @@ export default class P2pInstance<
         } finally {
             this.webRTCBridgeHandle?.dispose();
             this.webRTCBridgeHandle = undefined;
+            // leaves the realm bus with the session: otherwise every closed
+            // session keeps its store and its process crash hooks, and every
+            // later round re-uploads it
+            if (this.ownsLogger) this.logger.dispose();
         }
     }
 
