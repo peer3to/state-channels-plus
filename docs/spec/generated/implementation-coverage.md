@@ -5,7 +5,7 @@
 ## Score
 
 - Specification IDs fully implemented (only `Covered` claims): **199/243** (82%)
-- Source files with a file report: **236/258** (91%)
+- Source files with a file report: **237/257** (92%)
 
 ## Contents
 
@@ -36,9 +36,9 @@ the claiming conformance rows; an ID absent from every conformance table has no 
 | [`REQ-DIS-10-SAHJBN`](../specification/disputes/disputes.md#req-dis-10-sahjbn) | Partial | [implementation/source/src/stateManager/StateManager.ts.md](../implementation/source/src/stateManager/StateManager.ts.md#conformance-traceability) |
 | [`REQ-DISPUTE-PIPE-5-RZZB48`](../specification/disputes/dispute-processing.md#req-dispute-pipe-5-rzzb48) | Partial | [implementation/source/src/disputeManager/DisputeManager.ts.md](../implementation/source/src/disputeManager/DisputeManager.ts.md#conformance-traceability) |
 | [`REQ-GOSSIP-2-9PMMNH`](../specification/peer-communication/block-gossip.md#req-gossip-2-9pmmnh) | Partial | [implementation/source/src/rpc/services/stateTransition/StateTransitionRpcMethods.ts.md](../implementation/source/src/rpc/services/stateTransition/StateTransitionRpcMethods.ts.md#conformance-traceability) |
+| [`REQ-MIRROR-1-XCY9CB`](../specification/enforcement/local-mirror.md#req-mirror-1-xcy9cb) | Partial | [implementation/source/contracts/V1/StateChannelDiamondProxy/LocalDiamond.sol.md](../implementation/source/contracts/V1/StateChannelDiamondProxy/LocalDiamond.sol.md#conformance-traceability) |
 | [`REQ-MIRROR-2-E9F3TM`](../specification/enforcement/local-mirror.md#req-mirror-2-e9f3tm) | Partial | [implementation/source/contracts/V1/StateChannelDiamondProxy/LocalDiamond.sol.md](../implementation/source/contracts/V1/StateChannelDiamondProxy/LocalDiamond.sol.md#conformance-traceability)<br>[implementation/source/src/evm/EvmDiamondStateMachine.ts.md](../implementation/source/src/evm/EvmDiamondStateMachine.ts.md#conformance-traceability) |
 | [`REQ-MSGSTORE-1-6ME9D7`](../specification/storage/message-blocks.md#req-msgstore-1-6me9d7) | Contradicts | [implementation/source/src/storage/MessageBlockStorage.ts.md](../implementation/source/src/storage/MessageBlockStorage.ts.md#conformance-traceability) |
-| [`REQ-MSGSTORE-2-8RDXPZ`](../specification/storage/message-blocks.md#req-msgstore-2-8rdxpz) | Contradicts | [implementation/source/src/storage/MessageBlockStorage.ts.md](../implementation/source/src/storage/MessageBlockStorage.ts.md#conformance-traceability) |
 | [`REQ-NEG-3-Q5WFAA`](../specification/peer-communication/channel-negotiation.md#req-neg-3-q5wfaa) | Partial | [implementation/source/src/rpc/services/openChannelNegotiation/OpenChannelNegotiationService.ts.md](../implementation/source/src/rpc/services/openChannelNegotiation/OpenChannelNegotiationService.ts.md#conformance-traceability) |
 | [`REQ-RPC-1-FF89Z0`](../specification/peer-communication/rpc.md#req-rpc-1-ff89z0) | Partial | [implementation/views/architecture/rpc.md](../implementation/views/architecture/rpc.md#conformance-traceability)<br>[implementation/views/architecture/sdk/rpc/README.md](../implementation/views/architecture/sdk/rpc/README.md#11-canonical-requirement-ownership) |
 | [`REQ-RPC-2-SZDTTM`](../specification/peer-communication/rpc.md#req-rpc-2-szdttm) | Partial | [implementation/source/src/P2PManager.ts.md](../implementation/source/src/P2PManager.ts.md#conformance-traceability)<br>[implementation/source/src/rpc/ARpcService.ts.md](../implementation/source/src/rpc/ARpcService.ts.md#conformance-traceability)<br>[implementation/views/architecture/rpc.md](../implementation/views/architecture/rpc.md#conformance-traceability)<br>[implementation/views/architecture/sdk/rpc/README.md](../implementation/views/architecture/sdk/rpc/README.md#11-canonical-requirement-ownership) |
@@ -75,14 +75,12 @@ Every file under `src/` and `contracts/` needs one maintained report at
 | [src/cache/index.ts](../../../src/cache/index.ts) |
 | [src/cache/SignerRecoveryCache.ts](../../../src/cache/SignerRecoveryCache.ts) |
 | [src/stateManager/block/BlockCommitService.ts](../../../src/stateManager/block/BlockCommitService.ts) |
-| [src/stateManager/block/BlockProductionService.ts](../../../src/stateManager/block/BlockProductionService.ts) |
 | [src/stateManager/block/index.ts](../../../src/stateManager/block/index.ts) |
 | [src/stateManager/block/SnapshotAssemblyService.ts](../../../src/stateManager/block/SnapshotAssemblyService.ts) |
 | [src/stateManager/chainFallback/CalldataPostingService.ts](../../../src/stateManager/chainFallback/CalldataPostingService.ts) |
 | [src/stateManager/chainFallback/index.ts](../../../src/stateManager/chainFallback/index.ts) |
 | [src/stateManager/chainFallback/ParticipantTimeoutService.ts](../../../src/stateManager/chainFallback/ParticipantTimeoutService.ts) |
 | [src/stateManager/dispute/DisputeFraudProofService.ts](../../../src/stateManager/dispute/DisputeFraudProofService.ts) |
-| [src/stateManager/dispute/DisputeValidationService.ts](../../../src/stateManager/dispute/DisputeValidationService.ts) |
 | [src/stateManager/dispute/index.ts](../../../src/stateManager/dispute/index.ts) |
 | [src/stateManager/eventSync/EventSyncService.ts](../../../src/stateManager/eventSync/EventSyncService.ts) |
 | [src/stateManager/eventSync/index.ts](../../../src/stateManager/eventSync/index.ts) |

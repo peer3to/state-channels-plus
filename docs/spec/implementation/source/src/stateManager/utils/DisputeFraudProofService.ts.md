@@ -67,9 +67,9 @@ Status enum: `Covered` | `Partial` | `Contradicts` | `Missing`. Evidence cells a
 **Here:** / **Other files:** so each row is auditable from its links alone; genuine gaps go in the
 Gap column. Audit state is file-level (Status header), never a row status.
 
-| Requirement / invariant                                                                                              | Implementation status | Evidence                                                                                                                                                                                        | Gap / divergence |
-| -------------------------------------------------------------------------------------------------------------------- | --------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------- |
-| [`REQ-DISPUTE-PIPE-5-RZZB48`](../../../../../specification/disputes/dispute-processing.md#req-dispute-pipe-5-rzzb48) | Covered               | **Here:** per-family construction. **Other files:** [DisputeValidationService](../DisputeValidationService.ts.md) decides; [DisputeManager](../../disputeManager/DisputeManager.ts.md) submits. | None.            |
+| Requirement / invariant                                                                                              | Implementation status | Evidence                                                                                                                                                                                                | Gap / divergence |
+| -------------------------------------------------------------------------------------------------------------------- | --------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------- |
+| [`REQ-DISPUTE-PIPE-5-RZZB48`](../../../../../specification/disputes/dispute-processing.md#req-dispute-pipe-5-rzzb48) | Covered               | **Here:** per-family construction. **Other files:** [DisputeValidationService](../dispute/DisputeValidationService.ts.md) decides; [DisputeManager](../../disputeManager/DisputeManager.ts.md) submits. | None.            |
 
 ## Component test obligations
 

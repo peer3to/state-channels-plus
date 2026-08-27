@@ -1,3 +1,4 @@
+// @spec-test-coverage-ignore: shared test harness exercised by owning mapped test declarations
 import { NonceManager, Signer, ethers } from "ethers";
 import * as sinon from "sinon";
 import * as dotenv from "dotenv";
@@ -1028,7 +1029,14 @@ export class PeerTestHarness<
     }
 
     async quiesceHosts(): Promise<Error[]> {
-        if (this.peers.length === 0) return [];
+        const unavailablePeerIndices = new Set([
+            ...this.context.afkPeerIndices,
+            ...this.context.maliciousPeerIndices
+        ]);
+        const responsivePeers = this.peers.filter(
+            (peer) => !unavailablePeerIndices.has(peer.index)
+        );
+        if (responsivePeers.length === 0) return [];
         // In worker mode each drained worker thread runs exactly one peer, so
         // an unstamped rejection is attributable to the peer whose host
         // returned it. Inline hosts share one process (any peer's quiesce can
@@ -1036,7 +1044,7 @@ export class PeerTestHarness<
         // trustworthy.
         const stampPerHostThread = !!this.harnessConfig.RUN_SDK_IN_THREAD;
         const perPeer = await Promise.all(
-            this.peers.map(async (peer) => {
+            responsivePeers.map(async (peer) => {
                 const errors = await peer.p2pInstance
                     .quiesce()
                     .catch((error: unknown) => [

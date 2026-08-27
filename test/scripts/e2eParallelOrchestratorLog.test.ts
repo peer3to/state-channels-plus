@@ -28,10 +28,12 @@ const {
     coordinatorResultActions,
     createWorkerColorRegistry,
     createHeartbeatMonitor,
+    formatWorkerDispositions,
     formatWorkerSummary,
     promoteAttemptLog,
     promoteStarvationAttemptLog,
     recordWorkerFailure,
+    recordWorkerRetirement,
     validateWorkerStats,
     workerFaultStatus
 } = require("../../scripts/e2e-parallel/distributed/orchestrator.js");
@@ -306,16 +308,42 @@ describe("distributed orchestrator logs", function () {
     });
 
     it("quarantines a stable worker identity after repeated failures", function () {
-        const failures = new Map();
-        const ignored = new Set();
-        expect(
-            recordWorkerFailure(failures, ignored, "bad-worker")
-        ).to.deep.equal({ failures: 1, quarantined: false });
-        expect(ignored.has("healthy-worker")).to.equal(false);
-        expect(
-            recordWorkerFailure(failures, ignored, "bad-worker")
-        ).to.deep.equal({ failures: 2, quarantined: true });
-        expect(ignored.has("bad-worker")).to.equal(true);
+        const states = new Map();
+        const first = recordWorkerFailure(states, "bad-worker", {
+            label: "server-9",
+            kind: "workspace preparation failure",
+            reason: "pnpm install failed"
+        });
+        expect(first).to.include({ failures: 1, quarantined: false });
+        const second = recordWorkerFailure(states, "bad-worker", {
+            label: "server-9",
+            kind: "workspace preparation failure",
+            reason: "cached build failed"
+        });
+        expect(second).to.include({ failures: 2, quarantined: true });
+        expect(second.firstReason).to.equal("pnpm install failed");
+        expect(second.latestReason).to.equal("cached build failed");
+    });
+
+    it("keeps non-quarantine retirement reasons in the final disposition summary", function () {
+        const states = new Map();
+        recordWorkerRetirement(states, "protocol-worker", {
+            label: "server-2",
+            kind: "protocol failure",
+            reason: "invalid frame sequence"
+        });
+        recordWorkerRetirement(states, "closed-worker", {
+            label: "server-3",
+            kind: "connection closed",
+            reason: "child exited with code 1"
+        });
+        const summary = formatWorkerDispositions(states);
+        expect(summary).to.include(
+            "server-2: protocol failure — invalid frame sequence"
+        );
+        expect(summary).to.include(
+            "server-3: connection closed — child exited with code 1"
+        );
     });
 
     it("prints per-worker resource peaks and bounds", function () {

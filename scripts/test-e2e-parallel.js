@@ -65,20 +65,24 @@ function discoveryFailureMessage(tier, grep, error) {
     return `${tier} test discovery failed: ${error.message}`;
 }
 
-/**
- * An empty forge tier is a defect, not an empty selection: if the Solidity glob
- * or the static contract parser regresses, every forge task vanishes and the run
- * still goes green. Only an explicit `--grep` may legitimately select no forge
- * contract. Returns null when the tier is fine, the error message otherwise.
- */
-function emptyForgeTierMessage(forgeTaskCount, grep) {
-    if (forgeTaskCount > 0 || grep !== undefined) return null;
-    return (
-        "No Foundry test contracts found under test. The forge tier was " +
-        "requested but discovery produced no task — check the Solidity glob " +
-        "and the test-function parser in forgeTaskDiscovery.js, or re-run " +
-        "with --no-forge to skip the forge tier."
-    );
+function validateDiscoveryResults(cli, selection, mocha, forge) {
+    if (cli.mochaTestPattern !== undefined && !selection.includeMocha) {
+        return `--mocha-test-pattern ${JSON.stringify(cli.mochaTestPattern)} conflicts with the selected tiers (--forge-only=${cli.forgeOnly}, --e2e-only=${cli.e2eOnly})`;
+    }
+    if (cli.forgeTestPattern !== undefined && !selection.includeForge) {
+        return `--forge-test-pattern ${JSON.stringify(cli.forgeTestPattern)} conflicts with the selected tiers (--no-forge=${!cli.forge}, --e2e-only=${cli.e2eOnly})`;
+    }
+    if (cli.mochaTestPattern !== undefined && mocha.preGrepTaskCount === 0) {
+        return `Mocha tier selected by --mocha-test-pattern ${JSON.stringify(cli.mochaTestPattern)} contains no runnable tests`;
+    }
+    if (cli.forgeTestPattern !== undefined && forge.preGrepTaskCount === 0) {
+        return `Forge tier selected by --forge-test-pattern ${JSON.stringify(cli.forgeTestPattern)} contains no runnable tests`;
+    }
+    const tasks = [...mocha.tasks, ...forge.tasks];
+    if (tasks.length > 0) return null;
+    return cli.grep
+        ? `No selected tests matched --grep ${JSON.stringify(cli.grep)}`
+        : "No implemented tests found";
 }
 
 /**
@@ -91,6 +95,11 @@ function emptyForgeTierMessage(forgeTaskCount, grep) {
 function resolveSlotCount(tasks, requestedSlotCount, maxSlots) {
     if (!tasks.some(requiresChainSlot)) return 0;
     return Math.min(requestedSlotCount, maxSlots);
+}
+
+function resolveDistributedExecutionProfile(profile, slotCount) {
+    if (slotCount !== 0) return profile;
+    return { ...profile, slots: 0 };
 }
 
 // Build the env every test child inherits (log level, thread modes, etc.).
@@ -131,19 +140,18 @@ async function main(options = {}) {
     // ---- discover tasks ----
     // Mocha and Foundry tiers are discovered independently and scheduled as one
     // task list; each task carries the runner that executes it.
-    let files = [];
-    let tasks = [];
-    let forgeTasks = [];
+    let mochaDiscovery = { tasks: [], preGrepTaskCount: 0 };
+    let forgeDiscovery = { tasks: [], preGrepTaskCount: 0 };
     const { includeMocha, includeForge } = resolveDiscoverySelection(cli);
     const testDir = path.resolve(cli.e2eOnly ? "test/e2e" : "test");
     if (includeMocha) {
         try {
-            ({ files, tasks } = discoverTasks(
+            mochaDiscovery = discoverTasks(
                 testDir,
                 cli.grep,
                 undefined,
-                cli.testPattern
-            ));
+                cli.mochaTestPattern ?? cli.testPattern
+            );
         } catch (e) {
             console.error(discoveryFailureMessage("Mocha", cli.grep, e), e);
             process.exit(1);
@@ -151,43 +159,31 @@ async function main(options = {}) {
     }
     if (includeForge) {
         try {
-            ({ tasks: forgeTasks } = discoverForgeTasks(
+            forgeDiscovery = discoverForgeTasks(
                 path.resolve("test"),
                 cli.grep,
-                { threads: cli.forgeThreads }
-            ));
+                {
+                    threads: cli.forgeThreads,
+                    testPattern: cli.forgeTestPattern ?? cli.testPattern
+                }
+            );
         } catch (e) {
             console.error(discoveryFailureMessage("Forge", cli.grep, e), e);
             process.exit(1);
         }
     }
-    if (includeMocha && files.length === 0) {
-        console.error(
-            cli.e2eOnly
-                ? "No E2E test files found in test/e2e"
-                : "No Mocha test files found in test"
-        );
+    const discoveryError = validateDiscoveryResults(
+        cli,
+        { includeMocha, includeForge },
+        mochaDiscovery,
+        forgeDiscovery
+    );
+    if (discoveryError) {
+        console.error(discoveryError);
         process.exit(1);
     }
-    if (includeForge) {
-        const emptyForgeTier = emptyForgeTierMessage(
-            forgeTasks.length,
-            cli.grep
-        );
-        if (emptyForgeTier) {
-            console.error(emptyForgeTier);
-            process.exit(1);
-        }
-    }
-    tasks = [...tasks, ...forgeTasks];
-    if (tasks.length === 0) {
-        console.error(
-            cli.grep
-                ? `No ${cli.forgeOnly ? "forge" : cli.e2eOnly ? "E2E" : "Mocha"} tests matched --grep ${JSON.stringify(cli.grep)}`
-                : "No implemented tests found"
-        );
-        process.exit(1);
-    }
+    const forgeTasks = forgeDiscovery.tasks;
+    const tasks = [...mochaDiscovery.tasks, ...forgeTasks];
 
     // ---- resolve config ----
     const requestedSlotCount = cli.slots ?? DEFAULT_SLOTS;
@@ -213,8 +209,12 @@ async function main(options = {}) {
 
     if (cli.dryRun) {
         if (cli.distributed) {
+            const profile = resolveDistributedExecutionProfile(
+                cli.executionProfile,
+                slotCount
+            );
             console.log(
-                `Distributed dry run: ${tasks.length} task(s) (${forgeTasks.length} forge); capacity is configured by test:parallel:server`
+                `Distributed dry run: ${tasks.length} task(s) (${forgeTasks.length} forge); slots=${profile?.slots ?? "worker default"}; remaining capacity is configured by test:parallel:server`
             );
             return;
         }
@@ -332,7 +332,10 @@ async function main(options = {}) {
                         )
                     ),
                     discoveryTimeoutMs: cli.discoveryTimeoutMs,
-                    executionProfile: cli.executionProfile,
+                    executionProfile: resolveDistributedExecutionProfile(
+                        cli.executionProfile,
+                        slotCount
+                    ),
                     keepInfraLogs: cli.keepInfraLogs,
                     signal: distributedCancellation.signal,
                     baseEnv: buildRemoteEnvironment(
@@ -465,7 +468,8 @@ if (require.main === module) {
 module.exports = {
     buildBaseEnv,
     discoveryFailureMessage,
-    emptyForgeTierMessage,
+    validateDiscoveryResults,
+    resolveDistributedExecutionProfile,
     resolveSlotCount,
     main
 };

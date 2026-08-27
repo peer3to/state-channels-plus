@@ -1,4 +1,3 @@
-import { spawn } from "child_process";
 import { task, types } from "hardhat/config";
 
 // The parallel/distributed runner schedules Foundry test contracts as ordinary
@@ -12,34 +11,16 @@ import { task, types } from "hardhat/config";
 // has its own build, warmed once before scheduling, and a per-task recompile
 // would run on every scheduled task.
 
-const FORGE_BIN = "forge";
+const { FORGE_TEST_TASK, DEFAULT_FORGE_THREADS } =
+    require("../scripts/e2e-parallel/shared/forgeConfig") as {
+        FORGE_TEST_TASK: string;
+        DEFAULT_FORGE_THREADS: number;
+    };
+const { runForge } = require("../scripts/e2e-parallel/shared/forgeRunner") as {
+    runForge: (args: string[], cwd: string) => Promise<number>;
+};
 
-// Matches DEFAULT_FORGE_THREADS in scripts/e2e-parallel/shared/constants.js,
-// which every scheduled task passes explicitly. It only applies to a hand-typed
-// invocation. `forge test` otherwise sizes its thread pool from the logical
-// core count, which inside a CPU-limited container is still the host's count.
-const DEFAULT_THREADS = 1;
-
-/**
- * Run forge in the project root and resolve its exit code. `stdio: "inherit"`
- * hands forge this process's own stdout/stderr, so its output streams straight
- * into the runner's log capture. A null exit code means a signal or a failed
- * spawn — both failures.
- */
-function runForge(args: string[], cwd: string) {
-    return new Promise<number>((resolve) => {
-        const child = spawn(FORGE_BIN, args, { cwd, stdio: "inherit" });
-        child.on("error", (error) => {
-            process.stderr.write(
-                `Could not run \`${FORGE_BIN} ${args.join(" ")}\`: ${error.message}\n`
-            );
-            resolve(1);
-        });
-        child.on("close", (code) => resolve(code ?? 1));
-    });
-}
-
-task("forge-test", "Run Foundry tests through the Hardhat CLI")
+task(FORGE_TEST_TASK, "Run Foundry tests through the Hardhat CLI")
     .addParam(
         "matchContract",
         "Regular expression selecting the test contracts to run",
@@ -49,7 +30,7 @@ task("forge-test", "Run Foundry tests through the Hardhat CLI")
     .addOptionalParam(
         "threads",
         "Test threads for this forge run",
-        DEFAULT_THREADS,
+        DEFAULT_FORGE_THREADS,
         types.int
     )
     .setAction(

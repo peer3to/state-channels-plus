@@ -154,6 +154,25 @@ describe("MessageBlockStorage - inbound blocks", () => {
             expect(run.missingBlockHash).to.be.undefined;
         });
 
+        it("zero upper bound cannot satisfy a nonzero lower bound", () => {
+            const run = storage.tryGetMessageBlocksInRange({
+                upperBlockHash: ethers.ZeroHash,
+                lowerBlockHash: hash1
+            });
+            expect(run.blocks).to.deep.equal([]);
+            expect(run.missingBlockHash).to.equal(hash1);
+        });
+
+        it("a walk that reaches zero before the nonzero lower bound is incomplete", () => {
+            const unrelatedLowerHash = factory.hash();
+            const run = storage.tryGetMessageBlocksInRange({
+                upperBlockHash: hash1,
+                lowerBlockHash: unrelatedLowerHash
+            });
+            expect(run.blocks).to.deep.equal([mockMessageBlock, block1]);
+            expect(run.missingBlockHash).to.equal(unrelatedLowerHash);
+        });
+
         it("empty store → empty run, no gap", () => {
             const empty = new MessageBlockStorage();
             const run = empty.tryGetMessageBlocksInRange();

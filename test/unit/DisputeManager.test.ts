@@ -289,12 +289,12 @@ describe("Unit: DisputeManager", function () {
                 dispute.input.disputeAuditingDataHash
             );
 
-            // unbounded falls back to the raw store head -> different bytes.
-            // the stated hash is what keeps disputer and auditors agreeing
+            // An unbounded read also refuses to start below the pinned
+            // snapshot head, so it produces the same complete bytes.
             const unbounded = await disputer.dispute
                 .getAuditingData(newForkId, encodedStateProof)
                 .request();
-            expect(hash(unbounded.encodedAuditingData)).to.not.equal(
+            expect(hash(unbounded.encodedAuditingData)).to.equal(
                 dispute.input.disputeAuditingDataHash
             );
         });
