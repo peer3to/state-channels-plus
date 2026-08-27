@@ -4,8 +4,10 @@ import { createEvm } from "../../EvmFactory";
 import { config, createConfig } from "@/utils/config";
 import { createLogger } from "@platform/createLogger";
 import type { Logger } from "@/utils";
+import type { LogPortHandle } from "@/utils/logging/logControl";
 import type {
     ContractExecutorRequestPayload,
+    WorkerClientMessage,
     WorkerHostMessage,
     WorkerRequestMessage
 } from "./protocol";
@@ -23,6 +25,8 @@ workerGlobal.window ||= globalThis;
 class ContractExecutorWorkerHost {
     private executor: ContractExecutor | undefined;
     private logger: Logger | undefined;
+    private post: ((message: WorkerHostMessage) => void) | undefined;
+    private logPortHandle: LogPortHandle | undefined;
 
     private async init(
         request: Extract<ContractExecutorRequestPayload, { type: "init" }>
@@ -31,11 +35,15 @@ class ContractExecutorWorkerHost {
         // this thread with the same fatal delay threshold as every service loop.
         createConfig(request.config);
         const logger = createLogger(
-            {},
+            { threadName: "vm" },
             { component: "ContractExecutorWorker" },
-            { attachErrorListener: false }
+            { attachErrorListener: true }
         );
         this.logger = logger;
+        this.logPortHandle = logger.addLogPort({
+            post: (message) => this.post?.({ type: "logControl", message }),
+            remoteRealm: "parent"
+        });
         const evm = await createEvm(
             {
                 allowUnlimitedContractSize: true,
@@ -58,7 +66,10 @@ class ContractExecutorWorkerHost {
     }
 
     private dispose() {
+        this.logPortHandle?.remove();
+        this.logPortHandle = undefined;
         this.logger?.stopPerformanceMonitoring();
+        this.logger?.dispose();
         this.logger = undefined;
         this.executor = undefined;
         return null;
@@ -122,10 +133,15 @@ class ContractExecutorWorkerHost {
 
     start(
         post: (response: WorkerHostMessage) => void,
-        onMessage: (handler: (message: WorkerRequestMessage) => void) => void,
+        onMessage: (handler: (message: WorkerClientMessage) => void) => void,
         onDisposed?: () => void
     ): void {
+        this.post = post;
         onMessage((message) => {
+            if (message.type === "logControl") {
+                this.logPortHandle?.receive(message.message);
+                return;
+            }
             if (message.type !== "request") return;
             void this.handleRequest(message).then((response) => {
                 post(response);
@@ -139,7 +155,7 @@ class ContractExecutorWorkerHost {
 
 export function startContractExecutorWorkerHost(
     post: (response: WorkerHostMessage) => void,
-    onMessage: (handler: (message: WorkerRequestMessage) => void) => void,
+    onMessage: (handler: (message: WorkerClientMessage) => void) => void,
     onDisposed?: () => void
 ): void {
     new ContractExecutorWorkerHost().start(post, onMessage, onDisposed);

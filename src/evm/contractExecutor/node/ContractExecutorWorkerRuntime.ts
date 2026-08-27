@@ -5,13 +5,10 @@ import { resolveWorkerResourceLimits } from "../../node/workerResourceLimits";
 import { instrumentWorkerStartup } from "../../node/workerStartupTiming";
 import { createWorkerShutdown } from "../../node/workerShutdown";
 import type { WorkerLike } from "../types";
-import type {
-    WorkerRequestMessage,
-    WorkerResponseMessage
-} from "../worker/protocol";
+import type { WorkerHostMessage } from "../worker/protocol";
 
 export type ContractExecutorWorkerMessageHandler = (
-    message: WorkerResponseMessage
+    message: WorkerHostMessage
 ) => void;
 
 export type ContractExecutorWorkerErrorHandler = (error: Error) => void;
