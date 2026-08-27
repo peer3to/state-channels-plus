@@ -9,7 +9,7 @@ A permutation counts as tested only when an exact repository test declaration is
 - Specification IDs with test evidence: **80/243** (33%)
 - Test IDs (planned permutations) evidenced: **762/4531** (17%)
 - Test files with verification reports: **135/145** (93%)
-- Test declarations covering at least one test ID: **463/1172** (40%)
+- Test declarations covering at least one test ID: **463/1175** (39%)
 - Assigned test IDs with exactly one owning test: **762/762** (100%)
 - Test files excluded as out of scope (`@spec-test-coverage-ignore`): 19
 
@@ -4579,9 +4579,12 @@ Repository test declarations that no verification document maps to any planned p
 | `artifacts loading > should load all required facet artifacts` | [test/utils/ContractErrors.test.ts#L16](../../../test/utils/ContractErrors.test.ts#L16) |
 | `artifacts loading > should extract error ABIs from artifacts` | [test/utils/ContractErrors.test.ts#L29](../../../test/utils/ContractErrors.test.ts#L29) |
 | `ContractCaller and ContractErrors > should pass through regular errors unchanged` | [test/utils/ContractErrors.test.ts#L76](../../../test/utils/ContractErrors.test.ts#L76) |
-| `ContractCaller and ContractErrors > Real contract calls > should handle postBlockCalldata success case` | [test/utils/ContractErrors.test.ts#L134](../../../test/utils/ContractErrors.test.ts#L134) |
-| `ContractCaller and ContractErrors > Real contract calls > should handle ErrorBlockCalldataMsgSenderNotBlockAuthor custom error` | [test/utils/ContractErrors.test.ts#L156](../../../test/utils/ContractErrors.test.ts#L156) |
-| `ContractCaller and ContractErrors > Real contract calls > should handle ErrorBlockCalldataAlreadyPosted custom error` | [test/utils/ContractErrors.test.ts#L203](../../../test/utils/ContractErrors.test.ts#L203) |
+| `ContractCaller and ContractErrors > Real contract calls > should handle postBlockCalldata success case` | [test/utils/ContractErrors.test.ts#L130](../../../test/utils/ContractErrors.test.ts#L130) |
+| `ContractCaller and ContractErrors > Real contract calls > should handle ErrorBlockCalldataMsgSenderNotBlockAuthor custom error` | [test/utils/ContractErrors.test.ts#L152](../../../test/utils/ContractErrors.test.ts#L152) |
+| `ContractCaller and ContractErrors > Real contract calls > should handle ErrorBlockCalldataAlreadyPosted custom error` | [test/utils/ContractErrors.test.ts#L199](../../../test/utils/ContractErrors.test.ts#L199) |
+| `encodedCustomErrorRevert > encodes an argument-less error as its bare selector` | [test/utils/ContractErrors.test.ts#L233](../../../test/utils/ContractErrors.test.ts#L233) |
+| `encodedCustomErrorRevert > encodes an argument-bearing error with a zero value per parameter` | [test/utils/ContractErrors.test.ts#L247](../../../test/utils/ContractErrors.test.ts#L247) |
+| `encodedCustomErrorRevert > throws for a name that is not a contract error` | [test/utils/ContractErrors.test.ts#L263](../../../test/utils/ContractErrors.test.ts#L263) |
 | `HolepunchRelay > does not permanently exhaust the relayer pool after more failures than configured relayers` | [test/utils/HolepunchRelay.test.ts#L115](../../../test/utils/HolepunchRelay.test.ts#L115) |
 | `HolepunchRelay > keeps retrying a single configured relayer without locking out` | [test/utils/HolepunchRelay.test.ts#L146](../../../test/utils/HolepunchRelay.test.ts#L146) |
 | `HolepunchRelay > resets exclusion/backoff state on a successful connection` | [test/utils/HolepunchRelay.test.ts#L173](../../../test/utils/HolepunchRelay.test.ts#L173) |
