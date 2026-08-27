@@ -25,6 +25,7 @@ const {
 const {
     WORKER_COLORS,
     aggregateWorkerStats,
+    assertCompatibleWorkerProtocol,
     coordinatorResultActions,
     createWorkerColorRegistry,
     createHeartbeatMonitor,
@@ -41,8 +42,21 @@ const {
     acknowledgeLoglessAttempt,
     shouldTransferAttemptEvidence
 } = require("../../scripts/e2e-parallel/distributed/server.js");
+const {
+    DISTRIBUTED_PROTOCOL_VERSION
+} = require("../../scripts/e2e-parallel/distributed/protocol.js");
 
 describe("distributed orchestrator logs", function () {
+    it("rejects an incompatible worker host before leasing it", function () {
+        expect(() =>
+            assertCompatibleWorkerProtocol({
+                distributedProtocol: DISTRIBUTED_PROTOCOL_VERSION - 1
+            })
+        ).to.throw(
+            `Distributed worker protocol mismatch: orchestrator requires ${DISTRIBUTED_PROTOCOL_VERSION}, worker host provides ${DISTRIBUTED_PROTOCOL_VERSION - 1}`
+        );
+    });
+
     it("keeps worker colors stable across reconnects", function () {
         const registry = createWorkerColorRegistry(["one", "two", "three"]);
         expect(registry.colorFor("id-a", "worker-a")).to.equal("one");
@@ -207,6 +221,38 @@ describe("distributed orchestrator logs", function () {
                 )
             ).to.equal("failed output");
             expect(fs.existsSync(attemptPath)).to.equal(false);
+        } finally {
+            fs.rmSync(root, { recursive: true, force: true });
+        }
+    });
+
+    it("appends the runner failure reason to a signalled attempt log", function () {
+        const root = fs.mkdtempSync(
+            path.join(os.tmpdir(), "orchestrator-signal-result-")
+        );
+        const assignment = {
+            attemptId: "signal-7",
+            task: { logName: "signalled failure" }
+        };
+        try {
+            const attemptPath = getAttemptLogPath(
+                root,
+                assignment.task.logName,
+                assignment.attemptId
+            );
+            fs.writeFileSync(attemptPath, "partial output");
+            promoteAttemptLog(root, assignment, undefined, 1, {
+                failureReason: "Task process exited with signal SIGKILL"
+            });
+
+            expect(
+                fs.readFileSync(
+                    getErrorLogPath(root, assignment.task.logName),
+                    "utf8"
+                )
+            ).to.equal(
+                "partial output\n\n##PARALLEL_RUNNER## Task process exited with signal SIGKILL\n"
+            );
         } finally {
             fs.rmSync(root, { recursive: true, force: true });
         }

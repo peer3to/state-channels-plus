@@ -249,6 +249,11 @@ temp/distributed-worker/
 - Containers stop at lease end, so idle identities reserve disk only. The same
   identity restarts its stopped container and volume. Count and disk budgets
   evict only least-recently-used idle identities.
+- A connection owns its allocation and workspace lock from reservation through
+  cleanup. If the orchestrator disconnects during setup or transfer, the worker
+  finishes stopping or destroying that environment before granting the next
+  lease. A closed guest control pipe fails that environment, not the persistent
+  worker server.
 - Host metadata marks an environment dirty before preparation or execution and
   clears it only after Docker confirms stop/detach. Restart recovery stops
   orphans, retains clean idle caches, and destroys only a dirty identity.
@@ -291,6 +296,18 @@ apply only to future connection admission. A removed identity keeps its current
 lease but cannot reconnect. Migration admissions record the full unlisted public
 transport key in the host audit log so an operator can copy it into the
 allowlist; ordinary allowlisted admissions record only the fingerprint.
+
+The orchestrator normally stores its seed under
+`temp/distributed-orchestrator`. Stateless CI machines must instead provide a
+dedicated `SCP_TEST_ORCHESTRATOR_SEED` secret containing 64 lowercase hex
+characters. The same seed produces the same transport identity on every run,
+so each worker reuses one CI environment for the same workspace. Do not reuse
+`SCP_TEST_POOL_SECRET` as this seed. CI runs that share this identity must be
+serialized across the repository. GitHub keeps only one pending run in a
+concurrency group, so a newer PR update can cancel an older queued run. Re-run
+that cancelled check from the Actions tab. Host-lock process coverage runs as
+part of the canonical distributed suite; CI does not start a separate local
+host-lock job.
 
 Use that persistent admin identity to discover workers and manage their
 authorization stores over the authenticated distributed transport:
@@ -364,8 +381,14 @@ SIGTERM. Canonical task and failure logs remain on the orchestrator under
 `logs/run-N/`, including `error_*.ansi` files and worker infrastructure
 diagnostics. If a discovery server, Hardhat node, or isolated worker fails,
 `logs/run-N/infra/` is retained with the process diagnostic and the affected
-worker's streamed output. Successful-run infrastructure logs are removed by
-the normal end-of-run cleanup.
+worker's streamed output. Infrastructure output is collected and retained when
+any test fails. A fully successful run skips collection unless
+`--keep-infra-logs` is set.
+
+The distributed protocol version must match across the orchestrator, worker
+host, and isolated guest. A mismatch is rejected before test execution with an
+update or rebase instruction. After a protocol change, update and restart every
+worker host before running branches that use the new protocol.
 
 Dial diagnostics include the Noise handshake hash for each stream. Close lines
 state whether this application closed the stream, Hyperswarm reported duplicate

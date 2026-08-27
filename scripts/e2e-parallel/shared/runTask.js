@@ -56,6 +56,7 @@ async function runTask(
             env.STREAM_PARALLEL_CHILD_OUTPUT === "true";
 
         let infrastructureFailure;
+        let cancelled = false;
         let settled = false;
         let killTimer;
         let child;
@@ -97,8 +98,15 @@ async function runTask(
             );
             killTimer.unref();
         };
-        const onAbort = () => terminate();
-        cancellationSignal?.addEventListener("abort", onAbort, { once: true });
+        const onAbort = () => {
+            cancelled = true;
+            terminate();
+        };
+        if (cancellationSignal?.aborted) onAbort();
+        else
+            cancellationSignal?.addEventListener("abort", onAbort, {
+                once: true
+            });
 
         const writeOutput = (stream, data) => {
             try {
@@ -148,6 +156,7 @@ async function runTask(
                 stderr,
                 durationMs,
                 signal,
+                cancelled,
                 infrastructureFailure
             });
         };

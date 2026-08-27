@@ -1,7 +1,8 @@
 const crypto = require("crypto");
 const fs = require("fs");
-const { waitForMessage } = require("./protocol");
 const { buildDeltaBundle } = require("./runtimeBundle");
+
+const WORKSPACE_NEED_IDLE_TIMEOUT_MS = 60000;
 
 function waitForIdleMessage(
     peer,
@@ -60,7 +61,12 @@ async function sendBundle(
             { manifest: wireManifest },
             Buffer.from(JSON.stringify(files))
         );
-        const needMessage = await waitForMessage(peer, "WORKSPACE_NEED", 10000);
+        const needMessage = await waitForIdleMessage(
+            peer,
+            "WORKSPACE_NEED",
+            WORKSPACE_NEED_IDLE_TIMEOUT_MS,
+            new Set(["HEARTBEAT", "WORKER_STATUS"])
+        );
         const need = JSON.parse(needMessage.body.toString("utf8"));
         if (!Array.isArray(need.changed) || !Array.isArray(need.deleted)) {
             throw new Error("Worker returned an invalid workspace diff");

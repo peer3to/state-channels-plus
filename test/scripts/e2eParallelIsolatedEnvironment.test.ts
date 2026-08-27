@@ -4,11 +4,14 @@ import fs from "fs";
 import os from "os";
 import path from "path";
 import crypto from "crypto";
+import { setImmediate } from "node:timers";
 import { TestIsolatedRuntimeBackend } from "../fixtures/distributed/isolatedRuntimeBackend";
 
 const {
+    DOCKER_OPERATION_TIMEOUT_MS,
     DockerBackend,
     IsolatedEnvironmentManager,
+    runProcess,
     runtimeNames,
     trustedRunnerManifest
 } = require("../../scripts/e2e-parallel/distributed/isolatedEnvironment.js");
@@ -18,6 +21,9 @@ const {
 const {
     BoundedArtifactAssembler
 } = require("../../scripts/e2e-parallel/distributed/failureArtifacts.js");
+const {
+    DISTRIBUTED_PROTOCOL_VERSION
+} = require("../../scripts/e2e-parallel/distributed/protocol.js");
 
 const profile = {
     schedulerTickMs: 1000,
@@ -97,6 +103,107 @@ describe("distributed isolated environment", function () {
         }
     });
 
+    it("rejects an incompatible cached guest before environment setup", async function () {
+        const root = fs.mkdtempSync(
+            path.join(os.tmpdir(), "isolated-protocol-mismatch-")
+        );
+        const backend = new TestIsolatedRuntimeBackend();
+        backend.guestDistributedProtocol = DISTRIBUTED_PROTOCOL_VERSION - 1;
+        try {
+            const manager = await IsolatedEnvironmentManager.create({
+                workRoot: root,
+                backend,
+                backendName: "test"
+            });
+            const environment = await manager.allocate({
+                environmentKey: "7".repeat(64),
+                orchestratorPublicKey: "8".repeat(64),
+                profile
+            });
+            let failure: Error | null = null;
+            try {
+                await environment.start();
+            } catch (error) {
+                failure = error as Error;
+            }
+
+            expect(failure?.message).to.include(
+                `Distributed guest protocol mismatch: worker host requires ${DISTRIBUTED_PROTOCOL_VERSION}, cached guest provides ${DISTRIBUTED_PROTOCOL_VERSION - 1}`
+            );
+            expect(backend.frameKinds()).not.to.include("TRUSTED_RUNNER");
+            expect(backend.frameKinds()).not.to.include("ENVIRONMENT_SETUP");
+            await environment.destroy();
+        } finally {
+            fs.rmSync(root, { recursive: true, force: true });
+        }
+    });
+
+    it("contains a broken control pipe inside the failed environment", async function () {
+        const root = fs.mkdtempSync(
+            path.join(os.tmpdir(), "isolated-control-pipe-")
+        );
+        const backend = new TestIsolatedRuntimeBackend();
+        try {
+            const manager = await IsolatedEnvironmentManager.create({
+                workRoot: root,
+                backend,
+                backendName: "test"
+            });
+            const environment = await manager.allocate({
+                environmentKey: "e".repeat(64),
+                orchestratorPublicKey: "f".repeat(64),
+                profile
+            });
+            await environment.start();
+            const failure = new Promise<Error>((resolve) =>
+                environment.once("failure", resolve)
+            );
+            const brokenPipe = Object.assign(new Error("write EPIPE"), {
+                code: "EPIPE"
+            });
+            backend.controls[0].stdin.emit("error", brokenPipe);
+
+            expect(await failure).to.equal(brokenPipe);
+            expect(environment.state).to.equal("failed");
+            await environment.destroy();
+        } finally {
+            fs.rmSync(root, { recursive: true, force: true });
+        }
+    });
+
+    it("ignores a control pipe error after the environment stops", async function () {
+        const root = fs.mkdtempSync(
+            path.join(os.tmpdir(), "isolated-stopped-control-pipe-")
+        );
+        const backend = new TestIsolatedRuntimeBackend();
+        try {
+            const manager = await IsolatedEnvironmentManager.create({
+                workRoot: root,
+                backend,
+                backendName: "test"
+            });
+            const environment = await manager.allocate({
+                environmentKey: "1".repeat(64),
+                orchestratorPublicKey: "2".repeat(64),
+                profile
+            });
+            await environment.start();
+            await environment.stop();
+            let failed = false;
+            environment.once("failure", () => (failed = true));
+            backend.controls[0].stdin.emit(
+                "error",
+                Object.assign(new Error("write EPIPE"), { code: "EPIPE" })
+            );
+            await new Promise((resolve) => setImmediate(resolve));
+
+            expect(failed).to.equal(false);
+            expect(environment.state).to.equal("stopped");
+        } finally {
+            fs.rmSync(root, { recursive: true, force: true });
+        }
+    });
+
     it("updates retained runtime limits and rejects growth beyond its fixed disk quota", async function () {
         const root = fs.mkdtempSync(
             path.join(os.tmpdir(), "isolated-profile-update-")
@@ -158,29 +265,82 @@ describe("distributed isolated environment", function () {
     });
 
     it("maps a retained Docker profile update to cgroup limit flags", async function () {
-        const calls: string[][] = [];
+        const calls: Array<{
+            args: string[];
+            options: { timeoutMs?: number };
+        }> = [];
         const backend = new DockerBackend({
             image: `runner@sha256:${"f".repeat(64)}`,
-            run: async (_command: string, args: string[]) => {
-                calls.push(args);
+            run: async (
+                _command: string,
+                args: string[],
+                options: { timeoutMs?: number }
+            ) => {
+                calls.push({ args, options });
                 return { stdout: Buffer.alloc(0), stderr: Buffer.alloc(0) };
             }
         });
         await backend.update({ container: "retained" }, profile);
         expect(calls).to.deep.equal([
-            [
-                "update",
-                "--cpus",
-                String(profile.cpu),
-                "--memory",
-                String(profile.memoryBytes),
-                "--memory-swap",
-                String(profile.memoryBytes),
-                "--pids-limit",
-                String(profile.pidsLimit),
-                "retained"
-            ]
+            {
+                args: [
+                    "update",
+                    "--cpus",
+                    String(profile.cpu),
+                    "--memory",
+                    String(profile.memoryBytes),
+                    "--memory-swap",
+                    String(profile.memoryBytes),
+                    "--pids-limit",
+                    String(profile.pidsLimit),
+                    "retained"
+                ],
+                options: { timeoutMs: DOCKER_OPERATION_TIMEOUT_MS }
+            }
         ]);
+    });
+
+    it("bounds Docker startup commands", async function () {
+        const calls: Array<{
+            command: string;
+            options: { timeoutMs?: number };
+        }> = [];
+        const backend = new DockerBackend({
+            image: `runner@sha256:${"f".repeat(64)}`,
+            platform: "darwin",
+            processFactory: () => ({}),
+            run: async (
+                command: string,
+                _args: string[],
+                options: { timeoutMs?: number }
+            ) => {
+                calls.push({ command, options });
+                return { stdout: Buffer.alloc(0), stderr: Buffer.alloc(0) };
+            }
+        });
+        await backend.start({ container: "retained" });
+
+        expect(calls).not.to.be.empty;
+        expect(
+            calls.every(
+                (entry) =>
+                    entry.options.timeoutMs === DOCKER_OPERATION_TIMEOUT_MS
+            )
+        ).to.equal(true);
+    });
+
+    it("kills a process that exceeds its operation timeout", async function () {
+        let failure: Error | undefined;
+        try {
+            await runProcess(
+                process.execPath,
+                ["-e", "setInterval(()=>{},1000)"],
+                { timeoutMs: 25 }
+            );
+        } catch (error) {
+            failure = error as Error;
+        }
+        expect(failure?.message).to.include("timed out after 25ms");
     });
 
     it("does not poll Docker exit classification while an environment is running", async function () {
@@ -348,11 +508,19 @@ describe("distributed isolated environment", function () {
     });
 
     it("builds a hardened Docker create request without host mounts or Docker control", async function () {
-        const calls: Array<{ command: string; args: string[] }> = [];
+        const calls: Array<{
+            command: string;
+            args: string[];
+            options: { timeoutMs?: number };
+        }> = [];
         const backend = new DockerBackend({
             image: `runner@sha256:${"f".repeat(64)}`,
-            run: async (command: string, args: string[]) => {
-                calls.push({ command, args });
+            run: async (
+                command: string,
+                args: string[],
+                options: { timeoutMs?: number }
+            ) => {
+                calls.push({ command, args, options });
                 return { stdout: Buffer.alloc(0), stderr: Buffer.alloc(0) };
             }
         });
@@ -382,6 +550,12 @@ describe("distributed isolated environment", function () {
         expect(initialize.args).to.include("--cap-add=CHOWN");
         expect(initialize.args).to.include("110001:210001");
         expect(volume.args).to.include(`size=${profile.diskBytes}`);
+        expect(
+            calls.every(
+                (entry) =>
+                    entry.options.timeoutMs === DOCKER_OPERATION_TIMEOUT_MS
+            )
+        ).to.equal(true);
         expect(runtimeNames("c".repeat(64)).container).to.match(/^peer3-test-/);
     });
 

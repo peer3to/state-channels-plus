@@ -11,6 +11,8 @@ function task(label: string): {
     args: string[];
     startupMs?: number;
     repeatedStarvation?: boolean;
+    infrastructureDiagnostics?: string[];
+    infrastructureRetryCount?: number;
 } {
     return { label, logName: label, args: [] };
 }
@@ -109,6 +111,155 @@ describe("distributed task coordinator", function () {
         expect(
             failingCoordinator.finish().failed[0].infrastructureDiagnostics
         ).to.deep.equal(["disk a", "disk b"]);
+    });
+
+    it("retries a signalled task once and keeps its parsed diagnostics", function () {
+        const firstTask = task("signalled");
+        const coordinator = new TaskCoordinator([firstTask]);
+        const first = coordinator.requestTask("a");
+        const completion = coordinator.completeAttempt("a", {
+            attemptId: first.attemptId,
+            code: 1,
+            signal: "SIGKILL",
+            stdout: "",
+            stderr: "Event loop delay 1200ms exceeded configured threshold 1000ms\n"
+        });
+
+        expect(completion).to.deep.include({
+            disposition: "retry-infrastructure",
+            failureReason: "Task process exited with signal SIGKILL"
+        });
+        expect(completion.parsed.starveCount).to.equal(1);
+        expect(firstTask.infrastructureDiagnostics).to.deep.equal([
+            "Task process exited with signal SIGKILL"
+        ]);
+
+        const retry = coordinator.requestTask("b");
+        coordinator.completeAttempt("b", {
+            attemptId: retry.attemptId,
+            code: 0,
+            stdout: "",
+            stderr: ""
+        });
+        expect(coordinator.finish().failed).to.be.empty;
+    });
+
+    it("finalizes a task after its second signalled attempt", function () {
+        const firstTask = task("signalled twice");
+        const coordinator = new TaskCoordinator([firstTask]);
+        const first = coordinator.requestTask("a");
+        coordinator.completeAttempt("a", {
+            attemptId: first.attemptId,
+            code: 1,
+            signal: "SIGKILL",
+            stdout: "",
+            stderr: ""
+        });
+
+        const retry = coordinator.requestTask("b");
+        const completion = coordinator.completeAttempt("b", {
+            attemptId: retry.attemptId,
+            code: 1,
+            signal: "SIGKILL",
+            stdout: "",
+            stderr: ""
+        });
+
+        expect(completion).to.deep.include({
+            disposition: "complete",
+            code: 1
+        });
+        expect(coordinator.finish().failed).to.deep.equal([firstTask]);
+        expect(firstTask.infrastructureDiagnostics).to.deep.equal([
+            "Task process exited with signal SIGKILL",
+            "Task process exited with signal SIGKILL"
+        ]);
+    });
+
+    it("does not retry or diagnose a task cancelled with SIGTERM", function () {
+        const firstTask = task("cancelled");
+        const coordinator = new TaskCoordinator([firstTask]);
+        const assignment = coordinator.requestTask("a");
+        const completion = coordinator.completeAttempt("a", {
+            attemptId: assignment.attemptId,
+            code: 1,
+            signal: "SIGTERM",
+            cancelled: true,
+            stdout: "",
+            stderr: ""
+        });
+
+        expect(completion).to.deep.include({
+            disposition: "complete",
+            code: 1
+        });
+        expect(completion.attempt.failureReason).to.equal(
+            "Task cancelled with signal SIGTERM"
+        );
+        expect(firstTask.infrastructureDiagnostics).to.equal(undefined);
+        expect(firstTask.infrastructureRetryCount).to.equal(undefined);
+        expect(coordinator.finish().pending).to.equal(0);
+    });
+
+    it("keeps a late speculative signal as a test failure", function () {
+        const firstTask = task("late signal");
+        const coordinator = new TaskCoordinator([firstTask], {
+            speculative: true
+        });
+        const original = coordinator.requestTask("a");
+        const copy = coordinator.requestTask("b");
+        coordinator.completeAttempt("a", {
+            attemptId: original.attemptId,
+            code: 0,
+            stdout: "passed",
+            stderr: ""
+        });
+
+        const completion = coordinator.completeAttempt("b", {
+            attemptId: copy.attemptId,
+            code: 1,
+            signal: "SIGKILL",
+            stdout: "",
+            stderr: "failed"
+        });
+
+        expect(completion.disposition).to.equal("late-failure");
+        expect(firstTask.infrastructureDiagnostics).to.equal(undefined);
+        expect(coordinator.finish().failed).to.deep.equal([firstTask]);
+    });
+
+    it("ignores a speculative copy cancelled after the task succeeds", function () {
+        const firstTask = task("cancelled copy");
+        const coordinator = new TaskCoordinator([firstTask], {
+            speculative: true
+        });
+        const original = coordinator.requestTask("a");
+        const copy = coordinator.requestTask("b");
+        coordinator.completeAttempt("a", {
+            attemptId: original.attemptId,
+            code: 0,
+            stdout: "passed",
+            stderr: ""
+        });
+
+        const completion = coordinator.completeAttempt("b", {
+            attemptId: copy.attemptId,
+            code: 1,
+            signal: "SIGTERM",
+            cancelled: true,
+            stdout: "",
+            stderr: "cancelled during run completion"
+        });
+
+        expect(completion).to.deep.include({
+            accepted: false,
+            reason: "redundant-attempt"
+        });
+        expect(coordinator.finish()).to.deep.include({
+            done: true,
+            completed: 1
+        });
+        expect(coordinator.finish().failed).to.be.empty;
     });
 
     it("rejects stale, duplicate, and cross-worker results", function () {

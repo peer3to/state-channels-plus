@@ -230,7 +230,12 @@ function safeEmptyDir(dirPath, allowLogdirPurge) {
     }
 }
 
-function cleanupNonErrorLogs(logDir, allowLogdirPurge, keepInfraLogs = false) {
+function cleanupNonErrorLogs(
+    logDir,
+    allowLogdirPurge,
+    keepInfraLogs = false,
+    runPassed = true
+) {
     const resolved = path.resolve(logDir);
 
     if (isDangerousPurgeTarget(resolved)) {
@@ -254,7 +259,9 @@ function cleanupNonErrorLogs(logDir, allowLogdirPurge, keepInfraLogs = false) {
         const target = path.join(resolved, entry);
         if (
             entry === "infra" &&
-            (keepInfraLogs || fs.existsSync(path.join(target, ".failure")))
+            (keepInfraLogs ||
+                !runPassed ||
+                fs.existsSync(path.join(target, ".failure")))
         ) {
             continue;
         }
@@ -362,11 +369,26 @@ function starvationRetry({ seq, total, label, starveCount }) {
     );
 }
 
+function infrastructureRetry({ seq, total, label, reason }) {
+    console.log(
+        colorize(
+            "lightYellow",
+            `[${seq}/${total}] INFRASTRUCTURE FAILURE — rescheduling once [${label}] · ${reason}`
+        )
+    );
+}
+
+function appendRunnerFailureMarker(logPath, failureReason) {
+    if (!failureReason || !fs.existsSync(logPath)) return;
+    fs.appendFileSync(logPath, `\n\n##PARALLEL_RUNNER## ${failureReason}\n`);
+}
+
 // Green PASS / red FAIL, with timing + starvation annotations.
 function result({
     completed,
     total,
     code,
+    failureReason,
     label,
     durationMs,
     oomCount,
@@ -398,11 +420,13 @@ function result({
         const reason =
             oomCount > 0
                 ? `OOM x${oomCount}`
-                : repeatedStarvation
-                  ? "starved twice"
-                  : starvedFail
-                    ? "starved"
-                    : `exit ${code}`;
+                : failureReason
+                  ? failureReason
+                  : repeatedStarvation
+                    ? "starved twice"
+                    : starvedFail
+                      ? "starved"
+                      : `exit ${code}`;
         console.log(
             colorize(
                 repeatedStarvation
@@ -660,6 +684,8 @@ module.exports = {
     admission,
     hold,
     starvationRetry,
+    infrastructureRetry,
+    appendRunnerFailureMarker,
     result,
     gasPeakLine,
     getStarvationSummary,

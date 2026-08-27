@@ -30,6 +30,9 @@ const {
     DEFAULTS: SERVER_DEFAULTS,
     parseServerArgs
 } = require("../../scripts/e2e-parallel/distributed/serverArgParser.js");
+const {
+    getErrorLogPath
+} = require("../../scripts/e2e-parallel/shared/logging.js");
 
 describe("distributed worker scheduler", function () {
     it("uses parallel-runner defaults and accepts server-local short overrides", function () {
@@ -350,6 +353,86 @@ describe("distributed worker scheduler", function () {
         }
     });
 
+    it("retries and reports local signal exits as infrastructure failures", async function () {
+        const logDir = path.join(
+            process.cwd(),
+            "logs",
+            `scheduler-signal-${process.pid}`
+        );
+        const output: string[] = [];
+        const originalConsoleLog = console.log;
+        let attempts = 0;
+        console.log = (...values: unknown[]) => output.push(values.join(" "));
+        try {
+            const result = await runScheduler({
+                tasks: [
+                    {
+                        label: "local signal",
+                        logName: "local-signal",
+                        runner: "forge",
+                        args: []
+                    }
+                ],
+                slots: [],
+                slotCount: 0,
+                concurrencyCap: 1,
+                targetLoad: 1,
+                memBoundGb: 10,
+                baseEnv: {},
+                logDir,
+                infraPids: () => [],
+                tickMs: 1,
+                resourceGate: {
+                    cpuUtil: 0,
+                    occupiedGb: 0,
+                    allows: async () => true,
+                    stats: () => ({
+                        peakCpu: 0,
+                        avgCpu: 0,
+                        cpuSampleCount: 1,
+                        peakOccupiedGb: 0,
+                        avgPerTestGb: 0,
+                        memorySampleCount: 1,
+                        memBoundGb: 10
+                    })
+                },
+                runTaskImpl: async (
+                    _cmd: string,
+                    _args: string[],
+                    _env: Record<string, string | undefined>,
+                    label: string,
+                    logPath: string
+                ) => {
+                    attempts += 1;
+                    fs.mkdirSync(path.dirname(logPath), { recursive: true });
+                    fs.writeFileSync(logPath, `attempt ${attempts}`);
+                    return {
+                        code: 1,
+                        signal: "SIGKILL",
+                        label,
+                        stdout: "",
+                        stderr: "",
+                        durationMs: 1
+                    };
+                }
+            });
+
+            expect(attempts).to.equal(2);
+            expect(result.failed).to.have.length(1);
+            expect(output.join("\n")).to.include(
+                "INFRASTRUCTURE FAILURE — rescheduling once"
+            );
+            expect(
+                fs.readFileSync(getErrorLogPath(logDir, "local-signal"), "utf8")
+            ).to.equal(
+                "attempt 2\n\n##PARALLEL_RUNNER## Task process exited with signal SIGKILL\n"
+            );
+        } finally {
+            console.log = originalConsoleLog;
+            fs.rmSync(logDir, { recursive: true, force: true });
+        }
+    });
+
     it("releases distributed task resources after either failure or cancellation", function () {
         const pool = new TaskResourcePool({
             baseEnv: { BASE_ONLY: "yes" },
@@ -462,6 +545,37 @@ describe("distributed worker scheduler", function () {
         await new Promise((resolve) => setImmediate(resolve));
 
         expect(ran).to.equal(false);
+        expect(scheduler.running).to.equal(0);
+    });
+
+    it("does not report an in-flight task rejection after the scheduler stops", async function () {
+        let rejectTask!: (error: Error) => void;
+        const task = new Promise<void>((_resolve, reject) => {
+            rejectTask = reject;
+        });
+        const errors: Error[] = [];
+        let requested = false;
+        const scheduler = new WorkerScheduler({
+            concurrencyCap: 1,
+            retryMs: 5,
+            canRun: async () => true,
+            requestTask: async () => {
+                if (requested) return null;
+                requested = true;
+                return { id: "running-at-stop" };
+            },
+            runTask: async () => task,
+            onError: (error: Error) => errors.push(error)
+        });
+
+        scheduler.start();
+        await new Promise((resolve) => setImmediate(resolve));
+        expect(scheduler.running).to.equal(1);
+        scheduler.stop();
+        rejectTask(new Error("Distributed worker stopped"));
+        await new Promise((resolve) => setImmediate(resolve));
+
+        expect(errors).to.be.empty;
         expect(scheduler.running).to.equal(0);
     });
 

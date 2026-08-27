@@ -21,6 +21,7 @@ const {
     loadWorkerKeyPair
 } = require("../../scripts/e2e-parallel/distributed/workerIdentity.js");
 const {
+    DISTRIBUTED_PROTOCOL_VERSION,
     ProtocolPeer,
     waitForMessage
 } = require("../../scripts/e2e-parallel/distributed/protocol.js");
@@ -54,11 +55,41 @@ const {
     isRoutineDiscoveryFailure: isRoutineOrchestratorFailure
 } = require("../../scripts/e2e-parallel/distributed/orchestrator.js");
 const {
+    waitForIdleMessage
+} = require("../../scripts/e2e-parallel/distributed/artifactTransfer.js");
+const {
     isRoutineDiscoveryFailure: isRoutineServerFailure,
     requireTransportPublicKey
 } = require("../../scripts/e2e-parallel/distributed/server.js");
+const {
+    INFRA_PROCESS_LOG_CHUNK_BYTES,
+    createInfrastructureProcessLogChunks,
+    unpackInfrastructureProcessLogChunk
+} = require("../../scripts/e2e-parallel/distributed/infrastructureLogTransfer.js");
 
 describe("distributed protocol", function () {
+    it("chunks and restores infrastructure logs below the frame limit", function () {
+        const log = Buffer.concat([
+            Buffer.alloc(INFRA_PROCESS_LOG_CHUNK_BYTES, "a"),
+            Buffer.alloc(INFRA_PROCESS_LOG_CHUNK_BYTES, "b"),
+            Buffer.from("tail")
+        ]);
+        const chunks = createInfrastructureProcessLogChunks(log);
+
+        expect(chunks).to.have.length(3);
+        expect(chunks[0]).to.include({ sequence: 0, chunkCount: 3 });
+        expect(chunks[1]).to.include({ sequence: 1, chunkCount: 3 });
+        expect(chunks[2]).to.include({ sequence: 2, chunkCount: 3 });
+        expect(
+            Buffer.concat(
+                chunks.map(
+                    (chunk: Record<string, unknown>) =>
+                        unpackInfrastructureProcessLogChunk(chunk).body
+                )
+            )
+        ).to.deep.equal(log);
+    });
+
     it("rejects a server connection without an authenticated transport key", function () {
         expect(() => requireTransportPublicKey({})).to.throw(
             "Authenticated transport key is required"
@@ -109,6 +140,34 @@ describe("distributed protocol", function () {
             )
         ).to.equal("transport reported ECONNRESET; no local application close");
         expect(closeOwner(null, null)).to.include("no local application close");
+    });
+
+    it("keeps the workspace wait alive while the worker sends heartbeats", async function () {
+        const pair = await createSocketPair();
+        const sender = new ProtocolPeer(pair.client);
+        const receiver = new ProtocolPeer(pair.server);
+        try {
+            const waiting = waitForIdleMessage(
+                sender,
+                "WORKSPACE_NEED",
+                100,
+                new Set(["HEARTBEAT"])
+            );
+            setTimeout(() => receiver.send("HEARTBEAT"), 50);
+            setTimeout(
+                () =>
+                    receiver.send(
+                        "WORKSPACE_NEED",
+                        {},
+                        Buffer.from('{"changed":[],"deleted":[]}')
+                    ),
+                125
+            );
+
+            expect((await waiting).kind).to.equal("WORKSPACE_NEED");
+        } finally {
+            await pair.close();
+        }
     });
 
     it("tolerates a transport reset before protocol ownership is installed", function () {
@@ -196,6 +255,30 @@ describe("distributed protocol", function () {
             ).to.equal(true);
         } finally {
             fs.rmSync(stateDir, { recursive: true, force: true });
+        }
+    });
+
+    it("uses one explicit orchestrator seed across fresh state directories", function () {
+        const firstStateDir = fs.mkdtempSync(
+            path.join(os.tmpdir(), "orchestrator-explicit-seed-a-")
+        );
+        const secondStateDir = fs.mkdtempSync(
+            path.join(os.tmpdir(), "orchestrator-explicit-seed-b-")
+        );
+        const seed = "a".repeat(64);
+        try {
+            const first = loadOrchestratorKeyPair(firstStateDir, seed);
+            const second = loadOrchestratorKeyPair(secondStateDir, seed);
+            expect(second.publicKey.equals(first.publicKey)).to.equal(true);
+            expect(second.secretKey.equals(first.secretKey)).to.equal(true);
+            expect(fs.readdirSync(firstStateDir)).to.be.empty;
+            expect(fs.readdirSync(secondStateDir)).to.be.empty;
+            expect(() =>
+                loadOrchestratorKeyPair(firstStateDir, "not-a-seed")
+            ).to.throw("64-character lowercase hex");
+        } finally {
+            fs.rmSync(firstStateDir, { recursive: true, force: true });
+            fs.rmSync(secondStateDir, { recursive: true, force: true });
         }
     });
 
@@ -838,6 +921,7 @@ describe("distributed protocol", function () {
                     manifest: {
                         version: 3,
                         packageManager: "pnpm",
+                        distributedProtocol: DISTRIBUTED_PROTOCOL_VERSION,
                         workspaceId: "c".repeat(64),
                         sourceDigest: "d".repeat(64),
                         rootProjectPath: "project",
@@ -866,6 +950,7 @@ describe("distributed protocol", function () {
                     manifest: {
                         version: 3,
                         packageManager: "pnpm",
+                        distributedProtocol: DISTRIBUTED_PROTOCOL_VERSION,
                         archiveBytes: archive.length,
                         archiveSha256,
                         expandedBytes: packageJson.length,
@@ -953,6 +1038,7 @@ describe("distributed protocol", function () {
         const deltaManifest = {
             version: 3,
             packageManager: "pnpm",
+            distributedProtocol: DISTRIBUTED_PROTOCOL_VERSION,
             archiveBytes: archive.length,
             archiveSha256: crypto
                 .createHash("sha256")
@@ -1017,6 +1103,7 @@ describe("distributed protocol", function () {
                     manifest: {
                         version: 3,
                         packageManager: "pnpm",
+                        distributedProtocol: DISTRIBUTED_PROTOCOL_VERSION,
                         workspaceId: "c".repeat(64),
                         sourceDigest: "d".repeat(64),
                         rootProjectPath: "project",

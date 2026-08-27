@@ -13,10 +13,15 @@ const {
 const {
     ingestAttemptLogMessage
 } = require("../../scripts/e2e-parallel/distributed/orchestrator.js");
+const DHT = require("@hyperswarm/dht");
+const {
+    DISTRIBUTED_PROTOCOL_VERSION
+} = require("../../scripts/e2e-parallel/distributed/protocol.js");
 
 const workspaceManifest = {
     version: 3,
     packageManager: "pnpm",
+    distributedProtocol: DISTRIBUTED_PROTOCOL_VERSION,
     workspaceId: "a".repeat(64),
     sourceDigest: "source",
     rootProjectPath: "project",
@@ -204,6 +209,42 @@ describe("distributed worker pool lifecycle", function () {
 
             await orchestrator.send(worker.name, "RELEASE");
             await orchestrator.waitFor(worker.name, "LEASE_CLEAN");
+        } finally {
+            await pool.close();
+        }
+    });
+
+    it("rejects an incompatible uploaded runner before environment allocation", async function () {
+        const pool = await LeasePoolHarness.create();
+        const backend = new TestIsolatedRuntimeBackend();
+        try {
+            const worker = await pool.startServer("worker-a", {
+                environmentBackend: backend
+            });
+            const orchestrator = await pool.startOrchestrator("old-runner");
+            await orchestrator.waitFor(worker.name, "LEASE_GRANTED");
+            await orchestrator.send(
+                worker.name,
+                "WORKSPACE_OFFER",
+                {
+                    manifest: {
+                        ...workspaceManifest,
+                        distributedProtocol: DISTRIBUTED_PROTOCOL_VERSION - 1
+                    }
+                },
+                Buffer.from(JSON.stringify(sourceFiles))
+            );
+
+            const failure = await orchestrator.waitFor(
+                worker.name,
+                "PREPARATION_ERROR"
+            );
+            expect(failure.header.message).to.include(
+                `Distributed runner protocol mismatch: worker host requires ${DISTRIBUTED_PROTOCOL_VERSION}, uploaded workspace provides ${DISTRIBUTED_PROTOCOL_VERSION - 1}`
+            );
+            expect(
+                backend.calls.filter((entry) => entry.operation === "create")
+            ).to.be.empty;
         } finally {
             await pool.close();
         }
@@ -406,6 +447,148 @@ describe("distributed worker pool lifecycle", function () {
             await second.waitFor(worker.name, "LEASE_CLEAN", {
                 after: cleaning.sequence
             });
+        } finally {
+            await pool.close();
+        }
+    });
+
+    it("releases an allocating environment when its orchestrator disconnects", async function () {
+        const pool = await LeasePoolHarness.create();
+        const backend = new TestIsolatedRuntimeBackend();
+        backend.creationDelayMs = 200;
+        const keyPair = DHT.keyPair(Buffer.alloc(32, 7));
+        try {
+            const worker = await pool.startServer("worker-a", {
+                environmentBackend: backend
+            });
+            const first = await pool.startOrchestrator("allocating-run", {
+                keyPair
+            });
+            await first.waitFor(worker.name, "LEASE_GRANTED");
+            await first.send(
+                worker.name,
+                "WORKSPACE_OFFER",
+                { manifest: workspaceManifest },
+                Buffer.from(JSON.stringify(sourceFiles))
+            );
+            await backend.firstCreateStarted;
+
+            const second = await pool.startOrchestrator("retry-run", {
+                keyPair
+            });
+            await second.waitFor(worker.name, "BUSY");
+            await pool.closeOrchestrator(first);
+            await second.waitFor(worker.name, "LEASE_GRANTED");
+            await second.send(
+                worker.name,
+                "WORKSPACE_OFFER",
+                { manifest: workspaceManifest },
+                Buffer.from(JSON.stringify(sourceFiles))
+            );
+            await second.waitFor(worker.name, "WORKSPACE_NEED");
+
+            expect(
+                backend.calls.filter((entry) => entry.operation === "create")
+            ).to.have.length(2);
+            expect(
+                backend.calls.filter((entry) => entry.operation === "destroy")
+            ).to.have.length(1);
+            await second.send(worker.name, "RELEASE");
+            await second.waitFor(worker.name, "LEASE_CLEAN");
+        } finally {
+            await pool.close();
+        }
+    });
+
+    it("cancels the workspace diff wait when its orchestrator disconnects", async function () {
+        const pool = await LeasePoolHarness.create();
+        const backend = new TestIsolatedRuntimeBackend();
+        backend.respondToWorkspaceOffer = false;
+        const keyPair = DHT.keyPair(Buffer.alloc(32, 8));
+        try {
+            const worker = await pool.startServer("worker-a", {
+                environmentBackend: backend
+            });
+            const first = await pool.startOrchestrator("waiting-run", {
+                keyPair
+            });
+            await first.waitFor(worker.name, "LEASE_GRANTED");
+            await first.send(
+                worker.name,
+                "WORKSPACE_OFFER",
+                { manifest: workspaceManifest },
+                Buffer.from(JSON.stringify(sourceFiles))
+            );
+            await backend.firstWorkspaceOfferReceived;
+
+            const second = await pool.startOrchestrator("next-run");
+            await second.waitFor(worker.name, "BUSY");
+            const disconnectedAt = Date.now();
+            await pool.closeOrchestrator(first);
+            await second.waitFor(worker.name, "LEASE_GRANTED");
+
+            expect(Date.now() - disconnectedAt).to.be.lessThan(2000);
+            expect(
+                backend.calls.filter((entry) => entry.operation === "stop")
+            ).to.have.length(1);
+            expect(
+                backend.calls.filter((entry) => entry.operation === "destroy")
+            ).to.be.empty;
+            await second.send(worker.name, "RELEASE");
+            await second.waitFor(worker.name, "LEASE_CLEAN");
+        } finally {
+            await pool.close();
+        }
+    });
+
+    it("reuses an environment after its orchestrator disconnects during start", async function () {
+        const pool = await LeasePoolHarness.create();
+        const backend = new TestIsolatedRuntimeBackend();
+        backend.startDelayMs = 200;
+        const keyPair = DHT.keyPair(Buffer.alloc(32, 9));
+        try {
+            const worker = await pool.startServer("worker-a", {
+                environmentBackend: backend
+            });
+            const first = await pool.startOrchestrator("starting-run", {
+                keyPair
+            });
+            await first.waitFor(worker.name, "LEASE_GRANTED");
+            await first.send(
+                worker.name,
+                "WORKSPACE_OFFER",
+                { manifest: workspaceManifest },
+                Buffer.from(JSON.stringify(sourceFiles))
+            );
+            await backend.firstStartStarted;
+
+            await pool.closeOrchestrator(first);
+            const second = await pool.startOrchestrator("retry-run", {
+                keyPair
+            });
+            await second.waitFor(worker.name, "LEASE_GRANTED");
+            await second.send(
+                worker.name,
+                "WORKSPACE_OFFER",
+                { manifest: workspaceManifest },
+                Buffer.from(JSON.stringify(sourceFiles))
+            );
+            await second.waitFor(worker.name, "WORKSPACE_NEED");
+
+            expect(
+                backend.calls.filter((entry) => entry.operation === "create")
+            ).to.have.length(1);
+            expect(
+                backend.calls.filter((entry) => entry.operation === "start")
+            ).to.have.length(2);
+            expect(
+                backend.calls.filter((entry) => entry.operation === "stop")
+            ).to.have.length(1);
+            expect(
+                backend.calls.filter((entry) => entry.operation === "destroy")
+            ).to.be.empty;
+            await second.send(worker.name, "RELEASE");
+            await second.waitFor(worker.name, "LEASE_CLEAN");
         } finally {
             await pool.close();
         }
@@ -707,6 +890,248 @@ describe("distributed worker pool lifecycle", function () {
         }
     });
 
+    it("relays and reassembles a multi-chunk infrastructure process log", async function () {
+        const pool = await LeasePoolHarness.create();
+        const backend = new TestIsolatedRuntimeBackend();
+        const logRoot = fs.mkdtempSync(
+            path.join(os.tmpdir(), "infra-log-chunks-")
+        );
+        try {
+            const worker = await pool.startServer("worker-a", {
+                environmentBackend: backend
+            });
+            const orchestrator = await pool.startOrchestrator("infra-chunks");
+            await orchestrator.waitFor(worker.name, "LEASE_GRANTED");
+            await orchestrator.send(
+                worker.name,
+                "WORKSPACE_OFFER",
+                { manifest: workspaceManifest },
+                Buffer.from(JSON.stringify(sourceFiles))
+            );
+            await orchestrator.waitFor(worker.name, "WORKSPACE_NEED");
+            await orchestrator.send(worker.name, "BUNDLE_META", {
+                manifest: {
+                    ...workspaceManifest,
+                    fileCount: 0,
+                    expandedBytes: 0,
+                    archiveBytes: 0,
+                    archiveSha256: emptySourceSha256
+                }
+            });
+            await orchestrator.send(worker.name, "BUNDLE_END", {
+                byteCount: 0,
+                sha256: emptySourceSha256
+            });
+            await orchestrator.waitFor(worker.name, "PREPARED");
+            await orchestrator.send(worker.name, "RUN_CONFIG", {
+                baseEnv: {},
+                taskCount: 1
+            });
+            await orchestrator.waitFor(worker.name, "WORKER_READY");
+
+            const firstChunk = Buffer.alloc(512 * 1024, "a");
+            const secondChunk = Buffer.alloc(64 * 1024, "b");
+            const checkpoint = orchestrator.checkpoint();
+            backend.emitWorkerEvent(
+                {
+                    kind: "INFRA_PROCESS_DIAGNOSTIC",
+                    requestId: 501,
+                    processKind: "hardhat",
+                    slotId: 0,
+                    trigger: "test collection",
+                    processFailure: "",
+                    uploadId: "large-log",
+                    sequence: 0,
+                    chunkCount: 2
+                },
+                [],
+                firstChunk
+            );
+            backend.emitWorkerEvent(
+                {
+                    kind: "INFRA_PROCESS_DIAGNOSTIC",
+                    requestId: 502,
+                    processKind: "hardhat",
+                    slotId: 0,
+                    trigger: "test collection",
+                    processFailure: "",
+                    uploadId: "large-log",
+                    sequence: 1,
+                    chunkCount: 2
+                },
+                [],
+                secondChunk
+            );
+            await orchestrator.waitFor(worker.name, "INFRA_PROCESS_LOG", {
+                after: checkpoint,
+                predicate: (message) => message.header.sequence === 1
+            });
+
+            const messages = orchestrator.messages(
+                worker.name,
+                "INFRA_PROCESS_LOG",
+                checkpoint
+            );
+            expect(messages).to.have.length(2);
+            const store = new OrchestratorLogStore(logRoot);
+            const first = messages.find(
+                (message) => message.header.sequence === 0
+            )!;
+            const second = messages.find(
+                (message) => message.header.sequence === 1
+            )!;
+            store.writeInfrastructureProcessChunk(
+                worker.name,
+                worker.name,
+                first.header.processKind,
+                first.header.slotId,
+                first.header.trigger,
+                first.header.processFailure,
+                first.header.uploadId,
+                first.header.sequence,
+                first.header.chunkCount,
+                first.body
+            );
+            const outputPath = store.writeInfrastructureProcessChunk(
+                worker.name,
+                worker.name,
+                second.header.processKind,
+                second.header.slotId,
+                second.header.trigger,
+                second.header.processFailure,
+                second.header.uploadId,
+                second.header.sequence,
+                second.header.chunkCount,
+                second.body
+            );
+            expect(
+                fs
+                    .readFileSync(outputPath)
+                    .includes(Buffer.concat([firstChunk, secondChunk]))
+            ).to.equal(true);
+
+            await orchestrator.send(worker.name, "RELEASE");
+            await orchestrator.waitFor(worker.name, "LEASE_CLEAN");
+        } finally {
+            await pool.close();
+            fs.rmSync(logRoot, { recursive: true, force: true });
+        }
+    });
+
+    it("collects infrastructure logs only when the completed run requests them", async function () {
+        const pool = await LeasePoolHarness.create();
+        const backend = new TestIsolatedRuntimeBackend();
+        backend.completionInfrastructureLog = Buffer.from(
+            "retained infrastructure output\n"
+        );
+        try {
+            const worker = await pool.startServer("worker-a", {
+                environmentBackend: backend
+            });
+            const orchestrator = await pool.startOrchestrator("green-run");
+            await orchestrator.waitFor(worker.name, "LEASE_GRANTED");
+            await orchestrator.send(
+                worker.name,
+                "WORKSPACE_OFFER",
+                { manifest: workspaceManifest },
+                Buffer.from(JSON.stringify(sourceFiles))
+            );
+            await orchestrator.waitFor(worker.name, "WORKSPACE_NEED");
+            await orchestrator.send(worker.name, "BUNDLE_META", {
+                manifest: {
+                    ...workspaceManifest,
+                    fileCount: 0,
+                    expandedBytes: 0,
+                    archiveBytes: 0,
+                    archiveSha256: emptySourceSha256
+                }
+            });
+            await orchestrator.send(worker.name, "BUNDLE_END", {
+                byteCount: 0,
+                sha256: emptySourceSha256
+            });
+            await orchestrator.waitFor(worker.name, "PREPARED");
+            await orchestrator.send(worker.name, "RUN_CONFIG", {
+                baseEnv: {},
+                taskCount: 1
+            });
+            await orchestrator.waitFor(worker.name, "WORKER_READY");
+
+            const greenCompletion = orchestrator.checkpoint();
+            await orchestrator.send(worker.name, "RUN_COMPLETE", {
+                collectInfraLogs: false
+            });
+            await orchestrator.waitFor(worker.name, "LEASE_CLEAN", {
+                after: greenCompletion
+            });
+            expect(
+                orchestrator.count(
+                    worker.name,
+                    "INFRA_PROCESS_LOG",
+                    greenCompletion
+                )
+            ).to.equal(0);
+
+            const secondLease = orchestrator.checkpoint();
+            await orchestrator.send(worker.name, "LEASE_REQUEST", {
+                sessionId: "failed-run"
+            });
+            await orchestrator.waitFor(worker.name, "LEASE_GRANTED", {
+                after: secondLease
+            });
+            await orchestrator.send(
+                worker.name,
+                "WORKSPACE_OFFER",
+                { manifest: workspaceManifest },
+                Buffer.from(JSON.stringify(sourceFiles))
+            );
+            await orchestrator.waitFor(worker.name, "WORKSPACE_NEED", {
+                after: secondLease
+            });
+            await orchestrator.send(worker.name, "BUNDLE_META", {
+                manifest: {
+                    ...workspaceManifest,
+                    fileCount: 0,
+                    expandedBytes: 0,
+                    archiveBytes: 0,
+                    archiveSha256: emptySourceSha256
+                }
+            });
+            await orchestrator.send(worker.name, "BUNDLE_END", {
+                byteCount: 0,
+                sha256: emptySourceSha256
+            });
+            await orchestrator.waitFor(worker.name, "PREPARED", {
+                after: secondLease
+            });
+            await orchestrator.send(worker.name, "RUN_CONFIG", {
+                baseEnv: {},
+                taskCount: 1
+            });
+            await orchestrator.waitFor(worker.name, "WORKER_READY", {
+                after: secondLease
+            });
+
+            const failedCompletion = orchestrator.checkpoint();
+            await orchestrator.send(worker.name, "RUN_COMPLETE", {
+                collectInfraLogs: true
+            });
+            const diagnostic = await orchestrator.waitFor(
+                worker.name,
+                "INFRA_PROCESS_LOG",
+                { after: failedCompletion }
+            );
+            expect(diagnostic.body?.toString()).to.equal(
+                "retained infrastructure output\n"
+            );
+            await orchestrator.waitFor(worker.name, "LEASE_CLEAN", {
+                after: failedCompletion
+            });
+        } finally {
+            await pool.close();
+        }
+    });
+
     it("relays selected attempt evidence as bounded bytes without a guest path", async function () {
         const pool = await LeasePoolHarness.create();
         const backend = new TestIsolatedRuntimeBackend();
@@ -896,6 +1321,82 @@ describe("distributed worker pool lifecycle", function () {
             await second.send(worker.name, "RELEASE");
             await second.waitFor(worker.name, "LEASE_CLEAN", {
                 after: promotion
+            });
+        } finally {
+            await pool.close();
+        }
+    });
+
+    it("classifies a child OOM before relaying its generic worker error", async function () {
+        const pool = await LeasePoolHarness.create();
+        const backend = new TestIsolatedRuntimeBackend();
+        backend.exitClassification = {
+            resource: "memory",
+            limit: 1024,
+            phase: "execution",
+            message: "cgroup OOM"
+        };
+        try {
+            const worker = await pool.startServer("worker-a", {
+                environmentBackend: backend
+            });
+            const first = await pool.startOrchestrator("oom-run");
+            await first.waitFor(worker.name, "LEASE_GRANTED");
+            const second = await pool.startOrchestrator("after-oom");
+            await second.waitFor(worker.name, "BUSY");
+            await first.send(
+                worker.name,
+                "WORKSPACE_OFFER",
+                { manifest: workspaceManifest },
+                Buffer.from(JSON.stringify(sourceFiles))
+            );
+            await first.waitFor(worker.name, "WORKSPACE_NEED");
+            await first.send(worker.name, "BUNDLE_META", {
+                manifest: {
+                    ...workspaceManifest,
+                    fileCount: 0,
+                    expandedBytes: 0,
+                    archiveBytes: 0,
+                    archiveSha256: emptySourceSha256
+                }
+            });
+            await first.send(worker.name, "BUNDLE_END", {
+                byteCount: 0,
+                sha256: emptySourceSha256
+            });
+            await first.waitFor(worker.name, "PREPARED");
+            await first.send(worker.name, "RUN_CONFIG", {
+                baseEnv: {},
+                taskCount: 1,
+                extensions: { resourceLimitDetails: true }
+            });
+            await first.waitFor(worker.name, "WORKER_READY");
+            const failureCheckpoint = first.checkpoint();
+            const promotionCheckpoint = second.checkpoint();
+            backend.emitWorkerEvent({
+                kind: "WORKER_ERROR",
+                message: "slot 0 hardhat node exited (signal SIGKILL)"
+            });
+
+            const failure = await first.waitFor(
+                worker.name,
+                "RESOURCE_LIMIT_EXCEEDED",
+                { after: failureCheckpoint }
+            );
+            expect(failure.header).to.deep.include({
+                resource: "memory",
+                limit: 1024,
+                phase: "execution"
+            });
+            expect(
+                first.received(worker.name, "WORKER_ERROR", failureCheckpoint)
+            ).to.equal(false);
+            await second.waitFor(worker.name, "LEASE_GRANTED", {
+                after: promotionCheckpoint
+            });
+            await second.send(worker.name, "RELEASE");
+            await second.waitFor(worker.name, "LEASE_CLEAN", {
+                after: promotionCheckpoint
             });
         } finally {
             await pool.close();
