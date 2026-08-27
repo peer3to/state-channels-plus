@@ -1,9 +1,16 @@
 import { Address } from "@/types/types";
 import Clock from "@/Clock";
-import type { LogUploader } from "./LogUploader";
+import type { LogUploader, LogUploadOutcome } from "./LogUploader";
 import type { LogStore } from "./logStore";
 import { LoggerUtils } from "../LoggerUtils";
 import { DetachedPromises } from "../DetachedPromises";
+import { emptyFlushResult } from "./logControl";
+import type {
+    LogControlPort,
+    LogFlushResult,
+    LogPortHandle
+} from "./logControl";
+import type { LogFlushBus } from "./LogFlushBus";
 
 // The context exclusive to each logger
 export type ExclusiveLoggerContext = {
@@ -11,17 +18,23 @@ export type ExclusiveLoggerContext = {
     [key: string]: any;
 };
 
+export type LogThreadName = "main" | "sdk" | "vm";
+
 //The context shared among all child loggers
 export type SharedLoggerContext = {
     peerId?: number;
     peerAddress?: Address;
     channelId?: string;
+    threadName?: LogThreadName;
 };
 
 export type LogLevel = "debug" | "info" | "warn" | "error" | "verbose";
 
 export type LogEntry = {
     time: string;
+    // the only axis that orders three realms. `time` is chain-adjusted in sdk
+    // and raw in vm -> not comparable across them.
+    wallTimeMs: number;
     level: LogLevel;
     context: ExclusiveLoggerContext;
     sharedContext: SharedLoggerContext;
@@ -55,6 +68,8 @@ export abstract class Logger {
     protected readonly children: Set<Logger> = new Set();
     private destroyed = false;
     private performanceMonitorStop?: () => void;
+    /** set by registerLogger, dropped by dispose */
+    private flushBusRegistration?: { bus: LogFlushBus; unregister: () => void };
 
     constructor(
         context: ExclusiveLoggerContext,
@@ -77,8 +92,70 @@ export abstract class Logger {
     }
 
     public updateSharedContext(update: SharedLoggerContext): void {
-        const newSharedContext = { ...this.sharedContext, ...update };
-        Object.assign(this.sharedContext, newSharedContext);
+        const changes = Object.entries(update).filter(
+            ([key, value]) =>
+                value !== undefined &&
+                this.sharedContext[key as keyof SharedLoggerContext] !== value
+        );
+        // real changes only -> an update that bounces back stops here
+        if (changes.length === 0) return;
+        Object.assign(this.sharedContext, Object.fromEntries(changes));
+        this.flushBus?.postContext(this.rootLogger, update);
+    }
+
+    /** owns the store and uploader this one writes through. children share both,
+     *  so the bus keys on the root. */
+    public get rootLogger(): Logger {
+        let logger: Logger = this;
+        while (logger.parent) logger = logger.parent;
+        return logger;
+    }
+
+    public getSharedContext(): Readonly<SharedLoggerContext> {
+        return this.sharedContext;
+    }
+
+    public isUploadEnabled(): boolean {
+        return this.logUploader?.isEnabled() ?? false;
+    }
+
+    /** called by registerLogger when this becomes a root */
+    public attachFlushBus(bus: LogFlushBus, unregister: () => void): void {
+        this.flushBusRegistration?.unregister();
+        this.flushBusRegistration = { bus, unregister };
+    }
+
+    /** attach a port to an adjacent realm, owned by this logger -> the port lands
+     *  on whichever bus this root belongs to. undefined when this logger is on no
+     *  bus, so there is no flush tree to join. */
+    public addLogPort(port: LogControlPort): LogPortHandle | undefined {
+        return this.flushBus?.addPort(port, this);
+    }
+
+    /** make `target`'s channel follow this one's, both roots of this realm */
+    public followContextTo(target: Logger): () => void {
+        return this.flushBus?.followContext(this, target) ?? (() => {});
+    }
+
+    /** upload every realm reachable from this one, and report what that achieved */
+    public flushAllRealms(reason: string): Promise<LogFlushResult> {
+        return (
+            this.flushBus?.flushAll(reason) ??
+            Promise.resolve(emptyFlushResult())
+        );
+    }
+
+    /** upload only this realm's store */
+    public uploadOwnLogs(): Promise<LogUploadOutcome> {
+        return (
+            this.logUploader?.uploadLogs() ??
+            Promise.resolve({ ok: true, entries: 0 })
+        );
+    }
+
+    // set by whichever bus registered this root; undefined if none did
+    private get flushBus(): LogFlushBus | undefined {
+        return this.rootLogger.flushBusRegistration?.bus;
     }
 
     protected storeLog(logEntry: LogEntry): void {
@@ -107,6 +184,8 @@ export abstract class Logger {
             this.parent.dispose(options);
         }
 
+        this.flushBusRegistration?.unregister();
+        this.flushBusRegistration = undefined;
         this.logUploader?.destroy();
         this.unlinkAll();
     }
@@ -124,6 +203,7 @@ export abstract class Logger {
 
         const logEntry: LogEntry = {
             time: String(timeSeconds),
+            wallTimeMs: Date.now(),
             level,
             message,
             context: this.context,
@@ -157,11 +237,20 @@ export abstract class Logger {
         this.write(logEntry);
     }
 
-    public async uploadLogs(message: any, ...meta: any[]): Promise<void> {
-        await LoggerUtils.logTimestamp(this);
+    /** report-a-bug entry point: write the marker, upload every reachable realm,
+     *  return what happened so the caller can tell the user */
+    public async uploadLogs(
+        message: any,
+        ...meta: any[]
+    ): Promise<LogFlushResult> {
+        try {
+            await LoggerUtils.logTimestamp(this);
+        } catch {
+            // no Clock in this realm -> still flush
+        }
         const localTime = new Date().getTime() / 1000;
         this.warn(message, ...meta, localTime);
-        await this.logUploader?.uploadLogs();
+        return this.flushAllRealms(String(message));
     }
 
     public startPerformanceMonitoring(
