@@ -56,14 +56,17 @@ describe("LogUploader", function () {
     });
 
     it("uploads logs when no error is captured", async function () {
-        const { logUploader } = createUploaderFixture({
+        const { logger, logUploader } = createUploaderFixture({
             uploadEndpoint: receiver!.url
         });
+        logger.info("routine entry");
 
         await logUploader.uploadLogs();
         await receiver!.waitForRequests(1);
 
-        expect(decodeUpload(receiver!.requests[0])).to.deep.equal([]);
+        expect(
+            decodeUpload(receiver!.requests[0]).map((entry) => entry.message)
+        ).to.deep.equal(["routine entry"]);
     });
 
     // A window error burst: the second error lands while the first upload is still
@@ -72,7 +75,7 @@ describe("LogUploader", function () {
     it("delivers a captured error that arrives while an upload is in flight", async function () {
         const { logUploader } = createUploaderFixture({
             uploadEndpoint: receiver!.url,
-            jitterMs: 50
+            jitterMaxMs: 50
         });
 
         const inFlight = logUploader.uploadLogs();
