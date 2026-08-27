@@ -64,27 +64,70 @@ function findPackageRoot(startDir: string): string {
     }
 }
 
-function getPeerAddressesForChannel(
-    index: Record<string, string[]>,
+/** a channel id, or `<channelId>_<dd-mm-yyyy#hh:mm:ss>` once the dir has rotated */
+type ChannelDirName = string;
+/** a peer address as a path segment */
+type PeerDirName = string;
+/** the realm that wrote the stream - "main", "sdk" or "vm" */
+type ThreadDirName = string;
+/** `<storeId>/<fromSeq>-<toSeq>.b64` */
+type ChunkFileName = string;
+/** the channel id as a path segment - the on-disk dir may add a timestamp */
+type ChannelIdSegment = string;
+
+/** channel -> peer -> thread -> that thread's chunks */
+type LogIndex = Record<
+    ChannelDirName,
+    Record<PeerDirName, Record<ThreadDirName, ChunkFileName[]>>
+>;
+
+type PeerStreams = {
+    peerAddress: PeerDirName;
+    threads: ThreadDirName[];
+};
+
+function getPeerStreamsForChannel(
+    index: LogIndex,
     requestedChannelId: string
-): string[] {
+): PeerStreams[] {
     const matchingKeys = Object.keys(index).filter(
         (key) =>
             key === requestedChannelId ||
             key.startsWith(`${requestedChannelId}_`)
     );
 
-    const peerAddresses = new Set<string>();
+    const threadsByPeer = new Map<PeerDirName, Set<ThreadDirName>>();
     for (const key of matchingKeys) {
-        for (const peerAddress of index[key] ?? []) {
-            peerAddresses.add(peerAddress);
+        for (const [peerAddress, perThread] of Object.entries(
+            index[key] ?? {}
+        )) {
+            let threads = threadsByPeer.get(peerAddress);
+            if (!threads) {
+                threads = new Set<ThreadDirName>();
+                threadsByPeer.set(peerAddress, threads);
+            }
+            for (const threadName of Object.keys(perThread ?? {})) {
+                threads.add(threadName);
+            }
         }
     }
 
-    return Array.from(peerAddresses).sort();
+    return Array.from(threadsByPeer.entries())
+        .map(([peerAddress, threads]) => ({
+            peerAddress,
+            threads: Array.from(threads).sort()
+        }))
+        .sort((left, right) =>
+            left.peerAddress.localeCompare(right.peerAddress)
+        );
 }
 
 function compareLogEntries(left: LogEntry, right: LogEntry): number {
+    // wall clock first - the only field that orders three realms
+    if (left.wallTimeMs !== right.wallTimeMs) {
+        return left.wallTimeMs - right.wallTimeMs;
+    }
+
     const leftTime = Number(left.time);
     const rightTime = Number(right.time);
 
@@ -152,17 +195,20 @@ async function withConsoleRedirect<T>(
     }
 }
 
-async function fetchLogEntries(
-    baseUrl: string,
-    requestedChannelId: string,
-    peerAddress: string
-): Promise<LogEntry[]> {
+async function fetchLogEntries(request: {
+    baseUrl: string;
+    channelId: ChannelIdSegment;
+    peerAddress: PeerDirName;
+    threadName?: ThreadDirName;
+}): Promise<LogEntry[]> {
+    const { baseUrl, channelId, peerAddress, threadName } = request;
+    const threadSuffix = threadName ? `/${encodeURIComponent(threadName)}` : "";
     const response = await fetch(
-        `${baseUrl}/logs/${encodeURIComponent(requestedChannelId)}/${encodeURIComponent(peerAddress)}`
+        `${baseUrl}/logs/${encodeURIComponent(channelId)}/${encodeURIComponent(peerAddress)}${threadSuffix}`
     );
     if (!response.ok) {
         throw new Error(
-            `Failed to fetch logs for ${requestedChannelId}:${peerAddress}: ${response.status} ${response.statusText}`
+            `Failed to fetch logs for ${channelId}:${peerAddress}${threadSuffix}: ${response.status} ${response.statusText}`
         );
     }
 
@@ -171,20 +217,23 @@ async function fetchLogEntries(
     return decodeLogs(serializedLogs).sort(compareLogEntries);
 }
 
-async function persistLogEntries(
-    outputDir: string,
-    requestedChannelId: string,
-    peerAddress: string,
-    logEntries: LogEntry[]
-): Promise<string> {
+async function persistLogEntries(request: {
+    outputDir: string;
+    channelId: ChannelIdSegment;
+    peerAddress: PeerDirName;
+    logEntries: LogEntry[];
+    threadName?: ThreadDirName;
+}): Promise<string> {
+    const { outputDir, channelId, peerAddress, logEntries, threadName } =
+        request;
     await mkdir(outputDir, { recursive: true });
 
-    const outputPath = path.join(
-        outputDir,
-        `${sanitizeFileSegment(peerAddress)}.ansi`
-    );
+    const fileStem = threadName
+        ? `${sanitizeFileSegment(peerAddress)}.${sanitizeFileSegment(threadName)}`
+        : sanitizeFileSegment(peerAddress);
+    const outputPath = path.join(outputDir, `${fileStem}.ansi`);
     const replayLogger = createLogger(
-        { channelId: requestedChannelId, peerAddress: peerAddress as any },
+        { channelId, peerAddress },
         { component: "LogReplay" },
         { level: "debug" }
     );
@@ -192,7 +241,7 @@ async function persistLogEntries(
     const stream = createWriteStream(outputPath, { flags: "w" });
     await withConsoleRedirect(stream, async () => {
         replayLogger.info("Replaying fetched logs", {
-            channelId: requestedChannelId,
+            channelId,
             peerAddress,
             count: logEntries.length
         });
@@ -228,31 +277,31 @@ async function main() {
         );
     }
 
-    const index = (await indexResponse.json()) as Record<string, string[]>;
-    const peerAddresses = getPeerAddressesForChannel(index, channelId);
-    if (peerAddresses.length === 0) {
+    const index = (await indexResponse.json()) as LogIndex;
+    const peerStreams = getPeerStreamsForChannel(index, channelId);
+    if (peerStreams.length === 0) {
         throw new Error(`No peer logs found for channelId ${channelId}`);
     }
 
     console.log("Found peer log files", {
         channelId,
-        peerAddresses,
-        count: peerAddresses.length
+        peerStreams,
+        count: peerStreams.length
     });
 
-    for (const peerAddress of peerAddresses) {
-        console.log("Fetching peer logs", { channelId, peerAddress });
-        const logEntries = await fetchLogEntries(
+    for (const { peerAddress, threads } of peerStreams) {
+        console.log("Fetching peer logs", { channelId, peerAddress, threads });
+        const logEntries = await fetchLogEntries({
             baseUrl,
             channelId,
             peerAddress
-        );
-        const outputPath = await persistLogEntries(
+        });
+        const outputPath = await persistLogEntries({
             outputDir,
             channelId,
             peerAddress,
             logEntries
-        );
+        });
 
         console.log("Persisted peer logs", {
             channelId,
@@ -260,6 +309,30 @@ async function main() {
             count: logEntries.length,
             outputPath
         });
+
+        for (const threadName of threads) {
+            const threadEntries = await fetchLogEntries({
+                baseUrl,
+                channelId,
+                peerAddress,
+                threadName
+            });
+            const threadPath = await persistLogEntries({
+                outputDir,
+                channelId,
+                peerAddress,
+                logEntries: threadEntries,
+                threadName
+            });
+            // a missing thread shows up in the per-thread counts
+            console.log("Persisted thread logs", {
+                channelId,
+                peerAddress,
+                threadName,
+                count: threadEntries.length,
+                outputPath: threadPath
+            });
+        }
     }
 }
 
