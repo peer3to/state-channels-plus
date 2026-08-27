@@ -4,6 +4,7 @@ import type {
     WorkerHostMessage,
     WorkerRequestMessage
 } from "../worker/protocol";
+import { realmLogFlushBus } from "@/utils/logging/LogFlushBus";
 import { parentPort } from "node:worker_threads";
 
 if (!parentPort) {
@@ -18,7 +19,18 @@ const port = parentPort;
 const host = createContractExecutorWorkerHost((response: WorkerHostMessage) =>
     port.postMessage(response)
 );
-onUnhandledWorkerError(host.reportUnhandledError);
+onUnhandledWorkerError((error) => {
+    host.reportUnhandledError(error);
+    // deferred past this listener chain: the logger's own hook records the
+    // failure in a later listener, and collecting before it ran would ship an
+    // empty round. every realm uploads; nothing waits on the acks, because the
+    // thread stays alive and keeps answering calls
+    setImmediate(() => {
+        void realmLogFlushBus
+            .flushAll("vm detached error")
+            .catch(() => undefined);
+    });
+});
 host.start(
     (handler: (message: WorkerRequestMessage) => void) => {
         port.on("message", handler);
