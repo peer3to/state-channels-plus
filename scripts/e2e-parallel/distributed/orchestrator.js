@@ -503,6 +503,7 @@ async function runDistributed(options) {
             try {
                 assertCompatibleWorkerProtocol(ready.header.capabilities);
             } catch (error) {
+                info.ban(true);
                 if (!warnedIncompatibleWorkers.has(workerId)) {
                     warnedIncompatibleWorkers.add(workerId);
                     console.warn(

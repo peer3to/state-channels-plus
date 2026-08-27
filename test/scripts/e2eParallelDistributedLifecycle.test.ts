@@ -1327,6 +1327,82 @@ describe("distributed worker pool lifecycle", function () {
         }
     });
 
+    it("classifies a child OOM before relaying its generic worker error", async function () {
+        const pool = await LeasePoolHarness.create();
+        const backend = new TestIsolatedRuntimeBackend();
+        backend.exitClassification = {
+            resource: "memory",
+            limit: 1024,
+            phase: "execution",
+            message: "cgroup OOM"
+        };
+        try {
+            const worker = await pool.startServer("worker-a", {
+                environmentBackend: backend
+            });
+            const first = await pool.startOrchestrator("oom-run");
+            await first.waitFor(worker.name, "LEASE_GRANTED");
+            const second = await pool.startOrchestrator("after-oom");
+            await second.waitFor(worker.name, "BUSY");
+            await first.send(
+                worker.name,
+                "WORKSPACE_OFFER",
+                { manifest: workspaceManifest },
+                Buffer.from(JSON.stringify(sourceFiles))
+            );
+            await first.waitFor(worker.name, "WORKSPACE_NEED");
+            await first.send(worker.name, "BUNDLE_META", {
+                manifest: {
+                    ...workspaceManifest,
+                    fileCount: 0,
+                    expandedBytes: 0,
+                    archiveBytes: 0,
+                    archiveSha256: emptySourceSha256
+                }
+            });
+            await first.send(worker.name, "BUNDLE_END", {
+                byteCount: 0,
+                sha256: emptySourceSha256
+            });
+            await first.waitFor(worker.name, "PREPARED");
+            await first.send(worker.name, "RUN_CONFIG", {
+                baseEnv: {},
+                taskCount: 1,
+                extensions: { resourceLimitDetails: true }
+            });
+            await first.waitFor(worker.name, "WORKER_READY");
+            const failureCheckpoint = first.checkpoint();
+            const promotionCheckpoint = second.checkpoint();
+            backend.emitWorkerEvent({
+                kind: "WORKER_ERROR",
+                message: "slot 0 hardhat node exited (signal SIGKILL)"
+            });
+
+            const failure = await first.waitFor(
+                worker.name,
+                "RESOURCE_LIMIT_EXCEEDED",
+                { after: failureCheckpoint }
+            );
+            expect(failure.header).to.deep.include({
+                resource: "memory",
+                limit: 1024,
+                phase: "execution"
+            });
+            expect(
+                first.received(worker.name, "WORKER_ERROR", failureCheckpoint)
+            ).to.equal(false);
+            await second.waitFor(worker.name, "LEASE_GRANTED", {
+                after: promotionCheckpoint
+            });
+            await second.send(worker.name, "RELEASE");
+            await second.waitFor(worker.name, "LEASE_CLEAN", {
+                after: promotionCheckpoint
+            });
+        } finally {
+            await pool.close();
+        }
+    });
+
     it("keeps preparation alive while the guest reports activity", async function () {
         const pool = await LeasePoolHarness.create();
         const backend = new TestIsolatedRuntimeBackend();

@@ -548,6 +548,37 @@ describe("distributed worker scheduler", function () {
         expect(scheduler.running).to.equal(0);
     });
 
+    it("does not report an in-flight task rejection after the scheduler stops", async function () {
+        let rejectTask!: (error: Error) => void;
+        const task = new Promise<void>((_resolve, reject) => {
+            rejectTask = reject;
+        });
+        const errors: Error[] = [];
+        let requested = false;
+        const scheduler = new WorkerScheduler({
+            concurrencyCap: 1,
+            retryMs: 5,
+            canRun: async () => true,
+            requestTask: async () => {
+                if (requested) return null;
+                requested = true;
+                return { id: "running-at-stop" };
+            },
+            runTask: async () => task,
+            onError: (error: Error) => errors.push(error)
+        });
+
+        scheduler.start();
+        await new Promise((resolve) => setImmediate(resolve));
+        expect(scheduler.running).to.equal(1);
+        scheduler.stop();
+        rejectTask(new Error("Distributed worker stopped"));
+        await new Promise((resolve) => setImmediate(resolve));
+
+        expect(errors).to.be.empty;
+        expect(scheduler.running).to.equal(0);
+    });
+
     it("buffers the next distributed assignment before capacity opens", async function () {
         const requested: string[] = [];
         const releases: Array<() => void> = [];

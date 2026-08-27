@@ -1226,6 +1226,7 @@ async function main(options = {}) {
                 message.body || Buffer.alloc(0)
             );
         } else if (message.kind === "WORKER_ERROR") {
+            if (await handleClassifiedResourceLimit(connection)) return;
             if (message.stats) {
                 await connection.peer.send("WORKER_STATS", {
                     stats: message.stats
@@ -1248,20 +1249,22 @@ async function main(options = {}) {
                 await handleEnvironmentFailure(connection, error);
                 return;
             }
-            const classification = await connection.environment?.classifyExit();
-            if (classification) {
-                if (!connection.environment.claimResourceFailureReport()) {
-                    return;
-                }
-                await handleResourceLimit(connection, classification);
-                return;
-            }
+            if (await handleClassifiedResourceLimit(connection)) return;
             const error = new Error(
                 `Test worker exited unexpectedly (${message.code ?? message.signal})`
             );
             error.code = "ISOLATED_WORKER_EXIT";
             await handleEnvironmentFailure(connection, error);
         }
+    }
+
+    async function handleClassifiedResourceLimit(connection) {
+        const classification = await connection.environment?.classifyExit();
+        if (!classification) return false;
+        if (connection.environment.claimResourceFailureReport()) {
+            await handleResourceLimit(connection, classification);
+        }
+        return true;
     }
 
     async function handleResourceLimit(connection, failure) {

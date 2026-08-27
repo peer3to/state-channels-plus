@@ -426,6 +426,95 @@ describe("distributed parallel runner", function () {
         }
     });
 
+    it("stops reconnecting to an incompatible worker for the rest of the run", async function () {
+        const network = await createLocalDhtNetwork();
+        const root = fs.mkdtempSync(
+            path.join(os.tmpdir(), "distributed-incompatible-worker-")
+        );
+        const poolSecret = `incompatible-worker-${process.pid}`;
+        const keys = derivePoolKeys(poolSecret);
+        const warnings: string[] = [];
+        const originalWarn = console.warn;
+        let connections = 0;
+        const worker = await createPool({
+            announceTopics: [keys.workerTopic],
+            lookupTopics: [keys.orchestratorTopic],
+            dht: network.createNode(),
+            refreshIntervalMs: 25
+        });
+        try {
+            worker.onConnection(
+                async (stream: unknown, info: { publicKey?: Buffer }) => {
+                    connections++;
+                    const peer = new ProtocolPeer(stream);
+                    try {
+                        await authenticateServer(
+                            peer,
+                            keys.authKey,
+                            {
+                                local: worker.publicKey,
+                                remote: info.publicKey
+                            },
+                            TEST_DISTRIBUTED_CONNECTION_TIMEOUT_MS
+                        );
+                        await peer.send("SERVER_READY", {
+                            name: "old-worker",
+                            capabilities: {
+                                distributedProtocol:
+                                    DISTRIBUTED_PROTOCOL_VERSION - 1
+                            }
+                        });
+                    } catch {}
+                }
+            );
+            console.warn = (...data: unknown[]) => {
+                warnings.push(data.map(String).join(" "));
+            };
+            const run = runDistributed({
+                tasks: [{ label: "not-run", logName: "not-run" }],
+                projectRoot: root,
+                archivePath: path.join(root, "unused.tgz"),
+                manifest: {},
+                logDir: root,
+                poolSecret,
+                discoveryTimeoutMs: 1000,
+                discoveryRefreshMs: 25,
+                baseEnv: {},
+                dht: network.createNode()
+            });
+            await waitFor(
+                () =>
+                    warnings.some((line) =>
+                        line.includes("Ignoring worker old-worker")
+                    ),
+                TEST_DISTRIBUTED_CONNECTION_TIMEOUT_MS
+            );
+            const connectionsAfterMismatch = connections;
+            await new Promise((resolve) => setTimeout(resolve, 300));
+            expect(connections).to.equal(connectionsAfterMismatch);
+
+            let failure: Error | null = null;
+            try {
+                await run;
+            } catch (error) {
+                failure = error as Error;
+            }
+            expect(failure?.message).to.equal(
+                "No distributed workers discovered"
+            );
+            expect(
+                warnings.filter((line) =>
+                    line.includes("Ignoring worker old-worker")
+                )
+            ).to.have.length(1);
+        } finally {
+            console.warn = originalWarn;
+            await worker.close();
+            fs.rmSync(root, { recursive: true, force: true });
+            await network.close();
+        }
+    });
+
     it("reports every real worker failure cause after quarantine and protocol loss", async function () {
         const pool = await LeasePoolHarness.create();
         const root = fs.mkdtempSync(
