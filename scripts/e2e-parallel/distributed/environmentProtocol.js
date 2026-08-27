@@ -56,7 +56,10 @@ const PAYLOAD_SCHEMAS = {
     },
     ARTIFACT_COMMITTED: { required: ["requestId"], optional: [] },
     STOP: { required: [], optional: [] },
-    READY: { required: [], optional: ["version"] },
+    READY: {
+        required: [],
+        optional: ["version", "distributedProtocol"]
+    },
     WORKSPACE_NEED: { required: ["changed", "deleted"], optional: [] },
     PREPARED: { required: [], optional: ["reused", "projectRoot"] },
     WORKER_EVENT: {

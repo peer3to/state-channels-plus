@@ -2,7 +2,7 @@ const { EventEmitter } = require("events");
 const { closeStream } = require("./connectionLifecycle");
 
 const PROTOCOL_VERSION = 2;
-const DISTRIBUTED_PROTOCOL_VERSION = 12;
+const DISTRIBUTED_PROTOCOL_VERSION = 13;
 const DEFAULT_MAX_FRAME = 1024 * 1024;
 const MESSAGE_KINDS = new Set([
     "AUTH_HELLO",
@@ -72,7 +72,7 @@ const HEADER_FIELDS = {
     BUNDLE_META: ["manifest"],
     BUNDLE_CHUNK: ["sequence"],
     BUNDLE_END: ["byteCount", "sha256"],
-    RUN_CONFIG: ["baseEnv", "keepInfraLogs", "taskCount", "extensions"],
+    RUN_CONFIG: ["baseEnv", "taskCount", "extensions"],
     RUN_PROGRESS: ["completedTasks", "totalTasks"],
     TASK_REQUEST: ["requestId"],
     TASK_ASSIGNMENT: ["requestId", "assignment"],
@@ -116,6 +116,7 @@ const HEADER_FIELDS = {
     WORKER_STATS: ["stats"],
     PREPARATION_ERROR: ["message"],
     WORKER_ERROR: ["message"],
+    RUN_COMPLETE: ["collectInfraLogs"],
     RESOURCE_ALLOCATION_REJECTED: [
         "resource",
         "requested",

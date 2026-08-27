@@ -64,6 +64,7 @@ class WorkerScheduler {
         try {
             await this.options.runTask(assignment);
         } catch (error) {
+            if (this.stopped) return;
             this.stop();
             this.options.onError?.(error);
         } finally {
