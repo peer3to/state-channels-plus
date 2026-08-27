@@ -13,6 +13,7 @@ _Pending authoring: shared responsibility, design decisions, assumptions, cross-
 - [StateManager.ts](./StateManager.ts.md)
 - [ValidationService.ts](./ingest/ValidationService.ts.md)
 - [index.ts](./index.ts.md)
+- [membership/](./membership/README.md)
 - [reduction/](./reduction/README.md)
 - [snapshotUpdate/](./snapshotUpdate/README.md)
 - [utils/](./utils/README.md)

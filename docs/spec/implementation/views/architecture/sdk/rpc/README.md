@@ -270,9 +270,11 @@ by guard"}` so the remote caller's promise rejects instead of timing out.
 ### 5.2 HandshakeCompletedGuard
 
 [`HandshakeCompletedGuard`](../../../../../../../src/rpc/guards/HandshakeCompletedGuard.ts#L41) is the one
-built-in guard. `check` passes iff the sender transport maps to a `PeerProfile` with
-`isHandshakeCompleted` — i.e. the peer's EVM identity was proven by the challenge/response
-handshake (§7, `initHandshakeService`). All built-in services except `InitHandshakeService` use it
+built-in authenticated-RPC guard. `check` passes iff the exact incoming transport is open and
+completed its own challenge/response handshake (§7, `initHandshakeService`). Current or preferred
+transport selection is owned by the upgrade protocol; a replaced authenticated pipe remains valid
+during its grace overlap. All built-in services except
+`InitHandshakeService` use it
 (`StateTransitionService`, `SpectateService`, `IsForkDisputedService`, `JoinChannelService`,
 `WebRTCSetupService`, plus the unwired `OpenChannelNegotiationService`). `InitHandshakeService`
 is deliberately unguarded — it *is* the authentication mechanism and must accept pre-session
@@ -282,11 +284,13 @@ traffic.
 
 1. **Handshake in progress** (`initHandshakeService.isNegotiating(transport)`): the RPC is
    enqueued per-transport and a single waiter per transport waits up to `2 × agreementTime` for
-   completion; on success queued RPCs are replayed in arrival order through `service.runRPC`; on
-   timeout the queue is cleared and the peer is disconnected and blacklisted (by EVM address when
-   known, else by transport).
+   completion. Only that exact transport's authentication may release the queue. On success, queued
+   RPCs replay in arrival order while the transport and both owners remain live. Closure, timeout,
+   or owner disposal clears the queue. Timeout punishment additionally requires current transport
+   ownership, so a stale waiter cannot punish a healthy replacement.
 2. **No negotiation in progress**: a guarded RPC over an unverified transport is treated as
-   malicious — disconnect + blacklist immediately.
+   malicious — disconnect + blacklist immediately. A frame dispatched after its transport has
+   already closed is dropped silently because local retirement is not peer malice.
 
 **Open question:** the guard's retry queue and the request/response path interact badly. On guard
 failure `runRPC` *always* sends the `"rejected by guard"` error response when a `requestId` is
@@ -538,13 +542,10 @@ are behind `HandshakeCompletedGuard`; component-level summary table in
 
 ## 8. Outcome classification — what each failure does
 
-Verified consequences per failure class. "Blacklist" is by EVM address on the `PeerProfile`
-(survives transport churn); blacklisting a transport with **no profile yet is a disconnect only**
-(the optional-chained `profile?.blacklist()` in
-[`disconnectAndBlacklistPeer`](../../../../../../../src/P2PManager.ts#L174) is a no-op) — pre-handshake
-"blacklist" outcomes are therefore weaker than they read. **Open question:** whether pre-profile
-blacklisting should pin the transport-level address (when present) so a rejected peer cannot
-simply reconnect; today only `disconnectAndBlacklistPeerByEvmAddress` paths persist the ban.
+Verified consequences per failure class. Every transport starts with an addressless `PeerProfile`,
+so pre-handshake Holepunch blacklist outcomes ban the live SDK peer handle. Authentication adds the
+EVM-address index to that profile, and the profile then survives transport churn. **Open question:**
+whether an unauthenticated ban must survive a new SDK peer handle or process restart.
 (Divergence class: decision pending.)
 
 | Failure | Where | Consequence |
@@ -554,6 +555,7 @@ simply reconnect; today only `disconnectAndBlacklistPeerByEvmAddress` paths pers
 | Unknown service | `onRpc` step 4 | Disconnect |
 | Unknown method | `runRPC` | Disconnect |
 | Guard failure — unverified transport | `HandshakeCompletedGuard` | Disconnect + blacklist (+ error response if request) |
+| Guard failure — transport already closed | `HandshakeCompletedGuard` | Silent drop; no execution or peer punishment |
 | Guard failure — handshake in progress | `HandshakeCompletedGuard` | Queue + retry after handshake; timeout → disconnect + blacklist; request-style additionally gets an immediate error (see §5.2 open question) |
 | Request handler throws | `runRPC` request path | Error response; connection kept |
 | Fire-and-forget handler rejects/throws | `runRPC` | Disconnect (no blacklist) |
@@ -678,7 +680,7 @@ cross-file implementation evidence and link to those canonical owners.
   replacing today's per-endpoint choices (§8), including revisiting [`DEF-5-E8TP9N`](../../../../../audit/open-findings.md#def-5-e8tp9n).
 - Guard library growth per §5.3: participant-authorization and admission-state guards, so
   services like `spectateService`/`joinChannelService` stop re-deriving caller status inline.
-- Persist pre-profile bans by transport-level address (§8 open question).
+- Decide unauthenticated-ban durability across new SDK handles and process restarts (§8 open question).
 - Wire `OpenChannelNegotiationService` or document integrator wiring as the supported path
   ([open-channel-negotiation.md](./open-channel-negotiation.md);
   [components.md](../components.md) Future Work).

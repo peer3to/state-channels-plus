@@ -19,7 +19,14 @@ import type {
     DisconnectCleanupProbe,
     TransportRetirementProbe,
     BulkPenaltyProbe,
-    ConnectedPeerFallbackProbe
+    ConnectedPeerFallbackProbe,
+    BanPolicyProbe,
+    RelayAdmissionProbe,
+    UpgradeBanPolicyProbe,
+    HolepunchTopicProbe,
+    HandshakeFailureProbe,
+    LateHandshakeProbe,
+    ReplacementHandshakeProbe
 } from "./P2PManagerProbeService";
 
 export class P2PManagerProbeRpcMethods extends ARpcMethods<
@@ -151,5 +158,85 @@ export class P2PManagerProbeRpcMethods extends ARpcMethods<
             secondAddress,
             missingAddress
         );
+    }
+
+    public probeUnauthenticatedBlacklist(): BanPolicyProbe {
+        return this.service.probeUnauthenticatedBlacklist();
+    }
+
+    public probeUnauthenticatedClose(): BanPolicyProbe {
+        return this.service.probeUnauthenticatedClose();
+    }
+
+    public probeUpgradeBanPolicy(address: string): UpgradeBanPolicyProbe {
+        return this.service.probeUpgradeBanPolicy(address);
+    }
+
+    public probeExplicitBlacklist(address: string): BanPolicyProbe {
+        return this.service.probeExplicitBlacklist(address);
+    }
+
+    public probeHealthyWebRtcRejectsHolepunch(
+        address: string
+    ): Promise<RelayAdmissionProbe> {
+        return this.service.probeHealthyWebRtcRejectsHolepunch(address);
+    }
+
+    public probeWebRtcCloseAcceptsHolepunch(
+        address: string
+    ): Promise<RelayAdmissionProbe> {
+        return this.service.probeWebRtcCloseAcceptsHolepunch(address);
+    }
+
+    public probeBlacklistRejectsHolepunch(
+        address: string
+    ): Promise<RelayAdmissionProbe> {
+        return this.service.probeBlacklistRejectsHolepunch(address);
+    }
+
+    public probeHolepunchJoinAndEqualLeave(): Promise<HolepunchTopicProbe> {
+        return this.service.probeHolepunchJoinAndEqualLeave();
+    }
+
+    public probeHolepunchDuplicateLeave(): Promise<HolepunchTopicProbe> {
+        return this.service.probeHolepunchDuplicateLeave();
+    }
+
+    public probeHolepunchAbsentLeave(): Promise<HolepunchTopicProbe> {
+        return this.service.probeHolepunchAbsentLeave();
+    }
+
+    public probeHolepunchLeaveBeforeSwarm(): Promise<HolepunchTopicProbe> {
+        return this.service.probeHolepunchLeaveBeforeSwarm();
+    }
+
+    public probeHolepunchRejoinAfterLeave(): Promise<HolepunchTopicProbe> {
+        return this.service.probeHolepunchRejoinAfterLeave();
+    }
+
+    public probeHandshakeParticipantReadFailure(
+        address: string
+    ): Promise<HandshakeFailureProbe> {
+        return this.service.probeHandshakeParticipantReadFailure(address);
+    }
+
+    public probeMissingHandshake(address: string): Promise<LateHandshakeProbe> {
+        return this.service.probeMissingHandshake(address);
+    }
+
+    public probeClosedHandshake(address: string): Promise<LateHandshakeProbe> {
+        return this.service.probeClosedHandshake(address);
+    }
+
+    public probeDisposedHandshake(
+        address: string
+    ): Promise<LateHandshakeProbe> {
+        return this.service.probeDisposedHandshake(address);
+    }
+
+    public probeReplacementHandshake(
+        address: string
+    ): Promise<ReplacementHandshakeProbe> {
+        return this.service.probeReplacementHandshake(address);
     }
 }

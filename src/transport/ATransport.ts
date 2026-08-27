@@ -1,6 +1,5 @@
 import type P2PManager from "@/P2PManager";
 import { TransportType } from "./TransportType";
-import { BannablePeerInfo } from "./BannablePeerInfo";
 import Rpc, {
     RpcResponse,
     serializeRpc,
@@ -14,11 +13,14 @@ import { hasMethod, hasProperty } from "@/utils/ObjectChecks";
 abstract class ATransport {
     abstract transportType: TransportType;
     isClosed: boolean = false;
+    // Only ProfileManager.authenticateTransport sets this after proof and admission; trusted loopback names itself.
+    // A set address authenticates this exact transport for guarded RPC.
     peerAddress?: string;
     p2pManager: P2PManager;
 
     constructor(p2pManager: P2PManager) {
         this.p2pManager = p2pManager;
+        this.p2pManager.profileManager.registerTransport(this);
     }
 
     /**
@@ -47,16 +49,6 @@ abstract class ATransport {
      */
     get isTrusted(): boolean {
         return false;
-    }
-
-    /**
-     * Holepunch (Hyperswarm) peer-info handle used to ban/unban this peer at
-     * the DHT level. Only `HolepunchTransport` has one; every other transport
-     * has nothing to ban and keeps the default `undefined`. `ProfileManager`
-     * is the sole caller of `.ban()` on the returned handle.
-     */
-    getBannablePeerInfo(): BannablePeerInfo | undefined {
-        return undefined;
     }
 
     close(isExpected = false): void {

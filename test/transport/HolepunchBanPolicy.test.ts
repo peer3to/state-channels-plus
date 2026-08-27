@@ -1,168 +1,148 @@
 import { expect } from "chai";
-import { ethers } from "ethers";
-import ProfileManager from "@/ProfileManager";
-import PeerProfile from "@/PeerProfile";
-import { HolepunchTransport, WebRTCTransport } from "@/transport";
-import type P2PManager from "@/P2PManager";
-import { createLogger } from "@/utils";
 
-// `HolepunchTransport`/`ProfileManager` only need the narrow `BannablePeerInfo`
-// shape (`ban(val)`), never a real hyperswarm peer-info object - this is a
-// factory-built domain double for the one method `ProfileManager` is allowed
-// to call, not a mock of a collaborator (test/AGENTS.md "no mocks").
-function createFakeHolepunchPeerInfo() {
-    const banCalls: boolean[] = [];
-    return {
-        banCalls,
-        ban: (val: boolean) => {
-            banCalls.push(val);
-        }
-    };
-}
+import { TransportType } from "@/transport";
+import { P2PManagerFixture } from "@test/fixtures/P2PManagerFixture";
 
-function createFakeHolepunchSocket() {
-    return {
-        on: () => undefined,
-        write: () => undefined,
-        destroy: () => undefined
-    };
-}
+describe("ProfileManager Holepunch ban policy", function () {
+    let fixture: P2PManagerFixture;
 
-// `readyState` stays away from "open" so the constructor does not also kick
-// off `startHandshake()` (which needs a real `localRpc`) - this suite only
-// exercises the ban-policy wiring, not the handshake protocol.
-function createFakeWebRTCChannel() {
-    return {
-        readyState: "connecting",
-        onmessage: undefined,
-        onopen: undefined,
-        onclose: undefined,
-        onerror: undefined,
-        send: () => undefined,
-        close: () => undefined
-    };
-}
-
-function createP2pManagerStub(): P2PManager {
-    return {
-        logger: createLogger({}, {}, { level: "error" }),
-        localRpc: {
-            initHandshakeService: {
-                initHandshake: () => undefined
-            }
-        },
-        stateManager: {
-            getChannelId: () => "test-channel",
-            forkId: 0,
-            timeConfig: { agreementTime: 1 },
-            timeoutManager: {
-                // The upgrade grace-period task (retiring the old transport)
-                // is not exercised by this policy suite - record it instead
-                // of leaving a real timer running past the test.
-                scheduleTask: () =>
-                    ({}) as unknown as ReturnType<typeof setTimeout>
-            }
-        }
-    } as unknown as P2PManager;
-}
-
-function createRegisteredProfile(p2pManager: P2PManager) {
-    const evmAddress = ethers.Wallet.createRandom().address;
-    const peerInfo = createFakeHolepunchPeerInfo();
-    const holepunchTransport = new HolepunchTransport(
-        createFakeHolepunchSocket(),
-        peerInfo,
-        p2pManager
-    );
-    const profileManager = new ProfileManager();
-    const profile = new PeerProfile(holepunchTransport, evmAddress);
-    profileManager.registerProfile(profile);
-    return {
-        profileManager,
-        profile,
-        evmAddress,
-        peerInfo,
-        holepunchTransport
-    };
-}
-
-describe("ProfileManager - Holepunch ban policy", function () {
-    it("does not ban on an ordinary Holepunch transport close (bug fix)", function () {
-        const p2pManager = createP2pManagerStub();
-        const peerInfo = createFakeHolepunchPeerInfo();
-        const transport = new HolepunchTransport(
-            createFakeHolepunchSocket(),
-            peerInfo,
-            p2pManager
-        );
-
-        transport._close();
-
-        expect(peerInfo.banCalls).to.deep.equal([]);
+    beforeEach(async function () {
+        fixture = new P2PManagerFixture();
+        await fixture.setup();
     });
 
-    it("bans Holepunch on a successful Holepunch->WebRTC upgrade", function () {
-        const p2pManager = createP2pManagerStub();
-        const { profileManager, evmAddress, peerInfo } =
-            createRegisteredProfile(p2pManager);
-
-        const webRTCTransport = new WebRTCTransport(
-            createFakeWebRTCChannel() as any,
-            p2pManager
-        );
-        profileManager.updateTransport(evmAddress, webRTCTransport);
-
-        expect(peerInfo.banCalls).to.deep.equal([true]);
+    afterEach(async function () {
+        await fixture.cleanup();
     });
 
-    it("unbans Holepunch once the WebRTC transport closes for a non-blacklisted peer", function () {
-        const p2pManager = createP2pManagerStub();
-        const { profileManager, evmAddress, peerInfo } =
-            createRegisteredProfile(p2pManager);
+    it("bans an explicitly blacklisted unauthenticated Holepunch profile", async function () {
+        const result = await fixture
+            .control()
+            .p2pManagerProbe.probeUnauthenticatedBlacklist()
+            .request();
 
-        const webRTCTransport = new WebRTCTransport(
-            createFakeWebRTCChannel() as any,
-            p2pManager
-        );
-        profileManager.updateTransport(evmAddress, webRTCTransport);
-        expect(peerInfo.banCalls).to.deep.equal([true]);
-
-        profileManager.releaseHolepunchBanOnWebRtcClose(webRTCTransport);
-
-        expect(peerInfo.banCalls).to.deep.equal([true, false]);
+        expect(result.banCalls).to.deep.equal([true]);
+        expect(result.socketDestroyed).to.equal(true);
+        expect(result.profileBlacklisted).to.equal(true);
     });
 
-    it("bans on explicit blacklist and keeps the ban across a WebRTC close", function () {
-        const p2pManager = createP2pManagerStub();
-        const { profileManager, profile, evmAddress, peerInfo } =
-            createRegisteredProfile(p2pManager);
+    it("drops an ordinary unauthenticated Holepunch profile without banning it", async function () {
+        const result = await fixture
+            .control()
+            .p2pManagerProbe.probeUnauthenticatedClose()
+            .request();
 
-        const webRTCTransport = new WebRTCTransport(
-            createFakeWebRTCChannel() as any,
-            p2pManager
-        );
-        profileManager.updateTransport(evmAddress, webRTCTransport);
-        // The upgrade itself already banned - isolate the blacklist/close
-        // assertions from that first ban call.
-        peerInfo.banCalls.length = 0;
-
-        profileManager.blacklistProfile(profile);
-        expect(peerInfo.banCalls).to.deep.equal([true]);
-        expect(profile.isBlackListed).to.equal(true);
-
-        profileManager.releaseHolepunchBanOnWebRtcClose(webRTCTransport);
-
-        // Blacklist wins: the WebRTC close must not lift the ban.
-        expect(peerInfo.banCalls).to.deep.equal([true]);
+        expect(result.banCalls).to.deep.equal([]);
+        expect(result.socketDestroyed).to.equal(true);
+        expect(result.profileBlacklisted).to.equal(false);
     });
 
-    it("ignores a transport close that is not the WebRTC transport", function () {
-        const p2pManager = createP2pManagerStub();
-        const { profileManager, peerInfo, holepunchTransport } =
-            createRegisteredProfile(p2pManager);
+    it("bans the Holepunch fallback after a WebRTC upgrade", async function () {
+        const result = await fixture
+            .control()
+            .p2pManagerProbe.probeUpgradeBanPolicy(fixture.address(1))
+            .request();
 
-        profileManager.releaseHolepunchBanOnWebRtcClose(holepunchTransport);
+        expect(result.banCallsAfterUpgrade).to.deep.equal([true]);
+    });
 
-        expect(peerInfo.banCalls).to.deep.equal([]);
+    it("does not release the fallback ban when a replaced WebRTC transport closes", async function () {
+        const result = await fixture
+            .control()
+            .p2pManagerProbe.probeUpgradeBanPolicy(fixture.address(1))
+            .request();
+
+        expect(result.banCallsAfterStaleClose).to.deep.equal([true]);
+    });
+
+    it("releases the fallback ban when the current WebRTC transport closes", async function () {
+        const result = await fixture
+            .control()
+            .p2pManagerProbe.probeUpgradeBanPolicy(fixture.address(1))
+            .request();
+
+        expect(result.banCallsAfterCurrentClose).to.deep.equal([true, false]);
+    });
+
+    it("releases the fallback ban when WebRTC falls back to Holepunch", async function () {
+        const result = await fixture
+            .control()
+            .p2pManagerProbe.probeUpgradeBanPolicy(fixture.address(1))
+            .request();
+
+        expect(result.banCallsAfterFallback).to.deep.equal([
+            true,
+            false,
+            false
+        ]);
+    });
+
+    it("keeps an explicit blacklist banned when the current WebRTC transport closes", async function () {
+        const result = await fixture
+            .control()
+            .p2pManagerProbe.probeExplicitBlacklist(fixture.address(1))
+            .request();
+
+        expect(result.profileBlacklisted).to.equal(true);
+        expect(result.banCalls).to.deep.equal([true]);
+    });
+
+    it("rejects an authenticated Holepunch fallback while WebRTC is healthy", async function () {
+        const result = await fixture
+            .control()
+            .p2pManagerProbe.probeHealthyWebRtcRejectsHolepunch(
+                fixture.address(1)
+            )
+            .request();
+
+        expect(result.admitted).to.equal(false);
+        expect(result.attemptedClosed).to.equal(true);
+        expect(result.attemptedSocketDestroyed).to.equal(true);
+        expect(result.currentTransportType).to.equal(TransportType.WEBRTC);
+        expect(result.activePeerConnections).to.equal(1);
+        expect(result.originalBanCalls).to.deep.equal([true]);
+        expect(result.profileBlacklisted).to.equal(false);
+        expect(result.handshakeCompleted).to.equal(false);
+        expect(result.disconnectionHookCalls).to.equal(0);
+        expect(result.usableTrafficSent).to.equal(false);
+    });
+
+    it("accepts an authenticated usable Holepunch fallback after current WebRTC closes", async function () {
+        const result = await fixture
+            .control()
+            .p2pManagerProbe.probeWebRtcCloseAcceptsHolepunch(
+                fixture.address(1)
+            )
+            .request();
+
+        expect(result.admitted).to.equal(true);
+        expect(result.attemptedClosed).to.equal(false);
+        expect(result.attemptedSocketDestroyed).to.equal(false);
+        expect(result.currentTransportType).to.equal(TransportType.HOLEPUNCH);
+        expect(result.activePeerConnections).to.equal(1);
+        expect(result.originalBanCalls).to.deep.equal([true, false, false]);
+        expect(result.attemptedBanCalls).to.deep.equal([]);
+        expect(result.profileBlacklisted).to.equal(false);
+        expect(result.handshakeCompleted).to.equal(true);
+        expect(result.disconnectionHookCalls).to.equal(0);
+        expect(result.usableTrafficSent).to.equal(true);
+    });
+
+    it("rejects and bans a later Holepunch fallback for an excluded identity", async function () {
+        const result = await fixture
+            .control()
+            .p2pManagerProbe.probeBlacklistRejectsHolepunch(fixture.address(1))
+            .request();
+
+        expect(result.admitted).to.equal(false);
+        expect(result.attemptedClosed).to.equal(true);
+        expect(result.attemptedSocketDestroyed).to.equal(true);
+        expect(result.activePeerConnections).to.equal(0);
+        expect(result.originalBanCalls).to.deep.equal([true, true]);
+        expect(result.attemptedBanCalls).to.deep.equal([true]);
+        expect(result.profileBlacklisted).to.equal(true);
+        expect(result.handshakeCompleted).to.equal(false);
+        expect(result.disconnectionHookCalls).to.equal(0);
+        expect(result.usableTrafficSent).to.equal(false);
     });
 });

@@ -1,3 +1,4 @@
+// @spec-test-coverage-ignore: harness helper restored to its existing readiness ordering
 import { PeerTestHarness } from "@test/fixtures/PeerTestHarness";
 import type { HarnessControlRpc } from "@test/fixtures/customRpc/harnessControl/HarnessControlRpc";
 import { Logger, sleep } from "@/utils";
@@ -126,18 +127,13 @@ export class LifecycleActions<
             );
         }
 
-        // Kick off P2P connections early so handshaking overlaps with the tx
-        // below, but don't block on full connectivity yet: `P2PManager` only
-        // promotes a handshaked peer into `openConnections` once it resolves
-        // as a dispute participant, which is never resolvable before this
-        // very transaction lands on-chain. Waiting for connectivity here
-        // (pre-open) would deadlock against that gate. The blocking wait
-        // moves below, after the channel is confirmed open.
-        const networkController = this.harness.options.autoConnect
-            ? new NetworkController(this.harness, this.logger)
-            : undefined;
-        if (networkController) {
+        if (this.harness.options.autoConnect) {
+            const networkController = new NetworkController(
+                this.harness,
+                this.logger
+            );
             await networkController.connectAllPeers();
+            await this.harness.network.waitForP2PConnections();
         }
 
         this.logger.debug(
@@ -186,15 +182,6 @@ export class LifecycleActions<
         // (setState is called before forkId is set and before onSetState is called)
         if (!this.harness.activeForkId) {
             throw new Error("Fork ID was not set after waiting for onSetState");
-        }
-
-        // Now that the channel is confirmed open, each participant can
-        // resolve the others as dispute participants, so `P2PManager`'s
-        // deferred promotions (see `reevaluatePendingChannelMembership`) are
-        // free to land - block on full connectivity here instead of before
-        // the transaction above.
-        if (networkController) {
-            await this.harness.network.waitForP2PConnections();
         }
 
         this.logger.info(

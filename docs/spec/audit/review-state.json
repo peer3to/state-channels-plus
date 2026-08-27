@@ -65,14 +65,14 @@
         "date": "2026-08-15"
     },
     "implementation/source/src/P2PManager.ts.md": {
-        "hash": "4e2ade2ca7f4a371",
-        "reviewer": "Luka",
-        "date": "2026-08-18"
+        "hash": "83eadd3963d21239",
+        "reviewer": "Luka-discovery-base",
+        "date": "2026-08-27"
     },
     "implementation/source/src/ProfileManager.ts.md": {
-        "hash": "37214ce1cd3e186a",
-        "reviewer": "Luka",
-        "date": "2026-08-18"
+        "hash": "515d6f9a60b60982",
+        "reviewer": "Luka-discovery-base",
+        "date": "2026-08-27"
     },
     "implementation/source/src/events/EventBus.ts.md": {
         "hash": "f0b2dcf4c74a8706",
@@ -100,9 +100,9 @@
         "date": "2026-08-18"
     },
     "implementation/source/src/rpc/guards/HandshakeCompletedGuard.ts.md": {
-        "hash": "843cf2910ba8d69f",
-        "reviewer": "Luka",
-        "date": "2026-08-18"
+        "hash": "1bf503ace5ea59aa",
+        "reviewer": "Luka-discovery-base",
+        "date": "2026-08-27"
     },
     "implementation/source/src/stateManager/StateManager.ts.md": {
         "hash": "ad30c3f4d09275c0",
@@ -110,9 +110,9 @@
         "date": "2026-08-18"
     },
     "implementation/source/src/transport/ATransport.ts.md": {
-        "hash": "978e8d184f448391",
-        "reviewer": "Luka",
-        "date": "2026-08-18"
+        "hash": "056f9772e8689f15",
+        "reviewer": "Luka-discovery-base",
+        "date": "2026-08-27"
     },
     "implementation/source/src/utils/Codec.ts.md": {
         "hash": "122036de836c060b",
@@ -135,9 +135,9 @@
         "date": "2026-08-18"
     },
     "verification/tests/test/P2PManager.test.ts.md": {
-        "hash": "2ed26b452fb33eb4",
-        "reviewer": "Luka",
-        "date": "2026-08-18"
+        "hash": "acd2d1f2494ca944",
+        "reviewer": "Luka-discovery-base",
+        "date": "2026-08-27"
     },
     "verification/tests/test/e2e/E2E-CustomRpcRequestResponse.test.ts.md": {
         "hash": "55c29cb7f2c79233",
@@ -180,9 +180,9 @@
         "date": "2026-08-18"
     },
     "verification/tests/test/rpc/guards/HandshakeCompletedGuard.test.ts.md": {
-        "hash": "cf17e32c6c0d66f9",
-        "reviewer": "Luka",
-        "date": "2026-08-18"
+        "hash": "b6ad0e1e76bdf279",
+        "reviewer": "Luka-discovery-base",
+        "date": "2026-08-27"
     },
     "verification/tests/test/rpc/guards/runGuards.test.ts.md": {
         "hash": "7c942c760dbc45f7",
@@ -323,5 +323,140 @@
         "hash": "31e49a70f87524ae",
         "reviewer": "Luke Fishman",
         "date": "2026-08-18"
+    },
+    "implementation/source/src/Holepunch.ts.md": {
+        "hash": "01a0dae8c1675709",
+        "reviewer": "Luka-discovery-base",
+        "date": "2026-08-27"
+    },
+    "implementation/source/src/HolepunchRelay.ts.md": {
+        "hash": "f88e93b490ff117e",
+        "reviewer": "Luka-discovery-base",
+        "date": "2026-08-27"
+    },
+    "implementation/source/src/PeerProfile.ts.md": {
+        "hash": "d81f2daa668379ef",
+        "reviewer": "Luka-discovery-base",
+        "date": "2026-08-27"
+    },
+    "implementation/source/src/rpc/services/initHandshake/InitHandshakeService.ts.md": {
+        "hash": "850f18ebbdafc1ce",
+        "reviewer": "Luka-discovery-base",
+        "date": "2026-08-27"
+    },
+    "implementation/source/src/stateManager/README.md": {
+        "hash": "84962f7dc5460409",
+        "reviewer": "Luka-discovery-base",
+        "date": "2026-08-27"
+    },
+    "implementation/source/src/stateManager/membership/MembershipService.ts.md": {
+        "hash": "118963643165f6b5",
+        "reviewer": "Luka-discovery-base",
+        "date": "2026-08-27"
+    },
+    "implementation/source/src/stateManager/membership/README.md": {
+        "hash": "15595693ff13f28a",
+        "reviewer": "Luka-discovery-base",
+        "date": "2026-08-27"
+    },
+    "implementation/source/src/transport/HolepunchTransport.ts.md": {
+        "hash": "56e099d4063422e7",
+        "reviewer": "Luka-discovery-base",
+        "date": "2026-08-27"
+    },
+    "implementation/source/src/transport/README.md": {
+        "hash": "4933361ccfccc5f0",
+        "reviewer": "Luka-discovery-base",
+        "date": "2026-08-27"
+    },
+    "implementation/source/src/transport/WebRTCTransport.ts.md": {
+        "hash": "ea7d44742ff18d9c",
+        "reviewer": "Luka-discovery-base",
+        "date": "2026-08-27"
+    },
+    "implementation/source/src/transport/relay/README.md": {
+        "hash": "2914008cc0372275",
+        "reviewer": "Luka-discovery-base",
+        "date": "2026-08-27"
+    },
+    "implementation/source/src/transport/relay/RelayerPool.ts.md": {
+        "hash": "68aa61f705f210b5",
+        "reviewer": "Luka-discovery-base",
+        "date": "2026-08-27"
+    },
+    "implementation/views/architecture/sdk/rpc/README.md": {
+        "hash": "30468aa4303072c7",
+        "reviewer": "Luka-discovery-base",
+        "date": "2026-08-27"
+    },
+    "implementation/views/architecture/sdk/rpc/handshake.md": {
+        "hash": "8ea26fb3e0db7481",
+        "reviewer": "Luka-discovery-base",
+        "date": "2026-08-27"
+    },
+    "implementation/views/architecture/sdk/rpc/is-fork-disputed.md": {
+        "hash": "ccb6f3b0b42ee5d3",
+        "reviewer": "Luka-discovery-base",
+        "date": "2026-08-27"
+    },
+    "implementation/views/architecture/sdk/rpc/state-transition.md": {
+        "hash": "e00c0e8b8aabeabf",
+        "reviewer": "Luka-discovery-base",
+        "date": "2026-08-27"
+    },
+    "implementation/views/architecture/sdk/rpc/webrtc-setup.md": {
+        "hash": "db011561ae660aea",
+        "reviewer": "Luka-discovery-base",
+        "date": "2026-08-27"
+    },
+    "specification/open-questions.md": {
+        "hash": "ed4c1984b2d344af",
+        "reviewer": "Luka-discovery-base",
+        "date": "2026-08-27"
+    },
+    "specification/peer-communication/handshake.md": {
+        "hash": "9b2faeb467123330",
+        "reviewer": "Luka-discovery-base",
+        "date": "2026-08-27"
+    },
+    "specification/peer-communication/synchronization.md": {
+        "hash": "606f4b43f9cd3595",
+        "reviewer": "Luka-discovery-base",
+        "date": "2026-08-27"
+    },
+    "specification/peer-communication/transport-upgrade.md": {
+        "hash": "40f43a8dbd00fc9a",
+        "reviewer": "Luka-discovery-base",
+        "date": "2026-08-27"
+    },
+    "verification/tests/test/rpc/initHandshake/InitHandshakeLifecycle.test.ts.md": {
+        "hash": "1c6f1ed4827bbc71",
+        "reviewer": "Luka-discovery-base",
+        "date": "2026-08-27"
+    },
+    "verification/tests/test/transport/HolepunchBanPolicy.test.ts.md": {
+        "hash": "19ff0a658508c077",
+        "reviewer": "Luka-discovery-base",
+        "date": "2026-08-27"
+    },
+    "verification/tests/test/transport/HolepunchLeaveTopic.test.ts.md": {
+        "hash": "b4ff2ff7e495b1f5",
+        "reviewer": "Luka-discovery-base",
+        "date": "2026-08-27"
+    },
+    "verification/tests/test/transport/RelayerPool.test.ts.md": {
+        "hash": "d91ff7ddc3c1399d",
+        "reviewer": "Luka-discovery-base",
+        "date": "2026-08-27"
+    },
+    "verification/tests/test/utils/HolepunchRelay.test.ts.md": {
+        "hash": "56bab584d98e17e3",
+        "reviewer": "Luka-discovery-base",
+        "date": "2026-08-27"
+    },
+    "verification/tests/test/utils/WebRTCTransport.test.ts.md": {
+        "hash": "1c2cd42c9a84b5e3",
+        "reviewer": "Luka-discovery-base",
+        "date": "2026-08-27"
     }
 }

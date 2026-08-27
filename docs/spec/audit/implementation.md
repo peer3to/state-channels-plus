@@ -3,6 +3,22 @@
 > **Agent assessment:** In progress.
 > **Engineer disposition:** Pending.
 
+Post-handshake connection ownership is now centralized in `P2PManager`. Local channel status is
+the only admission input: every completed live transport is promoted, while `OPENED` alone performs
+the participant read and sync. Join and spectate RPC paths provide no alternate promotion or
+peer-supplied membership hint. Participant-read failure, close, disposal, and replacement races are
+contained without undoing valid authentication or creating a late connection.
+
+Every transport creates an addressless `PeerProfile` immediately, and the Holepunch ban handle is
+stored there before authentication. `ProfileManager` authenticates and indexes that same profile and
+owns all ban/unban policy. Generic transports expose no SDK ban handle. Fallback release is guarded by the
+profile's current transport, so stale WebRTC close is inert and explicit blacklist state wins.
+Authentication is also a final admission gate: a late Holepunch connection cannot replace healthy
+WebRTC or reattach an excluded identity, while a fallback after current-WebRTC close can become
+current and carry traffic.
+Relay retry state has one owned timer, which success cancels before resetting the pool. Holepunch
+topic join/leave retains its byte-exact `Buffer` contract.
+
 Join admission now keeps recorded membership separate from countersign eligibility: snapshot and
 pending participants remain members, on-chain-slashed members lose veto power, and slashed members
 cannot top up. The public paths preserve exact fork/snapshot pins and deadline semantics and invoke
@@ -37,6 +53,11 @@ per-peer, and aggregate work limits do not. Protocol compatibility remains missi
 the envelope nor handshake negotiates a version. [`DEF-8-HWJ10N`](open-findings.md#def-8-hwj10n)
 is resolved: handler and guard response sends use one guarded attempt, then disconnect on failure
 without a second send or unhandled rejection.
+
+The authenticated-RPC guard records admission per exact transport. A replaced but open authenticated
+pipe remains valid during upgrade grace overlap. Queued work releases only when its own transport
+authenticates; closure, timeout, and disposal clear it, and stale failure cannot punish a replacement.
+A frame dispatched after local transport close is dropped instead of treating retirement as peer malice.
 
 The runtime event bridge also preserves application-defined hook names and cloneable payloads without adding
 those names to the SDK hook declaration. The EventBus source report and real worker-to-client test now own

@@ -98,10 +98,7 @@ class HolepunchRelay {
         this.relayerUrls = relayerUrls;
         this.updateCallback = updateCallback;
         this.logger = logger.child({ component: "HolepunchRelay" });
-        this.relayerPool = new RelayerPool({
-            urls: relayerUrls,
-            logger: this.logger
-        });
+        this.relayerPool = new RelayerPool(relayerUrls, this.logger);
     }
 }
 

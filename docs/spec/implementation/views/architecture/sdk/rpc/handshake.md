@@ -36,7 +36,7 @@ pipe to an unauthenticated counterparty. Nothing about a fresh `HolepunchTranspo
 `WebRTCTransport`, or `LocalTransport` tells the node _who_ is on the other end: the discovery and
 NAT-traversal layers advertise an EVM address as plaintext registration metadata
 ([`LocalDiscoveryServer`](../../../../../../../src/utils/node/LocalDiscoveryServer.ts#L32) registration carries
-a `peerAddress` string), but no transport cryptographically binds that address to control of the
+an address string), but they do not write it to `transport.peerAddress` or bind it to control of the
 corresponding private key. `InitHandshakeService` is the mechanism that supplies that proof.
 
 Its place in the lifecycle:
@@ -51,9 +51,9 @@ Its place in the lifecycle:
 2. The service is the _only_ built-in that carries no `HandshakeCompletedGuard` — it is the
    authenticator and must accept pre-session traffic ([./README.md](./README.md) §5.2). Every other
    service refuses a transport until this service has written a completed `PeerProfile`.
-3. On success the transport becomes an "open connection" ([`P2PManager.addConnection`](../../../../../../../src/P2PManager.ts#L272)),
-   the guarded services open, and the node may kick off a WebRTC upgrade and a post-handshake state
-   sync.
+3. On success the service records the profile and emits `handshakeCompleted`. `P2PManager` alone
+   promotes a live transport from local status; only `OPENED` checks participation and syncs. The
+   service may also kick off a WebRTC upgrade.
 
 The service therefore straddles the trust boundary: its endpoints run against wholly unauthenticated
 input, and their correctness is what every downstream guard relies on.
@@ -73,15 +73,15 @@ written only at finalization.
 | `ackedTransports`                | `WeakSet<ATransport>`                | `markAcked` (on receiving an ack)                                   | `didReceiveAck`, `isNegotiating`, duplicate-ack check  | never explicitly cleared; GC'd with transport                                                                   |
 | `ackTimeoutScheduled`            | `WeakSet<ATransport>`                | `ensureHandshakeAckTimeoutScheduled`                                | itself (dedupes the timer)                             | idempotence guard; GC'd with transport                                                                          |
 | `remotePreferredTransportMap`    | `WeakMap<ATransport, TransportType>` | `setRemotePreferredTransport` (initiator, from response)            | `isNegotiating`, finalization gate                     | GC'd with transport                                                                                             |
-| `verifiedPeerAddressByTransport` | `WeakMap<ATransport, string>`        | `recordVerifiedPeerAddress` (initiator, after signature verify)     | finalization, ack-timeout fallback                     | GC'd with transport; also mirrored onto `transport.peerAddress`                                                 |
+| `verifiedPeerAddressByTransport` | `WeakMap<ATransport, string>`        | `recordVerifiedPeerAddress` (initiator, after signature verify)     | finalization, ack-timeout fallback                     | provisional proof; GC'd with transport                                                                          |
 | `handshakeBarrier`               | `EventBarrier`                       | `signal()` at finalization                                          | `waitForHandshakeCompleted` (guard retry-queue waiter) | service-lifetime singleton                                                                                      |
 | `timeoutManager`                 | ref                                  | constructor                                                         | ack-timeout scheduling                                 | service-lifetime                                                                                                |
 
 Identity outputs written elsewhere at finalization:
 
-- `transport.peerAddress` — the checksummed EVM address, set in `recordVerifiedPeerAddress` and again
-  in finalize. This is the field `ATransport.isSamePeer` and address-targeted delivery rely on.
-- `PeerProfile` (`isHandshakeCompleted`, transport binding) in `ProfileManager` — the authoritative,
+- `transport.peerAddress` — the checksummed EVM address, written only by final admission in
+  `ProfileManager.authenticateTransport`. Its presence is the exact transport's authentication fact.
+- `PeerProfile` (identity index, transport binding, and blacklist policy) in `ProfileManager` — the
   churn-surviving identity record ([./README.md](./README.md) §6.8).
 
 **Observed asymmetry (documentation debt).** Only the **initiator** of an exchange verifies a
@@ -158,7 +158,7 @@ Stages ([`InitHandshakeRpcMethods.onInitHandshakeRequest`](../../../../../../../
 4. **`handleHandshakeResponse`** (wrapped in try/catch so a malformed signature that makes
    `verifyMessage` throw disconnects instead of escaping as an unhandled rejection): - **RTT check.** `rtt = now - initTime > agreementTime` → disconnect, return. - **Response-timestamp skew.** `Math.abs(responseTime - initTime) > agreementTime` → disconnect. - **Verify signature.** `signerAddress = verifyMessage(buildHandshakeChallengeMessage(challengeHash),
 signature)`. This is the only authentication step: it proves the responder holds the key for
-   `signerAddress`. - **Blacklist check.** `isBlacklisted(signerAddress)` → disconnect. - `recordVerifiedPeerAddress(transport, signerAddress)` (checksums, sets `transport.peerAddress`). - `setRemotePreferredTransport(transport, preferredTransport)`. - `void maybeFinalizeHandshakeOnceFromTransport(transport)`. - **Send ack.** `remoteRpc.initHandshakeService.onInitHandshakeAck(challengeHash).sendOne(transport)`
+   `signerAddress`. - **Blacklist check.** `isBlacklisted(signerAddress)` → disconnect. - `recordVerifiedPeerAddress(transport, signerAddress)` stores the provisional proof. - `setRemotePreferredTransport(transport, preferredTransport)`. - `void maybeFinalizeHandshakeOnceFromTransport(transport)`. - **Send ack.** `remoteRpc.initHandshakeService.onInitHandshakeAck(challengeHash).sendOne(transport)`
    — tells the peer we authenticated them. - `ensureHandshakeAckTimeoutScheduled(transport)`.
 
 ### 3.4 `onInitHandshakeAck(challengeHash?)` — fire-and-forget
@@ -182,21 +182,23 @@ Idempotent gate; returns early unless **all** hold:
 
 When satisfied:
 
-1. Create or update the `PeerProfile` for `verifiedPeerAddress` (`registerProfile` new, else
-   `updateTransport` — the latter keeps the profile object identity across a transport upgrade and
-   schedules the old transport's retirement after an `agreementTime` grace,
-   [`ProfileManager.updateTransport`](../../../../../../../src/ProfileManager.ts#L44)).
-2. `transport.peerAddress = verifiedPeerAddress`; `profile.setIsHandshakeCompleted(true)`;
-   `inFlightHandshakeTransports.delete(transport)`.
-3. `p2pManager.addConnection(transport)` — only now is it an "open connection".
-4. **WebRTC upgrade decision.** If either side prefers WebRTC, the current transport is not already
+1. Ask `ProfileManager` to authenticate the transport as `verifiedPeerAddress`. A new identity keeps
+   the provisional profile; a permitted replacement merges it into the existing identity profile and
+   schedules the old transport's retirement after an `agreementTime` grace. A Holepunch fallback is
+   refused when the identity is explicitly blacklisted or its current WebRTC transport is still healthy.
+2. If admission was refused, clear the transport's in-flight handshake state and stop without marking
+   completion, starting WebRTC, emitting hooks, or releasing the guard barrier.
+3. Otherwise, `ProfileManager.authenticateTransport` writes `transport.peerAddress` once. That field
+   records authentication for this exact transport. Delete it from `inFlightHandshakeTransports`.
+4. Emit `handshakeCompleted`; `P2PManager` resolves the current profile transport, rejects closed or
+   disposed work, and calls `addConnection` for every local status.
+5. For `OPENED`, `P2PManager` reads participation and syncs only participants. A read failure is
+   logged and contained after promotion; other statuses skip the read and sync.
+6. **WebRTC upgrade decision.** If either side prefers WebRTC, the current transport is not already
    WebRTC, and `localAddress < completedPeerAddress` (deterministic single-initiator tiebreak to avoid
    glare), call `webRTCSetupService.initiateWebRTC(transport)` (see [./webrtc-setup.md](./webrtc-setup.md)).
-5. **Post-handshake sync.** If the channel is `OPENED` and the peer `canParticipateInDisputes`,
-   `spectateService.sync(...)`. The `canParticipateInDisputes` call is a chain read wrapped so that a
-   post-disposal rejection is swallowed.
-6. `p2pEventHooks.onConnection?.(...)`; `handshakeBarrier.signal()` (releases the guard retry-queue
-   waiter, [./README.md](./README.md) §5.2).
+7. `P2PManager` emits the connection hook once; `handshakeBarrier.signal()` wakes guard waiters, but
+   only the waiter whose exact transport authenticated may drain, [./README.md](./README.md) §5.2.
 
 ### 3.6 Timeouts and their consequences
 
@@ -238,7 +240,8 @@ sequenceDiagram
     A->>A: markAcked
 
     Note over A: finalize when verified(addrB) AND acked AND remotePreferred
-    A->>A: create/update PeerProfile(addrB), addConnection, maybe WebRTC/sync
+    A->>A: create/update PeerProfile(addrB), emit completion
+    A->>A: P2PManager promotes from local status, maybe syncs OPENED participant
     Note over B: same on B's side -> PeerProfile(addrA)
 ```
 
@@ -283,9 +286,9 @@ only useful in the live relay above, where the attacker forwards in real time.
 **Resource abuse (pre-guard flood).** Unhandled — accepted gap. This endpoint runs before any guard
 and performs an ECDSA `signMessage` per call; there is no per-peer or global rate limit
 ([./README.md](./README.md) §9, [`REQ-RPC-7-9CBSHK`](../../../../../specification/peer-communication/rpc.md#req-rpc-7-9cbshk) / [`OQ-6-4JPNE5`](../../../../../specification/open-questions.md#oq-6-4jpne5)). A peer can flood
-handshake requests to burn signing CPU, and — because a pre-profile "blacklist" is disconnect-only
-(§5, [./README.md](./README.md) §8) — reconnect freely to continue. Classified **missing** (rate
-limiting is an accepted, unimplemented direction).
+handshake requests to burn signing CPU. Every transport has an addressless profile, so an explicit
+Holepunch blacklist can ban that live SDK peer before identity authentication; a new SDK peer handle
+or process restart is not covered. Classified **missing** because rate limiting is still absent.
 
 **Information disclosure.** Minimal. A successful response reveals the node's `preferredTransport`,
 its clock (`responseTime`), and that it holds the local signer key (it always does). No secret is
@@ -300,13 +303,14 @@ peer's private key). A forged ack thus sets `ackedTransports` but cannot forge i
 `challengeHash` is ignored for decisions ([`INV-HSK-4-FDM91W`](handshake.md#inv-hsk-4-fdm91w)).
 
 **Duplicate ack (replay / protocol-order abuse).** Handled: second ack →
-`disconnectAndBlacklistPeer`. **Residual nuance (documentation debt):** at the moment a duplicate ack
-arrives, a `PeerProfile` may not yet exist (the first ack can precede this node's own verification, so
-finalize returned early and created no profile). `disconnectAndBlacklistPeer` uses
-`profile?.blacklist()`, which no-ops without a profile ([`P2PManager.disconnectAndBlacklistPeer`](../../../../../../../src/P2PManager.ts#L174)),
-so the "blacklist" degrades to a plain disconnect exactly in the pre-profile case — the same weakness
-flagged generally in [./README.md](./README.md) §8 and [`OQ-34-FY08V2`](../../../../../specification/open-questions.md#oq-34-fy08v2) (ban
-persistence before a profile exists).
+`disconnectAndBlacklistPeer`. The transport already owns an addressless `PeerProfile`, so a
+Holepunch peer is banned through its SDK handle even if identity verification has not completed.
+Durability across a new SDK handle or process restart remains open in
+[`OQ-34-FY08V2`](../../../../../specification/open-questions.md#oq-34-fy08v2).
+
+After identity proof, `ProfileManager` performs a final admission check. A new Holepunch transport
+cannot replace a healthy current WebRTC transport or revive an explicitly blacklisted identity, even
+if the external discovery layer presents a new SDK handle.
 
 **Racing two handshakes / protocol-order abuse.** Sending an ack before ever issuing a request, or
 interleaving acks with requests, cannot advance state past the verification gate (above). Because
@@ -317,8 +321,8 @@ misbehaving sender; the handler tolerates arbitrary delivery.
 
 ### 4.3 Identity binding — what actually ties the EVM address to the transport
 
-Only the local verification step binds them: after `verifyMessage`, this node writes
-`transport.peerAddress` and (at finalize) a `PeerProfile`. Every later trust decision — guard pass,
+Only the local verification step binds them: after `verifyMessage`, final admission adds the verified
+address to the profile created with the transport and writes `transport.peerAddress` once. Every later trust decision — guard pass,
 `isSamePeer` response correlation ([./README.md](./README.md) §6.5), address-targeted delivery — trusts
 that binding. It is sound **only under the assumption that the transport is not a relay** (§4.1). The
 transports provide no cryptographic peer identity of their own, so the handshake signature is the
@@ -331,35 +335,33 @@ service.
 
 Consistent with the model's classification table ([./README.md](./README.md) §8):
 
-| Trigger                                   | Method / role                             | Consequence                                                                         |
-| ----------------------------------------- | ----------------------------------------- | ----------------------------------------------------------------------------------- |
-| Non-hex32 challenge or non-finite time    | `onInitHandshakeRequest`                  | Disconnect + `{ok:false}` request error (throw)                                     |
-| Request time outside `agreementTime` skew | `onInitHandshakeRequest`                  | Disconnect + request error                                                          |
-| Response timeout                          | `runHandshake` (initiator)                | Disconnect, **no blacklist** (identity unproven)                                    |
-| RTT or response-timestamp outside window  | `handleHandshakeResponse`                 | Disconnect, no blacklist                                                            |
-| Undecodable / invalid signature           | `handleHandshakeResponse` (verify throws) | Disconnect, no blacklist                                                            |
-| Verified signer is blacklisted            | `handleHandshakeResponse`                 | Disconnect                                                                          |
-| Duplicate ack                             | `onInitHandshakeAck`                      | Disconnect + blacklist — **degrades to disconnect-only when no profile yet** (§4.2) |
-| Ack never arrives                         | ack-timeout task                          | Blacklist by verified address if known, else disconnect                             |
+| Trigger                                   | Method / role                             | Consequence                                                                     |
+| ----------------------------------------- | ----------------------------------------- | ------------------------------------------------------------------------------- |
+| Non-hex32 challenge or non-finite time    | `onInitHandshakeRequest`                  | Disconnect + `{ok:false}` request error (throw)                                 |
+| Request time outside `agreementTime` skew | `onInitHandshakeRequest`                  | Disconnect + request error                                                      |
+| Response timeout                          | `runHandshake` (initiator)                | Disconnect, **no blacklist** (identity unproven)                                |
+| RTT or response-timestamp outside window  | `handleHandshakeResponse`                 | Disconnect, no blacklist                                                        |
+| Undecodable / invalid signature           | `handleHandshakeResponse` (verify throws) | Disconnect, no blacklist                                                        |
+| Verified signer is blacklisted            | `handleHandshakeResponse`                 | Disconnect                                                                      |
+| Duplicate ack                             | `onInitHandshakeAck`                      | Disconnect + blacklist of the transport's addressless profile/SDK handle (§4.2) |
+| Ack never arrives                         | ack-timeout task                          | Blacklist by verified address if known, else disconnect                         |
 
-**Flagged mismatch vs. the model table.** [./README.md](./README.md) §8 lists "Duplicate handshake ack
-→ Disconnect + blacklist" unconditionally; in practice the blacklist half is conditional on a profile
-already existing (§4.2). Documentation debt — the tables should agree, or the code should pin the
-transport-level address so the ban actually persists.
+The duplicate-ack result matches the model table for the live transport. Identity-level durability
+across a new SDK handle or process restart is still an open policy decision.
 
 ---
 
 ## 6. Invariants
 
-| ID                                              | Invariant                                                                                                                                                                                                                                                                                  |
-| ----------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| <a id="inv-hsk-1-r44cn1"></a>`INV-HSK-1-R44CN1` | A `PeerProfile` is marked `isHandshakeCompleted` only after this node both (a) verified the peer's signature over the domain-tagged challenge _it_ generated and (b) received the peer's ack, with the peer's preferred transport known — i.e. both directions completed on the transport. |
-| <a id="inv-hsk-2-xcp7a2"></a>`INV-HSK-2-XCP7A2` | The responder signs only `peer3:init-handshake:v1:<hexlified challenge>`, never a bare 32-byte hash; a handshake signature cannot collide with a block signature.                                                                                                                          |
-| <a id="inv-hsk-3-z4wbjg"></a>`INV-HSK-3-Z4WBJG` | A request with a non-32-byte challenge or non-finite time is rejected before any signing action.                                                                                                                                                                                           |
-| <a id="inv-hsk-4-fdm91w"></a>`INV-HSK-4-FDM91W` | The `challengeHash` carried on an ack is diagnostic only and never authenticates or authorizes anything.                                                                                                                                                                                   |
-| <a id="inv-hsk-5-3e60dy"></a>`INV-HSK-5-3E60DY` | Request and response are accepted only within one `agreementTime` skew window (request time, RTT, and response-timestamp checks).                                                                                                                                                          |
-| <a id="req-hsk-1-y9jqs3"></a>`REQ-HSK-1-Y9JQS3` | `initHandshakeService` carries no guard and every endpoint MUST be safe against wholly unauthenticated, adversarial input (pre-authentication ingress).                                                                                                                                    |
-| <a id="req-hsk-2-mdnh4n"></a>`REQ-HSK-2-MDNH4N` | Any message the node signs on behalf of an unauthenticated caller MUST be domain-separated so it cannot be reused in another signature domain (signing-oracle hygiene).                                                                                                                    |
+| ID                                              | Invariant                                                                                                                                                                                                                                                                    |
+| ----------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| <a id="inv-hsk-1-r44cn1"></a>`INV-HSK-1-R44CN1` | A transport receives `peerAddress` only after this node both (a) verified the peer's signature over the domain-tagged challenge _it_ generated and (b) received the peer's ack, with the peer's preferred transport known — i.e. both directions completed on the transport. |
+| <a id="inv-hsk-2-xcp7a2"></a>`INV-HSK-2-XCP7A2` | The responder signs only `peer3:init-handshake:v1:<hexlified challenge>`, never a bare 32-byte hash; a handshake signature cannot collide with a block signature.                                                                                                            |
+| <a id="inv-hsk-3-z4wbjg"></a>`INV-HSK-3-Z4WBJG` | A request with a non-32-byte challenge or non-finite time is rejected before any signing action.                                                                                                                                                                             |
+| <a id="inv-hsk-4-fdm91w"></a>`INV-HSK-4-FDM91W` | The `challengeHash` carried on an ack is diagnostic only and never authenticates or authorizes anything.                                                                                                                                                                     |
+| <a id="inv-hsk-5-3e60dy"></a>`INV-HSK-5-3E60DY` | Request and response are accepted only within one `agreementTime` skew window (request time, RTT, and response-timestamp checks).                                                                                                                                            |
+| <a id="req-hsk-1-y9jqs3"></a>`REQ-HSK-1-Y9JQS3` | `initHandshakeService` carries no guard and every endpoint MUST be safe against wholly unauthenticated, adversarial input (pre-authentication ingress).                                                                                                                      |
+| <a id="req-hsk-2-mdnh4n"></a>`REQ-HSK-2-MDNH4N` | Any message the node signs on behalf of an unauthenticated caller MUST be domain-separated so it cannot be reused in another signature domain (signing-oracle hygiene).                                                                                                      |
 
 ---
 
@@ -389,8 +391,8 @@ _Non-normative._
   reflection MITM (§4.1); coordinate with [`OQ-29-EFY4NF`](../../../../../specification/open-questions.md#oq-29-efy4nf) domain separation and the
   protocol-versioning decision in [`OQ-34-FY08V2`](../../../../../specification/open-questions.md#oq-34-fy08v2) so one signed-domain scheme covers
   deployment scoping, protocol version, and channel binding.
-- Persist pre-profile bans by transport-level address so a rejected pre-handshake peer cannot reconnect
-  freely ([`OQ-34-FY08V2`](../../../../../specification/open-questions.md#oq-34-fy08v2), [./README.md](./README.md) §8).
+- Decide whether unauthenticated bans must survive a new SDK peer handle or process restart
+  ([`OQ-34-FY08V2`](../../../../../specification/open-questions.md#oq-34-fy08v2), [./README.md](./README.md) §8).
 - Fold the pre-guard signing endpoint under the central RPC rate limiter ([`OQ-6-4JPNE5`](../../../../../specification/open-questions.md#oq-6-4jpne5),
   [./README.md](./README.md) §9), with handshake traffic prioritized above bulk sync.
 

@@ -1,3 +1,4 @@
+// @spec-test-coverage-ignore: harness handshake controls exercised by owning mapped test declarations
 import ARpcMethods from "@/rpc/ARpcMethods";
 import type ATransport from "@/transport/ATransport";
 import type { TransportType } from "@/transport/TransportType";
@@ -37,7 +38,7 @@ export class HandshakeRpcMethods extends ARpcMethods {
     public isHandshakeCompleted(otherAddress: Address): boolean {
         const profile =
             this.p2pManager.profileManager.getProfileByEvmAddress(otherAddress);
-        return profile?.getIsHandshakeCompleted() ?? false;
+        return profile?.getTransport()?.peerAddress !== undefined;
     }
 
     /** Sign a message hash with this peer's p2p signer. */

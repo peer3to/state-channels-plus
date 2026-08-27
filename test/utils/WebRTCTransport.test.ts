@@ -1,5 +1,6 @@
 import { expect } from "chai";
 
+import ProfileManager from "@/ProfileManager";
 import WebRTCTransport from "@/transport/WebRTCTransport";
 import type { WebRTCDataChannelLike } from "@/rpc/services/WebRTCSetup/connection/WebRTCConnectionFactory";
 
@@ -58,9 +59,7 @@ function createP2PManager(
                 closeWebRTCConnection: () => undefined
             }
         },
-        profileManager: {
-            getProfileByTransport: () => undefined
-        },
+        profileManager: new ProfileManager(),
         disconnectConnection: () => undefined,
         onRpc: options.onRpc || (() => undefined)
     };

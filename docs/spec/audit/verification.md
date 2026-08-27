@@ -1,6 +1,7 @@
 # Verification Assessment
 
-> **Agent assessment:** Current as of 2026-08-29, after the proxy-routing and ABI-boundary coverage repair.
+> **Agent assessment:** Current as of 2026-08-29, after the proxy-routing, ABI-boundary, handshake-promotion,
+> and transport-lifecycle coverage repairs.
 > **Engineer disposition:** Pending.
 
 Existing tests are not treated as evidence by filename. Each declaration remains a visible queue item until
@@ -16,6 +17,18 @@ scores are what they are** and which lever moves each one.
 - [Levers, in order of payoff](#levers-in-order-of-payoff)
 
 ## Current state
+
+Direct, literal test declarations now cover all five local-status handshake routes, actual opened
+participant sync, participant-read failure, closed/disposed completion, and replacement retirement.
+Guard coverage also proves grace-overlap traffic on a replaced authenticated pipe and proves that
+one transport's authentication cannot release another transport's queued calls. It also proves a
+frame dispatched after local transport close cannot execute or punish the healthy replacement.
+Typed SDK-edge recorders cover unauthenticated-profile ban/no-ban, current-versus-stale WebRTC
+fallback, healthy-WebRTC rejection of an authenticated Holepunch attempt, usable fallback after
+current-WebRTC close, and permanent exclusion of a later attempt.
+Scoped fake time and randomness cover every relay selection/backoff branch, paired-event deduplication,
+and pending-retry cancellation after success. The real Holepunch public surface covers join,
+byte-equal leave, duplicates, no-op leaves, lazy creation, and restart replay.
 
 Runtime transport tests cover delayed and rejected custom-root readiness in inline and worker modes. Worker-executor coverage includes delayed precompile readiness before worker return and concurrent success/error response correlation. Eleven direct cases cover complete and incomplete cross-module RPC-service and transport shapes, RPC symbol and `then` behavior, service-cache isolation, non-service rejection, native, compatible, and proxy-wrapped ethers Results, stable normalized output, and ordinary-array rejection. Five worker-hosted `ATransport` cases cover identity boundaries, replacement identity, trust classification, exact request/response serialization, expected and unexpected close behavior, close idempotency, and synchronous failure propagation. Three real-runtime RpcHandler cases plus the custom-RPC typecheck cover every delivery verb and target overload, unresolved fire-and-forget targets, local request rejection, timeout forwarding, compatible transport values, and the compile-time delivery-face split. All 23 EventBus component and runtime declarations map dispatch, subscription lifecycle, contract mirroring, cross-runtime fidelity, clone failures, and StateManager-owned custom-root disposal to exact obligations. The consuming application's production-preview browser test separately proves that a dynamically loaded custom RPC root can complete a real two-peer handshake and reach a playable hand across duplicated bundle graphs.
 
@@ -34,7 +47,9 @@ RPC verification now uses the neutral specification as the only canonical `REQ-R
 raw-bigint rejection, and the exact frame constant. Worker-hosted component cases cover every
 implemented request settlement and race with pending-entry and timer cleanup. Separate guard
 suites cover ordered short-circuiting, handshake queue/replay behavior, and the current
-request-during-negotiation contradiction. Inline and worker runtime cases observe an unlocked
+request-during-negotiation contradiction. The handshake guard suite also proves transport
+retirement, owner disposal on both waiter outcomes, and late completion after timeout cannot revive
+queued work or apply late punishment. Inline and worker runtime cases observe an unlocked
 state mutex at RPC handler entry. Cancellation, aggregate resource limits, and compatibility
 negotiation remain unassigned gaps. Handler and guard response-send failures now have direct
 one-attempt, disconnect, and no-unhandled-rejection evidence.
@@ -48,9 +63,9 @@ boundaries, synchronous and asynchronous results, arguments, receiver/metadata p
 rejections, all supported listener verbs, repeated listener removal, event logs, query results, and
 ordinary-member passthrough.
 
-- Test IDs (planned permutations) evidenced: 848/4610 (18%).
-- Specification IDs with at least one evidenced permutation: 83/244 (34%).
-- Test declarations covering at least one ID: 524/1225 (43%); 20 files are
+- Test IDs (planned permutations) evidenced: 930/4720 (20%).
+- Specification IDs with at least one evidenced permutation: 87/251 (35%).
+- Test declarations covering at least one ID: 570/1272 (45%); 20 files are
   excluded as out-of-scope developer tooling via `@spec-test-coverage-ignore`.
 - One test may cover several IDs. Each assigned ID belongs to exactly one test; compliance is 100%.
 
@@ -61,9 +76,9 @@ exercises the whole defined scenario, including its oracle. Under that rule the 
 distinct causes, and they need different fixes.
 
 **1. Most planned IDs simply have no test yet (the dominant cause on the ID side).**
-Atomization expanded template test plans into 4610 concrete scenarios — per fault class, per
+Atomization expanded template test plans into 4720 concrete scenarios — per fault class, per
 signature violation, per boundary side, per proof type, per host. The suites were never written
-against plans of that grain. 3762 permutations await a test; the
+against plans of that grain. 3790 permutations await a test; the
 "Test IDs not tested" queue is now a literal to-write list, one test per row.
 
 **2. Tests over surfaces that define no IDs at all (the dominant cause on the test side).**

@@ -25,22 +25,15 @@ describe("E2E: spectating strategy junk-block handling", function () {
 
         const victim = await h.join.addSpectatorWait();
         const attacker = await h.join.addSpectator();
-        // Attacker and victim are both non-participant spectators of the
-        // same channel: neither is ever promoted into the other's
-        // `openConnections` (that's reserved for participants and accepted
-        // spectate relationships), so readiness here is "handshake done",
-        // not "connected" - the attack itself is delivered by a targeted
-        // send keyed on EVM address (`sendOne`), which never depends on
-        // `openConnections` membership.
         await h.connectionBarrier.waitFor(
             async () =>
-                await h.rpc.isHandshakeCompleted(
-                    attacker.index,
-                    victim.address
-                ),
+                await h
+                    .control(attacker)
+                    .query.isConnectedTo(victim.address)
+                    .request(),
             {
                 timeoutMs: h.event.protocolEventTimeoutMs(),
-                timeoutMessage: "attacker handshake with victim never completed"
+                timeoutMessage: "attacker never connected to victim"
             }
         );
 
@@ -73,17 +66,15 @@ describe("E2E: spectating strategy junk-block handling", function () {
         );
 
         const attacker = await h.join.addSpectator();
-        // See the sibling test above: readiness is handshake completion, not
-        // `openConnections` membership.
         await h.connectionBarrier.waitFor(
             async () =>
-                await h.rpc.isHandshakeCompleted(
-                    attacker.index,
-                    victim.address
-                ),
+                await h
+                    .control(attacker)
+                    .query.isConnectedTo(victim.address)
+                    .request(),
             {
                 timeoutMs: h.event.protocolEventTimeoutMs(),
-                timeoutMessage: "attacker handshake with victim never completed"
+                timeoutMessage: "attacker never connected to victim"
             }
         );
 
@@ -111,26 +102,24 @@ describe("E2E: spectating strategy junk-block handling", function () {
 
         const victim = await h.join.addSpectatorWait();
         const attacker = await h.join.addSpectator();
-        // See the first test in this file: readiness is handshake
-        // completion, not `openConnections` membership.
         await h.connectionBarrier.waitFor(
             async () =>
-                await h.rpc.isHandshakeCompleted(
-                    attacker.index,
-                    victim.address
-                ),
+                await h
+                    .control(attacker)
+                    .query.isConnectedTo(victim.address)
+                    .request(),
             {
                 timeoutMs: h.event.protocolEventTimeoutMs(),
-                timeoutMessage: "attacker handshake with victim never completed"
+                timeoutMessage: "attacker never connected to victim"
             }
         );
 
-        // the attacker has handshaked over the channel's p2p network but is
-        // not a channel participant. it authors + signs a well-formed next
-        // block with its own key: authentication passes, so it is queued and
-        // validated fresh -> reaches blockAuthorIsNotParticipant on the live
-        // queue, not the inline authenticate-failed path the junk cases hit.
-        // this is the vector that used to abort the spectator.
+        // the attacker is connected to the channel's p2p network but is not a
+        // channel participant. it authors + signs a well-formed next block with
+        // its own key: authentication passes, so it is queued and validated fresh
+        // -> reaches blockAuthorIsNotParticipant on the live queue, not the inline
+        // authenticate-failed path the junk cases hit. this is the vector that
+        // used to abort the spectator.
         const { encodedBlockConfirmation } =
             await h.byzantine.craftOutsiderAuthoredBlockConfirmation(
                 0,
@@ -192,22 +181,19 @@ describe("E2E: spectating strategy junk-block handling", function () {
 
         // two distinct non-participants: one signs the block, the other hands it
         // to the victim. neither is in the channel.
-        // See the first test in this file: readiness is handshake
-        // completion, not `openConnections` membership.
         await h.connectionBarrier.waitFor(
             async () =>
-                (await h.rpc.isHandshakeCompleted(
-                    relayer.index,
-                    victim.address
-                )) &&
-                (await h.rpc.isHandshakeCompleted(
-                    author.index,
-                    victim.address
-                )),
+                (await h
+                    .control(relayer)
+                    .query.isConnectedTo(victim.address)
+                    .request()) &&
+                (await h
+                    .control(author)
+                    .query.isConnectedTo(victim.address)
+                    .request()),
             {
                 timeoutMs: h.event.protocolEventTimeoutMs(),
-                timeoutMessage:
-                    "relayer/author handshake with victim never both completed"
+                timeoutMessage: "relayer/author never both connected to victim"
             }
         );
 

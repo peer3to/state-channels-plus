@@ -1,0 +1,20 @@
+# HolepunchLeaveTopic.test.ts — Verification Report
+
+> **Test file:** [test/transport/HolepunchLeaveTopic.test.ts](../../../../../../test/transport/HolepunchLeaveTopic.test.ts) > **Status:** Authored — engineer verification pending.
+> **Exercises:** [Holepunch](../../../../implementation/source/src/Holepunch.ts.md)
+
+## Overview
+
+Drives the real public join/leave surface with a typed swarm recorder to verify byte equality,
+duplicates, no-op leaves, lazy creation, and restart replay.
+
+## Tests and covered test IDs
+
+| Test declaration                                                                                                                                                                   | Covers                                                                                                                                                                                                                                                       |
+| ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| [`Holepunch topic lifecycle > records a joined Buffer topic with server and client discovery enabled`](../../../../../../test/transport/HolepunchLeaveTopic.test.ts#L18) (line 18) | [`UNIT-TEST-HOLEPUNCH-TOPIC-1-SYJT8J.P1`](../../../../implementation/source/src/Holepunch.ts.md#unit-test-holepunch-topic-1-syjt8j.p1), [`REQ-UPG-6-BC60XD.T1.P1`](../../../../specification/peer-communication/transport-upgrade.md#req-upg-6-bc60xd.t1.p1) |
+| [`Holepunch topic lifecycle > removes the first byte-equal topic and calls swarm leave`](../../../../../../test/transport/HolepunchLeaveTopic.test.ts#L35) (line 35)               | [`UNIT-TEST-HOLEPUNCH-TOPIC-1-SYJT8J.P2`](../../../../implementation/source/src/Holepunch.ts.md#unit-test-holepunch-topic-1-syjt8j.p2), [`REQ-UPG-6-BC60XD.T1.P2`](../../../../specification/peer-communication/transport-upgrade.md#req-upg-6-bc60xd.t1.p2) |
+| [`Holepunch topic lifecycle > keeps the second duplicate join after leaving once`](../../../../../../test/transport/HolepunchLeaveTopic.test.ts#L47) (line 47)                     | [`UNIT-TEST-HOLEPUNCH-TOPIC-1-SYJT8J.P3`](../../../../implementation/source/src/Holepunch.ts.md#unit-test-holepunch-topic-1-syjt8j.p3), [`REQ-UPG-6-BC60XD.T1.P3`](../../../../specification/peer-communication/transport-upgrade.md#req-upg-6-bc60xd.t1.p3) |
+| [`Holepunch topic lifecycle > does nothing when leaving a topic that was never joined`](../../../../../../test/transport/HolepunchLeaveTopic.test.ts#L59) (line 59)                | [`UNIT-TEST-HOLEPUNCH-TOPIC-1-SYJT8J.P4`](../../../../implementation/source/src/Holepunch.ts.md#unit-test-holepunch-topic-1-syjt8j.p4), [`REQ-UPG-6-BC60XD.T1.P4`](../../../../specification/peer-communication/transport-upgrade.md#req-upg-6-bc60xd.t1.p4) |
+| [`Holepunch topic lifecycle > does nothing when leave runs before lazy swarm creation`](../../../../../../test/transport/HolepunchLeaveTopic.test.ts#L69) (line 69)                | [`UNIT-TEST-HOLEPUNCH-TOPIC-1-SYJT8J.P5`](../../../../implementation/source/src/Holepunch.ts.md#unit-test-holepunch-topic-1-syjt8j.p5), [`REQ-UPG-6-BC60XD.T1.P5`](../../../../specification/peer-communication/transport-upgrade.md#req-upg-6-bc60xd.t1.p5) |
+| [`Holepunch topic lifecycle > does not reannounce a topic removed before a rejoin cycle`](../../../../../../test/transport/HolepunchLeaveTopic.test.ts#L82) (line 82)              | [`UNIT-TEST-HOLEPUNCH-TOPIC-1-SYJT8J.P6`](../../../../implementation/source/src/Holepunch.ts.md#unit-test-holepunch-topic-1-syjt8j.p6), [`REQ-UPG-6-BC60XD.T1.P6`](../../../../specification/peer-communication/transport-upgrade.md#req-upg-6-bc60xd.t1.p6) |

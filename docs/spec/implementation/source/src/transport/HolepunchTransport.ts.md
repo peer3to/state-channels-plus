@@ -19,12 +19,14 @@
 
 ## Responsibility and observable boundary
 
-The hyperswarm bootstrap transport: wraps a holepunch socket and starts the handshake from its
-constructor — every connection authenticates immediately.
+The hyperswarm bootstrap transport: wraps a Holepunch socket, stores its narrow ban handle on the
+profile created by `ATransport`, and starts authentication immediately.
 
 ## Key design decisions
 
 1. **Handshake-on-construct:** no window where an unauthenticated bootstrap connection idles usable.
+2. **Ban policy stays outside the transport.** Construction supplies the SDK handle to its profile;
+   the transport neither decides nor exposes ban/unban policy.
 
 ## Inputs, outputs, state, and side effects
 
@@ -40,9 +42,9 @@ constructor — every connection authenticates immediately.
 A file may contribute to several requirements; this report describes the contribution and never
 claims complete conformance for a requirement that depends on other files.
 
-| Source file                                                                    | Specification IDs                                                                                  |
-| ------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------- |
-| [HolepunchTransport.ts](../../../../../../src/transport/HolepunchTransport.ts) | [`REQ-AUTH-3-ZV74KB`](../../../../specification/peer-communication/handshake.md#req-auth-3-zv74kb) |
+| Source file                                                                    | Specification IDs                                                                                                                                                                                            |
+| ------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| [HolepunchTransport.ts](../../../../../../src/transport/HolepunchTransport.ts) | [`REQ-AUTH-3-ZV74KB`](../../../../specification/peer-communication/handshake.md#req-auth-3-zv74kb), [`REQ-UPG-4-M2XDBA`](../../../../specification/peer-communication/transport-upgrade.md#req-upg-4-m2xdba) |
 
 ## Assumptions, dependencies, trust boundaries, and limits
 

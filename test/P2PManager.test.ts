@@ -349,4 +349,61 @@ describe("P2PManager", function () {
 
         expect(result.connectedPeers).to.deep.equal([fixture!.address(1)]);
     });
+
+    it("keeps an OPENED connection and reports once when the participant read fails", async function () {
+        const result = await fixture!
+            .control()
+            .p2pManagerProbe.probeHandshakeParticipantReadFailure(
+                fixture!.address(1)
+            )
+            .request();
+
+        expect(result.connected).to.equal(true);
+        expect(result.syncCallCount).to.equal(0);
+        expect(result.hookCount).to.equal(1);
+        expect(result.failureLogged).to.equal(true);
+    });
+
+    it("ignores a completed handshake with no registered transport", async function () {
+        const result = await fixture!
+            .control()
+            .p2pManagerProbe.probeMissingHandshake(
+                Wallet.createRandom().address
+            )
+            .request();
+
+        expect(result.connected).to.equal(false);
+        expect(result.hookCount).to.equal(0);
+    });
+
+    it("does not promote a transport that closed before handshake dispatch", async function () {
+        const result = await fixture!
+            .control()
+            .p2pManagerProbe.probeClosedHandshake(fixture!.address(1))
+            .request();
+
+        expect(result.connected).to.equal(false);
+        expect(result.hookCount).to.equal(0);
+    });
+
+    it("does not promote a late handshake after manager disposal", async function () {
+        const result = await fixture!
+            .control()
+            .p2pManagerProbe.probeDisposedHandshake(fixture!.address(1))
+            .request();
+
+        expect(result.connected).to.equal(false);
+        expect(result.hookCount).to.equal(0);
+    });
+
+    it("retires a replaced handshake transport and keeps one live connection", async function () {
+        const result = await fixture!
+            .control()
+            .p2pManagerProbe.probeReplacementHandshake(fixture!.address(1))
+            .request();
+
+        expect(result.connectedCount).to.equal(1);
+        expect(result.replacementConnected).to.equal(true);
+        expect(result.hookCount).to.equal(2);
+    });
 });

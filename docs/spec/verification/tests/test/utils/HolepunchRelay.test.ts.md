@@ -1,40 +1,20 @@
-# test/utils/HolepunchRelay.test.ts — Test Report
+# HolepunchRelay.test.ts — Verification Report
 
 > **Test file:** [test/utils/HolepunchRelay.test.ts](../../../../../../test/utils/HolepunchRelay.test.ts) > **Status:** Authored — engineer verification pending.
-> **Exercises:** [HolepunchRelay.ts](../../../../implementation/source/src/HolepunchRelay.ts.md)
-
-## Contents
-
-- [Overview](#overview)
-- [Tests and covered test IDs](#tests-and-covered-test-ids)
+> **Exercises:** [HolepunchRelay](../../../../implementation/source/src/HolepunchRelay.ts.md)
 
 ## Overview
 
-The suite isolates the relayer-pool failover/backoff logic in `HolepunchRelay`: the hyperswarm
-modules (`hyperswarm`, `@hyperswarm/dht-relay`, `@hyperswarm/dht-relay/ws`) are stubbed through
-the require cache before load, `global.WebSocket` is replaced with a manually driven fake, and
-sinon fake timers control every retry timer; the singleton is reset between cases. Each test
-calls `HolepunchRelay.init` with a relayer URL list and drives failures via
-`emitClose`/`emitError`/`emitOpen`, asserting on the update-callback count, the URLs of created
-sockets, and the `setTimeout` delays captured by a spy. The oracles pin regression behavior: the
-pool never permanently exhausts after more failures than configured relayers, a single relayer
-keeps being retried, a successful connection resets exclusion/backoff state, single-failure
-retries carry a randomized sub-250ms jitter, and full-round exhaustion uses full-jitter backoff
-rather than a deterministic 1s mark. Real DHT wiring, message relay, and the transport built on
-top are out of scope. The seed pool defines no permutations for this component, so no test IDs
-are assignable here.
+Verifies the public relay wrapper over a typed global-WebSocket boundary while using the real
+DHT, stream, Hyperswarm, and `RelayerPool` construction.
 
 ## Tests and covered test IDs
 
-A row lists only test IDs this test covers **in full** — partial credit is never recorded. Each
-test ID may be assigned to at most one test across the whole tree; static analysis reports
-duplicate assignments, and tests with no assigned ID are listed in the verification-coverage
-report but are kept here.
-
-| Test declaration                                                                                                                                                                     | Covers |
-| ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------ |
-| [`HolepunchRelay > does not permanently exhaust the relayer pool after more failures than configured relayers`](../../../../../../test/utils/HolepunchRelay.test.ts#L115) (line 115) | —      |
-| [`HolepunchRelay > keeps retrying a single configured relayer without locking out`](../../../../../../test/utils/HolepunchRelay.test.ts#L146) (line 146)                             | —      |
-| [`HolepunchRelay > resets exclusion/backoff state on a successful connection`](../../../../../../test/utils/HolepunchRelay.test.ts#L173) (line 173)                                  | —      |
-| [`HolepunchRelay > adds a randomized, non-synchronized delay before retrying a single relayer failure`](../../../../../../test/utils/HolepunchRelay.test.ts#L212) (line 212)         | —      |
-| [`HolepunchRelay > applies full jitter (not a deterministic mark) to the exhaustion backoff`](../../../../../../test/utils/HolepunchRelay.test.ts#L250) (line 250)                   | —      |
+| Test declaration                                                                                                                                     | Covers                                                                                                                                      |
+| ---------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
+| [`HolepunchRelay > stays idle when no relayer URL is configured`](../../../../../../test/utils/HolepunchRelay.test.ts#L18) (line 18)                 | [`UNIT-TEST-HOLEPUNCH-RELAY-1-QF3FKY.P1`](../../../../implementation/source/src/HolepunchRelay.ts.md#unit-test-holepunch-relay-1-qf3fky.p1) |
+| [`HolepunchRelay > reconnects after a relay socket closes`](../../../../../../test/utils/HolepunchRelay.test.ts#L26) (line 26)                       | [`UNIT-TEST-HOLEPUNCH-RELAY-1-QF3FKY.P2`](../../../../implementation/source/src/HolepunchRelay.ts.md#unit-test-holepunch-relay-1-qf3fky.p2) |
+| [`HolepunchRelay > keeps reconnecting after the whole relay pool fails`](../../../../../../test/utils/HolepunchRelay.test.ts#L39) (line 39)          | [`UNIT-TEST-HOLEPUNCH-RELAY-1-QF3FKY.P3`](../../../../implementation/source/src/HolepunchRelay.ts.md#unit-test-holepunch-relay-1-qf3fky.p3) |
+| [`HolepunchRelay > keeps retrying one configured relay`](../../../../../../test/utils/HolepunchRelay.test.ts#L58) (line 58)                          | [`UNIT-TEST-HOLEPUNCH-RELAY-1-QF3FKY.P4`](../../../../implementation/source/src/HolepunchRelay.ts.md#unit-test-holepunch-relay-1-qf3fky.p4) |
+| [`HolepunchRelay > resets failed-relay exclusions after a successful connection`](../../../../../../test/utils/HolepunchRelay.test.ts#L74) (line 74) | [`UNIT-TEST-HOLEPUNCH-RELAY-1-QF3FKY.P5`](../../../../implementation/source/src/HolepunchRelay.ts.md#unit-test-holepunch-relay-1-qf3fky.p5) |
+| [`HolepunchRelay > deduplicates error and close events from one socket`](../../../../../../test/utils/HolepunchRelay.test.ts#L90) (line 90)          | [`UNIT-TEST-HOLEPUNCH-RELAY-1-QF3FKY.P6`](../../../../implementation/source/src/HolepunchRelay.ts.md#unit-test-holepunch-relay-1-qf3fky.p6) |

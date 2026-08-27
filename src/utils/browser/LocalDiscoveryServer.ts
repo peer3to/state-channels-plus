@@ -1,7 +1,7 @@
-import type P2PManager from "@/P2PManager";
-import type { ChannelId } from "@/types/types";
-import type { Logger } from "@/utils/logging/Logger";
-import { config } from "@/utils/config";
+import type P2PManager from "../../P2PManager";
+import type { ChannelId } from "../../types/types";
+import { config } from "../config";
+import type { Logger } from "../logging/Logger";
 
 /**
  * Browser LocalDiscoveryServer.
@@ -46,7 +46,7 @@ export class LocalDiscoveryServer {
         // and the announce listener attaching (the hub's peer announce fires
         // the instant both peers are present and would be missed in a gap).
         const { default: BrowserLocalTransport } = await import(
-            "@/transport/BrowserLocalTransport"
+            "../../transport/BrowserLocalTransport"
         );
 
         const url =
@@ -82,7 +82,6 @@ export class LocalDiscoveryServer {
 
                 const remoteAddress = announce.address;
                 const transport = new BrowserLocalTransport(ws, p2pManager);
-                transport.peerAddress = remoteAddress;
                 // Both ends initiate: the handshake is a mutual challenge, so a
                 // peer only finalizes once it has BOTH verified the remote (via
                 // its own challenge) and received the remote's ack.

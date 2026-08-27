@@ -4,8 +4,8 @@
 
 ## Score
 
-- Specification IDs fully implemented (only `Covered` claims): **197/244** (81%)
-- Source files with a file report: **246/264** (93%)
+- Specification IDs fully implemented (only `Covered` claims): **204/251** (81%)
+- Source files with a file report: **247/264** (94%)
 
 ## Contents
 
@@ -48,7 +48,7 @@ the claiming conformance rows; an ID absent from every conformance table has no 
 | [`REQ-RPC-3-ZM9WR5`](../specification/peer-communication/rpc.md#req-rpc-3-zm9wr5) | Partial | [implementation/views/architecture/rpc.md](../implementation/views/architecture/rpc.md#conformance-traceability)<br>[implementation/views/architecture/sdk/rpc/README.md](../implementation/views/architecture/sdk/rpc/README.md#11-canonical-requirement-ownership) |
 | [`REQ-RPC-4-9VX0B9`](../specification/peer-communication/rpc.md#req-rpc-4-9vx0b9) | Partial | [implementation/views/architecture/rpc.md](../implementation/views/architecture/rpc.md#conformance-traceability)<br>[implementation/views/architecture/sdk/rpc/README.md](../implementation/views/architecture/sdk/rpc/README.md#11-canonical-requirement-ownership) |
 | [`REQ-RPC-5-CV1R1Y`](../specification/peer-communication/rpc.md#req-rpc-5-cv1r1y) | Missing | [implementation/views/architecture/rpc.md](../implementation/views/architecture/rpc.md#conformance-traceability)<br>[implementation/views/architecture/sdk/rpc/README.md](../implementation/views/architecture/sdk/rpc/README.md#11-canonical-requirement-ownership) |
-| [`REQ-RPC-7-9CBSHK`](../specification/peer-communication/rpc.md#req-rpc-7-9cbshk) | Partial | [implementation/source/src/rpc/guards/HandshakeCompletedGuard.ts.md](../implementation/source/src/rpc/guards/HandshakeCompletedGuard.ts.md#conformance-traceability)<br>[implementation/views/architecture/rpc.md](../implementation/views/architecture/rpc.md#conformance-traceability)<br>[implementation/views/architecture/sdk/rpc/README.md](../implementation/views/architecture/sdk/rpc/README.md#11-canonical-requirement-ownership) |
+| [`REQ-RPC-7-9CBSHK`](../specification/peer-communication/rpc.md#req-rpc-7-9cbshk) | Partial | [implementation/source/src/P2PManager.ts.md](../implementation/source/src/P2PManager.ts.md#conformance-traceability)<br>[implementation/source/src/rpc/guards/HandshakeCompletedGuard.ts.md](../implementation/source/src/rpc/guards/HandshakeCompletedGuard.ts.md#conformance-traceability)<br>[implementation/views/architecture/rpc.md](../implementation/views/architecture/rpc.md#conformance-traceability)<br>[implementation/views/architecture/sdk/rpc/README.md](../implementation/views/architecture/sdk/rpc/README.md#11-canonical-requirement-ownership) |
 | [`REQ-RPC-8-44XECF`](../specification/peer-communication/rpc.md#req-rpc-8-44xecf) | Missing | [implementation/source/src/rpc/services/initHandshake/InitHandshakeService.ts.md](../implementation/source/src/rpc/services/initHandshake/InitHandshakeService.ts.md#conformance-traceability)<br>[implementation/views/architecture/rpc.md](../implementation/views/architecture/rpc.md#conformance-traceability)<br>[implementation/views/architecture/sdk/rpc/README.md](../implementation/views/architecture/sdk/rpc/README.md#11-canonical-requirement-ownership) |
 | [`REQ-SM-1-Y72CKX`](../specification/protocol-model/state-machines.md#req-sm-1-y72ckx) | Partial | [implementation/views/concepts/state-machines.md](../implementation/views/concepts/state-machines.md#conformance-traceability) |
 | [`REQ-SM-2-PHCRFR`](../specification/protocol-model/state-machines.md#req-sm-2-phcrfr) | Partial | [implementation/views/concepts/state-machines.md](../implementation/views/concepts/state-machines.md#conformance-traceability) |
@@ -91,5 +91,4 @@ Every file under `src/` and `contracts/` needs one maintained report at
 | [src/stateManager/ingest/index.ts](../../../src/stateManager/ingest/index.ts) |
 | [src/stateManager/ingest/StoredBlockMergeService.ts](../../../src/stateManager/ingest/StoredBlockMergeService.ts) |
 | [src/stateManager/membership/index.ts](../../../src/stateManager/membership/index.ts) |
-| [src/stateManager/membership/MembershipService.ts](../../../src/stateManager/membership/MembershipService.ts) |
 | [src/stateManager/snapshotUpdate/StateApplicationService.ts](../../../src/stateManager/snapshotUpdate/StateApplicationService.ts) |

@@ -8,8 +8,17 @@ import { TransportType } from "@/transport/TransportType";
 import PeerProfile from "@/PeerProfile";
 import { getChecksumAddress } from "@/utils";
 import { Buffer } from "buffer";
+import { Status } from "@/types";
+import sinon from "sinon";
 import type { PingPongRpc } from "../PingPongRpcManifest";
 import { P2PManagerProbeRpcMethods } from "./P2PManagerProbeRpcMethods";
+import { HolepunchTransport, WebRTCTransport } from "@/transport";
+import {
+    RecordingBannablePeerInfo,
+    RecordingHolepunchSocket,
+    RecordingSwarm,
+    RecordingWebRTCDataChannel
+} from "@test/fixtures/P2PTransportFixture";
 
 class RecordingTransport extends ATransport {
     public transportType = TransportType.HOLEPUNCH;
@@ -146,6 +155,60 @@ export type LifecycleProbe = {
     discoveryWasNodeNoop: boolean;
 };
 
+export type BanPolicyProbe = {
+    banCalls: boolean[];
+    socketDestroyed: boolean;
+    profileBlacklisted: boolean;
+};
+
+export type UpgradeBanPolicyProbe = {
+    banCallsAfterUpgrade: boolean[];
+    banCallsAfterStaleClose: boolean[];
+    banCallsAfterCurrentClose: boolean[];
+    banCallsAfterFallback: boolean[];
+};
+
+export type RelayAdmissionProbe = {
+    admitted: boolean;
+    attemptedClosed: boolean;
+    attemptedSocketDestroyed: boolean;
+    currentTransportType: TransportType | null;
+    activePeerConnections: number;
+    originalBanCalls: boolean[];
+    attemptedBanCalls: boolean[];
+    profileBlacklisted: boolean;
+    handshakeCompleted: boolean;
+    usableTrafficSent: boolean;
+    disconnectionHookCalls: number;
+};
+
+export type HolepunchTopicProbe = {
+    joinedTopics: string[];
+    joinCalls: {
+        topicHex: string;
+        options: { server: boolean; client: boolean };
+    }[];
+    leaveCalls: string[];
+};
+
+export type HandshakeFailureProbe = {
+    connected: boolean;
+    hookCount: number;
+    syncCallCount: number;
+    failureLogged: boolean;
+};
+
+export type LateHandshakeProbe = {
+    connected: boolean;
+    hookCount: number;
+};
+
+export type ReplacementHandshakeProbe = {
+    connectedCount: number;
+    replacementConnected: boolean;
+    hookCount: number;
+};
+
 export class P2PManagerProbeService extends ARpcService<
     P2PManagerProbeRpcMethods,
     P2PManager<PingPongRpc>
@@ -181,6 +244,48 @@ export class P2PManagerProbeService extends ARpcService<
         };
         if (!frame.requestId) throw new Error("Request frame has no requestId");
         return frame.requestId;
+    }
+
+    private holepunchTransport(): {
+        transport: HolepunchTransport;
+        peerInfo: RecordingBannablePeerInfo;
+        socket: RecordingHolepunchSocket;
+    } {
+        const peerInfo = new RecordingBannablePeerInfo();
+        const socket = new RecordingHolepunchSocket();
+        const transport = new HolepunchTransport(
+            socket,
+            peerInfo,
+            this.p2pManager
+        );
+        return { transport, peerInfo, socket };
+    }
+
+    private registeredHolepunchTransport(address: string): {
+        transport: HolepunchTransport;
+        peerInfo: RecordingBannablePeerInfo;
+        socket: RecordingHolepunchSocket;
+        profile: PeerProfile;
+    } {
+        const { transport, peerInfo, socket } = this.holepunchTransport();
+        const normalizedAddress = getChecksumAddress(address);
+        const profile = this.authenticateTransport(
+            transport,
+            normalizedAddress
+        );
+        return { transport, peerInfo, socket, profile };
+    }
+
+    private authenticateTransport(
+        transport: ATransport,
+        address: string
+    ): PeerProfile {
+        const profile = this.p2pManager.profileManager.authenticateTransport(
+            transport,
+            address
+        );
+        if (!profile) throw new Error("Fixture transport was not admitted");
+        return profile;
     }
 
     private response(
@@ -957,5 +1062,595 @@ export class P2PManagerProbeService extends ARpcService<
             discoveryWasNodeNoop:
                 this.p2pManager.openConnections.length === beforeDiscovery
         };
+    }
+
+    public probeUnauthenticatedBlacklist(): BanPolicyProbe {
+        const { transport, peerInfo, socket } = this.holepunchTransport();
+        const profile =
+            this.p2pManager.profileManager.getProfileByTransport(transport);
+
+        this.p2pManager.disconnectAndBlacklistPeer(transport);
+
+        return {
+            banCalls: [...peerInfo.banCalls],
+            socketDestroyed: socket.destroyed,
+            profileBlacklisted: profile?.isBlackListed ?? false
+        };
+    }
+
+    public probeUnauthenticatedClose(): BanPolicyProbe {
+        const { transport, peerInfo, socket } = this.holepunchTransport();
+        const profile =
+            this.p2pManager.profileManager.getProfileByTransport(transport);
+
+        transport.close();
+        this.p2pManager.disconnectAndBlacklistPeer(transport);
+
+        return {
+            banCalls: [...peerInfo.banCalls],
+            socketDestroyed: socket.destroyed,
+            profileBlacklisted: profile?.isBlackListed ?? false
+        };
+    }
+
+    public probeUpgradeBanPolicy(address: string): UpgradeBanPolicyProbe {
+        const { peerInfo } = this.registeredHolepunchTransport(address);
+        const firstWebRTC = new WebRTCTransport(
+            new RecordingWebRTCDataChannel(),
+            this.p2pManager
+        );
+        this.authenticateTransport(firstWebRTC, address);
+        const banCallsAfterUpgrade = [...peerInfo.banCalls];
+
+        const secondWebRTC = new WebRTCTransport(
+            new RecordingWebRTCDataChannel(),
+            this.p2pManager
+        );
+        this.authenticateTransport(secondWebRTC, address);
+        this.p2pManager.profileManager.releaseHolepunchBanOnWebRtcClose(
+            firstWebRTC
+        );
+        const banCallsAfterStaleClose = [...peerInfo.banCalls];
+
+        this.p2pManager.profileManager.releaseHolepunchBanOnWebRtcClose(
+            secondWebRTC
+        );
+        const banCallsAfterCurrentClose = [...peerInfo.banCalls];
+        const fallback = this.holepunchTransport().transport;
+        this.p2pManager.profileManager.updateTransport(address, fallback);
+        return {
+            banCallsAfterUpgrade,
+            banCallsAfterStaleClose,
+            banCallsAfterCurrentClose,
+            banCallsAfterFallback: [...peerInfo.banCalls]
+        };
+    }
+
+    public probeExplicitBlacklist(address: string): BanPolicyProbe {
+        const { peerInfo, socket, profile } =
+            this.registeredHolepunchTransport(address);
+        const webRTC = new WebRTCTransport(
+            new RecordingWebRTCDataChannel(),
+            this.p2pManager
+        );
+        this.authenticateTransport(webRTC, address);
+        peerInfo.banCalls.length = 0;
+
+        this.p2pManager.disconnectAndBlacklistPeerByEvmAddress(address);
+
+        return {
+            banCalls: [...peerInfo.banCalls],
+            socketDestroyed: socket.destroyed,
+            profileBlacklisted: profile.isBlackListed
+        };
+    }
+
+    public async probeHealthyWebRtcRejectsHolepunch(
+        address: string
+    ): Promise<RelayAdmissionProbe> {
+        const { peerInfo: originalPeerInfo, profile } =
+            this.registeredHolepunchTransport(address);
+        const webRTC = new WebRTCTransport(
+            new RecordingWebRTCDataChannel(),
+            this.p2pManager
+        );
+        this.authenticateTransport(webRTC, address);
+        this.p2pManager.addConnection(webRTC);
+
+        const {
+            transport: attempted,
+            peerInfo: attemptedPeerInfo,
+            socket: attemptedSocket
+        } = this.holepunchTransport();
+        const disconnectionHookCalls =
+            await this.finalizeAndCountDisconnections(attempted, address);
+        const admitted = this.isAuthenticatedCurrentTransport(attempted);
+
+        return this.relayAdmissionResult({
+            address,
+            admitted,
+            attempted,
+            attemptedPeerInfo,
+            attemptedSocket,
+            originalPeerInfo,
+            profile,
+            disconnectionHookCalls
+        });
+    }
+
+    public async probeWebRtcCloseAcceptsHolepunch(
+        address: string
+    ): Promise<RelayAdmissionProbe> {
+        const { peerInfo: originalPeerInfo, profile } =
+            this.registeredHolepunchTransport(address);
+        const webRTC = new WebRTCTransport(
+            new RecordingWebRTCDataChannel(),
+            this.p2pManager
+        );
+        this.authenticateTransport(webRTC, address);
+        this.p2pManager.addConnection(webRTC);
+        webRTC.close();
+
+        const {
+            transport: attempted,
+            peerInfo: attemptedPeerInfo,
+            socket: attemptedSocket
+        } = this.holepunchTransport();
+        const disconnectionHookCalls =
+            await this.finalizeAndCountDisconnections(attempted, address);
+        const admitted = this.isAuthenticatedCurrentTransport(attempted);
+        if (admitted) {
+            attempted.send({
+                service: "probe",
+                method: "ordinaryTraffic",
+                params: ["usable"]
+            });
+        }
+
+        return this.relayAdmissionResult({
+            address,
+            admitted,
+            attempted,
+            attemptedPeerInfo,
+            attemptedSocket,
+            originalPeerInfo,
+            profile,
+            disconnectionHookCalls
+        });
+    }
+
+    public async probeBlacklistRejectsHolepunch(
+        address: string
+    ): Promise<RelayAdmissionProbe> {
+        const { peerInfo: originalPeerInfo, profile } =
+            this.registeredHolepunchTransport(address);
+        const webRTC = new WebRTCTransport(
+            new RecordingWebRTCDataChannel(),
+            this.p2pManager
+        );
+        this.authenticateTransport(webRTC, address);
+        this.p2pManager.addConnection(webRTC);
+        this.p2pManager.disconnectAndBlacklistPeerByEvmAddress(address);
+
+        const {
+            transport: attempted,
+            peerInfo: attemptedPeerInfo,
+            socket: attemptedSocket
+        } = this.holepunchTransport();
+        const disconnectionHookCalls =
+            await this.finalizeAndCountDisconnections(attempted, address);
+        const admitted = this.isAuthenticatedCurrentTransport(attempted);
+
+        return this.relayAdmissionResult({
+            address,
+            admitted,
+            attempted,
+            attemptedPeerInfo,
+            attemptedSocket,
+            originalPeerInfo,
+            profile,
+            disconnectionHookCalls
+        });
+    }
+
+    private relayAdmissionResult({
+        address,
+        admitted,
+        attempted,
+        attemptedPeerInfo,
+        attemptedSocket,
+        originalPeerInfo,
+        profile,
+        disconnectionHookCalls
+    }: {
+        address: string;
+        admitted: boolean;
+        attempted: HolepunchTransport;
+        attemptedPeerInfo: RecordingBannablePeerInfo;
+        attemptedSocket: RecordingHolepunchSocket;
+        originalPeerInfo: RecordingBannablePeerInfo;
+        profile: PeerProfile;
+        disconnectionHookCalls: number;
+    }): RelayAdmissionProbe {
+        const current =
+            this.p2pManager.profileManager.getTransportByEvmAddress(address);
+        const usableTrafficSent = attemptedSocket.writes.some((frame) => {
+            const rpc = JSON.parse(frame) as Partial<Rpc>;
+            return (
+                rpc.service === "probe" &&
+                rpc.method === "ordinaryTraffic" &&
+                rpc.params?.[0] === "usable"
+            );
+        });
+        return {
+            admitted,
+            attemptedClosed: attempted.isClosed,
+            attemptedSocketDestroyed: attemptedSocket.destroyed,
+            currentTransportType: current?.transportType ?? null,
+            activePeerConnections: this.p2pManager.openConnections.filter(
+                (transport) =>
+                    !transport.isClosed &&
+                    transport.peerAddress === getChecksumAddress(address)
+            ).length,
+            originalBanCalls: [...originalPeerInfo.banCalls],
+            attemptedBanCalls: [...attemptedPeerInfo.banCalls],
+            profileBlacklisted: profile.isBlackListed,
+            handshakeCompleted: this.isAuthenticatedCurrentTransport(attempted),
+            usableTrafficSent,
+            disconnectionHookCalls
+        };
+    }
+
+    private async finalizeAndCountDisconnections(
+        transport: ATransport,
+        address: string
+    ): Promise<number> {
+        let disconnectionHookCalls = 0;
+        const unsubscribe = this.p2pManager.stateManager.events.on(
+            "p2pEventHooks",
+            "onDisconnection",
+            () => {
+                disconnectionHookCalls += 1;
+            }
+        );
+        try {
+            await this.finalizeTransportIdentity(transport, address);
+            return disconnectionHookCalls;
+        } finally {
+            unsubscribe();
+        }
+    }
+
+    private async finalizeTransportIdentity(
+        transport: ATransport,
+        address: string
+    ): Promise<void> {
+        const initHandshake = this.p2pManager.localRpc.initHandshakeService;
+        initHandshake.markHandshakeInFlight(transport);
+        initHandshake.recordVerifiedPeerAddress(transport, address);
+        initHandshake.markAcked(transport);
+        initHandshake.setRemotePreferredTransport(
+            transport,
+            TransportType.HOLEPUNCH
+        );
+        await initHandshake.maybeFinalizeHandshakeOnceFromTransport(transport);
+    }
+
+    private isAuthenticatedCurrentTransport(transport: ATransport): boolean {
+        const profile =
+            this.p2pManager.profileManager.getProfileByTransport(transport);
+        return (
+            profile?.getTransport() === transport &&
+            transport.peerAddress !== undefined
+        );
+    }
+
+    public async probeHolepunchJoinAndEqualLeave(): Promise<HolepunchTopicProbe> {
+        const swarm = new RecordingSwarm();
+        const previousSwarm = this.p2pManager.holepunch.swarm;
+        this.p2pManager.holepunch.swarm = swarm;
+        try {
+            await this.p2pManager.holepunch.join(Buffer.from("topic-a"));
+            await this.p2pManager.holepunch.leave(Buffer.from("topic-a"));
+            return this.holepunchTopicProbe(swarm);
+        } finally {
+            this.p2pManager.holepunch.swarm = previousSwarm;
+            this.p2pManager.holepunch.topics = [];
+        }
+    }
+
+    public async probeHolepunchDuplicateLeave(): Promise<HolepunchTopicProbe> {
+        const swarm = new RecordingSwarm();
+        const previousSwarm = this.p2pManager.holepunch.swarm;
+        this.p2pManager.holepunch.swarm = swarm;
+        try {
+            await this.p2pManager.holepunch.join(Buffer.from("topic-a"));
+            await this.p2pManager.holepunch.join(Buffer.from("topic-a"));
+            await this.p2pManager.holepunch.leave(Buffer.from("topic-a"));
+            return this.holepunchTopicProbe(swarm);
+        } finally {
+            this.p2pManager.holepunch.swarm = previousSwarm;
+            this.p2pManager.holepunch.topics = [];
+        }
+    }
+
+    public async probeHolepunchAbsentLeave(): Promise<HolepunchTopicProbe> {
+        const swarm = new RecordingSwarm();
+        const previousSwarm = this.p2pManager.holepunch.swarm;
+        this.p2pManager.holepunch.swarm = swarm;
+        try {
+            await this.p2pManager.holepunch.join(Buffer.from("topic-a"));
+            await this.p2pManager.holepunch.leave(Buffer.from("topic-b"));
+            return this.holepunchTopicProbe(swarm);
+        } finally {
+            this.p2pManager.holepunch.swarm = previousSwarm;
+            this.p2pManager.holepunch.topics = [];
+        }
+    }
+
+    public async probeHolepunchLeaveBeforeSwarm(): Promise<HolepunchTopicProbe> {
+        const previousSwarm = this.p2pManager.holepunch.swarm;
+        this.p2pManager.holepunch.swarm = undefined;
+        try {
+            await this.p2pManager.holepunch.leave(Buffer.from("topic-a"));
+            return {
+                joinedTopics: this.p2pManager.holepunch.topics.map((topic) =>
+                    topic.toString("hex")
+                ),
+                joinCalls: [],
+                leaveCalls: []
+            };
+        } finally {
+            this.p2pManager.holepunch.swarm = previousSwarm;
+            this.p2pManager.holepunch.topics = [];
+        }
+    }
+
+    public async probeHolepunchRejoinAfterLeave(): Promise<HolepunchTopicProbe> {
+        const initialSwarm = new RecordingSwarm();
+        const replacementSwarm = new RecordingSwarm();
+        const previousSwarm = this.p2pManager.holepunch.swarm;
+        const previousInjectedSwarm = Object.getOwnPropertyDescriptor(
+            globalThis,
+            "Hyperswarm"
+        );
+        this.p2pManager.holepunch.swarm = initialSwarm;
+        try {
+            await this.p2pManager.holepunch.join(Buffer.from("topic-a"));
+            await this.p2pManager.holepunch.join(Buffer.from("topic-b"));
+            await this.p2pManager.holepunch.leave(Buffer.from("topic-a"));
+            Object.defineProperty(globalThis, "Hyperswarm", {
+                configurable: true,
+                value: replacementSwarm
+            });
+            this.p2pManager.holepunch.swarm = undefined;
+            await this.p2pManager.holepunch.join(Buffer.from("topic-c"));
+            return this.holepunchTopicProbe(replacementSwarm);
+        } finally {
+            if (previousInjectedSwarm) {
+                Object.defineProperty(
+                    globalThis,
+                    "Hyperswarm",
+                    previousInjectedSwarm
+                );
+            } else {
+                Reflect.deleteProperty(globalThis, "Hyperswarm");
+            }
+            this.p2pManager.holepunch.swarm = previousSwarm;
+            this.p2pManager.holepunch.topics = [];
+        }
+    }
+
+    private holepunchTopicProbe(swarm: RecordingSwarm): HolepunchTopicProbe {
+        return {
+            joinedTopics: this.p2pManager.holepunch.topics.map((topic) =>
+                topic.toString("hex")
+            ),
+            joinCalls: [...swarm.joinCalls],
+            leaveCalls: [...swarm.leaveCalls]
+        };
+    }
+
+    public async probeHandshakeParticipantReadFailure(
+        address: string
+    ): Promise<HandshakeFailureProbe> {
+        const stateManager = this.p2pManager.stateManager;
+        const originalChannelId = stateManager.channelId;
+        const transport = this.transport(getChecksumAddress(address));
+        const profile = new PeerProfile(transport, getChecksumAddress(address));
+        this.p2pManager.profileManager.registerProfile(profile);
+        stateManager.setStatus(Status.OPENED);
+        await stateManager.setChannelId("0x12");
+        const originalDebug = this.p2pManager.logger.debug.bind(
+            this.p2pManager.logger
+        );
+        let hookCount = 0;
+        let syncCallCount = 0;
+        let failureLogged = false;
+        let resolveConnection!: () => void;
+        const connection = new Promise<void>((resolve) => {
+            resolveConnection = resolve;
+        });
+
+        const sync = sinon
+            .stub(this.p2pManager.localRpc.spectateService, "sync")
+            .callsFake(() => {
+                syncCallCount += 1;
+            });
+        const debug = sinon
+            .stub(this.p2pManager.logger, "debug")
+            .callsFake((message, ...metadata) => {
+                if (String(message).includes("participant read failed"))
+                    failureLogged = true;
+                originalDebug(message, ...metadata);
+            });
+        const unsubscribeConnection = stateManager.events.on(
+            "p2pEventHooks",
+            "onConnection",
+            () => {
+                hookCount += 1;
+                resolveConnection();
+            }
+        );
+
+        try {
+            stateManager.p2pEventHooks.handshakeCompleted?.(
+                getChecksumAddress(address)
+            );
+            await connection;
+            return {
+                connected: this.p2pManager.openConnections.includes(transport),
+                hookCount,
+                syncCallCount,
+                failureLogged
+            };
+        } finally {
+            await stateManager.setChannelId(originalChannelId);
+            sync.restore();
+            debug.restore();
+            unsubscribeConnection();
+        }
+    }
+
+    public async probeMissingHandshake(
+        address: string
+    ): Promise<LateHandshakeProbe> {
+        const stateManager = this.p2pManager.stateManager;
+        let hookCount = 0;
+        const connectionCount = this.p2pManager.openConnections.length;
+        const unsubscribeConnection = stateManager.events.on(
+            "p2pEventHooks",
+            "onConnection",
+            () => {
+                hookCount += 1;
+            }
+        );
+
+        try {
+            stateManager.p2pEventHooks.handshakeCompleted?.(
+                getChecksumAddress(address)
+            );
+            await Promise.resolve();
+            return {
+                connected:
+                    this.p2pManager.openConnections.length > connectionCount,
+                hookCount
+            };
+        } finally {
+            unsubscribeConnection();
+        }
+    }
+
+    public async probeClosedHandshake(
+        address: string
+    ): Promise<LateHandshakeProbe> {
+        const stateManager = this.p2pManager.stateManager;
+        const transport = this.transport(getChecksumAddress(address));
+        const profile = new PeerProfile(transport, getChecksumAddress(address));
+        this.p2pManager.profileManager.registerProfile(profile);
+        let hookCount = 0;
+        const unsubscribeConnection = stateManager.events.on(
+            "p2pEventHooks",
+            "onConnection",
+            () => {
+                hookCount += 1;
+            }
+        );
+
+        try {
+            transport.close();
+            stateManager.p2pEventHooks.handshakeCompleted?.(
+                getChecksumAddress(address)
+            );
+            await Promise.resolve();
+            return {
+                connected: this.p2pManager.openConnections.includes(transport),
+                hookCount
+            };
+        } finally {
+            unsubscribeConnection();
+        }
+    }
+
+    public async probeDisposedHandshake(
+        address: string
+    ): Promise<LateHandshakeProbe> {
+        const stateManager = this.p2pManager.stateManager;
+        const transport = this.transport(getChecksumAddress(address));
+        const profile = new PeerProfile(transport, getChecksumAddress(address));
+        this.p2pManager.profileManager.registerProfile(profile);
+        let hookCount = 0;
+        const unsubscribeConnection = stateManager.events.on(
+            "p2pEventHooks",
+            "onConnection",
+            () => {
+                hookCount += 1;
+            }
+        );
+
+        try {
+            await this.p2pManager.dispose();
+            stateManager.p2pEventHooks.handshakeCompleted?.(
+                getChecksumAddress(address)
+            );
+            await Promise.resolve();
+            return {
+                connected: this.p2pManager.openConnections.includes(transport),
+                hookCount
+            };
+        } finally {
+            unsubscribeConnection();
+        }
+    }
+
+    public async probeReplacementHandshake(
+        address: string
+    ): Promise<ReplacementHandshakeProbe> {
+        const stateManager = this.p2pManager.stateManager;
+        stateManager.setStatus(Status.SYNCED);
+        const normalizedAddress = getChecksumAddress(address);
+        const first = this.transport(normalizedAddress);
+        const profile = new PeerProfile(first, normalizedAddress);
+        this.p2pManager.profileManager.registerProfile(profile);
+        let hookCount = 0;
+        let resolveConnection!: () => void;
+        let connection = new Promise<void>((resolve) => {
+            resolveConnection = resolve;
+        });
+        const unsubscribeConnection = stateManager.events.on(
+            "p2pEventHooks",
+            "onConnection",
+            () => {
+                hookCount += 1;
+                resolveConnection();
+            }
+        );
+
+        try {
+            stateManager.p2pEventHooks.handshakeCompleted?.(normalizedAddress);
+            await connection;
+            const replacement = this.transport(normalizedAddress);
+            this.p2pManager.profileManager.updateTransport(
+                normalizedAddress,
+                replacement
+            );
+            connection = new Promise<void>((resolve) => {
+                resolveConnection = resolve;
+            });
+            stateManager.p2pEventHooks.handshakeCompleted?.(normalizedAddress);
+            await connection;
+            this.p2pManager.profileManager.removeTransport(first, true);
+
+            return {
+                connectedCount: this.p2pManager.openConnections.filter(
+                    (transport) => transport.peerAddress === normalizedAddress
+                ).length,
+                replacementConnected:
+                    this.p2pManager.openConnections.includes(replacement),
+                hookCount
+            };
+        } finally {
+            unsubscribeConnection();
+        }
     }
 }

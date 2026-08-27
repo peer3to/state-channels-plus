@@ -1,6 +1,8 @@
+// @spec-test-coverage-ignore: harness network setup exercised by owning mapped test declarations
 import ARpcMethods from "@/rpc/ARpcMethods";
 import type ATransport from "@/transport/ATransport";
 import { LocalDiscoveryServer } from "@/utils";
+import { Status } from "@/types";
 import type { Address, ChannelId } from "@/types/types";
 import type { NetworkService } from "./NetworkService";
 
@@ -21,7 +23,10 @@ export class NetworkRpcMethods extends ARpcMethods {
      * here using the host's own `self`. Idempotent (`tryStart` returns early if
      * already running).
      */
-    public async connectToChannel(channelId: string): Promise<boolean> {
+    public async connectToChannel(
+        channelId: string,
+        handshakeStatus?: Status
+    ): Promise<boolean> {
         await LocalDiscoveryServer.tryStart();
         // Use the SDK's connectToChannel (setChannelId +
         // refreshOpenedStatusFromChain + tryOpenConnectionToChannel) so a
@@ -30,6 +35,9 @@ export class NetworkRpcMethods extends ARpcMethods {
         await this.p2pManager.p2pSigner.connectToChannel(
             channelId as ChannelId
         );
+        if (handshakeStatus !== undefined) {
+            this.p2pManager.stateManager.setStatus(handshakeStatus);
+        }
         await LocalDiscoveryServer.connectToPeers(
             this.p2pManager.self,
             channelId as ChannelId,
