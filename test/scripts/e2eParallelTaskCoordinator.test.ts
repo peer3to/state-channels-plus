@@ -228,6 +228,40 @@ describe("distributed task coordinator", function () {
         expect(coordinator.finish().failed).to.deep.equal([firstTask]);
     });
 
+    it("ignores a speculative copy cancelled after the task succeeds", function () {
+        const firstTask = task("cancelled copy");
+        const coordinator = new TaskCoordinator([firstTask], {
+            speculative: true
+        });
+        const original = coordinator.requestTask("a");
+        const copy = coordinator.requestTask("b");
+        coordinator.completeAttempt("a", {
+            attemptId: original.attemptId,
+            code: 0,
+            stdout: "passed",
+            stderr: ""
+        });
+
+        const completion = coordinator.completeAttempt("b", {
+            attemptId: copy.attemptId,
+            code: 1,
+            signal: "SIGTERM",
+            cancelled: true,
+            stdout: "",
+            stderr: "cancelled during run completion"
+        });
+
+        expect(completion).to.deep.include({
+            accepted: false,
+            reason: "redundant-attempt"
+        });
+        expect(coordinator.finish()).to.deep.include({
+            done: true,
+            completed: 1
+        });
+        expect(coordinator.finish().failed).to.be.empty;
+    });
+
     it("rejects stale, duplicate, and cross-worker results", function () {
         const coordinator = new TaskCoordinator([task("one")]);
         const assignment = coordinator.requestTask("a");

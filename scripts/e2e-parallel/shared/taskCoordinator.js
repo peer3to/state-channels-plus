@@ -306,6 +306,7 @@ class TaskCoordinator {
         if (attempt.reduced) validateReducedAttempt(attempt.reduced);
         this.sumDurationMs += attempt.durationMs || 0;
         if (
+            attempt.cancelled ||
             attempt.code === 0 ||
             attempt.infrastructureFailure ||
             this.failedTaskIds.has(assignment.taskId)
