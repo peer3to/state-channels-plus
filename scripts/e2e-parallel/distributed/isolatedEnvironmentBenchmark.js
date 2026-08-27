@@ -7,6 +7,7 @@ const path = require("path");
 const { performance } = require("perf_hooks");
 const { IsolatedEnvironmentManager } = require("./isolatedEnvironment");
 const { parseArgs } = require("./isolatedEnvironmentSelfCheck");
+const { DISTRIBUTED_PROTOCOL_VERSION } = require("./protocol");
 
 const profile = {
     schedulerTickMs: 1000,
@@ -39,6 +40,7 @@ async function measureRun(environment, manager, sentinel, label) {
         manifest: {
             version: 3,
             packageManager: "pnpm",
+            distributedProtocol: DISTRIBUTED_PROTOCOL_VERSION,
             workspaceId: "0".repeat(64),
             sourceDigest: "0".repeat(64),
             rootProjectPath: "project",

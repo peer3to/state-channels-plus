@@ -102,6 +102,16 @@ function resolveDistributedExecutionProfile(profile, slotCount) {
     return { ...profile, slots: 0 };
 }
 
+function resolveDistributedOrchestratorKeyPair(
+    stateDir,
+    environment = process.env
+) {
+    return loadOrchestratorKeyPair(
+        stateDir,
+        environment.SCP_TEST_ORCHESTRATOR_SEED
+    );
+}
+
 // Build the env every test child inherits (log level, thread modes, etc.).
 function buildBaseEnv(threadModes) {
     return {
@@ -324,7 +334,7 @@ async function main(options = {}) {
                     manifest,
                     logDir,
                     poolSecret,
-                    keyPair: loadOrchestratorKeyPair(
+                    keyPair: resolveDistributedOrchestratorKeyPair(
                         path.join(
                             process.cwd(),
                             "temp",
@@ -382,7 +392,8 @@ async function main(options = {}) {
                 logging.cleanupNonErrorLogs(
                     logDir,
                     cli.allowLogdirPurge,
-                    cli.keepInfraLogs
+                    cli.keepInfraLogs,
+                    stats.failed.length === 0
                 );
                 process.exitCode = stats.failed.length ? 1 : 0;
                 return;
@@ -442,7 +453,8 @@ async function main(options = {}) {
             logging.cleanupNonErrorLogs(
                 logDir,
                 cli.allowLogdirPurge,
-                cli.keepInfraLogs
+                cli.keepInfraLogs,
+                false
             );
             process.exitCode = 1;
             return;
@@ -450,7 +462,8 @@ async function main(options = {}) {
         logging.cleanupNonErrorLogs(
             logDir,
             cli.allowLogdirPurge,
-            cli.keepInfraLogs
+            cli.keepInfraLogs,
+            true
         );
     } finally {
         teardown();
@@ -470,6 +483,7 @@ module.exports = {
     discoveryFailureMessage,
     validateDiscoveryResults,
     resolveDistributedExecutionProfile,
+    resolveDistributedOrchestratorKeyPair,
     resolveSlotCount,
     main
 };
