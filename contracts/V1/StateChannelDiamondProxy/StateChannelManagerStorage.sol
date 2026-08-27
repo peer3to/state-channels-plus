@@ -6,12 +6,12 @@ import "../AStateMachine.sol";
 
 contract StateChannelManagerStorage {
     //Config shared across all instances of the state machine
-    uint256 public p2pTime;
-    uint256 public agreementTime;
-    uint256 public chainFallbackTime;
+    uint256 internal p2pTime;
+    uint256 internal agreementTime;
+    uint256 internal chainFallbackTime;
     // Time within more dispute can be submitted during the challenge period
-    uint256 public evidenceTime;
-    uint256 public gasLimit;
+    uint256 internal evidenceTime;
+    uint256 internal gasLimit;
 
     AStateMachine stateMachineImplementation;
 

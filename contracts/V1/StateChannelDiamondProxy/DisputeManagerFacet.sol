@@ -45,7 +45,7 @@ contract DisputeManagerFacet is StateChannelCommon {
         Dispute memory dispute = abi.decode(disputeConfirmation.signedDispute.encodedDispute, (Dispute));
         require(msg.sender == dispute.input.disputer, ErrorDisputerNotMsgSender(dispute.input.disputer, msg.sender));
         require(
-            canParticipateInDisputes(dispute.input.channelId, msg.sender),
+            _canParticipateInDisputes(dispute.input.channelId, msg.sender),
             ErrorCantParticipateInDispute(dispute.input.channelId, msg.sender)
         );
 
@@ -63,7 +63,7 @@ contract DisputeManagerFacet is StateChannelCommon {
             throttleExpiry == 0 || block.timestamp >= throttleExpiry,
             ErrorDisputeThrottled(msg.sender, throttleExpiry, block.timestamp)
         );
-        disputerThrottle[dispute.input.channelId][msg.sender] = block.timestamp + getEvidenceTime();
+        disputerThrottle[dispute.input.channelId][msg.sender] = block.timestamp + _getEvidenceTime();
 
         //check if dispute window is created/opened for the disputed fork, otherwise create/open it
         if (disputeWindow.evidence.creationTimestamp == 0) {
@@ -76,7 +76,7 @@ contract DisputeManagerFacet is StateChannelCommon {
             bool hasNoCommitments = disputeWindow.evidence.disputeCommitments.length == 0;
 
             require(
-                !_isEvidencePeriodExpired(disputeWindow, getEvidenceTime()) || hasNoCommitments,
+                !_isEvidencePeriodExpired(disputeWindow, _getEvidenceTime()) || hasNoCommitments,
                 RaceConditionDisputeEvidencePeriodExpired()
             );
 
@@ -90,8 +90,8 @@ contract DisputeManagerFacet is StateChannelCommon {
 
         if (isThresholdFinal) {
             //finalize the dispute window by making the evidence and kill period expire -> which sets the genesisTimestamp to the current block.timestamp
-            disputeWindow.evidence.creationTimestamp = block.timestamp - getEvidenceTime();
-            disputeWindow.evidence.lastEvidenceSubmissionTimestamp = block.timestamp - getEvidenceTime(); // this implicitly sets the genesisTimestamp
+            disputeWindow.evidence.creationTimestamp = block.timestamp - _getEvidenceTime();
+            disputeWindow.evidence.lastEvidenceSubmissionTimestamp = block.timestamp - _getEvidenceTime(); // this implicitly sets the genesisTimestamp
             //delete all previous commitments - free up storage (gas refund)
             delete disputeWindow.evidence.disputeCommitments;
             //The reduced result is this dispute output. Finalize it by making it expired.
@@ -99,7 +99,7 @@ contract DisputeManagerFacet is StateChannelCommon {
                 dispute.input.channelId,
                 disputeWindow,
                 dispute.outputSnapshotDataHash,
-                block.timestamp - getEvidenceTime()
+                block.timestamp - _getEvidenceTime()
             );
         }
         {
@@ -125,7 +125,7 @@ contract DisputeManagerFacet is StateChannelCommon {
         if (dispute.input.timeout.participant != address(0) && !dispute.input.timeout.isForced) {
             bytes32 forkId = _getDisputeFork(dispute);
             //check if participant posted calldata commitment
-            (bool found, bytes32 blockCalldataCommitment) = getBlockCallDataCommitment(
+            (bool found, bytes32 blockCalldataCommitment) = _getBlockCallDataCommitment(
                 dispute.input.channelId, forkId, dispute.input.timeout.blockHeight, dispute.input.timeout.participant
             );
             if (found) {
@@ -139,7 +139,7 @@ contract DisputeManagerFacet is StateChannelCommon {
 
             //check if previous block producer posted blockCalldata and if the expectation matches
             if (dispute.input.timeout.previousBlockProducer != address(0)) {
-                (found, blockCalldataCommitment) = getBlockCallDataCommitment(
+                (found, blockCalldataCommitment) = _getBlockCallDataCommitment(
                     dispute.input.channelId,
                     forkId,
                     dispute.input.timeout.blockHeight - 1,
@@ -174,7 +174,7 @@ contract DisputeManagerFacet is StateChannelCommon {
         returns (bool isFinal)
     {
         Dispute memory dispute = abi.decode(disputeConfirmation.signedDispute.encodedDispute, (Dispute));
-        address[] memory thresholdSet = getOnChainThresholdSet(dispute.input.channelId);
+        address[] memory thresholdSet = _getOnChainThresholdSet(dispute.input.channelId);
         if (thresholdSet.length == 0) {
             return false;
         }

@@ -20,14 +20,14 @@ contract StateSnapshotFacet is StateChannelCommon {
             ErrorInvalidStateSnapshot()
         );
         (bool hasGenesis, uint256 genesisTimestamp) =
-            getGenesisTimestamp(channelId, newStateSnapshot.snapshotData.originForkId, targetForkId);
+            _getGenesisTimestamp(channelId, newStateSnapshot.snapshotData.originForkId, targetForkId);
         require(hasGenesis && newStateSnapshot.timestamp == genesisTimestamp, ErrorInvalidStateSnapshot());
         mapping(bytes32 forkId => DisputeWindow) storage disputeWindowMap = disputeData.disputeWindowMap;
         DisputeWindow storage disputeWindow = disputeWindowMap[currentStateSnapshot.forkId];
         bool updated = false;
         while (
             disputeWindow.reducedResult.forkId != bytes32(0)
-                && _isReduceChallengePeriodExpired(disputeWindow, getEvidenceTime())
+                && _isReduceChallengePeriodExpired(disputeWindow, _getEvidenceTime())
         ) {
             if (disputeWindow.reducedResult.forkId == targetForkId) {
                 _updateStateSnapshot(channelId, currentStateSnapshot, newStateSnapshot, outboundMessageBlocks, false);

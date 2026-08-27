@@ -11,8 +11,8 @@ import "./utils/BlockUtils.sol";
 import "./UtilityFacet.sol";
 
 contract StateChannelCommon is StateChannelManagerStorage, StateChannelManagerEvents {
-    function getOnChainSlashedParticipantsUpToTimestamp(bytes32 channelId, uint256 timestamp)
-        public
+    function _getOnChainSlashedParticipantsUpToTimestamp(bytes32 channelId, uint256 timestamp)
+        internal
         view
         virtual
         returns (address[] memory)
@@ -30,7 +30,7 @@ contract StateChannelCommon is StateChannelManagerStorage, StateChannelManagerEv
         return _shrinkAddressArray(slashedParticipants, actualCount);
     }
 
-    function getOnChainSlashedParticipants(bytes32 channelId) public view virtual returns (address[] memory) {
+    function _getOnChainSlashedParticipants(bytes32 channelId) internal view virtual returns (address[] memory) {
         address[] memory slashedParticipants = new address[](disputeData[channelId].onChainSlashes.length);
         for (uint256 i = 0; i < disputeData[channelId].onChainSlashes.length; i++) {
             slashedParticipants[i] = disputeData[channelId].onChainSlashes[i].participant;
@@ -38,8 +38,13 @@ contract StateChannelCommon is StateChannelManagerStorage, StateChannelManagerEv
         return slashedParticipants;
     }
 
-    function isParticipantSlashedOnChain(bytes32 channelId, address participant) public view virtual returns (bool) {
-        address[] memory slashedParticipants = getOnChainSlashedParticipants(channelId);
+    function _isParticipantSlashedOnChain(bytes32 channelId, address participant)
+        internal
+        view
+        virtual
+        returns (bool)
+    {
+        address[] memory slashedParticipants = _getOnChainSlashedParticipants(channelId);
         for (uint256 i = 0; i < slashedParticipants.length; i++) {
             if (slashedParticipants[i] == participant) {
                 return true;
@@ -49,25 +54,26 @@ contract StateChannelCommon is StateChannelManagerStorage, StateChannelManagerEv
     }
 
     function addOnChainSlashedParticipant(bytes32 channelId, address slashedParticipant) internal virtual {
-        if (isParticipantSlashedOnChain(channelId, slashedParticipant)) {
+        if (_isParticipantSlashedOnChain(channelId, slashedParticipant)) {
             return; //already slashed
         }
         disputeData[channelId].onChainSlashes.push(OnChainSlash(slashedParticipant, block.timestamp));
         emit ChainSlashed(channelId, slashedParticipant, block.timestamp);
     }
 
-    function getOnChainThresholdSet(bytes32 channelId) public view virtual returns (address[] memory) {
+    function _getOnChainThresholdSet(bytes32 channelId) internal view virtual returns (address[] memory) {
         return UtilityFacet(utilityFacetAddress).subtractAddressArrays(
             UtilityFacet(utilityFacetAddress).concatAddressArraysNoDuplicates(
-                getSnapshotParticipants(channelId), getPendingParticipants(channelId)
+                _getSnapshotParticipants(channelId), _getPendingParticipants(channelId)
             ),
-            getOnChainSlashedParticipants(channelId)
+            _getOnChainSlashedParticipants(channelId)
         );
     }
 
-    function getGenesisTimestamp(bytes32 channelId, bytes32 originForkId, bytes32 forkId)
-        public
+    function _getGenesisTimestamp(bytes32 channelId, bytes32 originForkId, bytes32 forkId)
+        internal
         view
+        virtual
         returns (bool isAvailable, uint256 timestamp)
     {
         DisputeData storage _disputeData = disputeData[channelId];
@@ -82,7 +88,7 @@ contract StateChannelCommon is StateChannelManagerStorage, StateChannelManagerEv
             }
             return (false, 0);
         }
-        (bool isExpired, uint256 killPeriodEnd) = _isKillPeriodExpired(disputeWindow, getEvidenceTime());
+        (bool isExpired, uint256 killPeriodEnd) = _isKillPeriodExpired(disputeWindow, _getEvidenceTime());
         uint256 genesisTimestap = killPeriodEnd;
         if (!isExpired) {
             return (false, genesisTimestap);
@@ -102,11 +108,11 @@ contract StateChannelCommon is StateChannelManagerStorage, StateChannelManagerEv
         return (true, genesisTimestap);
     }
 
-    function getSnapshotParticipants(bytes32 channelId) public view virtual returns (address[] memory) {
+    function _getSnapshotParticipants(bytes32 channelId) internal view virtual returns (address[] memory) {
         return stateSnapshots[channelId].snapshotData.participants;
     }
 
-    function getPendingParticipants(bytes32 channelId) public view virtual returns (address[] memory) {
+    function _getPendingParticipants(bytes32 channelId) internal view virtual returns (address[] memory) {
         address[] memory pendingParticipants = _derivePendingParticipantsFromInboundHash(
             channelId, channelBalances[channelId].latestInboundMessageBlockHash, bytes32(0)
         );
@@ -148,7 +154,7 @@ contract StateChannelCommon is StateChannelManagerStorage, StateChannelManagerEv
         view
         returns (address[] memory eligibleParticipants)
     {
-        address[] memory snapshotParticipants = getSnapshotParticipants(channelId);
+        address[] memory snapshotParticipants = _getSnapshotParticipants(channelId);
         return _deriveEligibleParticipantsFromInboundHashAndSnapshotParticipants(
             channelId, latestInboundMessageBlockHash, snapshotParticipants
         );
@@ -165,46 +171,46 @@ contract StateChannelCommon is StateChannelManagerStorage, StateChannelManagerEv
         address[] memory participants =
             UtilityFacet(utilityFacetAddress).concatAddressArraysNoDuplicates(snapshotParticipants, pendingParticipants);
         eligibleParticipants = UtilityFacet(utilityFacetAddress).subtractAddressArrays(
-            participants, getOnChainSlashedParticipants(channelId)
+            participants, _getOnChainSlashedParticipants(channelId)
         );
         return eligibleParticipants;
     }
 
-    function getStateSnapshot(bytes32 channelId) public view virtual returns (StateSnapshot memory) {
+    function _getStateSnapshot(bytes32 channelId) internal view virtual returns (StateSnapshot memory) {
         return stateSnapshots[channelId];
     }
 
-    function getChannelBalance(bytes32 channelId) public view virtual returns (ChannelBalance memory) {
+    function _getChannelBalance(bytes32 channelId) internal view virtual returns (ChannelBalance memory) {
         return channelBalances[channelId];
     }
 
-    function getStateMachineParticipants(bytes memory encodedState) public virtual returns (address[] memory) {
+    function _getStateMachineParticipants(bytes memory encodedState) internal virtual returns (address[] memory) {
         // setState fails
         stateMachineImplementation.setState(encodedState);
         return stateMachineImplementation.getParticipants();
     }
 
-    function getP2pTime() public view virtual returns (uint256) {
+    function _getP2pTime() internal view virtual returns (uint256) {
         return p2pTime;
     }
 
-    function getAgreementTime() public view virtual returns (uint256) {
+    function _getAgreementTime() internal view virtual returns (uint256) {
         return agreementTime;
     }
 
-    function getChainFallbackTime() public view virtual returns (uint256) {
+    function _getChainFallbackTime() internal view virtual returns (uint256) {
         return chainFallbackTime;
     }
 
-    function getEvidenceTime() public view virtual returns (uint256) {
+    function _getEvidenceTime() internal view virtual returns (uint256) {
         return evidenceTime;
     }
 
-    function getGasLimit() public view virtual returns (uint256) {
+    function _getGasLimit() internal view virtual returns (uint256) {
         return gasLimit;
     }
 
-    function getAllTimes() public view virtual returns (uint256, uint256, uint256, uint256) {
+    function _getAllTimes() internal view virtual returns (uint256, uint256, uint256, uint256) {
         return (p2pTime, agreementTime, chainFallbackTime, evidenceTime);
     }
 
@@ -270,13 +276,18 @@ contract StateChannelCommon is StateChannelManagerStorage, StateChannelManagerEv
         return inboundBlock.totalBalance;
     }
 
-    function hasInboundMessageBlock(bytes32 channelId, bytes32 messageBlockHash) public view virtual returns (bool) {
+    function _hasInboundMessageBlock(bytes32 channelId, bytes32 messageBlockHash)
+        internal
+        view
+        virtual
+        returns (bool)
+    {
         MessageBlock storage storedBlock = inboundMessageBlockMap[channelId][messageBlockHash];
         return storedBlock.timestamp != 0 || storedBlock.messages.length != 0;
     }
 
-    function getBlockCallDataCommitment(bytes32 channelId, bytes32 forkId, uint256 blockHeight, address participant)
-        public
+    function _getBlockCallDataCommitment(bytes32 channelId, bytes32 forkId, uint256 blockHeight, address participant)
+        internal
         view
         virtual
         returns (bool found, bytes32 blockCalldataCommitment)
@@ -289,7 +300,7 @@ contract StateChannelCommon is StateChannelManagerStorage, StateChannelManagerEv
         return (true, commitment);
     }
 
-    function isBlockAuthentic(SignedBlock memory _block) public view virtual returns (bool) {
+    function _isBlockAuthentic(SignedBlock memory _block) internal view virtual returns (bool) {
         (bool decoded, Block memory decodedBlock) =
             UtilityFacet(utilityFacetAddress).tryDecodeBlock(_block.encodedBlock);
         if (!decoded) return false;
@@ -333,7 +344,7 @@ contract StateChannelCommon is StateChannelManagerStorage, StateChannelManagerEv
         MessageBlock[] memory outboundMessageBlocks,
         SnapshotData memory lowerSnapshot,
         SnapshotData memory upperSnapshot
-    ) public view returns (bool) {
+    ) internal view virtual returns (bool) {
         bytes32 previousBlockHash = lowerSnapshot.latestOutboundMessageBlockHash;
         Balance memory totalOutbound = lowerSnapshot.totalWithdrawals;
         uint256 expectedHeight = lowerSnapshot.latestOutboundMessageBlockHeight;
@@ -513,9 +524,9 @@ contract StateChannelCommon is StateChannelManagerStorage, StateChannelManagerEv
     // !!!!!!!!!
     /// @dev Callable only by diamond facets - applies the join to the given state of the state machine and returns the modified state
 
-    function applyJoinChannelToStateMachine(bytes memory encodedState, JoinChannel[] memory joinChannels)
-        public
-        onlySelf
+    function _applyJoinChannelToStateMachine(bytes memory encodedState, JoinChannel[] memory joinChannels)
+        internal
+        virtual
         returns (bytes memory encodedModifiedState)
     {
         stateMachineImplementation.setState(encodedState);
@@ -541,7 +552,7 @@ contract StateChannelCommon is StateChannelManagerStorage, StateChannelManagerEv
         return false;
     }
 
-    function canParticipateInDisputes(bytes32 channelId, address participant) public view returns (bool) {
+    function _canParticipateInDisputes(bytes32 channelId, address participant) internal view virtual returns (bool) {
         address[] memory eligibleParticipants = _deriveEligibleParticipantsFromInboundHash(
             channelId, channelBalances[channelId].latestInboundMessageBlockHash
         );
@@ -583,7 +594,7 @@ contract StateChannelCommon is StateChannelManagerStorage, StateChannelManagerEv
         bytes32 reducedForkId,
         uint256 reductionTimestamp
     ) internal {
-        (bool isExpired,) = _isKillPeriodExpired(disputeWindow, getEvidenceTime());
+        (bool isExpired,) = _isKillPeriodExpired(disputeWindow, _getEvidenceTime());
         require(isExpired, RaceConditionDisputeKillPeriodNotExpired());
         require(disputeWindow.reducedResult.forkId == bytes32(0), RaceConditionDisputeAlreadyReduced());
         disputeWindow.reducedResult.forkId = reducedForkId;

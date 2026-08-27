@@ -43,7 +43,7 @@ contract JoinChannelFacet is StateChannelCommon {
 
         // Check deadline
         require(jc.deadlineTimestamp >= block.timestamp, RaceConditionJoinChannelExpired());
-        StateSnapshot memory currentSnapshot = getStateSnapshot(channelId);
+        StateSnapshot memory currentSnapshot = _getStateSnapshot(channelId);
         require(
             expectedForkId == currentSnapshot.forkId,
             RaceConditionSnapshotForkMismatch(currentSnapshot.forkId, expectedForkId)
@@ -53,13 +53,13 @@ contract JoinChannelFacet is StateChannelCommon {
         );
 
         address[] memory participantUnion = UtilityFacet(utilityFacetAddress)
-            .concatAddressArraysNoDuplicates(getSnapshotParticipants(channelId), getPendingParticipants(channelId));
+            .concatAddressArraysNoDuplicates(_getSnapshotParticipants(channelId), _getPendingParticipants(channelId));
         bool isExistingParticipant =
             UtilityFacet(utilityFacetAddress).isAddressInArray(participantUnion, jc.participant);
         if (isTopUp) {
             require(isExistingParticipant, ErrorTopUpBalanceParticipantNotFound());
             require(
-                !isParticipantSlashedOnChain(channelId, jc.participant),
+                !_isParticipantSlashedOnChain(channelId, jc.participant),
                 ErrorTopUpBalanceParticipantSlashed(jc.participant)
             );
         } else {
@@ -76,7 +76,7 @@ contract JoinChannelFacet is StateChannelCommon {
         require(jc.participant == retrievedAddress && isValidSignature, ErrorJoinChannelInvalidSignature());
 
         // Check threshold from the current eligibility set
-        address[] memory thresholdParticipants = getOnChainThresholdSet(channelId);
+        address[] memory thresholdParticipants = _getOnChainThresholdSet(channelId);
         (bool isValid,) = UtilityFacet(utilityFacetAddress)
             .verifyThresholdSigned(thresholdParticipants, sjc.encodedJoinChannel, joinChannelConfirmation.signatures);
         require(isValid, ErrorJoinChannelInvalidSignature());

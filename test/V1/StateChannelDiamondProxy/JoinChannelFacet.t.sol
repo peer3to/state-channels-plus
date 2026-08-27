@@ -52,6 +52,15 @@ contract JoinChannelFacetHarness is JoinChannelFacet {
         successfulJoins = joinChannels;
         return (messageBlock, newTotalDeposits, successfulJoins);
     }
+
+    /// Exposes the internal snapshot reads so the facet's storage effects can be asserted directly.
+    function getStateSnapshot(bytes32 channelId) external view returns (StateSnapshot memory) {
+        return _getStateSnapshot(channelId);
+    }
+
+    function getOnChainThresholdSet(bytes32 channelId) external view returns (address[] memory) {
+        return _getOnChainThresholdSet(channelId);
+    }
 }
 
 // test naming: test_<targetFunction>_<property>

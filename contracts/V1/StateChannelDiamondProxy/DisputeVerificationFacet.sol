@@ -21,8 +21,8 @@ contract DisputeVerificationFacet is StateChannelCommon {
         );
 
         bytes32 stateMachineStateHash = keccak256(disputeOutputState.encodedModifiedState);
-        // getStateMachineParticipants fails
-        address[] memory participants = getStateMachineParticipants(disputeOutputState.encodedModifiedState);
+        // _getStateMachineParticipants fails
+        address[] memory participants = _getStateMachineParticipants(disputeOutputState.encodedModifiedState);
         Balance memory totalDeposits = disputeOutputState.totalDeposits;
         Balance memory totalWithdrawals = disputeOutputState.totalWithdrawals;
         bytes32 latestOutboundBlockHash = latestStateSnapshot.snapshotData.latestOutboundMessageBlockHash;
@@ -69,14 +69,14 @@ contract DisputeVerificationFacet is StateChannelCommon {
         DisputeData storage disputeData = disputeData[disputes[0].input.channelId];
         DisputeWindow storage disputeWindow = disputeData.disputeWindowMap[disputes[0].input.forkId];
         uint256 disputeWindowExpirationTimestamp =
-            disputeWindow.evidence.lastEvidenceSubmissionTimestamp + getEvidenceTime();
+            disputeWindow.evidence.lastEvidenceSubmissionTimestamp + _getEvidenceTime();
         SnapshotData storage snapshotData = stateSnapshots[disputes[0].input.channelId].snapshotData;
         for (uint256 i = 0; i < disputes.length; i++) {
             Dispute memory dispute = disputes[i];
 
             // ***** setup / first run *****
             if (maxSlashCount == 0) {
-                address[] memory pendingParticipants = getPendingParticipants(dispute.input.channelId);
+                address[] memory pendingParticipants = _getPendingParticipants(dispute.input.channelId);
                 address[] memory snapshotParticipants = snapshotData.participants;
                 maxSlashCount = snapshotParticipants.length + pendingParticipants.length;
                 slashParticipants = new address[](maxSlashCount);
@@ -186,14 +186,14 @@ contract DisputeVerificationFacet is StateChannelCommon {
         require(disputes.length > 0, ErrorNoDisputesProvided());
         bytes32 channelId = disputes[0].input.channelId;
         bytes32 forkId = disputes[0].input.forkId;
-        require(canParticipateInDisputes(channelId, msg.sender), ErrorCantParticipateInDispute(channelId, msg.sender));
+        require(_canParticipateInDisputes(channelId, msg.sender), ErrorCantParticipateInDispute(channelId, msg.sender));
         DisputeData storage disputeData = disputeData[channelId];
         DisputeWindow storage disputeWindow = disputeData.disputeWindowMap[disputes[0].input.forkId];
         //require all disputes are part of commitment
         require(areDisputesCommitted(disputeWindow, disputes), ErrorDisputeCommitmentNotAvailable());
         //require reduce challenge period is not expired - this also assures it's committed
         require(
-            !_isReduceChallengePeriodExpired(disputeWindow, getEvidenceTime()), ErrorDisputeChallengePeriodExpired()
+            !_isReduceChallengePeriodExpired(disputeWindow, _getEvidenceTime()), ErrorDisputeChallengePeriodExpired()
         );
 
         ReduceOutput memory reducedOutput = reduce(disputes);
@@ -206,7 +206,7 @@ contract DisputeVerificationFacet is StateChannelCommon {
         if (winningForkId != disputeWindow.reducedResult.forkId) {
             addOnChainSlashedParticipant(channelId, disputeWindow.reducedResult.reducer);
             disputeWindow.reducedResult.forkId = bytes32(0); // unset
-            _commitToDisputeReducedResult(channelId, disputeWindow, winningForkId, block.timestamp - getEvidenceTime());
+            _commitToDisputeReducedResult(channelId, disputeWindow, winningForkId, block.timestamp - _getEvidenceTime());
         } else {
             addOnChainSlashedParticipant(channelId, msg.sender);
         }
@@ -246,7 +246,7 @@ contract DisputeVerificationFacet is StateChannelCommon {
             return;
         }
 
-        // require(canParticipateInDisputes(channelId, msg.sender), ErrorCantParticipateInDispute());
+        // require(_canParticipateInDisputes(channelId, msg.sender), ErrorCantParticipateInDispute());
         // require that provided disputes correspond to committed set
         require(areDisputesCommitted(disputeWindow, disputes), ErrorDisputeCommitmentNotAvailable());
 
@@ -265,7 +265,7 @@ contract DisputeVerificationFacet is StateChannelCommon {
         );
 
         // commit reduced result (enforces kill period expiration inside)
-        _commitToDisputeReducedResult(channelId, disputeWindow, winningForkId, block.timestamp - getEvidenceTime());
+        _commitToDisputeReducedResult(channelId, disputeWindow, winningForkId, block.timestamp - _getEvidenceTime());
     }
 
     function killDispute(Dispute memory dispute) public {
@@ -339,7 +339,7 @@ contract DisputeVerificationFacet is StateChannelCommon {
             SnapshotData({
                 originForkId: forkId,
                 stateMachineStateHash: keccak256(outputState.encodedModifiedState),
-                participants: getStateMachineParticipants(outputState.encodedModifiedState),
+                participants: _getStateMachineParticipants(outputState.encodedModifiedState),
                 latestInboundMessageBlockHash: reducedOutput.latestInboundMessageBlockHash, // Verified in _verifyInboundMessageBlocks
                 latestInboundMessageBlockHeight: reducedOutput.latestInboundMessageBlockHeight,
                 latestOutboundMessageBlockHash: nextOutboundMessageBlockHash,
@@ -499,7 +499,7 @@ contract DisputeVerificationFacet is StateChannelCommon {
         DisputeWindow storage disputeWindow = disputeData.disputeWindowMap[forkId];
 
         // require that the dispute window exists and is not expired
-        (bool isExpired,) = _isKillPeriodExpired(disputeWindow, getEvidenceTime());
+        (bool isExpired,) = _isKillPeriodExpired(disputeWindow, _getEvidenceTime());
         require(!isExpired, RaceConditionDisputeKillPeriodExpired());
         bytes32 commitment = keccak256(abi.encode(dispute));
         bool isFound = false;

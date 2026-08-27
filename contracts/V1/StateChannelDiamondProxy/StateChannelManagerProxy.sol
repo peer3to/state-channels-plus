@@ -395,65 +395,98 @@ contract StateChannelManagerProxy is StateChannelManagerInterface, StateChannelC
         override(StateChannelManagerInterface)
         returns (address[] memory)
     {
-        return getSnapshotParticipants(channelId);
+        return _getSnapshotParticipants(channelId);
     }
 
-    function getP2pTime() public view override(StateChannelCommon, StateChannelManagerInterface) returns (uint256) {
-        return StateChannelCommon.getP2pTime();
+    function getP2pTime() public view override(StateChannelManagerInterface) returns (uint256) {
+        return _getP2pTime();
     }
 
-    function getAgreementTime()
-        public
-        view
-        override(StateChannelCommon, StateChannelManagerInterface)
-        returns (uint256)
-    {
-        return StateChannelCommon.getAgreementTime();
+    function getAgreementTime() public view override(StateChannelManagerInterface) returns (uint256) {
+        return _getAgreementTime();
     }
 
-    function getChainFallbackTime()
-        public
-        view
-        override(StateChannelCommon, StateChannelManagerInterface)
-        returns (uint256)
-    {
-        return StateChannelCommon.getChainFallbackTime();
+    function getChainFallbackTime() public view override(StateChannelManagerInterface) returns (uint256) {
+        return _getChainFallbackTime();
     }
 
-    function getEvidenceTime()
-        public
-        view
-        override(StateChannelCommon, StateChannelManagerInterface)
-        returns (uint256)
-    {
-        return StateChannelCommon.getEvidenceTime();
+    function getEvidenceTime() public view override(StateChannelManagerInterface) returns (uint256) {
+        return _getEvidenceTime();
+    }
+
+    function getGasLimit() public view returns (uint256) {
+        return _getGasLimit();
     }
 
     function getAllTimes()
         public
         view
-        override(StateChannelCommon, StateChannelManagerInterface)
+        override(StateChannelManagerInterface)
         returns (uint256, uint256, uint256, uint256)
     {
-        return StateChannelCommon.getAllTimes();
+        return _getAllTimes();
     }
 
     function getBlockCallDataCommitment(bytes32 channelId, bytes32 forkId, uint256 blockHeight, address participant)
         public
         view
-        override(StateChannelCommon, StateChannelManagerInterface)
+        override(StateChannelManagerInterface)
         returns (bool found, bytes32 blockCalldataCommitment)
     {
-        return StateChannelCommon.getBlockCallDataCommitment(channelId, forkId, blockHeight, participant);
+        return _getBlockCallDataCommitment(channelId, forkId, blockHeight, participant);
     }
 
     function hasInboundMessageBlock(bytes32 channelId, bytes32 messageBlockHash)
         public
         view
-        override(StateChannelCommon, StateChannelManagerInterface)
+        override(StateChannelManagerInterface)
         returns (bool)
     {
-        return StateChannelCommon.hasInboundMessageBlock(channelId, messageBlockHash);
+        return _hasInboundMessageBlock(channelId, messageBlockHash);
+    }
+
+    function getOnChainSlashedParticipantsUpToTimestamp(bytes32 channelId, uint256 timestamp)
+        public
+        view
+        returns (address[] memory)
+    {
+        return _getOnChainSlashedParticipantsUpToTimestamp(channelId, timestamp);
+    }
+
+    function getOnChainSlashedParticipants(bytes32 channelId) public view returns (address[] memory) {
+        return _getOnChainSlashedParticipants(channelId);
+    }
+
+    function isParticipantSlashedOnChain(bytes32 channelId, address participant) public view returns (bool) {
+        return _isParticipantSlashedOnChain(channelId, participant);
+    }
+
+    function getOnChainThresholdSet(bytes32 channelId) public view returns (address[] memory) {
+        return _getOnChainThresholdSet(channelId);
+    }
+
+    function getSnapshotParticipants(bytes32 channelId) public view returns (address[] memory) {
+        return _getSnapshotParticipants(channelId);
+    }
+
+    function getPendingParticipants(bytes32 channelId) public view returns (address[] memory) {
+        return _getPendingParticipants(channelId);
+    }
+
+    function getStateSnapshot(bytes32 channelId) public view returns (StateSnapshot memory) {
+        return _getStateSnapshot(channelId);
+    }
+
+    function getChannelBalance(bytes32 channelId) public view returns (ChannelBalance memory) {
+        return _getChannelBalance(channelId);
+    }
+
+    function isBlockAuthentic(SignedBlock memory _block) public view returns (bool) {
+        return _isBlockAuthentic(_block);
+    }
+
+    function canParticipateInDisputes(bytes32 channelId, address participant) public view returns (bool) {
+        return _canParticipateInDisputes(channelId, participant);
     }
 
     function verifyStateProof(Dispute memory dispute, DisputeAuditingData memory disputeAuditingData)
@@ -668,14 +701,14 @@ contract StateChannelManagerProxy is StateChannelManagerInterface, StateChannelC
         DisputeData storage _disputeData = disputeData[channelId];
         DisputeWindow storage disputeWindow = _disputeData.disputeWindowMap[forkId];
         windowExists = _isDisputeWidnowCreated(disputeWindow);
-        (isExpired, killPeriodEnd) = _isKillPeriodExpired(disputeWindow, getEvidenceTime());
+        (isExpired, killPeriodEnd) = _isKillPeriodExpired(disputeWindow, _getEvidenceTime());
         return (windowExists, isExpired, killPeriodEnd, block.timestamp);
     }
 
     function isReduceChallengePeriodExpired(bytes32 channelId, bytes32 forkId) public view returns (bool) {
         DisputeData storage _disputeData = disputeData[channelId];
         DisputeWindow storage disputeWindow = _disputeData.disputeWindowMap[forkId];
-        return _isReduceChallengePeriodExpired(disputeWindow, getEvidenceTime());
+        return _isReduceChallengePeriodExpired(disputeWindow, _getEvidenceTime());
     }
 
     function getDisputeWindows(bytes32 channelId, bytes32[] memory forkIds)

@@ -49,7 +49,7 @@ contract DisputeExpiryGuardHarness is DisputeFraudProofFacet, DisputeVerificatio
     {
         DisputeWindow storage window = disputeData[channelId].disputeWindowMap[forkId];
         windowExists = window.evidence.creationTimestamp != 0;
-        (isExpired,) = _isKillPeriodExpired(window, getEvidenceTime());
+        (isExpired,) = _isKillPeriodExpired(window, _getEvidenceTime());
     }
 
     function commitmentCount(bytes32 channelId, bytes32 forkId) external view returns (uint256) {
@@ -62,6 +62,15 @@ contract DisputeExpiryGuardHarness is DisputeFraudProofFacet, DisputeVerificatio
         returns (address)
     {
         return _handleDisputeBlockAuthorNotParticipant(encodedProof, dispute);
+    }
+
+    /// Exposes the internal slash-window read so the shrink behaviour can be asserted directly.
+    function getOnChainSlashedParticipantsUpToTimestamp(bytes32 channelId, uint256 timestamp)
+        external
+        view
+        returns (address[] memory)
+    {
+        return _getOnChainSlashedParticipantsUpToTimestamp(channelId, timestamp);
     }
 }
 

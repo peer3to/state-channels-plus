@@ -212,11 +212,15 @@ methods }`. Never interleave a field declaration between methods. When adding a
   `StateChannelManagerProxy` forwarder + a `StateChannelManagerInterface` decl;
   TS calls `stateChannelManagerContract.<fn>.staticCall(...)`, other facets
   `delegatecall` the facet address (see `isCorrectLatestState`,
-  `areSignedBlocksLinkedAndVerified`). Broadly-shared primitive → `public` on
-  `StateChannelCommon` (`isBlockAuthentic`).
-- **Never put domain logic `public` on `StateChannelCommon`:** a `public` base fn
-  is in every facet's ABI → compiled into all of them. `internal` is
-  dead-code-eliminated to its callers.
+  `areSignedBlocksLinkedAndVerified`). Broadly-shared primitive → `internal`
+  `_`-prefixed on `StateChannelCommon` (`_isBlockAuthentic`), plus a thin
+  `public` wrapper on `StateChannelManagerProxy` when TS or a test needs to call
+  it (`isBlockAuthentic`). Keep the internal `virtual` so `LocalDiamond` can
+  override it and the proxy wrapper still dispatches to the override.
+- **Never put anything `public` on `StateChannelCommon`:** a `public` base fn (or
+  `public` state var) is in every facet's ABI → its body and dispatcher entry are
+  compiled into all of them, and external callers only ever reach the deployed
+  `StateChannelManagerProxy`. `internal` is dead-code-eliminated to its callers.
 
 ### Platform-specific code (node / browser)
 
