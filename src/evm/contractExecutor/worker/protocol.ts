@@ -1,5 +1,6 @@
 import type { ContractExecutionResult } from "../AContractExecutor";
 import type { Config } from "@/utils/config";
+import type { LogControlMessage } from "@/utils/logging/logControl";
 
 export type WorkerCustomPrecompile = {
     address: string;
@@ -67,4 +68,15 @@ export type WorkerResponseMessage =
     | WorkerSuccessResponseMessage
     | WorkerErrorResponseMessage;
 
-export type WorkerHostMessage = WorkerResponseMessage;
+/** log-control message riding the executor port either way. no requestId, never
+ *  answered by the dispatcher. */
+export type WorkerLogControlMessage = {
+    type: "logControl";
+    message: LogControlMessage;
+};
+
+export type WorkerHostMessage = WorkerResponseMessage | WorkerLogControlMessage;
+
+export type WorkerClientMessage =
+    | WorkerRequestMessage
+    | WorkerLogControlMessage;
