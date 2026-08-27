@@ -9,6 +9,17 @@ const express = require("express");
 const cors = require("cors");
 const fs = require("fs").promises;
 const path = require("path");
+const {
+    chunkFileName,
+    parseChunkFileName,
+    isSafeSeq,
+    decodeChunk,
+    encodeChunk,
+    mergeChunks
+} = require("./logChunks");
+
+// bounds what merge-on-read has to inflate; the client store is 10 MB raw
+const MAX_CHUNK_BASE64_BYTES = 8 * 1024 * 1024;
 
 const PORT = process.env.CRASH_LOG_SERVER_PORT || 3001;
 const LOG_DIR =
@@ -41,9 +52,13 @@ function parseIntArg(argv, name) {
     return Number.isFinite(n) ? Math.trunc(n) : 0;
 }
 
-// CLI: --channelDirMaxAgeMs=300000 (default: 5 minutes)
+// CLI: --age <minutes> (default: 5 minutes). `?? ` after the multiply would
+// see 0, not null, and rotate on every upload.
+const CHANNEL_DIR_MAX_AGE_MINUTES = parseIntArg(process.argv, "--age");
 const CHANNEL_DIR_MAX_AGE_MS =
-    parseIntArg(process.argv, "--age") * 60 * 1000 ?? 5 * 60 * 1000;
+    CHANNEL_DIR_MAX_AGE_MINUTES == null
+        ? 5 * 60 * 1000
+        : CHANNEL_DIR_MAX_AGE_MINUTES * 60 * 1000;
 
 function formatTimestamp() {
     const now = new Date();
@@ -91,7 +106,29 @@ async function listChannelDirs() {
     return entries.filter((d) => d.isDirectory()).map((d) => d.name);
 }
 
+const channelDirLocks = new Map();
+
+/**
+ * serialized per channel: a round fires peers x realms uploads at once, and two
+ * that both decide to rotate would race - the second rename ENOENTs and that
+ * realm's chunk is lost for the round.
+ */
 async function resolveChannelDir(channelId, options = {}) {
+    const key = sanitizeSegment(channelId);
+    const previous = channelDirLocks.get(key) ?? Promise.resolve();
+    const run = previous
+        .catch(() => undefined)
+        .then(() => resolveChannelDirFor(channelId, options));
+    const tail = run.catch(() => undefined);
+    channelDirLocks.set(key, tail);
+    try {
+        return await run;
+    } finally {
+        if (channelDirLocks.get(key) === tail) channelDirLocks.delete(key);
+    }
+}
+
+async function resolveChannelDirFor(channelId, options = {}) {
     // channelId is attacker-controlled and used to build on-disk paths; sanitize
     // it (same as peer segments) so it can't escape LOG_DIR via traversal.
     // Both the write (POST) and read (GET) paths go through here, so the
@@ -188,6 +225,154 @@ function sanitizeSegment(value) {
     return String(value).replace(/[^0-9a-zA-Z_-]/g, "_");
 }
 
+/** upload fields become path segments and chunk names. a bare typeof check lets
+ *  NaN, 2.5 and 1e300 through -> names that break merge order. */
+// the client always sends Bearer <token>; check it when one is configured so
+// the header is not a check that does not exist
+function isAuthorized(req) {
+    const expected = process.env.CRASH_LOG_API_TOKEN;
+    if (!expected) return true;
+    return req.headers.authorization === `Bearer ${expected}`;
+}
+
+function validateUploadBody(body) {
+    const {
+        channelId,
+        peerAddress,
+        threadName,
+        storeId,
+        compressedLogs,
+        fromSeq,
+        toSeq
+    } = body || {};
+
+    if (
+        !channelId ||
+        !peerAddress ||
+        !threadName ||
+        !storeId ||
+        !compressedLogs
+    ) {
+        return {
+            ok: false,
+            status: 400,
+            error: "Incorrect request data"
+        };
+    }
+
+    if (!isSafeSeq(fromSeq) || !isSafeSeq(toSeq) || toSeq < fromSeq) {
+        return {
+            ok: false,
+            status: 400,
+            error: "Invalid sequence range"
+        };
+    }
+
+    if (
+        Buffer.byteLength(String(compressedLogs), "utf8") >
+        MAX_CHUNK_BASE64_BYTES
+    ) {
+        return {
+            ok: false,
+            status: 413,
+            error: "Payload too large"
+        };
+    }
+
+    let entryCount;
+    try {
+        entryCount = decodeChunk(compressedLogs).length;
+    } catch (err) {
+        return {
+            ok: false,
+            status: 400,
+            error: `Undecodable chunk: ${String(err && err.message)}`
+        };
+    }
+
+    if (entryCount !== toSeq - fromSeq + 1) {
+        return {
+            ok: false,
+            status: 400,
+            error: `Chunk holds ${entryCount} entries but declares ${toSeq - fromSeq + 1}`
+        };
+    }
+
+    return { ok: true };
+}
+
+async function readThreadChunks(peerDir, threadName) {
+    const threadDir = path.join(peerDir, sanitizeSegment(threadName));
+    let storeDirs;
+    try {
+        storeDirs = await fs.readdir(threadDir, { withFileTypes: true });
+    } catch {
+        return [];
+    }
+
+    const chunks = [];
+    // newest store first: the merge budget stops partway through a very large
+    // read, and dropping the oldest run is far less surprising than the newest.
+    // a store id is random, so its name says nothing about age - stat for it.
+    const stores = await Promise.all(
+        storeDirs
+            .filter((e) => e.isDirectory())
+            .map(async (e) => {
+                const full = path.join(threadDir, e.name);
+                let mtimeMs = 0;
+                try {
+                    mtimeMs = (await fs.stat(full)).mtimeMs;
+                } catch {
+                    // gone between readdir and stat -> sorts oldest
+                }
+                return { name: e.name, full, mtimeMs };
+            })
+    );
+    stores.sort(
+        (a, b) => b.mtimeMs - a.mtimeMs || b.name.localeCompare(a.name)
+    );
+    for (const storeDir of stores) {
+        const storeId = storeDir.name;
+        const full = storeDir.full;
+        const names = await fs.readdir(full);
+        for (const name of names.slice().sort()) {
+            const range = parseChunkFileName(name);
+            if (!range) continue;
+            chunks.push({
+                storeId,
+                fromSeq: range.fromSeq,
+                toSeq: range.toSeq,
+                base64: await fs.readFile(path.join(full, name), "utf8")
+            });
+        }
+    }
+    return chunks;
+}
+
+async function listThreadNames(peerDir) {
+    try {
+        const entries = await fs.readdir(peerDir, { withFileTypes: true });
+        return entries.filter((e) => e.isDirectory()).map((e) => e.name);
+    } catch {
+        return [];
+    }
+}
+
+async function readPeerChunks(channelDir, peerAddress, threadName) {
+    const peerDir = path.join(channelDir, sanitizeSegment(peerAddress));
+    const threadNames = threadName
+        ? [threadName]
+        : await listThreadNames(peerDir);
+    const perThread = {};
+    for (const thread of threadNames) {
+        perThread[sanitizeSegment(thread)] = await readThreadChunks(
+            peerDir,
+            thread
+        );
+    }
+    return perThread;
+}
+
 function getRequestMeta(req) {
     return req._uploadMeta || null;
 }
@@ -234,19 +419,31 @@ app.post("/logs/upload", express.json({ limit: "50mb" }), async (req, res) => {
     try {
         const meta = getRequestMeta(req);
         const parseDoneMs = meta ? Date.now() - meta.startedAt : -1;
-        const { channelId, peerAddress, compressedLogs } = req.body || {};
+        const {
+            channelId,
+            peerAddress,
+            threadName,
+            storeId,
+            compressedLogs,
+            fromSeq,
+            toSeq
+        } = req.body || {};
 
         if (meta && meta.uploadId) {
             res.setHeader("x-upload-id", meta.uploadId);
         }
 
-        if (!channelId || !peerAddress || !compressedLogs) {
+        if (!isAuthorized(req)) {
+            res.status(401).json({ error: "Unauthorized" });
+            return;
+        }
+
+        const validation = validateUploadBody(req.body);
+        if (!validation.ok) {
             console.warn(
-                `[CrashLogServer][${meta ? meta.requestId : "unknown"}] Upload rejected: uploadId=${meta && meta.uploadId ? meta.uploadId : "N/A"} missing required fields channelId=${Boolean(channelId)} peerAddress=${Boolean(peerAddress)} compressedLogs=${Boolean(compressedLogs)}`
+                `[CrashLogServer][${meta ? meta.requestId : "unknown"}] Upload rejected: uploadId=${meta && meta.uploadId ? meta.uploadId : "N/A"} ${validation.error}`
             );
-            res.status(400).json({
-                error: "Incorrect request data"
-            });
+            res.status(validation.status).json({ error: validation.error });
             return;
         }
 
@@ -258,18 +455,30 @@ app.post("/logs/upload", express.json({ limit: "50mb" }), async (req, res) => {
             { rotateIfOld: true }
         );
         const resolveMs = Date.now() - resolveStartedAt;
+        // thread is attacker-controlled like every other segment
         const safePeer = sanitizeSegment(peerAddress);
-        const filename = `${safePeer}`;
-        const filepath = path.join(channelDir, filename);
+        const safeThread = sanitizeSegment(threadName);
+        const safeStore = sanitizeSegment(storeId);
+        const filename = chunkFileName(fromSeq, toSeq);
+        // one dir per store -> a second run's seq 0 can't overwrite the first's
+        const threadDir = path.join(
+            channelDir,
+            safePeer,
+            safeThread,
+            safeStore
+        );
+        const filepath = path.join(threadDir, filename);
 
         const writeStartedAt = Date.now();
 
+        await fs.mkdir(threadDir, { recursive: true });
+        // write, not append -> a retried delta overwrites its own chunk
         await fs.writeFile(filepath, compressedLogs, "utf8");
 
         const writeMs = Date.now() - writeStartedAt;
 
         console.log(
-            `[CrashLogServer][${meta ? meta.requestId : "unknown"}] Upload stored uploadId=${meta && meta.uploadId ? meta.uploadId : "N/A"} channelId=${channelId} peer=${safePeer} payloadBytes=${payloadBytes} parseMs=${parseDoneMs} resolveDirMs=${resolveMs} writeMs=${writeMs} timestamp=${timestamp}`
+            `[CrashLogServer][${meta ? meta.requestId : "unknown"}] Upload stored uploadId=${meta && meta.uploadId ? meta.uploadId : "N/A"} channelId=${channelId} peer=${safePeer} thread=${safeThread} seq=${fromSeq}-${toSeq} payloadBytes=${payloadBytes} parseMs=${parseDoneMs} resolveDirMs=${resolveMs} writeMs=${writeMs} timestamp=${timestamp}`
         );
 
         res.status(200).json({
@@ -277,6 +486,7 @@ app.post("/logs/upload", express.json({ limit: "50mb" }), async (req, res) => {
             uploadId: meta && meta.uploadId ? meta.uploadId : null,
             channelId,
             peerAddress,
+            threadName: safeThread,
             filename
         });
     } catch (err) {
@@ -329,12 +539,36 @@ app.get("/logs/index", async (_req, res) => {
         for (const dir of dirs) {
             const channelIdAndTimestamp = dir;
             const fullDir = path.join(LOG_DIR, dir);
-            const files = await fs.readdir(fullDir);
+            const peers = await fs.readdir(fullDir, { withFileTypes: true });
+            const perPeer = {};
 
-            if (!response[channelIdAndTimestamp]) {
-                response[channelIdAndTimestamp] = [];
+            for (const peer of peers) {
+                if (!peer.isDirectory()) continue;
+                const peerDir = path.join(fullDir, peer.name);
+                const perThread = {};
+                for (const thread of await listThreadNames(peerDir)) {
+                    // chunks sit one level down, under the store that wrote them
+                    const threadDir = path.join(peerDir, thread);
+                    const stores = await fs.readdir(threadDir, {
+                        withFileTypes: true
+                    });
+                    const names = [];
+                    for (const store of stores) {
+                        if (!store.isDirectory()) continue;
+                        const inStore = await fs.readdir(
+                            path.join(threadDir, store.name)
+                        );
+                        for (const name of inStore) {
+                            if (!parseChunkFileName(name)) continue;
+                            names.push(`${store.name}/${name}`);
+                        }
+                    }
+                    perThread[thread] = names.sort();
+                }
+                perPeer[peer.name] = perThread;
             }
-            response[channelIdAndTimestamp].push(...files);
+
+            response[channelIdAndTimestamp] = perPeer;
         }
 
         res.status(200).json(response);
@@ -344,30 +578,50 @@ app.get("/logs/index", async (_req, res) => {
     }
 });
 
+// a single base64 blob, so the fetch scripts and log-explorer keep working.
+// merges every thread of the peer.
 app.get("/logs/:channelId/:peerAddress", async (req, res) => {
+    await sendMergedChunks(req, res, undefined);
+});
+
+app.get("/logs/:channelId/:peerAddress/:threadName", async (req, res) => {
+    await sendMergedChunks(req, res, req.params.threadName);
+});
+
+async function sendMergedChunks(req, res, threadName) {
     try {
         const { channelId, peerAddress } = req.params;
         const { dir: channelDir } = await resolveChannelDir(channelId);
-        const files = await fs.readdir(channelDir);
-        const safePeer = sanitizeSegment(peerAddress);
-        const target =
-            files.find((f) => f === safePeer) ||
-            files.find((f) => f.endsWith(`_${safePeer}`));
+        const perThread = await readPeerChunks(
+            channelDir,
+            peerAddress,
+            threadName
+        );
 
-        if (!target) {
+        const hasChunks = Object.values(perThread).some(
+            (chunks) => chunks.length > 0
+        );
+        if (!hasChunks) {
             res.status(404).json({ error: "Log not found" });
             return;
         }
 
-        const filepath = path.join(channelDir, target);
-        const base64 = await fs.readFile(filepath, "utf8");
+        const merged = mergeChunks(perThread);
         res.setHeader("Content-Type", "text/plain");
-        res.send(base64);
+        // a short log must announce itself: the body is a plain blob, so the
+        // count of dropped chunks rides on a header
+        if (mergeChunks.lastSkippedChunks > 0) {
+            res.setHeader(
+                "x-skipped-chunks",
+                String(mergeChunks.lastSkippedChunks)
+            );
+        }
+        res.send(encodeChunk(merged));
     } catch (err) {
         console.error("[CrashLogServer] Retrieve failed:", err);
         res.status(500).json({ error: "Internal server error" });
     }
-});
+}
 
 async function start() {
     await ensureLogDir();
@@ -387,4 +641,4 @@ if (require.main === module) {
     });
 }
 
-module.exports = { sanitizeSegment };
+module.exports = { app, sanitizeSegment, validateUploadBody };
