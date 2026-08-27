@@ -1,11 +1,8 @@
 import type { WorkerLike } from "../types";
-import type {
-    WorkerRequestMessage,
-    WorkerResponseMessage
-} from "../worker/protocol";
+import type { WorkerHostMessage } from "../worker/protocol";
 
 export type ContractExecutorWorkerMessageHandler = (
-    message: WorkerResponseMessage
+    message: WorkerHostMessage
 ) => void;
 
 export type ContractExecutorWorkerErrorHandler = (error: Error) => void;
@@ -35,7 +32,7 @@ export function createContractExecutorWorkerFromUrl(
 ): WorkerLike {
     const worker = new Worker(workerUrl, { type: "module", name });
 
-    worker.onmessage = (event: MessageEvent<WorkerResponseMessage>) => {
+    worker.onmessage = (event: MessageEvent<WorkerHostMessage>) => {
         onMessage(event.data);
     };
     worker.onerror = (event: ErrorEvent) => {

@@ -2,12 +2,14 @@ import { createEvm } from "../../EvmFactory";
 import ContractExecutor from "../ContractExecutor";
 import type {
     ContractExecutorRequestPayload,
+    WorkerClientMessage,
     WorkerHostMessage,
     WorkerRequestMessage
 } from "./protocol";
 import { serializeError } from "@/evm/p2pRuntime/errorWire";
 import type { Logger } from "@/utils";
 import { config, createConfig } from "@/utils/config";
+import type { LogPortHandle } from "@/utils/logging/logControl";
 import type { PerformanceMonitorInternalOptions } from "@/utils/logging/performanceMonitorInternal";
 import { createLogger } from "@platform/createLogger";
 import { Buffer } from "buffer";
@@ -43,7 +45,7 @@ export type ContractExecutorWorkerHostHandle = {
     reportUnhandledError(error: unknown): void;
     /** Install request handling and post readiness. Call once. */
     start(
-        onMessage: (handler: (message: WorkerRequestMessage) => void) => void,
+        onMessage: (handler: (message: WorkerClientMessage) => void) => void,
         onDisposed?: () => void
     ): void;
 };
@@ -53,6 +55,7 @@ class ContractExecutorWorkerHost {
     private executor: ContractExecutor | undefined;
     private logger: Logger | undefined;
     private readonly post: (response: WorkerHostMessage) => void;
+    private logPortHandle: LogPortHandle | undefined;
     private readonly monitorOptions:
         | PerformanceMonitorInternalOptions
         | undefined;
@@ -75,11 +78,15 @@ class ContractExecutorWorkerHost {
         const logger =
             this.suppliedLogger ??
             createLogger(
-                {},
+                { threadName: "vm" },
                 { component: "ContractExecutorWorker" },
-                { attachErrorListener: false }
+                { attachErrorListener: true }
             );
         this.logger = logger;
+        this.logPortHandle = logger.addLogPort({
+            post: (message) => this.post({ type: "logControl", message }),
+            remoteRealm: "parent"
+        });
         const evm = await createEvm(
             {
                 allowUnlimitedContractSize: true,
@@ -116,7 +123,10 @@ class ContractExecutorWorkerHost {
     }
 
     private dispose() {
+        this.logPortHandle?.remove();
+        this.logPortHandle = undefined;
         this.logger?.stopPerformanceMonitoring();
+        this.logger?.dispose();
         this.logger = undefined;
         this.executor = undefined;
         return null;
@@ -179,10 +189,14 @@ class ContractExecutorWorkerHost {
     }
 
     start(
-        onMessage: (handler: (message: WorkerRequestMessage) => void) => void,
+        onMessage: (handler: (message: WorkerClientMessage) => void) => void,
         onDisposed?: () => void
     ): void {
         onMessage((message) => {
+            if (message.type === "logControl") {
+                this.logPortHandle?.receive(message.message);
+                return;
+            }
             if (message.type !== "request") return;
             void this.handleRequest(message).then((response) => {
                 this.post(response);
