@@ -392,7 +392,8 @@ async function main(options = {}) {
                 logging.cleanupNonErrorLogs(
                     logDir,
                     cli.allowLogdirPurge,
-                    cli.keepInfraLogs
+                    cli.keepInfraLogs,
+                    stats.failed.length === 0
                 );
                 process.exitCode = stats.failed.length ? 1 : 0;
                 return;
@@ -452,7 +453,8 @@ async function main(options = {}) {
             logging.cleanupNonErrorLogs(
                 logDir,
                 cli.allowLogdirPurge,
-                cli.keepInfraLogs
+                cli.keepInfraLogs,
+                false
             );
             process.exitCode = 1;
             return;
@@ -460,7 +462,8 @@ async function main(options = {}) {
         logging.cleanupNonErrorLogs(
             logDir,
             cli.allowLogdirPurge,
-            cli.keepInfraLogs
+            cli.keepInfraLogs,
+            true
         );
     } finally {
         teardown();

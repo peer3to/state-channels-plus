@@ -4,14 +4,19 @@ const fs = require("fs");
 const path = require("path");
 const { fork } = require("child_process");
 const {
+    ENVIRONMENT_PROTOCOL_VERSION,
     EnvironmentFrameParser,
     HOST_KINDS,
     encodeEnvironmentFrame
 } = require("./environmentProtocol");
+const { DISTRIBUTED_PROTOCOL_VERSION } = require("./protocol");
 const {
     assertCompatible,
     extractRuntimeBundle
 } = require("./runtimeExtractor");
+const {
+    unpackInfrastructureProcessLogChunk
+} = require("./infrastructureLogTransfer");
 const {
     commitSourceManifest,
     inspectWorkspace,
@@ -271,6 +276,11 @@ function startWorker(config) {
             });
             return;
         }
+        if (message.kind === "INFRA_PROCESS_DIAGNOSTIC") {
+            const chunk = unpackInfrastructureProcessLogChunk(message);
+            send("WORKER_EVENT", { message: chunk.message }, chunk.body);
+            return;
+        }
         send("WORKER_EVENT", { message });
     });
     worker.once("exit", (code, signal) => {
@@ -348,8 +358,14 @@ async function stop() {
 }
 
 async function handle(frame) {
-    if (frame.kind === "TRUSTED_RUNNER") trustedRunnerAccepted = true;
-    else if (frame.kind === "ENVIRONMENT_SETUP") {
+    if (frame.kind === "TRUSTED_RUNNER") {
+        if (frame.payload.version !== ENVIRONMENT_PROTOCOL_VERSION) {
+            throw new Error(
+                `Environment protocol mismatch: guest requires ${ENVIRONMENT_PROTOCOL_VERSION}, host provides ${frame.payload.version}`
+            );
+        }
+        trustedRunnerAccepted = true;
+    } else if (frame.kind === "ENVIRONMENT_SETUP") {
         if (!trustedRunnerAccepted) {
             throw new Error("Trusted runner must be accepted before setup");
         }
@@ -391,4 +407,7 @@ process.stdin.on("data", (chunk) => parser.consume(chunk));
 process.stdin.on("end", () => stop().catch(() => process.exit(1)));
 
 fs.mkdirSync(path.join(root, "home"), { recursive: true, mode: 0o700 });
-send("READY", { version: 1 });
+send("READY", {
+    version: ENVIRONMENT_PROTOCOL_VERSION,
+    distributedProtocol: DISTRIBUTED_PROTOCOL_VERSION
+});

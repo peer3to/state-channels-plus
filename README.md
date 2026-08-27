@@ -381,8 +381,14 @@ SIGTERM. Canonical task and failure logs remain on the orchestrator under
 `logs/run-N/`, including `error_*.ansi` files and worker infrastructure
 diagnostics. If a discovery server, Hardhat node, or isolated worker fails,
 `logs/run-N/infra/` is retained with the process diagnostic and the affected
-worker's streamed output. Successful-run infrastructure logs are removed by
-the normal end-of-run cleanup.
+worker's streamed output. Infrastructure output is collected and retained when
+any test fails. A fully successful run skips collection unless
+`--keep-infra-logs` is set.
+
+The distributed protocol version must match across the orchestrator, worker
+host, and isolated guest. A mismatch is rejected before test execution with an
+update or rebase instruction. After a protocol change, update and restart every
+worker host before running branches that use the new protocol.
 
 Dial diagnostics include the Noise handshake hash for each stream. Close lines
 state whether this application closed the stream, Hyperswarm reported duplicate

@@ -7,6 +7,9 @@ const {
     HOST_KINDS,
     encodeEnvironmentFrame
 } = require("../../../scripts/e2e-parallel/distributed/environmentProtocol.js");
+const {
+    DISTRIBUTED_PROTOCOL_VERSION
+} = require("../../../scripts/e2e-parallel/distributed/protocol.js");
 
 export class TestIsolatedRuntimeBackend {
     readonly calls: Array<{ operation: string; value?: unknown }> = [];
@@ -19,6 +22,7 @@ export class TestIsolatedRuntimeBackend {
     artifactOutput = { stdout: Buffer.alloc(0), stderr: Buffer.alloc(0) };
     artifactChunks: Array<{ name: "stdout" | "stderr"; body: Buffer }> = [];
     completeArtifactTransfer = true;
+    completionInfrastructureLog: Buffer | null = null;
     artifactTransferDelayMs = 0;
     creationDelayMs = 0;
     readonly firstCreateStarted: Promise<void>;
@@ -39,6 +43,7 @@ export class TestIsolatedRuntimeBackend {
     readonly preparedFiles = new Map<string, Set<string>>();
     respondToWorkspaceOffer = true;
     startDelayMs = 0;
+    guestDistributedProtocol = DISTRIBUTED_PROTOCOL_VERSION;
     private resolveFirstCreateStarted!: () => void;
     private resolveFirstStartStarted!: () => void;
     private resolveFirstWorkspaceOfferReceived!: () => void;
@@ -123,7 +128,10 @@ export class TestIsolatedRuntimeBackend {
                 kind: string;
                 payload: {
                     manifest?: { files: Array<{ path: string }> };
-                    message?: { kind: string };
+                    message?: {
+                        kind: string;
+                        collectInfraLogs?: boolean;
+                    };
                     requestId?: number;
                     names?: Array<"stdout" | "stderr">;
                 };
@@ -201,11 +209,42 @@ export class TestIsolatedRuntimeBackend {
                     frame.kind === "WORKER_MESSAGE" &&
                     frame.payload.message?.kind === "RUN_COMPLETE"
                 ) {
-                    stdout.write(
-                        encodeEnvironmentFrame("WORKER_EVENT", {
-                            message: { kind: "WORKER_COMPLETE", stats: null }
-                        })
-                    );
+                    const complete = () =>
+                        stdout.write(
+                            encodeEnvironmentFrame("WORKER_EVENT", {
+                                message: {
+                                    kind: "WORKER_COMPLETE",
+                                    stats: null
+                                }
+                            })
+                        );
+                    if (
+                        frame.payload.message.collectInfraLogs === true &&
+                        this.completionInfrastructureLog
+                    ) {
+                        stdout.write(
+                            encodeEnvironmentFrame(
+                                "WORKER_EVENT",
+                                {
+                                    message: {
+                                        kind: "INFRA_PROCESS_DIAGNOSTIC",
+                                        requestId: 900,
+                                        processKind: "hardhat",
+                                        slotId: 0,
+                                        trigger: "run completed",
+                                        processFailure: "",
+                                        uploadId: "completion-log",
+                                        sequence: 0,
+                                        chunkCount: 1
+                                    }
+                                },
+                                this.completionInfrastructureLog
+                            )
+                        );
+                        setImmediate(complete);
+                    } else {
+                        complete();
+                    }
                 }
                 if (frame.kind === "ARTIFACT_REQUEST") {
                     const { names, requestId } = frame.payload;
@@ -259,7 +298,13 @@ export class TestIsolatedRuntimeBackend {
         );
         stdin.on("data", (chunk) => parser.consume(chunk));
         this.controls.push({ stdin, stdout, stderr, process: processHandle });
-        queueMicrotask(() => stdout.write(encodeEnvironmentFrame("READY")));
+        queueMicrotask(() =>
+            stdout.write(
+                encodeEnvironmentFrame("READY", {
+                    distributedProtocol: this.guestDistributedProtocol
+                })
+            )
+        );
         return processHandle;
     }
 
@@ -309,13 +354,21 @@ export class TestIsolatedRuntimeBackend {
         this.controls[index].process.emit("exit", 137, null);
     }
 
-    emitWorkerEvent(message: unknown, artifactManifest: unknown[] = []) {
+    emitWorkerEvent(
+        message: unknown,
+        artifactManifest: unknown[] = [],
+        body = Buffer.alloc(0)
+    ) {
         const control = this.controls[this.controls.length - 1];
         control.stdout.write(
-            encodeEnvironmentFrame("WORKER_EVENT", {
-                message,
-                artifactManifest
-            })
+            encodeEnvironmentFrame(
+                "WORKER_EVENT",
+                {
+                    message,
+                    artifactManifest
+                },
+                body
+            )
         );
     }
 

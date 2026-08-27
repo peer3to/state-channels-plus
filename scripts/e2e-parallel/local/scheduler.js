@@ -67,12 +67,18 @@ async function runScheduler({
     const coordinator = new TaskCoordinator(tasks, {
         onWorkAvailable: () => scheduler?.workAvailable(),
         onResult: ({ assignment, attempt, code, parsed }) => {
-            if (code !== 0)
+            if (code !== 0) {
+                logging.appendRunnerFailureMarker(
+                    logging.getLogPath(logDir, assignment.task.logName),
+                    attempt.failureReason
+                );
                 logging.markLogAsError(logDir, assignment.task.logName);
+            }
             logging.result({
                 completed: coordinator.completed,
                 total: tasks.length,
                 code,
+                failureReason: attempt.failureReason,
                 label: attempt.label,
                 durationMs: attempt.durationMs,
                 oomCount: parsed?.oomCount || 0,
@@ -151,6 +157,13 @@ async function runScheduler({
                     total: tasks.length,
                     label: attempt.label,
                     starveCount: result.parsed.starveCount
+                });
+            } else if (result.disposition === "retry-infrastructure") {
+                logging.infrastructureRetry({
+                    seq: assignment.seq,
+                    total: tasks.length,
+                    label: attempt.label,
+                    reason: result.failureReason
                 });
             }
         }

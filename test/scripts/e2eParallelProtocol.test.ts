@@ -21,6 +21,7 @@ const {
     loadWorkerKeyPair
 } = require("../../scripts/e2e-parallel/distributed/workerIdentity.js");
 const {
+    DISTRIBUTED_PROTOCOL_VERSION,
     ProtocolPeer,
     waitForMessage
 } = require("../../scripts/e2e-parallel/distributed/protocol.js");
@@ -60,8 +61,35 @@ const {
     isRoutineDiscoveryFailure: isRoutineServerFailure,
     requireTransportPublicKey
 } = require("../../scripts/e2e-parallel/distributed/server.js");
+const {
+    INFRA_PROCESS_LOG_CHUNK_BYTES,
+    createInfrastructureProcessLogChunks,
+    unpackInfrastructureProcessLogChunk
+} = require("../../scripts/e2e-parallel/distributed/infrastructureLogTransfer.js");
 
 describe("distributed protocol", function () {
+    it("chunks and restores infrastructure logs below the frame limit", function () {
+        const log = Buffer.concat([
+            Buffer.alloc(INFRA_PROCESS_LOG_CHUNK_BYTES, "a"),
+            Buffer.alloc(INFRA_PROCESS_LOG_CHUNK_BYTES, "b"),
+            Buffer.from("tail")
+        ]);
+        const chunks = createInfrastructureProcessLogChunks(log);
+
+        expect(chunks).to.have.length(3);
+        expect(chunks[0]).to.include({ sequence: 0, chunkCount: 3 });
+        expect(chunks[1]).to.include({ sequence: 1, chunkCount: 3 });
+        expect(chunks[2]).to.include({ sequence: 2, chunkCount: 3 });
+        expect(
+            Buffer.concat(
+                chunks.map(
+                    (chunk: Record<string, unknown>) =>
+                        unpackInfrastructureProcessLogChunk(chunk).body
+                )
+            )
+        ).to.deep.equal(log);
+    });
+
     it("rejects a server connection without an authenticated transport key", function () {
         expect(() => requireTransportPublicKey({})).to.throw(
             "Authenticated transport key is required"
@@ -893,6 +921,7 @@ describe("distributed protocol", function () {
                     manifest: {
                         version: 3,
                         packageManager: "pnpm",
+                        distributedProtocol: DISTRIBUTED_PROTOCOL_VERSION,
                         workspaceId: "c".repeat(64),
                         sourceDigest: "d".repeat(64),
                         rootProjectPath: "project",
@@ -921,6 +950,7 @@ describe("distributed protocol", function () {
                     manifest: {
                         version: 3,
                         packageManager: "pnpm",
+                        distributedProtocol: DISTRIBUTED_PROTOCOL_VERSION,
                         archiveBytes: archive.length,
                         archiveSha256,
                         expandedBytes: packageJson.length,
@@ -1008,6 +1038,7 @@ describe("distributed protocol", function () {
         const deltaManifest = {
             version: 3,
             packageManager: "pnpm",
+            distributedProtocol: DISTRIBUTED_PROTOCOL_VERSION,
             archiveBytes: archive.length,
             archiveSha256: crypto
                 .createHash("sha256")
@@ -1072,6 +1103,7 @@ describe("distributed protocol", function () {
                     manifest: {
                         version: 3,
                         packageManager: "pnpm",
+                        distributedProtocol: DISTRIBUTED_PROTOCOL_VERSION,
                         workspaceId: "c".repeat(64),
                         sourceDigest: "d".repeat(64),
                         rootProjectPath: "project",

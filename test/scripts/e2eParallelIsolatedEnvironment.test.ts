@@ -21,6 +21,9 @@ const {
 const {
     BoundedArtifactAssembler
 } = require("../../scripts/e2e-parallel/distributed/failureArtifacts.js");
+const {
+    DISTRIBUTED_PROTOCOL_VERSION
+} = require("../../scripts/e2e-parallel/distributed/protocol.js");
 
 const profile = {
     schedulerTickMs: 1000,
@@ -95,6 +98,41 @@ describe("distributed isolated environment", function () {
                 )
             );
             expect(metadata.dirty).to.equal(true);
+        } finally {
+            fs.rmSync(root, { recursive: true, force: true });
+        }
+    });
+
+    it("rejects an incompatible cached guest before environment setup", async function () {
+        const root = fs.mkdtempSync(
+            path.join(os.tmpdir(), "isolated-protocol-mismatch-")
+        );
+        const backend = new TestIsolatedRuntimeBackend();
+        backend.guestDistributedProtocol = DISTRIBUTED_PROTOCOL_VERSION - 1;
+        try {
+            const manager = await IsolatedEnvironmentManager.create({
+                workRoot: root,
+                backend,
+                backendName: "test"
+            });
+            const environment = await manager.allocate({
+                environmentKey: "7".repeat(64),
+                orchestratorPublicKey: "8".repeat(64),
+                profile
+            });
+            let failure: Error | null = null;
+            try {
+                await environment.start();
+            } catch (error) {
+                failure = error as Error;
+            }
+
+            expect(failure?.message).to.include(
+                `Distributed guest protocol mismatch: worker host requires ${DISTRIBUTED_PROTOCOL_VERSION}, cached guest provides ${DISTRIBUTED_PROTOCOL_VERSION - 1}`
+            );
+            expect(backend.frameKinds()).not.to.include("TRUSTED_RUNNER");
+            expect(backend.frameKinds()).not.to.include("ENVIRONMENT_SETUP");
+            await environment.destroy();
         } finally {
             fs.rmSync(root, { recursive: true, force: true });
         }

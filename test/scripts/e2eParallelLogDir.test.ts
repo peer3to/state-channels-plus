@@ -43,7 +43,8 @@ const {
     cleanupNonErrorLogs: (
         dirPath: string,
         allow: boolean,
-        keepInfraLogs?: boolean
+        keepInfraLogs?: boolean,
+        runPassed?: boolean
     ) => void;
     countStarvation: (text: string) => number;
     getStarvationSummary: (tasks: Array<Record<string, unknown>>) => {
@@ -232,7 +233,9 @@ describe("e2e-parallel argParser - logDir validation", function () {
                     "--prod",
                     "--prefer-offline",
                     "--ignore-scripts",
-                    "--package-import-method=hardlink"
+                    "--package-import-method=hardlink",
+                    "--store-dir",
+                    path.join(root, "pnpm-store")
                 ],
                 {
                     cwd: consumer,
@@ -453,7 +456,7 @@ describe("e2e-parallel logging - purge guards", function () {
         expect(removed).to.have.lengthOf(0);
     });
 
-    it("keeps failed infrastructure diagnostics while removing normal worker logs", function () {
+    it("keeps infrastructure logs when any test fails", function () {
         const root = fs.mkdtempSync(path.join(os.tmpdir(), "log-cleanup-"));
         const successfulRoot = fs.mkdtempSync(
             path.join(os.tmpdir(), "successful-log-cleanup-")
@@ -481,7 +484,7 @@ describe("e2e-parallel logging - purge guards", function () {
             fs.writeFileSync(path.join(root, "passing.ansi"), "passing");
             fs.writeFileSync(path.join(root, "error_failed.ansi"), "failed");
 
-            cleanupNonErrorLogs(root, true);
+            cleanupNonErrorLogs(root, true, false, false);
             cleanupNonErrorLogs(successfulRoot, true);
 
             expect(fs.existsSync(infrastructure)).to.equal(true);
@@ -495,6 +498,26 @@ describe("e2e-parallel logging - purge guards", function () {
         } finally {
             fs.rmSync(root, { recursive: true, force: true });
             fs.rmSync(successfulRoot, { recursive: true, force: true });
+        }
+    });
+
+    it("purges successful infrastructure logs when the flag is not set", function () {
+        const root = fs.mkdtempSync(
+            path.join(os.tmpdir(), "successful-infra-log-cleanup-")
+        );
+        try {
+            const infrastructure = path.join(root, "infra");
+            fs.mkdirSync(infrastructure, { recursive: true });
+            fs.writeFileSync(
+                path.join(infrastructure, "hardhat-node.ansi"),
+                "normal infrastructure"
+            );
+
+            cleanupNonErrorLogs(root, true, false, true);
+
+            expect(fs.existsSync(infrastructure)).to.equal(false);
+        } finally {
+            fs.rmSync(root, { recursive: true, force: true });
         }
     });
 

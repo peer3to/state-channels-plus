@@ -3,10 +3,16 @@ const path = require("path");
 const tar = require("tar");
 const { sha256File } = require("../shared/fileHash");
 const { assertContained } = require("../shared/paths");
+const { DISTRIBUTED_PROTOCOL_VERSION } = require("./protocol");
 
 function assertCompatible(manifest) {
     if (manifest.version !== 3 || manifest.packageManager !== "pnpm") {
         throw new Error("Unsupported source workspace format");
+    }
+    if (manifest.distributedProtocol !== DISTRIBUTED_PROTOCOL_VERSION) {
+        throw new Error(
+            `Distributed runner protocol mismatch: guest requires ${DISTRIBUTED_PROTOCOL_VERSION}, uploaded workspace provides ${manifest.distributedProtocol ?? "none"}. Update the worker host or rebase the orchestrator branch.`
+        );
     }
 }
 

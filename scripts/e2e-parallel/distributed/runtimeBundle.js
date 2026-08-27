@@ -3,6 +3,7 @@ const fs = require("fs");
 const path = require("path");
 const { execFileSync } = require("child_process");
 const tar = require("tar");
+const { DISTRIBUTED_PROTOCOL_VERSION } = require("./protocol");
 const { sha256File } = require("../shared/fileHash");
 
 const EXCLUDED_SOURCE_ROOTS = new Set([
@@ -212,6 +213,7 @@ async function buildRuntimeManifest(projectRoot, onProgress = () => {}) {
             JSON.stringify({
                 rootProjectPath,
                 runnerEntry,
+                distributedProtocol: DISTRIBUTED_PROTOCOL_VERSION,
                 repositories: repositoryManifest.map(({ path, name }) => ({
                     path,
                     name
@@ -226,6 +228,7 @@ async function buildRuntimeManifest(projectRoot, onProgress = () => {}) {
     const manifest = {
         version: 3,
         packageManager: "pnpm",
+        distributedProtocol: DISTRIBUTED_PROTOCOL_VERSION,
         workspaceId,
         sourceDigest,
         rootProjectPath,

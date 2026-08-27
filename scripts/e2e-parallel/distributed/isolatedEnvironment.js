@@ -5,10 +5,12 @@ const path = require("path");
 const { EventEmitter } = require("events");
 const { spawn } = require("child_process");
 const {
+    ENVIRONMENT_PROTOCOL_VERSION,
     EnvironmentFrameParser,
     GUEST_KINDS,
     encodeEnvironmentFrame
 } = require("./environmentProtocol");
+const { DISTRIBUTED_PROTOCOL_VERSION } = require("./protocol");
 const {
     buildLinuxEgressRules,
     hostInterfaceCidrs,
@@ -995,9 +997,20 @@ class IsolatedEnvironment extends EventEmitter {
                 });
             }
         });
-        await this.waitFor("READY", 10000);
+        const ready = await this.waitFor("READY", 10000);
+        if (
+            ready.payload.distributedProtocol !== DISTRIBUTED_PROTOCOL_VERSION
+        ) {
+            const error = new Error(
+                `Distributed guest protocol mismatch: worker host requires ${DISTRIBUTED_PROTOCOL_VERSION}, cached guest provides ${ready.payload.distributedProtocol ?? "none"}. Restart the worker server to rebuild the environment.`
+            );
+            error.code = "ISOLATED_PROTOCOL_MISMATCH";
+            throw error;
+        }
         this.state = "ready";
-        await this.send("TRUSTED_RUNNER", { version: 1 });
+        await this.send("TRUSTED_RUNNER", {
+            version: ENVIRONMENT_PROTOCOL_VERSION
+        });
         return this;
     }
 

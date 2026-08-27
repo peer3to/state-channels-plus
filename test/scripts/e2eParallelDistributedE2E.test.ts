@@ -15,6 +15,7 @@ import {
 } from "../fixtures/distributed/testTransport";
 
 const {
+    DISTRIBUTED_PROTOCOL_VERSION,
     ProtocolPeer
 } = require("../../scripts/e2e-parallel/distributed/protocol.js");
 const {
@@ -50,6 +51,7 @@ describe("distributed parallel runner", function () {
         const manifest = {
             version: 3,
             packageManager: "pnpm",
+            distributedProtocol: DISTRIBUTED_PROTOCOL_VERSION,
             workspaceId: "9".repeat(64),
             sourceDigest: "source",
             rootProjectPath: ".",
@@ -442,6 +444,7 @@ describe("distributed parallel runner", function () {
         const manifest = {
             version: 3,
             packageManager: "pnpm",
+            distributedProtocol: DISTRIBUTED_PROTOCOL_VERSION,
             workspaceId: "a".repeat(64),
             sourceDigest: crypto
                 .createHash("sha256")
@@ -673,6 +676,7 @@ describe("distributed parallel runner", function () {
             const manifest = {
                 version: 3,
                 packageManager: "pnpm",
+                distributedProtocol: DISTRIBUTED_PROTOCOL_VERSION,
                 workspaceId: "1".repeat(64),
                 sourceDigest: "source",
                 rootProjectPath: ".",
@@ -743,6 +747,7 @@ describe("distributed parallel runner", function () {
         const manifest = {
             version: 3,
             packageManager: "pnpm",
+            distributedProtocol: DISTRIBUTED_PROTOCOL_VERSION,
             workspaceId: "1".repeat(64),
             sourceDigest: "source",
             rootProjectPath: ".",

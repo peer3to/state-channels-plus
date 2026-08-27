@@ -34,7 +34,6 @@ const { BoundedArtifactAssembler } = require("./failureArtifacts");
 
 const SHUTDOWN_TIMEOUT_MS = 5000;
 const CLEANUP_SETUP_WARNING_MS = 60000;
-const INFRA_PROCESS_LOG_CHUNK_BYTES = 512 * 1024;
 
 function isRoutineDiscoveryFailure(error) {
     return isDiscoveryAuthenticationFailure(error);
@@ -52,6 +51,15 @@ function requireTransportPublicKey(info) {
         throw new Error("Authenticated transport key is required");
     }
     return peerId;
+}
+
+function assertCompatibleRunnerProtocol(manifest) {
+    if (manifest.distributedProtocol === DISTRIBUTED_PROTOCOL_VERSION) return;
+    const error = new Error(
+        `Distributed runner protocol mismatch: worker host requires ${DISTRIBUTED_PROTOCOL_VERSION}, uploaded workspace provides ${manifest.distributedProtocol ?? "none"}. Update the worker host or rebase the orchestrator branch.`
+    );
+    error.code = "DISTRIBUTED_PROTOCOL_MISMATCH";
+    throw error;
 }
 
 function sendStatusMessage(connection, status) {
@@ -790,6 +798,7 @@ async function main(options = {}) {
                     ...message.header.manifest,
                     files: JSON.parse(message.body.toString("utf8"))
                 };
+                assertCompatibleRunnerProtocol(manifest);
                 if (
                     manifest.files.length !== manifest.fileCount ||
                     manifest.files.some(
@@ -924,7 +933,6 @@ async function main(options = {}) {
                         memBoundGb: profile.memoryBytes / 1024 ** 3,
                         maxAttemptSpoolBytes: config.maxAttemptSpoolBytes,
                         heartbeatTimeoutMs: config.heartbeatTimeoutMs,
-                        keepInfraLogs: message.header.keepInfraLogs === true,
                         taskCount: message.header.taskCount,
                         baseEnv: message.header.baseEnv || {}
                     }
@@ -974,7 +982,12 @@ async function main(options = {}) {
                 connection.stopRequested = true;
                 await reportStatus(connection, "Cleaning completed lease");
                 if (connection.workerStarted) {
-                    sendToWorker(connection, { kind: message.kind });
+                    sendToWorker(connection, {
+                        kind: message.kind,
+                        collectInfraLogs:
+                            message.kind === "RUN_COMPLETE" &&
+                            message.header.collectInfraLogs === true
+                    });
                 }
                 if (
                     message.kind === "RUN_COMPLETE" &&
@@ -1188,33 +1201,19 @@ async function main(options = {}) {
                 requestId: message.requestId
             });
         } else if (message.kind === "INFRA_PROCESS_DIAGNOSTIC") {
-            const log = Buffer.from(message.log);
-            const chunkCount = Math.max(
-                1,
-                Math.ceil(log.length / INFRA_PROCESS_LOG_CHUNK_BYTES)
+            await connection.peer.send(
+                "INFRA_PROCESS_LOG",
+                {
+                    processKind: message.processKind,
+                    slotId: message.slotId,
+                    trigger: message.trigger,
+                    processFailure: message.processFailure,
+                    uploadId: message.uploadId,
+                    sequence: message.sequence,
+                    chunkCount: message.chunkCount
+                },
+                message.body
             );
-            for (let sequence = 0; sequence < chunkCount; sequence++) {
-                const offset = sequence * INFRA_PROCESS_LOG_CHUNK_BYTES;
-                await connection.peer.send(
-                    "INFRA_PROCESS_LOG",
-                    {
-                        processKind: message.processKind,
-                        slotId: message.slotId,
-                        trigger: message.trigger,
-                        processFailure: message.processFailure,
-                        uploadId: message.uploadId,
-                        sequence,
-                        chunkCount
-                    },
-                    log.subarray(
-                        offset,
-                        Math.min(
-                            log.length,
-                            offset + INFRA_PROCESS_LOG_CHUNK_BYTES
-                        )
-                    )
-                );
-            }
             sendToWorker(connection, {
                 kind: "RESPONSE",
                 requestId: message.requestId,
@@ -1457,6 +1456,7 @@ if (require.main === module) {
 
 module.exports = {
     acknowledgeLoglessAttempt,
+    assertCompatibleRunnerProtocol,
     main,
     capabilities,
     isRoutineDiscoveryFailure,

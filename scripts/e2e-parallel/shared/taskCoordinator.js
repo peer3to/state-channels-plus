@@ -146,14 +146,30 @@ class TaskCoordinator {
             }
             return { accepted: false, reason: "stale-or-wrong-worker" };
         }
-        if (attempt.reduced) validateReducedAttempt(attempt.reduced);
         this.assignments.delete(assignment.attemptId);
         if (this.completedTaskIds.has(assignment.taskId)) {
             return { accepted: false, reason: "redundant-attempt" };
         }
         this.sumDurationMs += attempt.durationMs || 0;
+        const parsed = reduceAttempt(assignment.task, attempt);
 
+        if (attempt.cancelled) {
+            attempt.failureReason = attempt.signal
+                ? `Task cancelled with signal ${attempt.signal}`
+                : "Task cancelled";
+            return this.finalizeOrDefer(
+                assignment,
+                attempt,
+                attempt.code,
+                parsed
+            );
+        }
+
+        if (!attempt.infrastructureFailure && attempt.signal) {
+            attempt.infrastructureFailure = `Task process exited with signal ${attempt.signal}`;
+        }
         if (attempt.infrastructureFailure) {
+            attempt.failureReason = attempt.infrastructureFailure;
             const task = assignment.task;
             task.infrastructureDiagnostics = [
                 ...(task.infrastructureDiagnostics || []),
@@ -162,13 +178,17 @@ class TaskCoordinator {
             if ((task.infrastructureRetryCount || 0) === 0) {
                 task.infrastructureRetryCount = 1;
                 this.requeue(assignment);
-                return { accepted: true, disposition: "retry-infrastructure" };
+                return {
+                    accepted: true,
+                    disposition: "retry-infrastructure",
+                    failureReason: attempt.failureReason,
+                    parsed
+                };
             }
             task.infrastructureFailure = true;
-            return this.finalizeOrDefer(assignment, attempt, 1, null);
+            return this.finalizeOrDefer(assignment, attempt, 1, parsed);
         }
 
-        const parsed = reduceAttempt(assignment.task, attempt);
         if (
             parsed.starveCount > 0 &&
             (assignment.task.starvationRetryCount || 0) === 0
