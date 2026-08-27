@@ -876,6 +876,10 @@ export class PeerTestHarness<
                 peer.logger.error(`Error during cleanup: ${error}`, {
                     component: "TestHarness"
                 });
+            } finally {
+                // unregister -> otherwise every test's peer loggers keep taking
+                // flush rounds for the life of the process
+                peer.logger.dispose();
             }
         });
 

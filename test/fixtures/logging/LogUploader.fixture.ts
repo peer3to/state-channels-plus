@@ -5,12 +5,28 @@ import { LogStore } from "@/utils/logging/logStore";
 import { NodeLogUploader } from "@/utils/logging/node/NodeLogUploader";
 import { NodeLogger } from "@/utils/logging/node/NodeLogger";
 import { decodeLogs, decompressFromBase64 } from "@/utils/logging/logEncoder";
-import { LogEntry } from "@/utils/logging/Logger";
+import {
+    LogEntry,
+    type LogThreadName,
+    type SharedLoggerContext
+} from "@/utils/logging/Logger";
 
 export type ReceivedUpload = {
     channelId: string;
     peerAddress: string;
+    threadName: LogThreadName;
     compressedLogs: string;
+    fromSeq: number;
+    toSeq: number;
+};
+
+export type LogReceiverOptions = {
+    // status per upload, by arrival order. awaited -> a test can hold a response
+    // open while driving the next one. defaults to 200.
+    respond?: (
+        received: ReceivedUpload,
+        index: number
+    ) => number | Promise<number>;
 };
 
 export type LogReceiver = {
@@ -24,7 +40,9 @@ export type LogReceiver = {
 
 // A real local HTTP endpoint that captures the uploader's POSTed payloads, so
 // tests exercise the actual upload boundary instead of stubbing the HTTP client.
-export async function startLogReceiver(): Promise<LogReceiver> {
+export async function startLogReceiver(
+    options: LogReceiverOptions = {}
+): Promise<LogReceiver> {
     const requests: ReceivedUpload[] = [];
     const waiters: Array<{ count: number; resolve: () => void }> = [];
 
@@ -35,20 +53,31 @@ export async function startLogReceiver(): Promise<LogReceiver> {
             body += chunk;
         });
         req.on("end", () => {
+            let received: ReceivedUpload | undefined;
             try {
-                requests.push(JSON.parse(body));
+                received = JSON.parse(body) as ReceivedUpload;
+                requests.push(received);
             } catch {
                 // ignore non-JSON probes
             }
+            const index = requests.length - 1;
+            // resolve on arrival, before the response is decided -> a test can see
+            // a request whose response is held open
             for (let i = waiters.length - 1; i >= 0; i--) {
                 if (requests.length >= waiters[i].count) {
                     waiters[i].resolve();
                     waiters.splice(i, 1);
                 }
             }
-            res.setHeader("x-upload-id", "test-receiver");
-            res.statusCode = 200;
-            res.end(JSON.stringify({ ok: true }));
+            void Promise.resolve(
+                received && options.respond
+                    ? options.respond(received, index)
+                    : 200
+            ).then((status) => {
+                res.setHeader("x-upload-id", "test-receiver");
+                res.statusCode = status;
+                res.end(JSON.stringify({ ok: status < 400 }));
+            });
         });
     });
 
@@ -91,6 +120,62 @@ export function decodeUpload(received: ReceivedUpload): LogEntry[] {
     return decodeLogs(decompressFromBase64(received.compressedLogs));
 }
 
+export {
+    crashLogConfigOverrides,
+    crashLogUploadOverrides
+} from "./crashLogConfig";
+
+/** uploads for one peer, grouped by sending thread */
+export function streamsFor(
+    receiver: LogReceiver,
+    peerAddress: string
+): Map<LogThreadName, ReceivedUpload[]> {
+    return streamsIn(receiver.requests, peerAddress);
+}
+
+/** every upload one realm sent, across peers - for single-peer scenarios */
+export function threadStream(
+    receiver: LogReceiver,
+    threadName: LogThreadName
+): ReceivedUpload[] {
+    return receiver.requests.filter(
+        (request) => request.threadName === threadName
+    );
+}
+
+/** the same grouping over an already-sliced set, e.g. one round's uploads */
+export function streamsIn(
+    uploads: readonly ReceivedUpload[],
+    peerAddress: string
+): Map<LogThreadName, ReceivedUpload[]> {
+    const streams = new Map<LogThreadName, ReceivedUpload[]>();
+    for (const upload of uploads) {
+        if (upload.peerAddress !== peerAddress) continue;
+        const existing = streams.get(upload.threadName) ?? [];
+        existing.push(upload);
+        streams.set(upload.threadName, existing);
+    }
+    return streams;
+}
+
+/** every message the given uploads carry, in arrival order */
+export function messagesIn(uploads: ReceivedUpload[]): string[] {
+    return uploads.flatMap((upload) =>
+        decodeUpload(upload).map((entry) => entry.message)
+    );
+}
+
+/** whether `text` appears anywhere in the uploads - message, metadata or stack.
+ *  a captured crash carries its error in metadata, not the message. */
+export function uploadsInclude(
+    uploads: ReceivedUpload[],
+    text: string
+): boolean {
+    return uploads.some((upload) =>
+        JSON.stringify(decodeUpload(upload)).includes(text)
+    );
+}
+
 export type UploaderFixture = {
     logUploader: NodeLogUploader;
     logStore: LogStore;
@@ -99,20 +184,25 @@ export type UploaderFixture = {
 
 // Builds a real uploader + logger against a real endpoint, wired exactly as the
 // platform loggers do (`logUploader.setLogger(this)` in the logger constructor).
-// jitterMs is deterministic (default 0) so tests get a fixed delay without
-// stubbing Math.random.
+// jitter off by default so tests do not sleep
 export function createUploaderFixture(opts: {
     uploadEndpoint: string;
-    jitterMs?: number;
+    jitterMaxMs?: number;
+    // replaces the default channel/peer identity, e.g. a thread name and no channel
+    sharedContext?: SharedLoggerContext;
+    maxStoreBytes?: number;
 }): UploaderFixture {
-    const logStore = new LogStore(1024 * 1024, true);
-    const sharedContext = {
+    const logStore = new LogStore(opts.maxStoreBytes ?? 1024 * 1024, true);
+    const sharedContext: SharedLoggerContext = opts.sharedContext ?? {
         channelId: ethers.ZeroHash,
         peerAddress: ethers.Wallet.createRandom().address
     };
     const logUploader = new NodeLogUploader(
         logStore,
-        { uploadEndpoint: opts.uploadEndpoint, jitterMs: opts.jitterMs ?? 0 },
+        {
+            uploadEndpoint: opts.uploadEndpoint,
+            jitterMaxMs: opts.jitterMaxMs ?? 0
+        },
         { component: "LogUploaderTest" },
         sharedContext,
         false

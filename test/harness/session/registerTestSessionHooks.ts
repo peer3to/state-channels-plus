@@ -92,15 +92,16 @@ export function registerTestSessionHooks(testSession: TestSessionClass): void {
             if (this.currentTest?.state === "failed" || firstDetachedError) {
                 hookTrace("Test failed - trying to upload logs!");
                 const h = testSession.getHarness();
+                // markers only - the harness upload below fans out to every peer
+                // and root, so a per-peer upload here would run N rounds
                 h.peers.forEach((peer, index) => {
-                    const promise = peer.logger.uploadLogs(
+                    peer.logger.warn(
                         `FAILED (Peer ${index}): ${this.currentTest?.title}`,
                         {
                             testError: this.currentTest?.err || "N/A",
                             firstDetachedError: firstDetachedError || "N/A"
                         }
                     );
-                    DetachedPromises.collect(promise);
                 });
                 const promise = h.logger.uploadLogs(
                     `FAILED (Harness): ${this.currentTest?.title}`,

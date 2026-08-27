@@ -6,6 +6,64 @@ import {
     createContractExecutorFactory,
     type EvmCustomPrecompileManifest
 } from "@/evm";
+import { realmLogFlushBus } from "@/utils/logging/LogFlushBus";
+import type { NodeLogger } from "@/utils/logging/node/NodeLogger";
+import {
+    createUploaderFixture,
+    decodeUpload,
+    startLogReceiver,
+    type LogReceiver
+} from "@test/fixtures/logging/LogUploader.fixture";
+import {
+    applyCrashLogConfig,
+    crashLogUploadOverrides
+} from "@test/fixtures/logging/crashLogConfig";
+import { WORKER_ASYNC_CRASH_MESSAGE } from "@test/fixtures/workerAnswerPrecompile";
+
+// one port hop plus one POST -> above the receiver fixture's 2s default
+const FLUSH_WAIT_MS = 15_000;
+
+// schedules an unhandled rejection inside the worker thread
+function crashingPrecompile(address: string): EvmCustomPrecompileManifest {
+    return {
+        address,
+        module: path.resolve(
+            __dirname,
+            "../fixtures/workerAnswerPrecompile.ts"
+        ),
+        options: {
+            expectedData: "0x1234",
+            value: "42",
+            crashAsync: true
+        }
+    };
+}
+
+// points every realm's uploader at a real receiver, jitter off. the worker
+// rebuilds config from the init payload.
+function useReceiver(receiver: LogReceiver): {
+    logger: NodeLogger;
+    dispose: () => void;
+} {
+    const restoreConfig = applyCrashLogConfig(
+        crashLogUploadOverrides(receiver.url)
+    );
+    const { logger } = createUploaderFixture({
+        uploadEndpoint: receiver.url,
+        sharedContext: {
+            threadName: "sdk",
+            peerAddress: ethers.Wallet.createRandom().address
+        }
+    });
+    realmLogFlushBus.registerLogger(logger);
+    return {
+        logger,
+        dispose: () => {
+            logger.dispose();
+            restoreConfig();
+        }
+    };
+}
 
 describe("WorkerContractExecutor", function () {
     const createLogOnlyInitCode = (topic: string) => {
@@ -217,46 +275,166 @@ describe("WorkerContractExecutor", function () {
         }
     });
 
-    for (const dedicatedThread of [false, true]) {
-        it(`should serialize simulations with local writes (${dedicatedThread ? "worker" : "inline"})`, async function () {
-            const customAddress = Address.fromString(
-                "0x00000000000000000000000000000000000000bc"
-            );
-            const customPrecompile: EvmCustomPrecompileManifest = {
-                address: customAddress.toString(),
-                module: path.resolve(
-                    __dirname,
-                    "../fixtures/workerConcurrencyPrecompile.ts"
-                ),
-                options: { delayMs: 50 }
-            };
-            const executor = await createContractExecutorFactory({
-                dedicatedThread,
-                customPrecompiles: [customPrecompile]
-            });
-
-            try {
-                const simulation = executor.simulateCall(
-                    "0x1234",
-                    customAddress.toString()
-                );
-                const write = executor.executeCall(
-                    "0x5678",
-                    customAddress.toString()
-                );
-                const results = await Promise.all([simulation, write]);
-
-                for (const result of results) {
-                    const [maximumActiveCalls] =
-                        ethers.AbiCoder.defaultAbiCoder().decode(
-                            ["uint256"],
-                            result.returnValue
-                        );
-                    expect(maximumActiveCalls).to.equal(1n);
-                }
-            } finally {
-                await executor.dispose();
-            }
+    it("ends the worker after a fatal so pending calls do not hang", async function () {
+        const customAddress = Address.fromString(
+            "0x00000000000000000000000000000000000000be"
+        );
+        const receiver = await startLogReceiver();
+        const { logger, dispose } = useReceiver(receiver);
+        const executor = await createContractExecutorFactory({
+            dedicatedThread: true,
+            logger,
+            customPrecompiles: [crashingPrecompile(customAddress.toString())]
         });
+
+        try {
+            await executor.simulateCall("0x1234", customAddress.toString());
+            await receiver.waitForRequests(1, FLUSH_WAIT_MS);
+
+            // the crash hooks the vm logger installs suppress node's fatal
+            // default, so without an explicit end the thread survives and calls
+            // keep succeeding instead of failing the peer
+            const deadline = Date.now() + FLUSH_WAIT_MS;
+            let rejected = false;
+            while (!rejected && Date.now() < deadline) {
+                try {
+                    await executor.simulateCall(
+                        "0x1234",
+                        customAddress.toString()
+                    );
+                } catch {
+                    rejected = true;
+                }
+            }
+
+            expect(
+                rejected,
+                "worker still serving calls after a fatal"
+            ).to.equal(true);
+        } finally {
+            await Promise.resolve(executor.dispose()).catch(() => undefined);
+            dispose();
+            await receiver.close();
+        }
+    });
+
+    it("uploads the worker's logs under the vm thread", async function () {
+        const customAddress = Address.fromString(
+            "0x00000000000000000000000000000000000000bf"
+        );
+        const receiver = await startLogReceiver();
+        const { logger, dispose } = useReceiver(receiver);
+        const executor = await createContractExecutorFactory({
+            dedicatedThread: true,
+            logger,
+            customPrecompiles: [crashingPrecompile(customAddress.toString())]
+        });
+
+        try {
+            // vm logs nothing normally -> an entry here means a real worker failure
+            await executor.simulateCall("0x1234", customAddress.toString());
+            await receiver.waitForRequests(1, FLUSH_WAIT_MS);
+
+            const vmUpload = receiver.requests.find(
+                (request) => request.threadName === "vm"
+            );
+            expect(vmUpload, "no vm upload arrived").to.not.be.undefined;
+            expect(vmUpload!.fromSeq).to.equal(0);
+            // filed under the identity the host pushed on attach; init carries none
+            expect(vmUpload!.peerAddress).to.equal(
+                logger.getSharedContext().peerAddress
+            );
+        } finally {
+            await executor.dispose();
+            dispose();
+            await receiver.close();
+        }
+    });
+
+    it("an unhandled rejection in the worker uploads every linked realm", async function () {
+        const customAddress = Address.fromString(
+            "0x00000000000000000000000000000000000000bf"
+        );
+        const receiver = await startLogReceiver();
+        const { logger, dispose } = useReceiver(receiver);
+        const executor = await createContractExecutorFactory({
+            dedicatedThread: true,
+            logger,
+            customPrecompiles: [crashingPrecompile(customAddress.toString())]
+        });
+
+        try {
+            logger.info("host realm entry");
+            await executor.simulateCall("0x1234", customAddress.toString());
+            await receiver.waitForRequests(2, FLUSH_WAIT_MS);
+
+            const vmUpload = receiver.requests.find(
+                (request) => request.threadName === "vm"
+            );
+            expect(vmUpload, "no vm upload arrived").to.not.be.undefined;
+            expect(JSON.stringify(decodeUpload(vmUpload!))).to.include(
+                WORKER_ASYNC_CRASH_MESSAGE
+            );
+            expect(
+                receiver.requests.map((request) => request.threadName)
+            ).to.include("sdk");
+        } finally {
+            await executor.dispose();
+            dispose();
+            await receiver.close();
+        }
+    });
+
+    // static declarations: the parallel/distributed runner discovers cases by
+    // literal name, so the shared body lives in a helper instead of a loop
+    async function assertSimulationsSerializeWithLocalWrites(
+        dedicatedThread: boolean
+    ): Promise<void> {
+        const customAddress = Address.fromString(
+            "0x00000000000000000000000000000000000000bc"
+        );
+        const customPrecompile: EvmCustomPrecompileManifest = {
+            address: customAddress.toString(),
+            module: path.resolve(
+                __dirname,
+                "../fixtures/workerConcurrencyPrecompile.ts"
+            ),
+            options: { delayMs: 50 }
+        };
+        const executor = await createContractExecutorFactory({
+            dedicatedThread,
+            customPrecompiles: [customPrecompile]
+        });
+
+        try {
+            const simulation = executor.simulateCall(
+                "0x1234",
+                customAddress.toString()
+            );
+            const write = executor.executeCall(
+                "0x5678",
+                customAddress.toString()
+            );
+            const results = await Promise.all([simulation, write]);
+
+            for (const result of results) {
+                const [maximumActiveCalls] =
+                    ethers.AbiCoder.defaultAbiCoder().decode(
+                        ["uint256"],
+                        result.returnValue
+                    );
+                expect(maximumActiveCalls).to.equal(1n);
+            }
+        } finally {
+            await executor.dispose();
+        }
     }
+
+    it("should serialize simulations with local writes (inline)", async function () {
+        await assertSimulationsSerializeWithLocalWrites(false);
+    });
+
+    it("should serialize simulations with local writes (worker)", async function () {
+        await assertSimulationsSerializeWithLocalWrites(true);
+    });
 });

@@ -1,6 +1,6 @@
 import { expect } from "chai";
 import { AxiosError } from "axios";
-import { encodeLogEntry } from "@/utils/logging/logEncoder";
+import { decodeLogEntry, encodeLogEntry } from "@/utils/logging/logEncoder";
 import { LogEntry } from "@/utils/logging/Logger";
 
 const SECRETS = ["Bearer top-secret", "session=cookie-secret", "body-secret"];
@@ -27,6 +27,7 @@ function secretAxiosError(): AxiosError {
 function encodeMeta(meta: unknown): string {
     const entry: LogEntry = {
         time: "1",
+        wallTimeMs: 1000,
         level: "error",
         context: {},
         sharedContext: {},
@@ -141,5 +142,57 @@ describe("encodeLogEntry", function () {
         const encoded = encodeMeta({ when: new Date(0), big: 10n });
         expect(encoded).to.include("1970-01-01T00:00:00.000Z");
         expect(encoded).to.include('"10"');
+    });
+
+    it("round-trips the wall-clock timestamp", function () {
+        const entry: LogEntry = {
+            time: "1",
+            wallTimeMs: 1_700_000_000_123,
+            level: "info",
+            context: {},
+            sharedContext: { threadName: "vm" },
+            message: "m",
+            meta: [],
+            stack: "s"
+        };
+
+        const decoded = decodeLogEntry(encodeLogEntry(entry));
+
+        expect(decoded.wallTimeMs).to.equal(1_700_000_000_123);
+        expect(decoded.sharedContext.threadName).to.equal("vm");
+    });
+
+    it("encodes a non-string message as a string", function () {
+        // call sites pass anything - SpectateService does `logger.warn(e)`. an
+        // object message decodes to nothing the server will keep, and the merge
+        // now drops it silently instead of rejecting the chunk.
+        const entry = {
+            time: "1",
+            wallTimeMs: 1000,
+            level: "warn",
+            context: {},
+            sharedContext: {},
+            message: new Error("boom"),
+            meta: [],
+            stack: "s"
+        } as unknown as LogEntry;
+
+        const decoded = decodeLogEntry(encodeLogEntry(entry));
+
+        expect(decoded.message).to.equal("boom");
+    });
+
+    it("rejects an entry with no wall-clock timestamp", function () {
+        const noWallClock = JSON.stringify({
+            time: "1",
+            level: "info",
+            context: {},
+            sharedContext: {},
+            message: "m",
+            meta: [],
+            stack: "s"
+        });
+
+        expect(() => decodeLogEntry(noWallClock)).to.throw("invalid fields");
     });
 });
