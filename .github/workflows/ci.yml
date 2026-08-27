@@ -34,6 +34,11 @@ jobs:
             - name: Install dependencies
               run: yarn install --frozen-lockfile
 
+            - name: Install Foundry
+              uses: foundry-rs/foundry-toolchain@v1
+              with:
+                  version: v1.2.3
+
             - name: Check distributed pool secrets are present
               env:
                   SCP_TEST_POOL_SECRET: ${{ secrets.SCP_TEST_POOL_SECRET }}
