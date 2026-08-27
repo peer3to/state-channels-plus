@@ -463,6 +463,55 @@ export function customEvmError(
     return tryDecodeCustomError(revertError)!;
 }
 
+// The zero value for one ABI parameter: 0 for integers, the zero address, an
+// empty dynamic value, the all-zero fixed-width bytes, and so on recursively
+// for arrays and tuples.
+function zeroValueForParamType(paramType: ethers.ParamType): unknown {
+    if (paramType.baseType === "array") {
+        const arrayLength = paramType.arrayLength ?? -1;
+        if (arrayLength < 0) return [];
+        return Array.from({ length: arrayLength }, () =>
+            zeroValueForParamType(paramType.arrayChildren!)
+        );
+    }
+    if (paramType.baseType === "tuple") {
+        return (paramType.components ?? []).map(zeroValueForParamType);
+    }
+    if (paramType.baseType === "address") return ethers.ZeroAddress;
+    if (paramType.baseType === "bool") return false;
+    if (paramType.baseType === "string") return "";
+    if (paramType.baseType === "bytes") return "0x";
+    const fixedBytesWidth = /^bytes(\d+)$/.exec(paramType.baseType);
+    if (fixedBytesWidth) {
+        return ethers.zeroPadValue("0x", Number(fixedBytesWidth[1]));
+    }
+    if (/^u?int\d*$/.test(paramType.baseType)) return 0n;
+    throw new Error(
+        `Unsupported custom error parameter type: ${paramType.type}`
+    );
+}
+
+/**
+ * Revert data for `errorName`, with a zero value for every argument the error
+ * declares. Derived from the error's own ABI fragment, so a test that only
+ * cares about the error's identity keeps working when the error gains
+ * arguments - never hand-hash `keccak256("Name()")`, which silently stops
+ * matching the moment a parameter is added.
+ *
+ * Throws when `errorName` is not a known contract error.
+ */
+export function encodedCustomErrorRevert(errorName: string): Bytes {
+    const errorInterface = getErrorInterface();
+    const errorFragment = errorInterface.getError(errorName);
+    if (!errorFragment) {
+        throw new Error(`Unknown contract error: ${errorName}`);
+    }
+    return errorInterface.encodeErrorResult(
+        errorFragment,
+        errorFragment.inputs.map(zeroValueForParamType)
+    );
+}
+
 export function snapshotData(
     overrides: Partial<SnapshotDataStruct> = {}
 ): SnapshotDataStruct {

@@ -24,10 +24,10 @@ Detailed statements, source evidence, design analysis, and test mappings remain 
 - Current security-accepted paths: **0/243** (0%)
 - Final ready paths: **0/243** (0%)
 - Source files assigned to implementation subjects: **240/258** (93%)
-- Test declarations mapped or explicitly ignored: **804/1513** (53%)
+- Test declarations mapped or explicitly ignored: **831/1543** (54%)
 - Open questions: 38
 - Active findings: 17
-- Strict blocking items: 5239
+- Strict blocking items: 5242
 
 ## Requirement paths
 
@@ -280,7 +280,7 @@ Detailed statements, source evidence, design analysis, and test mappings remain 
 ## Global gaps
 
 - 18 source/contract file(s) have no implementation-subject owner.
-- 709 test declaration(s) are unaccounted.
+- 712 test declaration(s) are unaccounted.
 - 38 open question(s) require decisions.
 - 17 active finding(s) remain.
 - 243 requirement path(s) lack current engineer approval.

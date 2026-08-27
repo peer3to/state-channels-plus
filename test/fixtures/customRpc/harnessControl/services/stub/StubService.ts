@@ -1299,7 +1299,11 @@ export class StubService extends ARpcService<
 
     private submissionFailure(failure: DisputeSubmissionFailureSpec): unknown {
         if (failure.customError) {
-            return { data: id(`${failure.customError}()`).slice(0, 10) };
+            // Built from the error's own ABI fragment; a hand-hashed `Name()`
+            // selector decodes to nothing once the error gains a parameter.
+            return {
+                data: factory.encodedCustomErrorRevert(failure.customError)
+            };
         }
         return new Error(failure.message ?? "dispute upload failed");
     }
