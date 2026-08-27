@@ -117,7 +117,16 @@ function isRoutineDiscoveryFailure(error) {
     return isDiscoveryAuthenticationFailure(error);
 }
 
-function promoteAttemptLog(logDir, assignment, worker, code) {
+function assertCompatibleWorkerProtocol(capabilities) {
+    if (capabilities?.distributedProtocol === DISTRIBUTED_PROTOCOL_VERSION) {
+        return;
+    }
+    throw new Error(
+        `Distributed worker protocol mismatch: orchestrator requires ${DISTRIBUTED_PROTOCOL_VERSION}, worker host provides ${capabilities?.distributedProtocol ?? "none"}. Update and restart the worker host or rebase this branch.`
+    );
+}
+
+function promoteAttemptLog(logDir, assignment, worker, code, attempt = {}) {
     const attemptPath =
         worker?.attemptPaths.get(assignment.attemptId) ||
         logging.getAttemptLogPath(
@@ -126,7 +135,14 @@ function promoteAttemptLog(logDir, assignment, worker, code) {
             assignment.attemptId
         );
     const canonical = logging.getLogPath(logDir, assignment.task.logName);
-    if (fs.existsSync(attemptPath)) fs.renameSync(attemptPath, canonical);
+    if (fs.existsSync(attemptPath)) {
+        if (code !== 0)
+            logging.appendRunnerFailureMarker(
+                attemptPath,
+                attempt.failureReason
+            );
+        fs.renameSync(attemptPath, canonical);
+    }
     if (code !== 0) logging.markLogAsError(logDir, assignment.task.logName);
 }
 
@@ -396,11 +412,18 @@ async function runDistributed(options) {
                 );
             }
             if (actions.report) {
-                promoteAttemptLog(options.logDir, assignment, worker, code);
+                promoteAttemptLog(
+                    options.logDir,
+                    assignment,
+                    worker,
+                    code,
+                    attempt
+                );
                 logging.result({
                     completed: coordinator.completed,
                     total: options.tasks.length,
                     code,
+                    failureReason: attempt.failureReason,
                     label: attempt.label,
                     durationMs: attempt.durationMs,
                     oomCount: parsed?.oomCount || 0,
@@ -477,22 +500,17 @@ async function runDistributed(options) {
                 );
                 return;
             }
-            if (
-                ready.header.capabilities.distributedProtocol !==
-                DISTRIBUTED_PROTOCOL_VERSION
-            ) {
+            try {
+                assertCompatibleWorkerProtocol(ready.header.capabilities);
+            } catch (error) {
+                info.ban(true);
                 if (!warnedIncompatibleWorkers.has(workerId)) {
                     warnedIncompatibleWorkers.add(workerId);
                     console.warn(
-                        `Ignoring worker ${ready.header.name}: restart it with the current code`
+                        `Ignoring worker ${ready.header.name}: ${error.message}`
                     );
                 }
-                const heartbeat = setInterval(
-                    () => peer.send("HEARTBEAT").catch(() => {}),
-                    5000
-                );
-                peer.on("message", () => {});
-                peer.once("close", () => clearInterval(heartbeat));
+                peer.close(error.message);
                 return;
             }
             const worker = {
@@ -651,7 +669,6 @@ async function runDistributed(options) {
             }
             await worker.peer.send("RUN_CONFIG", {
                 baseEnv: options.baseEnv,
-                keepInfraLogs: options.keepInfraLogs,
                 taskCount: options.tasks.length,
                 extensions: Object.keys(runExtensions).length
                     ? runExtensions
@@ -758,6 +775,13 @@ async function runDistributed(options) {
                     total: options.tasks.length,
                     label: message.header.result.label,
                     starveCount: completion.parsed.starveCount
+                });
+            } else if (completion.disposition === "retry-infrastructure") {
+                logging.infrastructureRetry({
+                    seq: message.header.assignment.seq,
+                    total: options.tasks.length,
+                    label: message.header.result.label,
+                    reason: completion.failureReason
                 });
             }
             await Promise.all(
@@ -957,7 +981,11 @@ async function runDistributed(options) {
         await Promise.all(
             used.map((worker) =>
                 worker.peer
-                    .send("RUN_COMPLETE")
+                    .send("RUN_COMPLETE", {
+                        collectInfraLogs:
+                            options.keepInfraLogs === true ||
+                            coordinator.failed.length > 0
+                    })
                     .catch((error) => dropWorker(worker, error))
             )
         );
@@ -1007,6 +1035,7 @@ async function runDistributed(options) {
 module.exports = {
     WORKER_COLORS,
     aggregateWorkerStats,
+    assertCompatibleWorkerProtocol,
     coordinatorResultActions,
     createWorkerColorRegistry,
     createHeartbeatMonitor,

@@ -15,6 +15,9 @@ const {
     provisionSlots,
     teardownInfra
 } = require("../../../test/utils/nodeInfra");
+const {
+    createInfrastructureProcessLogChunks
+} = require("./infrastructureLogTransfer");
 
 let scheduler;
 let infra = { nodes: [], discoveries: [] };
@@ -52,31 +55,36 @@ async function reportInfrastructureProcessLog(
     trigger,
     processFailure
 ) {
-    let log = "";
+    let log = Buffer.alloc(0);
     try {
         log = processHandle.logPath
-            ? fs.readFileSync(processHandle.logPath, "utf8")
-            : "";
+            ? fs.readFileSync(processHandle.logPath)
+            : Buffer.alloc(0);
     } catch (error) {
-        log = `Could not read ${processKind} log: ${error.message}\n`;
+        log = Buffer.from(
+            `Could not read ${processKind} log: ${error.message}\n`
+        );
     }
-    await request("INFRA_PROCESS_DIAGNOSTIC", {
-        uploadId: `${process.pid}-${infrastructureUploadId++}`,
-        processKind,
-        slotId: processHandle.slotId,
-        trigger,
-        processFailure,
-        log
-    });
+    const uploadId = `${process.pid}-${infrastructureUploadId++}`;
+    for (const chunk of createInfrastructureProcessLogChunks(log)) {
+        await request("INFRA_PROCESS_DIAGNOSTIC", {
+            uploadId,
+            processKind,
+            slotId: processHandle.slotId,
+            trigger,
+            processFailure,
+            ...chunk
+        });
+    }
 }
 
 async function reportInfrastructureLogs() {
-    await Promise.all([
+    const results = await Promise.allSettled([
         ...infra.nodes.map((node) =>
             reportInfrastructureProcessLog(
                 "hardhat",
                 node,
-                "run completed with --keep-infra-logs",
+                "run completed; collecting infrastructure logs",
                 ""
             )
         ),
@@ -84,11 +92,18 @@ async function reportInfrastructureLogs() {
             reportInfrastructureProcessLog(
                 "discovery",
                 discovery,
-                "run completed with --keep-infra-logs",
+                "run completed; collecting infrastructure logs",
                 ""
             )
         )
     ]);
+    for (const result of results) {
+        if (result.status === "rejected") {
+            console.error(
+                `Could not collect infrastructure log: ${result.reason?.message || result.reason}`
+            );
+        }
+    }
 }
 
 function monitorInfrastructureProcess(processKind, processHandle) {
@@ -278,11 +293,15 @@ async function start(config) {
     scheduler.start();
 }
 
-async function stop(exitCode = 0, reportStats = false) {
+async function stop(
+    exitCode = 0,
+    reportStats = false,
+    collectInfraLogs = false
+) {
     scheduler?.stop();
     cancellation.abort();
     if (reportStats && process.connected) {
-        if (configuration?.keepInfraLogs) {
+        if (collectInfraLogs) {
             await reportInfrastructureLogs();
         }
         rejectPending(new Error("Distributed worker stopped"));
@@ -312,7 +331,8 @@ process.on("message", (message) => {
     } else if (message.kind === "WORK_AVAILABLE") scheduler?.workAvailable();
     else if (message.kind === "WORKER_COMPLETE_ACK")
         finishStop(completionExitCode ?? 0);
-    else if (message.kind === "RUN_COMPLETE") stop(0, true);
+    else if (message.kind === "RUN_COMPLETE")
+        stop(0, true, message.collectInfraLogs === true);
     else if (message.kind === "CANCEL") stop();
 });
 process.on("disconnect", () => stop());

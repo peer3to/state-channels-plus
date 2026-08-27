@@ -33,7 +33,7 @@ const { shouldTransferAttemptEvidence } = require("./artifactSelection");
 const { BoundedArtifactAssembler } = require("./failureArtifacts");
 
 const SHUTDOWN_TIMEOUT_MS = 5000;
-const INFRA_PROCESS_LOG_CHUNK_BYTES = 512 * 1024;
+const CLEANUP_SETUP_WARNING_MS = 60000;
 
 function isRoutineDiscoveryFailure(error) {
     return isDiscoveryAuthenticationFailure(error);
@@ -51,6 +51,15 @@ function requireTransportPublicKey(info) {
         throw new Error("Authenticated transport key is required");
     }
     return peerId;
+}
+
+function assertCompatibleRunnerProtocol(manifest) {
+    if (manifest.distributedProtocol === DISTRIBUTED_PROTOCOL_VERSION) return;
+    const error = new Error(
+        `Distributed runner protocol mismatch: worker host requires ${DISTRIBUTED_PROTOCOL_VERSION}, uploaded workspace provides ${manifest.distributedProtocol ?? "none"}. Update the worker host or rebase the orchestrator branch.`
+    );
+    error.code = "DISTRIBUTED_PROTOCOL_MISMATCH";
+    throw error;
 }
 
 function sendStatusMessage(connection, status) {
@@ -222,6 +231,171 @@ async function main(options = {}) {
             targetLoad: config.targetLoad
         };
         return { defaults, ceilings: { ...defaults } };
+    }
+
+    function createWorkspaceRuntime(connection, environmentKey, manifest) {
+        let reserved = false;
+        let lock = null;
+        let environment = null;
+        let listeners = null;
+        let setupFailure = null;
+        let cleanupRequested = false;
+        let cleaned = false;
+        const setupCancellation = new AbortController();
+        const runtime = {
+            setup: null,
+            async cleanup() {
+                if (cleaned) return;
+                cleaned = true;
+                cleanupRequested = true;
+                setupCancellation.abort();
+                const setupWarning = setTimeout(
+                    () =>
+                        console.warn(
+                            `Environment cleanup is still waiting for setup after ${CLEANUP_SETUP_WARNING_MS}ms (${environmentKey})`
+                        ),
+                    CLEANUP_SETUP_WARNING_MS
+                );
+                setupWarning.unref();
+                try {
+                    await runtime.setup.catch(() => {});
+                } finally {
+                    clearTimeout(setupWarning);
+                }
+                if (listeners && environment) {
+                    environment.off("frame", listeners.frame);
+                    environment.off("failure", listeners.failure);
+                    environment.off("resourceLimit", listeners.resourceLimit);
+                }
+                if (reserved) environmentCache.beginStop(environmentKey);
+                let detached = false;
+                let destroyed = false;
+                try {
+                    if (environment) {
+                        if (
+                            setupFailure ||
+                            connection.environmentFailed ||
+                            environment.state === "created" ||
+                            environment.state === "failed"
+                        ) {
+                            await environment.destroy();
+                            destroyed = true;
+                        } else {
+                            await environment.stop();
+                            environmentManager.markClean(environment);
+                        }
+                    }
+                    detached = true;
+                } catch (error) {
+                    environmentManager.block(environmentKey, error);
+                    audit.append({
+                        action: "environment-failure",
+                        accepted: false,
+                        callerFingerprint: fingerprint(connection.peerId),
+                        environmentKey,
+                        failureCode: "DETACH_UNCONFIRMED"
+                    });
+                } finally {
+                    lock?.release();
+                    if (reserved) environmentCache.release(environmentKey);
+                }
+                if (destroyed && detached && reserved) {
+                    environmentCache.invalidate(environmentKey);
+                }
+            }
+        };
+        runtime.setup = (async () => {
+            const reservation = await environmentCache.reserve(
+                environmentKey,
+                connection.executionProfile.diskBytes
+            );
+            reserved = true;
+            audit.append({
+                action: "environment-allocation",
+                accepted: true,
+                callerFingerprint: fingerprint(connection.peerId),
+                environmentKey,
+                backend: environmentManager.capabilities().backend,
+                cacheBytes: reservation.measuredBytes,
+                resolvedProfile: profileSummary(connection.executionProfile),
+                reason: reservation.evicted.length
+                    ? `evicted:${reservation.evicted.join(",")}`
+                    : "within-cache-budget"
+            });
+            if (cleanupRequested) return null;
+            lock = acquireWorkspaceLock(config.workRoot, environmentKey);
+            if (cleanupRequested) return null;
+            environment = await environmentManager.allocate({
+                environmentKey,
+                orchestratorPublicKey: connection.peerId,
+                profile: connection.executionProfile
+            });
+            connection.environment = environment;
+            connection.environmentKey = environmentKey;
+            const onEnvironmentFrame = (frame) =>
+                handleEnvironmentFrame(connection, frame).catch((error) =>
+                    handleEnvironmentFailure(connection, error)
+                );
+            const onEnvironmentFailure = (error) =>
+                handleEnvironmentFailure(connection, error);
+            const onResourceLimit = (failure) =>
+                handleEnvironmentFrame(connection, {
+                    kind: "RESOURCE_LIMIT_EXCEEDED",
+                    payload: failure,
+                    body: Buffer.alloc(0)
+                }).catch((error) =>
+                    handleEnvironmentFailure(connection, error)
+                );
+            listeners = {
+                frame: onEnvironmentFrame,
+                failure: onEnvironmentFailure,
+                resourceLimit: onResourceLimit
+            };
+            environment.on("frame", onEnvironmentFrame);
+            environment.on("failure", onEnvironmentFailure);
+            environment.on("resourceLimit", onResourceLimit);
+            if (cleanupRequested) return null;
+            await environment.start();
+            if (cleanupRequested) return null;
+            environmentManager.writeMetadata(environment, true);
+            await environment.send("ENVIRONMENT_SETUP", {
+                environmentKey,
+                orchestratorPublicKey: connection.peerId,
+                profile: profileSummary(connection.executionProfile),
+                limits: {
+                    maxCompressedBytes: config.maxCompressedBytes,
+                    maxExpandedBytes: config.maxExpandedBytes,
+                    maxAttemptSpoolBytes: config.maxAttemptSpoolBytes
+                }
+            });
+            if (cleanupRequested) return null;
+            const needed = environment.waitFor(
+                "WORKSPACE_NEED",
+                30000,
+                setupCancellation.signal
+            );
+            let need;
+            try {
+                await environment.send("WORKSPACE_OFFER", { manifest });
+                need = (await needed).payload;
+            } catch (error) {
+                setupCancellation.abort();
+                await needed.catch(() => {});
+                if (
+                    cleanupRequested &&
+                    error.code === "ISOLATED_WAIT_ABORTED"
+                ) {
+                    return null;
+                }
+                throw error;
+            }
+            if (cleanupRequested) return null;
+            return need;
+        })().catch((error) => {
+            setupFailure = error;
+            throw error;
+        });
+        return runtime;
     }
 
     async function handleAuthorizationAdmin(connection, message) {
@@ -615,7 +789,7 @@ async function main(options = {}) {
             }
             manager.assertActive(connection);
             if (message.kind === "WORKSPACE_OFFER") {
-                if (connection.environment) {
+                if (connection.runtime) {
                     throw new Error(
                         "Workspace offer is invalid after preparation has started"
                     );
@@ -624,6 +798,7 @@ async function main(options = {}) {
                     ...message.header.manifest,
                     files: JSON.parse(message.body.toString("utf8"))
                 };
+                assertCompatibleRunnerProtocol(manifest);
                 if (
                     manifest.files.length !== manifest.fileCount ||
                     manifest.files.some(
@@ -638,119 +813,15 @@ async function main(options = {}) {
                     connection.peerId,
                     manifest.workspaceId
                 );
-                const reservation = await environmentCache.reserve(
-                    environmentKey,
-                    connection.executionProfile.diskBytes
-                );
-                audit.append({
-                    action: "environment-allocation",
-                    accepted: true,
-                    callerFingerprint: fingerprint(connection.peerId),
-                    environmentKey,
-                    backend: environmentManager.capabilities().backend,
-                    cacheBytes: reservation.measuredBytes,
-                    resolvedProfile: profileSummary(
-                        connection.executionProfile
-                    ),
-                    reason: reservation.evicted.length
-                        ? `evicted:${reservation.evicted.join(",")}`
-                        : "within-cache-budget"
-                });
-                let lock;
-                let environment;
-                try {
-                    lock = acquireWorkspaceLock(
-                        config.workRoot,
-                        environmentKey
-                    );
-                    environment = await environmentManager.allocate({
-                        environmentKey,
-                        orchestratorPublicKey: connection.peerId,
-                        profile: connection.executionProfile
-                    });
-                } catch (error) {
-                    lock?.release();
-                    environmentCache.beginStop(environmentKey);
-                    environmentCache.release(environmentKey);
-                    throw error;
-                }
-                connection.environment = environment;
                 connection.environmentKey = environmentKey;
-                const onEnvironmentFrame = (frame) =>
-                    handleEnvironmentFrame(connection, frame).catch((error) =>
-                        handleEnvironmentFailure(connection, error)
-                    );
-                const onEnvironmentFailure = (error) =>
-                    handleEnvironmentFailure(connection, error);
-                const onResourceLimit = (failure) =>
-                    handleEnvironmentFrame(connection, {
-                        kind: "RESOURCE_LIMIT_EXCEEDED",
-                        payload: failure,
-                        body: Buffer.alloc(0)
-                    }).catch((error) =>
-                        handleEnvironmentFailure(connection, error)
-                    );
-                let cleaned = false;
-                connection.runtime = {
-                    listeners: {
-                        frame: onEnvironmentFrame,
-                        failure: onEnvironmentFailure,
-                        resourceLimit: onResourceLimit
-                    },
-                    async cleanup() {
-                        if (cleaned) return;
-                        cleaned = true;
-                        environment.off("frame", onEnvironmentFrame);
-                        environment.off("failure", onEnvironmentFailure);
-                        environment.off("resourceLimit", onResourceLimit);
-                        environmentCache.beginStop(environmentKey);
-                        let detached = false;
-                        try {
-                            if (connection.environmentFailed) {
-                                await environment.destroy();
-                            } else {
-                                await environment.stop();
-                                environmentManager.markClean(environment);
-                            }
-                            detached = true;
-                        } catch (error) {
-                            environmentManager.block(environmentKey, error);
-                            audit.append({
-                                action: "environment-failure",
-                                accepted: false,
-                                callerFingerprint: fingerprint(
-                                    connection.peerId
-                                ),
-                                environmentKey,
-                                failureCode: "DETACH_UNCONFIRMED"
-                            });
-                        } finally {
-                            lock.release();
-                            environmentCache.release(environmentKey);
-                        }
-                        if (connection.environmentFailed && detached) {
-                            environmentCache.invalidate(environmentKey);
-                        }
-                    }
-                };
-                environment.on("frame", onEnvironmentFrame);
-                environment.on("failure", onEnvironmentFailure);
-                environment.on("resourceLimit", onResourceLimit);
-                await environment.start();
-                environmentManager.writeMetadata(environment, true);
-                await environment.send("ENVIRONMENT_SETUP", {
+                const runtime = createWorkspaceRuntime(
+                    connection,
                     environmentKey,
-                    orchestratorPublicKey: connection.peerId,
-                    profile: profileSummary(connection.executionProfile),
-                    limits: {
-                        maxCompressedBytes: config.maxCompressedBytes,
-                        maxExpandedBytes: config.maxExpandedBytes,
-                        maxAttemptSpoolBytes: config.maxAttemptSpoolBytes
-                    }
-                });
-                const needed = environment.waitFor("WORKSPACE_NEED", 30000);
-                await environment.send("WORKSPACE_OFFER", { manifest });
-                const need = (await needed).payload;
+                    manifest
+                );
+                connection.runtime = runtime;
+                const need = await runtime.setup;
+                if (connection.closing || !need) return;
                 connection.workspaceOffer = { manifest, need };
                 const { changed, deleted } = need;
                 await connection.peer.send(
@@ -862,7 +933,6 @@ async function main(options = {}) {
                         memBoundGb: profile.memoryBytes / 1024 ** 3,
                         maxAttemptSpoolBytes: config.maxAttemptSpoolBytes,
                         heartbeatTimeoutMs: config.heartbeatTimeoutMs,
-                        keepInfraLogs: message.header.keepInfraLogs === true,
                         taskCount: message.header.taskCount,
                         baseEnv: message.header.baseEnv || {}
                     }
@@ -912,7 +982,12 @@ async function main(options = {}) {
                 connection.stopRequested = true;
                 await reportStatus(connection, "Cleaning completed lease");
                 if (connection.workerStarted) {
-                    sendToWorker(connection, { kind: message.kind });
+                    sendToWorker(connection, {
+                        kind: message.kind,
+                        collectInfraLogs:
+                            message.kind === "RUN_COMPLETE" &&
+                            message.header.collectInfraLogs === true
+                    });
                 }
                 if (
                     message.kind === "RUN_COMPLETE" &&
@@ -1126,33 +1201,19 @@ async function main(options = {}) {
                 requestId: message.requestId
             });
         } else if (message.kind === "INFRA_PROCESS_DIAGNOSTIC") {
-            const log = Buffer.from(message.log);
-            const chunkCount = Math.max(
-                1,
-                Math.ceil(log.length / INFRA_PROCESS_LOG_CHUNK_BYTES)
+            await connection.peer.send(
+                "INFRA_PROCESS_LOG",
+                {
+                    processKind: message.processKind,
+                    slotId: message.slotId,
+                    trigger: message.trigger,
+                    processFailure: message.processFailure,
+                    uploadId: message.uploadId,
+                    sequence: message.sequence,
+                    chunkCount: message.chunkCount
+                },
+                message.body
             );
-            for (let sequence = 0; sequence < chunkCount; sequence++) {
-                const offset = sequence * INFRA_PROCESS_LOG_CHUNK_BYTES;
-                await connection.peer.send(
-                    "INFRA_PROCESS_LOG",
-                    {
-                        processKind: message.processKind,
-                        slotId: message.slotId,
-                        trigger: message.trigger,
-                        processFailure: message.processFailure,
-                        uploadId: message.uploadId,
-                        sequence,
-                        chunkCount
-                    },
-                    log.subarray(
-                        offset,
-                        Math.min(
-                            log.length,
-                            offset + INFRA_PROCESS_LOG_CHUNK_BYTES
-                        )
-                    )
-                );
-            }
             sendToWorker(connection, {
                 kind: "RESPONSE",
                 requestId: message.requestId,
@@ -1165,6 +1226,7 @@ async function main(options = {}) {
                 message.body || Buffer.alloc(0)
             );
         } else if (message.kind === "WORKER_ERROR") {
+            if (await handleClassifiedResourceLimit(connection)) return;
             if (message.stats) {
                 await connection.peer.send("WORKER_STATS", {
                     stats: message.stats
@@ -1187,20 +1249,22 @@ async function main(options = {}) {
                 await handleEnvironmentFailure(connection, error);
                 return;
             }
-            const classification = await connection.environment?.classifyExit();
-            if (classification) {
-                if (!connection.environment.claimResourceFailureReport()) {
-                    return;
-                }
-                await handleResourceLimit(connection, classification);
-                return;
-            }
+            if (await handleClassifiedResourceLimit(connection)) return;
             const error = new Error(
                 `Test worker exited unexpectedly (${message.code ?? message.signal})`
             );
             error.code = "ISOLATED_WORKER_EXIT";
             await handleEnvironmentFailure(connection, error);
         }
+    }
+
+    async function handleClassifiedResourceLimit(connection) {
+        const classification = await connection.environment?.classifyExit();
+        if (!classification) return false;
+        if (connection.environment.claimResourceFailureReport()) {
+            await handleResourceLimit(connection, classification);
+        }
+        return true;
     }
 
     async function handleResourceLimit(connection, failure) {
@@ -1395,6 +1459,7 @@ if (require.main === module) {
 
 module.exports = {
     acknowledgeLoglessAttempt,
+    assertCompatibleRunnerProtocol,
     main,
     capabilities,
     isRoutineDiscoveryFailure,

@@ -10,7 +10,8 @@ import {
 
 const {
     authenticateClient,
-    derivePoolKeys
+    derivePoolKeys,
+    isDiscoveryAuthenticationFailure
 } = require("../../../scripts/e2e-parallel/distributed/authentication.js");
 const {
     createPool
@@ -150,6 +151,7 @@ export class LeaseOrchestrator {
         );
         pool.onConnection((stream: unknown, info: { publicKey?: Buffer }) => {
             orchestrator.connect(stream, info).catch((error: Error) => {
+                if (isDiscoveryAuthenticationFailure(error)) return;
                 orchestrator.notifications.emit("error", error);
             });
         });

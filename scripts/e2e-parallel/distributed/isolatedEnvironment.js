@@ -5,10 +5,12 @@ const path = require("path");
 const { EventEmitter } = require("events");
 const { spawn } = require("child_process");
 const {
+    ENVIRONMENT_PROTOCOL_VERSION,
     EnvironmentFrameParser,
     GUEST_KINDS,
     encodeEnvironmentFrame
 } = require("./environmentProtocol");
+const { DISTRIBUTED_PROTOCOL_VERSION } = require("./protocol");
 const {
     buildLinuxEgressRules,
     hostInterfaceCidrs,
@@ -18,6 +20,7 @@ const { ResourceAllocationError } = require("./executionProfile");
 
 const RUNTIME_LABEL = "peer3.distributed-environment";
 const ENVIRONMENT_NAME_PREFIX = "peer3-test-";
+const DOCKER_OPERATION_TIMEOUT_MS = 5 * 60 * 1000;
 
 function assertEnvironmentKey(environmentKey) {
     if (
@@ -151,7 +154,14 @@ function runProcess(command, args, options = {}) {
 
 class DockerBackend {
     constructor(options = {}) {
-        this.run = options.run || runProcess;
+        const run = options.run || runProcess;
+        const operationTimeoutMs =
+            options.operationTimeoutMs || DOCKER_OPERATION_TIMEOUT_MS;
+        this.run = (command, args, runOptions = {}) =>
+            run(command, args, {
+                timeoutMs: operationTimeoutMs,
+                ...runOptions
+            });
         this.image = options.image;
         this.trustedRoot =
             options.trustedRoot || path.resolve(__dirname, "../../..");
@@ -957,6 +967,16 @@ class IsolatedEnvironment extends EventEmitter {
         this.control.stderr.on("data", (chunk) =>
             this.emit("diagnostic", chunk)
         );
+        this.control.stdin.on("error", (error) => {
+            if (
+                this.state !== "stopping" &&
+                this.state !== "stopped" &&
+                this.state !== "destroyed"
+            ) {
+                error.code ||= "ISOLATED_CONTROL_WRITE";
+                this.fail(error);
+            }
+        });
         this.parser.on("frame", (frame) => this.receive(frame));
         this.parser.on("error", (error) => {
             error.code = "ISOLATED_CONTROL_PROTOCOL";
@@ -977,9 +997,20 @@ class IsolatedEnvironment extends EventEmitter {
                 });
             }
         });
-        await this.waitFor("READY", 10000);
+        const ready = await this.waitFor("READY", 10000);
+        if (
+            ready.payload.distributedProtocol !== DISTRIBUTED_PROTOCOL_VERSION
+        ) {
+            const error = new Error(
+                `Distributed guest protocol mismatch: worker host requires ${DISTRIBUTED_PROTOCOL_VERSION}, cached guest provides ${ready.payload.distributedProtocol ?? "none"}. Restart the worker server to rebuild the environment.`
+            );
+            error.code = "ISOLATED_PROTOCOL_MISMATCH";
+            throw error;
+        }
         this.state = "ready";
-        await this.send("TRUSTED_RUNNER", { version: 1 });
+        await this.send("TRUSTED_RUNNER", {
+            version: ENVIRONMENT_PROTOCOL_VERSION
+        });
         return this;
     }
 
@@ -995,15 +1026,20 @@ class IsolatedEnvironment extends EventEmitter {
         });
     }
 
-    waitFor(kind, timeoutMs) {
+    waitFor(kind, timeoutMs, signal) {
         const buffered = this.pending.findIndex((frame) => frame.kind === kind);
         if (buffered >= 0)
             return Promise.resolve(this.pending.splice(buffered, 1)[0]);
         return new Promise((resolve, reject) => {
-            const timer = setTimeout(() => {
+            let timer;
+            const onAbort = () => {
                 cleanup();
-                reject(new Error(`Timed out waiting for isolated ${kind}`));
-            }, timeoutMs);
+                const error = new Error(
+                    `Cancelled waiting for isolated ${kind}`
+                );
+                error.code = "ISOLATED_WAIT_ABORTED";
+                reject(error);
+            };
             const onFrame = (frame) => {
                 if (frame.kind !== kind) return;
                 cleanup();
@@ -1017,9 +1053,19 @@ class IsolatedEnvironment extends EventEmitter {
                 clearTimeout(timer);
                 this.off("frame", onFrame);
                 this.off("failure", onError);
+                signal?.removeEventListener("abort", onAbort);
             };
             this.on("frame", onFrame);
             this.on("failure", onError);
+            signal?.addEventListener("abort", onAbort, { once: true });
+            if (signal?.aborted) {
+                onAbort();
+                return;
+            }
+            timer = setTimeout(() => {
+                cleanup();
+                reject(new Error(`Timed out waiting for isolated ${kind}`));
+            }, timeoutMs);
         });
     }
 
@@ -1375,6 +1421,7 @@ class IsolatedEnvironmentManager {
 }
 
 module.exports = {
+    DOCKER_OPERATION_TIMEOUT_MS,
     DockerBackend,
     IsolatedEnvironment,
     IsolatedEnvironmentManager,

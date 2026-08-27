@@ -4,6 +4,7 @@ const crypto = require("crypto");
 const fs = require("fs");
 const path = require("path");
 const { IsolatedEnvironmentManager } = require("./isolatedEnvironment");
+const { DISTRIBUTED_PROTOCOL_VERSION } = require("./protocol");
 
 function parseArgs(argv) {
     const options = {};
@@ -74,6 +75,7 @@ async function main(argv = process.argv, runOptions = {}) {
             manifest: {
                 version: 3,
                 packageManager: "pnpm",
+                distributedProtocol: DISTRIBUTED_PROTOCOL_VERSION,
                 workspaceId: "0".repeat(64),
                 sourceDigest: "0".repeat(64),
                 rootProjectPath: "project",
