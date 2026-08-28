@@ -2,6 +2,7 @@ import { expect } from "chai";
 import { AxiosError } from "axios";
 import { decodeLogEntry, encodeLogEntry } from "@/utils/logging/logEncoder";
 import { LogEntry } from "@/utils/logging/Logger";
+import { createUploaderFixture } from "@test/fixtures/logging/LogUploader.fixture";
 
 const SECRETS = ["Bearer top-secret", "session=cookie-secret", "body-secret"];
 
@@ -166,20 +167,19 @@ describe("encodeLogEntry", function () {
         // call sites pass anything - SpectateService does `logger.warn(e)`. an
         // object message decodes to nothing the server will keep, and the merge
         // now drops it silently instead of rejecting the chunk.
-        const entry = {
-            time: "1",
-            wallTimeMs: 1000,
-            level: "warn",
-            context: {},
-            sharedContext: {},
-            message: new Error("boom"),
-            meta: [],
-            stack: "s"
-        } as unknown as LogEntry;
+        const { logger, logStore } = createUploaderFixture({
+            uploadEndpoint: "http://127.0.0.1:1/logs/upload"
+        });
+        try {
+            logger.warn(new Error("boom"));
+            const [entry] = logStore.getAllLogs();
 
-        const decoded = decodeLogEntry(encodeLogEntry(entry));
+            const decoded = decodeLogEntry(encodeLogEntry(entry));
 
-        expect(decoded.message).to.equal("boom");
+            expect(decoded.message).to.equal("boom");
+        } finally {
+            logger.dispose();
+        }
     });
 
     it("rejects an entry with no wall-clock timestamp", function () {

@@ -1,81 +1,27 @@
 // @spec-test-coverage-ignore: developer test-orchestration tooling; not protocol behavior, no specification or implementation IDs apply
 import { expect } from "chai";
 import path from "path";
-import {
-    mkdirSync,
-    mkdtempSync,
-    readdirSync,
-    rmSync,
-    utimesSync
-} from "node:fs";
-import { tmpdir } from "node:os";
-import { once } from "node:events";
-import type { AddressInfo } from "node:net";
+import { mkdirSync, readdirSync, rmSync, utimesSync } from "node:fs";
 import type { Server } from "node:http";
 
-// set before the server module is required: it reads CRASH_LOG_DIR at import
-const TEST_LOG_DIR = mkdtempSync(path.join(tmpdir(), "crash-log-server-test-"));
-process.env.CRASH_LOG_DIR = TEST_LOG_DIR;
+import {
+    decodeChunk,
+    encodeChunk,
+    listenOn,
+    loadCrashLogServer,
+    logEntries,
+    paddedLogEntries,
+    withInflateCeiling,
+    upload as uploadTo,
+    uploadBody
+} from "@test/fixtures/logging/crashLogServer.fixture";
 
-// The crash-log server is a CommonJS dev script. Its start() is guarded by
-// `require.main === module`, so requiring it here only imports the helper and
-// does not spin up a server.
-type UploadValidation =
-    | { ok: true }
-    | { ok: false; status: number; error: string };
-
-const { app, sanitizeSegment, validateUploadBody } =
-    require("../../scripts/logging/crash-log-server.js") as {
-        app: { listen: (port: number, host: string) => Server };
-        sanitizeSegment: (value: unknown) => string;
-        validateUploadBody: (body: unknown) => UploadValidation;
-    };
-
-const { encodeChunk, decodeChunk } =
-    require("../../scripts/logging/logChunks.js") as {
-        encodeChunk: (entries: unknown[]) => string;
-        decodeChunk: (base64: string) => { message: string }[];
-    };
-
-function logEntries(count: number): unknown[] {
-    return Array.from({ length: count }, (_unused, index) => ({
-        time: "1",
-        wallTimeMs: 1 + index,
-        level: "info",
-        context: {},
-        sharedContext: { threadName: "vm" },
-        message: `entry ${index}`,
-        meta: [],
-        stack: "stack"
-    }));
-}
-
-/** entries fat enough that a handful of chunks exhaust a lowered merge budget */
-function paddedLogEntries(count: number, marker: string): unknown[] {
-    return Array.from({ length: count }, (_unused, index) => ({
-        time: "1",
-        wallTimeMs: 1 + index,
-        level: "info",
-        context: {},
-        sharedContext: { threadName: "vm" },
-        message: `${marker} ${index}`,
-        meta: [],
-        stack: `${marker}-${index}-`.padEnd(1000, "x")
-    }));
-}
-
-function uploadBody(overrides: Record<string, unknown> = {}) {
-    return {
-        channelId: "0x" + "ab".repeat(32),
-        peerAddress: "0x" + "cd".repeat(20),
-        threadName: "vm",
-        storeId: "a1b2c3d4",
-        compressedLogs: encodeChunk(logEntries(3)),
-        fromSeq: 0,
-        toSeq: 2,
-        ...overrides
-    };
-}
+const {
+    app,
+    sanitizeSegment,
+    validateUploadBody,
+    logDir: TEST_LOG_DIR
+} = loadCrashLogServer();
 
 /**
  * Regression: channelId / peerAddress are attacker-controlled and used to build
@@ -187,10 +133,7 @@ describe("crash-log-server routes", function () {
     let baseUrl: string;
 
     before(async function () {
-        server = app.listen(0, "127.0.0.1");
-        await once(server, "listening");
-        const { port } = server.address() as AddressInfo;
-        baseUrl = `http://127.0.0.1:${port}`;
+        ({ server, baseUrl } = await listenOn(app));
     });
 
     after(function () {
@@ -198,13 +141,8 @@ describe("crash-log-server routes", function () {
         rmSync(TEST_LOG_DIR, { recursive: true, force: true });
     });
 
-    async function upload(body: Record<string, unknown>): Promise<number> {
-        const response = await fetch(`${baseUrl}/logs/upload`, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify(body)
-        });
-        return response.status;
+    function upload(body: Record<string, unknown>): Promise<number> {
+        return uploadTo(baseUrl, body);
     }
 
     it("stores an uploaded chunk and reads it back merged", async function () {
@@ -334,19 +272,10 @@ describe("crash-log-server routes", function () {
         utimesSync(path.join(threadDir, oldStore), now - 600, now - 600);
         utimesSync(path.join(threadDir, newStore), now, now);
 
-        const previousMaxSizeMb = process.env.CRASH_LOG_MAX_SIZE_MB;
         // ~50 KB per chunk, so the whole read gets ~1 MB
-        process.env.CRASH_LOG_MAX_SIZE_MB = "0.05";
-        let read: Response;
-        try {
-            read = await fetch(`${baseUrl}/logs/${channelId}/${peerAddress}`);
-        } finally {
-            if (previousMaxSizeMb === undefined) {
-                delete process.env.CRASH_LOG_MAX_SIZE_MB;
-            } else {
-                process.env.CRASH_LOG_MAX_SIZE_MB = previousMaxSizeMb;
-            }
-        }
+        const read = await withInflateCeiling("0.05", () =>
+            fetch(`${baseUrl}/logs/${channelId}/${peerAddress}`)
+        );
 
         expect(read.status).to.equal(200);
         // the read really was truncated, or the case proves nothing
