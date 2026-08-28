@@ -4,8 +4,8 @@
 > its content hash with `SPEC_REVIEWER="Name" node docs/spec/tools/review.js <file...>`.
 > Any later edit invalidates the record automatically (the file returns to pending as stale).
 
-- Verified (current): **37/534** (7%)
-- Pending (never reviewed): **469**
+- Verified (current): **37/535** (7%)
+- Pending (never reviewed): **470**
 - Stale (edited since review): **28**
 
 ## Stale — edited since engineer review
@@ -260,8 +260,9 @@
 - [implementation/source/src/stateManager/block/BlockProductionService.ts.md](../implementation/source/src/stateManager/block/BlockProductionService.ts.md)
 - [implementation/source/src/stateManager/BlockQueueManager.ts.md](../implementation/source/src/stateManager/BlockQueueManager.ts.md)
 - [implementation/source/src/stateManager/dispute/DisputeValidationService.ts.md](../implementation/source/src/stateManager/dispute/DisputeValidationService.ts.md)
-- [implementation/source/src/stateManager/EventSyncService.ts.md](../implementation/source/src/stateManager/EventSyncService.ts.md)
+- [implementation/source/src/stateManager/eventSync/EventSyncService.ts.md](../implementation/source/src/stateManager/eventSync/EventSyncService.ts.md)
 - [implementation/source/src/stateManager/index.ts.md](../implementation/source/src/stateManager/index.ts.md)
+- [implementation/source/src/stateManager/ingest/ValidationService.ts.md](../implementation/source/src/stateManager/ingest/ValidationService.ts.md)
 - [implementation/source/src/stateManager/README.md](../implementation/source/src/stateManager/README.md)
 - [implementation/source/src/stateManager/reduction/index.ts.md](../implementation/source/src/stateManager/reduction/index.ts.md)
 - [implementation/source/src/stateManager/reduction/README.md](../implementation/source/src/stateManager/reduction/README.md)
@@ -274,7 +275,6 @@
 - [implementation/source/src/stateManager/utils/DisputeFraudProofService.ts.md](../implementation/source/src/stateManager/utils/DisputeFraudProofService.ts.md)
 - [implementation/source/src/stateManager/utils/FraudProofService.ts.md](../implementation/source/src/stateManager/utils/FraudProofService.ts.md)
 - [implementation/source/src/stateManager/utils/README.md](../implementation/source/src/stateManager/utils/README.md)
-- [implementation/source/src/stateManager/ValidationService.ts.md](../implementation/source/src/stateManager/ValidationService.ts.md)
 - [implementation/source/src/stateManager/validationStrategy/AValidationStrategy.ts.md](../implementation/source/src/stateManager/validationStrategy/AValidationStrategy.ts.md)
 - [implementation/source/src/stateManager/validationStrategy/BlockValidationStrategy.ts.md](../implementation/source/src/stateManager/validationStrategy/BlockValidationStrategy.ts.md)
 - [implementation/source/src/stateManager/validationStrategy/CalldataCommittedStrategy.ts.md](../implementation/source/src/stateManager/validationStrategy/CalldataCommittedStrategy.ts.md)
@@ -410,7 +410,7 @@
 - [implementation/views/security/data-availability.md](../implementation/views/security/data-availability.md)
 - [implementation/views/security/trust-model.md](../implementation/views/security/trust-model.md)
 
-### verification (114)
+### verification (115)
 
 - [verification/open-questions.md](../verification/open-questions.md)
 - [verification/README.md](../verification/README.md)
@@ -523,6 +523,7 @@
 - [verification/tests/test/V1/DiamondProxy/UtilityLibrary/SignatureVerification.test.ts.md](../verification/tests/test/V1/DiamondProxy/UtilityLibrary/SignatureVerification.test.ts.md)
 - [verification/tests/test/V1/StateChannelDiamondProxy/DisputeVerificationFacet.t.sol.md](../verification/tests/test/V1/StateChannelDiamondProxy/DisputeVerificationFacet.t.sol.md)
 - [verification/tests/test/V1/StateChannelDiamondProxy/FraudProofFacet.t.sol.md](../verification/tests/test/V1/StateChannelDiamondProxy/FraudProofFacet.t.sol.md)
+- [verification/tests/test/V1/StateChannelDiamondProxy/StateChannelManagerProxyOpen.t.sol.md](../verification/tests/test/V1/StateChannelDiamondProxy/StateChannelManagerProxyOpen.t.sol.md)
 - [verification/tests/test/V1/StateChannelDiamondProxy/UtilityFacet.t.sol.md](../verification/tests/test/V1/StateChannelDiamondProxy/UtilityFacet.t.sol.md)
 - [verification/tests/test/V1/StateChannelDiamondProxy/utils/DisputeUtils.t.sol.md](../verification/tests/test/V1/StateChannelDiamondProxy/utils/DisputeUtils.t.sol.md)
 - [verification/tests/test/V1/UniversalDeployment.test.ts.md](../verification/tests/test/V1/UniversalDeployment.test.ts.md)

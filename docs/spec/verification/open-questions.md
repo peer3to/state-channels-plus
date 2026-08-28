@@ -8,10 +8,10 @@ Existing `OQ-*` IDs are preserved; new questions use the layer-scoped namespace 
 
 ## Index
 
-| ID                                             | Question                                                            | Source                 | Affected documents                                            | Status |
-| ---------------------------------------------- | ------------------------------------------------------------------- | ---------------------- | ------------------------------------------------------------- | ------ |
-| [`OQ-4-JGDCNX`](open-questions.md#oq-4-jgdcnx) | Dispute-reduction order-independence: proof and permutation testing | Specification analysis | [protocol/disputes.md](../specification/disputes/disputes.md) | Open   |
-| [`OQ-VER-DISCOVERY-1-9JWTRH`](open-questions.md#oq-ver-discovery-1-9jwtrh) | A Foundry test file named `*.test.sol` is invisible to test discovery | Repository analysis | [tools/shared/test-inventory.js](../tools/shared/test-inventory.js), [test/V1/StateChannelDiamondProxy/StateChannelManagerProxyOpen.test.sol](../../../test/V1/StateChannelDiamondProxy/StateChannelManagerProxyOpen.test.sol) | Open   |
+| ID                                                                         | Question                                                              | Source                 | Affected documents                                                                                                                                                                                                       | Status   |
+| -------------------------------------------------------------------------- | --------------------------------------------------------------------- | ---------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | -------- |
+| [`OQ-4-JGDCNX`](open-questions.md#oq-4-jgdcnx)                             | Dispute-reduction order-independence: proof and permutation testing   | Specification analysis | [protocol/disputes.md](../specification/disputes/disputes.md)                                                                                                                                                            | Open     |
+| [`OQ-VER-DISCOVERY-1-9JWTRH`](open-questions.md#oq-ver-discovery-1-9jwtrh) | A Foundry test file named `*.test.sol` is invisible to test discovery | Repository analysis    | [tools/shared/test-inventory.js](../tools/shared/test-inventory.js), [test/V1/StateChannelDiamondProxy/StateChannelManagerProxyOpen.t.sol](../../../test/V1/StateChannelDiamondProxy/StateChannelManagerProxyOpen.t.sol) | Resolved |
 
 <a id="oq-4-jgdcnx"></a>
 
@@ -35,28 +35,32 @@ or prove and permutation-test independence including kills and slash-application
 
 ## OQ-VER-DISCOVERY-1-9JWTRH — A Foundry test file named `*.test.sol` is invisible to test discovery
 
-`test/V1/StateChannelDiamondProxy/StateChannelManagerProxyOpen.test.sol` declares a real Foundry
-case (`test_open_duplicateParticipants_reverts`) and Foundry runs it: `foundry.toml` sets
-`test = 'test'` and Forge collects any contract under that tree whose functions start with `test`.
-The verification layer cannot see it. `TEST_FILE_RE` in
+A Foundry test file used to be named `StateChannelManagerProxyOpen.test.sol`. It declared a real
+case (`test_open_duplicateParticipants_reverts`) and Foundry ran it — `foundry.toml` sets
+`test = 'test'` and Forge collects any contract under that tree whose functions start with `test` —
+but the verification layer could not see it. `TEST_FILE_RE` in
 [tools/shared/test-inventory.js](../tools/shared/test-inventory.js) matches `*.t.sol`, not
-`*.test.sol`, so the file yields no discovered declarations, has no report under
-`verification/tests/`, and appears in neither the coverage report nor the change-impact analysis.
-Every one of its seven siblings in that directory uses `.t.sol`.
+`*.test.sol`, so the file yielded no discovered declarations, had no report under
+`verification/tests/`, and appeared in neither the coverage report nor the change-impact analysis.
+Every one of its siblings in that directory already used `.t.sol`.
 
-The consequence is a silent hole rather than a visible gap: real executed evidence exists and no
-maintained document can claim it, and a future case added to that file inherits the same
+The consequence was a silent hole rather than a visible gap: real executed evidence existed and no
+maintained document could claim it, and a future case added to that file would inherit the same
 invisibility.
 
-Engineer decision requested — the two directions are not equivalent:
+Two directions were put to the engineer — rename the file, or widen `TEST_FILE_RE` to bless both
+spellings.
 
-1. **Rename the file to `StateChannelManagerProxyOpen.t.sol`** (a repository change outside this
-   tree). It restores the directory's convention, makes the file discoverable with no tooling
-   change, and then requires a verification report with a row per declaration. Preferred by the
-   surrounding convention, but it is a code change an agent must not make unilaterally.
-2. **Widen `TEST_FILE_RE` to accept `*.test.sol`.** No repository change, and it is strictly
-   stricter (it adds an obligation rather than hiding one), but it blesses two spellings for the
-   same thing and leaves the naming inconsistency in place.
+**Resolved (2026-08-28, engineer decision):** rename the file. It restores the directory's
+convention and makes the case discoverable with no tooling change, whereas widening the pattern
+would have left two spellings for the same thing. `TEST_FILE_RE` is unchanged.
 
-Blocking effect: until it is resolved, `yarn spec:impact` reports this file as an unmapped changed
-file whenever it is touched, and its evidence stays unassignable.
+The file is now
+[test/V1/StateChannelDiamondProxy/StateChannelManagerProxyOpen.t.sol](../../../test/V1/StateChannelDiamondProxy/StateChannelManagerProxyOpen.t.sol),
+its declaration is inventoried in
+[StateChannelManagerProxyOpen.t.sol.md](tests/test/V1/StateChannelDiamondProxy/StateChannelManagerProxyOpen.t.sol.md),
+and its evidence is assigned to
+[`UNIT-TEST-MANAGER-PROXY-1-NTYR71.P12`](../implementation/source/contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol.md#unit-test-manager-proxy-1-ntyr71.p12).
+The parallel runner keeps its extension-agnostic Solidity discovery, so no runner behaviour changed;
+the `.test.sol` case in `test/scripts/e2eParallelForgeTasks.test.ts` now uses a synthetic fixture
+instead of this repository file. `yarn spec:impact` no longer reports the file as unmapped.

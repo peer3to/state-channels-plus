@@ -5,7 +5,7 @@
 ## Score
 
 - Specification IDs fully implemented (only `Covered` claims): **197/243** (81%)
-- Source files with a file report: **240/260** (92%)
+- Source files with a file report: **242/260** (93%)
 
 ## Contents
 
@@ -84,13 +84,11 @@ Every file under `src/` and `contracts/` needs one maintained report at
 | [src/stateManager/chainFallback/ParticipantTimeoutService.ts](../../../src/stateManager/chainFallback/ParticipantTimeoutService.ts) |
 | [src/stateManager/dispute/DisputeFraudProofService.ts](../../../src/stateManager/dispute/DisputeFraudProofService.ts) |
 | [src/stateManager/dispute/index.ts](../../../src/stateManager/dispute/index.ts) |
-| [src/stateManager/eventSync/EventSyncService.ts](../../../src/stateManager/eventSync/EventSyncService.ts) |
 | [src/stateManager/eventSync/index.ts](../../../src/stateManager/eventSync/index.ts) |
 | [src/stateManager/ingest/BlockIngestService.ts](../../../src/stateManager/ingest/BlockIngestService.ts) |
 | [src/stateManager/ingest/BlockQueueManager.ts](../../../src/stateManager/ingest/BlockQueueManager.ts) |
 | [src/stateManager/ingest/index.ts](../../../src/stateManager/ingest/index.ts) |
 | [src/stateManager/ingest/StoredBlockMergeService.ts](../../../src/stateManager/ingest/StoredBlockMergeService.ts) |
-| [src/stateManager/ingest/ValidationService.ts](../../../src/stateManager/ingest/ValidationService.ts) |
 | [src/stateManager/membership/index.ts](../../../src/stateManager/membership/index.ts) |
 | [src/stateManager/membership/MembershipService.ts](../../../src/stateManager/membership/MembershipService.ts) |
 | [src/stateManager/snapshotUpdate/StateApplicationService.ts](../../../src/stateManager/snapshotUpdate/StateApplicationService.ts) |

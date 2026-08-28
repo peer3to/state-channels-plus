@@ -78,4 +78,4 @@ Exact test evidence is mapped against these IDs in the verification test reports
 
 ## Related source reports
 
-- [EventSyncService](./stateManager/EventSyncService.ts.md), [EventHandler](./eventHandlers/EventHandler.ts.md).
+- [EventSyncService](./stateManager/eventSync/EventSyncService.ts.md), [EventHandler](./eventHandlers/EventHandler.ts.md).

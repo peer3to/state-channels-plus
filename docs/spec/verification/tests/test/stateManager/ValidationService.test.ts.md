@@ -1,7 +1,7 @@
 # test/stateManager/ValidationService.test.ts — Test Report
 
 > **Test file:** [test/stateManager/ValidationService.test.ts](../../../../../../test/stateManager/ValidationService.test.ts) > **Status:** Authored — engineer verification pending.
-> **Exercises:** [ValidationService.ts](../../../../implementation/source/src/stateManager/ValidationService.ts.md)
+> **Exercises:** [ValidationService.ts](../../../../implementation/source/src/stateManager/ingest/ValidationService.ts.md)
 
 ## Contents
 

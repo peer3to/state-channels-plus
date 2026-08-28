@@ -70,10 +70,10 @@ Status enum: `Covered` | `Partial` | `Contradicts` | `Missing`. Evidence cells a
 **Here:** / **Other files:** so each row is auditable from its links alone; genuine gaps go in the
 Gap column. Audit state is file-level (Status header), never a row status.
 
-| Requirement / invariant                                                                              | Implementation status | Evidence                                                                                                                                                                                                                       | Gap / divergence |
-| ---------------------------------------------------------------------------------------------------- | --------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ---------------- |
-| [`REQ-RMSTORE-1-BWKVBG`](../../../../specification/storage/progress-markers.md#req-rmstore-1-bwkvbg) | Covered               | **Here:** max() retention per normalized channel key ([#L14](../../../../../../src/storage/EventSyncStorage.ts#L14)). **Other files:** processed-only discipline — [EventSyncService](../stateManager/EventSyncService.ts.md). | None.            |
-| [`REQ-ID-2-F3Y8J4`](../../../../specification/protocol-model/identity.md#req-id-2-f3y8j4)            | Covered               | **Here:** lowercased channel keys ([#L25](../../../../../../src/storage/EventSyncStorage.ts#L25)).                                                                                                                             | None.            |
+| Requirement / invariant                                                                              | Implementation status | Evidence                                                                                                                                                                                                                                 | Gap / divergence |
+| ---------------------------------------------------------------------------------------------------- | --------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------- |
+| [`REQ-RMSTORE-1-BWKVBG`](../../../../specification/storage/progress-markers.md#req-rmstore-1-bwkvbg) | Covered               | **Here:** max() retention per normalized channel key ([#L14](../../../../../../src/storage/EventSyncStorage.ts#L14)). **Other files:** processed-only discipline — [EventSyncService](../stateManager/eventSync/EventSyncService.ts.md). | None.            |
+| [`REQ-ID-2-F3Y8J4`](../../../../specification/protocol-model/identity.md#req-id-2-f3y8j4)            | Covered               | **Here:** lowercased channel keys ([#L25](../../../../../../src/storage/EventSyncStorage.ts#L25)).                                                                                                                                       | None.            |
 
 ## Component test obligations
 
@@ -85,4 +85,4 @@ Exact test evidence is mapped against these IDs in the verification test reports
 
 ## Related source reports
 
-- [EventSyncService](../stateManager/EventSyncService.ts.md) (the producer enforcing processed-only).
+- [EventSyncService](../stateManager/eventSync/EventSyncService.ts.md) (the producer enforcing processed-only).
