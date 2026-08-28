@@ -345,7 +345,8 @@ describe("WorkerContractExecutor", function () {
                 logger.getSharedContext().peerAddress
             );
         } finally {
-            await executor.dispose();
+            // the crash ends the worker -> dispose meets a failed executor
+            await Promise.resolve(executor.dispose()).catch(() => undefined);
             dispose();
             await receiver.close();
         }
@@ -379,7 +380,8 @@ describe("WorkerContractExecutor", function () {
                 receiver.requests.map((request) => request.threadName)
             ).to.include("sdk");
         } finally {
-            await executor.dispose();
+            // the crash ends the worker -> dispose meets a failed executor
+            await Promise.resolve(executor.dispose()).catch(() => undefined);
             dispose();
             await receiver.close();
         }
