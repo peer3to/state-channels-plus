@@ -33,7 +33,7 @@ abstract contract StateChannelManagerInterface is StateChannelManagerEvents {
     function executeStateTransition(bytes32 channelId, bytes memory encodedState, Transaction memory _tx)
         public
         virtual
-        returns (bool, bytes memory, Message[] memory);
+        returns (bool, bytes memory encodedModifiedState, Message[] memory outboundMessages);
 
     function multicall(bytes[] calldata calls) external virtual returns (bytes[] memory results);
 
@@ -135,11 +135,11 @@ abstract contract StateChannelManagerInterface is StateChannelManagerEvents {
         virtual
         returns (MessageBlock[] memory);
 
-    function isGenesisSnapshotWithoutTimeCheck(StateSnapshot memory snapshot) public view virtual returns (bool);
+    function isGenesisSnapshotWithoutTimeCheck(StateSnapshot memory snapshot) public pure virtual returns (bool);
 
     function isSnapshotNewer(StateSnapshot memory newSnapshot, StateSnapshot memory currentSnapshot)
         public
-        view
+        pure
         virtual
         returns (bool);
 
@@ -161,7 +161,7 @@ abstract contract StateChannelManagerInterface is StateChannelManagerEvents {
         MessageBlock[] memory inboundMessageBlocks
     ) public virtual;
 
-    function reduce(Dispute[] memory disputes) public virtual returns (ReduceOutput memory);
+    function reduce(Dispute[] memory disputes) public view virtual returns (ReduceOutput memory reducedOutput);
 
     function reduceOutputToSnapshotData(
         bytes32 forkId,
@@ -169,7 +169,7 @@ abstract contract StateChannelManagerInterface is StateChannelManagerEvents {
         StateSnapshot memory latestStateSnapshot,
         bytes memory encodedStateMachineState,
         MessageBlock[] memory inboundMessageBlocks
-    ) public virtual returns (SnapshotData memory, bytes memory, MessageBlock memory);
+    ) public virtual returns (SnapshotData memory outputSnapshotData, bytes memory, MessageBlock memory);
 
     function reduceAndFinalize(
         Dispute[] memory disputes,
@@ -193,7 +193,7 @@ abstract contract StateChannelManagerInterface is StateChannelManagerEvents {
         FraudProofVerificationContext memory fraudProofVerificationContext
     ) public virtual;
 
-    function hasInvalidTimestamp(InvalidTimestampProof memory proof) public virtual returns (bool);
+    function hasInvalidTimestamp(InvalidTimestampProof memory proof) public view virtual returns (bool);
 
     // ********** routed to DisputeFraudProofFacet **********
 
@@ -206,9 +206,9 @@ abstract contract StateChannelManagerInterface is StateChannelManagerEvents {
 
     function isLastMilestoneFinalByEveryone(Dispute memory dispute) public virtual returns (bool isFinal);
 
-    function hasStateProofHeaderMismatch(Dispute memory dispute) public virtual returns (bool);
+    function hasStateProofHeaderMismatch(Dispute memory dispute) public pure virtual returns (bool);
 
-    function isDisputeInboundHashValid(Dispute memory dispute) public virtual returns (bool);
+    function isDisputeInboundHashValid(Dispute memory dispute) public view virtual returns (bool);
 
     // ********** routed to StateSnapshotFacet **********
 
@@ -228,13 +228,13 @@ abstract contract StateChannelManagerInterface is StateChannelManagerEvents {
     // ********** routed to JoinChannelFacet **********
 
     function joinChannel(
-        JoinChannelConfirmation memory joinChannelConfirmations,
+        JoinChannelConfirmation memory joinChannelConfirmation,
         bytes32 expectedSnapshotHash,
         bytes32 expectedForkId
     ) public virtual;
 
     function topUpBalance(
-        JoinChannelConfirmation memory joinChannelConfirmations,
+        JoinChannelConfirmation memory joinChannelConfirmation,
         bytes32 expectedSnapshotHash,
         bytes32 expectedForkId
     ) public virtual;
@@ -248,18 +248,21 @@ abstract contract StateChannelManagerInterface is StateChannelManagerEvents {
 
     function isCorrectLatestState(Dispute memory dispute, SnapshotData memory genesisStateSnapshotData)
         public
+        view
         virtual
         returns (bool);
 
-    function areSignedBlocksLinkedAndVerified(SignedBlock[] memory signedBlocks) public virtual returns (bool);
+    function areSignedBlocksLinkedAndVerified(SignedBlock[] memory signedBlocks) public view virtual returns (bool);
 
     function isInvalidBlockStructureInStateProof(StateProof memory stateProof, uint256 blockIndex)
         public
+        view
         virtual
         returns (bool);
 
     function findFirstInvalidBlockStructureInStateProof(StateProof memory stateProof)
         public
+        view
         virtual
         returns (bool found, uint256 blockIndex);
 

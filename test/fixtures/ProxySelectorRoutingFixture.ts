@@ -8,6 +8,8 @@ import {
     FraudProofFacet__factory,
     JoinChannelFacet__factory,
     StateChannelManagerInterface,
+    StateChannelManagerInterface__factory,
+    StateChannelManagerProxy__factory,
     StateProofFacet__factory,
     StateSnapshotFacet__factory,
     UtilityFacet__factory
@@ -17,6 +19,16 @@ import {
 type FacetFunctionName = string;
 /** Why a facet function is deliberately absent from the diamond's routed surface. */
 type ExclusionReason = string;
+/** 4-byte function selector as an `0x`-prefixed hex string. */
+type Selector = string;
+/** Contract that implements a callable function - the proxy or one of the facets. */
+type ImplementorName = string;
+
+/** A function reachable on the deployed diamond, with the contract that implements it. */
+export type DiamondFunction = {
+    implementorName: ImplementorName;
+    fragment: FunctionFragment;
+};
 
 export type FacetRoutingSpec = {
     /** Contract name, as the deployment fixture keys its facet addresses. */
@@ -166,6 +178,63 @@ export async function expectFacetSelectorsNotRouted(
             `${spec.facetName}.${fragment.format("sighash")} (${reason})`
         ).to.equal(consumerFacetAddress);
     }
+}
+
+/** Functions the proxy implements itself - they dispatch before the fallback. */
+export function proxyOwnedFunctions(): DiamondFunction[] {
+    return functionFragments(
+        StateChannelManagerProxy__factory.abi as InterfaceAbi
+    ).map((fragment) => ({
+        implementorName: "StateChannelManagerProxy",
+        fragment
+    }));
+}
+
+/** Facet functions the fallback routes: every facet function the spec doesn't exclude. */
+export function routedFacetFunctions(): DiamondFunction[] {
+    return facetRoutingSpecs.flatMap((spec) =>
+        functionFragments(spec.abi)
+            .filter((fragment) => !(fragment.name in spec.notRouted))
+            .map((fragment) => ({
+                implementorName: spec.facetName,
+                fragment
+            }))
+    );
+}
+
+/** The declarations on `StateChannelManagerInterface`, the caller-side typing artifact. */
+export function interfaceFunctions(): FunctionFragment[] {
+    return functionFragments(
+        StateChannelManagerInterface__factory.abi as InterfaceAbi
+    );
+}
+
+/** Every function callable on the deployed diamond: proxy-owned plus routed. */
+export function diamondCallableFunctions(): Map<Selector, DiamondFunction> {
+    return new Map(
+        [...proxyOwnedFunctions(), ...routedFacetFunctions()].map(
+            (callable) => [callable.fragment.selector, callable]
+        )
+    );
+}
+
+/**
+ * Routed facet functions whose selector the proxy also implements itself. The
+ * proxy body dispatches before the fallback, so such a routed function is
+ * unreachable even though `facetAddressForSelector` still names its facet.
+ */
+export function proxyShadowedRoutedFunctions(): DiamondFunction[] {
+    const proxySelectors = new Set(
+        proxyOwnedFunctions().map((callable) => callable.fragment.selector)
+    );
+    return routedFacetFunctions().filter((callable) =>
+        proxySelectors.has(callable.fragment.selector)
+    );
+}
+
+/** `implementor.signature`, the label failures identify a callable function by. */
+export function diamondFunctionLabel(callable: DiamondFunction): string {
+    return `${callable.implementorName}.${callable.fragment.format("sighash")}`;
 }
 
 /** Selectors defined by more than one facet ABI, as `selector -> facet names`. */

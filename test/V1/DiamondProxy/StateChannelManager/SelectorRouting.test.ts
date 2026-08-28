@@ -6,10 +6,14 @@ import {
     DeployedFacetAddresses
 } from "@test/test_utils/testHelpers";
 import {
+    diamondCallableFunctions,
+    diamondFunctionLabel,
     expectFacetSelectorsNotRouted,
     expectFacetSelectorsRouted,
     facetRoutingSpec,
-    facetSelectorCollisions
+    facetSelectorCollisions,
+    interfaceFunctions,
+    proxyShadowedRoutedFunctions
 } from "@test/fixtures/ProxySelectorRoutingFixture";
 import {
     StateChannelManagerInterface,
@@ -124,6 +128,62 @@ describe("StateChannelManagerProxy selector routing", function () {
                 ([selector, facets]) => `${selector}: ${facets.join(", ")}`
             )
         ).to.deep.equal([]);
+    });
+
+    it("has no routed facet selector shadowed by a proxy function", async function () {
+        // A shadowed routed function is unreachable: the proxy body dispatches
+        // first, while facetAddressForSelector still reports its facet.
+        expect(
+            proxyShadowedRoutedFunctions().map(diamondFunctionLabel)
+        ).to.deep.equal([]);
+    });
+
+    it("declares every proxy-owned and routed facet function on the interface", async function () {
+        const declared = new Set(
+            interfaceFunctions().map((fragment) => fragment.selector)
+        );
+        const undeclared = [...diamondCallableFunctions().values()]
+            .filter((callable) => !declared.has(callable.fragment.selector))
+            .map(diamondFunctionLabel);
+        expect(undeclared).to.deep.equal([]);
+    });
+
+    it("declares nothing the proxy neither implements nor routes", async function () {
+        const callables = diamondCallableFunctions();
+        const unreachable = interfaceFunctions()
+            .filter((fragment) => !callables.has(fragment.selector))
+            .map((fragment) => fragment.format("sighash"));
+        expect(unreachable).to.deep.equal([]);
+    });
+
+    it("declares the implementing function's state mutability for every interface function", async function () {
+        const callables = diamondCallableFunctions();
+        const mismatches: string[] = [];
+        for (const fragment of interfaceFunctions()) {
+            const callable = callables.get(fragment.selector);
+            if (callable === undefined) continue;
+            if (callable.fragment.stateMutability === fragment.stateMutability)
+                continue;
+            mismatches.push(
+                `${diamondFunctionLabel(callable)}: interface=${fragment.stateMutability} ${callable.implementorName}=${callable.fragment.stateMutability}`
+            );
+        }
+        expect(mismatches).to.deep.equal([]);
+    });
+
+    it("declares the implementing function's full signature for every interface function", async function () {
+        const callables = diamondCallableFunctions();
+        const mismatches: string[] = [];
+        for (const fragment of interfaceFunctions()) {
+            const callable = callables.get(fragment.selector);
+            if (callable === undefined) continue;
+            if (callable.fragment.format("full") === fragment.format("full"))
+                continue;
+            mismatches.push(
+                `interface: ${fragment.format("full")}\n${callable.implementorName}: ${callable.fragment.format("full")}`
+            );
+        }
+        expect(mismatches).to.deep.equal([]);
     });
 
     it("resolves an unknown selector to the consumer facet", async function () {
