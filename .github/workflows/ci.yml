@@ -34,12 +34,6 @@ jobs:
             - name: Install dependencies
               run: yarn install --frozen-lockfile
 
-            # Discovery statically parses every test file's syntax tree for
-            # literal it()/describe() titles — it never imports the files or
-            # invokes forge, so neither compiled contracts nor a Foundry
-            # toolchain are needed on the orchestrator. Each worker compiles
-            # contracts and builds forge tests itself via its own prepare
-            # script before it runs any task.
             - name: Check distributed pool secrets are present
               env:
                   SCP_TEST_POOL_SECRET: ${{ secrets.SCP_TEST_POOL_SECRET }}
