@@ -13,6 +13,7 @@ import {
 import {
     decodeUpload,
     startLogReceiver,
+    threadStream,
     type LogReceiver
 } from "@test/fixtures/logging/LogUploader.fixture";
 import { applyCrashLogConfig } from "@test/fixtures/logging/crashLogConfig";
@@ -33,6 +34,12 @@ function setAckTimeout(ms: number): void {
 
 function threadNamesOf(receiver: LogReceiver): string[] {
     return receiver.requests.map((request) => request.threadName).sort();
+}
+
+function flushSummaryIn(receiver: LogReceiver, threadName: "main" | "vm") {
+    return threadStream(receiver, threadName)
+        .flatMap(decodeUpload)
+        .find((entry) => entry.message === "Log flush round reached");
 }
 
 function uploadFor(receiver: LogReceiver, threadName: string) {
@@ -486,5 +493,82 @@ describe("LogFlushBus", function () {
         second.remove();
 
         expect(result.timedOut).to.equal(2);
+    });
+
+    it("uploads this realm without waiting for a port that never acks", async function () {
+        setAckTimeout(SHORT_ACK_TIMEOUT_MS);
+        const vm = realm("vm");
+        const dead = addDeadPort(vm);
+        vm.logger.info("vm entry");
+
+        const startedAt = Date.now();
+        const result = await vm.bus.flushOwnRealm();
+        dead.remove();
+
+        expect(Date.now() - startedAt).to.be.lessThan(SHORT_ACK_TIMEOUT_MS);
+        expect(result).to.deep.equal({
+            ok: 1,
+            failed: 0,
+            timedOut: 0,
+            entries: 1
+        });
+        expect(threadNamesOf(receiver!)).to.deep.equal(["vm"]);
+    });
+
+    it("asks every port while resolving on this realm's own upload", async function () {
+        setAckTimeout(SHORT_ACK_TIMEOUT_MS);
+        const vm = realm("vm");
+        const dead = addDeadPort(vm);
+        vm.logger.info("vm entry");
+
+        // the shape the vm worker exits on: sweep detached, wait on its own POST
+        const round = vm.bus.flushAll("crash");
+        const startedAt = Date.now();
+        const own = await vm.bus.flushOwnRealm();
+
+        expect(Date.now() - startedAt).to.be.lessThan(SHORT_ACK_TIMEOUT_MS);
+        expect(countMessages(dead.posted, "flushRequest")).to.equal(1);
+        // the round already shipped the entry -> this realm has nothing left
+        expect(own).to.deep.equal({
+            ok: 1,
+            failed: 0,
+            timedOut: 0,
+            entries: 0
+        });
+        expect(threadNamesOf(receiver!)).to.deep.equal(["vm"]);
+
+        expect((await round).timedOut).to.equal(1);
+        dead.remove();
+    });
+
+    it("records what a round reached in the realm that asked for it", async function () {
+        const main = realm("main");
+        const sdk = realm("sdk");
+        connect(main, sdk);
+        sdk.logger.info("sdk entry");
+
+        const result = await main.logger.uploadLogs("user report");
+
+        expect(result.timedOut).to.equal(0);
+        const summary = flushSummaryIn(receiver!, "main");
+        expect(summary, "no flush summary entry").to.not.be.undefined;
+        expect(summary!.meta[0]).to.deep.equal({
+            reason: "user report",
+            ...result
+        });
+    });
+
+    it("records the realms a round never reached", async function () {
+        setAckTimeout(SHORT_ACK_TIMEOUT_MS);
+        const main = realm("main");
+        const dead = addDeadPort(main);
+
+        const result = await main.logger.uploadLogs("user report");
+        dead.remove();
+
+        expect(result.timedOut).to.equal(1);
+        const summary = flushSummaryIn(receiver!, "main");
+        expect(summary, "no flush summary entry").to.not.be.undefined;
+        expect(summary!.meta[0].timedOut).to.equal(1);
     });
 });
