@@ -21,8 +21,12 @@ const endThreadAfterCollecting = (reason: string) => () => {
     // failure in a later listener, and collecting before it ran would ship an
     // empty round and then kill the thread mid-upload
     setImmediate(() => {
+        // ask every realm to upload, but wait only for this one's POST. the
+        // realms across the port are still running and finish on their own,
+        // so their acks would only delay the exit
+        void realmLogFlushBus.flushAll(reason).catch(() => undefined);
         void realmLogFlushBus
-            .flushAll(reason)
+            .flushOwnRealm()
             .catch(() => undefined)
             .finally(() => process.exit(1));
     });
