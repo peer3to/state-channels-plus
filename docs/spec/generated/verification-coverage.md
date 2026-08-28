@@ -6,12 +6,12 @@ A permutation counts as tested only when an exact repository test declaration is
 
 ## Score
 
-- Specification IDs with test evidence: **80/243** (33%)
-- Test IDs (planned permutations) evidenced: **762/4531** (17%)
-- Test files with verification reports: **135/145** (93%)
-- Test declarations covering at least one test ID: **463/1172** (40%)
-- Assigned test IDs with exactly one owning test: **762/762** (100%)
-- Test files excluded as out of scope (`@spec-test-coverage-ignore`): 19
+- Specification IDs with test evidence: **92/255** (36%)
+- Test IDs (planned permutations) evidenced: **870/4652** (19%)
+- Test files with verification reports: **142/152** (93%)
+- Test declarations covering at least one test ID: **545/1265** (43%)
+- Assigned test IDs with exactly one owning test: **870/870** (100%)
+- Test files excluded as out of scope (`@spec-test-coverage-ignore`): 18
 
 ## Contents
 
@@ -799,6 +799,8 @@ Every planned test permutation — specification black-box plans and implementat
 | [`INV-LIF-5-ENQB91.T1.P5`](../specification/settlement/lifecycle.md#inv-lif-5-enqb91.t1.p5) | Specification | [specification/settlement/lifecycle.md](../specification/settlement/lifecycle.md#inv-lif-5-enqb91.t1.p5) |
 | [`INV-LIF-5-ENQB91.T1.P6`](../specification/settlement/lifecycle.md#inv-lif-5-enqb91.t1.p6) | Specification | [specification/settlement/lifecycle.md](../specification/settlement/lifecycle.md#inv-lif-5-enqb91.t1.p6) |
 | [`INV-LIF-5-ENQB91.T1.P7`](../specification/settlement/lifecycle.md#inv-lif-5-enqb91.t1.p7) | Specification | [specification/settlement/lifecycle.md](../specification/settlement/lifecycle.md#inv-lif-5-enqb91.t1.p7) |
+| [`INV-LOG-1-P4WT6R.T1.P5`](../specification/runtime/log-collection.md#inv-log-1-p4wt6r.t1.p5) | Specification | [specification/runtime/log-collection.md](../specification/runtime/log-collection.md#inv-log-1-p4wt6r.t1.p5) |
+| [`INV-LOG-2-C7KZ9M.T1.P2`](../specification/runtime/log-collection.md#inv-log-2-c7kz9m.t1.p2) | Specification | [specification/runtime/log-collection.md](../specification/runtime/log-collection.md#inv-log-2-c7kz9m.t1.p2) |
 | [`INV-MIRROR-1-VAF778.T1.P1`](../specification/enforcement/local-mirror.md#inv-mirror-1-vaf778.t1.p1) | Specification | [specification/enforcement/local-mirror.md](../specification/enforcement/local-mirror.md#inv-mirror-1-vaf778.t1.p1) |
 | [`INV-MIRROR-1-VAF778.T1.P2`](../specification/enforcement/local-mirror.md#inv-mirror-1-vaf778.t1.p2) | Specification | [specification/enforcement/local-mirror.md](../specification/enforcement/local-mirror.md#inv-mirror-1-vaf778.t1.p2) |
 | [`INV-MIRROR-1-VAF778.T1.P3`](../specification/enforcement/local-mirror.md#inv-mirror-1-vaf778.t1.p3) | Specification | [specification/enforcement/local-mirror.md](../specification/enforcement/local-mirror.md#inv-mirror-1-vaf778.t1.p3) |
@@ -2364,6 +2366,15 @@ Every planned test permutation — specification black-box plans and implementat
 | [`REQ-LIF-7-0XZBDM.T1.P4`](../specification/settlement/lifecycle.md#req-lif-7-0xzbdm.t1.p4) | Specification | [specification/settlement/lifecycle.md](../specification/settlement/lifecycle.md#req-lif-7-0xzbdm.t1.p4) |
 | [`REQ-LIF-7-0XZBDM.T1.P5`](../specification/settlement/lifecycle.md#req-lif-7-0xzbdm.t1.p5) | Specification | [specification/settlement/lifecycle.md](../specification/settlement/lifecycle.md#req-lif-7-0xzbdm.t1.p5) |
 | [`REQ-LIF-7-0XZBDM.T1.P6`](../specification/settlement/lifecycle.md#req-lif-7-0xzbdm.t1.p6) | Specification | [specification/settlement/lifecycle.md](../specification/settlement/lifecycle.md#req-lif-7-0xzbdm.t1.p6) |
+| [`REQ-LOG-1-H2VQ8X.T1.P1`](../specification/runtime/log-collection.md#req-log-1-h2vq8x.t1.p1) | Specification | [specification/runtime/log-collection.md](../specification/runtime/log-collection.md#req-log-1-h2vq8x.t1.p1) |
+| [`REQ-LOG-1-H2VQ8X.T1.P2`](../specification/runtime/log-collection.md#req-log-1-h2vq8x.t1.p2) | Specification | [specification/runtime/log-collection.md](../specification/runtime/log-collection.md#req-log-1-h2vq8x.t1.p2) |
+| [`REQ-LOG-3-T9FM2K.T1.P4`](../specification/runtime/log-collection.md#req-log-3-t9fm2k.t1.p4) | Specification | [specification/runtime/log-collection.md](../specification/runtime/log-collection.md#req-log-3-t9fm2k.t1.p4) |
+| [`REQ-LOG-4-W5XR7Q.T1.P4`](../specification/runtime/log-collection.md#req-log-4-w5xr7q.t1.p4) | Specification | [specification/runtime/log-collection.md](../specification/runtime/log-collection.md#req-log-4-w5xr7q.t1.p4) |
+| [`REQ-LOG-5-ST6S0G.T1.P1`](../specification/runtime/log-collection.md#req-log-5-st6s0g.t1.p1) | Specification | [specification/runtime/log-collection.md](../specification/runtime/log-collection.md#req-log-5-st6s0g.t1.p1) |
+| [`REQ-LOG-6-Q8KY4N.T1.P1`](../specification/runtime/log-collection.md#req-log-6-q8ky4n.t1.p1) | Specification | [specification/runtime/log-collection.md](../specification/runtime/log-collection.md#req-log-6-q8ky4n.t1.p1) |
+| [`REQ-LOG-8-B7VN3J.T1.P2`](../specification/runtime/log-collection.md#req-log-8-b7vn3j.t1.p2) | Specification | [specification/runtime/log-collection.md](../specification/runtime/log-collection.md#req-log-8-b7vn3j.t1.p2) |
+| [`REQ-LOG-8-B7VN3J.T1.P5`](../specification/runtime/log-collection.md#req-log-8-b7vn3j.t1.p5) | Specification | [specification/runtime/log-collection.md](../specification/runtime/log-collection.md#req-log-8-b7vn3j.t1.p5) |
+| [`REQ-LOG-8-B7VN3J.T1.P6`](../specification/runtime/log-collection.md#req-log-8-b7vn3j.t1.p6) | Specification | [specification/runtime/log-collection.md](../specification/runtime/log-collection.md#req-log-8-b7vn3j.t1.p6) |
 | [`REQ-MIRROR-1-XCY9CB.T1.P1`](../specification/enforcement/local-mirror.md#req-mirror-1-xcy9cb.t1.p1) | Specification | [specification/enforcement/local-mirror.md](../specification/enforcement/local-mirror.md#req-mirror-1-xcy9cb.t1.p1) |
 | [`REQ-MIRROR-1-XCY9CB.T1.P2`](../specification/enforcement/local-mirror.md#req-mirror-1-xcy9cb.t1.p2) | Specification | [specification/enforcement/local-mirror.md](../specification/enforcement/local-mirror.md#req-mirror-1-xcy9cb.t1.p2) |
 | [`REQ-MIRROR-1-XCY9CB.T1.P3`](../specification/enforcement/local-mirror.md#req-mirror-1-xcy9cb.t1.p3) | Specification | [specification/enforcement/local-mirror.md](../specification/enforcement/local-mirror.md#req-mirror-1-xcy9cb.t1.p3) |
@@ -2973,6 +2984,7 @@ Every planned test permutation — specification black-box plans and implementat
 | [`REQ-SP-7-70EMAT.T1.P7`](../specification/disputes/state-proofs.md#req-sp-7-70emat.t1.p7) | Specification | [specification/disputes/state-proofs.md](../specification/disputes/state-proofs.md#req-sp-7-70emat.t1.p7) |
 | [`REQ-SP-7-70EMAT.T1.P8`](../specification/disputes/state-proofs.md#req-sp-7-70emat.t1.p8) | Specification | [specification/disputes/state-proofs.md](../specification/disputes/state-proofs.md#req-sp-7-70emat.t1.p8) |
 | [`REQ-SP-7-70EMAT.T1.P9`](../specification/disputes/state-proofs.md#req-sp-7-70emat.t1.p9) | Specification | [specification/disputes/state-proofs.md](../specification/disputes/state-proofs.md#req-sp-7-70emat.t1.p9) |
+| [`REQ-SPC-1-H10R5K.T1.P1`](../implementation/views/architecture/sdk/rpc/spectate.md#req-spc-1-h10r5k.t1.p1) | Implementation | [implementation/views/architecture/sdk/rpc/spectate.md](../implementation/views/architecture/sdk/rpc/spectate.md#req-spc-1-h10r5k.t1.p1) |
 | [`REQ-SPC-1-H10R5K.T1.P2`](../implementation/views/architecture/sdk/rpc/spectate.md#req-spc-1-h10r5k.t1.p2) | Implementation | [implementation/views/architecture/sdk/rpc/spectate.md](../implementation/views/architecture/sdk/rpc/spectate.md#req-spc-1-h10r5k.t1.p2) |
 | [`REQ-SPC-1-H10R5K.T1.P3`](../implementation/views/architecture/sdk/rpc/spectate.md#req-spc-1-h10r5k.t1.p3) | Implementation | [implementation/views/architecture/sdk/rpc/spectate.md](../implementation/views/architecture/sdk/rpc/spectate.md#req-spc-1-h10r5k.t1.p3) |
 | [`REQ-SPC-1-H10R5K.T1.P4`](../implementation/views/architecture/sdk/rpc/spectate.md#req-spc-1-h10r5k.t1.p4) | Implementation | [implementation/views/architecture/sdk/rpc/spectate.md](../implementation/views/architecture/sdk/rpc/spectate.md#req-spc-1-h10r5k.t1.p4) |
@@ -3845,6 +3857,7 @@ Every planned test permutation — specification black-box plans and implementat
 | [`UNIT-TEST-SPECTATE-SERVICE-2-CHK2PD.P4`](../implementation/source/src/rpc/services/spectate/SpectateService.ts.md#unit-test-spectate-service-2-chk2pd.p4) | Implementation | [implementation/source/src/rpc/services/spectate/SpectateService.ts.md](../implementation/source/src/rpc/services/spectate/SpectateService.ts.md#unit-test-spectate-service-2-chk2pd.p4) |
 | [`UNIT-TEST-SPECTATE-SERVICE-2-CHK2PD.P5`](../implementation/source/src/rpc/services/spectate/SpectateService.ts.md#unit-test-spectate-service-2-chk2pd.p5) | Implementation | [implementation/source/src/rpc/services/spectate/SpectateService.ts.md](../implementation/source/src/rpc/services/spectate/SpectateService.ts.md#unit-test-spectate-service-2-chk2pd.p5) |
 | [`UNIT-TEST-SPECTATE-SERVICE-2-CHK2PD.P6`](../implementation/source/src/rpc/services/spectate/SpectateService.ts.md#unit-test-spectate-service-2-chk2pd.p6) | Implementation | [implementation/source/src/rpc/services/spectate/SpectateService.ts.md](../implementation/source/src/rpc/services/spectate/SpectateService.ts.md#unit-test-spectate-service-2-chk2pd.p6) |
+| [`UNIT-TEST-SPECTATE-SERVICE-2-CHK2PD.P7`](../implementation/source/src/rpc/services/spectate/SpectateService.ts.md#unit-test-spectate-service-2-chk2pd.p7) | Implementation | [implementation/source/src/rpc/services/spectate/SpectateService.ts.md](../implementation/source/src/rpc/services/spectate/SpectateService.ts.md#unit-test-spectate-service-2-chk2pd.p7) |
 | [`UNIT-TEST-SPECTATINGVALIDATION-STRATEGY-1-CTD8AH.P10`](../implementation/source/src/stateManager/validationStrategy/SpectatingValidationStrategy.ts.md#unit-test-spectatingvalidation-strategy-1-ctd8ah.p10) | Implementation | [implementation/source/src/stateManager/validationStrategy/SpectatingValidationStrategy.ts.md](../implementation/source/src/stateManager/validationStrategy/SpectatingValidationStrategy.ts.md#unit-test-spectatingvalidation-strategy-1-ctd8ah.p10) |
 | [`UNIT-TEST-SPECTATINGVALIDATION-STRATEGY-1-CTD8AH.P11`](../implementation/source/src/stateManager/validationStrategy/SpectatingValidationStrategy.ts.md#unit-test-spectatingvalidation-strategy-1-ctd8ah.p11) | Implementation | [implementation/source/src/stateManager/validationStrategy/SpectatingValidationStrategy.ts.md](../implementation/source/src/stateManager/validationStrategy/SpectatingValidationStrategy.ts.md#unit-test-spectatingvalidation-strategy-1-ctd8ah.p11) |
 | [`UNIT-TEST-SPECTATINGVALIDATION-STRATEGY-1-CTD8AH.P12`](../implementation/source/src/stateManager/validationStrategy/SpectatingValidationStrategy.ts.md#unit-test-spectatingvalidation-strategy-1-ctd8ah.p12) | Implementation | [implementation/source/src/stateManager/validationStrategy/SpectatingValidationStrategy.ts.md](../implementation/source/src/stateManager/validationStrategy/SpectatingValidationStrategy.ts.md#unit-test-spectatingvalidation-strategy-1-ctd8ah.p12) |
@@ -4068,6 +4081,7 @@ Repository test declarations that no verification document maps to any planned p
 | `E2E: BlockQueueManager > queue timeout window (host-side unit scope) > schedules the full window fresh, only the remainder after aging, and nothing at the deadline` | [test/e2e/E2E-BlockQueueManager.test.ts#L1258](../../../test/e2e/E2E-BlockQueueManager.test.ts#L1258) |
 | `E2E: Byzantine error attribution > suppresses a stray detached error originating on a malicious peer` | [test/e2e/E2E-ByzantineErrorAttribution.test.ts#L6](../../../test/e2e/E2E-ByzantineErrorAttribution.test.ts#L6) |
 | `E2E: Byzantine error attribution > does not suppress the same error when it comes from an honest peer` | [test/e2e/E2E-ByzantineErrorAttribution.test.ts#L24](../../../test/e2e/E2E-ByzantineErrorAttribution.test.ts#L24) |
+| `E2E: crash log upload > a second flush uploads only what happened since the first` | [test/e2e/E2E-CrashLogUpload.test.ts#L137](../../../test/e2e/E2E-CrashLogUpload.test.ts#L137) |
 | `E2E: Dispute Manager > Dispute Resolution and Fork Management > should post a dispute WITH auditing calldata on a pending-join fork` | [test/e2e/E2E-DisputeManager.test.ts#L37](../../../test/e2e/E2E-DisputeManager.test.ts#L37) |
 | `E2E: Dispute Manager > Dispute Resolution and Fork Management > should post updated state snapshot after fork resolution` | [test/e2e/E2E-DisputeManager.test.ts#L62](../../../test/e2e/E2E-DisputeManager.test.ts#L62) |
 | `E2E: Dispute Manager > Writer Timeout on a Pending-Join Fork > should dispute a timed-out writer on a pending-join fork with auditing calldata` | [test/e2e/E2E-DisputeManager.test.ts#L91](../../../test/e2e/E2E-DisputeManager.test.ts#L91) |
@@ -4082,7 +4096,6 @@ Repository test declarations that no verification document maps to any planned p
 | `E2E: final dispute resolution > missed final-dispute delivery recovers the exact final output during reduction` | [test/e2e/E2E-FinalDispute.test.ts#L162](../../../test/e2e/E2E-FinalDispute.test.ts#L162) |
 | `E2E: final dispute resolution > failed final-dispute preparation propagates without abandoning participation` | [test/e2e/E2E-FinalDispute.test.ts#L211](../../../test/e2e/E2E-FinalDispute.test.ts#L211) |
 | `E2E: First block timestamp grace > authors height 0 after the old participant deadline and every peer finalizes it` | [test/e2e/E2E-FirstBlockTimestampGrace.test.ts#L78](../../../test/e2e/E2E-FirstBlockTimestampGrace.test.ts#L78) |
-| `E2E: Fuzz - dispute soundness under randomized state evolution > <dynamic: `rep ${rep}/${REPS}: survivors stay in sync; every attack is contained without honest loss`>` | [test/e2e/E2E-Fuzz-Dispute-MVP.test.ts#L23](../../../test/e2e/E2E-Fuzz-Dispute-MVP.test.ts#L23) |
 | `E2E: Init Handshake > Time Validation > should disconnect peer when handshake request time difference exceeds agreementTime` | [test/e2e/E2E-InitHandshake.test.ts#L116](../../../test/e2e/E2E-InitHandshake.test.ts#L116) |
 | `E2E: Init Handshake > Time Validation > should disconnect peer that doesn't respond within agreementTime` | [test/e2e/E2E-InitHandshake.test.ts#L136](../../../test/e2e/E2E-InitHandshake.test.ts#L136) |
 | `E2E: Init Handshake > Time Validation > should disconnect peer when handshake response time doesn't match init time` | [test/e2e/E2E-InitHandshake.test.ts#L159](../../../test/e2e/E2E-InitHandshake.test.ts#L159) |
@@ -4113,9 +4126,11 @@ Repository test declarations that no verification document maps to any planned p
 | `E2E: Spectate Service > block height 0 spectating > should spectate successfully when joining at block 0` | [test/e2e/E2E-Spectate.test.ts#L1059](../../../test/e2e/E2E-Spectate.test.ts#L1059) |
 | `E2E: Spectate Service > Concurrent sync dedup > collapses two concurrent sync() calls for the same peer into a single on-the-wire request` | [test/e2e/E2E-Spectate.test.ts#L1078](../../../test/e2e/E2E-Spectate.test.ts#L1078) |
 | `E2E: Spectate Service > Unprovable sync target mutually blacklists both peers > an above-latest target can't be proven, so requester and responder blacklist each other` | [test/e2e/E2E-Spectate.test.ts#L1120](../../../test/e2e/E2E-Spectate.test.ts#L1120) |
-| `E2E: Spectate Service > Exact-target sync payload generation > pins the sync payload to the exact leave-block height while the responder is ahead` | [test/e2e/E2E-Spectate.test.ts#L1225](../../../test/e2e/E2E-Spectate.test.ts#L1225) |
-| `E2E: Spectate Service > Exact-target sync payload generation > pins the sync payload below a participant leave while the responder is ahead` | [test/e2e/E2E-Spectate.test.ts#L1364](../../../test/e2e/E2E-Spectate.test.ts#L1364) |
-| `E2E: Spectate Service > Spectate request across a dispute-window event gap > suppressed dispute event on the responder → the on-chain window is recovered and the disputed fork is declined, not proved` | [test/e2e/E2E-Spectate.test.ts#L1524](../../../test/e2e/E2E-Spectate.test.ts#L1524) |
+| `E2E: Spectate Service > Exact-target sync payload generation > pins the sync payload to requested height 0 while ahead` | [test/e2e/E2E-Spectate.test.ts#L1224](../../../test/e2e/E2E-Spectate.test.ts#L1224) |
+| `E2E: Spectate Service > Exact-target sync payload generation > pins the sync payload to requested height 1 while ahead` | [test/e2e/E2E-Spectate.test.ts#L1228](../../../test/e2e/E2E-Spectate.test.ts#L1228) |
+| `E2E: Spectate Service > Exact-target sync payload generation > pins the sync payload to the exact leave-block height while the responder is ahead` | [test/e2e/E2E-Spectate.test.ts#L1231](../../../test/e2e/E2E-Spectate.test.ts#L1231) |
+| `E2E: Spectate Service > Exact-target sync payload generation > pins the sync payload below a participant leave while the responder is ahead` | [test/e2e/E2E-Spectate.test.ts#L1370](../../../test/e2e/E2E-Spectate.test.ts#L1370) |
+| `E2E: Spectate Service > Spectate request across a dispute-window event gap > suppressed dispute event on the responder → the on-chain window is recovered and the disputed fork is declined, not proved` | [test/e2e/E2E-Spectate.test.ts#L1530](../../../test/e2e/E2E-Spectate.test.ts#L1530) |
 | `E2E: spectating strategy junk-block handling > cuts the sender of an unauthenticated junk block and keeps a PENDING_PARTICIPANT running` | [test/e2e/E2E-SpectatingAbortDoS.test.ts#L57](../../../test/e2e/E2E-SpectatingAbortDoS.test.ts#L57) |
 | `E2E: spectating strategy junk-block handling > cuts an ex-member that authors a linked block naming a stale membership snapshot, keeping the spectator SYNCED` | [test/e2e/E2E-SpectatingAbortDoS.test.ts#L233](../../../test/e2e/E2E-SpectatingAbortDoS.test.ts#L233) |
 | `E2E: active-participant stale-membership handling > cuts an ex-member's stale-membership block, stays PARTICIPATING, starts no dispute` | [test/e2e/E2E-SpectatingAbortDoS.test.ts#L299](../../../test/e2e/E2E-SpectatingAbortDoS.test.ts#L299) |
@@ -4164,6 +4179,7 @@ Repository test declarations that no verification document maps to any planned p
 | `RuntimeChainContext > rejects non-WebSocket-compatible provider URLs` | [test/evm/RuntimeChainContext.test.ts#L34](../../../test/evm/RuntimeChainContext.test.ts#L34) |
 | `RuntimeChainContext > lets the host own the quiesce timeout` | [test/evm/RuntimeChainContext.test.ts#L107](../../../test/evm/RuntimeChainContext.test.ts#L107) |
 | `RuntimeChainContext > lets an uncancellable P2P signer mutation outlive the request timeout` | [test/evm/RuntimeChainContext.test.ts#L168](../../../test/evm/RuntimeChainContext.test.ts#L168) |
+| `WorkerContractExecutor > should serialize simulations with local writes (worker)` | [test/evm/WorkerContractExecutor.test.ts#L505](../../../test/evm/WorkerContractExecutor.test.ts#L505) |
 | `workerShutdown > resolves once the worker drains its loop and exits` | [test/evm/workerShutdown.test.ts#L18](../../../test/evm/workerShutdown.test.ts#L18) |
 | `workerShutdown > resolves immediately for an already-exited worker` | [test/evm/workerShutdown.test.ts#L28](../../../test/evm/workerShutdown.test.ts#L28) |
 | `workerShutdown > waits for a slow drain instead of abandoning the worker` | [test/evm/workerShutdown.test.ts#L41](../../../test/evm/workerShutdown.test.ts#L41) |
@@ -4234,6 +4250,25 @@ Repository test declarations that no verification document maps to any planned p
 | `getOpenChannelProposalMismatch > accepts a proposal that matches the negotiated terms` | [test/rpc/openChannelNegotiation/OpenChannelProposal.test.ts#L45](../../../test/rpc/openChannelNegotiation/OpenChannelProposal.test.ts#L45) |
 | `getOpenChannelProposalMismatch > rejects a deadline in the past` | [test/rpc/openChannelNegotiation/OpenChannelProposal.test.ts#L103](../../../test/rpc/openChannelNegotiation/OpenChannelProposal.test.ts#L103) |
 | `getOpenChannelProposalMismatch > matches participants and channelId irrespective of address casing` | [test/rpc/openChannelNegotiation/OpenChannelProposal.test.ts#L119](../../../test/rpc/openChannelNegotiation/OpenChannelProposal.test.ts#L119) |
+| `crash-log-server sanitizeSegment - path traversal > leaves legitimate hex ids / addresses unchanged` | [test/scripts/crashLogServer.test.ts#L33](../../../test/scripts/crashLogServer.test.ts#L33) |
+| `crash-log-server sanitizeSegment - path traversal > replaces every disallowed character with _` | [test/scripts/crashLogServer.test.ts#L40](../../../test/scripts/crashLogServer.test.ts#L40) |
+| `crash-log-server sanitizeSegment - path traversal > keeps a sanitized segment contained under LOG_DIR` | [test/scripts/crashLogServer.test.ts#L44](../../../test/scripts/crashLogServer.test.ts#L44) |
+| `crash-log-server sanitizeSegment - path traversal > keeps a sanitized thread segment under LOG_DIR` | [test/scripts/crashLogServer.test.ts#L63](../../../test/scripts/crashLogServer.test.ts#L63) |
+| `crash-log-server validateUploadBody > accepts a well-formed chunk upload` | [test/scripts/crashLogServer.test.ts#L78](../../../test/scripts/crashLogServer.test.ts#L78) |
+| `crash-log-server validateUploadBody > rejects a non-integer sequence range` | [test/scripts/crashLogServer.test.ts#L82](../../../test/scripts/crashLogServer.test.ts#L82) |
+| `crash-log-server validateUploadBody > rejects an upload with no store id` | [test/scripts/crashLogServer.test.ts#L97](../../../test/scripts/crashLogServer.test.ts#L97) |
+| `crash-log-server validateUploadBody > rejects a chunk whose entry count disagrees with its range` | [test/scripts/crashLogServer.test.ts#L105](../../../test/scripts/crashLogServer.test.ts#L105) |
+| `crash-log-server validateUploadBody > rejects a body with no thread name` | [test/scripts/crashLogServer.test.ts#L114](../../../test/scripts/crashLogServer.test.ts#L114) |
+| `crash-log-server routes > stores an uploaded chunk and reads it back merged` | [test/scripts/crashLogServer.test.ts#L147](../../../test/scripts/crashLogServer.test.ts#L147) |
+| `crash-log-server routes > lists stored chunks in the index` | [test/scripts/crashLogServer.test.ts#L292](../../../test/scripts/crashLogServer.test.ts#L292) |
+| `crash-log-server bearer token > stores an upload with the configured token` | [test/scripts/crashLogServer.test.ts#L348](../../../test/scripts/crashLogServer.test.ts#L348) |
+| `fetch-logs > writes no marker for a read the server completed` | [test/scripts/fetchLogs.test.ts#L82](../../../test/scripts/fetchLogs.test.ts#L82) |
+| `logChunks > names and parses a chunk by its sequence range` | [test/scripts/logChunks.test.ts#L56](../../../test/scripts/logChunks.test.ts#L56) |
+| `logChunks > merges three threads into one ordered stream` | [test/scripts/logChunks.test.ts#L70](../../../test/scripts/logChunks.test.ts#L70) |
+| `logChunks > keeps the gap when a chunk is missing` | [test/scripts/logChunks.test.ts#L118](../../../test/scripts/logChunks.test.ts#L118) |
+| `logChunks > stops a merged read at the shared inflate budget and reports it` | [test/scripts/logChunks.test.ts#L135](../../../test/scripts/logChunks.test.ts#L135) |
+| `logChunks > drops an entry with no wall-clock timestamp from the merge` | [test/scripts/logChunks.test.ts#L184](../../../test/scripts/logChunks.test.ts#L184) |
+| `logChunks > keeps the sequence of entries after a dropped one aligned` | [test/scripts/logChunks.test.ts#L199](../../../test/scripts/logChunks.test.ts#L199) |
 | `DisputeValidationStrategy > continues a local not-linked replay when committed structure is clean` | [test/stateManager/DisputeValidationStrategy.test.ts#L23](../../../test/stateManager/DisputeValidationStrategy.test.ts#L23) |
 | `DisputeValidationStrategy > continues outsider checks when participant snapshots are unavailable` | [test/stateManager/DisputeValidationStrategy.test.ts#L36](../../../test/stateManager/DisputeValidationStrategy.test.ts#L36) |
 | `EventBus (worker + main thread) > forwards an application-defined p2p hook name and payload across the runtime bridge` | [test/stateManager/EventBus.test.ts#L136](../../../test/stateManager/EventBus.test.ts#L136) |
@@ -4383,8 +4418,8 @@ Repository test declarations that no verification document maps to any planned p
 | `Unit: BlockCommitService > shouldSignBlock > a block authored by a blacklisted peer → not signed` | [test/unit/BlockCommitService.test.ts#L31](../../../test/unit/BlockCommitService.test.ts#L31) |
 | `Unit: BlockCommitService > shouldSignBlock > a SYNCED spectator → not signed` | [test/unit/BlockCommitService.test.ts#L67](../../../test/unit/BlockCommitService.test.ts#L67) |
 | `Unit: BlockCommitService > shouldSignBlock > a participant that joined after the block → outside its union, not signed` | [test/unit/BlockCommitService.test.ts#L97](../../../test/unit/BlockCommitService.test.ts#L97) |
-| `Unit: BlockCommitService > shouldSignBlock > a block posted on-chain → the next-to-write peer does not sign, others do` | [test/unit/BlockCommitService.test.ts#L150](../../../test/unit/BlockCommitService.test.ts#L150) |
-| `Unit: BlockCommitService > success → status promotion > a PENDING joiner's first committed block includes it → PARTICIPATING and the recorded forceJoin height cleared` | [test/unit/BlockCommitService.test.ts#L186](../../../test/unit/BlockCommitService.test.ts#L186) |
+| `Unit: BlockCommitService > shouldSignBlock > a block posted on-chain → the next-to-write peer does not sign, others do` | [test/unit/BlockCommitService.test.ts#L165](../../../test/unit/BlockCommitService.test.ts#L165) |
+| `Unit: BlockCommitService > success → status promotion > a PENDING joiner's first committed block includes it → PARTICIPATING and the recorded forceJoin height cleared` | [test/unit/BlockCommitService.test.ts#L201](../../../test/unit/BlockCommitService.test.ts#L201) |
 | `Unit: BlockIngestService > isKnownStaleFork > current fork, zero hash and an invented fork → all not stale` | [test/unit/BlockIngestService.test.ts#L60](../../../test/unit/BlockIngestService.test.ts#L60) |
 | `Unit: BlockIngestService > isKnownStaleFork > the fork we left behind after a dispute → stale` | [test/unit/BlockIngestService.test.ts#L90](../../../test/unit/BlockIngestService.test.ts#L90) |
 | `Unit: BlockIngestService > isKnownStaleFork > a non-current fork whose genesis snapshot we hold → stale` | [test/unit/BlockIngestService.test.ts#L110](../../../test/unit/BlockIngestService.test.ts#L110) |
@@ -4438,11 +4473,15 @@ Repository test declarations that no verification document maps to any planned p
 | `Unit: DisputeManager > killDispute > no stored fraud proof → the throw stays inside, nothing is submitted` | [test/unit/DisputeManager.test.ts#L1307](../../../test/unit/DisputeManager.test.ts#L1307) |
 | `Unit: DisputeManager > killDispute > no dispute window → killDispute returns before submitting (unreachable)` | [test/unit/DisputeManager.test.ts#L1357](../../../test/unit/DisputeManager.test.ts#L1357) |
 | `Unit: DisputeManager > killDispute > expired kill window → killDispute returns before submitting anything` | [test/unit/DisputeManager.test.ts#L1359](../../../test/unit/DisputeManager.test.ts#L1359) |
-| `Unit: DisputeManager > killDispute > <dynamic: `${customError} on the apply → consumed, no rejection, no detached error`>` | [test/unit/DisputeManager.test.ts#L1411](../../../test/unit/DisputeManager.test.ts#L1411) |
-| `Unit: DisputeManager > killDispute > <dynamic: `an unrecognized apply failure at ${at} → swallowed, nothing retried`>` | [test/unit/DisputeManager.test.ts#L1453](../../../test/unit/DisputeManager.test.ts#L1453) |
-| `Unit: DisputeManager > killDispute > live kill window → the stored proof is submitted and its transaction awaited` | [test/unit/DisputeManager.test.ts#L1501](../../../test/unit/DisputeManager.test.ts#L1501) |
-| `Unit: DisputeManager > killDispute > two killDispute calls inside one live kill window → one slash, the loser lands as a no-op` | [test/unit/DisputeManager.test.ts#L1540](../../../test/unit/DisputeManager.test.ts#L1540) |
-| `Unit: DisputeManager > constructDispute → concurrency > fraud proof stored while constructDispute is held at getStateProof → lands in fraudProofsToApply and onChainSlashes` | [test/unit/DisputeManager.test.ts#L1595](../../../test/unit/DisputeManager.test.ts#L1595) |
+| `Unit: DisputeManager > killDispute > RaceConditionDisputeKillPeriodExpired on the apply → consumed, no rejection, no detached error` | [test/unit/DisputeManager.test.ts#L1449](../../../test/unit/DisputeManager.test.ts#L1449) |
+| `Unit: DisputeManager > killDispute > RaceConditionOnChainSlashes on the apply → consumed, no rejection, no detached error` | [test/unit/DisputeManager.test.ts#L1455](../../../test/unit/DisputeManager.test.ts#L1455) |
+| `Unit: DisputeManager > killDispute > RaceConditionGenesisTimestampNotAvailable on the apply → consumed, no rejection, no detached error` | [test/unit/DisputeManager.test.ts#L1461](../../../test/unit/DisputeManager.test.ts#L1461) |
+| `Unit: DisputeManager > killDispute > RaceConditionUnexpectedBlockCalldataPosted on the apply → consumed, no rejection, no detached error` | [test/unit/DisputeManager.test.ts#L1467](../../../test/unit/DisputeManager.test.ts#L1467) |
+| `Unit: DisputeManager > killDispute > an unrecognized apply failure at send → swallowed, nothing retried` | [test/unit/DisputeManager.test.ts#L1520](../../../test/unit/DisputeManager.test.ts#L1520) |
+| `Unit: DisputeManager > killDispute > an unrecognized apply failure at wait → swallowed, nothing retried` | [test/unit/DisputeManager.test.ts#L1524](../../../test/unit/DisputeManager.test.ts#L1524) |
+| `Unit: DisputeManager > killDispute > live kill window → the stored proof is submitted and its transaction awaited` | [test/unit/DisputeManager.test.ts#L1528](../../../test/unit/DisputeManager.test.ts#L1528) |
+| `Unit: DisputeManager > killDispute > two killDispute calls inside one live kill window → one slash, the loser lands as a no-op` | [test/unit/DisputeManager.test.ts#L1567](../../../test/unit/DisputeManager.test.ts#L1567) |
+| `Unit: DisputeManager > constructDispute → concurrency > fraud proof stored while constructDispute is held at getStateProof → lands in fraudProofsToApply and onChainSlashes` | [test/unit/DisputeManager.test.ts#L1622](../../../test/unit/DisputeManager.test.ts#L1622) |
 | `Unit: DisputeValidationService > inbound hash > dispute.input.latestInboundMessageBlockHash = random -> false + DisputeInboundHashNotInChain` | [test/unit/DisputeValidationService.test.ts#L24](../../../test/unit/DisputeValidationService.test.ts#L24) |
 | `Unit: DisputeValidationService > state proof decode > milestones[0].blockConfirmations[0].signedBlock.encodedBlock = junk AND postedAuditingData false -> false + DisputeLastMilestoneNotFinalAndNoAuditingData` | [test/unit/DisputeValidationService.test.ts#L44](../../../test/unit/DisputeValidationService.test.ts#L44) |
 | `Unit: DisputeValidationService > state proof decode > signedBlocks[-1].encodedBlock = junk with no milestones AND postedAuditingData false -> audit skipped, true, no proof` | [test/unit/DisputeValidationService.test.ts#L65](../../../test/unit/DisputeValidationService.test.ts#L65) |
@@ -4587,16 +4626,6 @@ Repository test declarations that no verification document maps to any planned p
 | `HolepunchRelay > resets exclusion/backoff state on a successful connection` | [test/utils/HolepunchRelay.test.ts#L173](../../../test/utils/HolepunchRelay.test.ts#L173) |
 | `HolepunchRelay > adds a randomized, non-synchronized delay before retrying a single relayer failure` | [test/utils/HolepunchRelay.test.ts#L212](../../../test/utils/HolepunchRelay.test.ts#L212) |
 | `HolepunchRelay > applies full jitter (not a deterministic mark) to the exhaustion backoff` | [test/utils/HolepunchRelay.test.ts#L250](../../../test/utils/HolepunchRelay.test.ts#L250) |
-| `encodeLogEntry > redacts a direct AxiosError but keeps name/message/code` | [test/utils/logEncoder.test.ts#L47](../../../test/utils/logEncoder.test.ts#L47) |
-| `encodeLogEntry > redacts an AxiosError nested in a class instance` | [test/utils/logEncoder.test.ts#L55](../../../test/utils/logEncoder.test.ts#L55) |
-| `encodeLogEntry > redacts an AxiosError on an enumerable property of a Map` | [test/utils/logEncoder.test.ts#L62](../../../test/utils/logEncoder.test.ts#L62) |
-| `encodeLogEntry > does not slip a raw error out through a non-string Error field getter` | [test/utils/logEncoder.test.ts#L68](../../../test/utils/logEncoder.test.ts#L68) |
-| `encodeLogEntry > neither copies nor invokes an untrusted toJSON that would expose secrets` | [test/utils/logEncoder.test.ts#L79](../../../test/utils/logEncoder.test.ts#L79) |
-| `encodeLogEntry > does not invoke an accessor that materializes an error's config` | [test/utils/logEncoder.test.ts#L87](../../../test/utils/logEncoder.test.ts#L87) |
-| `encodeLogEntry > drops a function whose toJSON would expose an error` | [test/utils/logEncoder.test.ts#L100](../../../test/utils/logEncoder.test.ts#L100) |
-| `encodeLogEntry > encodes a circular class instance as [Circular] without throwing` | [test/utils/logEncoder.test.ts#L108](../../../test/utils/logEncoder.test.ts#L108) |
-| `encodeLogEntry > survives throwing Error accessors without throwing` | [test/utils/logEncoder.test.ts#L123](../../../test/utils/logEncoder.test.ts#L123) |
-| `encodeLogEntry > preserves Date as ISO and bigint as a string` | [test/utils/logEncoder.test.ts#L140](../../../test/utils/logEncoder.test.ts#L140) |
 | `LoggerUtils > builds contract-call metadata from encoded calldata` | [test/utils/LoggerUtils.test.ts#L7](../../../test/utils/LoggerUtils.test.ts#L7) |
 | `LoggerUtils > getCustomEvmErrorMetadata > names every revert arg from the error ABI` | [test/utils/LoggerUtils.test.ts#L26](../../../test/utils/LoggerUtils.test.ts#L26) |
 | `LoggerUtils > getCustomEvmErrorMetadata > keeps numeric revert args as bigints` | [test/utils/LoggerUtils.test.ts#L45](../../../test/utils/LoggerUtils.test.ts#L45) |
@@ -4604,11 +4633,6 @@ Repository test declarations that no verification document maps to any planned p
 | `LoggerUtils > getCustomEvmErrorMetadata > no decoded custom error yields no metadata` | [test/utils/LoggerUtils.test.ts#L87](../../../test/utils/LoggerUtils.test.ts#L87) |
 | `LoggerUtils > reports each message block's previousBlockHash` | [test/utils/LoggerUtils.test.ts#L98](../../../test/utils/LoggerUtils.test.ts#L98) |
 | `LoggerUtils > pairs the submitted snapshot head with the computed reduction target` | [test/utils/LoggerUtils.test.ts#L112](../../../test/utils/LoggerUtils.test.ts#L112) |
-| `LogUploader > uploads a captured error without leaking secret fields of a real AxiosError` | [test/utils/LogUploader.test.ts#L26](../../../test/utils/LogUploader.test.ts#L26) |
-| `LogUploader > uploads logs when no error is captured` | [test/utils/LogUploader.test.ts#L58](../../../test/utils/LogUploader.test.ts#L58) |
-| `LogUploader > delivers a captured error that arrives while an upload is in flight` | [test/utils/LogUploader.test.ts#L72](../../../test/utils/LogUploader.test.ts#L72) |
-| `LogUploader > captures a non-Error reason whose toString throws without itself throwing` | [test/utils/LogUploader.test.ts#L91](../../../test/utils/LogUploader.test.ts#L91) |
-| `LogUploader > captures an Error with throwing accessors without itself throwing` | [test/utils/LogUploader.test.ts#L111](../../../test/utils/LogUploader.test.ts#L111) |
 | `ObjectChecks > accepts a complete RPC service shape` | [test/utils/ObjectChecks.test.ts#L82](../../../test/utils/ObjectChecks.test.ts#L82) |
 | `ObjectChecks > accepts an array with the complete ethers Result API` | [test/utils/ObjectChecks.test.ts#L154](../../../test/utils/ObjectChecks.test.ts#L154) |
 | `SignatureCollectionMap > should insert a new signature` | [test/utils/SignatureCollectionMap.test.ts#L26](../../../test/utils/SignatureCollectionMap.test.ts#L26) |

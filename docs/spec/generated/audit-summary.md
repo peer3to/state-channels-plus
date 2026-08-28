@@ -18,16 +18,16 @@ Detailed statements, source evidence, design analysis, and test mappings remain 
 
 ## Readiness
 
-- Requirements/invariants: 243
-- Structurally complete requirement paths: **8/243** (3%)
-- Current engineer-approved paths: **0/243** (0%)
-- Current security-accepted paths: **0/243** (0%)
-- Final ready paths: **0/243** (0%)
-- Source files assigned to implementation subjects: **240/258** (93%)
-- Test declarations mapped or explicitly ignored: **734/1443** (51%)
+- Requirements/invariants: 255
+- Structurally complete requirement paths: **9/255** (4%)
+- Current engineer-approved paths: **0/255** (0%)
+- Current security-accepted paths: **0/255** (0%)
+- Final ready paths: **0/255** (0%)
+- Source files assigned to implementation subjects: **242/260** (93%)
+- Test declarations mapped or explicitly ignored: **910/1630** (56%)
 - Open questions: 38
-- Active findings: 17
-- Strict blocking items: 5239
+- Active findings: 18
+- Strict blocking items: 5293
 
 ## Requirement paths
 
@@ -61,6 +61,8 @@ Detailed statements, source evidence, design analysis, and test mappings remain 
 | [`INV-ID-1-B4FXJ4`](../specification/protocol-model/identity.md#inv-id-1-b4fxj4) | [INV-ID-1-B4FXJ4 · 1 plan](../specification/protocol-model/identity.md#inv-id-1-b4fxj4) | [Covered](../implementation/source/src/utils/SignatureUtils.ts.md#conformance-traceability) | 0/7 permutations evidenced | 0 | None linked | Gap | Approval pending | Assessment pending | Not ready |
 | [`INV-JOINSIG-1-JX5EC4`](../specification/peer-communication/join-authorization.md#inv-joinsig-1-jx5ec4) | [INV-JOINSIG-1-JX5EC4 · 1 plan](../specification/peer-communication/join-authorization.md#inv-joinsig-1-jx5ec4) | [Covered](../implementation/source/src/rpc/services/joinChannel/JoinChannelService.ts.md#conformance-traceability) | 0/4 permutations evidenced | 0 | None linked | Gap | Approval pending | Assessment pending | Not ready |
 | [`INV-LIF-5-ENQB91`](../specification/settlement/lifecycle.md#inv-lif-5-enqb91) | [INV-LIF-5-ENQB91 · 1 plan](../specification/settlement/lifecycle.md#inv-lif-5-enqb91) | [Covered](../implementation/views/protocol/lifecycle.md#conformance-traceability) | 1/7 permutations evidenced | 1 | None linked | Gap | Approval pending | Assessment pending | Not ready |
+| [`INV-LOG-1-P4WT6R`](../specification/runtime/log-collection.md#inv-log-1-p4wt6r) | [INV-LOG-1-P4WT6R · 1 plan](../specification/runtime/log-collection.md#inv-log-1-p4wt6r) | [Covered](../implementation/source/src/evm/contractExecutor/WorkerContractExecutor.ts.md#conformance-traceability) | 5/6 permutations evidenced | 4 | None linked | Gap | Approval pending | Assessment pending | Not ready |
+| [`INV-LOG-2-C7KZ9M`](../specification/runtime/log-collection.md#inv-log-2-c7kz9m) | [INV-LOG-2-C7KZ9M · 1 plan](../specification/runtime/log-collection.md#inv-log-2-c7kz9m) | [Partial](../implementation/source/src/utils/logging/LogFlushBus.ts.md#conformance-traceability) | 3/4 permutations evidenced | 3 | None linked | Gap | Approval pending | Assessment pending | Not ready |
 | [`INV-MIRROR-1-VAF778`](../specification/enforcement/local-mirror.md#inv-mirror-1-vaf778) | [INV-MIRROR-1-VAF778 · 1 plan](../specification/enforcement/local-mirror.md#inv-mirror-1-vaf778) | [Covered](../implementation/source/contracts/V1/StateChannelDiamondProxy/LocalDiamond.sol.md#conformance-traceability) | 0/6 permutations evidenced | 0 | None linked | Gap | Approval pending | Assessment pending | Not ready |
 | [`INV-MSG-1-36Y41Q`](../specification/settlement/cross-layer-messages.md#inv-msg-1-36y41q) | [INV-MSG-1-36Y41Q · 1 plan](../specification/settlement/cross-layer-messages.md#inv-msg-1-36y41q) | [Covered](../implementation/views/protocol/cross-layer-messages.md#conformance-traceability) | 0/14 permutations evidenced | 0 | None linked | Gap | Approval pending | Assessment pending | Not ready |
 | [`INV-MSG-2-PQ0T1K`](../specification/settlement/cross-layer-messages.md#inv-msg-2-pq0t1k) | [INV-MSG-2-PQ0T1K · 1 plan](../specification/settlement/cross-layer-messages.md#inv-msg-2-pq0t1k) | [Covered](../implementation/views/protocol/cross-layer-messages.md#conformance-traceability) | 0/7 permutations evidenced | 0 | None linked | Gap | Approval pending | Assessment pending | Not ready |
@@ -193,6 +195,16 @@ Detailed statements, source evidence, design analysis, and test mappings remain 
 | [`REQ-LIF-4-SW8GVY`](../specification/settlement/lifecycle.md#req-lif-4-sw8gvy) | [REQ-LIF-4-SW8GVY · 1 plan](../specification/settlement/lifecycle.md#req-lif-4-sw8gvy) | [Covered](../implementation/views/protocol/lifecycle.md#conformance-traceability) | 0/12 permutations evidenced | 0 | None linked | Gap | Approval pending | Assessment pending | Not ready |
 | [`REQ-LIF-6-VG861M`](../specification/settlement/lifecycle.md#req-lif-6-vg861m) | [REQ-LIF-6-VG861M · 1 plan](../specification/settlement/lifecycle.md#req-lif-6-vg861m) | [Covered](../implementation/views/protocol/lifecycle.md#conformance-traceability) | 0/6 permutations evidenced | 0 | None linked | Gap | Approval pending | Assessment pending | Not ready |
 | [`REQ-LIF-7-0XZBDM`](../specification/settlement/lifecycle.md#req-lif-7-0xzbdm) | [REQ-LIF-7-0XZBDM · 1 plan](../specification/settlement/lifecycle.md#req-lif-7-0xzbdm) | [Covered](../implementation/source/src/eventHandlers/EventHandler.ts.md#conformance-traceability) | 0/6 permutations evidenced | 0 | None linked | Gap | Approval pending | Assessment pending | Not ready |
+| [`REQ-LOG-1-H2VQ8X`](../specification/runtime/log-collection.md#req-log-1-h2vq8x) | [REQ-LOG-1-H2VQ8X · 1 plan](../specification/runtime/log-collection.md#req-log-1-h2vq8x) | [Covered](../implementation/source/src/evm/P2pInstance.ts.md#conformance-traceability) | 2/4 permutations evidenced | 2 | None linked | Gap | Approval pending | Assessment pending | Not ready |
+| [`REQ-LOG-10-69CTN1`](../specification/runtime/log-collection.md#req-log-10-69ctn1) | [REQ-LOG-10-69CTN1 · 1 plan](../specification/runtime/log-collection.md#req-log-10-69ctn1) | [Partial](../implementation/source/src/utils/logging/LogFlushBus.ts.md#conformance-traceability) | 3/3 permutations evidenced | 3 | None linked | Gap | Approval pending | Assessment pending | Not ready |
+| [`REQ-LOG-2-N6BJ3D`](../specification/runtime/log-collection.md#req-log-2-n6bj3d) | [REQ-LOG-2-N6BJ3D · 1 plan](../specification/runtime/log-collection.md#req-log-2-n6bj3d) | [Partial](../implementation/source/src/utils/logging/logControl.ts.md#conformance-traceability) | 5/5 permutations evidenced | 4 | None linked | Gap | Approval pending | Assessment pending | Not ready |
+| [`REQ-LOG-3-T9FM2K`](../specification/runtime/log-collection.md#req-log-3-t9fm2k) | [REQ-LOG-3-T9FM2K · 1 plan](../specification/runtime/log-collection.md#req-log-3-t9fm2k) | [Covered](../implementation/source/src/utils/logging/Logger.ts.md#conformance-traceability) | 3/4 permutations evidenced | 3 | None linked | Gap | Approval pending | Assessment pending | Not ready |
+| [`REQ-LOG-4-W5XR7Q`](../specification/runtime/log-collection.md#req-log-4-w5xr7q) | [REQ-LOG-4-W5XR7Q · 1 plan](../specification/runtime/log-collection.md#req-log-4-w5xr7q) | [Partial](../implementation/source/src/utils/logging/logControl.ts.md#conformance-traceability) | 4/5 permutations evidenced | 4 | None linked | Gap | Approval pending | Assessment pending | Not ready |
+| [`REQ-LOG-5-ST6S0G`](../specification/runtime/log-collection.md#req-log-5-st6s0g) | [REQ-LOG-5-ST6S0G · 1 plan](../specification/runtime/log-collection.md#req-log-5-st6s0g) | [Covered](../implementation/source/src/utils/logging/logStore.ts.md#conformance-traceability) | 3/4 permutations evidenced | 3 | None linked | Gap | Approval pending | Assessment pending | Not ready |
+| [`REQ-LOG-6-Q8KY4N`](../specification/runtime/log-collection.md#req-log-6-q8ky4n) | [REQ-LOG-6-Q8KY4N · 1 plan](../specification/runtime/log-collection.md#req-log-6-q8ky4n) | [Partial](../implementation/source/src/utils/logging/logStore.ts.md#conformance-traceability) | 3/4 permutations evidenced | 3 | None linked | Gap | Approval pending | Assessment pending | Not ready |
+| [`REQ-LOG-7-M2RC5W`](../specification/runtime/log-collection.md#req-log-7-m2rc5w) | [REQ-LOG-7-M2RC5W · 1 plan](../specification/runtime/log-collection.md#req-log-7-m2rc5w) | No claim | 7/7 permutations evidenced | 7 | None linked | Gap | Approval pending | Assessment pending | Not ready |
+| [`REQ-LOG-8-B7VN3J`](../specification/runtime/log-collection.md#req-log-8-b7vn3j) | [REQ-LOG-8-B7VN3J · 1 plan](../specification/runtime/log-collection.md#req-log-8-b7vn3j) | [Covered](../implementation/source/src/utils/logging/logControl.ts.md#conformance-traceability) | 3/6 permutations evidenced | 3 | None linked | Gap | Approval pending | Assessment pending | Not ready |
+| [`REQ-LOG-9-V6SMAC`](../specification/runtime/log-collection.md#req-log-9-v6smac) | [REQ-LOG-9-V6SMAC · 1 plan](../specification/runtime/log-collection.md#req-log-9-v6smac) | [Covered](../implementation/source/src/utils/logging/LogFlushBus.ts.md#conformance-traceability) | 4/4 permutations evidenced | 2 | None linked | Complete | Approval pending | Assessment pending | Not ready |
 | [`REQ-MIRROR-1-XCY9CB`](../specification/enforcement/local-mirror.md#req-mirror-1-xcy9cb) | [REQ-MIRROR-1-XCY9CB · 2 plan](../specification/enforcement/local-mirror.md#req-mirror-1-xcy9cb) | [Partial](../implementation/source/contracts/V1/StateChannelDiamondProxy/LocalDiamond.sol.md#conformance-traceability) | 2/10 permutations evidenced | 2 | None linked | Gap | Approval pending | Assessment pending | Not ready |
 | [`REQ-MIRROR-2-E9F3TM`](../specification/enforcement/local-mirror.md#req-mirror-2-e9f3tm) | [REQ-MIRROR-2-E9F3TM · 2 plan](../specification/enforcement/local-mirror.md#req-mirror-2-e9f3tm) | [Partial](../implementation/source/contracts/V1/StateChannelDiamondProxy/LocalDiamond.sol.md#conformance-traceability) | 2/4 permutations evidenced | 2 | None linked | Gap | Approval pending | Assessment pending | Not ready |
 | [`REQ-MIRROR-3-THD7K8`](../specification/enforcement/local-mirror.md#req-mirror-3-thd7k8) | [REQ-MIRROR-3-THD7K8 · 1 plan](../specification/enforcement/local-mirror.md#req-mirror-3-thd7k8) | [Covered](../implementation/source/src/agreementManager/AgreementManager.ts.md#conformance-traceability) | 1/4 permutations evidenced | 1 | None linked | Gap | Approval pending | Assessment pending | Not ready |
@@ -280,11 +292,11 @@ Detailed statements, source evidence, design analysis, and test mappings remain 
 ## Global gaps
 
 - 18 source/contract file(s) have no implementation-subject owner.
-- 709 test declaration(s) are unaccounted.
+- 720 test declaration(s) are unaccounted.
 - 38 open question(s) require decisions.
-- 17 active finding(s) remain.
-- 243 requirement path(s) lack current engineer approval.
-- 243 requirement path(s) lack current security-risk acceptance.
+- 18 active finding(s) remain.
+- 255 requirement path(s) lack current engineer approval.
+- 255 requirement path(s) lack current security-risk acceptance.
 
 ## Audit sources
 

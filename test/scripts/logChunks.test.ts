@@ -1,4 +1,3 @@
-// @spec-test-coverage-ignore: developer diagnostics tooling; not protocol behavior, no specification or implementation IDs apply
 import { expect } from "chai";
 
 import type { LogEntry } from "@/utils/logging/Logger";

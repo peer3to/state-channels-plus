@@ -1,3 +1,4 @@
+// @spec-test-coverage-ignore: log receiver and uploader staging shared by the logging suites; the suites own the declarations
 import http from "http";
 import { AddressInfo } from "net";
 import { ethers } from "ethers";

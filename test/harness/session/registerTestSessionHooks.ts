@@ -1,3 +1,4 @@
+// @spec-test-coverage-ignore: harness session lifecycle hooks; no declarations of its own
 import { DetachedPromises, maybeStampErrorWithPeerAddress } from "@/utils";
 
 import { PeerIdentityExecutionContext } from "../core/peerErrorAttribution";
