@@ -88,19 +88,22 @@ export default class P2pInstance<
     }
 
     public async dispose() {
-        try {
-            await Promise.all([
-                this.p2pContractInstance.removeAllListeners(),
-                this.stateChannelManagerContract.removeAllListeners(),
-                this.client.dispose()
-            ]);
-        } finally {
-            this.webRTCBridgeHandle?.dispose();
-            this.webRTCBridgeHandle = undefined;
-            // leaves the realm bus with the session: otherwise every closed
-            // session keeps its store and its process crash hooks, and every
-            // later round re-uploads it
-            if (this.ownsLogger) this.logger.dispose();
+        // every teardown runs to the end before the logger goes: a listener
+        // removal that rejects must not take the realm off the bus while the
+        // client is still closing and may still log
+        const outcomes = await Promise.allSettled([
+            this.p2pContractInstance.removeAllListeners(),
+            this.stateChannelManagerContract.removeAllListeners(),
+            this.client.dispose()
+        ]);
+        this.webRTCBridgeHandle?.dispose();
+        this.webRTCBridgeHandle = undefined;
+        // leaves the realm bus with the session: otherwise every closed
+        // session keeps its store and its process crash hooks, and every
+        // later round re-uploads it
+        if (this.ownsLogger) this.logger.dispose();
+        for (const outcome of outcomes) {
+            if (outcome.status === "rejected") throw outcome.reason;
         }
     }
 
