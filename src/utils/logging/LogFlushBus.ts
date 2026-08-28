@@ -146,6 +146,13 @@ export class LogFlushBus {
         return this.scheduleRound(reason, undefined);
     }
 
+    /** upload this realm's own stores and nothing else. a thread about to end
+     *  waits on this rather than on a round - the realms across its ports are
+     *  still running and upload on their own. */
+    public flushOwnRealm(): Promise<LogFlushResult> {
+        return this.localFlush();
+    }
+
     private hasUploadTarget(): boolean {
         for (const logger of this.roots) {
             if (logger.isUploadEnabled()) return true;
