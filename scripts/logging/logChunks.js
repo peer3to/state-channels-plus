@@ -62,8 +62,9 @@ function inflateBounded(bytes, maxBytes) {
     return inflated;
 }
 
-// the same required fields decodeLogEntry enforces -> the server never stores
-// an entry the SDK decoder would later throw on
+// the same required fields decodeLogEntry enforces -> a merged read never
+// hands the SDK decoder an entry it would throw on. read path only: an upload
+// is checked for a decodable chunk and its entry count, not per entry
 function isDecodableEntry(entry) {
     return (
         Boolean(entry) &&
