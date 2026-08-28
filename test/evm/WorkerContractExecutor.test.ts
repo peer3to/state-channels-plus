@@ -387,11 +387,9 @@ describe("WorkerContractExecutor", function () {
         }
     });
 
-    // static declarations: the parallel/distributed runner discovers cases by
-    // literal name, so the shared body lives in a helper instead of a loop
-    async function assertSimulationsSerializeWithLocalWrites(
+    async function expectSimulationsSerializeWithLocalWrites(
         dedicatedThread: boolean
-    ): Promise<void> {
+    ) {
         const customAddress = Address.fromString(
             "0x00000000000000000000000000000000000000bc"
         );
@@ -433,10 +431,10 @@ describe("WorkerContractExecutor", function () {
     }
 
     it("should serialize simulations with local writes (inline)", async function () {
-        await assertSimulationsSerializeWithLocalWrites(false);
+        await expectSimulationsSerializeWithLocalWrites(false);
     });
 
     it("should serialize simulations with local writes (worker)", async function () {
-        await assertSimulationsSerializeWithLocalWrites(true);
+        await expectSimulationsSerializeWithLocalWrites(true);
     });
 });

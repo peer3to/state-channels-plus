@@ -1165,63 +1165,69 @@ describe("E2E: Spectate Service", function () {
         // Driven host-side against the real `generateSyncPayload` so the pin is
         // asserted deterministically at its source (the full sync pipeline
         // normalizes an over-proved height, so it can't distinguish the fix).
-        for (const requestedHeight of [0, 1]) {
-            it(`pins the sync payload to requested height ${requestedHeight} while ahead`, async function () {
-                const h = TestSession.getHarness();
-                await h.lifecycle.start(2, 0, {
-                    timeConfig: {
-                        p2pTime: 5,
-                        agreementTime: 10,
-                        chainFallbackTime: 2,
-                        evidenceTime: 10
-                    }
-                });
-
-                // Advance so the responder is finalized well beyond the target.
-                await h.transition.advanceState({
-                    count: 3,
-                    waitForFinalization: true
-                });
-
-                const responder = h.getPeer(0);
-                const forkId = h.activeForkId!;
-
-                // The responder is locally ahead of the requested target.
-                const responderLatest = await h
-                    .control(responder)
-                    .query.getLatestBlockBundle(forkId)
-                    .request();
-                expect(responderLatest).to.not.equal(null);
-                expect(responderLatest!.height).to.be.greaterThan(
-                    requestedHeight
-                );
-
-                const syncResult = await h
-                    .control(responder)
-                    .spectate.generateSyncPayload(
-                        h.channelId!,
-                        forkId,
-                        requestedHeight
-                    )
-                    .request();
-                expect(syncResult).to.not.equal(null);
-                const syncPayload = Codec.decode(
-                    syncResult!.encodedSyncPayload,
-                    Type.SyncPayload
-                );
-
-                // The proof is pinned to exactly the requested height, not the
-                // responder's latest. Pre-fix (height 0 -> `||` -> latest) this
-                // is the responder's tip and the assertion fails.
-                const latestFinalizedSnapshot =
-                    syncPayload.milestoneSnapshots.at(-1) ??
-                    syncPayload.latestForkGenesisSnapshot;
-                expect(Number(latestFinalizedSnapshot.blockHeight)).to.equal(
-                    requestedHeight,
-                    "sync payload must prove exactly the requested height"
-                );
+        async function expectSyncPayloadPinnedToRequestedHeightWhileAhead(
+            requestedHeight: number
+        ) {
+            const h = TestSession.getHarness();
+            await h.lifecycle.start(2, 0, {
+                timeConfig: {
+                    p2pTime: 5,
+                    agreementTime: 10,
+                    chainFallbackTime: 2,
+                    evidenceTime: 10
+                }
             });
+
+            // Advance so the responder is finalized well beyond the target.
+            await h.transition.advanceState({
+                count: 3,
+                waitForFinalization: true
+            });
+
+            const responder = h.getPeer(0);
+            const forkId = h.activeForkId!;
+
+            // The responder is locally ahead of the requested target.
+            const responderLatest = await h
+                .control(responder)
+                .query.getLatestBlockBundle(forkId)
+                .request();
+            expect(responderLatest).to.not.equal(null);
+            expect(responderLatest!.height).to.be.greaterThan(requestedHeight);
+
+            const syncResult = await h
+                .control(responder)
+                .spectate.generateSyncPayload(
+                    h.channelId!,
+                    forkId,
+                    requestedHeight
+                )
+                .request();
+            expect(syncResult).to.not.equal(null);
+            const syncPayload = Codec.decode(
+                syncResult!.encodedSyncPayload,
+                Type.SyncPayload
+            );
+
+            // The proof is pinned to exactly the requested height, not the
+            // responder's latest. Pre-fix (height 0 -> `||` -> latest) this
+            // is the responder's tip and the assertion fails.
+            const latestFinalizedSnapshot =
+                syncPayload.milestoneSnapshots.at(-1) ??
+                syncPayload.latestForkGenesisSnapshot;
+            expect(Number(latestFinalizedSnapshot.blockHeight)).to.equal(
+                requestedHeight,
+                "sync payload must prove exactly the requested height"
+            );
         }
+
+        it("pins the sync payload to requested height 0 while ahead", async function () {
+            await expectSyncPayloadPinnedToRequestedHeightWhileAhead(0);
+        });
+
+        it("pins the sync payload to requested height 1 while ahead", async function () {
+            await expectSyncPayloadPinnedToRequestedHeightWhileAhead(1);
+        });
         it("pins the sync payload to the exact leave-block height while the responder is ahead", async function () {
             const h = TestSession.getHarness();
             await h.lifecycle.start(4, 0, {
