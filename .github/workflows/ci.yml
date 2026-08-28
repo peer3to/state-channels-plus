@@ -34,32 +34,12 @@ jobs:
             - name: Install dependencies
               run: yarn install --frozen-lockfile
 
-            - name: Install Foundry
-              uses: foundry-rs/foundry-toolchain@v1
-              with:
-                  version: v1.2.3
-                  cache: true
-
-            - name: Cache compiled contracts and typechain output
-              id: hardhat-cache
-              uses: actions/cache@v4
-              with:
-                  path: |
-                      cache
-                      artifacts
-                      typechain-types
-                      src/utils/GeneratedArtifacts.ts
-                  key: hardhat-artifacts-${{ hashFiles('contracts/**/*.sol', 'hardhat.config.ts', 'package.json', 'yarn.lock') }}
-
-            # Mocha test discovery imports every test file to enumerate its
-            # real describe/it tree, and those files import typechain types,
-            # so compiled contracts must exist before discovery runs. `yarn
-            # compile` always does a clean --force rebuild, so only run it
-            # when the sources it depends on actually changed.
-            - name: Compile contracts and generate artifacts
-              if: steps.hardhat-cache.outputs.cache-hit != 'true'
-              run: yarn compile
-
+            # Discovery statically parses every test file's syntax tree for
+            # literal it()/describe() titles — it never imports the files or
+            # invokes forge, so neither compiled contracts nor a Foundry
+            # toolchain are needed on the orchestrator. Each worker compiles
+            # contracts and builds forge tests itself via its own prepare
+            # script before it runs any task.
             - name: Check distributed pool secrets are present
               env:
                   SCP_TEST_POOL_SECRET: ${{ secrets.SCP_TEST_POOL_SECRET }}
