@@ -5,6 +5,7 @@ import { MathTestSession as TestSession } from "@test/harness";
 import { waitFor } from "@test/utils/waitFor";
 import {
     crashLogConfigOverrides,
+    decodeUpload,
     messagesIn,
     startLogReceiver,
     streamsFor,
@@ -165,6 +166,26 @@ describe("E2E: crash log upload", function () {
                 previous[previous.length - 1].toSeq + 1
             );
         }
+    });
+
+    // boundary - the round's own outcome, back through the server it uploaded to
+    it("uploads a record of what the round reached", async function () {
+        const h = TestSession.getHarness();
+        await h.lifecycle.start(2, 2, {
+            configOverrides: crashLogConfigOverrides(receiver!.url, THREADED)
+        });
+
+        const reason = "FAILED: round record";
+        const result = await h.logger.uploadLogs(reason);
+
+        const summary = receiver!.requests
+            .flatMap(decodeUpload)
+            .find((entry) => entry.message === "Log flush round reached");
+        expect(summary, "no flush summary entry").to.not.be.undefined;
+        expect(summary!.meta[0]).to.deep.equal({ reason, ...result });
+        // every realm answered -> nothing is missing from this report
+        expect(summary!.meta[0].timedOut).to.equal(0);
+        expect(summary!.meta[0].ok).to.be.greaterThan(0);
     });
 
     // boundary - no ports at all; every realm is this process
