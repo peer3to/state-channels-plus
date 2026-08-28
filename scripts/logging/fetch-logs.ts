@@ -289,6 +289,12 @@ async function main() {
         count: peerStreams.length
     });
 
+    /** thread kind -> streams seen across every peer */
+    const streamsByThread = new Map<ThreadDirName, number>();
+    /** thread kind -> entries fetched across every peer */
+    const entriesByThread = new Map<ThreadDirName, number>();
+    let totalEntries = 0;
+
     for (const { peerAddress, threads } of peerStreams) {
         console.log("Fetching peer logs", { channelId, peerAddress, threads });
         const logEntries = await fetchLogEntries({
@@ -303,6 +309,7 @@ async function main() {
             logEntries
         });
 
+        totalEntries += logEntries.length;
         console.log("Persisted peer logs", {
             channelId,
             peerAddress,
@@ -324,6 +331,14 @@ async function main() {
                 logEntries: threadEntries,
                 threadName
             });
+            streamsByThread.set(
+                threadName,
+                (streamsByThread.get(threadName) ?? 0) + 1
+            );
+            entriesByThread.set(
+                threadName,
+                (entriesByThread.get(threadName) ?? 0) + threadEntries.length
+            );
             // a missing thread shows up in the per-thread counts
             console.log("Persisted thread logs", {
                 channelId,
@@ -334,6 +349,16 @@ async function main() {
             });
         }
     }
+
+    // what arrived. a thread the run had but the server never received is
+    // absent here - the `Log flush round reached` entry names how many
+    console.log("Collected log summary", {
+        channelId,
+        peers: peerStreams.length,
+        entries: totalEntries,
+        streamsByThread: Object.fromEntries(streamsByThread),
+        entriesByThread: Object.fromEntries(entriesByThread)
+    });
 }
 
 main().catch((error) => {
