@@ -411,17 +411,19 @@ describe("parallel forge task discovery", function () {
     });
 
     it("includes a test contract declared in a .test.sol file", function () {
-        const { tasks } = discoverForgeTasks(REPO_TEST_DIR);
-        const task = tasks.find(
-            (candidate) =>
-                candidate.fullTitle === "StateChannelManagerProxyOpenTest"
-        );
-        expect(task?.label).to.equal(
-            "forge:StateChannelManagerProxyOpen.test.sol:StateChannelManagerProxyOpenTest"
-        );
-        expect(task?.logName).to.equal(
-            "StateChannelManagerProxyOpen.test__StateChannelManagerProxyOpenTest"
-        );
+        const root = fs.mkdtempSync(path.join(os.tmpdir(), "forge-dotted-"));
+        try {
+            fs.writeFileSync(
+                path.join(root, "Sample.test.sol"),
+                TEST_CONTRACT_SOURCE
+            );
+            const { tasks } = discoverForgeTasks(root);
+            expect(tasks).to.have.lengthOf(1);
+            expect(tasks[0].label).to.equal("forge:Sample.test.sol:SampleTest");
+            expect(tasks[0].logName).to.equal("Sample.test__SampleTest");
+        } finally {
+            fs.rmSync(root, { recursive: true, force: true });
+        }
     });
 
     it("skips harness contracts that declare no test function", function () {
