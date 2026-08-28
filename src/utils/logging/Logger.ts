@@ -239,7 +239,7 @@ export abstract class Logger {
     }
 
     /** report-a-bug entry point: write the marker, upload every reachable realm,
-     *  return what happened so the caller can tell the user */
+     *  then record what that round reached and ship that record too */
     public async uploadLogs(
         message: any,
         ...meta: any[]
@@ -251,7 +251,9 @@ export abstract class Logger {
         }
         const localTime = new Date().getTime() / 1000;
         this.warn(message, ...meta, localTime);
-        return this.flushAllRealms(String(message));
+        const result = await this.flushAllRealms(String(message));
+        await this.flushBus?.recordRoundResult(String(message), result);
+        return result;
     }
 
     public startPerformanceMonitoring(

@@ -153,6 +153,19 @@ export class LogFlushBus {
         return this.localFlush();
     }
 
+    /** note on every root here what a round reached, and upload that note.
+     *  `failed` and `timedOut` name realms whose logs are missing from the
+     *  report - the uploaded files cannot show that on their own. */
+    public recordRoundResult(
+        reason: string,
+        result: LogFlushResult
+    ): Promise<LogFlushResult> {
+        for (const root of this.roots) {
+            root.warn("Log flush round reached", { reason, ...result });
+        }
+        return this.flushOwnRealm();
+    }
+
     private hasUploadTarget(): boolean {
         for (const logger of this.roots) {
             if (logger.isUploadEnabled()) return true;
