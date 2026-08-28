@@ -1,3 +1,4 @@
+// @spec-test-coverage-ignore: precompile module and manifests the worker suites load; the suites own the declarations
 import type { PrecompileInput } from "@ethereumjs/evm";
 import { ethers } from "ethers";
 import { isMainThread } from "node:worker_threads";
