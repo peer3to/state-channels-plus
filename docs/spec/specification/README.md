@@ -60,7 +60,7 @@ belong in [open-questions.md](./open-questions.md).
 | 4 | [Cross-layer messaging and settlement](./settlement/README.md) | Deposits, joins, top-ups, inbound inclusion, outbound effects, exits, snapshot adoption, range proofs, consumer asset accounting, lifecycle. |
 | 5 | [Objective fault handling and dispute resolution](./disputes/README.md) | Fraud-proof algorithms, slash-set lifecycle, dispute inputs, state proofs, window lifecycle, timeout precedence, reduction, successor forks, resumption. |
 | 6 | [On-chain enforcement](./enforcement/README.md) | The manager decomposed into modules (admission/funds, snapshot adoption, proof verification, dispute windows, fraud slashing, execution/consumer), composition and storage domains, events, upgrade and code-size constraints — plus the dual-execution local mirror the client uses as check engine and cache. |
-| 7 | [Runtime and operations](./runtime/README.md) | Client-node process model, worker/inline equivalence, chain observation, restart sync, watchtowers, harness control, configuration. |
+| 7 | [Runtime and operations](./runtime/README.md) | Client-node process model, worker/inline equivalence, chain observation, restart sync, selected watchtowers with availability receipts, the restricted AFK removal block, and the disconnection-publication duty ([runtime/watchtowers.md](./runtime/watchtowers.md)), harness control, configuration. |
 | 8 | [Security, limits, and verification](./security/README.md) | Threat model, trust assumptions, adversary actions, resource limits, accepted v1 limitations, completeness review, test strategy. |
 | 9 | [Storage](./storage/README.md) | The node's local protocol knowledge behind module boundaries: blocks, queue, streams, snapshots/states, change points, evidence, calldata, timeouts, markers — shared durability/recovery rules plus one spec per module. |
 
@@ -127,8 +127,9 @@ The generated index lists only IDs that do not appear in any specification test.
 
 ## System assumptions and constraints
 
-The complete system assumes a live, final base chain; at least one honest participant or delegated
-watchtower with an honest chain view; deterministic state-machine replay; available proof and block data;
+The complete system assumes a live, final base chain; at least one threshold-required participant
+whose full chosen authority path is honest (the participant alone when towerless, the participant
+plus its selected watchtower when it delegates), with an honest chain view; deterministic state-machine replay; available proof and block data;
 unforgeable signatures; collision-resistant commitments; and configuration windows large enough for the
 deployment's chain and network conditions. Participant count, proof size, gas, latency, storage, topology,
 and availability limits must be explicit in the owning documents. A guarantee does not apply outside its

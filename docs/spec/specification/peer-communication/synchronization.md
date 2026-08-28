@@ -159,7 +159,9 @@ satisfy the channel-balance invariant checked against chain-anchored deposits an
 
 **<a id="req-sync-3-1p5zht"></a>`REQ-SYNC-3-1P5ZHT` — Suffix through the standard pipeline.** Unfinalized blocks arriving via sync MUST
 replay through the same validation pipeline as live blocks, under the spectating context's
-consequence rules.
+consequence rules. A supplied branch is validated against its own proved pre-state — never the
+receiver's different live state — and receiving it supplies evidence, not authority to overwrite
+a signed local history; dead-fork suspension and successor installation are unchanged.
 
 ## Assumptions and constraints
 

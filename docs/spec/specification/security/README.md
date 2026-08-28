@@ -21,8 +21,8 @@ algorithms.
 - **Calls / called by.** Cross-references only. Mechanism documents refine these constraints without
   weakening them ([../README.md](../README.md), system assumptions).
 - **Trust and availability assumptions.** These documents *define* them: live final chain, at least
-  one honest participant or watchtower per channel, honest RPC observation, unforgeable signatures,
-  deterministic replay, chain-backed data availability.
+  one threshold-required peer per channel whose full chosen authority path is honest, honest RPC
+  observation, unforgeable signatures, deterministic replay, chain-backed data availability.
 - **Ordering and concurrency.** Not applicable; timing-window adequacy is constrained here and
   computed in [../protocol-model/time.md](../protocol-model/time.md).
 - **Invariants (owned).** `REQ-TRUST-*` ([trust-model.md](./trust-model.md)); `REQ-DA-*`, `INV-DA-*`

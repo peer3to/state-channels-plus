@@ -85,6 +85,40 @@ availability, RPC trust, leader election, cross-layer interactions) has not happ
 belongs in this subsection, structured per [`REQ-SEC-3-NPPJN5`](security-assessment.md#req-sec-3-nppjn5) and [`REQ-SEC-4-VF81QD`](security-assessment.md#req-sec-4-vf81qd). Until it exists, no
 completeness claim may be made anywhere in this tree.
 
+### 4.1a Staged watchtower redesign — targeted assessment (2026-08-26)
+
+The staged selected-watchtower redesign was assessed against its own stated properties, not as a
+substitute for §4.1:
+
+- **Exact checkpoint preservation.** Every later accepted history preserves the exact settled
+  snapshot — state allocation, membership, balances, messages, and history commitment; total
+  balance checks alone never admit an incompatible per-user allocation
+  ([`REQ-LIF-2-Z3Z9Y3`](../specification/settlement/lifecycle.md#req-lif-2-z3z9y3)).
+- **Per-user state continuity.** Same-height and higher conflicting branches cannot replace a
+  settled checkpoint, and removal, exit, and withdrawal remain exactly-once and deposit-bounded
+  across replays and reorderings. The outbound stream is append-only across rejoin: a prior exit
+  is preserved — whether still pending or already processed — and a later independently valid
+  removal after a genuine rejoin appends a distinct fresh exit at the current selected-state
+  balance, each exit paid exactly once
+  ([cross-layer-messages.md §5](../specification/settlement/cross-layer-messages.md#5-exit-removal-and-slashing-outbound-stream-consumers)).
+- **No automatic penalty for chain-progress staleness.** A claim made stale only by an
+  intervening compatible settlement is not fraud; the unresolved stale-result lifecycle is
+  [`OQ-50-YSDG8S`](../specification/open-questions.md#oq-50-ysdg8s).
+- **Scoped tower substitution.** Tower-derived credit carries availability only and never
+  substitutes for an assigned peer's ordinary finality vote; a recovered signer that is itself a
+  participant keeps its own participant-signature effect, and one pair satisfying both the
+  participant and tower fraud predicates is routed through each existing path independently (the
+  overlap rule of the central key policy,
+  [identity.md](../specification/protocol-model/identity.md#identity)). The single finality
+  substitution is the AFK target's own credit on the exact restricted AFK block, and the accepted
+  conditional pre-publication race — protection only when the affected history's checkpoint
+  settles first — is recorded without any probability or one-round bound
+  ([`REQ-TRUST-3-3YWEZR`](../specification/security/trust-model.md#req-trust-3-3ywezr),
+  [`REQ-WT-10-GNG79P`](../specification/runtime/watchtowers.md#req-wt-10-gng79p)).
+
+This is a static specification assessment; no existing suite or plan review is evidence of a
+completed security proof.
+
 ### 4.2 Known findings from targeted analysis
 
 Produced while specifying the SDK pipelines and the RPC subtree, not by a systematic sweep. Each

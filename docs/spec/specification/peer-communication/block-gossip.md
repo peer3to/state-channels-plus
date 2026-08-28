@@ -77,7 +77,12 @@ pipeline classifies as acceptable knowledge, and never forgives what the pipelin
 sender's own violation.
 
 **<a id="req-gossip-3-hqznqx"></a>`REQ-GOSSIP-3-HQZNQX` — Re-broadcast on growth.** A node MUST re-broadcast a confirmation when its local
-signature set grows, so signature knowledge converges across honest peers without a request cycle.
+signature set grows, so signature knowledge converges across honest peers without a request cycle. Receiving
+an alternative branch — including the tower's restricted AFK candidate — supplies evidence, never
+authority to overwrite a signed local history: the ordinary confirmation carrier and pipeline are
+retained, and the no-switch rule of
+[`INV-FIN-2-MK27J6`](../protocol-model/finality.md#inv-fin-2-mk27j6) applies before any additive
+signing.
 
 ## Assumptions and constraints
 
