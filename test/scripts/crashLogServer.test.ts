@@ -305,3 +305,75 @@ describe("crash-log-server routes", function () {
         expect(chunks.some((name) => name.includes("/"))).to.equal(true);
     });
 });
+
+/** a receiver that expects a token refuses a send without one, and a refusal
+ *  does not poison the sends that follow */
+describe("crash-log-server bearer token", function () {
+    let server: Server;
+    let baseUrl: string;
+    let previousToken: string | undefined;
+    const token = "test-token";
+
+    before(async function () {
+        previousToken = process.env.CRASH_LOG_API_TOKEN;
+        process.env.CRASH_LOG_API_TOKEN = token;
+        ({ server, baseUrl } = await listenOn(app));
+    });
+
+    after(function () {
+        if (previousToken === undefined) delete process.env.CRASH_LOG_API_TOKEN;
+        else process.env.CRASH_LOG_API_TOKEN = previousToken;
+        server.close();
+        rmSync(TEST_LOG_DIR, { recursive: true, force: true });
+    });
+
+    it("refuses an upload with no token", async function () {
+        const body = uploadBody({ channelId: "0x" + "a1".repeat(32) });
+
+        expect(await uploadTo(baseUrl, body)).to.equal(401);
+        const read = await fetch(
+            `${baseUrl}/logs/${body.channelId}/${body.peerAddress}`
+        );
+        // refused means not stored
+        expect(read.status).to.equal(404);
+    });
+
+    it("refuses an upload with the wrong token", async function () {
+        const body = uploadBody({ channelId: "0x" + "a2".repeat(32) });
+
+        expect(
+            await uploadTo(baseUrl, body, { Authorization: "Bearer wrong" })
+        ).to.equal(401);
+    });
+
+    it("stores an upload with the configured token", async function () {
+        const body = uploadBody({ channelId: "0x" + "a3".repeat(32) });
+
+        expect(
+            await uploadTo(baseUrl, body, { Authorization: `Bearer ${token}` })
+        ).to.equal(200);
+        const read = await fetch(
+            `${baseUrl}/logs/${body.channelId}/${body.peerAddress}`
+        );
+        expect(decodeChunk(await read.text())).to.have.length(3);
+    });
+
+    it("stores a valid upload after a refused one", async function () {
+        const channelId = "0x" + "a4".repeat(32);
+        const refused = uploadBody({ channelId, storeId: "refused1" });
+        const accepted = uploadBody({ channelId, storeId: "accepted" });
+
+        expect(await uploadTo(baseUrl, refused)).to.equal(401);
+        expect(
+            await uploadTo(baseUrl, accepted, {
+                Authorization: `Bearer ${token}`
+            })
+        ).to.equal(200);
+
+        const read = await fetch(
+            `${baseUrl}/logs/${channelId}/${accepted.peerAddress}`
+        );
+        // only the accepted store made it to disk
+        expect(decodeChunk(await read.text())).to.have.length(3);
+    });
+});
