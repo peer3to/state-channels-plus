@@ -178,7 +178,7 @@ responsibility, implementation choices, constraints, and exhaustive file-owned u
 
 ### Source report: 🟨 AStateMachine.sol
 
-**Source:** [contracts/V1/AStateMachine.sol](../../../../../contracts/V1/AStateMachine.sol#L22)  
+**Source:** [contracts/V1/AStateMachine.sol](../../../../../contracts/V1/AStateMachine.sol#L22)<br>
 **Specification IDs:** [`INV-SM-1-J7BP6D`](../../../specification/protocol-model/state-machines.md#inv-sm-1-j7bp6d), [`REQ-SM-1-Y72CKX`](../../../specification/protocol-model/state-machines.md#req-sm-1-y72ckx), [`INV-SM-2-0FTJ2T`](../../../specification/protocol-model/state-machines.md#inv-sm-2-0ftj2t), [`REQ-SM-2-PHCRFR`](../../../specification/protocol-model/state-machines.md#req-sm-2-phcrfr), [`REQ-BAL-1-Z8RH4V`](../../../specification/protocol-model/state-machines.md#req-bal-1-z8rh4v), [`REQ-BAL-2-KTSW9B`](../../../specification/protocol-model/state-machines.md#req-bal-2-ktsw9b), [`REQ-BAL-3-P7Q83F`](../../../specification/protocol-model/state-machines.md#req-bal-3-p7q83f), [`REQ-SM-5-3GS7A7`](../../../specification/protocol-model/state-machines.md#req-sm-5-3gs7a7), [`REQ-SM-7-Y38NTY`](../../../specification/protocol-model/state-machines.md#req-sm-7-y38nty), [`REQ-SM-8-8CHSQ8`](../../../specification/protocol-model/state-machines.md#req-sm-8-8chsq8), [`REQ-SM-9-QK86SJ`](../../../specification/protocol-model/state-machines.md#req-sm-9-qk86sj)
 
 - **Implementation responsibility:** Defines the application-facing state-machine contract, state and balance hooks, inbound dispatch, outbound buffering, participant lifecycle wrappers, and bounded transition self-call.
@@ -205,7 +205,7 @@ These tests belong to this implementation file. Together, their listed permutati
 
 ### Source report: 🟨 MathStateMachine.sol
 
-**Source:** [contracts/V1/examples/MathStateMachine/MathStateMachine.sol](../../../../../contracts/V1/examples/MathStateMachine/MathStateMachine.sol#L16)  
+**Source:** [contracts/V1/examples/MathStateMachine/MathStateMachine.sol](../../../../../contracts/V1/examples/MathStateMachine/MathStateMachine.sol#L16)<br>
 **Specification IDs:** [`INV-SM-1-J7BP6D`](../../../specification/protocol-model/state-machines.md#inv-sm-1-j7bp6d), [`REQ-SM-1-Y72CKX`](../../../specification/protocol-model/state-machines.md#req-sm-1-y72ckx), [`INV-SM-2-0FTJ2T`](../../../specification/protocol-model/state-machines.md#inv-sm-2-0ftj2t), [`REQ-SM-2-PHCRFR`](../../../specification/protocol-model/state-machines.md#req-sm-2-phcrfr), [`REQ-BAL-1-Z8RH4V`](../../../specification/protocol-model/state-machines.md#req-bal-1-z8rh4v), [`REQ-BAL-2-KTSW9B`](../../../specification/protocol-model/state-machines.md#req-bal-2-ktsw9b), [`REQ-BAL-3-P7Q83F`](../../../specification/protocol-model/state-machines.md#req-bal-3-p7q83f), [`REQ-SM-5-3GS7A7`](../../../specification/protocol-model/state-machines.md#req-sm-5-3gs7a7), [`REQ-SM-7-Y38NTY`](../../../specification/protocol-model/state-machines.md#req-sm-7-y38nty), [`REQ-SM-8-8CHSQ8`](../../../specification/protocol-model/state-machines.md#req-sm-8-8chsq8), [`REQ-SM-9-QK86SJ`](../../../specification/protocol-model/state-machines.md#req-sm-9-qk86sj)
 
 - **Implementation responsibility:** Supplies the repository's executable application implementation: ABI state codec, turn selector, admission/top-up, removal/slashing, simple-amount balance algebra, and example transitions.
@@ -233,7 +233,7 @@ These tests belong to this implementation file. Together, their listed permutati
 
 ### Source report: 🟨 MessageTypeHashes.sol
 
-**Source:** [contracts/V1/types/MessageTypeHashes.sol](../../../../../contracts/V1/types/MessageTypeHashes.sol#L1)  
+**Source:** [contracts/V1/types/MessageTypeHashes.sol](../../../../../contracts/V1/types/MessageTypeHashes.sol#L1)<br>
 **Specification IDs:** [`REQ-SM-7-Y38NTY`](../../../specification/protocol-model/state-machines.md#req-sm-7-y38nty), [`REQ-SM-8-8CHSQ8`](../../../specification/protocol-model/state-machines.md#req-sm-8-8chsq8)
 
 - **Implementation responsibility:** Defines the stable join and exit message-type discriminators used by state-machine dispatch and cross-layer message processing.
@@ -256,7 +256,7 @@ These tests belong to this implementation file. Together, their listed permutati
 
 ### Source report: 🟨 StateChannelManagerProxy.sol
 
-**Source:** [contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol](../../../../../contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol#L249)  
+**Source:** [contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol](../../../../../contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol#L249)<br>
 **Specification IDs:** [`INV-SM-1-J7BP6D`](../../../specification/protocol-model/state-machines.md#inv-sm-1-j7bp6d), [`INV-SM-2-0FTJ2T`](../../../specification/protocol-model/state-machines.md#inv-sm-2-0ftj2t), [`REQ-SM-4-Z32M0W`](../../../specification/protocol-model/state-machines.md#req-sm-4-z32m0w), [`REQ-SM-9-QK86SJ`](../../../specification/protocol-model/state-machines.md#req-sm-9-qk86sj)
 
 - **Implementation responsibility:** Restores supplied state into the configured on-chain state-machine implementation, executes a transition, and returns success, resulting bytes, and outbound messages for replay consumers.
@@ -280,7 +280,7 @@ These tests belong to this implementation file. Together, their listed permutati
 
 ### Source report: 🟨 FraudProofFacet.sol
 
-**Source:** [contracts/V1/StateChannelDiamondProxy/FraudProofFacet.sol](../../../../../contracts/V1/StateChannelDiamondProxy/FraudProofFacet.sol#L150)  
+**Source:** [contracts/V1/StateChannelDiamondProxy/FraudProofFacet.sol](../../../../../contracts/V1/StateChannelDiamondProxy/FraudProofFacet.sol#L150)<br>
 **Specification IDs:** [`INV-SM-1-J7BP6D`](../../../specification/protocol-model/state-machines.md#inv-sm-1-j7bp6d), [`REQ-BAL-3-P7Q83F`](../../../specification/protocol-model/state-machines.md#req-bal-3-p7q83f), [`REQ-SM-6-BJZVQ5`](../../../specification/protocol-model/state-machines.md#req-sm-6-bjzvq5)
 
 - **Implementation responsibility:** Replays challenged transitions, compares the resulting commitments, and incorporates state-machine outbound balances into fraud-proof results.
@@ -304,7 +304,7 @@ These tests belong to this implementation file. Together, their listed permutati
 
 ### Source report: 🟨 DisputeVerificationFacet.sol
 
-**Source:** [contracts/V1/StateChannelDiamondProxy/DisputeVerificationFacet.sol](../../../../../contracts/V1/StateChannelDiamondProxy/DisputeVerificationFacet.sol#L375)  
+**Source:** [contracts/V1/StateChannelDiamondProxy/DisputeVerificationFacet.sol](../../../../../contracts/V1/StateChannelDiamondProxy/DisputeVerificationFacet.sol#L375)<br>
 **Specification IDs:** [`INV-SM-2-0FTJ2T`](../../../specification/protocol-model/state-machines.md#inv-sm-2-0ftj2t), [`REQ-BAL-1-Z8RH4V`](../../../specification/protocol-model/state-machines.md#req-bal-1-z8rh4v), [`REQ-BAL-3-P7Q83F`](../../../specification/protocol-model/state-machines.md#req-bal-3-p7q83f), [`REQ-SM-8-8CHSQ8`](../../../specification/protocol-model/state-machines.md#req-sm-8-8chsq8)
 
 - **Implementation responsibility:** Restores dispute output state, applies removal/slashing hooks, collects returned exits, and aggregates resulting withdrawals.
@@ -328,7 +328,7 @@ These tests belong to this implementation file. Together, their listed permutati
 
 ### Source report: 🟨 ADiamondStateMachine.ts
 
-**Source:** [src/ADiamondStateMachine.ts](../../../../../src/ADiamondStateMachine.ts#L14)  
+**Source:** [src/ADiamondStateMachine.ts](../../../../../src/ADiamondStateMachine.ts#L14)<br>
 **Specification IDs:** [`INV-SM-1-J7BP6D`](../../../specification/protocol-model/state-machines.md#inv-sm-1-j7bp6d), [`INV-SM-2-0FTJ2T`](../../../specification/protocol-model/state-machines.md#inv-sm-2-0ftj2t), [`REQ-SM-2-PHCRFR`](../../../specification/protocol-model/state-machines.md#req-sm-2-phcrfr), [`REQ-BAL-1-Z8RH4V`](../../../specification/protocol-model/state-machines.md#req-bal-1-z8rh4v), [`REQ-BAL-2-KTSW9B`](../../../specification/protocol-model/state-machines.md#req-bal-2-ktsw9b), [`REQ-BAL-3-P7Q83F`](../../../specification/protocol-model/state-machines.md#req-bal-3-p7q83f), [`REQ-SM-5-3GS7A7`](../../../specification/protocol-model/state-machines.md#req-sm-5-3gs7a7), [`REQ-SM-7-Y38NTY`](../../../specification/protocol-model/state-machines.md#req-sm-7-y38nty), [`REQ-SM-9-QK86SJ`](../../../specification/protocol-model/state-machines.md#req-sm-9-qk86sj)
 
 - **Implementation responsibility:** Declares the SDK's logical state-machine capability surface independent of the concrete local EVM executor.
@@ -351,7 +351,7 @@ These tests belong to this implementation file. Together, their listed permutati
 
 ### Source report: 🟨 EvmDiamondStateMachine.ts
 
-**Source:** [src/evm/EvmDiamondStateMachine.ts](../../../../../src/evm/EvmDiamondStateMachine.ts#L155)  
+**Source:** [src/evm/EvmDiamondStateMachine.ts](../../../../../src/evm/EvmDiamondStateMachine.ts#L155)<br>
 **Specification IDs:** [`INV-SM-1-J7BP6D`](../../../specification/protocol-model/state-machines.md#inv-sm-1-j7bp6d), [`INV-SM-2-0FTJ2T`](../../../specification/protocol-model/state-machines.md#inv-sm-2-0ftj2t), [`REQ-SM-2-PHCRFR`](../../../specification/protocol-model/state-machines.md#req-sm-2-phcrfr), [`REQ-BAL-1-Z8RH4V`](../../../specification/protocol-model/state-machines.md#req-bal-1-z8rh4v), [`REQ-BAL-2-KTSW9B`](../../../specification/protocol-model/state-machines.md#req-bal-2-ktsw9b), [`REQ-BAL-3-P7Q83F`](../../../specification/protocol-model/state-machines.md#req-bal-3-p7q83f), [`REQ-SM-5-3GS7A7`](../../../specification/protocol-model/state-machines.md#req-sm-5-3gs7a7), [`REQ-SM-7-Y38NTY`](../../../specification/protocol-model/state-machines.md#req-sm-7-y38nty), [`REQ-SM-9-QK86SJ`](../../../specification/protocol-model/state-machines.md#req-sm-9-qk86sj)
 
 - **Implementation responsibility:** Encodes SDK calls, invokes the local contract executor, decodes results, translates failures, and forwards successful transition logs through a deferred callback.
@@ -378,7 +378,7 @@ These tests belong to this implementation file. Together, their listed permutati
 
 ### Source report: 🟨 StateManager.ts
 
-**Source:** [src/stateManager/StateManager.ts](../../../../../src/stateManager/StateManager.ts#L1275)  
+**Source:** [src/stateManager/StateManager.ts](../../../../../src/stateManager/StateManager.ts#L1275)<br>
 **Specification IDs:** [`INV-SM-1-J7BP6D`](../../../specification/protocol-model/state-machines.md#inv-sm-1-j7bp6d), [`INV-SM-2-0FTJ2T`](../../../specification/protocol-model/state-machines.md#inv-sm-2-0ftj2t), [`REQ-BAL-3-P7Q83F`](../../../specification/protocol-model/state-machines.md#req-bal-3-p7q83f), [`REQ-SM-5-3GS7A7`](../../../specification/protocol-model/state-machines.md#req-sm-5-3gs7a7), [`REQ-SM-7-Y38NTY`](../../../specification/protocol-model/state-machines.md#req-sm-7-y38nty), [`REQ-SM-9-QK86SJ`](../../../specification/protocol-model/state-machines.md#req-sm-9-qk86sj)
 
 - **Implementation responsibility:** Composes the live state machine with block processing, state persistence, inbound-message inclusion, balance accounting, membership changes, and snapshot production.
@@ -405,7 +405,7 @@ These tests belong to this implementation file. Together, their listed permutati
 
 ### Source report: 🟨 ValidationService.ts
 
-**Source:** [src/stateManager/ValidationService.ts](../../../../../src/stateManager/ValidationService.ts#L146)  
+**Source:** [src/stateManager/ValidationService.ts](../../../../../src/stateManager/ValidationService.ts#L146)<br>
 **Specification IDs:** [`REQ-SM-5-3GS7A7`](../../../specification/protocol-model/state-machines.md#req-sm-5-3gs7a7), [`REQ-SM-6-BJZVQ5`](../../../specification/protocol-model/state-machines.md#req-sm-6-bjzvq5)
 
 - **Implementation responsibility:** Queries the pre-state next writer and rejects a block whose author differs before the transition is executed.

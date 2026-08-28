@@ -31,6 +31,8 @@ classification.
    chain read. Adding arguments changes the error selector but not its name, so name-keyed
    client handling is unaffected; the decoded argument names come from the error's own ABI, so
    no client-side decoder is added per error.
+3. **Duplicate selector registration is exact:** `ErrorDuplicateSelectorRegistration(bytes4)`
+   identifies the constructor entry that collided, so deployment failures are auditable.
 
 ## Inputs, outputs, state, and side effects
 

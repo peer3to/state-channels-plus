@@ -232,8 +232,9 @@ limit, so it implements only what needs its own storage and composition (`open`,
 `multicall`). Everything else reaches its facet through the fallback.
 
 - **A new externally callable facet function needs three edits**: the `public`
-  function on the facet, a `Facet.fn.selector` branch in the proxy's
-  `_facetForSelector`, and a declaration on `StateChannelManagerInterface`.
+  function on the facet, a compiler-derived
+  `_registerRoute(Facet.fn.selector, facetAddress)` call in the proxy
+  constructor, and a declaration on `StateChannelManagerInterface`.
   Never add a typed forwarder body to the proxy — an `abi.encodeCall` /
   `abi.decode` pair per function is what pushed it over the limit.
 - **Selectors are always written `FacetType.functionName.selector`** so the
@@ -242,7 +243,7 @@ limit, so it implements only what needs its own storage and composition (`open`,
 - **`StateChannelManagerInterface` is a caller-side typing artifact only** —
   nothing implements it. It is the union of what the proxy implements and what
   the proxy routes, and it carries `StateChannelManagerEvents`. TS binds it at
-  the proxy address (`StateChannelManagerInterface__factory.connect`); facets
+  the proxy address with `connectStateChannelManager`; facets
   doing typed self-calls cast `StateChannelManagerInterface(address(this))`.
   Keep each declaration's state mutability identical to the facet's, since that
   is what decides whether ethers sends a call or a transaction.

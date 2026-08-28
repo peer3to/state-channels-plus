@@ -24,6 +24,9 @@ permutation and the host-construction-failure invariant's valid case. Full host 
 behavior (inline/worker equivalence, disposal settlement, signing confinement) is out of scope,
 so the remaining host-protocol permutations stay unassigned.
 
+All three manager payloads serialize `stateChannelManagerAbi`, the same combined ABI production
+sends across the worker port. Host reconstruction therefore retains proxy and facet error fragments.
+
 ## Tests and covered test IDs
 
 A row lists only test IDs this test covers **in full** — partial credit is never recorded. Each

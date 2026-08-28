@@ -21,11 +21,8 @@ import { protocolEventTimeoutMs } from "@test/harness/core/testTimeConfig";
 import MathStateMachineArtifact from "../../artifacts/contracts/V1/examples/MathStateMachine/MathStateMachine.sol/MathStateMachine.json";
 import MathConsumerFacetArtifact from "../../artifacts/contracts/V1/examples/MathStateMachine/MathConsumerFacet.sol/MathConsumerFacet.json";
 import { deployFullStack } from "../../scripts/V1/deploy";
-import {
-    MathStateMachine,
-    MathStateMachine__factory,
-    StateChannelManagerInterface__factory
-} from "@typechain-types";
+import { MathStateMachine, MathStateMachine__factory } from "@typechain-types";
+import { connectStateChannelManager } from "@/utils/stateChannelManager";
 import type {
     PingPongRpc,
     SumResponse
@@ -155,7 +152,7 @@ describe("E2E: custom RPC request/response over the runtime port", function () {
             selfAddress: string
         ): Promise<PingPeer> => {
             const runtimeSigner = runtimeWallet;
-            const scm = StateChannelManagerInterface__factory.connect(
+            const scm = connectStateChannelManager(
                 scmDeployment.address,
                 runtimeSigner
             );
@@ -214,7 +211,7 @@ describe("E2E: custom RPC request/response over the runtime port", function () {
         await peer0.hostRpc.network.connectToChannel(channelId).request();
         await peer1.hostRpc.network.connectToChannel(channelId).request();
 
-        const channelManager = StateChannelManagerInterface__factory.connect(
+        const channelManager = connectStateChannelManager(
             scmDeployment.address,
             deployerSigner
         );

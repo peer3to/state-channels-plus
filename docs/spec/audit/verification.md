@@ -44,9 +44,9 @@ boundaries, synchronous and asynchronous results, arguments, receiver/metadata p
 rejections, all supported listener verbs, repeated listener removal, event logs, query results, and
 ordinary-member passthrough.
 
-- Test IDs (planned permutations) evidenced: 924/4464 (21%).
-- Specification IDs with at least one evidenced permutation: 93/241 (39%).
-- Test declarations covering at least one ID: 535/1001 (53%); 13 files under `test/scripts/` are
+- Test IDs (planned permutations) evidenced: 814/4606 (18%).
+- Specification IDs with at least one evidenced permutation: 82/244 (34%).
+- Test declarations covering at least one ID: 496/1224 (41%); 19 files are
   excluded as out-of-scope developer tooling via `@spec-test-coverage-ignore`.
 - One test may cover several IDs. Each assigned ID belongs to exactly one test; compliance is 100%.
 
@@ -57,9 +57,9 @@ exercises the whole defined scenario, including its oracle. Under that rule the 
 distinct causes, and they need different fixes.
 
 **1. Most planned IDs simply have no test yet (the dominant cause on the ID side).**
-Atomization expanded template test plans into 4356 concrete scenarios — per fault class, per
+Atomization expanded template test plans into 4606 concrete scenarios — per fault class, per
 signature violation, per boundary side, per proof type, per host. The suites were never written
-against plans of that grain. 3709 permutations await a test; the
+against plans of that grain. 3792 permutations await a test; the
 "Test IDs not tested" queue is now a literal to-write list, one test per row.
 
 **2. Tests over surfaces that define no IDs at all (the dominant cause on the test side).**

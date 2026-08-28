@@ -19,7 +19,8 @@
 
 ## Responsibility and observable boundary
 
-The package's public export surface.
+The package's public export surface, including `connectStateChannelManager` and
+`stateChannelManagerAbi` as the supported deployed-manager binding.
 
 ## Key design decisions
 

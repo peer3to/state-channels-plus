@@ -1,18 +1,11 @@
-import {
-    ContractRunner,
-    ErrorFragment,
-    ethers,
-    EventFragment,
-    Fragment,
-    FunctionFragment,
-    InterfaceAbi
-} from "ethers";
+import { ContractRunner, ethers, Fragment, InterfaceAbi } from "ethers";
 import {
     LocalDiamond,
     LocalDiamond__factory,
-    StateChannelManagerInterface,
-    StateChannelManagerInterface__factory
+    StateChannelManagerInterface
 } from "@typechain-types";
+import { mergeAbis } from "@/utils/contractAbi";
+import { stateChannelManagerAbi } from "@/utils/stateChannelManager";
 
 /**
  * The deployed local diamond as callers see it: `LocalDiamond`'s own local-only
@@ -22,36 +15,10 @@ import {
  */
 export type LocalDiamondContract = LocalDiamond & StateChannelManagerInterface;
 
-/** `type:signature` of an ABI fragment - identity for de-duplication. */
-type FragmentKey = string;
-
-function fragmentKey(fragment: Fragment): FragmentKey {
-    if (
-        fragment instanceof FunctionFragment ||
-        fragment instanceof EventFragment ||
-        fragment instanceof ErrorFragment
-    ) {
-        return `${fragment.type}:${fragment.format("sighash")}`;
-    }
-    // constructor/fallback/receive have no signature and appear at most once
-    return fragment.type;
-}
-
-function mergeAbis(...abis: InterfaceAbi[]): Fragment[] {
-    const merged = new Map<FragmentKey, Fragment>();
-    for (const abi of abis) {
-        for (const fragment of ethers.Interface.from(abi).fragments) {
-            const key = fragmentKey(fragment);
-            if (!merged.has(key)) merged.set(key, fragment);
-        }
-    }
-    return [...merged.values()];
-}
-
 /** ABI covering both the local diamond's own functions and the routed ones. */
 export const localDiamondAbi: Fragment[] = mergeAbis(
     LocalDiamond__factory.abi as InterfaceAbi,
-    StateChannelManagerInterface__factory.abi as InterfaceAbi
+    stateChannelManagerAbi
 );
 
 export function connectLocalDiamond(

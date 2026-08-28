@@ -405,9 +405,10 @@ describe("parallel forge task discovery", function () {
             "JoinChannelFacetTest",
             "StateChannelManagerProxyDepositTest",
             "StateChannelManagerProxyOpenTest",
+            "StateChannelManagerProxyRegistrationTest",
             "UtilityFacetTest"
         ]);
-        expect(tasks).to.have.lengthOf(7);
+        expect(tasks).to.have.lengthOf(8);
     });
 
     it("includes a test contract declared in a .test.sol file", function () {
@@ -626,7 +627,8 @@ describe("parallel forge task discovery", function () {
         );
         expect(tasks.map((task) => task.fullTitle)).to.have.members([
             "StateChannelManagerProxyDepositTest",
-            "StateChannelManagerProxyOpenTest"
+            "StateChannelManagerProxyOpenTest",
+            "StateChannelManagerProxyRegistrationTest"
         ]);
     });
 

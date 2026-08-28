@@ -63,6 +63,10 @@ const platformAliases = {
         projectRoot,
         "src/utils/browser/DeployUtils.ts"
     ),
+    "@platform/evmJumpdestCache": path.join(
+        projectRoot,
+        "src/evm/browser/evmJumpdestCache.ts"
+    ),
     "@platform/LocalDiscoveryServer": path.join(
         projectRoot,
         "src/utils/browser/LocalDiscoveryServer.ts"

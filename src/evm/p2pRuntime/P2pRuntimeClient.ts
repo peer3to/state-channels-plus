@@ -1,11 +1,9 @@
 import { ethers } from "ethers";
-import {
-    StateChannelManagerInterface,
-    StateChannelManagerInterface__factory
-} from "@typechain-types";
+import { StateChannelManagerInterface } from "@typechain-types";
 
 import { maybeStampErrorWithPeerAddress } from "@/utils/errorPeerAddress";
 import type { Address } from "@/types/types";
+import { connectStateChannelManager } from "@/utils/stateChannelManager";
 import type { Logger } from "@/utils";
 import ClientP2pSigner from "../signer/ClientP2pSigner";
 import ClientChainSigner from "../signer/ClientChainSigner";
@@ -135,11 +133,10 @@ class P2pRuntimeClient<T = ethers.Contract> {
             options.provider,
             options.signerAddress.toString()
         );
-        this.stateChannelManagerContract =
-            StateChannelManagerInterface__factory.connect(
-                options.scm.address,
-                this.chainSigner
-            );
+        this.stateChannelManagerContract = connectStateChannelManager(
+            options.scm.address,
+            this.chainSigner
+        );
         const contract = new ethers.Contract(
             options.stateMachine.address,
             JSON.parse(options.stateMachine.abiJson),

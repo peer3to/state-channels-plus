@@ -5,27 +5,24 @@ import {
     StateChannelManagerInterface__factory
 } from "@typechain-types";
 import { connectLocalDiamond, localDiamondAbi } from "@/utils/localDiamond";
+import { stateChannelManagerAbi } from "@/utils/stateChannelManager";
+import {
+    duplicateFragmentKeys,
+    expectedManagerErrorKeys,
+    fragmentKeys,
+    fragmentKeysOfType
+} from "@test/fixtures/ContractAbiFixture";
 
 // The mirror is never called here: these cases are about the ABI the binding
 // carries, so any address is a valid placeholder for the binding itself.
 const MIRROR_ADDRESS = "0x0000000000000000000000000000000000000001";
-
-function fragmentKeys(abi: ethers.InterfaceAbi): string[] {
-    return [...ethers.Interface.from(abi).fragments].map((fragment) =>
-        fragment.type === "function" ||
-        fragment.type === "event" ||
-        fragment.type === "error"
-            ? `${fragment.type}:${fragment.format("sighash")}`
-            : fragment.type
-    );
-}
 
 describe("localDiamond binding", function () {
     it("carries every fragment of both generated ABIs", function () {
         const merged = new Set(fragmentKeys(localDiamondAbi));
         const expected = [
             ...fragmentKeys(LocalDiamond__factory.abi),
-            ...fragmentKeys(StateChannelManagerInterface__factory.abi)
+            ...fragmentKeys(stateChannelManagerAbi)
         ];
 
         expect(
@@ -34,12 +31,13 @@ describe("localDiamond binding", function () {
     });
 
     it("keeps one fragment for a signature declared by both ABIs", function () {
-        const keys = fragmentKeys(localDiamondAbi);
-        const duplicates = keys.filter(
-            (key, index) => keys.indexOf(key) !== index
-        );
+        expect(duplicateFragmentKeys(localDiamondAbi)).to.deep.equal([]);
+    });
 
-        expect(duplicates).to.deep.equal([]);
+    it("includes every manager error once", function () {
+        expect(fragmentKeysOfType(localDiamondAbi, "error")).to.deep.equal(
+            expectedManagerErrorKeys()
+        );
     });
 
     it("encodes a call to a function the proxy routes to a facet", function () {

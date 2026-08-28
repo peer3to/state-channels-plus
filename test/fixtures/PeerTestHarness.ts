@@ -17,9 +17,9 @@ import { EvmStateMachine } from "@/evm";
 import P2pEventHooks from "@/P2pEventHooks";
 import {
     AStateMachine as AStateMachineContract,
-    StateChannelManagerInterface,
-    StateChannelManagerInterface__factory
+    StateChannelManagerInterface
 } from "@typechain-types";
+import { connectStateChannelManager } from "@/utils/stateChannelManager";
 import { ForkId, ChannelId, Address, Hash } from "@/types/types";
 import { TimeConfig } from "@/types";
 import { resolveTestTimeConfig } from "@test/harness/core/testTimeConfig";
@@ -545,10 +545,7 @@ export class PeerTestHarness<
         // round-tripping a frozen `Result` (e.g. `getStateSnapshot().snapshotData`)
         // back into a `staticCall` throws "Cannot assign to read only property".
         this.channelManager = createEthersResultProxy(
-            StateChannelManagerInterface__factory.connect(
-                channelManagerAddress,
-                deployerSigner
-            )
+            connectStateChannelManager(channelManagerAddress, deployerSigner)
         );
     }
 

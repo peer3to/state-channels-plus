@@ -1,5 +1,5 @@
 import { expect } from "chai";
-import { ZeroAddress, ZeroHash } from "ethers";
+import { ethers, ZeroAddress, ZeroHash } from "ethers";
 import {
     CustomEvmError,
     tryDecodeCustomError,
@@ -11,6 +11,7 @@ import * as factory from "@test/factory";
 import { StateChannelManagerInterface } from "@typechain-types";
 import { artifacts, errorAbis } from "@/utils/GeneratedArtifacts";
 import { HardhatEthersSigner } from "@nomicfoundation/hardhat-ethers/signers";
+import { routedFacets } from "@/utils/routedFacets";
 
 describe("artifacts loading", () => {
     it("should load all required facet artifacts", () => {
@@ -34,6 +35,36 @@ describe("artifacts loading", () => {
             expect(errorAbi).to.have.property("type", "error");
             expect(errorAbi).to.have.property("name");
         });
+    });
+
+    it("includes every routed facet in generated artifacts", () => {
+        expect(
+            artifacts.map((artifact) => artifact.contractName)
+        ).to.include.members(routedFacets.map((facet) => facet.facetName));
+    });
+
+    it("includes every ECDSA error reachable through manager facets", () => {
+        const names = new Set(errorAbis.map((errorAbi) => errorAbi.name));
+
+        expect(names).to.include("ECDSAInvalidSignature");
+        expect(names).to.include("ECDSAInvalidSignatureLength");
+        expect(names).to.include("ECDSAInvalidSignatureS");
+    });
+
+    it("decodes ECDSAInvalidSignatureS with its argument", () => {
+        const fragment = errorAbis.find(
+            (errorAbi) => errorAbi.name === "ECDSAInvalidSignatureS"
+        )!;
+        const data = new ethers.Interface([fragment]).encodeErrorResult(
+            "ECDSAInvalidSignatureS",
+            [ZeroHash]
+        );
+        const decoded = tryDecodeCustomError({ data });
+
+        expect(decoded?.errorDescription.name).to.equal(
+            "ECDSAInvalidSignatureS"
+        );
+        expect(decoded?.errorDescription.args[0]).to.equal(ZeroHash);
     });
 });
 

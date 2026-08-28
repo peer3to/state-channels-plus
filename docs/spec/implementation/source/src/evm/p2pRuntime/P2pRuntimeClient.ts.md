@@ -24,6 +24,8 @@ The main-thread client: the application-facing typed surface sending requests to
 ## Key design decisions
 
 1. **The client is a proxy, never an owner** — node state lives host-side; the client correlates and forwards.
+2. **Manager addresses use `connectStateChannelManager`.** The client keeps the combined ABI, so
+   facet and proxy custom errors survive the same runtime boundary as calls and events.
 
 ## Inputs, outputs, state, and side effects
 

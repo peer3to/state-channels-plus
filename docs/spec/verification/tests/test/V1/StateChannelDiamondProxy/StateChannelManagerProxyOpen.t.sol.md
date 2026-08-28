@@ -10,6 +10,17 @@
 
 ## Overview
 
+<a id="oq-ver-discovery-1-9jwtrh"></a>
+
+### OQ-VER-DISCOVERY-1-9JWTRH — Resolved Foundry filename discovery decision
+
+The 2026-08-28 engineer decision addressed Foundry filename
+discovery. The original `*.test.sol` spelling ran in Forge but was invisible to the repository's
+test inventory, verification reports, coverage, impact analysis, and parallel-runner mapping. The
+file was renamed to `.t.sol`, the one repository spelling. Widening `TEST_FILE_RE` was rejected
+because it would preserve two spellings for the same test kind. The tooling pattern remains
+unchanged.
+
 One direct Foundry case on the opening path. `setUp` deploys the full diamond through
 `DiamondHarness` and binds it as `StateChannelManagerInterface`. The case builds an `OpenChannel`
 whose two participant entries are the same address, signs the encoding once with that participant's

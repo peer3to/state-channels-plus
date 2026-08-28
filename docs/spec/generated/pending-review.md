@@ -4,8 +4,8 @@
 > its content hash with `SPEC_REVIEWER="Name" node docs/spec/tools/review.js <file...>`.
 > Any later edit invalidates the record automatically (the file returns to pending as stale).
 
-- Verified (current): **37/535** (7%)
-- Pending (never reviewed): **470**
+- Verified (current): **37/542** (7%)
+- Pending (never reviewed): **477**
 - Stale (edited since review): **28**
 
 ## Stale — edited since engineer review
@@ -89,7 +89,7 @@
 - [specification/settlement/lifecycle.md](../specification/settlement/lifecycle.md)
 - [specification/settlement/README.md](../specification/settlement/README.md)
 
-### implementation (318)
+### implementation (322)
 
 - [implementation/open-questions.md](../implementation/open-questions.md)
 - [implementation/README.md](../implementation/README.md)
@@ -322,6 +322,8 @@
 - [implementation/source/src/utils/browser/LocalDiscoveryServer.ts.md](../implementation/source/src/utils/browser/LocalDiscoveryServer.ts.md)
 - [implementation/source/src/utils/browser/README.md](../implementation/source/src/utils/browser/README.md)
 - [implementation/source/src/utils/config.ts.md](../implementation/source/src/utils/config.ts.md)
+- [implementation/source/src/utils/contractAbi.ts.md](../implementation/source/src/utils/contractAbi.ts.md)
+- [implementation/source/src/utils/contractSize.ts.md](../implementation/source/src/utils/contractSize.ts.md)
 - [implementation/source/src/utils/DebugProxy.ts.md](../implementation/source/src/utils/DebugProxy.ts.md)
 - [implementation/source/src/utils/DeepCopyProxy.ts.md](../implementation/source/src/utils/DeepCopyProxy.ts.md)
 - [implementation/source/src/utils/DeployUtils.ts.md](../implementation/source/src/utils/DeployUtils.ts.md)
@@ -369,10 +371,12 @@
 - [implementation/source/src/utils/participantUtils.ts.md](../implementation/source/src/utils/participantUtils.ts.md)
 - [implementation/source/src/utils/README.md](../implementation/source/src/utils/README.md)
 - [implementation/source/src/utils/retry.ts.md](../implementation/source/src/utils/retry.ts.md)
+- [implementation/source/src/utils/routedFacets.ts.md](../implementation/source/src/utils/routedFacets.ts.md)
 - [implementation/source/src/utils/scheduler.ts.md](../implementation/source/src/utils/scheduler.ts.md)
 - [implementation/source/src/utils/set.ts.md](../implementation/source/src/utils/set.ts.md)
 - [implementation/source/src/utils/SignatureCollectionMap.ts.md](../implementation/source/src/utils/SignatureCollectionMap.ts.md)
 - [implementation/source/src/utils/SignatureUtils.ts.md](../implementation/source/src/utils/SignatureUtils.ts.md)
+- [implementation/source/src/utils/stateChannelManager.ts.md](../implementation/source/src/utils/stateChannelManager.ts.md)
 - [implementation/source/src/utils/TimeoutManager.ts.md](../implementation/source/src/utils/TimeoutManager.ts.md)
 - [implementation/views/architecture/contracts.md](../implementation/views/architecture/contracts.md)
 - [implementation/views/architecture/contracts/architecture.md](../implementation/views/architecture/contracts/architecture.md)
@@ -410,7 +414,7 @@
 - [implementation/views/security/data-availability.md](../implementation/views/security/data-availability.md)
 - [implementation/views/security/trust-model.md](../implementation/views/security/trust-model.md)
 
-### verification (115)
+### verification (118)
 
 - [verification/open-questions.md](../verification/open-questions.md)
 - [verification/README.md](../verification/README.md)
@@ -499,12 +503,14 @@
 - [verification/tests/test/storage/Storage.test.ts.md](../verification/tests/test/storage/Storage.test.ts.md)
 - [verification/tests/test/unit/AgreementManager.test.ts.md](../verification/tests/test/unit/AgreementManager.test.ts.md)
 - [verification/tests/test/unit/BlockProductionService.test.ts.md](../verification/tests/test/unit/BlockProductionService.test.ts.md)
+- [verification/tests/test/unit/ContractSize.test.ts.md](../verification/tests/test/unit/ContractSize.test.ts.md)
 - [verification/tests/test/unit/DeploymentCache.test.ts.md](../verification/tests/test/unit/DeploymentCache.test.ts.md)
 - [verification/tests/test/unit/DisputeManager.test.ts.md](../verification/tests/test/unit/DisputeManager.test.ts.md)
 - [verification/tests/test/unit/EventBarrier.test.ts.md](../verification/tests/test/unit/EventBarrier.test.ts.md)
 - [verification/tests/test/unit/LocalDiamondBinding.test.ts.md](../verification/tests/test/unit/LocalDiamondBinding.test.ts.md)
 - [verification/tests/test/unit/ReductionExecutor.test.ts.md](../verification/tests/test/unit/ReductionExecutor.test.ts.md)
 - [verification/tests/test/unit/SpectateService.test.ts.md](../verification/tests/test/unit/SpectateService.test.ts.md)
+- [verification/tests/test/unit/StateChannelManagerBinding.test.ts.md](../verification/tests/test/unit/StateChannelManagerBinding.test.ts.md)
 - [verification/tests/test/unit/ValidationService.test.ts.md](../verification/tests/test/unit/ValidationService.test.ts.md)
 - [verification/tests/test/utils/Config.test.ts.md](../verification/tests/test/utils/Config.test.ts.md)
 - [verification/tests/test/utils/ContractErrors.test.ts.md](../verification/tests/test/utils/ContractErrors.test.ts.md)
@@ -524,6 +530,7 @@
 - [verification/tests/test/V1/StateChannelDiamondProxy/DisputeVerificationFacet.t.sol.md](../verification/tests/test/V1/StateChannelDiamondProxy/DisputeVerificationFacet.t.sol.md)
 - [verification/tests/test/V1/StateChannelDiamondProxy/FraudProofFacet.t.sol.md](../verification/tests/test/V1/StateChannelDiamondProxy/FraudProofFacet.t.sol.md)
 - [verification/tests/test/V1/StateChannelDiamondProxy/StateChannelManagerProxyOpen.t.sol.md](../verification/tests/test/V1/StateChannelDiamondProxy/StateChannelManagerProxyOpen.t.sol.md)
+- [verification/tests/test/V1/StateChannelDiamondProxy/StateChannelManagerProxyRegistration.t.sol.md](../verification/tests/test/V1/StateChannelDiamondProxy/StateChannelManagerProxyRegistration.t.sol.md)
 - [verification/tests/test/V1/StateChannelDiamondProxy/UtilityFacet.t.sol.md](../verification/tests/test/V1/StateChannelDiamondProxy/UtilityFacet.t.sol.md)
 - [verification/tests/test/V1/StateChannelDiamondProxy/utils/DisputeUtils.t.sol.md](../verification/tests/test/V1/StateChannelDiamondProxy/utils/DisputeUtils.t.sol.md)
 - [verification/tests/test/V1/UniversalDeployment.test.ts.md](../verification/tests/test/V1/UniversalDeployment.test.ts.md)

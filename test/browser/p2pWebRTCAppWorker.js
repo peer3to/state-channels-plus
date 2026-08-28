@@ -6,10 +6,8 @@ import "@/evm/p2pRuntime/worker/nodeGlobalsShim";
 import { ethers, ContractFactory } from "ethers";
 
 import { EvmStateMachine } from "@/evm";
-import {
-    MathStateMachine__factory,
-    StateChannelManagerInterface__factory
-} from "@typechain-types";
+import { MathStateMachine__factory } from "@typechain-types";
+import { connectStateChannelManager } from "@/utils/stateChannelManager";
 import MathStateMachineArtifact from "../../artifacts/contracts/V1/examples/MathStateMachine/MathStateMachine.sol/MathStateMachine.json";
 
 /**
@@ -61,10 +59,7 @@ self.onmessage = async (event) => {
         );
 
         const p2pInstance = await EvmStateMachine.p2pSetup(
-            StateChannelManagerInterface__factory.connect(
-                scmAddress,
-                runtimeSigner
-            ),
+            connectStateChannelManager(scmAddress, runtimeSigner),
             stateMachineContractInstance,
             deployLocalStateMachine,
             {

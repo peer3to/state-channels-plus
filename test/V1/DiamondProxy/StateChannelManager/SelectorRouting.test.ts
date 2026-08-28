@@ -10,6 +10,7 @@ import {
     diamondFunctionLabel,
     expectFacetSelectorsNotRouted,
     expectFacetSelectorsRouted,
+    facetRoutingSpecs,
     facetRoutingSpec,
     facetSelectorCollisions,
     interfaceFunctions,
@@ -31,6 +32,12 @@ describe("StateChannelManagerProxy selector routing", function () {
         diamond = contracts.mathChannelManager;
         facetAddresses = contracts.facetAddresses;
         consumerFacetAddress = contracts.consumerFacetAddress;
+    });
+
+    it("uses the canonical routed-facet inventory for every deployed facet", function () {
+        expect(
+            facetRoutingSpecs.map(({ facetName }) => facetName).sort()
+        ).to.deep.equal(Object.keys(facetAddresses).sort());
     });
 
     it("routes every dispute manager selector to the dispute manager facet", async function () {

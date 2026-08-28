@@ -19,8 +19,7 @@ import "./UtilityFacet.sol";
 /// @dev The proxy implements only the functions that need its own storage and
 /// composition (channel opening, calldata posting, the deposit/withdraw
 /// composables, multicall). Everything else is routed to a facet by selector in
-/// `_facetForSelector` and delegatecalled from the fallback, so the proxy pays a
-/// selector comparison instead of a typed forwarder body. The full external
+/// `_facetForSelector` and delegatecalled from the fallback. The full external
 /// surface is declared on `StateChannelManagerInterface` for callers to bind.
 contract StateChannelManagerProxy is StateChannelCommon {
     // Default time values
@@ -57,6 +56,64 @@ contract StateChannelManagerProxy is StateChannelCommon {
         stateProofFacetAddress = _stateProofFacet;
         utilityFacetAddress = _utilityFacet;
         consumerFacetAddress = _consumerFacet;
+
+        _registerRoute(DisputeManagerFacet.uploadDispute.selector, _disputeManagerFacet);
+        _registerRoute(DisputeManagerFacet.uploadDisputeWithCalldata.selector, _disputeManagerFacet);
+        _registerRoute(DisputeVerificationFacet.challengeDisputeReduction.selector, _disputeVerificationFacet);
+        _registerRoute(DisputeVerificationFacet.reduce.selector, _disputeVerificationFacet);
+        _registerRoute(DisputeVerificationFacet.reduceOutputToSnapshotData.selector, _disputeVerificationFacet);
+        _registerRoute(DisputeVerificationFacet.reduceAndFinalize.selector, _disputeVerificationFacet);
+        _registerRoute(DisputeVerificationFacet.verifyBalanceInvariantCheckSnapshot.selector, _disputeVerificationFacet);
+        _registerRoute(FraudProofFacet.applyFraudProofs.selector, _fraudProofFacet);
+        _registerRoute(FraudProofFacet.hasInvalidTimestamp.selector, _fraudProofFacet);
+        _registerRoute(DisputeFraudProofFacet.applyDisputeFraudProofs.selector, _disputeFraudProofFacet);
+        _registerRoute(DisputeFraudProofFacet.validateTimeoutCalldataPostedProof.selector, _disputeFraudProofFacet);
+        _registerRoute(DisputeFraudProofFacet.isLastMilestoneFinalByEveryone.selector, _disputeFraudProofFacet);
+        _registerRoute(DisputeFraudProofFacet.hasStateProofHeaderMismatch.selector, _disputeFraudProofFacet);
+        _registerRoute(DisputeFraudProofFacet.isDisputeInboundHashValid.selector, _disputeFraudProofFacet);
+        _registerRoute(StateSnapshotFacet.updateStateSnapshotFork.selector, _stateSnapshotFacet);
+        _registerRoute(StateSnapshotFacet.updateStateSnapshotSameFork.selector, _stateSnapshotFacet);
+        _registerRoute(JoinChannelFacet.joinChannel.selector, _joinChannelFacet);
+        _registerRoute(JoinChannelFacet.topUpBalance.selector, _joinChannelFacet);
+        _registerRoute(StateProofFacet.verifyStateProof.selector, _stateProofFacet);
+        _registerRoute(StateProofFacet.isCorrectLatestState.selector, _stateProofFacet);
+        _registerRoute(StateProofFacet.areSignedBlocksLinkedAndVerified.selector, _stateProofFacet);
+        _registerRoute(StateProofFacet.isInvalidBlockStructureInStateProof.selector, _stateProofFacet);
+        _registerRoute(StateProofFacet.findFirstInvalidBlockStructureInStateProof.selector, _stateProofFacet);
+        _registerRoute(StateProofFacet.verifyMilestones.selector, _stateProofFacet);
+        _registerRoute(StateProofFacet.isMilestoneFinal.selector, _stateProofFacet);
+        _registerRoute(UtilityFacet.getParticipants.selector, _utilityFacet);
+        _registerRoute(UtilityFacet.getSnapshotParticipants.selector, _utilityFacet);
+        _registerRoute(UtilityFacet.getPendingParticipants.selector, _utilityFacet);
+        _registerRoute(UtilityFacet.getOnChainSlashedParticipants.selector, _utilityFacet);
+        _registerRoute(UtilityFacet.getOnChainSlashedParticipantsUpToTimestamp.selector, _utilityFacet);
+        _registerRoute(UtilityFacet.isParticipantSlashedOnChain.selector, _utilityFacet);
+        _registerRoute(UtilityFacet.getOnChainThresholdSet.selector, _utilityFacet);
+        _registerRoute(UtilityFacet.canParticipateInDisputes.selector, _utilityFacet);
+        _registerRoute(UtilityFacet.getStateSnapshot.selector, _utilityFacet);
+        _registerRoute(UtilityFacet.getChannelBalance.selector, _utilityFacet);
+        _registerRoute(UtilityFacet.isChannelOpen.selector, _utilityFacet);
+        _registerRoute(UtilityFacet.isForkDisputed.selector, _utilityFacet);
+        _registerRoute(UtilityFacet.getP2pTime.selector, _utilityFacet);
+        _registerRoute(UtilityFacet.getAgreementTime.selector, _utilityFacet);
+        _registerRoute(UtilityFacet.getChainFallbackTime.selector, _utilityFacet);
+        _registerRoute(UtilityFacet.getEvidenceTime.selector, _utilityFacet);
+        _registerRoute(UtilityFacet.getGasLimit.selector, _utilityFacet);
+        _registerRoute(UtilityFacet.getAllTimes.selector, _utilityFacet);
+        _registerRoute(UtilityFacet.getBlockCallDataCommitment.selector, _utilityFacet);
+        _registerRoute(UtilityFacet.hasInboundMessageBlock.selector, _utilityFacet);
+        _registerRoute(UtilityFacet.isBlockAuthentic.selector, _utilityFacet);
+        _registerRoute(UtilityFacet.getWindowCommitments.selector, _utilityFacet);
+        _registerRoute(UtilityFacet.getDisputeWindowCreationTimestamp.selector, _utilityFacet);
+        _registerRoute(UtilityFacet.getReducedResult.selector, _utilityFacet);
+        _registerRoute(UtilityFacet.isKillPeriodExpired.selector, _utilityFacet);
+        _registerRoute(UtilityFacet.isReduceChallengePeriodExpired.selector, _utilityFacet);
+        _registerRoute(UtilityFacet.getDisputeWindows.selector, _utilityFacet);
+        _registerRoute(UtilityFacet.verifyOutboundMessageBlocks.selector, _utilityFacet);
+        _registerRoute(UtilityFacet.pruneOutboundMessageBlocks.selector, _utilityFacet);
+        _registerRoute(UtilityFacet.isGenesisSnapshotWithoutTimeCheck.selector, _utilityFacet);
+        _registerRoute(UtilityFacet.isSnapshotNewer.selector, _utilityFacet);
+
         p2pTime = _p2pTime == 0 ? DEFAULT_P2P_TIME : _p2pTime;
         agreementTime = _agreementTime == 0 ? DEFAULT_AGREEMENT_TIME : _agreementTime;
         chainFallbackTime = _chainFallbackTime == 0 ? DEFAULT_CHAIN_FALLBACK_TIME : _chainFallbackTime;
@@ -277,81 +334,16 @@ contract StateChannelManagerProxy is StateChannelCommon {
 
     // ********** private/internal functions **********
 
-    /// @dev Selector routing table. Selectors are derived by the compiler from the
-    ///     facet function types, so a signature change updates the routing with it -
-    ///     nothing here is hand-hashed. The state-changing facets come first so
-    ///     on-chain calls pay the fewest comparisons; the utility views are read
-    ///     off-chain. Unknown selectors keep the historical behaviour of falling
-    ///     through to the consumer facet.
+    /// @dev Registers a compiler-derived selector once during construction.
+    function _registerRoute(bytes4 selector, address facet) internal {
+        if (selectorRoutes[selector].configured) revert ErrorDuplicateSelectorRegistration(selector);
+        selectorRoutes[selector] = SelectorRoute({facet: facet, configured: true});
+    }
+
+    /// @dev Constant-time selector lookup. Unknown selectors keep the historical
+    ///     behaviour of falling through to the consumer facet.
     function _facetForSelector(bytes4 sig) internal view returns (address) {
-        if (
-            sig == DisputeManagerFacet.uploadDispute.selector
-                || sig == DisputeManagerFacet.uploadDisputeWithCalldata.selector
-        ) return disputeManagerFacetAddress;
-
-        if (
-            sig == DisputeVerificationFacet.challengeDisputeReduction.selector
-                || sig == DisputeVerificationFacet.reduce.selector
-                || sig == DisputeVerificationFacet.reduceOutputToSnapshotData.selector
-                || sig == DisputeVerificationFacet.reduceAndFinalize.selector
-                || sig == DisputeVerificationFacet.verifyBalanceInvariantCheckSnapshot.selector
-        ) return disputeVerificationFacetAddress;
-
-        if (
-            sig == FraudProofFacet.applyFraudProofs.selector
-                || sig == FraudProofFacet.hasInvalidTimestamp.selector
-        ) return fraudProofFacetAddress;
-
-        if (
-            sig == DisputeFraudProofFacet.applyDisputeFraudProofs.selector
-                || sig == DisputeFraudProofFacet.validateTimeoutCalldataPostedProof.selector
-                || sig == DisputeFraudProofFacet.isLastMilestoneFinalByEveryone.selector
-                || sig == DisputeFraudProofFacet.hasStateProofHeaderMismatch.selector
-                || sig == DisputeFraudProofFacet.isDisputeInboundHashValid.selector
-        ) return disputeFraudProofFacetAddress;
-
-        if (
-            sig == StateSnapshotFacet.updateStateSnapshotFork.selector
-                || sig == StateSnapshotFacet.updateStateSnapshotSameFork.selector
-        ) return stateSnapshotFacetAddress;
-
-        if (
-            sig == JoinChannelFacet.joinChannel.selector || sig == JoinChannelFacet.topUpBalance.selector
-        ) return joinChannelFacetAddress;
-
-        if (
-            sig == StateProofFacet.verifyStateProof.selector || sig == StateProofFacet.isCorrectLatestState.selector
-                || sig == StateProofFacet.areSignedBlocksLinkedAndVerified.selector
-                || sig == StateProofFacet.isInvalidBlockStructureInStateProof.selector
-                || sig == StateProofFacet.findFirstInvalidBlockStructureInStateProof.selector
-                || sig == StateProofFacet.verifyMilestones.selector || sig == StateProofFacet.isMilestoneFinal.selector
-        ) return stateProofFacetAddress;
-
-        if (
-            sig == UtilityFacet.getParticipants.selector || sig == UtilityFacet.getSnapshotParticipants.selector
-                || sig == UtilityFacet.getPendingParticipants.selector
-                || sig == UtilityFacet.getOnChainSlashedParticipants.selector
-                || sig == UtilityFacet.getOnChainSlashedParticipantsUpToTimestamp.selector
-                || sig == UtilityFacet.isParticipantSlashedOnChain.selector
-                || sig == UtilityFacet.getOnChainThresholdSet.selector
-                || sig == UtilityFacet.canParticipateInDisputes.selector || sig == UtilityFacet.getStateSnapshot.selector
-                || sig == UtilityFacet.getChannelBalance.selector || sig == UtilityFacet.isChannelOpen.selector
-                || sig == UtilityFacet.isForkDisputed.selector || sig == UtilityFacet.getP2pTime.selector
-                || sig == UtilityFacet.getAgreementTime.selector || sig == UtilityFacet.getChainFallbackTime.selector
-                || sig == UtilityFacet.getEvidenceTime.selector || sig == UtilityFacet.getGasLimit.selector
-                || sig == UtilityFacet.getAllTimes.selector || sig == UtilityFacet.getBlockCallDataCommitment.selector
-                || sig == UtilityFacet.hasInboundMessageBlock.selector || sig == UtilityFacet.isBlockAuthentic.selector
-                || sig == UtilityFacet.getWindowCommitments.selector
-                || sig == UtilityFacet.getDisputeWindowCreationTimestamp.selector
-                || sig == UtilityFacet.getReducedResult.selector || sig == UtilityFacet.isKillPeriodExpired.selector
-                || sig == UtilityFacet.isReduceChallengePeriodExpired.selector
-                || sig == UtilityFacet.getDisputeWindows.selector
-                || sig == UtilityFacet.verifyOutboundMessageBlocks.selector
-                || sig == UtilityFacet.pruneOutboundMessageBlocks.selector
-                || sig == UtilityFacet.isGenesisSnapshotWithoutTimeCheck.selector
-                || sig == UtilityFacet.isSnapshotNewer.selector
-        ) return utilityFacetAddress;
-
-        return consumerFacetAddress;
+        SelectorRoute memory route = selectorRoutes[sig];
+        return route.configured ? route.facet : consumerFacetAddress;
     }
 }

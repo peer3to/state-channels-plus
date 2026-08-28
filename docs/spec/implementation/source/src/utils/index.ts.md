@@ -19,7 +19,9 @@
 
 ## Responsibility and observable boundary
 
-Utils re-exports.
+Utils re-exports, including the canonical manager ABI/connector and ABI composition. Heavy
+artifact-backed deployment utilities remain path imports so browser consumers of this barrel do
+not load facet bytecode.
 
 ## Key design decisions
 

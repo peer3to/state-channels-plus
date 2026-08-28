@@ -19,11 +19,15 @@
 
 ## Responsibility and observable boundary
 
-The generated contract-artifact bundle (ABIs/bytecode) — build output committed for platform-neutral loading; never hand-edited.
+The generated contract-artifact bundle (ABIs/bytecode) — build output for platform-neutral loading;
+never hand-edited. `errorAbis` is the single reachable-manager error union.
 
 ## Key design decisions
 
 1. **Committed generated code** so browser bundles need no filesystem artifact loading.
+2. **Generator-owned error inventory.** Its inputs include `StateProofFacet` and `UtilityFacet`, so
+   the union contains `ECDSAInvalidSignature`, `ECDSAInvalidSignatureLength`, and
+   `ECDSAInvalidSignatureS` without a second hand-maintained error list.
 
 ## Inputs, outputs, state, and side effects
 
@@ -72,8 +76,9 @@ Gap column. Audit state is file-level (Status header), never a row status.
 
 Exact test evidence is mapped against these IDs in the verification test reports.
 
-| Unit test ID | Obligation | Public entry and setup | Oracle and forbidden effects | Required permutations |
-| ------------ | ---------- | ---------------------- | ---------------------------- | --------------------- |
+Evidence for ECDSA membership maps to
+[`UNIT-TEST-EVM-ERROR-HANDLER-1-DP1MJF.P28`](evmErrorHandler.ts.md#unit-test-evm-error-handler-1-dp1mjf.p28);
+this generated owner has no second test root.
 
 ## Related source reports
 

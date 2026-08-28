@@ -3,9 +3,10 @@ import { ethers, AddressLike } from "ethers";
 import { HardhatEthersHelpers } from "hardhat/types/runtime";
 import {
     StateChannelManagerInterface,
-    StateChannelManagerInterface__factory,
     MathStateMachine
 } from "@typechain-types";
+import { connectStateChannelManager } from "@/utils/stateChannelManager";
+import { routedFacets } from "@/utils/routedFacets";
 
 import {
     JoinChannelStruct,
@@ -94,18 +95,6 @@ export async function deployMathChannelProxyFixture(
     facetAddresses: DeployedFacetAddresses;
     consumerFacetAddress: string;
 }> {
-    // Facet configurations in constructor order
-    const facetConfigs = [
-        { name: "DisputeManagerFacet" },
-        { name: "DisputeVerificationFacet" },
-        { name: "FraudProofFacet" },
-        { name: "DisputeFraudProofFacet" },
-        { name: "StateSnapshotFacet" },
-        { name: "JoinChannelFacet" },
-        { name: "StateProofFacet" },
-        { name: "UtilityFacet" }
-    ] as const;
-
     // the generic are here in order to make the spread operator in mathSmcFactory.deploy work
     // typescipt needs to know the keys and the order of the array
     async function deployFacets<T extends readonly any[]>(
@@ -113,9 +102,9 @@ export async function deployMathChannelProxyFixture(
     ): Promise<{ [K in keyof T]: string }> {
         const addresses = await Promise.all(
             configs.map(async (config) => {
-                const factory = await _ethers.getContractFactory(config.name, {
-                    libraries: config.libs
-                });
+                const factory = await _ethers.getContractFactory(
+                    config.facetName
+                );
                 const facet = await factory.deploy();
                 return await facet.getAddress();
             })
@@ -124,7 +113,7 @@ export async function deployMathChannelProxyFixture(
     }
 
     // Deploy all facets in parallel and get addresses in order
-    const facetAddresses = await deployFacets(facetConfigs);
+    const facetAddresses = await deployFacets(routedFacets);
 
     const mathConsumerFactory =
         await _ethers.getContractFactory("MathConsumerFacet");
@@ -152,14 +141,14 @@ export async function deployMathChannelProxyFixture(
     // The proxy only implements a handful of selectors itself and routes the
     // rest to facets, so bind the diamond's full surface at its address.
     return {
-        mathChannelManager: StateChannelManagerInterface__factory.connect(
+        mathChannelManager: connectStateChannelManager(
             await mathStateChannelContactInstance.getAddress(),
             mathStateChannelContactInstance.runner
         ),
         mathInstance: mathContactInstance,
         facetAddresses: Object.fromEntries(
-            facetConfigs.map((config, index) => [
-                config.name,
+            routedFacets.map((config, index) => [
+                config.facetName,
                 facetAddresses[index]
             ])
         ),

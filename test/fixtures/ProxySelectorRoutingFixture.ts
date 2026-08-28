@@ -2,18 +2,11 @@
 import { expect } from "chai";
 import { ethers, FunctionFragment, InterfaceAbi } from "ethers";
 import {
-    DisputeFraudProofFacet__factory,
-    DisputeManagerFacet__factory,
-    DisputeVerificationFacet__factory,
-    FraudProofFacet__factory,
-    JoinChannelFacet__factory,
     StateChannelManagerInterface,
     StateChannelManagerInterface__factory,
-    StateChannelManagerProxy__factory,
-    StateProofFacet__factory,
-    StateSnapshotFacet__factory,
-    UtilityFacet__factory
+    StateChannelManagerProxy__factory
 } from "@typechain-types";
+import { routedFacets } from "@/utils/routedFacets";
 
 /** Solidity function name as written on the facet. */
 type FacetFunctionName = string;
@@ -42,88 +35,57 @@ export type FacetRoutingSpec = {
  * either resolve to that facet through `facetAddressForSelector` or be listed in
  * `notRouted` with the reason it stays off the diamond's external surface.
  */
-export const facetRoutingSpecs: FacetRoutingSpec[] = [
-    {
-        facetName: "DisputeManagerFacet",
-        abi: DisputeManagerFacet__factory.abi as InterfaceAbi,
-        notRouted: {}
+const notRoutedByFacet: Record<
+    string,
+    Record<FacetFunctionName, ExclusionReason>
+> = {
+    DisputeVerificationFacet: {
+        checkDisputeAuditingDataCommitment:
+            "internal verification step - reached by facets and LocalDiamond, never through the proxy",
+        computeDisputeOutputSnapshotData:
+            "dispute computation helper - LocalDiamond delegatecalls it with its own gas budget",
+        computeDisputeOutputState:
+            "dispute computation helper - LocalDiamond delegatecalls it with its own gas budget",
+        generateDisputeOutputState:
+            "internal step of the dispute pipeline, not part of the diamond surface",
+        isDisputeOutputCorrect:
+            "dispute verification helper - LocalDiamond delegatecalls it with its own gas budget",
+        killDispute:
+            "invoked from within the dispute pipeline; exposing it externally would widen the attack surface"
     },
-    {
-        facetName: "DisputeVerificationFacet",
-        abi: DisputeVerificationFacet__factory.abi as InterfaceAbi,
-        notRouted: {
-            checkDisputeAuditingDataCommitment:
-                "internal verification step - reached by facets and LocalDiamond, never through the proxy",
-            computeDisputeOutputSnapshotData:
-                "dispute computation helper - LocalDiamond delegatecalls it with its own gas budget",
-            computeDisputeOutputState:
-                "dispute computation helper - LocalDiamond delegatecalls it with its own gas budget",
-            generateDisputeOutputState:
-                "internal step of the dispute pipeline, not part of the diamond surface",
-            isDisputeOutputCorrect:
-                "dispute verification helper - LocalDiamond delegatecalls it with its own gas budget",
-            killDispute:
-                "invoked from within the dispute pipeline; exposing it externally would widen the attack surface"
-        }
+    FraudProofFacet: {
+        runFraudProof:
+            "single fraud-proof step driven by applyFraudProofs; not callable on its own"
     },
-    {
-        facetName: "FraudProofFacet",
-        abi: FraudProofFacet__factory.abi as InterfaceAbi,
-        notRouted: {
-            runFraudProof:
-                "single fraud-proof step driven by applyFraudProofs; not callable on its own"
-        }
-    },
-    {
-        facetName: "DisputeFraudProofFacet",
-        abi: DisputeFraudProofFacet__factory.abi as InterfaceAbi,
-        notRouted: {}
-    },
-    {
-        facetName: "StateSnapshotFacet",
-        abi: StateSnapshotFacet__factory.abi as InterfaceAbi,
-        notRouted: {}
-    },
-    {
-        facetName: "JoinChannelFacet",
-        abi: JoinChannelFacet__factory.abi as InterfaceAbi,
-        notRouted: {}
-    },
-    {
-        facetName: "StateProofFacet",
-        abi: StateProofFacet__factory.abi as InterfaceAbi,
-        notRouted: {}
-    },
-    {
-        facetName: "UtilityFacet",
-        abi: UtilityFacet__factory.abi as InterfaceAbi,
+    UtilityFacet: {
         // The stateless helpers are called externally on the deployed facet by
         // StateChannelCommon, so they are not part of the diamond's surface.
-        notRouted: {
-            areAddressArraysEqual:
-                "stateless helper called on the facet directly",
-            concatAddressArraysNoDuplicates:
-                "stateless helper called on the facet directly",
-            concatBytesArrays: "stateless helper called on the facet directly",
-            concatExitChannelArrays:
-                "stateless helper called on the facet directly",
-            decodeBlock: "stateless helper called on the facet directly",
-            inParticipantUnion: "stateless helper called on the facet directly",
-            insertBytesInByteArray:
-                "stateless helper called on the facet directly",
-            insertIntoAddressArrayNoDuplicates:
-                "stateless helper called on the facet directly",
-            isAddressInArray: "stateless helper called on the facet directly",
-            retrieveSignerAddress:
-                "stateless helper called on the facet directly",
-            subtractAddressArrays:
-                "stateless helper called on the facet directly",
-            tryDecodeBlock: "stateless helper called on the facet directly",
-            verifyThresholdSigned:
-                "stateless helper called on the facet directly"
-        }
+        areAddressArraysEqual: "stateless helper called on the facet directly",
+        concatAddressArraysNoDuplicates:
+            "stateless helper called on the facet directly",
+        concatBytesArrays: "stateless helper called on the facet directly",
+        concatExitChannelArrays:
+            "stateless helper called on the facet directly",
+        decodeBlock: "stateless helper called on the facet directly",
+        inParticipantUnion: "stateless helper called on the facet directly",
+        insertBytesInByteArray: "stateless helper called on the facet directly",
+        insertIntoAddressArrayNoDuplicates:
+            "stateless helper called on the facet directly",
+        isAddressInArray: "stateless helper called on the facet directly",
+        retrieveSignerAddress: "stateless helper called on the facet directly",
+        subtractAddressArrays: "stateless helper called on the facet directly",
+        tryDecodeBlock: "stateless helper called on the facet directly",
+        verifyThresholdSigned: "stateless helper called on the facet directly"
     }
-];
+};
+
+export const facetRoutingSpecs: FacetRoutingSpec[] = routedFacets.map(
+    ({ facetName, factory }) => ({
+        facetName,
+        abi: factory.abi as InterfaceAbi,
+        notRouted: notRoutedByFacet[facetName] ?? {}
+    })
+);
 
 export function facetRoutingSpec(facetName: string): FacetRoutingSpec {
     const spec = facetRoutingSpecs.find((s) => s.facetName === facetName);

@@ -17,6 +17,9 @@ immutable). The suite uses two kinds of oracle: the on-chain `facetAddressForSel
 against the facet addresses and the consumer-facet address the fixture returns, and — for the
 interface cases — pure ABI set comparison, with no deployment involved.
 
+The first case also proves the deployed fixture consumes the single production `routedFacets`
+inventory; only test-specific exclusions remain in the fixture.
+
 The per-facet cases are exhaustive by construction rather than by enumeration: for each of the
 eight routed facets the suite takes every `function` fragment of that facet's generated ABI,
 subtracts the `notRouted` exclusions declared in `ProxySelectorRoutingFixture`, asserts the
@@ -58,6 +61,7 @@ report but are kept here.
 
 | Test declaration                                                                                                                                                                                                                             | Covers                                                                                                                                                                                       |
 | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| [`StateChannelManagerProxy selector routing > uses the canonical routed-facet inventory for every deployed facet`](../../../../../../../../test/V1/DiamondProxy/StateChannelManager/SelectorRouting.test.ts#L37) (line 37)                   | [`UNIT-TEST-MANAGER-PROXY-2-KJRMB8.P30`](../../../../../../implementation/source/contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol.md#unit-test-manager-proxy-2-kjrmb8.p30) |
 | [`StateChannelManagerProxy selector routing > routes every dispute manager selector to the dispute manager facet`](../../../../../../../../test/V1/DiamondProxy/StateChannelManager/SelectorRouting.test.ts#L36) (line 36)                   | [`UNIT-TEST-MANAGER-PROXY-2-KJRMB8.P1`](../../../../../../implementation/source/contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol.md#unit-test-manager-proxy-2-kjrmb8.p1)   |
 | [`StateChannelManagerProxy selector routing > routes every dispute verification selector to the dispute verification facet`](../../../../../../../../test/V1/DiamondProxy/StateChannelManager/SelectorRouting.test.ts#L44) (line 44)         | [`UNIT-TEST-MANAGER-PROXY-2-KJRMB8.P4`](../../../../../../implementation/source/contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol.md#unit-test-manager-proxy-2-kjrmb8.p4)   |
 | [`StateChannelManagerProxy selector routing > routes every fraud proof selector to the fraud proof facet`](../../../../../../../../test/V1/DiamondProxy/StateChannelManager/SelectorRouting.test.ts#L52) (line 52)                           | [`UNIT-TEST-MANAGER-PROXY-2-KJRMB8.P5`](../../../../../../implementation/source/contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol.md#unit-test-manager-proxy-2-kjrmb8.p5)   |

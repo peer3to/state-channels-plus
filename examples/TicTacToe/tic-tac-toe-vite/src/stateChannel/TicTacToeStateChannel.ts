@@ -2,7 +2,7 @@ import {
     ethers,
     EvmStateMachine,
     P2pEventHooks,
-    StateChannelManagerInterface__factory
+    connectStateChannelManager
 } from "@peer3/state-channels-plus";
 import type {
     Signer,
@@ -36,11 +36,10 @@ export const getDltContracts = async (signer: Signer) => {
 
     // The proxy implements only a few selectors itself and routes the rest to
     // facets, so bind the diamond's full surface instead of the proxy ABI.
-    let TicTacToeStateChannelManagerInstance =
-        StateChannelManagerInterface__factory.connect(
-            ContractsJSON.TicTacToeStateChannelManagerProxy.address,
-            signer
-        );
+    let TicTacToeStateChannelManagerInstance = connectStateChannelManager(
+        ContractsJSON.TicTacToeStateChannelManagerProxy.address,
+        signer
+    );
     return { TicTacToeStateChannelManagerInstance, TicTacToeSmInstance };
 };
 

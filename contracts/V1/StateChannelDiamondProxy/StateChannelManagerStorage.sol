@@ -5,6 +5,11 @@ import "../types/DataTypes.sol";
 import "../AStateMachine.sol";
 
 contract StateChannelManagerStorage {
+    struct SelectorRoute {
+        address facet;
+        bool configured;
+    }
+
     //Config shared across all instances of the state machine
     uint256 internal p2pTime;
     uint256 internal agreementTime;
@@ -43,9 +48,9 @@ contract StateChannelManagerStorage {
     mapping(
         bytes32 channelId
             => mapping(
-            address signerAddress
-                => mapping(bytes32 forkId => mapping(uint256 blockHeight => bytes32 blockCallDataCommitment))
-        )
+                address signerAddress
+                    => mapping(bytes32 forkId => mapping(uint256 blockHeight => bytes32 blockCallDataCommitment))
+            )
     ) blockCalldataCommitments;
 
     // ================== Dispute on chain storage ==================
@@ -55,6 +60,9 @@ contract StateChannelManagerStorage {
 
     /// @dev Per-channel per-address throttle: address may not open a new dispute window until block.timestamp >= this value (0 = never submitted)
     mapping(bytes32 channelId => mapping(address disputer => uint256 throttleExpiry)) disputerThrottle;
+
+    /// @dev Immutable-at-runtime selector routes installed by the proxy constructor.
+    mapping(bytes4 selector => SelectorRoute route) selectorRoutes;
 
     // ================== Modifiers ==================
 

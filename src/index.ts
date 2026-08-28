@@ -92,6 +92,10 @@ export type {
 export { Address } from "@ethereumjs/util";
 
 export * from "@/utils/logging";
+export {
+    connectStateChannelManager,
+    stateChannelManagerAbi
+} from "@/utils/stateChannelManager";
 
 export * from "../typechain-types";
 export * as DataTypes from "../typechain-types/contracts/V1/types/DataTypes";

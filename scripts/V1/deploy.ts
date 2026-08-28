@@ -1,39 +1,23 @@
 import { ContractFactory, Signer, ethers } from "ethers";
 
-import DisputeVerificationFacetArtifact from "../../artifacts/contracts/V1/StateChannelDiamondProxy/DisputeVerificationFacet.sol/DisputeVerificationFacet.json";
-import DisputeManagerFacetArtifact from "../../artifacts/contracts/V1/StateChannelDiamondProxy/DisputeManagerFacet.sol/DisputeManagerFacet.json";
-import FraudProofFacetArtifact from "../../artifacts/contracts/V1/StateChannelDiamondProxy/FraudProofFacet.sol/FraudProofFacet.json";
-import DisputeFraudProofFacetArtifact from "../../artifacts/contracts/V1/StateChannelDiamondProxy/DisputeFraudProofFacet.sol/DisputeFraudProofFacet.json";
-import StateSnapshotFacetArtifact from "../../artifacts/contracts/V1/StateChannelDiamondProxy/StateSnapshotFacet.sol/StateSnapshotFacet.json";
-import JoinChannelFacetArtifact from "../../artifacts/contracts/V1/StateChannelDiamondProxy/JoinChannelFacet.sol/JoinChannelFacet.json";
-import StateProofFacetArtifact from "../../artifacts/contracts/V1/StateChannelDiamondProxy/StateProofFacet.sol/StateProofFacet.json";
 import StateChannelManagerProxyArtifact from "../../artifacts/contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol/StateChannelManagerProxy.json";
 import LocalDiamondArtifact from "../../artifacts/contracts/V1/StateChannelDiamondProxy/LocalDiamond.sol/LocalDiamond.json";
-import UtilityFacetArtifact from "../../artifacts/contracts/V1/StateChannelDiamondProxy/UtilityFacet.sol/UtilityFacet.json";
 
-import {
-    StateChannelManagerInterface,
-    StateChannelManagerInterface__factory
-} from "@typechain-types/index";
+import { StateChannelManagerInterface } from "@typechain-types/index";
 import { Artifact } from "hardhat/types";
 import { config } from "@/utils/config";
 import type { Address } from "@/types/types";
+import { routedFacetArtifacts } from "@/utils/routedFacets";
+import { connectStateChannelManager } from "@/utils/stateChannelManager";
+import {
+    assertArtifactRuntimeSize,
+    assertDeploymentInitcodeSize
+} from "@/utils/contractSize";
 
 const DEFAULT_DISPUTE_EXECUTION_GAS_LIMIT = 3_000_000;
 const FACET_DEPLOY_GAS_LIMIT = 12_000_000;
 const NONCE_GAP_RETRY_DELAY_MS = 10;
 const NONCE_GAP_MAX_RETRIES = 500;
-
-const facetArtifacts = [
-    DisputeManagerFacetArtifact,
-    DisputeVerificationFacetArtifact,
-    FraudProofFacetArtifact,
-    DisputeFraudProofFacetArtifact,
-    StateSnapshotFacetArtifact,
-    JoinChannelFacetArtifact,
-    StateProofFacetArtifact,
-    UtilityFacetArtifact
-];
 
 export type DeploymentResult = {
     address: Address;
@@ -70,11 +54,21 @@ export async function deployArtifact<T>(
         txOverrides?: ethers.TransactionRequest;
     }
 ): Promise<{ address: string; contract: T }> {
+    assertArtifactRuntimeSize(artifact);
     const linkedArtifact = linkLibraries(artifact, options?.libs || {});
 
     const factory = new ContractFactory(artifact.abi, linkedArtifact.bytecode);
     const deployTx = await factory.getDeployTransaction(
         ...(options?.args || [])
+    );
+    if (deployTx.data === null || deployTx.data === undefined) {
+        throw new Error(
+            `Deployment failed: missing transaction data for ${artifact.contractName}`
+        );
+    }
+    assertDeploymentInitcodeSize(
+        artifact.contractName,
+        ethers.hexlify(deployTx.data)
     );
     const gasLimit =
         options?.txOverrides?.gasLimit ??
@@ -134,7 +128,7 @@ export async function deployFacets(
 ): Promise<string[]> {
     const nextNonce = await signer.getNonce("pending");
     return Promise.all(
-        facetArtifacts.map(async (artifact, index) => {
+        routedFacetArtifacts.map(async (artifact, index) => {
             for (let attempt = 0; ; attempt++) {
                 try {
                     return (
@@ -173,7 +167,7 @@ export async function deployFacetsLocal(
     libs: Record<string, string> = {}
 ): Promise<string[]> {
     return Promise.all(
-        facetArtifacts.map((artifact) =>
+        routedFacetArtifacts.map((artifact) =>
             deployArtifactLocal(artifact, signer, { libs }).then((address) =>
                 address.toString()
             )
@@ -243,7 +237,7 @@ export async function deploy(
     // the rest are routed to facets, so bind the diamond's full surface here.
     return {
         address,
-        contract: StateChannelManagerInterface__factory.connect(address, signer)
+        contract: connectStateChannelManager(address, signer)
     };
 }
 
