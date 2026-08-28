@@ -3,6 +3,7 @@ import {
     decodeLogs,
     decompressFromBase64
 } from "../../src/utils/logging/logEncoder";
+import { skippedChunksOf } from "./logFetch";
 
 const baseUrl = process.argv[2] || "http://localhost:3001";
 const channelId = process.argv[3];
@@ -31,6 +32,12 @@ async function main() {
         );
     }
 
+    const skippedChunks = skippedChunksOf(response);
+    if (skippedChunks > 0) {
+        logger.error("Incomplete log: the server skipped stored chunks", {
+            skippedChunks
+        });
+    }
     const base64 = await response.text();
     logger.info("Fetched log file base64", { base64 });
     const serializedLogs = decompressFromBase64(base64);
