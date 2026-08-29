@@ -5,11 +5,8 @@ import type { LogStore } from "./logStore";
 import { LoggerUtils } from "../LoggerUtils";
 import { DetachedPromises } from "../DetachedPromises";
 import { emptyFlushResult } from "./logControl";
-import type {
-    LogControlPort,
-    LogFlushResult,
-    LogPortHandle
-} from "./logControl";
+import type { LogFlushResult } from "./logControl";
+import type { WorkerLink } from "@/rpc/WorkerLinks";
 import type { LogFlushBus } from "./LogFlushBus";
 
 // The context exclusive to each logger
@@ -125,11 +122,16 @@ export abstract class Logger {
         this.flushBusRegistration = { bus, unregister };
     }
 
-    /** attach a port to an adjacent realm, owned by this logger -> the port lands
-     *  on whichever bus this root belongs to. undefined when this logger is on no
-     *  bus, so there is no flush tree to join. */
-    public addLogPort(port: LogControlPort): LogPortHandle | undefined {
-        return this.flushBus?.addPort(port, this);
+    /** register a worker link on whichever bus this root belongs to: the link
+     *  becomes a port carrying this logger's context. undefined when this
+     *  logger is on no bus, so there is no flush tree to join. */
+    public addLogLink(link: WorkerLink): (() => void) | undefined {
+        return this.flushBus?.links.add(link);
+    }
+
+    /** the bus this root is registered on, if any */
+    public get logFlushBus(): LogFlushBus | undefined {
+        return this.flushBus;
     }
 
     /** make `target`'s channel follow this one's, both roots of this realm */

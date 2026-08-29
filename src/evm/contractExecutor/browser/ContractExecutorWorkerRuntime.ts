@@ -1,23 +1,19 @@
-import type { WorkerHostMessage } from "../worker/protocol";
-import type { WorkerLike } from "../types";
+import type { RuntimePort } from "@/transport/RuntimePort";
+import type { ContractExecutorWorkerErrorHandler, WorkerLike } from "../types";
 
-export type ContractExecutorWorkerMessageHandler = (
-    message: WorkerHostMessage
-) => void;
-
-export type ContractExecutorWorkerErrorHandler = (error: Error) => void;
+export type { ContractExecutorWorkerErrorHandler };
 
 export function createContractExecutorWorker(
-    onMessage: ContractExecutorWorkerMessageHandler,
     onError: ContractExecutorWorkerErrorHandler
 ): WorkerLike {
     const worker = new Worker(
         new URL("./ContractExecutorWorkerEntry.js", import.meta.url),
         { type: "module" }
     );
-
-    worker.onmessage = (event: MessageEvent<WorkerHostMessage>) => {
-        onMessage(event.data);
+    const closeHandlers: (() => void)[] = [];
+    const messageHandlers: ((message: unknown) => void)[] = [];
+    worker.onmessage = (event: MessageEvent) => {
+        for (const handler of messageHandlers) handler(event.data);
     };
     worker.onerror = (event: ErrorEvent) => {
         const details = [
@@ -27,14 +23,28 @@ export function createContractExecutorWorker(
             event.colno ? `column: ${event.colno}` : undefined
         ].filter(Boolean);
         onError(new Error(details.join(" ")));
+        for (const handler of closeHandlers) handler();
     };
     worker.onmessageerror = () => {
         onError(
             new Error("Contract executor worker message could not be cloned")
         );
     };
+    // the worker as a port. a browser worker has no exit event: an error
+    // closes the line, and a clean end comes through dispose
+    const port: RuntimePort = {
+        post: (message) => worker.postMessage(message),
+        onMessage: (handler) => {
+            messageHandlers.push(handler);
+        },
+        start: () => {},
+        onClose: (handler) => {
+            closeHandlers.push(handler);
+        },
+        close: () => {}
+    };
     return {
-        postMessage: (message) => worker.postMessage(message),
+        port,
         shutdown: async () => worker.terminate()
     };
 }

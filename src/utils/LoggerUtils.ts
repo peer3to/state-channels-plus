@@ -1,4 +1,5 @@
 import type StateManager from "@/stateManager/StateManager";
+import type { RpcRouterLike } from "@/rpc/ARpcRouter";
 import {
     DisputeStruct,
     TimeoutStruct,
@@ -70,6 +71,13 @@ export type InitHandshakeLogArgs = {
     remotePreferred?: TransportType;
     reason?: string;
 };
+
+/** a peer router carries the channel it serves; a port router carries none */
+function namesChannel(
+    router: RpcRouterLike
+): router is RpcRouterLike & { stateManager: StateManager } {
+    return "stateManager" in router;
+}
 
 export class LoggerUtils {
     private static readonly MESSAGE_TYPE_LABELS: Record<string, string> = {
@@ -397,9 +405,9 @@ export class LoggerUtils {
         const peerAddress = transport.peerAddress || "unknown";
         const transportType = TransportType[transport.transportType];
         // a port router has no state manager -> no channel to name
-        const stateManager = (
-            transport.router as { stateManager?: StateManager }
-        ).stateManager;
+        const stateManager = namesChannel(transport.router)
+            ? transport.router.stateManager
+            : undefined;
 
         return {
             peerAddress,

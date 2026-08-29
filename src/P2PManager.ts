@@ -151,6 +151,14 @@ class P2PManager<TCustomRpc extends MainRpcService = MainRpcService>
         this.disconnectConnection(transport);
     }
 
+    protected onFrameDispatched(rpc: Rpc, transport: ATransport): void {
+        this.logger.verbose("onRpc", {
+            rpc: LoggerUtils.getRpcLogMetadata(rpc),
+            transportType: TransportType[transport.transportType],
+            peerAddress: transport.peerAddress
+        });
+    }
+
     public async tryOpenConnectionToChannel(channelId: string) {
         // TODO: Give Holepunch and LocalDiscoveryServer the same lifecycle API
         // and inject the selected backend so P2PManager does not know which

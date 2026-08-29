@@ -2,7 +2,7 @@ import { expect } from "chai";
 import { MessageChannel } from "node:worker_threads";
 
 import { TransportType } from "@/transport/TransportType";
-import { adaptPort } from "@platform/p2pRuntimeChannel";
+import { adaptPort } from "@/evm/p2pRuntime/node/P2pRuntimeChannel";
 import { linkedRouters } from "@test/fixtures/rpc/PortRpcProbe.fixture";
 
 describe("MessagePortTransport", function () {

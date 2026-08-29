@@ -7,7 +7,7 @@ import {
     TransactionLike
 } from "ethers";
 
-import type { RuntimeRequester } from "../p2pRuntime/types";
+import type { RuntimeHostEndpoint } from "../p2pRuntime/P2pRuntimeClient";
 
 const UNSUPPORTED = "Operation not supported by deployment bridge signer";
 
@@ -19,7 +19,7 @@ class DeploymentBridgeSigner implements Signer {
     provider: Provider | null = null;
 
     constructor(
-        private readonly requester: RuntimeRequester,
+        private readonly host: RuntimeHostEndpoint,
         private readonly signerAddress: string
     ) {}
 
@@ -28,13 +28,11 @@ class DeploymentBridgeSigner implements Signer {
     }
 
     getAddress(): Promise<string> {
-        return this.requester.request<string>({
-            type: "deploySignerGetAddress"
-        });
+        return this.host.deploySigner.getAddress().request();
     }
 
     getNonce(): Promise<number> {
-        return this.requester.request<number>({ type: "deploySignerGetNonce" });
+        return this.host.deploySigner.getNonce().request();
     }
 
     populateCall(): Promise<TransactionLike<string>> {
@@ -50,17 +48,11 @@ class DeploymentBridgeSigner implements Signer {
     }
 
     call(tx: TransactionRequest): Promise<string> {
-        return this.requester.request<string>({
-            type: "deploySignerCall",
-            tx
-        });
+        return this.host.deploySigner.call(tx).request();
     }
 
     resolveName(name: string): Promise<string | null> {
-        return this.requester.request<string | null>({
-            type: "deploySignerResolveName",
-            name
-        });
+        return this.host.deploySigner.resolveName(name).request();
     }
 
     signTransaction(): Promise<string> {
@@ -68,17 +60,9 @@ class DeploymentBridgeSigner implements Signer {
     }
 
     sendTransaction(tx: TransactionRequest): Promise<TransactionResponse> {
-        return this.requester
-            .request<{
-                hash: string;
-                to: string | null;
-                from: string;
-                data: string;
-                receipt: unknown;
-            }>({
-                type: "deploySignerSendTransaction",
-                tx
-            })
+        return this.host.deploySigner
+            .sendTransaction(tx)
+            .request()
             .then((result) => {
                 const response = {
                     hash: result.hash,
@@ -92,11 +76,11 @@ class DeploymentBridgeSigner implements Signer {
     }
 
     signMessage(message: string | Uint8Array): Promise<string> {
-        return this.requester.request<string>({
-            type: "signMessage",
-            message:
+        return this.host.p2pSigner
+            .signMessage(
                 typeof message === "string" ? message : ethers.hexlify(message)
-        });
+            )
+            .request();
     }
 
     signTypedData(
@@ -104,12 +88,9 @@ class DeploymentBridgeSigner implements Signer {
         types: Record<string, ethers.TypedDataField[]>,
         value: Record<string, any>
     ): Promise<string> {
-        return this.requester.request<string>({
-            type: "signTypedData",
-            domain,
-            types,
-            value
-        });
+        return this.host.p2pSigner
+            .signTypedData(domain, types, value)
+            .request();
     }
 
     getSignerAddress(): string {

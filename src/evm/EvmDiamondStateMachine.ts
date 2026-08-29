@@ -536,17 +536,23 @@ class EvmDiamondStateMachine extends ADiamondStateMachine {
 
             let clientPort: RuntimePort;
             let onClose: (() => void) | undefined;
+            let webRTCBridgeCandidate: MessagePort | undefined;
 
             if (activeConfig.RUN_SDK_IN_THREAD) {
                 const { localPort, transferablePort } =
                     createTransferableChannel();
+                // the bridge is minted here and its worker end goes down with
+                // the bootstrap: an RPC frame cannot transfer a port
+                const bridge = new MessageChannel();
+                webRTCBridgeCandidate = bridge.port1;
                 const worker = createP2pRuntimeWorker();
                 const bootstrap: WorkerBootstrapMessage = {
                     type: "connect",
                     payload,
-                    port: transferablePort
+                    port: transferablePort,
+                    webRTCBridgePort: bridge.port2
                 };
-                worker.postMessage(bootstrap, [transferablePort]);
+                worker.postMessage(bootstrap, [transferablePort, bridge.port2]);
                 clientPort = localPort;
                 onClose = () => worker.shutdown();
             } else {
@@ -569,11 +575,12 @@ class EvmDiamondStateMachine extends ADiamondStateMachine {
                 logger,
                 onClose,
                 // only a threaded host is a separate realm with its own bus
-                openLogControlPort: activeConfig.RUN_SDK_IN_THREAD
+                openLogControlPort: activeConfig.RUN_SDK_IN_THREAD,
+                webRTCBridgeCandidate
             });
 
             const deployBridgeSigner = new DeploymentBridgeSigner(
-                client,
+                client.host,
                 resolvedSignerAddress
             );
             // Deploy two independent local state machine instances:
@@ -585,13 +592,10 @@ class EvmDiamondStateMachine extends ADiamondStateMachine {
             const diamondStateMachineAddress =
                 await deployStateMachine(deployBridgeSigner);
             try {
-                await client.request<void>({
-                    type: "deployComplete",
-                    localStateMachineAddress:
-                        localStateMachineAddress.toString(),
-                    diamondStateMachineAddress:
-                        diamondStateMachineAddress.toString()
-                });
+                await client.deployComplete(
+                    localStateMachineAddress.toString(),
+                    diamondStateMachineAddress.toString()
+                );
                 await client.ready;
             } catch (error) {
                 await client.dispose();

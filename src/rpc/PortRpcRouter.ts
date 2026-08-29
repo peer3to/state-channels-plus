@@ -4,9 +4,10 @@ import type { RuntimePort } from "@/transport/RuntimePort";
 import type { Address } from "@/types/types";
 import type { Logger } from "@/utils/logging/Logger";
 import noOpLogger from "@/utils/logging/noOpLogger";
+import { hasRpcService } from "@/utils/ObjectChecks";
 import ARpcRouter from "./ARpcRouter";
 import RemoteRpcProxy, { type RemoteRpcServices } from "./RemoteRpcProxy";
-import type Rpc from "./Rpc";
+import Rpc, { isRpc } from "./Rpc";
 
 export type PortRpcRouterOptions = {
     /** bound on every request that does not bring its own; `null` -> none */
@@ -28,6 +29,10 @@ class PortRpcRouter<TRoot extends object> extends ARpcRouter<TRoot> {
     private currentLogger: Logger;
     private readonly options: PortRpcRouterOptions;
     private readonly transports = new Set<MessagePortTransport>();
+    /** requests that arrived while this end was still being built; a port
+     *  queues what is posted before anyone listens, and this keeps that
+     *  promise once a transport is listening */
+    private heldRequests?: { frame: Rpc; transport: ATransport }[];
 
     /** the root needs the router and the router the root -> built here */
     constructor(
@@ -45,15 +50,37 @@ class PortRpcRouter<TRoot extends object> extends ARpcRouter<TRoot> {
         return this.currentLogger;
     }
 
-    /** a worker has no logger until its config arrived */
+    /** a worker has no logger until its config arrived; the services on the
+     *  root were built with the stand-in and take the real one here */
     setLogger(logger: Logger): void {
         this.currentLogger = logger;
+        for (const name of Object.keys(this.localRpc)) {
+            if (hasRpcService(this.localRpc, name)) {
+                this.localRpc[name].logger = logger;
+            }
+        }
     }
 
     attach(port: RuntimePort): MessagePortTransport {
         const transport = new MessagePortTransport(port, this);
         this.transports.add(transport);
         return transport;
+    }
+
+    /** queue inbound requests until `releaseInbound`: the services behind the
+     *  root are not all built yet. replies to this end's own requests still
+     *  settle. */
+    holdInbound(): void {
+        this.heldRequests ??= [];
+    }
+
+    /** dispatch what was held, in arrival order, and stop holding */
+    releaseInbound(): void {
+        const held = this.heldRequests;
+        this.heldRequests = undefined;
+        for (const { frame, transport } of held ?? []) {
+            super.onRpcFrame(frame, transport);
+        }
     }
 
     /** the far end of `transport`, typed by the root it serves */
@@ -83,6 +110,10 @@ class PortRpcRouter<TRoot extends object> extends ARpcRouter<TRoot> {
         frame: Parameters<ARpcRouter<TRoot>["onRpcFrame"]>[0],
         transport: ATransport
     ): void {
+        if (this.heldRequests && isRpc(frame)) {
+            this.heldRequests.push({ frame, transport });
+            return;
+        }
         const wrap = this.options.wrapInbound;
         if (wrap) {
             wrap(() => super.onRpcFrame(frame, transport));

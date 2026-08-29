@@ -1,7 +1,6 @@
 import type { Config } from "@/utils/config";
 import type { EvmCustomPrecompileManifest } from "@/evm/EvmFactory";
 import type { CustomRpcManifest } from "@/rpc/registry";
-import type { RuntimeRequestInput } from "./worker/protocol";
 
 /** the port surface a runtime link runs on; owned by the transport layer */
 export type { RuntimePort, RuntimeChannel } from "@/transport/RuntimePort";
@@ -37,10 +36,18 @@ export interface SetupPayload {
     customPrecompiles?: EvmCustomPrecompileManifest[];
 }
 
-/** Request envelope: every client→host request carries a correlation id. */
-export interface RuntimeRequest<TType extends string = string> {
-    requestId: number;
-    type: TType;
+/**
+ * Worker-level bootstrap message (NOT a runtime-port frame). Sent via
+ * `Worker.postMessage` together with the transferred runtime port - the one
+ * message that carries ownership across, which an RPC envelope cannot.
+ */
+export interface WorkerBootstrapMessage {
+    type: "connect";
+    payload: SetupPayload;
+    /** The transferred raw MessagePort (platform-specific); adapted by the worker. */
+    port: unknown;
+    /** the worker end of the WebRTC bridge channel, transferred alongside */
+    webRTCBridgePort: unknown;
 }
 
 /**
@@ -52,59 +59,5 @@ export interface P2pRuntimeWorker {
     shutdown(): Promise<void>;
 }
 
-/** `Omit` that distributes over unions (preserves discriminated members). */
-export type DistributiveOmit<T, K extends PropertyKey> = T extends unknown
-    ? Omit<T, K>
-    : never;
-
-/** Serializable error shape carried in failed runtime responses. */
+/** Serializable error shape carried in failed runtime replies. */
 export type { SerializedError } from "@/rpc/serializeError";
-
-/** Minimal surface needed to issue requests to the host. */
-export interface RuntimeRequester {
-    request<TResult>(
-        request: RuntimeRequestInput,
-        options?: { timeoutMs?: number | null }
-    ): Promise<TResult>;
-}
-
-export type {
-    CallViewRequest,
-    ChainSignerSendTransactionRequest,
-    ChainSignerSignMessageRequest,
-    ChainSignerSignTransactionRequest,
-    ChainSignerSignTypedDataRequest,
-    ConnectToChannelRequest,
-    CollectJoinChannelConfirmationRequest,
-    HostRpcRequest,
-    DeployCompleteRequest,
-    DeploySignerCallRequest,
-    DeploySignerGetAddressRequest,
-    DeploySignerGetNonceRequest,
-    DeploySignerResolveNameRequest,
-    DeploySignerSendTransactionRequest,
-    DisconnectFromPeersRequest,
-    DisposeRequest,
-    GetChannelStatusRequest,
-    JoinChannelRequest,
-    TopUpBalanceRequest,
-    P2pRuntimeBootstrapMessage,
-    P2pRuntimeHostMessage,
-    P2pRuntimeRequestMessage,
-    RuntimeBusEventMessage,
-    RuntimeClientMessage,
-    RuntimeClientRequest,
-    RuntimeHostErrorMessage,
-    RuntimeHostMessage,
-    RuntimeLogControlMessage,
-    RuntimeReadyMessage,
-    RuntimeRequestInput,
-    RuntimeResponse,
-    RuntimeWebRTCBridgePortMessage,
-    SendTransactionRequest,
-    SetChannelIdRequest,
-    SetIsLeaderRequest,
-    SignMessageRequest,
-    SignTypedDataRequest,
-    WorkerBootstrapMessage
-} from "./worker/protocol";

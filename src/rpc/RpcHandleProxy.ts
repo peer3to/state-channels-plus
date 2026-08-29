@@ -9,12 +9,15 @@ import RpcHandler, {
 
 /**
  * Picks the delivery API based on a method's return type:
- * - `void`/`Promise<void>` -> fire-and-forget (broadcast/sendOne/sendMultiple)
- * - any other value        -> request/response (`request(target)` returning that value)
+ * - `void`          -> fire-and-forget (broadcast/sendOne/sendMultiple)
+ * - `Promise<void>` -> both: nothing comes back, but "done" can be awaited
+ * - any other value -> request/response (`request(target)` returning that value)
  */
-type RpcCallHandler<R> = [Awaited<R>] extends [void]
+type RpcCallHandler<R> = [R] extends [void]
     ? FireAndForgetRpcHandler
-    : RequestRpcHandler<Awaited<R>>;
+    : [Awaited<R>] extends [void]
+      ? FireAndForgetRpcHandler & RequestRpcHandler<void>
+      : RequestRpcHandler<Awaited<R>>;
 
 /**
  * Transforms a function's return type into the matching RPC delivery handler
