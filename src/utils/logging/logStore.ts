@@ -12,11 +12,12 @@ export type LogStoreDelta = {
 // Shared log storage helper (instance-based)
 export class LogStore {
     /** distinguishes one process's stream from the next: seq restarts at 0 per
-     *  store, so without it a second run overwrites the first's chunks */
-    public readonly storeId: string = Array.from({ length: 2 }, () =>
-        Math.floor(Math.random() * 0xffff)
-            .toString(16)
-            .padStart(4, "0")
+     *  store, so without it a second run overwrites the first's chunks. 64
+     *  random bits from the platform CSPRNG - `randomUUID` needs a secure
+     *  context, and this file is browser-compiled */
+    public readonly storeId: string = Array.from(
+        crypto.getRandomValues(new Uint8Array(8)),
+        (byte) => byte.toString(16).padStart(2, "0")
     ).join("");
     private logs: Array<{ entry: LogEntry; sizeInBytes: number; seq: number }> =
         [];
