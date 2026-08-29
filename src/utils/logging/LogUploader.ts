@@ -144,6 +144,28 @@ export abstract class LogUploader {
         return running;
     }
 
+    /** where this realm files a batch; read live, never cached across a sleep */
+    private identity() {
+        const channelId = this.sharedContext.channelId || ethers.ZeroHash;
+        const peerAddress =
+            this.sharedContext.peerAddress || ethers.ZeroAddress;
+        const threadName: LogThreadName =
+            this.sharedContext.threadName ?? "main";
+        return {
+            channelId,
+            peerAddress,
+            threadName,
+            uploadKey: `${channelId}/${peerAddress}`
+        };
+    }
+
+    /** the delta cursor for a key: from the top again once the key changed */
+    private watermarkFor(uploadKey: string): number {
+        return this.lastUploadedKey && this.lastUploadedKey !== uploadKey
+            ? -1
+            : this.lastUploadedSeq;
+    }
+
     private async postDelta(): Promise<LogUploadOutcome> {
         let rawLogsSize;
         let compressedLogsSize;
@@ -151,28 +173,25 @@ export abstract class LogUploader {
         try {
             if (!this.isEnabled()) return { ok: true, entries: 0 };
 
-            const channelId = this.sharedContext.channelId || ethers.ZeroHash;
-            const peerAddress =
-                this.sharedContext.peerAddress || ethers.ZeroAddress;
-            const threadName: LogThreadName =
-                this.sharedContext.threadName ?? "main";
-            const uploadKey = `${channelId}/${peerAddress}`;
-            if (this.lastUploadedKey && this.lastUploadedKey !== uploadKey) {
-                this.lastUploadedSeq = -1;
-            }
-
             // checked before the jitter sleep -> a fan-out onto an idle realm
-            // costs neither HTTP nor wall time
+            // costs neither HTTP nor wall time. the cursor is only read here;
+            // a changed identity restarts it once the batch is really built
             if (
-                this.logStore.getLogsSince(this.lastUploadedSeq).entries
-                    .length === 0
+                this.logStore.getLogsSince(
+                    this.watermarkFor(this.identity().uploadKey)
+                ).entries.length === 0
             ) {
                 return { ok: true, entries: 0 };
             }
 
             await sleep(this.getJitterMs());
 
-            // re-read: entries written during the sleep ride along
+            // identity and delta are read together, after the sleep: a channel
+            // or peer set during it files this batch, instead of the batch
+            // landing in the old bucket and being sent again under the new one
+            const { channelId, peerAddress, threadName, uploadKey } =
+                this.identity();
+            this.lastUploadedSeq = this.watermarkFor(uploadKey);
             const { entries, fromSeq, toSeq } = this.logStore.getLogsSince(
                 this.lastUploadedSeq
             );

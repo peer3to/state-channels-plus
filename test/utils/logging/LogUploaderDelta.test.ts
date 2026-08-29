@@ -114,6 +114,28 @@ describe("LogUploader delta uploads", function () {
         expect(lastBody.fromSeq).to.equal(0);
     });
 
+    it("files an upload under the identity current after the jitter", async function () {
+        const before = ethers.Wallet.createRandom().address;
+        const after = ethers.Wallet.createRandom().address;
+        const { logger, logUploader } = createUploaderFixture({
+            uploadEndpoint: receiver!.url,
+            sharedContext: { channelId: ethers.ZeroHash, peerAddress: before }
+        });
+        logger.info("entry");
+
+        // the peer is set while the upload is already sleeping off its jitter
+        const upload = logUploader.uploadLogs();
+        logger.updateSharedContext({ peerAddress: after });
+        await upload;
+        // nothing new under that identity -> the batch is not sent again
+        const again = await logUploader.uploadLogs();
+
+        expect(receiver!.requests.map((r) => r.peerAddress)).to.deep.equal([
+            after
+        ]);
+        expect(again).to.deep.equal({ ok: true, entries: 0 });
+    });
+
     it("sends threadName and the sequence range", async function () {
         const channelId = ethers.id("delta-upload-channel");
         const peerAddress = ethers.Wallet.createRandom().address;
