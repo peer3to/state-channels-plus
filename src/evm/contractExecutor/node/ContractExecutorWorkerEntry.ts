@@ -1,26 +1,36 @@
 import { onUnhandledWorkerError } from "../../p2pRuntime/node/P2pRuntimeWorkerRuntime";
-import { createContractExecutorWorkerHost } from "../worker/ContractExecutorWorkerHostCore";
-import type {
-    WorkerHostMessage,
-    WorkerRequestMessage
-} from "../worker/protocol";
+import {
+    CONTRACT_EXECUTOR_CLIENT_MANIFEST,
+    type ContractExecutorClientRoot
+} from "../rpc/ContractExecutorClientRoot";
+import { ContractExecutorRoot } from "../rpc/ContractExecutorRoot";
+import PortRpcRouter from "@/rpc/PortRpcRouter";
+import { serializeError } from "@/rpc/serializeError";
 import { realmLogFlushBus } from "@/utils/logging/LogFlushBus";
+import { adaptWorkerScope } from "@platform/p2pRuntimeChannel";
 import { parentPort } from "node:worker_threads";
 
 if (!parentPort) {
     throw new Error("Contract executor worker host requires a parent port");
 }
 
-const port = parentPort;
+// the whole protocol: this root, over the parent port
+const router = new PortRpcRouter<ContractExecutorRoot>(
+    (self) => new ContractExecutorRoot(self),
+    // the worker's logger exists once init brought the config
+    undefined
+);
+const transport = router.attach(adaptWorkerScope());
+const owner = router.endpoint<ContractExecutorClientRoot>(
+    transport,
+    CONTRACT_EXECUTOR_CLIENT_MANIFEST
+);
 
 // Same policy as the sdk worker: an error outside a request is reported to
-// the host and the worker keeps serving. The funnel is registered as soon as
-// the port and the host reporter exist, before request handling begins.
-const host = createContractExecutorWorkerHost((response: WorkerHostMessage) =>
-    port.postMessage(response)
-);
+// the owner and the worker keeps serving. The funnel is registered here, with
+// the line already up, so a load-time failure is reportable too.
 onUnhandledWorkerError((error) => {
-    host.reportUnhandledError(error);
+    owner.workerErrors.detachedError(serializeError(error)).sendOne();
     // deferred past this listener chain: the logger's own hook records the
     // failure in a later listener, and collecting before it ran would ship an
     // empty round. every realm uploads; nothing waits on the acks, because the
@@ -31,11 +41,3 @@ onUnhandledWorkerError((error) => {
             .catch(() => undefined);
     });
 });
-host.start(
-    (handler: (message: WorkerRequestMessage) => void) => {
-        port.on("message", handler);
-    },
-    // Close the port so the drained loop can exit naturally (see
-    // workerShutdown.ts for why the loop must never be force-stopped).
-    () => port.close()
-);

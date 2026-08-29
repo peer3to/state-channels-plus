@@ -1,58 +1,64 @@
 import type { Logger, SharedLoggerContext } from "./Logger";
-import { config } from "../config";
+import type ATransport from "@/transport/ATransport";
+import { WorkerLinks, realmWorkerLinks } from "@/rpc/WorkerLinks";
+import { logControlPortOver } from "./rpc/logControl/logControlPort";
 import {
     emptyFlushResult,
     sumFlushResults,
-    type FlushId,
-    type LogControlMessage,
     type LogControlPort,
-    type LogContextUpdate,
-    type LogFlushRequest,
     type LogFlushResult,
     type LogPortHandle,
     type LogRemoteRealm
 } from "./logControl";
 
 /**
- * one per realm: that realm's root loggers, and one port per adjacent realm.
- * ports across all realms must form a TREE - forwarding skips the sender and
- * there is no loop guard, so a cycle circulates a round forever.
+ * one per realm: that realm's root loggers, and one port per neighbouring
+ * realm. the links across all realms must form a TREE - a round is forwarded
+ * everywhere but where it came from and there is no loop guard, so a cycle
+ * circulates a round forever.
  */
 export class LogFlushBus {
+    /** the links this realm holds; every one is a port here for as long as it
+     *  is held. the bus never learns what service runs across a link. */
+    readonly links: WorkerLinks;
     private readonly roots = new Set<Logger>();
     /** port -> the root logger whose context it carries */
     private readonly portOwners = new Map<LogControlPort, Logger>();
+    /** the link a port stands on -> the port; how an inbound call finds its port */
+    private readonly portsByTransport = new Map<
+        ATransport,
+        { port: LogControlPort; handle: LogPortHandle }
+    >();
     /** root -> roots in this realm that follow its channel */
     private readonly contextFollowers = new Map<Logger, Set<Logger>>();
-    /** flushId -> ports still owed an ack */
-    private readonly pendingAcks = new Map<
-        FlushId,
-        Map<LogControlPort, (result: LogFlushResult) => void>
-    >();
     private activeRound?: Promise<LogFlushResult>;
     /** the active round's own upload. a queued round waits on this instead of
      *  the whole round -> a folded ack never waits on the realm that asked,
      *  which would close a cycle when two realms originate at once. */
     private activeLocalFlush?: Promise<LogFlushResult>;
-    private queuedRound?: Promise<LogFlushResult>;
-    /** ports the queued round skips: only those every folded trigger came from */
-    private queuedExcluded?: Set<LogControlPort>;
-    private flushCounter = 0;
+    /** source port (null = this realm) -> the round queued for requests from it.
+     *  one per source: a request from port A still has to reach port B, whose
+     *  own round covers only B's side. a single queued round that skipped both
+     *  would answer each with the other's subtree missing from its count. */
+    private readonly queuedRounds = new Map<
+        LogControlPort | null,
+        Promise<LogFlushResult>
+    >();
 
-    /** read per round: config is reassigned during worker startup, so a value
-     *  captured at construction would be the default */
-    private get ackTimeoutMs(): number {
-        return config.CRASH_LOG_FLUSH_TIMEOUT_MS;
-    }
-
-    /** labels a flush id. read off a root because a realm's thread name only
-     *  exists once a logger does. */
-    private get threadName(): string {
-        for (const root of this.roots) {
-            const name = root.getSharedContext().threadName;
-            if (name) return name;
-        }
-        return "realm";
+    constructor(links: WorkerLinks = new WorkerLinks()) {
+        this.links = links;
+        links.onChange((link, change) => {
+            if (change === "added") {
+                const port = logControlPortOver(link);
+                const handle = this.addPort(port, link.ownerLogger);
+                this.portsByTransport.set(link.transport, { port, handle });
+                return;
+            }
+            const held = this.portsByTransport.get(link.transport);
+            if (!held) return;
+            this.portsByTransport.delete(link.transport);
+            held.handle.remove();
+        });
     }
 
     /** adds a root logger; returns the remover. children share the root's store. */
@@ -72,16 +78,15 @@ export class LogFlushBus {
         this.portOwners.set(port, root);
         this.postContextOn(port, root.getSharedContext());
         return {
-            receive: (message) => this.receive(message, port),
             remove: () => {
                 this.portOwners.delete(port);
-                // a removed port can never ack -> settle its waiters now, not
-                // at the timeout
-                for (const waiting of this.pendingAcks.values()) {
-                    waiting.get(port)?.(emptyFlushResult());
-                }
             }
         };
+    }
+
+    /** the port standing on the link a call came in on */
+    public portFor(transport: ATransport): LogControlPort | undefined {
+        return this.portsByTransport.get(transport)?.port;
     }
 
     /** inline-host case: two roots on one bus with no port between them. only
@@ -122,23 +127,6 @@ export class LogFlushBus {
         target.updateSharedContext(update);
     }
 
-    // only reached through a LogPortHandle -> the port always matches
-    private receive(message: LogControlMessage, port: LogControlPort): void {
-        switch (message.type) {
-            case "flushRequest":
-                this.receiveFlushRequest(message, port);
-                return;
-            case "flushAck":
-                this.pendingAcks.get(message.flushId)?.get(port)?.(
-                    message.result
-                );
-                return;
-            case "contextUpdate":
-                this.receiveContextUpdate(message, port);
-                return;
-        }
-    }
-
     /** originate a round. returns at once when no root here uploads - "uploads
      *  off" is realm-wide, so there is nothing to collect. */
     public flushAll(reason: string): Promise<LogFlushResult> {
@@ -166,39 +154,32 @@ export class LogFlushBus {
         return this.flushOwnRealm();
     }
 
+    /** a neighbour asked: run a round that skips the port it came in on and
+     *  answer with what it reached. the reply is the ack. */
+    public receiveFlush(
+        reason: string,
+        fromPort: LogControlPort | undefined
+    ): Promise<LogFlushResult> {
+        return this.scheduleRound(reason, fromPort);
+    }
+
+    /** a neighbour's context changed: apply what its side of the tree may set */
+    public applyInboundContext(
+        port: LogControlPort,
+        context: SharedLoggerContext
+    ): void {
+        const owner = this.portOwners.get(port);
+        if (!owner) return;
+        const update = this.inboundContext(context, port.remoteRealm);
+        if (Object.keys(update).length === 0) return;
+        owner.updateSharedContext(update);
+    }
+
     private hasUploadTarget(): boolean {
         for (const logger of this.roots) {
             if (logger.isUploadEnabled()) return true;
         }
         return false;
-    }
-
-    private receiveFlushRequest(
-        message: LogFlushRequest,
-        port: LogControlPort
-    ): void {
-        void this.scheduleRound(message.reason, port).then((result) => {
-            try {
-                port.post({
-                    type: "flushAck",
-                    flushId: message.flushId,
-                    result
-                });
-            } catch {
-                // realm across the port is gone -> no ack for it
-            }
-        });
-    }
-
-    private receiveContextUpdate(
-        message: LogContextUpdate,
-        port: LogControlPort
-    ): void {
-        const owner = this.portOwners.get(port);
-        if (!owner) return;
-        const update = this.inboundContext(message.context, port.remoteRealm);
-        if (Object.keys(update).length === 0) return;
-        owner.updateSharedContext(update);
     }
 
     /** how much of an inbound context to apply. threadName is absent by
@@ -226,39 +207,35 @@ export class LogFlushBus {
         context: SharedLoggerContext
     ): void {
         try {
-            port.post({ type: "contextUpdate", context: { ...context } });
+            port.postContext({ ...context });
         } catch {
             // realm across the port is gone -> its context is moot
         }
     }
 
-    /** run a round, or fold into the one already queued. a folded request acks
-     *  when that round finishes -> an ack never outruns its POST. */
+    /** run a round, or fold into the one already queued for the same source. a
+     *  folded request acks when that round finishes -> an ack never outruns
+     *  its POST. */
     private scheduleRound(
         reason: string,
         fromPort: LogControlPort | undefined
     ): Promise<LogFlushResult> {
-        if (!this.activeRound) {
-            return this.startRound(
-                reason,
-                fromPort ? new Set([fromPort]) : undefined
-            );
-        }
+        const excluded = fromPort ? new Set([fromPort]) : undefined;
+        if (!this.activeRound) return this.startRound(reason, excluded);
 
-        this.foldExclusion(fromPort);
-        if (this.queuedRound) return this.queuedRound;
+        const source = fromPort ?? null;
+        const folded = this.queuedRounds.get(source);
+        if (folded) return folded;
 
         // waits on the active round's upload only: waiting on the whole round
         // would block behind an ack from the realm that is asking
         const queued = (this.activeLocalFlush ?? this.activeRound)
             .catch(() => undefined)
             .then(() => {
-                const excluded = this.queuedExcluded;
-                this.queuedRound = undefined;
-                this.queuedExcluded = undefined;
+                this.queuedRounds.delete(source);
                 return this.startRound(reason, excluded);
             });
-        this.queuedRound = queued;
+        this.queuedRounds.set(source, queued);
         return queued;
     }
 
@@ -266,11 +243,7 @@ export class LogFlushBus {
         reason: string,
         excluded: Set<LogControlPort> | undefined
     ): Promise<LogFlushResult> {
-        const active = this.runRound(
-            this.nextFlushId(),
-            reason,
-            excluded
-        ).finally(() => {
+        const active = this.runRound(reason, excluded).finally(() => {
             if (this.activeRound === active) {
                 this.activeRound = undefined;
                 this.activeLocalFlush = undefined;
@@ -280,33 +253,13 @@ export class LogFlushBus {
         return active;
     }
 
-    // a port is skipped only when every folded trigger came from it, so widen
-    // by union - a reset would forward the round back to the realms that asked
-    private foldExclusion(fromPort: LogControlPort | undefined): void {
-        if (!fromPort) {
-            // local trigger -> reach every port
-            this.queuedExcluded = new Set();
-            return;
-        }
-        if (!this.queuedRound || !this.queuedExcluded) {
-            this.queuedExcluded = new Set([fromPort]);
-            return;
-        }
-        this.queuedExcluded.add(fromPort);
-    }
-
-    private nextFlushId(): FlushId {
-        return `${this.threadName}-${++this.flushCounter}`;
-    }
-
     private async runRound(
-        flushId: FlushId,
         reason: string,
         excluded: Set<LogControlPort> | undefined
     ): Promise<LogFlushResult> {
         const forwarded = [...this.portOwners.keys()]
             .filter((port) => !excluded?.has(port))
-            .map((port) => this.forward(port, flushId, reason));
+            .map((port) => this.forward(port, reason));
         const local = this.localFlush();
         this.activeLocalFlush = local;
         return sumFlushResults(await Promise.all([local, ...forwarded]));
@@ -325,47 +278,22 @@ export class LogFlushBus {
         return result;
     }
 
-    /** post, then wait for the matching flushAck. bounded by ackTimeoutMs so a
-     *  wedged thread can't stall teardown. */
-    private forward(
+    /** ask the far realm and take its totals. the call's own bound and the
+     *  link closing both reject -> that realm never answered. */
+    private async forward(
         port: LogControlPort,
-        flushId: FlushId,
         reason: string
     ): Promise<LogFlushResult> {
-        return new Promise<LogFlushResult>((resolve) => {
-            let waiting = this.pendingAcks.get(flushId);
-            if (!waiting) {
-                waiting = new Map();
-                this.pendingAcks.set(flushId, waiting);
-            }
-
-            let settled = false;
-            const settle = (result: LogFlushResult) => {
-                if (settled) return;
-                settled = true;
-                clearTimeout(timer);
-                const stillWaiting = this.pendingAcks.get(flushId);
-                stillWaiting?.delete(port);
-                if (stillWaiting?.size === 0) this.pendingAcks.delete(flushId);
-                resolve(result);
-            };
-            const timer = setTimeout(
-                () => settle({ ok: 0, failed: 0, timedOut: 1, entries: 0 }),
-                this.ackTimeoutMs
-            );
-            waiting.set(port, settle);
-
-            try {
-                port.post({ type: "flushRequest", flushId, reason });
-            } catch {
-                settle({ ok: 0, failed: 0, timedOut: 1, entries: 0 });
-            }
-        });
+        try {
+            return await port.flush(reason);
+        } catch {
+            return { ok: 0, failed: 0, timedOut: 1, entries: 0 };
+        }
     }
 }
 
 /** this realm's bus. each thread loads its own copy of this module -> its own
  *  bus, which is the scope ports and root loggers live at. */
-export const realmLogFlushBus = new LogFlushBus();
+export const realmLogFlushBus = new LogFlushBus(realmWorkerLinks);
 
 export default LogFlushBus;

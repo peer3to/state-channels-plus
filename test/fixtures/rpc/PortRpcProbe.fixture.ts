@@ -1,12 +1,15 @@
 // @spec-test-coverage-ignore: port router staging shared by the port-link suites; the suites own the declarations
-import { MessageChannel, type MessagePort } from "node:worker_threads";
+import {
+    MessageChannel,
+    type MessagePort as NodeMessagePort
+} from "node:worker_threads";
 
 import ARpcMethods from "@/rpc/ARpcMethods";
 import ARpcService from "@/rpc/ARpcService";
 import PortRpcRouter, { type PortRpcRouterOptions } from "@/rpc/PortRpcRouter";
 import type MessagePortTransport from "@/transport/MessagePortTransport";
 import type { RemoteRpcServices } from "@/rpc/RemoteRpcProxy";
-import { adaptPort } from "@platform/p2pRuntimeChannel";
+import { adaptPort } from "@/evm/p2pRuntime/node/P2pRuntimeChannel";
 import { createUploaderFixture } from "@test/fixtures/logging/LogUploader.fixture";
 import type { NodeLogger } from "@/utils/logging/node/NodeLogger";
 import type { LogStore } from "@/utils/logging/logStore";
@@ -127,7 +130,7 @@ export function linkedRouters(
 ): { a: ProbeEnd; b: ProbeEnd; close: () => void } {
     const channel = new MessageChannel();
     const build = (
-        port: MessagePort,
+        port: NodeMessagePort,
         routerOptions: PortRpcRouterOptions | undefined
     ): ProbeEnd => {
         const { logger, logStore } = createUploaderFixture({

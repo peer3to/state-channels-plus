@@ -51,3 +51,32 @@ export function createTransferableChannel(): {
         transferablePort: channel.port2
     };
 }
+
+/** this worker's global scope, for an entry that serves the thread above it */
+export function adaptWorkerScope(): RuntimePort {
+    const scope = self as unknown as {
+        postMessage: (message: unknown) => void;
+        addEventListener: (
+            type: "message",
+            listener: (event: MessageEvent) => void
+        ) => void;
+        close: () => void;
+    };
+    return {
+        post(message: unknown) {
+            scope.postMessage(message);
+        },
+        onMessage(handler: (message: unknown) => void) {
+            scope.addEventListener("message", (event: MessageEvent) => {
+                handler(event.data);
+            });
+        },
+        start() {},
+        onClose() {
+            // a dedicated worker scope has no close event; the parent ends it
+        },
+        close() {
+            scope.close();
+        }
+    };
+}

@@ -20,12 +20,13 @@ export type {
 };
 export { decodeLogs, decompressFromBase64, LogFlushBus, realmLogFlushBus };
 export type {
-    FlushId,
-    LogControlMessage,
     LogControlPort,
     LogFlushResult,
     LogPortHandle,
     LogRemoteRealm
 } from "./logControl";
+export { LogControlService } from "./rpc/logControl/LogControlService";
+export { logControlPortOver } from "./rpc/logControl/logControlPort";
+export { LogControlRpcMethods } from "./rpc/logControl/LogControlRpcMethods";
 export type { LogThreadName } from "./Logger";
 export type { LogUploadOutcome } from "./LogUploader";

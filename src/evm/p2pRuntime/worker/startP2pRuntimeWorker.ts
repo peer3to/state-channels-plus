@@ -1,4 +1,3 @@
-import { serializeError } from "../errorWire";
 import { startP2pRuntimeHost } from "../P2pRuntimeHost";
 import { createConfig } from "@/utils/config";
 
@@ -15,25 +14,20 @@ import {
  */
 export function startP2pRuntimeWorker(): void {
     onWorkerBootstrap(async (message) => {
-        const { payload, port } = message;
+        const { payload, port, webRTCBridgePort } = message;
 
         // Re-establish the config singleton inside the worker.
         createConfig(payload.config);
 
         const runtimePort = adaptTransferredPort(port);
 
-        // Funnel autonomous worker-thread errors to the main-thread orchestrator
-        // so they surface as if the host ran inline.
-        onUnhandledWorkerError((error) => {
-            runtimePort.post({
-                type: "hostError",
-                error: serializeError(error)
-            });
-        });
-
         await startP2pRuntimeHost(runtimePort, payload, {
             threadLabel: "sdk",
-            onDisposed: closeWorkerBootstrapPort
+            onDisposed: closeWorkerBootstrapPort,
+            webRTCBridgePort: webRTCBridgePort as MessagePort | undefined,
+            // Funnel autonomous worker-thread errors to the main-thread
+            // orchestrator so they surface as if the host ran inline.
+            onUnhandledError: onUnhandledWorkerError
         });
     });
 }

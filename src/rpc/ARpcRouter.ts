@@ -2,7 +2,6 @@ import type ATransport from "@/transport/ATransport";
 import { TransportType } from "@/transport/TransportType";
 import type { Address } from "@/types/types";
 import type { Logger } from "@/utils/logging/Logger";
-import { LoggerUtils } from "@/utils/LoggerUtils";
 import { hasRpcService } from "@/utils/ObjectChecks";
 import type ARpcService from "./ARpcService";
 import RemoteRpcProxy, { type RemoteRpcProxyType } from "./RemoteRpcProxy";
@@ -91,6 +90,9 @@ export abstract class ARpcRouter<TRoot extends object>
     protected abstract cancelTimeout(handle: unknown): void;
     /** `null` -> requests wait as long as they take unless a call says otherwise */
     protected abstract defaultRequestTimeoutMs(): number | null;
+
+    /** an inbound request about to be dispatched; peers log it */
+    protected onFrameDispatched(_rpc: Rpc, _transport: ATransport): void {}
 
     /** a request settled by reply; port routers log the slow ones */
     protected onRequestSettled(
@@ -293,11 +295,7 @@ export abstract class ARpcRouter<TRoot extends object>
     }
 
     private dispatch(rpc: Rpc, transport: ATransport): void {
-        this.logger.verbose("onRpc", {
-            rpc: LoggerUtils.getRpcLogMetadata(rpc),
-            transportType: TransportType[transport.transportType],
-            peerAddress: transport.peerAddress
-        });
+        this.onFrameDispatched(rpc, transport);
         if (!hasRpcService(this.localRpc, rpc.service)) {
             this.refuse(rpc, transport, `Unknown RPC service '${rpc.service}'`);
             return;

@@ -1,5 +1,4 @@
 import type ATransport from "@/transport/ATransport";
-import type MessagePortTransport from "@/transport/MessagePortTransport";
 import type { Logger } from "@/utils/logging/Logger";
 import type PortRpcRouter from "./PortRpcRouter";
 
@@ -14,8 +13,8 @@ export type LinkId = string;
  *  logger whose context crosses it */
 export type WorkerLink = {
     id: LinkId;
-    transport: MessagePortTransport;
-    router: PortRpcRouter<object>;
+    transport: ATransport;
+    router: PortRpcRouter<any>;
     remoteRealm: WorkerLinkSide;
     ownerLogger: Logger;
 };

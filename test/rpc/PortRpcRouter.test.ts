@@ -203,4 +203,24 @@ describe("PortRpcRouter", function () {
         expect(slow).to.have.length(1);
         expect(slow[0].meta[0].operation).to.equal("probe.slow");
     });
+
+    it("holds inbound requests until released and dispatches them in order", async function () {
+        link = linkedRouters();
+        link.b.router.holdInbound();
+
+        const first = link.a.far.probe.echo("first").request();
+        const second = link.a.far.probe.echo("second").request();
+        await new Promise((resolve) => setTimeout(resolve, 30));
+        // nothing answered while held, and the far root saw nothing
+        expect(link.b.router.localRpc.probe.calls).to.deep.equal([]);
+
+        link.b.router.releaseInbound();
+
+        expect(await first).to.equal("first");
+        expect(await second).to.equal("second");
+        expect(link.b.router.localRpc.probe.calls).to.deep.equal([
+            "echo",
+            "echo"
+        ]);
+    });
 });
