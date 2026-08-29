@@ -19,7 +19,8 @@
 
 ## Responsibility and observable boundary
 
-Browser worker entry point: a `PortRpcRouter` serving `ContractExecutorRoot` over the worker's own scope.
+Browser worker entry point: the node-globals and `Buffer` shims the EVM stack needs, installed before
+anything boots it, then a `PortRpcRouter` serving `ContractExecutorRoot` over the worker's own scope.
 
 ## Key design decisions
 

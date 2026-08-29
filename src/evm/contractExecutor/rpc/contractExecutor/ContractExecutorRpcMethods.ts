@@ -101,7 +101,7 @@ export class ContractExecutorRpcMethods extends ARpcMethods<
         // the port lets the drained loop exit on its own (see
         // workerShutdown.ts for why the loop is never force-stopped)
         const transport = this.senderTransport;
-        setImmediate(() => transport.close(true));
+        setTimeout(() => transport.close(true), 0);
     }
 
     deploy(data: string): Promise<ContractExecutionResult> {

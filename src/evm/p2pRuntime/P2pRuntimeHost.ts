@@ -194,10 +194,10 @@ export async function startP2pRuntimeHost<
         closeAfterReply: (transport: ATransport) => {
             // the reply is posted in the microtasks after the endpoint
             // returns; the macrotask runs after them
-            setImmediate(() => {
+            setTimeout(() => {
                 transport.close(true);
                 void ctx.onDisposed?.();
-            });
+            }, 0);
         }
     };
 
