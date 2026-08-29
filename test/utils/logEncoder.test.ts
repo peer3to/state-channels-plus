@@ -182,6 +182,58 @@ describe("encodeLogEntry", function () {
         }
     });
 
+    it("coerces a hostile message without running its code", function () {
+        // a getter, toJSON and Symbol.toPrimitive that all throw: the old
+        // coercion ran every one of them inside the logger
+        const hostile = {
+            get message(): string {
+                throw new Error("message accessor exploded");
+            },
+            toJSON(): never {
+                throw new Error("toJSON exploded");
+            },
+            [Symbol.toPrimitive](): never {
+                throw new Error("toPrimitive exploded");
+            }
+        };
+        const { logger, logStore } = createUploaderFixture({
+            uploadEndpoint: "http://127.0.0.1:1/logs/upload"
+        });
+        try {
+            expect(() => logger.warn(hostile)).to.not.throw();
+            const [entry] = logStore.getAllLogs();
+
+            const decoded = decodeLogEntry(encodeLogEntry(entry));
+
+            expect(decoded.message).to.equal("[accessor]");
+        } finally {
+            logger.dispose();
+        }
+    });
+
+    it("coerces an Error whose message getter throws", function () {
+        const hostile = new Error("boom");
+        Object.defineProperty(hostile, "message", {
+            configurable: true,
+            get() {
+                throw new Error("message accessor exploded");
+            }
+        });
+        const { logger, logStore } = createUploaderFixture({
+            uploadEndpoint: "http://127.0.0.1:1/logs/upload"
+        });
+        try {
+            expect(() => logger.warn(hostile)).to.not.throw();
+            const [entry] = logStore.getAllLogs();
+
+            const decoded = decodeLogEntry(encodeLogEntry(entry));
+
+            expect(decoded.message).to.equal("[unreadable]");
+        } finally {
+            logger.dispose();
+        }
+    });
+
     it("rejects an entry with no wall-clock timestamp", function () {
         const noWallClock = JSON.stringify({
             time: "1",
