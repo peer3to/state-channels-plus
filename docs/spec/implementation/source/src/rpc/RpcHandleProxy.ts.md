@@ -21,7 +21,8 @@
 
 The per-service typed proxy: any method access on `remoteRpc.<service>` fabricates an envelope
 and returns the matching delivery handler, with the type layer mapping each RpcMethods signature
-to fire-and-forget or request/response by its return type.
+to fire-and-forget or request/response by its return type: `void` is a cast, a value is a request,
+and `Promise<void>` offers both so a caller may await "done".
 
 ## Key design decisions
 

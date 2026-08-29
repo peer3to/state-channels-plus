@@ -19,7 +19,7 @@
 
 ## Responsibility and observable boundary
 
-Deployment-time bridge signer (mirror deployment paths).
+Deployment-time bridge signer (mirror deployment paths): calls the host's `deploySigner` service; a deploy reply is the mined transaction.
 
 ## Key design decisions
 

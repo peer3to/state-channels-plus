@@ -19,7 +19,7 @@
 
 ## Responsibility and observable boundary
 
-The `hostRpc` back-channel: no target → loopback into the local host's service root; peer target → relay the same typed call — local interaction without exposing service objects.
+The `hostRpc` back-channel: no target → loopback into the local host's service root; peer target → relay the same typed call — local interaction without exposing service objects. The call crosses the port as one `hostRpc.call` on the host root's mirror service, which replays it on the host's `remoteRpc`.
 
 ## Key design decisions
 

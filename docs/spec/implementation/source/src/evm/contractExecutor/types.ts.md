@@ -19,7 +19,7 @@
 
 ## Responsibility and observable boundary
 
-Executor operation types.
+Executor operation types and `WorkerLike`, the port-plus-shutdown a platform runtime hands the executor.
 
 ## Key design decisions
 

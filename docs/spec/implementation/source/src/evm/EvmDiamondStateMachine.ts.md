@@ -26,11 +26,9 @@ mirror, and controls the local execution context (time) for window predicates.
 
 ## Key design decisions
 
-Error text delegates to the dependency-free errorMessage helper. Existing catch policy, stack fields, log messages and error propagation remain at this call site. See [EvmDiamondStateMachine.ts](../../../../../../src/evm/EvmDiamondStateMachine.ts#L1).
-
 1. **The mirror deployment is the check engine** — every service's staticCall lands here; nothing protocol-shaped is evaluated outside contract logic ([`INV-MIRROR-1-VAF778`](../../../../specification/enforcement/local-mirror.md#inv-mirror-1-vaf778)).
 2. **Local context control is explicit** so time-driven predicates evaluate under the intended clock (the equivalence constraint of [`REQ-MIRROR-1-XCY9CB`](../../../../specification/enforcement/local-mirror.md#req-mirror-1-xcy9cb)).
-3. **`p2pSetup` is a wrapper over `setupP2pRuntime`** ([setupP2pRuntime.ts](./p2pRuntime/setupP2pRuntime.ts.md)) with the production dependencies; its public signature (`P2pSetupOptions`) is unchanged. The construction returns only after host readiness and disposes the runtime client if deployment completion or application readiness rejects.
+3. **`p2pSetup` returns only after host readiness** — the `deployComplete` reply — and disposes the runtime client if deployment completion or application readiness rejects. In worker mode it mints the WebRTC bridge channel here and sends the worker end in the bootstrap.
 
 ## Inputs, outputs, state, and side effects
 
@@ -88,10 +86,3 @@ Exact test evidence is mapped against these IDs in the verification test reports
 ## Related source reports
 
 - [LocalDiamond](../../contracts/V1/StateChannelDiamondProxy/LocalDiamond.sol.md), [ContractExecutor](./contractExecutor/ContractExecutor.ts.md), [ADiamondStateMachine](../ADiamondStateMachine.ts.md).
-
-## Balance comparison exposure
-
-The EVM adapter forwards full balance values to the existing Solidity lesser-than view and returns its
-Boolean unchanged. This preserves application-specific balance algebra for remote-term validation.
-
-Shared operation owners: [errorMessage.ts.md](../utils/errorMessage.ts.md).

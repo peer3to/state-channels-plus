@@ -19,7 +19,7 @@
 
 ## Responsibility and observable boundary
 
-Node worker entry point.
+Node worker entry point: a `PortRpcRouter` serving `ContractExecutorRoot` over the parent port, plus the crash hooks that collect logs and end the thread.
 
 ## Key design decisions
 

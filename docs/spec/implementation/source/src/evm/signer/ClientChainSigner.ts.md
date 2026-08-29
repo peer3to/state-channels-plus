@@ -19,7 +19,7 @@
 
 ## Responsibility and observable boundary
 
-Client-side chain signer proxy for transaction signing via host authority.
+Client-side chain signer proxy: every operation is a call on the host's `chainSigner` service; transactions cross in their serialized form.
 
 ## Key design decisions
 

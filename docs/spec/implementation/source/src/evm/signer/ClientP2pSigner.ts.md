@@ -19,16 +19,9 @@
 
 ## Responsibility and observable boundary
 
-The client signer mirrors `joinLobby(topic, options)` and boolean `leaveLobby(topic)` across the runtime port.
-Only the serializable caller topic and opening options cross the boundary. The host owns matching,
-negotiation, retry, timers, transports, and cleanup. The client observes only the opened-channel result
-or an undefined matching-cancellation result. A false leave result means matching already handed off.
-
-The client-side signer facade in isolated deployments: forwards signing/collection to the host over `hostRpc` — the key never leaves the host.
+The client-side signer facade in isolated deployments: forwards signing/collection to the host's `p2pSigner` service over the runtime endpoint — the key never leaves the host.
 
 ## Key design decisions
-
-Channel IDs use the shared validation-only bytes32 check. Existing normalization, option decoding and public errors remain at their original boundaries. See [ClientP2pSigner.ts](../../../../../../../src/evm/signer/ClientP2pSigner.ts#L1).
 
 1. **Signing requests cross the boundary; keys do not** ([`REQ-ID-3-KR0BE3`](../../../../../specification/protocol-model/identity.md#req-id-3-kr0be3)).
 
@@ -84,19 +77,4 @@ Exact test evidence is mapped against these IDs in the verification test reports
 
 ## Related source reports
 
-## Channel ownership and leave contribution
-
-The client exposes no channel-ID setter and forwards `leaveChannel` with no generic request timeout. Host
-lifecycle failures remain authoritative. The method is an internal route for `P2pInstance.leaveChannel`; a
-direct signer call does not dispose the outer runtime. This contributes to [`REQ-TJOIN-6-0HEVYH`](../../../../../specification/peer-communication/targeted-channel-join.md#req-tjoin-6-0hevyh) and [`REQ-TJOIN-7-NNGTAY`](../../../../../specification/peer-communication/targeted-channel-join.md#req-tjoin-7-nngtay).
-
 - [identity.md](../../../../../specification/protocol-model/identity.md), [P2pRuntimeHost](../p2pRuntime/P2pRuntimeHost.ts.md).
-
-## Targeted connect implementation
-
-The client validates programmer input before port dispatch, encodes full balances with the SDK codec, sends
-one connect request with an optional option record, and keeps the runtime-client deadline disabled. The
-dedicated cancellation request carries the normalized channel ID and cannot route through `leaveLobby`.
-Boolean results are preserved across the port. See [`REQ-TJOIN-1-5VGR1F`](../../../../../specification/peer-communication/targeted-channel-join.md#req-tjoin-1-5vgr1f).
-
-Shared operation owners: [bytes32.ts.md](../../utils/bytes32.ts.md).

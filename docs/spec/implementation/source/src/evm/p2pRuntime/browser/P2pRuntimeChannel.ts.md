@@ -19,7 +19,8 @@
 
 ## Responsibility and observable boundary
 
-Browser paired-channel implementation (MessageChannel).
+Browser paired-channel implementation (MessageChannel): `adaptPort` for either end and
+`adaptWorkerScope` for a worker entry serving the thread above it.
 
 ## Key design decisions
 

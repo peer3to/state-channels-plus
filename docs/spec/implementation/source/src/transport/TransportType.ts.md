@@ -19,7 +19,8 @@
 
 ## Responsibility and observable boundary
 
-The transport-type enum (preference negotiation vocabulary).
+The transport-type enum (preference negotiation vocabulary), plus `MESSAGE_PORT` for a worker link,
+which is never negotiated.
 
 ## Key design decisions
 

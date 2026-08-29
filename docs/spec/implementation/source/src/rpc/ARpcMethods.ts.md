@@ -19,8 +19,9 @@
 
 ## Responsibility and observable boundary
 
-The RpcMethods base: binds a dispatch to its sender transport and exposes the manager's typed
-remote surface — the only state an endpoint instance carries.
+The RpcMethods base: binds a dispatch to its sender transport and exposes the router's typed
+remote surface — the only state an endpoint instance carries. Generic over the router, so the
+same base serves a peer service under `P2PManager` and a worker-link service under `PortRpcRouter`.
 
 ## Key design decisions
 

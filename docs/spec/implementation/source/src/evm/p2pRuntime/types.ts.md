@@ -19,7 +19,10 @@
 
 ## Responsibility and observable boundary
 
-The runtime port protocol types.
+The one worker-level message: `WorkerBootstrapMessage`, which carries the setup payload, the
+runtime port and the WebRTC bridge port into the worker by transfer — the only thing an RPC envelope
+cannot carry. The port types are re-exported from the transport layer; no request or response
+shapes live here any more.
 
 ## Key design decisions
 

@@ -19,7 +19,7 @@
 
 ## Responsibility and observable boundary
 
-Browser worker runtime bootstrap.
+Browser worker runtime bootstrap: spawns the worker and returns its port and shutdown as a `WorkerLike`.
 
 ## Key design decisions
 
