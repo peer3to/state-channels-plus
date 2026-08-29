@@ -19,13 +19,14 @@
 
 ## Responsibility and observable boundary
 
-Utils re-exports, including the canonical manager ABI/connector and ABI composition. Heavy
-artifact-backed deployment utilities remain path imports so browser consumers of this barrel do
-not load facet bytecode.
+Utils re-exports, including manager ABI composition and the platform-neutral contract-size policy.
+Heavy artifact-backed deployment utilities remain path imports so browser consumers of this barrel
+do not load facet bytecode.
 
 ## Key design decisions
 
-_None — the file is declarative/mechanical; behavior-shaping decisions live with its consumers._
+1. The barrel exposes the contract-size limits and structured errors without exporting routed facet
+   artifacts or deployment scripts.
 
 ## Inputs, outputs, state, and side effects
 

@@ -23,7 +23,8 @@ The runtime port protocol types.
 
 ## Key design decisions
 
-_None — the file is declarative/mechanical; behavior-shaping decisions live with its consumers._
+1. `SerializedContract.abiJson` carries application ABI metadata across the port. For the manager,
+   both runtime sides merge it after the SDK-owned ABI so consumer extensions remain available.
 
 ## Inputs, outputs, state, and side effects
 
@@ -45,7 +46,7 @@ claims complete conformance for a requirement that depends on other files.
 
 ## Assumptions, dependencies, trust boundaries, and limits
 
-- Cross-context values use the canonical transfer-safe encodings; ownership and ordering per the runtime rules.
+- `abiJson` must be valid JSON ABI. Manager consumers apply the shared SDK-first merge policy.
 
 ## Specification adherence
 

@@ -12,13 +12,23 @@ export const stateChannelManagerAbi: Fragment[] = mergeAbis(
     errorAbis as InterfaceAbi
 );
 
+/** SDK-owned manager fragments first, followed by consumer-only extensions. */
+export function mergeStateChannelManagerAbi(
+    consumerAbi?: InterfaceAbi
+): Fragment[] {
+    return consumerAbi
+        ? mergeAbis(stateChannelManagerAbi, consumerAbi)
+        : stateChannelManagerAbi;
+}
+
 export function connectStateChannelManager(
     address: string,
-    runner: ContractRunner | null
+    runner: ContractRunner | null,
+    consumerAbi?: InterfaceAbi
 ): StateChannelManagerInterface {
     return new ethers.Contract(
         address,
-        stateChannelManagerAbi,
+        mergeStateChannelManagerAbi(consumerAbi),
         runner
     ) as unknown as StateChannelManagerInterface;
 }

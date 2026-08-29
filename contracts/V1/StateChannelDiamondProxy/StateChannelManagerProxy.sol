@@ -337,6 +337,7 @@ contract StateChannelManagerProxy is StateChannelCommon {
     /// @dev Registers a compiler-derived selector once during construction.
     function _registerRoute(bytes4 selector, address facet) internal {
         if (selectorRoutes[selector].configured) revert ErrorDuplicateSelectorRegistration(selector);
+        if (facet.code.length == 0) revert ErrorRouteTargetHasNoCode(selector, facet);
         selectorRoutes[selector] = SelectorRoute({facet: facet, configured: true});
     }
 

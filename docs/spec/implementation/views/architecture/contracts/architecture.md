@@ -101,8 +101,8 @@ The mechanics, each verified in code:
   and delegatecalls that facet with raw `msg.data`. Revert data still bubbles through the unchanged
   [`GeneralUtils._delegatecall`](../../../../../../contracts/V1/StateChannelDiamondProxy/utils/GeneralUtils.sol#L6).
   The constructor registers each entry with `_registerRoute(Facet.fn.selector, facetAddress)`, so
-  nothing is hand-hashed and duplicate selector registration reverts exactly. Runtime lookup is one
-  mapping read for configured routes. The route table is constructor-only today; its structure is
+  nothing is hand-hashed; duplicate selector registration and codeless targets revert exactly.
+  Runtime lookup is one mapping read for configured routes. The route table is constructor-only today; its structure is
   the base for a separately designed governance-controlled upgrade path with authorization,
   collision protection, events, and upgrade tests.
 - **Functions implemented on the proxy itself.** Only what needs the proxy's own storage and
@@ -177,15 +177,16 @@ The mechanics, each verified in code:
   ([#L446](../../../../../../contracts/V1/StateChannelDiamondProxy/LocalDiamond.sol#L446)): a declared
   function dispatches before the fallback, whereas production routes that selector to
   `UtilityFacet`. It is not a production deployable.
-- **Callers use one manager binding.** `connectStateChannelManager` combines the exact
-  `StateChannelManagerInterface` function/event surface with generated `errorAbis`, including facet
-  errors, and is the canonical binding for a deployed manager address. `connectLocalDiamond` adds
-  local-only declarations to that same manager ABI.
+- **Callers use one manager binding.** `connectStateChannelManager` starts with the exact
+  `StateChannelManagerInterface` function/event surface and generated `errorAbis`, then appends any
+  consumer ABI. SDK fragments win duplicate signatures; consumer-only fragments remain available
+  to application and host-side custom RPC code. `connectLocalDiamond` adds local-only declarations
+  to that same SDK manager ABI.
 
 ### Assumptions, constraints & dependencies
 
-- The constructor wiring is trusted: whoever deploys chooses the facet addresses and there is no
-  later verification that a facet matches its expected code.
+- The constructor rejects routed facet addresses without code. Whoever deploys still chooses the
+  addresses, and there is no verification that their code matches the expected facets.
 - Facets MUST NOT declare state variables; a facet that did would silently alias the proxy layout.
   `Current:` upheld by convention only — there is no automated layout check (`none — gap`).
 - The proxy inherits OpenZeppelin `ECDSA` transitively; external dependencies are limited to
@@ -214,9 +215,9 @@ sizes from the Hardhat artifacts (`solc 0.8.34`, optimizer `runs: 100`, `viaIR: 
 | `JoinChannelFacet`         |          7,338 | under                                                   |
 | `LocalDiamond` (test-only) |         27,985 | over — acceptable only because it never targets mainnet |
 
-Initcode is comfortably clear of EIP-3860: the proxy's creation bytecode is 24,642 bytes (runtime
-12,464) and its full constructor data is 25,122; `DisputeFraudProofFacet` is 22,743; `LocalDiamond`
-is 40,102 before constructor arguments. All are under 49,152.
+Initcode is clear of EIP-3860: the proxy's creation bytecode is 27,375 bytes (runtime 12,464) and
+its full constructor data is 27,855 bytes; `DisputeFraudProofFacet` is 22,743 bytes; `LocalDiamond`
+is 42,276 bytes before constructor arguments and 42,724 bytes with them. All are under 49,152.
 
 The map is chosen for constant lookup cost, scalable routing, and future upgradeability. The
 current route table is constructor-only. Mutable routing remains a separate governance design with

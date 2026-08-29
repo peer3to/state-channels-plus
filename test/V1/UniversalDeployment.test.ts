@@ -16,9 +16,12 @@ import { createContractExecutorFactory } from "@/evm";
 import LocalContractExecutorSigner from "@/evm/signer/LocalContractExecutorSigner";
 import { connectLocalDiamond } from "@/utils/localDiamond";
 import * as factory from "@test/factory";
-import { ContractSizeLimitError } from "@/utils/contractSize";
-import { createOpenChannelTestObject } from "@test/test_utils/testHelpers";
-import { SignatureUtils } from "@/utils";
+import { ContractSizeLimitError } from "@/index";
+import {
+    createJoinChannelTestObject,
+    createOpenChannelTestObject
+} from "@test/test_utils/testHelpers";
+import { Codec, SignatureUtils, Type } from "@/utils";
 
 describe("Universal Deployment", () => {
     let deployer: HardhatEthersSigner;
@@ -289,6 +292,37 @@ describe("Universal Deployment", () => {
             );
             expect(facetError?.name).to.equal("ECDSAInvalidSignatureLength");
             expect(facetError?.args[0]).to.equal(66n);
+
+            const invalidSubmitterJoin = createJoinChannelTestObject(
+                secondSigner.address
+            );
+            let routedFacetFailure: any;
+            try {
+                await diamondContract.joinChannel(
+                    {
+                        signedJoinChannel: {
+                            encodedJoinChannel: Codec.encode(
+                                invalidSubmitterJoin,
+                                Type.JoinChannel
+                            ),
+                            signature: "0x"
+                        },
+                        signatures: []
+                    },
+                    ethers.ZeroHash,
+                    ethers.ZeroHash
+                );
+            } catch (error) {
+                routedFacetFailure = error;
+            }
+            const routedFacetError = diamondContract.interface.parseError(
+                routedFacetFailure.data
+            );
+            expect(routedFacetError?.name).to.equal(
+                "ErrorJoinChannelInvalidSubmitter"
+            );
+            expect(routedFacetError?.args[0]).to.equal(secondSigner.address);
+            expect(routedFacetError?.args[1]).to.equal(deployer.address);
         });
 
         it("fails with invalid consumer facet", async () => {

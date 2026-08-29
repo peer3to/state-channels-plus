@@ -4,9 +4,9 @@
 > its content hash with `SPEC_REVIEWER="Name" node docs/spec/tools/review.js <file...>`.
 > Any later edit invalidates the record automatically (the file returns to pending as stale).
 
-- Verified (current): **37/542** (7%)
+- Verified (current): **36/542** (7%)
 - Pending (never reviewed): **477**
-- Stale (edited since review): **28**
+- Stale (edited since review): **29**
 
 ## Stale — edited since engineer review
 
@@ -20,12 +20,13 @@
 - [specification/storage/queue.md](../specification/storage/queue.md) — Luke Fishman, 2026-08-17
 - [specification/storage/README.md](../specification/storage/README.md) — Luke Fishman, 2026-08-17
 
-### implementation (9)
+### implementation (10)
 
 - [implementation/source/contracts/V1/StateChannelDiamondProxy/JoinChannelFacet.sol.md](../implementation/source/contracts/V1/StateChannelDiamondProxy/JoinChannelFacet.sol.md) — Luka, 2026-08-19
 - [implementation/source/src/evm/contractExecutor/worker/ContractExecutorWorkerHostCore.ts.md](../implementation/source/src/evm/contractExecutor/worker/ContractExecutorWorkerHostCore.ts.md) — Luka, 2026-08-15
 - [implementation/source/src/evm/contractExecutor/worker/protocol.ts.md](../implementation/source/src/evm/contractExecutor/worker/protocol.ts.md) — Luka, 2026-08-15
 - [implementation/source/src/evm/contractExecutor/WorkerContractExecutor.ts.md](../implementation/source/src/evm/contractExecutor/WorkerContractExecutor.ts.md) — Luka, 2026-08-15
+- [implementation/source/src/evm/p2pRuntime/P2pRuntimeHost.ts.md](../implementation/source/src/evm/p2pRuntime/P2pRuntimeHost.ts.md) — Luka, 2026-08-15
 - [implementation/source/src/rpc/guards/HandshakeCompletedGuard.ts.md](../implementation/source/src/rpc/guards/HandshakeCompletedGuard.ts.md) — Luka, 2026-08-18
 - [implementation/source/src/rpc/services/joinChannel/JoinChannelService.ts.md](../implementation/source/src/rpc/services/joinChannel/JoinChannelService.ts.md) — Luka, 2026-08-19
 - [implementation/source/src/stateManager/StateManager.ts.md](../implementation/source/src/stateManager/StateManager.ts.md) — Luka, 2026-08-18
@@ -551,11 +552,10 @@
 - [specification/storage/progress-markers.md](../specification/storage/progress-markers.md) — Luke Fishman, 2026-08-17
 - [specification/storage/snapshots-and-states.md](../specification/storage/snapshots-and-states.md) — Luke Fishman, 2026-08-17
 
-### implementation (13)
+### implementation (12)
 
 - [implementation/source/src/events/EventBus.ts.md](../implementation/source/src/events/EventBus.ts.md) — Luka, 2026-08-18
 - [implementation/source/src/evm/EvmDiamondStateMachine.ts.md](../implementation/source/src/evm/EvmDiamondStateMachine.ts.md) — Luka, 2026-08-15
-- [implementation/source/src/evm/p2pRuntime/P2pRuntimeHost.ts.md](../implementation/source/src/evm/p2pRuntime/P2pRuntimeHost.ts.md) — Luka, 2026-08-15
 - [implementation/source/src/P2PManager.ts.md](../implementation/source/src/P2PManager.ts.md) — Luka, 2026-08-18
 - [implementation/source/src/ProfileManager.ts.md](../implementation/source/src/ProfileManager.ts.md) — Luka, 2026-08-18
 - [implementation/source/src/rpc/ARpcService.ts.md](../implementation/source/src/rpc/ARpcService.ts.md) — Luka, 2026-08-18

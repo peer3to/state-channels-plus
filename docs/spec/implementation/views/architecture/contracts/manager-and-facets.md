@@ -66,7 +66,7 @@ which declares the complete surface, and against the implementing proxy/facet bo
   [`_facetForSelector`](../../../../../../contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol#L286)
   returns for `msg.sig`, passing raw `msg.data`.
 - The constructor installs routes with `_registerRoute(Facet.fn.selector, facetAddress)`. Duplicate
-  registration reverts, lookup is constant-time, and runtime mutation is not exposed. Mutable
+  registration and codeless route targets revert, lookup is constant-time, and runtime mutation is not exposed. Mutable
   governance routing remains separate future work.
 - **Introspection.** `facetAddressForSelector(bytes4) returns (address)` is read-only and reports
   where the fallback would send a selector. Selectors the proxy declares itself never reach the

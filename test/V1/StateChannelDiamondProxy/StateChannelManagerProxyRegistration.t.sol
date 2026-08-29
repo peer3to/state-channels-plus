@@ -3,21 +3,28 @@ pragma solidity ^0.8.8;
 
 import {Test} from "forge-std/Test.sol";
 import {DisputeManagerFacet} from "../../../contracts/V1/StateChannelDiamondProxy/DisputeManagerFacet.sol";
-import {ErrorDuplicateSelectorRegistration} from "../../../contracts/V1/StateChannelDiamondProxy/Errors.sol";
+import {
+    ErrorDuplicateSelectorRegistration,
+    ErrorRouteTargetHasNoCode
+} from "../../../contracts/V1/StateChannelDiamondProxy/Errors.sol";
 import {StateChannelManagerProxy} from "../../../contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol";
+import {StateChannelManagerInterface} from "../../../contracts/V1/StateChannelManagerInterface.sol";
+import {UtilityFacet} from "../../../contracts/V1/StateChannelDiamondProxy/UtilityFacet.sol";
+
+contract RouteTarget {}
 
 contract DuplicateRouteRegistrationHarness is StateChannelManagerProxy {
-    constructor()
+    constructor(address routeTarget)
         StateChannelManagerProxy(
             address(1),
-            address(2),
-            address(3),
-            address(4),
-            address(5),
-            address(6),
-            address(7),
-            address(8),
-            address(9),
+            routeTarget,
+            routeTarget,
+            routeTarget,
+            routeTarget,
+            routeTarget,
+            routeTarget,
+            routeTarget,
+            routeTarget,
             address(10),
             0,
             0,
@@ -26,31 +33,59 @@ contract DuplicateRouteRegistrationHarness is StateChannelManagerProxy {
             0
         )
     {
-        _registerRoute(DisputeManagerFacet.uploadDispute.selector, address(2));
+        _registerRoute(DisputeManagerFacet.uploadDispute.selector, routeTarget);
     }
 }
 
 contract StateChannelManagerProxyRegistrationTest is Test {
     function test_constructor_duplicateSelectorRegistration_reverts() public {
+        RouteTarget routeTarget = new RouteTarget();
         vm.expectRevert(
             abi.encodeWithSelector(
                 ErrorDuplicateSelectorRegistration.selector, DisputeManagerFacet.uploadDispute.selector
             )
         );
-        new DuplicateRouteRegistrationHarness();
+        new DuplicateRouteRegistrationHarness(address(routeTarget));
     }
 
-    function test_facetAddressForSelector_configuredZeroFacet_returnsZero() public {
-        StateChannelManagerProxy proxy = new StateChannelManagerProxy(
+    function test_constructor_codelessRouteTarget_reverts() public {
+        RouteTarget routeTarget = new RouteTarget();
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                ErrorRouteTargetHasNoCode.selector, DisputeManagerFacet.uploadDispute.selector, address(0)
+            )
+        );
+        new StateChannelManagerProxy(
             address(1),
             address(0),
-            address(3),
-            address(4),
-            address(5),
-            address(6),
-            address(7),
-            address(8),
-            address(9),
+            address(routeTarget),
+            address(routeTarget),
+            address(routeTarget),
+            address(routeTarget),
+            address(routeTarget),
+            address(routeTarget),
+            address(routeTarget),
+            address(10),
+            0,
+            0,
+            0,
+            0,
+            0
+        );
+    }
+
+    function test_routedSelector_executesOnFacet() public {
+        UtilityFacet utilityFacet = new UtilityFacet();
+        StateChannelManagerProxy proxy = new StateChannelManagerProxy(
+            address(1),
+            address(utilityFacet),
+            address(utilityFacet),
+            address(utilityFacet),
+            address(utilityFacet),
+            address(utilityFacet),
+            address(utilityFacet),
+            address(utilityFacet),
+            address(utilityFacet),
             address(10),
             0,
             0,
@@ -59,6 +94,6 @@ contract StateChannelManagerProxyRegistrationTest is Test {
             0
         );
 
-        assertEq(proxy.facetAddressForSelector(DisputeManagerFacet.uploadDispute.selector), address(0));
+        assertEq(StateChannelManagerInterface(address(proxy)).getP2pTime(), 15);
     }
 }

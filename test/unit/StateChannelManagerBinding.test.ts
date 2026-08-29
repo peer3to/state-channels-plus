@@ -6,6 +6,7 @@ import {
 } from "@typechain-types";
 import {
     connectStateChannelManager,
+    mergeStateChannelManagerAbi,
     stateChannelManagerAbi
 } from "@/utils/stateChannelManager";
 import {
@@ -87,6 +88,39 @@ describe("stateChannelManager binding", function () {
             const data = reconstructed.encodeErrorResult(errorName);
             expect(reconstructed.parseError(data)?.name).to.equal(errorName);
         }
+    });
+
+    it("merges consumer ABI extensions after the SDK manager ABI", function () {
+        const consumerAbi = [
+            "function getP2pTime() view returns (bytes32)",
+            "function consumerValue(uint256 input) view returns (uint256)",
+            "event ConsumerEvent(bytes32 indexed value)",
+            "error ConsumerError(uint256 code)"
+        ];
+        const merged = mergeStateChannelManagerAbi(consumerAbi);
+        const binding = connectStateChannelManager(
+            MANAGER_ADDRESS,
+            null,
+            consumerAbi
+        );
+        const bindingInterface: ethers.Interface = binding.interface;
+
+        expect(bindingInterface.fragments).to.deep.equal(merged);
+        expect(
+            bindingInterface.getFunction("getP2pTime")?.outputs[0].type
+        ).to.equal("uint256");
+        expect(bindingInterface.getFunction("consumerValue")).to.not.equal(
+            null
+        );
+        expect(bindingInterface.getEvent("ConsumerEvent")).to.not.equal(null);
+        const encodedError = bindingInterface.encodeErrorResult(
+            "ConsumerError",
+            [7n]
+        );
+        const decodedError = bindingInterface.parseError(encodedError);
+        expect(decodedError?.name).to.equal("ConsumerError");
+        expect(decodedError?.args[0]).to.equal(7n);
+        expect(duplicateFragmentKeys(merged)).to.deep.equal([]);
     });
 
     it("connects a read-only binding when no runner is given", function () {

@@ -27,6 +27,8 @@ validation, and structured size violations used by the build scan and artifact-b
 1. The required input is a narrow named-bytecode shape, not another repository `Artifact` type.
 2. Initcode checks use fully encoded deployment data, so constructor arguments count.
 3. Missing bytecode fields fail as invalid artifacts instead of measuring as zero.
+4. The public package entry re-exports both structured error classes and both limit constants, so
+   callers of exported deployment helpers can catch and inspect failures by type.
 
 ## Inputs, outputs, state, and side effects
 

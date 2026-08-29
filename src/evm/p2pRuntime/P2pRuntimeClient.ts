@@ -1,4 +1,4 @@
-import { ethers } from "ethers";
+import { ethers, type InterfaceAbi } from "ethers";
 import { StateChannelManagerInterface } from "@typechain-types";
 
 import { maybeStampErrorWithPeerAddress } from "@/utils/errorPeerAddress";
@@ -135,7 +135,8 @@ class P2pRuntimeClient<T = ethers.Contract> {
         );
         this.stateChannelManagerContract = connectStateChannelManager(
             options.scm.address,
-            this.chainSigner
+            this.chainSigner,
+            JSON.parse(options.scm.abiJson) as InterfaceAbi
         );
         const contract = new ethers.Contract(
             options.stateMachine.address,

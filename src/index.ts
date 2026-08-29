@@ -94,8 +94,15 @@ export { Address } from "@ethereumjs/util";
 export * from "@/utils/logging";
 export {
     connectStateChannelManager,
+    mergeStateChannelManagerAbi,
     stateChannelManagerAbi
 } from "@/utils/stateChannelManager";
+export {
+    ContractSizeLimitError,
+    EIP170_RUNTIME_LIMIT_BYTES,
+    EIP3860_INITCODE_LIMIT_BYTES,
+    InvalidContractArtifactError
+} from "@/utils/contractSize";
 
 export * from "../typechain-types";
 export * as DataTypes from "../typechain-types/contracts/V1/types/DataTypes";

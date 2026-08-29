@@ -22,6 +22,7 @@ export * from "./EthersResultProxy";
 export * from "./address";
 export * from "./localDiamond";
 export * from "./contractAbi";
+export * from "./contractSize";
 export * from "./stateChannelManager";
 
 export function sleep(ms: number): Promise<void> {

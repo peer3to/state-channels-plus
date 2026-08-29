@@ -29,6 +29,9 @@ drain, restart).
 1. **The host signs; the client never holds the key** — signing authority stays in one trusted context ([`REQ-ID-3-KR0BE3`](../../../../../specification/protocol-model/identity.md#req-id-3-kr0be3)).
 2. **Everything crosses as serialized messages over the pair** — inline and worker deployments share the protocol (the transport-neutrality decision of the review §44).
 3. **Application readiness closes startup** — the host awaits the custom root after constructing the runtime graph, disposes partial state on rejection, then starts its service-loop monitor with the configured fatal guard and emits the runtime-ready timing marker when Node stdout is available. Browser hosts skip the Node-only marker.
+4. **The host uses the same manager ABI merge as the client.** SDK fragments are installed first,
+   then the serialized consumer ABI is appended before the contract enters `StateManager`. Host-side
+   custom RPC services can call consumer functions without losing SDK errors.
 
 ## Inputs, outputs, state, and side effects
 
@@ -51,6 +54,8 @@ claims complete conformance for a requirement that depends on other files.
 ## Assumptions, dependencies, trust boundaries, and limits
 
 - Cross-context values use the canonical transfer-safe encodings; ownership and ordering per the runtime rules.
+- The application-supplied manager ABI must be valid JSON. It may extend the manager surface, but
+  cannot replace a duplicate SDK fragment.
 
 ## Specification adherence
 
