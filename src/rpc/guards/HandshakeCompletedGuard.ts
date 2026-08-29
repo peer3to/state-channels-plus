@@ -50,11 +50,7 @@ export class HandshakeCompletedGuard extends AGuard<ARpcService<ARpcMethods>> {
     }
 
     check(_rpc: Rpc, transport: ATransport): boolean {
-        const profile =
-            this.service.p2pManager.profileManager.getProfileByTransport(
-                transport
-            );
-        return !!profile && profile.getIsHandshakeCompleted();
+        return this.isLiveAuthenticatedTransport(transport);
     }
 
     private getQueue(transport: ATransport): RpcQueue {
@@ -63,6 +59,37 @@ export class HandshakeCompletedGuard extends AGuard<ARpcService<ARpcMethods>> {
         const created = new RpcQueue();
         this.rpcQueueByTransport.set(transport, created);
         return created;
+    }
+
+    private isCurrentTransport(transport: ATransport): boolean {
+        if (
+            this.service.p2pManager.isDisposed ||
+            this.service.p2pManager.stateManager.isDisposed ||
+            transport.isClosed
+        ) {
+            return false;
+        }
+        const profile =
+            this.service.p2pManager.profileManager.getProfileByTransport(
+                transport
+            );
+        return profile?.getTransport() === transport;
+    }
+
+    private isLiveAuthenticatedTransport(transport: ATransport): boolean {
+        if (
+            this.service.p2pManager.isDisposed ||
+            this.service.p2pManager.stateManager.isDisposed ||
+            transport.isClosed
+        ) {
+            return false;
+        }
+        return transport.peerAddress !== undefined;
+    }
+
+    private clearQueue(transport: ATransport, queue: RpcQueue): void {
+        queue.clear();
+        this.rpcQueueByTransport.delete(transport);
     }
 
     onFailure(rpc: Rpc, transport: ATransport): void {
@@ -101,15 +128,19 @@ export class HandshakeCompletedGuard extends AGuard<ARpcService<ARpcMethods>> {
                 // and start a new waiter (in the timeout case).
                 queue.markWaiting(false);
 
-                if (completed) {
+                if (completed && this.isLiveAuthenticatedTransport(transport)) {
                     // Replay in original arrival order.
                     queue.drain((queued) => {
                         this.service.runRPC(queued, transport);
                     });
+                    this.rpcQueueByTransport.delete(transport);
                     return;
                 }
 
-                queue.clear();
+                this.clearQueue(transport, queue);
+
+                // A retired transport or disposed owner must not act on a late waiter.
+                if (!this.isCurrentTransport(transport)) return;
 
                 // Negotiation timed out; treat as failure.
                 this.service.logger.warn(
@@ -133,6 +164,8 @@ export class HandshakeCompletedGuard extends AGuard<ARpcService<ARpcMethods>> {
             return;
         }
 
+        if (transport.isClosed) return;
+
         const profile =
             this.service.p2pManager.profileManager.getProfileByTransport(
                 transport
@@ -140,7 +173,7 @@ export class HandshakeCompletedGuard extends AGuard<ARpcService<ARpcMethods>> {
         const peerAddress = profile?.evmAddress?.toString();
 
         this.service.logger.warn(
-            "No peer profile for transport; disconnecting",
+            "Unauthenticated transport attempted guarded RPC; disconnecting",
             {
                 peerAddress,
                 service: rpc.service,

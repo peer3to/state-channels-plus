@@ -1,22 +1,22 @@
-import { ATransport, BannablePeerInfo } from "@/transport";
+import type ATransport from "@/transport/ATransport";
 import { Address } from "@/types/types";
+
+export interface BannablePeerInfo {
+    ban(value?: boolean): void;
+}
 
 //TODO? maybe rename to ParticipantProfile to be consistent with the rest of the codebase, even though PeerProfile sounds better
 class PeerProfile {
     transport: ATransport | undefined;
-    evmAddress: Address; //TODO! - AAdress -> base class for different address types (when we do substrate and other address formats)
+    evmAddress: Address | undefined; //TODO! - AAdress -> base class for different address types (when we do substrate and other address formats)
     hpAddress: string | undefined;
     isLeader: boolean;
     isBlackListed: boolean;
-    // The Holepunch peer-info handle for this identity, kept even after the
-    // active transport is upgraded to WebRTC so `ProfileManager` can still
-    // apply ban policy (upgrade ban / fallback release) once Holepunch is no
-    // longer the active transport.
+    // This handle belongs to the profile before and after authentication.
     private holepunchPeerInfo: BannablePeerInfo | undefined;
-    private isHandshakeCompleted = false;
     constructor(
         transport: ATransport,
-        evmAddress: Address,
+        evmAddress?: Address,
         hpAddress?: string | undefined
     ) {
         this.transport = transport;
@@ -44,11 +44,22 @@ class PeerProfile {
     public setHolepunchPeerInfo(peerInfo: BannablePeerInfo) {
         this.holepunchPeerInfo = peerInfo;
     }
+    public removeHolepunchPeerInfo() {
+        this.holepunchPeerInfo = undefined;
+    }
+    public takeHolepunchPeerInfo(): BannablePeerInfo | undefined {
+        const peerInfo = this.holepunchPeerInfo;
+        this.holepunchPeerInfo = undefined;
+        return peerInfo;
+    }
     public getHolepunchPeerInfo(): BannablePeerInfo | undefined {
         return this.holepunchPeerInfo;
     }
     public getEvmAddress() {
         return this.evmAddress;
+    }
+    public setEvmAddress(evmAddress: Address) {
+        this.evmAddress = evmAddress;
     }
     public getHpAddress() {
         return this.hpAddress;
@@ -58,12 +69,6 @@ class PeerProfile {
     }
     public getIsLeader() {
         return this.isLeader;
-    }
-    public setIsHandshakeCompleted(value: boolean) {
-        this.isHandshakeCompleted = value;
-    }
-    public getIsHandshakeCompleted() {
-        return this.isHandshakeCompleted;
     }
 }
 

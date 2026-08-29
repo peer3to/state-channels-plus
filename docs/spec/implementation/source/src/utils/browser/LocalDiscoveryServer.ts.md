@@ -23,7 +23,8 @@ Browser-side discovery client counterpart.
 
 ## Key design decisions
 
-_None — the file is declarative/mechanical; behavior-shaping decisions live with its consumers._
+1. **Discovery metadata is not authentication.** The relay's announced address selects the
+   handshake peer but is not written to `transport.peerAddress`; final admission owns that field.
 
 ## Inputs, outputs, state, and side effects
 
@@ -39,9 +40,9 @@ _None — the file is declarative/mechanical; behavior-shaping decisions live wi
 A file may contribute to several requirements; this report describes the contribution and never
 claims complete conformance for a requirement that depends on other files.
 
-| Source file                                                                               | Specification IDs                                                                                |
-| ----------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------ |
-| [LocalDiscoveryServer.ts](../../../../../../../src/utils/browser/LocalDiscoveryServer.ts) | [`REQ-RUNTIME-4-B0N70Y`](../../../../../specification/runtime/execution.md#req-runtime-4-b0n70y) |
+| Source file                                                                               | Specification IDs                                                                                                                                                                                       |
+| ----------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| [LocalDiscoveryServer.ts](../../../../../../../src/utils/browser/LocalDiscoveryServer.ts) | [`REQ-RUNTIME-4-B0N70Y`](../../../../../specification/runtime/execution.md#req-runtime-4-b0n70y), [`REQ-AUTH-3-ZV74KB`](../../../../../specification/peer-communication/handshake.md#req-auth-3-zv74kb) |
 
 ## Assumptions, dependencies, trust boundaries, and limits
 
@@ -65,8 +66,9 @@ Status enum: `Covered` | `Partial` | `Contradicts` | `Missing`. Evidence cells a
 **Here:** / **Other files:** so each row is auditable from its links alone; genuine gaps go in the
 Gap column. Audit state is file-level (Status header), never a row status.
 
-| Requirement / invariant | Implementation status | Evidence | Gap / divergence |
-| ----------------------- | --------------------- | -------- | ---------------- |
+| Requirement / invariant                                                                               | Implementation status | Evidence                                                                                                                                                                                                                                                            | Gap / divergence |
+| ----------------------------------------------------------------------------------------------------- | --------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------- |
+| [`REQ-AUTH-3-ZV74KB`](../../../../../specification/peer-communication/handshake.md#req-auth-3-zv74kb) | Covered               | **Here:** the unauthenticated browser transport starts without `peerAddress`; the handshake receives the discovery address separately. **Other files:** [InitHandshakeService](../../rpc/services/initHandshake/InitHandshakeService.ts.md) verifies and admits it. | None.            |
 
 ## Component test obligations
 

@@ -1,41 +1,35 @@
-import { ATransport, TransportType } from "@/transport";
-import PeerProfile from "@/PeerProfile";
+import ATransport from "@/transport/ATransport";
+import { TransportType } from "@/transport/TransportType";
+import PeerProfile, { BannablePeerInfo } from "@/PeerProfile";
 import { Address } from "./types/types";
 import { getChecksumAddress } from "./utils";
 import { LoggerUtils } from "./utils/LoggerUtils";
 
-/**
- * Single owner of Holepunch ban/unban policy. No other transport or RPC code
- * may call `peerInfo.ban()` directly - callers ask `ProfileManager` to apply
- * policy for an identity and it invokes the transport-specific behaviour.
- *
- * Three cases are covered:
- * 1. Explicit blacklist (`blacklistProfile`) - ban forever.
- * 2. A Holepunch->WebRTC upgrade succeeds (`updateTransport`) - temporarily
- *    ban Holepunch so Hyperswarm doesn't reconnect the relay transport while
- *    WebRTC is healthy.
- * 3. The WebRTC transport closes (`releaseHolepunchBanOnWebRtcClose`) - unban
- *    Holepunch so it can reconnect as the fallback transport, unless the
- *    peer is explicitly blacklisted (case 1 wins and stays banned).
- */
+// ProfileManager alone owns explicit bans, upgrade bans, and fallback release.
+// An explicit blacklist always wins over transport fallback.
 class ProfileManager {
     private mapTransportToProfile: WeakMap<ATransport, PeerProfile> =
         new WeakMap<ATransport, PeerProfile>();
-    private mapEvmAddressToProfile: Map<string, PeerProfile> = new Map();
+    private mapEvmAddressToProfile: Map<Address, PeerProfile> = new Map();
     private mapHpAddressToProfile: Map<Address, PeerProfile> = new Map<
         Address,
         PeerProfile
     >();
 
+    public registerTransport(transport: ATransport): PeerProfile {
+        const existingProfile = this.mapTransportToProfile.get(transport);
+        if (existingProfile) return existingProfile;
+
+        const profile = new PeerProfile(transport);
+        this.mapTransportToProfile.set(transport, profile);
+        return profile;
+    }
+
     public registerProfile(profile: PeerProfile) {
         const evmAddress = profile.getEvmAddress();
         const transport = profile.getTransport();
         if (transport) {
-            this.mapTransportToProfile.set(transport, profile);
-            if (evmAddress && !transport.peerAddress) {
-                transport.peerAddress = getChecksumAddress(evmAddress);
-            }
-            this.trackBannablePeerInfo(transport, profile);
+            this.attachTransportProfile(transport, profile);
         }
         if (evmAddress)
             this.mapEvmAddressToProfile.set(
@@ -47,6 +41,41 @@ class ProfileManager {
             this.mapHpAddressToProfile.set(hpAddress, profile);
         }
     }
+    public authenticateTransport(
+        transport: ATransport,
+        evmAddress: Address
+    ): PeerProfile | undefined {
+        const normalizedAddress = getChecksumAddress(evmAddress);
+        const existingProfile =
+            this.mapEvmAddressToProfile.get(normalizedAddress);
+        if (existingProfile) {
+            if (existingProfile.isBlackListed) {
+                this.blacklistPeer(transport);
+                transport.close(true);
+                return undefined;
+            }
+            const currentTransport = existingProfile.getTransport();
+            if (
+                currentTransport?.transportType === TransportType.WEBRTC &&
+                !currentTransport.isClosed &&
+                transport.transportType === TransportType.HOLEPUNCH
+            ) {
+                transport.close(true);
+                return undefined;
+            }
+        }
+
+        transport.peerAddress = normalizedAddress;
+        if (existingProfile) {
+            this.updateTransport(normalizedAddress, transport);
+            return existingProfile;
+        }
+
+        const profile = this.registerTransport(transport);
+        profile.setEvmAddress(normalizedAddress);
+        this.registerProfile(profile);
+        return profile;
+    }
     public unregisterProfile(profile: PeerProfile) {
         const transport = profile.getTransport();
         if (transport) this.mapTransportToProfile.delete(transport);
@@ -55,6 +84,7 @@ class ProfileManager {
             this.mapEvmAddressToProfile.delete(getChecksumAddress(evmAddress));
         const hpAddress = profile.getHpAddress();
         if (hpAddress) this.mapHpAddressToProfile.delete(hpAddress);
+        profile.removeHolepunchPeerInfo();
     }
     public updateTransport(profileAddress: string, newTransport: ATransport) {
         const profile = this.mapEvmAddressToProfile.get(
@@ -84,12 +114,8 @@ class ProfileManager {
             );
         }
 
-        // Ensure the new transport carries the peer identity.
-        newTransport.peerAddress = getChecksumAddress(profileAddress);
-
         profile.setTransport(newTransport);
-        this.mapTransportToProfile.set(newTransport, profile);
-        this.trackBannablePeerInfo(newTransport, profile);
+        this.attachTransportProfile(newTransport, profile);
     }
     public removeTransport(transport: ATransport, isUpgraded = false) {
         const profile = this.mapTransportToProfile.get(transport);
@@ -100,19 +126,17 @@ class ProfileManager {
     public getProfileByTransport(
         transport: ATransport
     ): PeerProfile | undefined {
-        const existingProfile = this.mapTransportToProfile.get(transport);
-        if (existingProfile) {
-            return existingProfile;
-        }
+        const transportProfile = this.mapTransportToProfile.get(transport);
+        if (transportProfile) return transportProfile;
+        if (!transport.peerAddress) return undefined;
 
-        for (const profile of this.mapEvmAddressToProfile.values()) {
-            if (profile.getTransport() === transport) {
-                this.mapTransportToProfile.set(transport, profile);
-                return profile;
-            }
-        }
+        const identityProfile = this.mapEvmAddressToProfile.get(
+            getChecksumAddress(transport.peerAddress)
+        );
+        if (identityProfile?.getTransport() !== transport) return undefined;
 
-        return undefined;
+        this.mapTransportToProfile.set(transport, identityProfile);
+        return identityProfile;
     }
     public getProfileByEvmAddress(
         evmAddress: Address
@@ -127,41 +151,44 @@ class ProfileManager {
         return this.getProfileByEvmAddress(evmAddress)?.getTransport() ?? null;
     }
 
-    /**
-     * Case 1: explicit blacklist. Bans the Holepunch peer and never unbans
-     * it - `releaseHolepunchBanOnWebRtcClose` checks `isBlackListed` and
-     * refuses to lift a ban applied here.
-     */
-    public blacklistProfile(profile: PeerProfile): void {
+    public setBannablePeerInfo(
+        transport: ATransport,
+        peerInfo: BannablePeerInfo
+    ): void {
+        this.registerTransport(transport).setHolepunchPeerInfo(peerInfo);
+    }
+
+    public blacklistPeer(peer: ATransport | Address): ATransport | undefined {
+        if (peer instanceof ATransport) {
+            const profile = this.getProfileByTransport(peer);
+            if (profile) this.blacklistProfile(profile);
+            return peer;
+        }
+
+        const profile = this.getProfileByEvmAddress(peer);
+        if (!profile) return undefined;
+        this.blacklistProfile(profile);
+        return profile.getTransport();
+    }
+
+    public releaseHolepunchBanOnWebRtcClose(transport: ATransport): void {
+        if (transport.transportType !== TransportType.WEBRTC) return;
+        const profile = this.getProfileByTransport(transport);
+        if (
+            !profile ||
+            profile.getTransport() !== transport ||
+            profile.isBlackListed
+        ) {
+            return;
+        }
+        profile.getHolepunchPeerInfo()?.ban(false);
+    }
+
+    private blacklistProfile(profile: PeerProfile): void {
         profile.blacklist();
         profile.getHolepunchPeerInfo()?.ban(true);
     }
 
-    /**
-     * Case 3 (release): the WebRTC transport for this profile closed. Unban
-     * the stored Holepunch peer-info so Holepunch can reconnect as the
-     * fallback transport - unless the profile is explicitly blacklisted, in
-     * which case the ban from `blacklistProfile` stays in place.
-     *
-     * Note: Hyperswarm doesn't schedule a retry timer for a banned peer, so
-     * lifting the ban doesn't by itself force an immediate outbound retry -
-     * rediscovery/announce or `swarm.joinPeer(publicKey)` is what triggers
-     * the next outbound attempt. Inbound connections are accepted again
-     * right away.
-     */
-    public releaseHolepunchBanOnWebRtcClose(transport: ATransport): void {
-        if (transport.transportType !== TransportType.WEBRTC) return;
-        const profile = this.getProfileByTransport(transport);
-        if (!profile || profile.isBlackListed) return;
-        profile.getHolepunchPeerInfo()?.ban(false);
-    }
-
-    /**
-     * Case 2: a Holepunch->WebRTC upgrade succeeded. Temporarily ban the
-     * Holepunch peer so Hyperswarm doesn't reconnect the relay transport
-     * while the preferred WebRTC transport is healthy. Lifted again by
-     * `releaseHolepunchBanOnWebRtcClose` once the WebRTC transport closes.
-     */
     private applyUpgradeBanPolicy(
         oldTransport: ATransport,
         newTransport: ATransport,
@@ -171,23 +198,29 @@ class ProfileManager {
             oldTransport.transportType !== TransportType.HOLEPUNCH ||
             newTransport.transportType !== TransportType.WEBRTC
         ) {
+            if (
+                oldTransport.transportType === TransportType.WEBRTC &&
+                newTransport.transportType === TransportType.HOLEPUNCH &&
+                !profile.isBlackListed
+            ) {
+                profile.getHolepunchPeerInfo()?.ban(false);
+            }
             return;
         }
         profile.getHolepunchPeerInfo()?.ban(true);
     }
 
-    // Captures the Holepunch peer-info handle for `profile` whenever
-    // `transport` exposes one, so the profile keeps it even after its active
-    // transport moves on to WebRTC (transports that aren't Holepunch return
-    // `undefined` and leave any previously stored handle untouched).
-    private trackBannablePeerInfo(
+    private attachTransportProfile(
         transport: ATransport,
         profile: PeerProfile
     ): void {
-        const bannablePeerInfo = transport.getBannablePeerInfo();
-        if (bannablePeerInfo) {
-            profile.setHolepunchPeerInfo(bannablePeerInfo);
+        const transportProfile = this.mapTransportToProfile.get(transport);
+        if (transportProfile && transportProfile !== profile) {
+            const peerInfo = transportProfile.takeHolepunchPeerInfo();
+            if (peerInfo) profile.setHolepunchPeerInfo(peerInfo);
+            if (transportProfile.isBlackListed) profile.blacklist();
         }
+        this.mapTransportToProfile.set(transport, profile);
     }
 }
 

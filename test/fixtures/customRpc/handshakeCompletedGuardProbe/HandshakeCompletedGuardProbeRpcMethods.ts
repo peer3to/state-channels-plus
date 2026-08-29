@@ -7,11 +7,17 @@ import type {
     CompletedGuardProbe,
     AddresslessGuardProbe,
     CustomFailureGuardProbe,
+    DisposedWaiterGuardProbe,
     HandshakeCompletedGuardProbeService,
     PunishmentGuardProbe,
     QueueIsolationGuardProbe,
     QueueGuardProbe,
     RequestGuardProbe,
+    RetiredTransportGuardProbe,
+    GraceOverlapGuardProbe,
+    ExactTransportQueueGuardProbe,
+    ClosedTransportDispatchGuardProbe,
+    LateCompletionGuardProbe,
     TimeoutGuardProbe
 } from "./HandshakeCompletedGuardProbeService";
 
@@ -55,5 +61,31 @@ export class HandshakeCompletedGuardProbeRpcMethods extends ARpcMethods<
 
     public probeCustomFailure(): Promise<CustomFailureGuardProbe> {
         return this.service.probeCustomFailure();
+    }
+
+    public probeRetiredTransportCompletion(): Promise<RetiredTransportGuardProbe> {
+        return this.service.probeRetiredTransportCompletion();
+    }
+
+    public probeDisposedWaiter(
+        completed: boolean
+    ): Promise<DisposedWaiterGuardProbe> {
+        return this.service.probeDisposedWaiter(completed);
+    }
+
+    public probeLateCompletionAfterTimeout(): Promise<LateCompletionGuardProbe> {
+        return this.service.probeLateCompletionAfterTimeout();
+    }
+
+    public probeAuthenticatedGraceOverlap(): Promise<GraceOverlapGuardProbe> {
+        return this.service.probeAuthenticatedGraceOverlap();
+    }
+
+    public probeExactTransportQueueOwnership(): Promise<ExactTransportQueueGuardProbe> {
+        return this.service.probeExactTransportQueueOwnership();
+    }
+
+    public probeClosedTransportDispatch(): Promise<ClosedTransportDispatchGuardProbe> {
+        return this.service.probeClosedTransportDispatch();
     }
 }

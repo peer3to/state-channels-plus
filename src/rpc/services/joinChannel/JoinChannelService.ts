@@ -34,34 +34,6 @@ export default class JoinChannelService extends ARpcService<JoinChannelRpcMethod
         return new JoinChannelRpcMethods(transport, this);
     }
 
-    /**
-     * Handles a peer's "my join landed" announcement. All this does is ask
-     * `P2PManager` to take its deferred promotion decisions again - the
-     * announcement itself proves nothing, and the re-check reads the
-     * on-chain participant union as usual.
-     *
-     * Ignores an announcement naming a channel that isn't ours: a peer
-     * joining some other channel changes nothing about who belongs in this
-     * one, and acting on it would spend a chain read per unrelated join.
-     */
-    public handleMembershipAnnouncement(
-        transport: ATransport,
-        channelId: ChannelId
-    ): void {
-        const ourChannelId = this.p2pManager.stateManager.channelId;
-        if (String(channelId) !== String(ourChannelId)) {
-            this.logger.debug(
-                "Ignoring membership announcement for another channel",
-                { announced: String(channelId), peerAddress: transport.peerAddress }
-            );
-            return;
-        }
-        this.logger.debug("Peer announced its channel membership", {
-            peerAddress: transport.peerAddress
-        });
-        void this.p2pManager.reevaluatePendingChannelMembership();
-    }
-
     public async collectJoinChannelConfirmation(
         joinChannel: JoinChannelStruct
     ): Promise<PreparedJoinChannelConfirmation> {

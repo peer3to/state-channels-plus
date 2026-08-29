@@ -100,7 +100,7 @@ describe("HandshakeCompletedGuard", function () {
         expect(result.secondDisconnected).to.equal(true);
     });
 
-    it("rejects missing profiles through both addressless punishment branches", async function () {
+    it("rejects unauthenticated profiles through both addressless punishment branches", async function () {
         const result = await fixture
             .control()
             .handshakeCompletedGuardProbe.probeAddresslessFallback()
@@ -120,5 +120,104 @@ describe("HandshakeCompletedGuard", function () {
         expect(result.failureCalls).to.equal(1);
         expect(result.disconnected).to.equal(false);
         expect(result.invocations).to.deep.equal([]);
+    });
+
+    it("drops queued calls when their transport retires before authentication completes", async function () {
+        const result = await fixture
+            .control()
+            .handshakeCompletedGuardProbe.probeRetiredTransportCompletion()
+            .request();
+
+        expect(result.waitCalls).to.equal(1);
+        expect(result.invocations).to.deep.equal(["replacement"]);
+        expect(result.retiredClosed).to.equal(true);
+        expect(result.retiredRegistered).to.equal(false);
+        expect(result.retiredBlacklisted).to.equal(false);
+        expect(result.replacementCurrent).to.equal(true);
+    });
+
+    it("drops queued calls when a disposed owner receives late authentication success", async function () {
+        const result = await fixture
+            .control()
+            .handshakeCompletedGuardProbe.probeDisposedWaiter(true)
+            .request();
+
+        expect(result.invocations).to.deep.equal([]);
+        expect(result.blacklisted).to.equal(false);
+        expect(result.closeCalls).to.equal(1);
+        expect(result.responses).to.deep.equal([]);
+        expect(result.managerDisposed).to.equal(true);
+    });
+
+    it("does not punish after a disposed owner's authentication waiter fails", async function () {
+        const result = await fixture
+            .control()
+            .handshakeCompletedGuardProbe.probeDisposedWaiter(false)
+            .request();
+
+        expect(result.invocations).to.deep.equal([]);
+        expect(result.blacklisted).to.equal(false);
+        expect(result.closeCalls).to.equal(1);
+        expect(result.responses).to.deep.equal([]);
+        expect(result.managerDisposed).to.equal(true);
+    });
+
+    it("does not revive a timed-out queue after late authentication", async function () {
+        const result = await fixture
+            .control()
+            .handshakeCompletedGuardProbe.probeLateCompletionAfterTimeout()
+            .request();
+
+        expect(result.waitCalls).to.equal(2);
+        expect(result.invocations).to.deep.equal(["replacement"]);
+        expect(result.originalBlacklisted).to.equal(true);
+        expect(result.originalDisconnected).to.equal(true);
+        expect(result.replacementConnected).to.equal(true);
+    });
+
+    it("allows guarded RPCs on an authenticated transport during replacement grace", async function () {
+        const result = await fixture
+            .control()
+            .handshakeCompletedGuardProbe.probeAuthenticatedGraceOverlap()
+            .request();
+
+        expect(result.invocations).to.deep.equal(["original-live"]);
+        expect(result.originalClosed).to.equal(false);
+        expect(result.replacementClosed).to.equal(false);
+        expect(result.originalAuthenticated).to.equal(true);
+        expect(result.replacementCurrent).to.equal(true);
+        expect(result.profileBlacklisted).to.equal(false);
+        expect(result.activeConnections).to.equal(2);
+    });
+
+    it("releases a queued RPC only when its exact transport authenticates", async function () {
+        const result = await fixture
+            .control()
+            .handshakeCompletedGuardProbe.probeExactTransportQueueOwnership()
+            .request();
+
+        expect(result.beforeAuthentication).to.deep.equal([]);
+        expect(result.afterReplacementAuthentication).to.deep.equal([]);
+        expect(result.finalInvocations).to.deep.equal([
+            "original-first",
+            "original-second"
+        ]);
+        expect(result.originalAuthenticated).to.equal(true);
+        expect(result.replacementAuthenticated).to.equal(true);
+        expect(result.originalCurrent).to.equal(true);
+        expect(result.profileBlacklisted).to.equal(false);
+    });
+
+    it("drops a late frame dispatched after its authenticated transport closes", async function () {
+        const result = await fixture
+            .control()
+            .handshakeCompletedGuardProbe.probeClosedTransportDispatch()
+            .request();
+
+        expect(result.invocations).to.deep.equal([]);
+        expect(result.originalClosed).to.equal(true);
+        expect(result.replacementClosed).to.equal(false);
+        expect(result.replacementConnected).to.equal(true);
+        expect(result.profileBlacklisted).to.equal(false);
     });
 });

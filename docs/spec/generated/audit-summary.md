@@ -18,16 +18,16 @@ Detailed statements, source evidence, design analysis, and test mappings remain 
 
 ## Readiness
 
-- Requirements/invariants: 244
-- Structurally complete requirement paths: **8/244** (3%)
-- Current engineer-approved paths: **0/244** (0%)
-- Current security-accepted paths: **0/244** (0%)
-- Final ready paths: **0/244** (0%)
-- Source files assigned to implementation subjects: **248/264** (94%)
-- Test declarations mapped or explicitly ignored: **893/1594** (56%)
-- Open questions: 38
+- Requirements/invariants: 251
+- Structurally complete requirement paths: **11/251** (4%)
+- Current engineer-approved paths: **0/251** (0%)
+- Current security-accepted paths: **0/251** (0%)
+- Final ready paths: **0/251** (0%)
+- Source files assigned to implementation subjects: **249/264** (94%)
+- Test declarations mapped or explicitly ignored: **939/1641** (57%)
+- Open questions: 39
 - Active findings: 17
-- Strict blocking items: 5225
+- Strict blocking items: 5271
 
 ## Requirement paths
 
@@ -35,6 +35,7 @@ Detailed statements, source evidence, design analysis, and test mappings remain 
 | --- | --- | --- | --- | ---: | --- | --- | --- | --- | --- |
 | [`INV-AUTH-1-J0PRYA`](../specification/peer-communication/handshake.md#inv-auth-1-j0prya) | [INV-AUTH-1-J0PRYA · 1 plan](../specification/peer-communication/handshake.md#inv-auth-1-j0prya) | [Covered](../implementation/source/src/rpc/services/initHandshake/InitHandshakeService.ts.md#conformance-traceability) | 1/4 permutations evidenced | 1 | None linked | Gap | Approval pending | Assessment pending | Not ready |
 | [`INV-AUTH-2-VQ6D54`](../specification/peer-communication/handshake.md#inv-auth-2-vq6d54) | [INV-AUTH-2-VQ6D54 · 1 plan](../specification/peer-communication/handshake.md#inv-auth-2-vq6d54) | [Covered](../implementation/source/src/rpc/services/initHandshake/InitHandshakeRpcMethods.ts.md#conformance-traceability) | 1/5 permutations evidenced | 1 | None linked | Gap | Approval pending | Assessment pending | Not ready |
+| [`INV-AUTH-3-0QP5E9`](../specification/peer-communication/handshake.md#inv-auth-3-0qp5e9) | [INV-AUTH-3-0QP5E9 · 1 plan](../specification/peer-communication/handshake.md#inv-auth-3-0qp5e9) | [Covered](../implementation/source/src/rpc/services/initHandshake/InitHandshakeService.ts.md#conformance-traceability) | 0/2 permutations evidenced | 0 | [`OQ-45-ACZCDE`](../specification/open-questions.md#oq-45-aczcde) | Gap | Approval pending | Blocked | Not ready |
 | [`INV-BLKSTORE-1-MK4W8D`](../specification/storage/blocks.md#inv-blkstore-1-mk4w8d) | [INV-BLKSTORE-1-MK4W8D · 1 plan](../specification/storage/blocks.md#inv-blkstore-1-mk4w8d) | [Covered](../implementation/source/src/storage/BlockStorage.ts.md#conformance-traceability) | 4/4 permutations evidenced | 4 | None linked | Complete | Approval pending | Assessment pending | Not ready |
 | [`INV-BLOCK-PIPE-1-1AB2ME`](../specification/block-progression/block-processing.md#inv-block-pipe-1-1ab2me) | [INV-BLOCK-PIPE-1-1AB2ME · 1 plan](../specification/block-progression/block-processing.md#inv-block-pipe-1-1ab2me) | [Covered](../implementation/source/src/stateManager/block/BlockProductionService.ts.md#conformance-traceability) | 1/16 permutations evidenced | 1 | None linked | Gap | Approval pending | Assessment pending | Not ready |
 | [`INV-CONFIG-1-0FJ2HX`](../specification/runtime/configuration.md#inv-config-1-0fj2hx) | [INV-CONFIG-1-0FJ2HX · 1 plan](../specification/runtime/configuration.md#inv-config-1-0fj2hx) | [Covered](../implementation/views/operations/configuration.md#conformance-traceability) | 0/14 permutations evidenced | 0 | None linked | Gap | Approval pending | Assessment pending | Not ready |
@@ -86,6 +87,9 @@ Detailed statements, source evidence, design analysis, and test mappings remain 
 | [`REQ-AUTH-2-BQ5CRG`](../specification/peer-communication/handshake.md#req-auth-2-bq5crg) | [REQ-AUTH-2-BQ5CRG · 1 plan](../specification/peer-communication/handshake.md#req-auth-2-bq5crg) | [Covered](../implementation/source/src/rpc/services/initHandshake/InitHandshakeService.ts.md#conformance-traceability) | 0/3 permutations evidenced | 0 | None linked | Gap | Approval pending | Assessment pending | Not ready |
 | [`REQ-AUTH-3-ZV74KB`](../specification/peer-communication/handshake.md#req-auth-3-zv74kb) | [REQ-AUTH-3-ZV74KB · 1 plan](../specification/peer-communication/handshake.md#req-auth-3-zv74kb) | [Covered](../implementation/source/src/rpc/services/initHandshake/InitHandshakeService.ts.md#conformance-traceability) | 0/5 permutations evidenced | 0 | None linked | Gap | Approval pending | Assessment pending | Not ready |
 | [`REQ-AUTH-4-JWCF71`](../specification/peer-communication/handshake.md#req-auth-4-jwcf71) | [REQ-AUTH-4-JWCF71 · 1 plan](../specification/peer-communication/handshake.md#req-auth-4-jwcf71) | [Covered](../implementation/source/src/rpc/services/initHandshake/InitHandshakeService.ts.md#conformance-traceability) | 0/3 permutations evidenced | 0 | None linked | Gap | Approval pending | Assessment pending | Not ready |
+| [`REQ-AUTH-5-BQG9AG`](../specification/peer-communication/synchronization.md#req-auth-5-bqg9ag) | [REQ-AUTH-5-BQG9AG · 1 plan](../specification/peer-communication/synchronization.md#req-auth-5-bqg9ag) | [Covered](../implementation/source/src/P2PManager.ts.md#conformance-traceability) | 7/11 permutations evidenced | 7 | [`OQ-45-ACZCDE`](../specification/open-questions.md#oq-45-aczcde) | Gap | Approval pending | Blocked | Not ready |
+| [`REQ-AUTH-6-E7SSH3`](../specification/peer-communication/handshake.md#req-auth-6-e7ssh3) | [REQ-AUTH-6-E7SSH3 · 1 plan](../specification/peer-communication/handshake.md#req-auth-6-e7ssh3) | [Covered](../implementation/source/src/rpc/services/initHandshake/InitHandshakeService.ts.md#conformance-traceability) | 0/9 permutations evidenced | 0 | None linked | Gap | Approval pending | Assessment pending | Not ready |
+| [`REQ-AUTH-7-VJFSD5`](../specification/peer-communication/handshake.md#req-auth-7-vjfsd5) | [REQ-AUTH-7-VJFSD5 · 1 plan](../specification/peer-communication/handshake.md#req-auth-7-vjfsd5) | [Covered](../implementation/source/src/P2PManager.ts.md#conformance-traceability) | 0/5 permutations evidenced | 0 | [`OQ-45-ACZCDE`](../specification/open-questions.md#oq-45-aczcde) | Gap | Approval pending | Blocked | Not ready |
 | [`REQ-BAL-1-Z8RH4V`](../specification/protocol-model/state-machines.md#req-bal-1-z8rh4v) | [REQ-BAL-1-Z8RH4V · 1 plan](../specification/protocol-model/state-machines.md#req-bal-1-z8rh4v) | [Partial](../implementation/views/concepts/state-machines.md#conformance-traceability) | 0/33 permutations evidenced | 0 | None linked | Gap | Approval pending | Assessment pending | Not ready |
 | [`REQ-BAL-2-KTSW9B`](../specification/protocol-model/state-machines.md#req-bal-2-ktsw9b) | [REQ-BAL-2-KTSW9B · 1 plan](../specification/protocol-model/state-machines.md#req-bal-2-ktsw9b) | [Partial](../implementation/views/concepts/state-machines.md#conformance-traceability) | 0/34 permutations evidenced | 0 | None linked | Gap | Approval pending | Assessment pending | Not ready |
 | [`REQ-BAL-3-P7Q83F`](../specification/protocol-model/state-machines.md#req-bal-3-p7q83f) | [REQ-BAL-3-P7Q83F · 1 plan](../specification/protocol-model/state-machines.md#req-bal-3-p7q83f) | [Partial](../implementation/views/concepts/state-machines.md#conformance-traceability) | 0/39 permutations evidenced | 0 | None linked | Gap | Approval pending | Assessment pending | Not ready |
@@ -226,7 +230,7 @@ Detailed statements, source evidence, design analysis, and test mappings remain 
 | [`REQ-RPC-4-9VX0B9`](../specification/peer-communication/rpc.md#req-rpc-4-9vx0b9) | [REQ-RPC-4-9VX0B9 · 1 plan](../specification/peer-communication/rpc.md#req-rpc-4-9vx0b9) | [Partial](../implementation/views/architecture/rpc.md#conformance-traceability) | 4/8 permutations evidenced | 3 | None linked | Gap | Approval pending | Assessment pending | Not ready |
 | [`REQ-RPC-5-CV1R1Y`](../specification/peer-communication/rpc.md#req-rpc-5-cv1r1y) | [REQ-RPC-5-CV1R1Y · 1 plan](../specification/peer-communication/rpc.md#req-rpc-5-cv1r1y) | [Missing](../implementation/views/architecture/rpc.md#conformance-traceability) | 3/11 permutations evidenced | 2 | None linked | Gap | Approval pending | Assessment pending | Not ready |
 | [`REQ-RPC-6-E60S4J`](../specification/peer-communication/rpc.md#req-rpc-6-e60s4j) | [REQ-RPC-6-E60S4J · 1 plan](../specification/peer-communication/rpc.md#req-rpc-6-e60s4j) | [Covered](../implementation/source/src/P2PManager.ts.md#conformance-traceability) | 6/6 permutations evidenced | 4 | None linked | Complete | Approval pending | Assessment pending | Not ready |
-| [`REQ-RPC-7-9CBSHK`](../specification/peer-communication/rpc.md#req-rpc-7-9cbshk) | [REQ-RPC-7-9CBSHK · 1 plan](../specification/peer-communication/rpc.md#req-rpc-7-9cbshk) | [Partial](../implementation/source/src/rpc/guards/HandshakeCompletedGuard.ts.md#conformance-traceability) | 5/5 permutations evidenced | 5 | None linked | Gap | Approval pending | Assessment pending | Not ready |
+| [`REQ-RPC-7-9CBSHK`](../specification/peer-communication/rpc.md#req-rpc-7-9cbshk) | [REQ-RPC-7-9CBSHK · 1 plan](../specification/peer-communication/rpc.md#req-rpc-7-9cbshk) | [Partial](../implementation/source/src/P2PManager.ts.md#conformance-traceability) | 12/12 permutations evidenced | 12 | None linked | Gap | Approval pending | Assessment pending | Not ready |
 | [`REQ-RPC-8-44XECF`](../specification/peer-communication/rpc.md#req-rpc-8-44xecf) | [REQ-RPC-8-44XECF · 1 plan](../specification/peer-communication/rpc.md#req-rpc-8-44xecf) | [Missing](../implementation/source/src/rpc/services/initHandshake/InitHandshakeService.ts.md#conformance-traceability) | 0/3 permutations evidenced | 0 | None linked | Gap | Approval pending | Assessment pending | Not ready |
 | [`REQ-RUNTIME-1-RSM6MZ`](../specification/runtime/execution.md#req-runtime-1-rsm6mz) | [REQ-RUNTIME-1-RSM6MZ · 1 plan](../specification/runtime/execution.md#req-runtime-1-rsm6mz) | [Covered](../implementation/source/src/evm/contractExecutor/worker/protocol.ts.md#conformance-traceability) | 0/14 permutations evidenced | 0 | None linked | Gap | Approval pending | Assessment pending | Not ready |
 | [`REQ-RUNTIME-2-KBXKTG`](../specification/runtime/execution.md#req-runtime-2-kbxktg) | [REQ-RUNTIME-2-KBXKTG · 1 plan](../specification/runtime/execution.md#req-runtime-2-kbxktg) | [Covered](../implementation/source/src/evm/contractExecutor/worker/ContractExecutorWorkerHostCore.ts.md#conformance-traceability) | 1/12 permutations evidenced | 1 | None linked | Gap | Approval pending | Assessment pending | Not ready |
@@ -275,17 +279,20 @@ Detailed statements, source evidence, design analysis, and test mappings remain 
 | [`REQ-TRUST-5-NDVRW8`](../specification/security/trust-model.md#req-trust-5-ndvrw8) | [REQ-TRUST-5-NDVRW8 · 1 plan](../specification/security/trust-model.md#req-trust-5-ndvrw8) | [Covered](../implementation/views/security/trust-model.md#conformance-traceability) | 0/6 permutations evidenced | 0 | None linked | Gap | Approval pending | Assessment pending | Not ready |
 | [`REQ-TRUST-6-Z586T0`](../specification/security/trust-model.md#req-trust-6-z586t0) | [REQ-TRUST-6-Z586T0 · 1 plan](../specification/security/trust-model.md#req-trust-6-z586t0) | [Covered](../implementation/views/security/trust-model.md#conformance-traceability) | 0/8 permutations evidenced | 0 | None linked | Gap | Approval pending | Assessment pending | Not ready |
 | [`REQ-UPG-1-MFBTZ1`](../specification/peer-communication/transport-upgrade.md#req-upg-1-mfbtz1) | [REQ-UPG-1-MFBTZ1 · 1 plan](../specification/peer-communication/transport-upgrade.md#req-upg-1-mfbtz1) | [Partial](../implementation/source/src/rpc/services/WebRTCSetup/WebRTCSetupService.ts.md#conformance-traceability) | 0/4 permutations evidenced | 0 | None linked | Gap | Approval pending | Assessment pending | Not ready |
-| [`REQ-UPG-2-WH7BC7`](../specification/peer-communication/transport-upgrade.md#req-upg-2-wh7bc7) | [REQ-UPG-2-WH7BC7 · 1 plan](../specification/peer-communication/transport-upgrade.md#req-upg-2-wh7bc7) | [Covered](../implementation/source/src/ProfileManager.ts.md#conformance-traceability) | 1/4 permutations evidenced | 1 | None linked | Gap | Approval pending | Assessment pending | Not ready |
+| [`REQ-UPG-2-WH7BC7`](../specification/peer-communication/transport-upgrade.md#req-upg-2-wh7bc7) | [REQ-UPG-2-WH7BC7 · 1 plan](../specification/peer-communication/transport-upgrade.md#req-upg-2-wh7bc7) | [Covered](../implementation/source/src/ProfileManager.ts.md#conformance-traceability) | 2/5 permutations evidenced | 2 | None linked | Gap | Approval pending | Assessment pending | Not ready |
 | [`REQ-UPG-3-T1SRMS`](../specification/peer-communication/transport-upgrade.md#req-upg-3-t1srms) | [REQ-UPG-3-T1SRMS · 1 plan](../specification/peer-communication/transport-upgrade.md#req-upg-3-t1srms) | [Covered](../implementation/source/src/rpc/services/initHandshake/InitHandshakeService.ts.md#conformance-traceability) | 0/6 permutations evidenced | 0 | None linked | Gap | Approval pending | Assessment pending | Not ready |
+| [`REQ-UPG-4-M2XDBA`](../specification/peer-communication/transport-upgrade.md#req-upg-4-m2xdba) | [REQ-UPG-4-M2XDBA · 1 plan](../specification/peer-communication/transport-upgrade.md#req-upg-4-m2xdba) | [Covered](../implementation/source/src/PeerProfile.ts.md#conformance-traceability) | 9/9 permutations evidenced | 9 | None linked | Complete | Approval pending | Assessment pending | Not ready |
+| [`REQ-UPG-5-YQV7MJ`](../specification/peer-communication/transport-upgrade.md#req-upg-5-yqv7mj) | [REQ-UPG-5-YQV7MJ · 1 plan](../specification/peer-communication/transport-upgrade.md#req-upg-5-yqv7mj) | [Covered](../implementation/source/src/HolepunchRelay.ts.md#conformance-traceability) | 8/8 permutations evidenced | 8 | None linked | Complete | Approval pending | Assessment pending | Not ready |
+| [`REQ-UPG-6-BC60XD`](../specification/peer-communication/transport-upgrade.md#req-upg-6-bc60xd) | [REQ-UPG-6-BC60XD · 1 plan](../specification/peer-communication/transport-upgrade.md#req-upg-6-bc60xd) | [Covered](../implementation/source/src/Holepunch.ts.md#conformance-traceability) | 6/6 permutations evidenced | 6 | None linked | Complete | Approval pending | Assessment pending | Not ready |
 
 ## Global gaps
 
-- 16 source/contract file(s) have no implementation-subject owner.
-- 701 test declaration(s) are unaccounted.
-- 38 open question(s) require decisions.
+- 15 source/contract file(s) have no implementation-subject owner.
+- 702 test declaration(s) are unaccounted.
+- 39 open question(s) require decisions.
 - 17 active finding(s) remain.
-- 244 requirement path(s) lack current engineer approval.
-- 244 requirement path(s) lack current security-risk acceptance.
+- 251 requirement path(s) lack current engineer approval.
+- 251 requirement path(s) lack current security-risk acceptance.
 
 ## Audit sources
 

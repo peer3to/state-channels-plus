@@ -95,6 +95,18 @@ by dispatch instead of constructor identity. This fixes an availability failure 
 bundles without granting peer trust: frame validation, service-method checks, guards, and payload
 validation remain unchanged.
 
+Handshake completion no longer accepts a peer-supplied membership announcement and no RPC endpoint
+can promote a transport outside the local-status dispatcher. This removes an authorization-shaped
+remote input from connection admission. Every transport starts with an addressless `PeerProfile`,
+and its Holepunch ban handle stays on that profile while `ProfileManager` alone applies policy.
+Ordinary unauthenticated close cannot ban a peer, while explicit unauthenticated blacklist can. A stale WebRTC close cannot release the active
+fallback ban. Final identity attachment independently refuses a late bootstrap connection while
+WebRTC is healthy and refuses every transport for an excluded identity, so an in-flight connection
+cannot bypass the SDK ban handle. Authenticated-RPC queues also die with their original transport
+or manager and cannot execute or punish after disposal. A late frame dispatched after local transport
+close is dropped without blacklisting the identity or tearing down its healthy replacement. These changes narrow existing trust boundaries;
+they do not resolve the separate open rate-limit, ICE-target, or protocol-version findings.
+
 The RPC verification ledger now separates implemented boundary coverage from missing controls.
 Endpoint hard stops, guard ordering and isolation, peer-bound response settlement, and cleanup after
 implemented winners have executable evidence. Cancellation, aggregate admission limits, and

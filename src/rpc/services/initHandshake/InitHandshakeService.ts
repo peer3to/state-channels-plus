@@ -4,7 +4,6 @@ import Clock from "@/Clock";
 
 import { TransportType } from "@/transport/TransportType";
 import ATransport from "@/transport/ATransport";
-import PeerProfile from "@/PeerProfile";
 import InitHandshakeRpcMethods from "./InitHandshakeRpcMethods";
 import type P2PManager from "@/P2PManager";
 import { TimeoutManager } from "@/utils/TimeoutManager";
@@ -271,17 +270,12 @@ class InitHandshakeService extends ARpcService<InitHandshakeRpcMethods> {
         // Boundary: peerAddress may come from non-ethers sources; canonicalize once.
         const checksummed = getChecksumAddress(peerAddress);
         this.verifiedPeerAddressByTransport.set(transport, checksummed);
-        transport.peerAddress = checksummed;
     }
 
     public isHandshakeCompletedForTransport(transport: ATransport): boolean {
-        const address = transport.peerAddress;
-        const profileManager = this.p2pManager.profileManager;
-        const profile = address
-            ? profileManager.getProfileByEvmAddress(address)
-            : profileManager.getProfileByTransport(transport);
-
-        const isCompleted = !!profile && profile.getIsHandshakeCompleted();
+        const profile =
+            this.p2pManager.profileManager.getProfileByTransport(transport);
+        const isCompleted = transport.peerAddress !== undefined;
 
         const transportMeta = LoggerUtils.getTransportMetadata(transport);
         this.logger.verbose(
@@ -392,28 +386,25 @@ class InitHandshakeService extends ARpcService<InitHandshakeRpcMethods> {
         const stateManager = this.p2pManager.stateManager;
         if (stateManager.isDisposed) return;
 
-        // Only create/update the profile once the handshake has fully completed.
-        let profile =
-            this.p2pManager.profileManager.getProfileByEvmAddress(
-                verifiedPeerAddress
-            );
+        const profile = this.p2pManager.profileManager.authenticateTransport(
+            transport,
+            verifiedPeerAddress
+        );
         if (!profile) {
-            profile = new PeerProfile(transport, verifiedPeerAddress);
-            this.p2pManager.profileManager.registerProfile(profile);
-        } else {
-            this.p2pManager.profileManager.updateTransport(
-                profile.getEvmAddress().toString(),
-                transport
-            );
+            this.inFlightHandshakeTransports.delete(transport);
+            LoggerUtils.logInitHandshakeMessage(this.logger, transport, {
+                direction: "local",
+                message: "rejected",
+                verifiedPeerAddress,
+                didReceiveAck: true,
+                remotePreferred
+            });
+            return;
         }
 
-        // Ensure the transport always carries the canonical peer address.
-        transport.peerAddress = verifiedPeerAddress;
-
-        profile.setIsHandshakeCompleted(true);
         this.inFlightHandshakeTransports.delete(transport);
 
-        const completedPeerAddress = profile.getEvmAddress().toString();
+        const completedPeerAddress = verifiedPeerAddress.toString();
         LoggerUtils.logInitHandshakeMessage(this.logger, transport, {
             direction: "local",
             message: "completed",
@@ -436,13 +427,7 @@ class InitHandshakeService extends ARpcService<InitHandshakeRpcMethods> {
             );
         }
 
-        // Handshake lifecycle ends here: identity is verified and the profile
-        // is registered/updated above, but that does NOT imply the peer is
-        // admitted to the channel connection set. `ProfileManager` tracks
-        // identity/transport; `P2PManager.openConnections` is the
-        // broadcast/`getConnectedPeers`/cleanup set. Whoever owns this
-        // transport (e.g. the channel-connection path) decides whether to
-        // promote it via this hook - this service does not decide.
+        // P2PManager owns post-handshake routing for the current local status.
         this.p2pManager.stateManager.p2pEventHooks.handshakeCompleted?.(
             completedPeerAddress
         );

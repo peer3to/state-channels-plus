@@ -38,6 +38,16 @@ handshake and, on completion, replaces the old transport in the peer's profile
 ([`ProfileManager.updateTransport`](../../../../../../../src/ProfileManager.ts#L44), [./README.md](./README.md)
 §6.8).
 
+`PeerProfile` keeps the bootstrap handle from transport creation through authentication and cutover, while `ProfileManager` owns
+the ban policy. A successful Holepunch-to-WebRTC replacement bans the fallback handle. Only closure
+of the profile's current WebRTC transport may release it; stale close is inert, and blacklist wins.
+Final handshake admission also refuses a Holepunch replacement while current WebRTC is healthy or
+the identity is explicitly blacklisted. After current WebRTC closes, an unblacklisted fallback may
+authenticate, become current, and carry traffic.
+
+Transport preference does not define authentication. During the upgrade grace window, both old and
+new open transports that completed their own handshake may carry guarded RPCs until retirement.
+
 Position: strictly **after** authentication. The service carries a `HandshakeCompletedGuard`
 ([`WebRTCSetupService` constructor](../../../../../../../src/rpc/services/WebRTCSetup/WebRTCSetupService.ts#L1)
 line 45), so every remote signaling method is refused unless the sender transport already maps to a
