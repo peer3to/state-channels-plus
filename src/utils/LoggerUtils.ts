@@ -1,3 +1,4 @@
+import type StateManager from "@/stateManager/StateManager";
 import {
     DisputeStruct,
     TimeoutStruct,
@@ -372,7 +373,7 @@ export class LoggerUtils {
         isInfoLevel = false
     ): void {
         const meta = this.getTransportMetadata(transport);
-        const logger = transport.p2pManager.logger;
+        const logger = transport.router.logger;
 
         logger[isInfoLevel ? "info" : "warn"]("🔌 Peer disconnected", {
             ...meta
@@ -394,14 +395,17 @@ export class LoggerUtils {
 
     static getTransportMetadata(transport: ATransport) {
         const peerAddress = transport.peerAddress || "unknown";
-        const stateManager = transport.p2pManager.stateManager;
         const transportType = TransportType[transport.transportType];
+        // a port router has no state manager -> no channel to name
+        const stateManager = (
+            transport.router as { stateManager?: StateManager }
+        ).stateManager;
 
         return {
             peerAddress,
             transportType,
-            channelId: stateManager.channelId,
-            forkId: stateManager.forkId.toString()
+            channelId: stateManager?.channelId,
+            forkId: stateManager?.forkId.toString()
         };
     }
     static getBlockMetadata(block: Block, storage?: Storage) {

@@ -1,4 +1,5 @@
 import type P2PManager from "@/P2PManager";
+import type { RpcRouterLike } from "@/rpc/ARpcRouter";
 import { TransportType } from "./TransportType";
 import Rpc, {
     RpcResponse,
@@ -7,17 +8,22 @@ import Rpc, {
 } from "@/rpc/Rpc";
 import { LoggerUtils } from "@/utils/LoggerUtils";
 import { getChecksumAddress } from "@/utils/address";
-import { Address } from "@/types";
 import { hasMethod, hasProperty } from "@/utils/ObjectChecks";
 
 abstract class ATransport {
     abstract transportType: TransportType;
     isClosed: boolean = false;
     peerAddress?: string;
-    p2pManager: P2PManager;
+    /** the router this transport delivers to: the peer manager or a port router */
+    readonly router: RpcRouterLike;
 
-    constructor(p2pManager: P2PManager) {
-        this.p2pManager = p2pManager;
+    constructor(router: RpcRouterLike) {
+        this.router = router;
+    }
+
+    /** the peer transports live on the peer manager */
+    get p2pManager(): P2PManager {
+        return this.router as P2PManager;
     }
 
     /**
@@ -52,18 +58,13 @@ abstract class ATransport {
         if (!this.isClosed) {
             LoggerUtils.logTransportDisconnect(this, isExpected);
             this.isClosed = true;
-            if (!isExpected) {
-                this.p2pManager.stateManager.p2pEventHooks?.onDisconnection?.(
-                    this.peerAddress as Address
-                );
-            }
-            this.p2pManager.disconnectConnection(this);
+            this.router.onTransportClosed(this, isExpected);
             this._close();
         }
     }
 
     send(rpc: Rpc): void {
-        this.p2pManager.logger.verbose("Sending RPC", {
+        this.router.logger.verbose("Sending RPC", {
             transportType: TransportType[this.transportType],
             peerAddress: this.peerAddress,
             rpc: LoggerUtils.getRpcLogMetadata(rpc)
@@ -73,7 +74,7 @@ abstract class ATransport {
     }
 
     sendRpcResponse(response: RpcResponse): void {
-        this.p2pManager.logger.verbose("Sending RPC response", {
+        this.router.logger.verbose("Sending RPC response", {
             transportType: TransportType[this.transportType],
             peerAddress: this.peerAddress,
             requestId: response.requestId,
