@@ -9,6 +9,15 @@ export default function createBrowserWorkerAnswerPrecompile(options) {
             );
         }
 
+        // an unhandled rejection on a timer -> a genuine crash of this realm
+        if (options.crashAsync) {
+            setTimeout(() => {
+                void Promise.reject(
+                    new Error("browser worker answer precompile async crash")
+                );
+            }, 0);
+        }
+
         const isWorker =
             typeof WorkerGlobalScope !== "undefined" &&
             globalThis instanceof WorkerGlobalScope &&
