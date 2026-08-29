@@ -53,18 +53,16 @@ export default class WorkerContractExecutor extends AContractExecutor {
     ): Promise<WorkerContractExecutor> {
         const executor = new WorkerContractExecutor(logger);
         try {
-            // post init first, link second: the worker adds its end of the
-            // link at the top of init, before anything that can fail, so the
-            // context the link posts on attach lands on a link that exists and
-            // a crash while the evm is still being built already has a way up
-            const init = executor.vm.contractExecutor
+            executor.link();
+            // the owner's log identity rides in init, so the order of the link
+            // and the init does not matter; a later change is cast over the link
+            await executor.vm.contractExecutor
                 .init(
                     customPrecompiles.map(serializePrecompileManifest),
-                    config
+                    config,
+                    executor.logger?.getSharedContext() ?? {}
                 )
                 .request({ timeoutMs: null });
-            executor.link();
-            await init;
         } catch (error) {
             // a worker that failed to init has no owner to dispose it, and a
             // live worker at process exit aborts the process

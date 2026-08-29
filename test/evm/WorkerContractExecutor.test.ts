@@ -393,7 +393,7 @@ describe("WorkerContractExecutor", function () {
             );
             expect(vmUpload, "no vm upload arrived").to.not.be.undefined;
             expect(vmUpload!.fromSeq).to.equal(0);
-            // filed under the identity the host pushed on attach; init carries none
+            // filed under the identity init carried down from the host
             expect(vmUpload!.peerAddress).to.equal(
                 logger.getSharedContext().peerAddress
             );

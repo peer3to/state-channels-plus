@@ -195,14 +195,20 @@ describe("LogFlushBus", function () {
         const sdk = realm("sdk");
         const upper = connect(main, sdk);
 
+        main.logger.info("main entry");
+        sdk.logger.info("sdk entry");
+
         await Promise.all([
             main.bus.flushAll("one"),
             main.bus.flushAll("two"),
             main.bus.flushAll("three")
         ]);
 
-        // the active round plus at most one queued follow-up
-        expect(countMessages(upper.toChild, "flushRequest")).to.equal(2);
+        // every request is forwarded; what coalesces is the upload: one in
+        // flight plus one queued behind it, and the queued one posts nothing
+        // when the first already shipped every entry
+        expect(countMessages(upper.toChild, "flushRequest")).to.equal(3);
+        expect(threadNamesOf(receiver!)).to.deep.equal(["main", "sdk"]);
     });
 
     it("acks a request that arrives while a round is in flight", async function () {

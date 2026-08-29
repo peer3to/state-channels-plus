@@ -2,6 +2,7 @@ import ARpcMethods from "@/rpc/ARpcMethods";
 import type PortRpcRouter from "@/rpc/PortRpcRouter";
 import type ATransport from "@/transport/ATransport";
 import { config, createConfig, type Config } from "@/utils/config";
+import type { SharedLoggerContext } from "@/utils/logging/Logger";
 import { createLogger } from "@platform/createLogger";
 import { createEvm } from "../../../EvmFactory";
 import ContractExecutor from "../../ContractExecutor";
@@ -39,7 +40,8 @@ export class ContractExecutorRpcMethods extends ARpcMethods<
     /** the reply is the worker's readiness */
     async init(
         customPrecompiles: WorkerCustomPrecompile[],
-        workerConfig: Partial<Config>
+        workerConfig: Partial<Config>,
+        ownerContext: SharedLoggerContext
     ): Promise<void> {
         const service = this.service;
         // Re-establish config in this worker and build its logger, then monitor
@@ -61,6 +63,11 @@ export class ContractExecutorRpcMethods extends ARpcMethods<
             remoteRealm: "parent",
             ownerLogger: logger
         });
+        // the owner's identity rides in init: the cast its link makes on
+        // registration may have crossed before this end of the link existed
+        const bus = logger.logFlushBus;
+        const port = bus?.portFor(this.senderTransport);
+        if (bus && port) bus.applyInboundContext(port, ownerContext);
         const evm = await createEvm(
             {
                 allowUnlimitedContractSize: true,
