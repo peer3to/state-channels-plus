@@ -117,18 +117,26 @@ function sanitizeForEncoding(value: unknown, seen: WeakSet<object>): unknown {
 
 // `message` is typed string but call sites pass anything - SpectateService does
 // `logger.warn(e)`. the decoder requires a string, so coerce at the boundary
-// rather than let one entry fail its whole chunk.
+// rather than let one entry fail its whole chunk. nothing here runs the value's
+// own code: a getter, toJSON or Symbol.toPrimitive on a hostile message would
+// otherwise throw inside the logger, at the call site that was reporting it.
 function toMessageString(value: unknown): string {
     if (typeof value === "string") return value;
-    if (value instanceof Error) return value.message;
-    if (value && typeof value === "object" && "message" in value) {
-        const inner = (value as { message?: unknown }).message;
-        if (typeof inner === "string") return inner;
-    }
+    if (typeof value === "function") return "[function]";
+    if (value === null || typeof value !== "object") return String(value);
     try {
-        return JSON.stringify(value) ?? String(value);
+        const safe = sanitizeForEncoding(value, new WeakSet<object>());
+        if (safe && typeof safe === "object" && !Array.isArray(safe)) {
+            const message = (safe as { message?: unknown }).message;
+            if (typeof message === "string") return message;
+        }
+        return (
+            JSON.stringify(safe, (_key, item) =>
+                typeof item === "bigint" ? item.toString() : item
+            ) ?? "[unserializable]"
+        );
     } catch {
-        return String(value);
+        return "[unreadable]";
     }
 }
 
