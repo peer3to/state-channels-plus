@@ -23,8 +23,12 @@ import { WORKER_ASYNC_CRASH_MESSAGE } from "@test/fixtures/workerAnswerPrecompil
 // one port hop plus one POST -> above the receiver fixture's 2s default
 const FLUSH_WAIT_MS = 15_000;
 
-// schedules an unhandled rejection inside the worker thread
-function crashingPrecompile(address: string): EvmCustomPrecompileManifest {
+// schedules an unhandled rejection inside the worker thread; with a call delay
+// the call that scheduled it is still unanswered when the thread ends
+function crashingPrecompile(
+    address: string,
+    callDelayMs?: number
+): EvmCustomPrecompileManifest {
     return {
         address,
         module: path.resolve(
@@ -34,7 +38,8 @@ function crashingPrecompile(address: string): EvmCustomPrecompileManifest {
         options: {
             expectedData: "0x1234",
             value: "42",
-            crashAsync: true
+            crashAsync: true,
+            ...(callDelayMs ? { callDelayMs } : {})
         }
     };
 }
@@ -313,6 +318,78 @@ describe("WorkerContractExecutor", function () {
             ).to.equal(true);
         } finally {
             await Promise.resolve(executor.dispose()).catch(() => undefined);
+            dispose();
+            await receiver.close();
+        }
+    });
+
+    it("rejects a call still in flight when the worker crashes", async function () {
+        const customAddress = Address.fromString(
+            "0x00000000000000000000000000000000000000bd"
+        );
+        const receiver = await startLogReceiver();
+        const { logger, dispose } = useReceiver(receiver);
+        const executor = await createContractExecutorFactory({
+            dedicatedThread: true,
+            logger,
+            customPrecompiles: [
+                // the crash lands while this call is still being answered
+                crashingPrecompile(customAddress.toString(), 30_000)
+            ]
+        });
+
+        try {
+            let caught: Error | undefined;
+            try {
+                await executor.simulateCall("0x1234", customAddress.toString());
+            } catch (error) {
+                caught = error as Error;
+            }
+
+            expect(
+                caught,
+                "the call outlived the thread that was answering it"
+            ).to.be.instanceOf(Error);
+        } finally {
+            await Promise.resolve(executor.dispose()).catch(() => undefined);
+            dispose();
+            await receiver.close();
+        }
+    });
+
+    it("keeps the caller's logger working after the worker crashed", async function () {
+        const customAddress = Address.fromString(
+            "0x00000000000000000000000000000000000000bf"
+        );
+        const receiver = await startLogReceiver();
+        const { logger, dispose } = useReceiver(receiver);
+        const executor = await createContractExecutorFactory({
+            dedicatedThread: true,
+            logger,
+            customPrecompiles: [crashingPrecompile(customAddress.toString())]
+        });
+
+        try {
+            await executor.simulateCall("0x1234", customAddress.toString());
+            await receiver.waitForRequests(1, FLUSH_WAIT_MS);
+            await Promise.resolve(executor.dispose()).catch(() => undefined);
+
+            logger.info("after the vm crash");
+            const result = await realmLogFlushBus.flushAll("after crash");
+
+            // the dead link is gone: nothing waits on it, and this realm ships
+            expect(result.timedOut).to.equal(0);
+            const shipped = receiver.requests.some(
+                (request) =>
+                    request.threadName === "sdk" &&
+                    decodeUpload(request).some(
+                        (entry) => entry.message === "after the vm crash"
+                    )
+            );
+            expect(shipped, "the caller's entry was not uploaded").to.equal(
+                true
+            );
+        } finally {
             dispose();
             await receiver.close();
         }
