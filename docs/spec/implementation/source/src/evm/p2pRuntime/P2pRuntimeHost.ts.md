@@ -20,27 +20,30 @@
 ## Responsibility and observable boundary
 
 The runtime host: owns the full node state (managers, storage, EVM) and the signing authority in
-the host context, serves the main thread's typed requests over the paired port (requests,
-responses, events, errors, bridge ports), and drives lifecycle (startup readiness, disposal
-drain, restart).
+the host context, serves the main thread over the paired port as ordinary services on
+[`P2pRuntimeHostRoot`](./rpc/P2pRuntimeHostRoot.ts.md) under a `PortRpcRouter`, pushes bus events
+and its own failures at the client's `runtimeEvents` service, and drives lifecycle (startup
+readiness as the `deployComplete` reply, disposal drain, restart).
 
 ## Key design decisions
 
 1. **The host signs; the client never holds the key** — signing authority stays in one trusted context ([`REQ-ID-3-KR0BE3`](../../../../../specification/protocol-model/identity.md#req-id-3-kr0be3)).
-2. **Everything crosses as serialized messages over the pair** — inline and worker deployments share the protocol (the transport-neutrality decision of the review §44).
-3. **Application readiness closes startup** — the host awaits the custom root after constructing the runtime graph, disposes partial state on rejection, then starts its service-loop monitor with the configured fatal guard and emits the runtime-ready timing marker when Node stdout is available. Browser hosts skip the Node-only marker.
-4. **The host uses the same manager ABI merge as the client.** SDK fragments are installed first,
+2. **Everything crosses as RPC envelopes over the pair** — inline and worker deployments share the protocol (the transport-neutrality decision of the review §44), and the protocol is the root's services, not a message union.
+3. **Inbound requests are held until the root can answer.** The router attaches the port at once so nothing posted early is lost, holds requests until `buildRuntime` is defined, then releases them in order ([`holdInbound`](../../../../../../../src/evm/p2pRuntime/P2pRuntimeHost.ts#L228)).
+4. **The WebRTC bridge port arrives with the bootstrap**, not in a message of its own; the `deployComplete` reply tells the client whether the host registered it ([`registerWebRTCBridgeIfNeeded`](../../../../../../../src/evm/p2pRuntime/P2pRuntimeHost.ts#L420)).
+5. **The host uses the same manager ABI merge as the client.** SDK fragments are installed first,
    then the serialized consumer ABI is appended before the contract enters `StateManager`. Host-side
    custom RPC services can call consumer functions without losing SDK errors.
+6. **Application readiness closes startup** — the host awaits the custom root after constructing the runtime graph, disposes partial state on rejection, then starts its service-loop monitor with the configured fatal guard and emits the runtime-ready timing marker when Node stdout is available. Browser hosts skip the Node-only marker.
 
 ## Inputs, outputs, state, and side effects
 
-| Aspect       | Contents        |
-| ------------ | --------------- |
-| Inputs       | Per role above. |
-| Outputs      | Per role above. |
-| Owned state  | Per role above. |
-| Side effects | Per role above. |
+| Aspect       | Contents                                                                                  |
+| ------------ | ----------------------------------------------------------------------------------------- |
+| Inputs       | A `HostContext` (port, setup payload, signer, hooks, the bridge port when threaded).      |
+| Outputs      | A `RuntimeHandle`; replies to the client's calls; `runtimeEvents` casts.                  |
+| Owned state  | The node graph, the signing wallet, the nonce manager, the port router and its transport. |
+| Side effects | Chain traffic, peer transports, log uploads, the link's close on dispose.                 |
 
 ## Linked requirements
 
@@ -75,11 +78,11 @@ Status enum: `Covered` | `Partial` | `Contradicts` | `Missing`. Evidence cells a
 **Here:** / **Other files:** so each row is auditable from its links alone; genuine gaps go in the
 Gap column. Audit state is file-level (Status header), never a row status.
 
-| Requirement / invariant                                                                          | Implementation status | Evidence                                                                                                                                                                           | Gap / divergence |
-| ------------------------------------------------------------------------------------------------ | --------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------- |
-| [`REQ-ID-3-KR0BE3`](../../../../../specification/protocol-model/identity.md#req-id-3-kr0be3)     | Covered               | **Here:** host-confined signing behind validated typed requests.                                                                                                                   | None.            |
-| [`INV-RUNTIME-1-AKRHAK`](../../../../../specification/runtime/execution.md#inv-runtime-1-akrhak) | Covered               | **Here:** one message protocol for inline and worker hosting. **Other files:** channels/runtimes per platform.                                                                     | None.            |
-| [`REQ-IX-8-FY54AV`](../../../../../specification/interactions.md#req-ix-8-fy54av)                | Covered               | **Here:** one serialized port protocol for inline and worker hosting; host-owned state and signing. **Other files:** platform channels and worker runtimes under [p2pRuntime](./). | None.            |
+| Requirement / invariant                                                                          | Implementation status | Evidence                                                                                                                                                                             | Gap / divergence |
+| ------------------------------------------------------------------------------------------------ | --------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ---------------- |
+| [`REQ-ID-3-KR0BE3`](../../../../../specification/protocol-model/identity.md#req-id-3-kr0be3)     | Covered               | **Here:** host-confined signing behind the `p2pSigner` and `chainSigner` services.                                                                                                   | None.            |
+| [`INV-RUNTIME-1-AKRHAK`](../../../../../specification/runtime/execution.md#inv-runtime-1-akrhak) | Covered               | **Here:** one root and one router for inline and worker hosting. **Other files:** channels/runtimes per platform; [rpc/P2pRuntimeHostRoot.ts.md](./rpc/P2pRuntimeHostRoot.ts.md).    | None.            |
+| [`REQ-IX-8-FY54AV`](../../../../../specification/interactions.md#req-ix-8-fy54av)                | Covered               | **Here:** one RPC-envelope port protocol for inline and worker hosting; host-owned state and signing. **Other files:** platform channels and worker runtimes under [p2pRuntime](./). | None.            |
 
 ## Component test obligations
 
@@ -92,3 +95,5 @@ Exact test evidence is mapped against these IDs in the verification test reports
 ## Related source reports
 
 - [P2pRuntimeClient](./P2pRuntimeClient.ts.md), [ClientHostRpc](./ClientHostRpc.ts.md), platform channels.
+- [rpc/P2pRuntimeHostRoot.ts.md](./rpc/P2pRuntimeHostRoot.ts.md) — the services this file builds and feeds.
+- [../../rpc/PortRpcRouter.ts.md](../../rpc/PortRpcRouter.ts.md) — the router over the port.

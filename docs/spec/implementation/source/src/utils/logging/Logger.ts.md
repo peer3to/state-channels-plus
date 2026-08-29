@@ -21,8 +21,8 @@
 
 The structured logger every realm writes through: levels, child contexts, one session context
 shared by a root and its children, a bounded store, and the hooks a collection uses — registering
-on the realm bus, attaching a connection to a neighbouring thread, uploading its own store, and
-leaving the bus when disposed.
+on the realm bus, registering a link to a neighbouring thread (`addLogLink`), uploading its own
+store, and leaving the bus when disposed.
 
 ## Key design decisions
 
@@ -42,12 +42,12 @@ leaving the bus when disposed.
 
 ## Inputs, outputs, state, and side effects
 
-| Aspect       | Contents                                                                                                                     |
-| ------------ | ---------------------------------------------------------------------------------------------------------------------------- |
-| Inputs       | Log calls at every level with any message and meta; context updates; a bus registration and connections from the transports. |
-| Outputs      | Stored entries; local writes; the outcome of its own upload; the totals of a collection it started.                          |
-| Owned state  | Its context, the shared context, the store and uploader it shares with its children, its bus registration.                   |
-| Side effects | Local console writes; uploads through the uploader; a collection through the bus; crash hooks on the platform logger.        |
+| Aspect       | Contents                                                                                                                           |
+| ------------ | ---------------------------------------------------------------------------------------------------------------------------------- |
+| Inputs       | Log calls at every level with any message and meta; context updates; a bus registration and links from the owners of worker ports. |
+| Outputs      | Stored entries; local writes; the outcome of its own upload; the totals of a collection it started.                                |
+| Owned state  | Its context, the shared context, the store and uploader it shares with its children, its bus registration.                         |
+| Side effects | Local console writes; uploads through the uploader; a collection through the bus; crash hooks on the platform logger.              |
 
 ## Linked requirements
 

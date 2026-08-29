@@ -19,7 +19,7 @@
 
 ## Responsibility and observable boundary
 
-Structured-log formatting helpers (dispute/auditing metadata projections, hash formatting).
+Structured-log formatting helpers (dispute/auditing metadata projections, hash formatting, transport metadata that names the channel only when the transport's router is a peer manager).
 
 ## Key design decisions
 

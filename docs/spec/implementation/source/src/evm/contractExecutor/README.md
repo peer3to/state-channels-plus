@@ -15,5 +15,5 @@ _Pending authoring: shared responsibility, design decisions, assumptions, cross-
 - [browser/](./browser/README.md)
 - [index.ts](./index.ts.md)
 - [node/](./node/README.md)
+- [rpc/](./rpc/README.md)
 - [types.ts](./types.ts.md)
-- [worker/](./worker/README.md)

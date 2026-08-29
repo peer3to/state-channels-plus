@@ -22,14 +22,15 @@
 The transport base: `send` and `sendRpcResponse` serialization, idempotent close/disconnection
 delivery, the authenticated `peerAddress` used by network transports, `isSamePeer`
 (checksum-address comparison — the settlement identity rule), `isTrusted` (false for every
-network transport), and the module-graph-independent `isTransport` public-shape predicate.
+network transport), the `router` it delivers to (the peer manager or a port router; `p2pManager`
+remains as the peer-only view), and the module-graph-independent `isTransport` public-shape predicate.
 
 ## Key design decisions
 
 1. **`isSamePeer` compares identities, not objects** — response settlement survives transport upgrades ([`REQ-RPC-2-SZDTTM`](../../../../specification/peer-communication/rpc.md#req-rpc-2-szdttm)).
-2. **`isTrusted` defaults false**; only loopback overrides — the guard-bypass boundary is a transport property, not a call-site decision.
+2. **`isTrusted` defaults false**; only loopback and the worker port override — the guard-bypass boundary is a transport property, not a call-site decision.
 3. **`isTransport` checks the stable delivery surface.** Compatible transports are identified by `transportType`, `send`, and `sendRpcResponse`, not by one module graph's constructor ([#L89](../../../../../../src/transport/ATransport.ts#L89)).
-4. **Close is first-call-wins.** The first close marks the transport closed, emits an unexpected-disconnection hook when applicable, removes the connection, and invokes concrete cleanup; later closes do nothing ([#L51](../../../../../../src/transport/ATransport.ts#L51)).
+4. **Close is first-call-wins.** The first close marks the transport closed, tells the router (`onTransportClosed`: pending requests reject, a peer router emits the disconnection hook and removes the connection), and invokes concrete cleanup; later closes do nothing ([#L51](../../../../../../src/transport/ATransport.ts#L51)).
 
 ## Inputs, outputs, state, and side effects
 

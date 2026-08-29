@@ -19,7 +19,7 @@
 
 ## Responsibility and observable boundary
 
-Browser worker entry point.
+Browser worker entry point: a `PortRpcRouter` serving `ContractExecutorRoot` over the worker's own scope.
 
 ## Key design decisions
 

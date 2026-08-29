@@ -19,7 +19,8 @@
 
 ## Responsibility and observable boundary
 
-Main-thread worker launcher with readiness handshake.
+Main-thread worker launcher: posts the bootstrap message with the runtime port and the bridge port
+transferred; readiness is the `deployComplete` reply, not a handshake of this file's.
 
 ## Key design decisions
 

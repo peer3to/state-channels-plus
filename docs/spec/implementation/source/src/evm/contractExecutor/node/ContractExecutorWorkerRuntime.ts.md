@@ -19,7 +19,7 @@
 
 ## Responsibility and observable boundary
 
-Node worker runtime bootstrap (limits, shutdown wiring).
+Node worker runtime bootstrap (limits, shutdown wiring): spawns the worker and returns its port and shutdown as a `WorkerLike`.
 
 ## Key design decisions
 

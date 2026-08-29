@@ -19,7 +19,7 @@
 
 ## Responsibility and observable boundary
 
-The client-side signer facade in isolated deployments: forwards signing/collection to the host over `hostRpc` — the key never leaves the host.
+The client-side signer facade in isolated deployments: forwards signing/collection to the host's `p2pSigner` service over the runtime endpoint — the key never leaves the host.
 
 ## Key design decisions
 

@@ -19,19 +19,21 @@
 
 ## Responsibility and observable boundary
 
-The frame dispatcher and correlation owner: `onRpc` runs stages 1–4 of the ingress order (16 MiB
-UTF-8 byte gate before parsing, response-first classification, envelope verification, service
-resolution) before handing to the service base; `sendRpcRequest` owns the pending-request table,
-per-call timeouts, the addressed-peer settlement rule (peer identity, not transport object),
-late-response silent ignore, and disconnect settlement; plus broadcast/addressed delivery and
-connection registry.
+The peers' router: `ARpcRouter` specialised with peer policy. The inherited core runs stages 1–4
+of the ingress order (16 MiB UTF-8 byte gate before parsing, response-first classification,
+envelope verification, service resolution) before handing to the service base, and owns the
+pending-request table, per-call timeouts and late-response silent ignore; this file supplies the
+timer manager and the agreement-time default, the addressed-peer settlement rule (peer identity,
+not transport object), the foreign-response penalty, disconnect settlement, address resolution
+through the profile manager, plus broadcast/addressed delivery and the connection registry.
 
 ## Key design decisions
 
 1. **Response-first classification** keeps response frames out of service dispatch entirely ([`REQ-RPC-6-E60S4J`](../../../specification/peer-communication/rpc.md#req-rpc-6-e60s4j)).
 2. **Settlement by peer identity, not transport identity** — a WebRTC upgrade cannot orphan pending requests; a response from any _other_ peer penalizes the responder ([`REQ-RPC-2-SZDTTM`](../../../specification/peer-communication/rpc.md#req-rpc-2-szdttm)).
 3. **Unknown/late responses are penalty-free by design** (must therefore stay cheap; bounded by the frame gate).
-4. **Service resolution uses the shared public-shape predicate.** A valid custom root loaded from a separate application module graph reaches the same guard and dispatch pipeline; constructor identity is not part of the wire contract ([#L228](../../../../../src/P2PManager.ts#L228)).
+4. **Peer policy is a set of hooks, not a fork of the core.** `defaultRequestTimeoutMs`, `isResponseFromRequestee`, `onForeignResponse`, `resolveTransport`, `onTransportClosed` and `onServiceFailure` are the only places peer semantics enter; the same core serves the worker links under `PortRpcRouter` ([ARpcRouter.ts.md](./rpc/ARpcRouter.ts.md)).
+5. **Service resolution uses the shared public-shape predicate.** A valid custom root loaded from a separate application module graph reaches the same guard and dispatch pipeline; constructor identity is not part of the wire contract ([#L228](../../../../../src/P2PManager.ts#L228)).
 
 ## Inputs, outputs, state, and side effects
 

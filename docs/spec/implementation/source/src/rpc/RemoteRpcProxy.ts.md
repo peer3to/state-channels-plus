@@ -21,7 +21,9 @@
 
 The root typed proxy: substitutes every structurally valid service on the local root with its
 RpcMethods-typed sending surface (`remoteRpc.initHandshakeService.…`), caching one per-service
-proxy even when the service came from another JavaScript module graph.
+proxy even when the service came from another JavaScript module graph. `createEndpoint` builds the
+same proxy for the far end of a worker link, typed by the far root's manifest and bound to that link
+as its default target.
 
 ## Key design decisions
 

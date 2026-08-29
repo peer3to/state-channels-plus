@@ -20,8 +20,10 @@
 ## Responsibility and observable boundary
 
 The wire contract: the `Rpc` envelope (`service`, `method`, `params[]`, optional `requestId`),
-the `RpcResponse` shape, the 16 MiB frame cap, and the (de)serialization functions whose shape
-checks are the first validation every inbound frame meets.
+the `RpcResponse` shape (`error` is a string from a peer or a `SerializedError` from a trusted
+transport), the 16 MiB frame cap, the `isRpc` / `isRpcResponse` shape checks that classify an
+object frame, and the (de)serialization functions whose shape checks are the first validation every
+inbound byte frame meets.
 
 ## Key design decisions
 
