@@ -21,6 +21,18 @@ function entry(message: string): LogEntry {
 const SMALL_STORE_BYTES = 2000;
 
 describe("LogStore", function () {
+    it("draws a 64-bit store id that no two stores share", function () {
+        const ids = new Set(
+            Array.from(
+                { length: 200 },
+                () => new LogStore(SMALL_STORE_BYTES, true).storeId
+            )
+        );
+
+        for (const id of ids) expect(id).to.match(/^[0-9a-f]{16}$/);
+        expect(ids.size).to.equal(200);
+    });
+
     it("keeps sequence numbers monotonic across eviction", function () {
         const store = new LogStore(SMALL_STORE_BYTES, true);
         for (let i = 0; i < 40; i++) store.store(entry(`entry ${i}`));
