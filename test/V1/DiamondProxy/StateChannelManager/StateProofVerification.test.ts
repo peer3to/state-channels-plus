@@ -3,7 +3,7 @@ import { ethers } from "hardhat";
 
 import { Codec, Type } from "@/utils";
 import { deployMathChannelProxyFixture } from "@test/test_utils/testHelpers";
-import { StateChannelManagerProxy } from "@typechain-types";
+import { StateChannelManagerInterface } from "@typechain-types";
 import {
     DisputeAuditingDataStruct,
     DisputeStruct,
@@ -15,7 +15,7 @@ import {
 } from "@typechain-types/contracts/V1/types/DataTypes";
 
 describe("StateChannelManagerProxy.verifyStateProof", function () {
-    let mathChannelManager: StateChannelManagerProxy;
+    let mathChannelManager: StateChannelManagerInterface;
 
     beforeEach(async function () {
         const contracts = await deployMathChannelProxyFixture(ethers);

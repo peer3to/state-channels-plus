@@ -1,6 +1,6 @@
-import { tryDecodeCustomError } from "@/utils";
 import { MathTestSession as TestSession, sleep } from "@test/harness";
 import { hash as randomHash } from "@test/factory";
+import { expectDecodedError } from "@test/test_utils/customErrorAssertions";
 import { expect } from "chai";
 import { ethers } from "ethers";
 
@@ -17,6 +17,7 @@ describe("E2E: dispute validation / uploadRevert / disputerThrottle", function (
             });
             await h.assert.sync.peersInSyncWait();
             h.event.resetEventSpies();
+            const throttledPeer = h.getPeer(1).address;
 
             // First dispute — opens a new window for a junk fork, throttle is set
             await h.tamper.postTamperedDispute(1, (dispute) => {
@@ -36,13 +37,20 @@ describe("E2E: dispute validation / uploadRevert / disputerThrottle", function (
                 });
                 expect.fail("expected revert");
             } catch (error: unknown) {
-                const customError = tryDecodeCustomError(error);
-                expect(customError, "expected ErrorDisputeThrottled").to.not.be
-                    .null;
-                expect(
-                    customError!.errorDescription.name,
+                const customError = expectDecodedError(
+                    error,
+                    "ErrorDisputeThrottled",
                     "expected ErrorDisputeThrottled"
-                ).to.equal("ErrorDisputeThrottled");
+                );
+                const args = customError.errorDescription.args;
+                expect(String(args.disputer).toLowerCase()).to.equal(
+                    throttledPeer.toLowerCase()
+                );
+                // the throttle has not run out yet — that is why it reverted.
+                // chai 4 rejects bigint in greaterThan, so compare as numbers.
+                expect(Number(args.throttleExpiry)).to.be.greaterThan(
+                    Number(args.currentTimestamp)
+                );
             }
         });
 
@@ -81,6 +89,8 @@ describe("E2E: dispute validation / uploadRevert / disputerThrottle", function (
             await h.assert.sync.peersInSyncWait();
             h.event.resetEventSpies();
 
+            const throttledPeer = h.getPeer(2).address;
+
             // Peer 1 opens window-A on the channel — sets peer-1 throttle
             const sharedForkId = randomHash();
             await h.tamper.postTamperedDispute(1, (dispute) => {
@@ -110,13 +120,20 @@ describe("E2E: dispute validation / uploadRevert / disputerThrottle", function (
                 });
                 expect.fail("expected revert");
             } catch (error: unknown) {
-                const customError = tryDecodeCustomError(error);
-                expect(customError, "expected ErrorDisputeThrottled").to.not.be
-                    .null;
-                expect(
-                    customError!.errorDescription.name,
+                const customError = expectDecodedError(
+                    error,
+                    "ErrorDisputeThrottled",
                     "expected ErrorDisputeThrottled"
-                ).to.equal("ErrorDisputeThrottled");
+                );
+                const args = customError.errorDescription.args;
+                expect(String(args.disputer).toLowerCase()).to.equal(
+                    throttledPeer.toLowerCase()
+                );
+                // the throttle has not run out yet — that is why it reverted.
+                // chai 4 rejects bigint in greaterThan, so compare as numbers.
+                expect(Number(args.throttleExpiry)).to.be.greaterThan(
+                    Number(args.currentTimestamp)
+                );
             }
         });
     });

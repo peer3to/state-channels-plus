@@ -1,7 +1,6 @@
 pragma solidity ^0.8.8;
 
 import "./StateChannelCommon.sol";
-import "./StateChannelManagerProxy.sol";
 import "./Errors.sol";
 import "../types/FraudProofTypes.sol";
 import "./UtilityFacet.sol";
@@ -15,14 +14,14 @@ contract FraudProofFacet is StateChannelCommon {
     ) public {
         FraudProof[] memory proofs = fraudProofs;
         for (uint256 i = 0; i < proofs.length; i++) {
-            if (!isParticipantSlashedOnChain(fraudProofVerificationContext.channelId, proofs[i].participant)) {
+            if (!_isParticipantSlashedOnChain(fraudProofVerificationContext.channelId, proofs[i].participant)) {
                 address slashedParticipant = runFraudProof(proofs[i], fraudProofVerificationContext);
                 if (slashedParticipant == address(0) || slashedParticipant != proofs[i].participant) {
                     // slash the disputer
                     slashedParticipant = msg.sender;
                 }
                 // if in (participants || pendingParticipants) && !slashedOnChain
-                if (canParticipateInDisputes(fraudProofVerificationContext.channelId, slashedParticipant)) {
+                if (_canParticipateInDisputes(fraudProofVerificationContext.channelId, slashedParticipant)) {
                     addOnChainSlashedParticipant(fraudProofVerificationContext.channelId, slashedParticipant);
                 }
             }
@@ -148,7 +147,7 @@ contract FraudProofFacet is StateChannelCommon {
             }
         }
 
-        (isSuccess, encodedModifiedState, outboundMessages) = StateChannelManagerProxy(address(this))
+        (isSuccess, encodedModifiedState, outboundMessages) = StateChannelManagerInterface(address(this))
             .executeStateTransition(
             fraudProofVerificationContext.channelId, previousStateStateMachineState, fraudBlock.transaction
         );
@@ -191,7 +190,7 @@ contract FraudProofFacet is StateChannelCommon {
         }
 
         newSnapshotData.stateMachineStateHash = keccak256(encodedModifiedState);
-        newSnapshotData.participants = getStateMachineParticipants(encodedModifiedState);
+        newSnapshotData.participants = _getStateMachineParticipants(encodedModifiedState);
         newSnapshotData.originForkId = previousStateSnapshot.forkId;
 
         StateSnapshot memory newStateSnapshot = StateSnapshot({
@@ -223,21 +222,21 @@ contract FraudProofFacet is StateChannelCommon {
     }
 
     function _hasInvalidTimestamp(InvalidTimestampProof memory proof) internal view returns (bool) {
-        if (!isBlockAuthentic(proof.invalidBlock)) return false;
+        if (!_isBlockAuthentic(proof.invalidBlock)) return false;
         Block memory fraudBlock = abi.decode(proof.invalidBlock.encodedBlock, (Block));
         uint256 fraudTimestamp = fraudBlock.transaction.header.timestamp;
-        uint256 p2pTime = getP2pTime();
+        uint256 p2pTime = _getP2pTime();
 
         if (fraudBlock.transaction.header.transactionCnt == 0) {
             if (fraudBlock.previousBlockHash != keccak256(abi.encode(proof.previousStateSnapshot))) {
                 return false;
             }
             uint256 prevSnapshotTimestamp = proof.previousStateSnapshot.timestamp;
-            (bool ok, uint256 maxValidTimestamp) = Math.tryAdd(prevSnapshotTimestamp, getEvidenceTime() + p2pTime);
+            (bool ok, uint256 maxValidTimestamp) = Math.tryAdd(prevSnapshotTimestamp, _getEvidenceTime() + p2pTime);
             return fraudTimestamp < prevSnapshotTimestamp || (ok && fraudTimestamp > maxValidTimestamp);
         }
 
-        if (!isBlockAuthentic(proof.previousBlock)) return false;
+        if (!_isBlockAuthentic(proof.previousBlock)) return false;
         Block memory previousBlock = abi.decode(proof.previousBlock.encodedBlock, (Block));
         if (fraudBlock.previousBlockHash != keccak256(abi.encode(previousBlock))) return false;
 
@@ -252,7 +251,7 @@ contract FraudProofFacet is StateChannelCommon {
 
         uint256 relevantTimestamp = previousBlock.transaction.header.timestamp;
         if (!hasForfeited) {
-            (bool found, bytes32 commitment) = getBlockCallDataCommitment(
+            (bool found, bytes32 commitment) = _getBlockCallDataCommitment(
                 fraudBlock.transaction.header.channelId,
                 fraudBlock.transaction.header.forkId,
                 previousBlock.transaction.header.transactionCnt,
@@ -282,7 +281,7 @@ contract FraudProofFacet is StateChannelCommon {
     {
         WrongGenesisProof memory proof = abi.decode(fraudProof.encodedProof, (WrongGenesisProof));
         SignedBlock memory signedBlock = proof.invalidBlock;
-        if (!isBlockAuthentic(signedBlock)) return _invalid();
+        if (!_isBlockAuthentic(signedBlock)) return _invalid();
         Block memory _block = abi.decode(signedBlock.encodedBlock, (Block));
         if (_block.transaction.header.transactionCnt != 0) return _invalid();
 
@@ -291,7 +290,7 @@ contract FraudProofFacet is StateChannelCommon {
         address blockAuthor = _block.transaction.header.participant;
         StateSnapshot memory correctGenesisSnapshot = proof.genesisSnapshot;
         bytes32 originForkId = correctGenesisSnapshot.snapshotData.originForkId;
-        StateSnapshot memory onChainSnapshot = getStateSnapshot(channelId);
+        StateSnapshot memory onChainSnapshot = _getStateSnapshot(channelId);
 
         if (onChainSnapshot.forkId == forkId) {
             if (!UtilityFacet(utilityFacetAddress).isGenesisSnapshotWithoutTimeCheck(onChainSnapshot)) {
@@ -305,9 +304,9 @@ contract FraudProofFacet is StateChannelCommon {
         DisputeData storage _disputeData = disputeData[channelId];
         DisputeWindow storage disputeWindow =
             _disputeData.disputeWindowMap[correctGenesisSnapshot.snapshotData.originForkId];
-        (bool isExpired,) = _isKillPeriodExpired(disputeWindow, getEvidenceTime());
+        (bool isExpired,) = _isKillPeriodExpired(disputeWindow, _getEvidenceTime());
         require(isExpired, RaceConditionDisputeKillPeriodNotExpired());
-        (bool isAvailable, uint256 timestamp) = getGenesisTimestamp(channelId, originForkId, forkId);
+        (bool isAvailable, uint256 timestamp) = _getGenesisTimestamp(channelId, originForkId, forkId);
         require(isAvailable, RaceConditionGenesisTimestampNotAvailable());
         if (timestamp != correctGenesisSnapshot.timestamp) return _invalid();
         if (!UtilityFacet(utilityFacetAddress).isGenesisSnapshotWithoutTimeCheck(correctGenesisSnapshot)) {
@@ -324,7 +323,7 @@ contract FraudProofFacet is StateChannelCommon {
         ForgedInboundMessageBlockProof memory proof =
             abi.decode(fraudProof.encodedProof, (ForgedInboundMessageBlockProof));
 
-        if (!isBlockAuthentic(proof.invalidBlock)) return _invalid();
+        if (!_isBlockAuthentic(proof.invalidBlock)) return _invalid();
 
         Block memory fraudBlock = abi.decode(proof.invalidBlock.encodedBlock, (Block));
         if (fraudBlock.transaction.header.channelId != fraudProofVerificationContext.channelId) {
@@ -349,7 +348,7 @@ contract FraudProofFacet is StateChannelCommon {
             return _invalid();
         }
 
-        StateSnapshot memory onChainSnapshot = getStateSnapshot(fraudProofVerificationContext.channelId);
+        StateSnapshot memory onChainSnapshot = _getStateSnapshot(fraudProofVerificationContext.channelId);
         if (onChainSnapshot.snapshotData.latestInboundMessageBlockHash == messageBlockHash) {
             return _invalid();
         }

@@ -6,7 +6,7 @@ import type { Address, ForkId, Hash, Timestamp } from "@/types/types";
 import type { HarnessControlRpc } from "../../HarnessControlRpc";
 import StubRpcMethods from "./StubRpcMethods";
 import { ethers, id, Log } from "ethers";
-import type { StateChannelManagerProxy } from "@typechain-types";
+import type { StateChannelManagerInterface } from "@typechain-types";
 import type {
     DisputeAuditingDataStruct,
     DisputeConfirmationStruct,
@@ -127,9 +127,9 @@ export type DisputeSubmissionFailureSpec = {
 };
 
 export type DisputeSubmissionOriginals = {
-    multicall: StateChannelManagerProxy["multicall"];
-    uploadDispute: StateChannelManagerProxy["uploadDispute"];
-    uploadDisputeWithCalldata: StateChannelManagerProxy["uploadDisputeWithCalldata"];
+    multicall: StateChannelManagerInterface["multicall"];
+    uploadDispute: StateChannelManagerInterface["uploadDispute"];
+    uploadDisputeWithCalldata: StateChannelManagerInterface["uploadDisputeWithCalldata"];
 };
 
 export type DisputeSubmissionHold = {
@@ -963,7 +963,7 @@ export class StubService extends ARpcService<
         const original = this.stubOriginals.get("disputeWindowTimestamp");
         if (original === undefined) return false;
         this.sm.stateChannelManagerContract.getDisputeWindowCreationTimestamp =
-            original as StateChannelManagerProxy["getDisputeWindowCreationTimestamp"];
+            original as StateChannelManagerInterface["getDisputeWindowCreationTimestamp"];
         this.stubOriginals.delete("disputeWindowTimestamp");
         return true;
     }
@@ -1299,7 +1299,11 @@ export class StubService extends ARpcService<
 
     private submissionFailure(failure: DisputeSubmissionFailureSpec): unknown {
         if (failure.customError) {
-            return { data: id(`${failure.customError}()`).slice(0, 10) };
+            // Built from the error's own ABI fragment; a hand-hashed `Name()`
+            // selector decodes to nothing once the error gains a parameter.
+            return {
+                data: factory.encodedCustomErrorRevert(failure.customError)
+            };
         }
         return new Error(failure.message ?? "dispute upload failed");
     }

@@ -1,9 +1,9 @@
 pragma solidity ^0.8.8;
 
 import "./StateChannelCommon.sol";
-import "./StateChannelManagerProxy.sol";
 import "./DisputeVerificationFacet.sol";
 import "./StateProofFacet.sol";
+import "./FraudProofFacet.sol";
 import "./Errors.sol";
 import "../types/DisputeFraudProofTypes.sol";
 import "./utils/DisputeUtils.sol";
@@ -21,7 +21,7 @@ contract DisputeFraudProofFacet is StateChannelCommon {
             if (!isDisputeCommitted(dispute)) continue;
             DisputeWindow storage disputeWindow =
                 disputeData[dispute.input.channelId].disputeWindowMap[dispute.input.forkId];
-            (bool isExpired,) = _isKillPeriodExpired(disputeWindow, getEvidenceTime());
+            (bool isExpired,) = _isKillPeriodExpired(disputeWindow, _getEvidenceTime());
             // A successful batch means every committed proof was eligible and applied.
             require(!isExpired, RaceConditionDisputeKillPeriodExpired());
             address slashedParticipant = _getHandle(proofs[i].proofType)(proofs[i].encodedProof, dispute);
@@ -29,7 +29,7 @@ contract DisputeFraudProofFacet is StateChannelCommon {
                 _delegatecall(
                     disputeVerificationFacetAddress, abi.encodeCall(DisputeVerificationFacet.killDispute, (dispute))
                 );
-            } else if (canParticipateInDisputes(dispute.input.channelId, msg.sender)) {
+            } else if (_canParticipateInDisputes(dispute.input.channelId, msg.sender)) {
                 addOnChainSlashedParticipant(dispute.input.channelId, msg.sender);
             }
         }
@@ -105,9 +105,9 @@ contract DisputeFraudProofFacet is StateChannelCommon {
         view
         returns (bool ok, uint256 deadline)
     {
-        uint256 firstBlockGrace = hasBlock ? 0 : getEvidenceTime();
+        uint256 firstBlockGrace = hasBlock ? 0 : _getEvidenceTime();
         return
-            Math.tryAdd(previousTimestamp, firstBlockGrace + getP2pTime() + getAgreementTime() + getChainFallbackTime());
+            Math.tryAdd(previousTimestamp, firstBlockGrace + _getP2pTime() + _getAgreementTime() + _getChainFallbackTime());
     }
 
     function _handleInvalidDisputeFraudProofType(bytes memory, Dispute memory) internal pure returns (address) {
@@ -368,7 +368,7 @@ contract DisputeFraudProofFacet is StateChannelCommon {
         view
         returns (address)
     {
-        address[] memory onChainSlashes = getOnChainSlashedParticipants(dispute.input.channelId);
+        address[] memory onChainSlashes = _getOnChainSlashedParticipants(dispute.input.channelId);
         address[] memory disputeSlashes = dispute.input.onChainSlashes;
         for (uint256 i = 0; i < disputeSlashes.length; i++) {
             bool found = false;
@@ -476,7 +476,7 @@ contract DisputeFraudProofFacet is StateChannelCommon {
         // check is timeout set
         if (dispute.input.timeout.participant == address(0)) return _invalid();
 
-        uint256 timeoutTimestamp = StateChannelManagerProxy(address(this)).getDisputeWindowCreationTimestamp(
+        uint256 timeoutTimestamp = StateChannelManagerInterface(address(this)).getDisputeWindowCreationTimestamp(
             dispute.input.channelId, dispute.input.forkId
         );
         uint256 previousTimestamp;
@@ -487,7 +487,7 @@ contract DisputeFraudProofFacet is StateChannelCommon {
             // genesis
             if (!_isGenesisSnapshotDataLinkedToFork(forkId, proof.genesisStateSnapshotData)) return _invalid();
             (bool hasGenesis, uint256 genesisTimestamp) =
-                getGenesisTimestamp(channelId, proof.genesisStateSnapshotData.originForkId, forkId);
+                _getGenesisTimestamp(channelId, proof.genesisStateSnapshotData.originForkId, forkId);
             require(hasGenesis, RaceConditionGenesisTimestampNotAvailable());
             previousTimestamp = genesisTimestamp;
         } else {
@@ -506,7 +506,7 @@ contract DisputeFraudProofFacet is StateChannelCommon {
             if (!hasForfeitedRightToExtraTime) {
                 uint256 blockHeight = latestBlock.transaction.header.transactionCnt;
                 address author = latestBlock.transaction.header.participant;
-                (bool found, bytes32 commitment) = getBlockCallDataCommitment(channelId, forkId, blockHeight, author);
+                (bool found, bytes32 commitment) = _getBlockCallDataCommitment(channelId, forkId, blockHeight, author);
                 if (found) {
                     // check is the caller aware of race condition
                     require(proof.previousBlockOnChainTimestamp != 0, RaceConditionUnexpectedBlockCalldataPosted());
@@ -561,7 +561,7 @@ contract DisputeFraudProofFacet is StateChannelCommon {
         }
 
         // Check block calldata posted
-        (bool isFound, bytes32 commitment) = getBlockCallDataCommitment(
+        (bool isFound, bytes32 commitment) = _getBlockCallDataCommitment(
             _getDisputeChannel(dispute),
             _getDisputeFork(dispute),
             dispute.input.timeout.blockHeight,
@@ -583,7 +583,7 @@ contract DisputeFraudProofFacet is StateChannelCommon {
             ) {
                 return false;
             }
-            (bool hasGenesis, uint256 genesisTimestamp) = getGenesisTimestamp(
+            (bool hasGenesis, uint256 genesisTimestamp) = _getGenesisTimestamp(
                 dispute.input.channelId,
                 timeoutCalldataPostedProof.genesisStateSnapshotData.originForkId,
                 dispute.input.forkId
@@ -593,7 +593,7 @@ contract DisputeFraudProofFacet is StateChannelCommon {
         } else {
             // check is calldata posted and if block is the same as stateProof latest block
             // Check block calldata posted
-            (bool _isFound, bytes32 previousBlockCommitment) = getBlockCallDataCommitment(
+            (bool _isFound, bytes32 previousBlockCommitment) = _getBlockCallDataCommitment(
                 _getDisputeChannel(dispute),
                 _getDisputeFork(dispute),
                 latestBlock.transaction.header.transactionCnt,
@@ -635,7 +635,7 @@ contract DisputeFraudProofFacet is StateChannelCommon {
         bool isSuccess;
         bytes memory encodedModifiedState;
         Message[] memory outboundMessages;
-        (isSuccess, encodedModifiedState, outboundMessages) = StateChannelManagerProxy(address(this))
+        (isSuccess, encodedModifiedState, outboundMessages) = StateChannelManagerInterface(address(this))
             .executeStateTransition(
             dispute.input.channelId, timeoutCalldataPostedProof.latestStateStateMachineState, _block.transaction
         );
@@ -666,7 +666,7 @@ contract DisputeFraudProofFacet is StateChannelCommon {
         SnapshotData memory newSnapshotData = SnapshotData({
             originForkId: latestStateSnapshot.snapshotData.originForkId,
             stateMachineStateHash: keccak256(encodedModifiedState),
-            participants: getStateMachineParticipants(encodedModifiedState),
+            participants: _getStateMachineParticipants(encodedModifiedState),
             latestInboundMessageBlockHash: latestStateSnapshot.snapshotData.latestInboundMessageBlockHash,
             latestInboundMessageBlockHeight: latestStateSnapshot.snapshotData.latestInboundMessageBlockHeight,
             latestOutboundMessageBlockHash: nextOutboundMessageBlockHash,
@@ -789,7 +789,7 @@ contract DisputeFraudProofFacet is StateChannelCommon {
         SnapshotData memory thresholdSnapshotData = stateSnapshots[dispute.input.channelId].snapshotData;
         thresholdSnapshotData.participants = expectedParticipants;
 
-        (isFinal,) = StateChannelManagerProxy(address(this)).isMilestoneFinal(
+        (isFinal,) = StateChannelManagerInterface(address(this)).isMilestoneFinal(
             dispute.input.forkId, thresholdSnapshotData, lastMilestone
         );
     }

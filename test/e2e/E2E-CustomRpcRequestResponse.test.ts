@@ -11,7 +11,10 @@ import path from "node:path";
 import { EvmStateMachine } from "@/evm";
 import type P2pInstance from "@/evm/P2pInstance";
 import { Codec, LocalDiscoveryServer, SignatureUtils, Type } from "@/utils";
-import { createOpenChannelTestObject } from "@test/test_utils/testHelpers";
+import {
+    createJoinChannelTestObject,
+    createOpenChannelTestObject
+} from "@test/test_utils/testHelpers";
 import { waitFor } from "@test/utils/waitFor";
 import {
     slotAccountIndex,
@@ -21,11 +24,8 @@ import { protocolEventTimeoutMs } from "@test/harness/core/testTimeConfig";
 import MathStateMachineArtifact from "../../artifacts/contracts/V1/examples/MathStateMachine/MathStateMachine.sol/MathStateMachine.json";
 import MathConsumerFacetArtifact from "../../artifacts/contracts/V1/examples/MathStateMachine/MathConsumerFacet.sol/MathConsumerFacet.json";
 import { deployFullStack } from "../../scripts/V1/deploy";
-import {
-    MathStateMachine,
-    MathStateMachine__factory,
-    StateChannelManagerProxy__factory
-} from "@typechain-types";
+import { MathStateMachine, MathStateMachine__factory } from "@typechain-types";
+import { connectStateChannelManager } from "@/utils/stateChannelManager";
 import type {
     PingPongRpc,
     SumResponse
@@ -155,9 +155,10 @@ describe("E2E: custom RPC request/response over the runtime port", function () {
             selfAddress: string
         ): Promise<PingPeer> => {
             const runtimeSigner = runtimeWallet;
-            const scm = StateChannelManagerProxy__factory.connect(
+            const scm = connectStateChannelManager(
                 scmDeployment.address,
-                runtimeSigner
+                runtimeSigner,
+                MathConsumerFacetArtifact.abi
             );
             const stateMachineTemplate = MathStateMachine__factory.connect(
                 ethers.ZeroAddress,
@@ -195,6 +196,23 @@ describe("E2E: custom RPC request/response over the runtime port", function () {
         const peer1 = await makePeer(peer1Wallet, peer1Address);
         peers.push(peer1);
 
+        const clientManagerInterface: ethers.Interface =
+            peer0.stateChannelManagerContract.interface;
+        expect(clientManagerInterface.getFunction("deposit")).to.not.equal(
+            null
+        );
+        const consumerJoin = createJoinChannelTestObject(
+            peer0Address,
+            "custom-rpc-consumer-abi"
+        );
+        expect(
+            await peer0.hostRpc.pingService
+                .callConsumerDeposit(
+                    ethers.hexlify(Codec.encode(consumerJoin, Type.JoinChannel))
+                )
+                .request({ timeoutMs: TEST_PROTOCOL_TIMEOUT_MS })
+        ).to.equal(true);
+
         // Open a channel with both participants, driven entirely from the
         // client side (connectToChannel forwards over the port; the host wires
         // up local discovery and the handshake).
@@ -214,7 +232,7 @@ describe("E2E: custom RPC request/response over the runtime port", function () {
         await peer0.hostRpc.network.connectToChannel(channelId).request();
         await peer1.hostRpc.network.connectToChannel(channelId).request();
 
-        const channelManager = StateChannelManagerProxy__factory.connect(
+        const channelManager = connectStateChannelManager(
             scmDeployment.address,
             deployerSigner
         );

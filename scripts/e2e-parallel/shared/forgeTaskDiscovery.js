@@ -5,8 +5,8 @@ const { DEFAULT_FORGE_THREADS, FORGE_TEST_TASK } = require("./forgeConfig");
 const { escapeRegex, sanitizeFileName } = require("./taskDiscovery");
 const { TASK_RUNNERS } = require("./taskRunners");
 
-// Foundry test contracts are not confined to `*.t.sol` in this repo, so the
-// glob has to cover every Solidity file under the test tree.
+// Foundry does not confine test contracts to `*.t.sol`, so the glob has to
+// cover every Solidity file under the test tree.
 const DEFAULT_FORGE_TEST_PATTERN = "**/*.sol";
 
 // Vendored sources and build output are never our test contracts.

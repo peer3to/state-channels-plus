@@ -3,8 +3,14 @@ pragma solidity ^0.8.8;
 import "@openzeppelin/contracts/utils/cryptography/ECDSA.sol";
 import "../types/DisputeTypes.sol";
 import "./utils/GeneralUtils.sol";
+import "./StateChannelCommon.sol";
+import "./UtilityFacetInterface.sol";
 
-contract UtilityFacet {
+/// @dev The pure helpers are called externally on the deployed facet (see
+/// `StateChannelCommon`), the view wrappers are delegatecalled by
+/// `StateChannelManagerProxy`'s selector routing and therefore read the proxy's
+/// storage - hence the `StateChannelCommon` base.
+contract UtilityFacet is UtilityFacetInterface, StateChannelCommon {
     /**
      * @param addressesInThreshold - The public EOA addresses of the signers in the threshold
      * @param encodedData - The encoded data, which keccak256 hash was signed
@@ -59,6 +65,7 @@ contract UtilityFacet {
     function retrieveSignerAddress(bytes memory encodedData, bytes memory signature)
         public
         pure
+        override
         returns (address, bool)
     {
         bytes32 _hash = keccak256(encodedData);
@@ -75,7 +82,12 @@ contract UtilityFacet {
         return abi.decode(encodedBlock, (Block));
     }
 
-    function tryDecodeBlock(bytes memory encodedBlock) public view returns (bool decoded, Block memory blockData) {
+    function tryDecodeBlock(bytes memory encodedBlock)
+        public
+        view
+        override
+        returns (bool decoded, Block memory blockData)
+    {
         try this.decodeBlock(encodedBlock) returns (Block memory decodedBlock) {
             return (true, decodedBlock);
         } catch {
@@ -83,7 +95,7 @@ contract UtilityFacet {
         }
     }
 
-    function isAddressInArray(address[] memory array, address adr) public pure returns (bool) {
+    function isAddressInArray(address[] memory array, address adr) public pure override returns (bool) {
         return _isAddressInArray(array, adr);
     }
 
@@ -113,6 +125,7 @@ contract UtilityFacet {
     function subtractAddressArrays(address[] memory array1, address[] memory array2)
         public
         pure
+        override
         returns (address[] memory)
     {
         address[] memory result = new address[](array1.length);
@@ -173,6 +186,7 @@ contract UtilityFacet {
     function concatAddressArraysNoDuplicates(address[] memory array1, address[] memory array2)
         public
         pure
+        override
         returns (address[] memory)
     {
         // array1 is assumed to contain no duplicates
@@ -207,6 +221,7 @@ contract UtilityFacet {
     function insertIntoAddressArrayNoDuplicates(address[] memory array, address newAddress)
         public
         pure
+        override
         returns (address[] memory)
     {
         // Check if the address is already in the array
@@ -226,7 +241,7 @@ contract UtilityFacet {
         return newArray;
     }
 
-    function isGenesisSnapshotWithoutTimeCheck(StateSnapshot memory snapshot) public pure returns (bool) {
+    function isGenesisSnapshotWithoutTimeCheck(StateSnapshot memory snapshot) public pure override returns (bool) {
         return snapshot.forkId == keccak256(abi.encode(snapshot.snapshotData)) && snapshot.blockHeight == 0;
     }
 
@@ -242,5 +257,177 @@ contract UtilityFacet {
                 && keccak256(abi.encode(newSnapshot)) != keccak256(abi.encode(currentSnapshot))
         ) return true;
         return false;
+    }
+
+    // ********** proxy storage views - delegatecalled through the proxy's selector routing **********
+
+    function getParticipants(bytes32 channelId) public view returns (address[] memory) {
+        return _getSnapshotParticipants(channelId);
+    }
+
+    function getP2pTime() public view returns (uint256) {
+        return _getP2pTime();
+    }
+
+    function getAgreementTime() public view returns (uint256) {
+        return _getAgreementTime();
+    }
+
+    function getChainFallbackTime() public view returns (uint256) {
+        return _getChainFallbackTime();
+    }
+
+    function getEvidenceTime() public view returns (uint256) {
+        return _getEvidenceTime();
+    }
+
+    function getGasLimit() public view returns (uint256) {
+        return _getGasLimit();
+    }
+
+    function getAllTimes() public view returns (uint256, uint256, uint256, uint256) {
+        return _getAllTimes();
+    }
+
+    function getBlockCallDataCommitment(bytes32 channelId, bytes32 forkId, uint256 blockHeight, address participant)
+        public
+        view
+        returns (bool found, bytes32 blockCalldataCommitment)
+    {
+        return _getBlockCallDataCommitment(channelId, forkId, blockHeight, participant);
+    }
+
+    function hasInboundMessageBlock(bytes32 channelId, bytes32 messageBlockHash) public view returns (bool) {
+        return _hasInboundMessageBlock(channelId, messageBlockHash);
+    }
+
+    function getOnChainSlashedParticipantsUpToTimestamp(bytes32 channelId, uint256 timestamp)
+        public
+        view
+        returns (address[] memory)
+    {
+        return _getOnChainSlashedParticipantsUpToTimestamp(channelId, timestamp);
+    }
+
+    function getOnChainSlashedParticipants(bytes32 channelId) public view returns (address[] memory) {
+        return _getOnChainSlashedParticipants(channelId);
+    }
+
+    function isParticipantSlashedOnChain(bytes32 channelId, address participant) public view returns (bool) {
+        return _isParticipantSlashedOnChain(channelId, participant);
+    }
+
+    function getOnChainThresholdSet(bytes32 channelId) public view returns (address[] memory) {
+        return _getOnChainThresholdSet(channelId);
+    }
+
+    function getSnapshotParticipants(bytes32 channelId) public view returns (address[] memory) {
+        return _getSnapshotParticipants(channelId);
+    }
+
+    function getPendingParticipants(bytes32 channelId) public view returns (address[] memory) {
+        return _getPendingParticipants(channelId);
+    }
+
+    function getStateSnapshot(bytes32 channelId) public view returns (StateSnapshot memory) {
+        return _getStateSnapshot(channelId);
+    }
+
+    function getChannelBalance(bytes32 channelId) public view returns (ChannelBalance memory) {
+        return _getChannelBalance(channelId);
+    }
+
+    function isBlockAuthentic(SignedBlock memory _block) public view returns (bool) {
+        return _isBlockAuthentic(_block);
+    }
+
+    function canParticipateInDisputes(bytes32 channelId, address participant) public view returns (bool) {
+        return _canParticipateInDisputes(channelId, participant);
+    }
+
+    function isChannelOpen(bytes32 channelId) public view returns (bool, StateSnapshot memory) {
+        return _isChannelOpen(channelId);
+    }
+
+    function isForkDisputed(bytes32 channelId, bytes32 forkId) public view returns (bool) {
+        return _isForkDisputed(channelId, forkId);
+    }
+
+    function getWindowCommitments(bytes32 channelId, bytes32 forkId)
+        public
+        view
+        returns (bytes32[] memory disputeCommitments)
+    {
+        DisputeData storage _disputeData = disputeData[channelId];
+        DisputeWindow storage disputeWindow = _disputeData.disputeWindowMap[forkId];
+        return disputeWindow.evidence.disputeCommitments;
+    }
+
+    function getDisputeWindowCreationTimestamp(bytes32 channelId, bytes32 forkId)
+        public
+        view
+        returns (uint256 creationTimestamp)
+    {
+        DisputeData storage _disputeData = disputeData[channelId];
+        DisputeWindow storage disputeWindow = _disputeData.disputeWindowMap[forkId];
+        return disputeWindow.evidence.creationTimestamp;
+    }
+
+    function getReducedResult(bytes32 channelId, bytes32 forkId)
+        public
+        view
+        returns (bytes32 reducedForkId, uint256 timestamp, address reducer)
+    {
+        DisputeData storage _disputeData = disputeData[channelId];
+        DisputeWindow storage disputeWindow = _disputeData.disputeWindowMap[forkId];
+        DisputeWindowReducedResult storage reducedResult = disputeWindow.reducedResult;
+        return (reducedResult.forkId, reducedResult.timestamp, reducedResult.reducer);
+    }
+
+    function isKillPeriodExpired(bytes32 channelId, bytes32 forkId)
+        public
+        view
+        returns (bool windowExists, bool isExpired, uint256 killPeriodEnd, uint256 blockTimestamp)
+    {
+        DisputeData storage _disputeData = disputeData[channelId];
+        DisputeWindow storage disputeWindow = _disputeData.disputeWindowMap[forkId];
+        windowExists = _isDisputeWidnowCreated(disputeWindow);
+        (isExpired, killPeriodEnd) = _isKillPeriodExpired(disputeWindow, _getEvidenceTime());
+        return (windowExists, isExpired, killPeriodEnd, block.timestamp);
+    }
+
+    function isReduceChallengePeriodExpired(bytes32 channelId, bytes32 forkId) public view returns (bool) {
+        DisputeData storage _disputeData = disputeData[channelId];
+        DisputeWindow storage disputeWindow = _disputeData.disputeWindowMap[forkId];
+        return _isReduceChallengePeriodExpired(disputeWindow, _getEvidenceTime());
+    }
+
+    function getDisputeWindows(bytes32 channelId, bytes32[] memory forkIds)
+        public
+        view
+        returns (DisputeWindow[] memory)
+    {
+        DisputeWindow[] memory disputeWindows = new DisputeWindow[](forkIds.length);
+        DisputeData storage disputeData = disputeData[channelId];
+        for (uint256 i = 0; i < forkIds.length; i++) {
+            disputeWindows[i] = disputeData.disputeWindowMap[forkIds[i]];
+        }
+        return disputeWindows;
+    }
+
+    function verifyOutboundMessageBlocks(
+        MessageBlock[] memory outboundMessageBlocks,
+        SnapshotData memory lowerSnapshot,
+        SnapshotData memory upperSnapshot
+    ) public view returns (bool) {
+        return _verifyOutboundMessageBlocks(outboundMessageBlocks, lowerSnapshot, upperSnapshot);
+    }
+
+    function pruneOutboundMessageBlocks(MessageBlock[] memory outboundMessageBlocks, bytes32 lowerHash)
+        public
+        pure
+        returns (MessageBlock[] memory)
+    {
+        return _pruneOutboundMessageBlocks(outboundMessageBlocks, lowerHash);
     }
 }

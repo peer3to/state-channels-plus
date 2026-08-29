@@ -1,8 +1,11 @@
 // @spec-test-coverage-ignore: shared custom-RPC support manifest; executable evidence is mapped from its test files
+import { ethers } from "ethers";
+
 import ARpcMethods from "@/rpc/ARpcMethods";
 import ARpcService from "@/rpc/ARpcService";
 import type P2PManager from "@/P2PManager";
 import type ATransport from "@/transport/ATransport";
+import { Codec, Type } from "@/utils";
 import { HarnessControlRpc } from "./harnessControl/HarnessControlRpc";
 import { ARpcServiceProbeService } from "./aRpcServiceProbe/ARpcServiceProbeService";
 import { ATransportProbeService } from "./aTransportProbe/ATransportProbeService";
@@ -111,6 +114,17 @@ class PingRpcMethods extends ARpcMethods<P2PManager<PingPongRpc>> {
     /** Request/response error: the rejection is propagated back to the caller. */
     public async fail(reason: string): Promise<string> {
         throw new Error(reason);
+    }
+
+    public async callConsumerDeposit(
+        encodedJoinChannel: string
+    ): Promise<boolean> {
+        const joinChannel = Codec.decode(encodedJoinChannel, Type.JoinChannel);
+        const contract: ethers.BaseContract =
+            this.service.p2pManager.stateManager.stateChannelManagerContract;
+        return Boolean(
+            await contract.getFunction("deposit").staticCall(joinChannel)
+        );
     }
 
     public never(): Promise<string> {

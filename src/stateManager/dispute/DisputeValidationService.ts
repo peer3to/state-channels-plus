@@ -1,4 +1,4 @@
-import { StateChannelManagerProxy } from "@typechain-types";
+import { StateChannelManagerInterface } from "@typechain-types";
 import { ethers } from "ethers";
 
 import ADiamondStateMachine from "@/ADiamondStateMachine";
@@ -27,7 +27,7 @@ export default class DisputeValidationService {
     private readonly disputeFraudProofService: DisputeFraudProofService;
     private readonly storage: Storage;
     private readonly diamondStateMachine: ADiamondStateMachine;
-    private readonly stateChannelManagerContract: StateChannelManagerProxy;
+    private readonly stateChannelManagerContract: StateChannelManagerInterface;
     private readonly disputeManager: DisputeManager;
     private readonly agreementManager: AgreementManager;
     private readonly logger: Logger;

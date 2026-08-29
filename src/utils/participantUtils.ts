@@ -1,9 +1,9 @@
-import { StateChannelManagerProxy } from "@typechain-types";
+import { StateChannelManagerInterface } from "@typechain-types";
 import { difference, union } from "./set";
 import { Address, ChannelId } from "@/types/types";
 
 export async function getActiveParticipants(
-    contract: StateChannelManagerProxy,
+    contract: StateChannelManagerInterface,
     channelId: ChannelId
 ): Promise<Set<Address>> {
     const snapshotParticipants = new Set(

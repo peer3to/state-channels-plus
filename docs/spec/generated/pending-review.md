@@ -4,9 +4,9 @@
 > its content hash with `SPEC_REVIEWER="Name" node docs/spec/tools/review.js <file...>`.
 > Any later edit invalidates the record automatically (the file returns to pending as stale).
 
-- Verified (current): **37/530** (7%)
-- Pending (never reviewed): **465**
-- Stale (edited since review): **28**
+- Verified (current): **36/542** (7%)
+- Pending (never reviewed): **477**
+- Stale (edited since review): **29**
 
 ## Stale — edited since engineer review
 
@@ -20,12 +20,13 @@
 - [specification/storage/queue.md](../specification/storage/queue.md) — Luke Fishman, 2026-08-17
 - [specification/storage/README.md](../specification/storage/README.md) — Luke Fishman, 2026-08-17
 
-### implementation (9)
+### implementation (10)
 
 - [implementation/source/contracts/V1/StateChannelDiamondProxy/JoinChannelFacet.sol.md](../implementation/source/contracts/V1/StateChannelDiamondProxy/JoinChannelFacet.sol.md) — Luka, 2026-08-19
 - [implementation/source/src/evm/contractExecutor/worker/ContractExecutorWorkerHostCore.ts.md](../implementation/source/src/evm/contractExecutor/worker/ContractExecutorWorkerHostCore.ts.md) — Luka, 2026-08-15
 - [implementation/source/src/evm/contractExecutor/worker/protocol.ts.md](../implementation/source/src/evm/contractExecutor/worker/protocol.ts.md) — Luka, 2026-08-15
 - [implementation/source/src/evm/contractExecutor/WorkerContractExecutor.ts.md](../implementation/source/src/evm/contractExecutor/WorkerContractExecutor.ts.md) — Luka, 2026-08-15
+- [implementation/source/src/evm/p2pRuntime/P2pRuntimeHost.ts.md](../implementation/source/src/evm/p2pRuntime/P2pRuntimeHost.ts.md) — Luka, 2026-08-15
 - [implementation/source/src/rpc/guards/HandshakeCompletedGuard.ts.md](../implementation/source/src/rpc/guards/HandshakeCompletedGuard.ts.md) — Luka, 2026-08-18
 - [implementation/source/src/rpc/services/joinChannel/JoinChannelService.ts.md](../implementation/source/src/rpc/services/joinChannel/JoinChannelService.ts.md) — Luka, 2026-08-19
 - [implementation/source/src/stateManager/StateManager.ts.md](../implementation/source/src/stateManager/StateManager.ts.md) — Luka, 2026-08-18
@@ -89,7 +90,7 @@
 - [specification/settlement/lifecycle.md](../specification/settlement/lifecycle.md)
 - [specification/settlement/README.md](../specification/settlement/README.md)
 
-### implementation (316)
+### implementation (322)
 
 - [implementation/open-questions.md](../implementation/open-questions.md)
 - [implementation/README.md](../implementation/README.md)
@@ -121,6 +122,7 @@
 - [implementation/source/contracts/V1/StateChannelDiamondProxy/StateProofFacet.sol.md](../implementation/source/contracts/V1/StateChannelDiamondProxy/StateProofFacet.sol.md)
 - [implementation/source/contracts/V1/StateChannelDiamondProxy/StateSnapshotFacet.sol.md](../implementation/source/contracts/V1/StateChannelDiamondProxy/StateSnapshotFacet.sol.md)
 - [implementation/source/contracts/V1/StateChannelDiamondProxy/UtilityFacet.sol.md](../implementation/source/contracts/V1/StateChannelDiamondProxy/UtilityFacet.sol.md)
+- [implementation/source/contracts/V1/StateChannelDiamondProxy/UtilityFacetInterface.sol.md](../implementation/source/contracts/V1/StateChannelDiamondProxy/UtilityFacetInterface.sol.md)
 - [implementation/source/contracts/V1/StateChannelDiamondProxy/utils/BlockUtils.sol.md](../implementation/source/contracts/V1/StateChannelDiamondProxy/utils/BlockUtils.sol.md)
 - [implementation/source/contracts/V1/StateChannelDiamondProxy/utils/DisputeUtils.sol.md](../implementation/source/contracts/V1/StateChannelDiamondProxy/utils/DisputeUtils.sol.md)
 - [implementation/source/contracts/V1/StateChannelDiamondProxy/utils/GeneralUtils.sol.md](../implementation/source/contracts/V1/StateChannelDiamondProxy/utils/GeneralUtils.sol.md)
@@ -259,8 +261,9 @@
 - [implementation/source/src/stateManager/block/BlockProductionService.ts.md](../implementation/source/src/stateManager/block/BlockProductionService.ts.md)
 - [implementation/source/src/stateManager/BlockQueueManager.ts.md](../implementation/source/src/stateManager/BlockQueueManager.ts.md)
 - [implementation/source/src/stateManager/dispute/DisputeValidationService.ts.md](../implementation/source/src/stateManager/dispute/DisputeValidationService.ts.md)
-- [implementation/source/src/stateManager/EventSyncService.ts.md](../implementation/source/src/stateManager/EventSyncService.ts.md)
+- [implementation/source/src/stateManager/eventSync/EventSyncService.ts.md](../implementation/source/src/stateManager/eventSync/EventSyncService.ts.md)
 - [implementation/source/src/stateManager/index.ts.md](../implementation/source/src/stateManager/index.ts.md)
+- [implementation/source/src/stateManager/ingest/ValidationService.ts.md](../implementation/source/src/stateManager/ingest/ValidationService.ts.md)
 - [implementation/source/src/stateManager/README.md](../implementation/source/src/stateManager/README.md)
 - [implementation/source/src/stateManager/reduction/index.ts.md](../implementation/source/src/stateManager/reduction/index.ts.md)
 - [implementation/source/src/stateManager/reduction/README.md](../implementation/source/src/stateManager/reduction/README.md)
@@ -273,7 +276,6 @@
 - [implementation/source/src/stateManager/utils/DisputeFraudProofService.ts.md](../implementation/source/src/stateManager/utils/DisputeFraudProofService.ts.md)
 - [implementation/source/src/stateManager/utils/FraudProofService.ts.md](../implementation/source/src/stateManager/utils/FraudProofService.ts.md)
 - [implementation/source/src/stateManager/utils/README.md](../implementation/source/src/stateManager/utils/README.md)
-- [implementation/source/src/stateManager/ValidationService.ts.md](../implementation/source/src/stateManager/ValidationService.ts.md)
 - [implementation/source/src/stateManager/validationStrategy/AValidationStrategy.ts.md](../implementation/source/src/stateManager/validationStrategy/AValidationStrategy.ts.md)
 - [implementation/source/src/stateManager/validationStrategy/BlockValidationStrategy.ts.md](../implementation/source/src/stateManager/validationStrategy/BlockValidationStrategy.ts.md)
 - [implementation/source/src/stateManager/validationStrategy/CalldataCommittedStrategy.ts.md](../implementation/source/src/stateManager/validationStrategy/CalldataCommittedStrategy.ts.md)
@@ -321,6 +323,8 @@
 - [implementation/source/src/utils/browser/LocalDiscoveryServer.ts.md](../implementation/source/src/utils/browser/LocalDiscoveryServer.ts.md)
 - [implementation/source/src/utils/browser/README.md](../implementation/source/src/utils/browser/README.md)
 - [implementation/source/src/utils/config.ts.md](../implementation/source/src/utils/config.ts.md)
+- [implementation/source/src/utils/contractAbi.ts.md](../implementation/source/src/utils/contractAbi.ts.md)
+- [implementation/source/src/utils/contractSize.ts.md](../implementation/source/src/utils/contractSize.ts.md)
 - [implementation/source/src/utils/DebugProxy.ts.md](../implementation/source/src/utils/DebugProxy.ts.md)
 - [implementation/source/src/utils/DeepCopyProxy.ts.md](../implementation/source/src/utils/DeepCopyProxy.ts.md)
 - [implementation/source/src/utils/DeployUtils.ts.md](../implementation/source/src/utils/DeployUtils.ts.md)
@@ -331,6 +335,7 @@
 - [implementation/source/src/utils/GeneratedArtifacts.ts.md](../implementation/source/src/utils/GeneratedArtifacts.ts.md)
 - [implementation/source/src/utils/hash.ts.md](../implementation/source/src/utils/hash.ts.md)
 - [implementation/source/src/utils/index.ts.md](../implementation/source/src/utils/index.ts.md)
+- [implementation/source/src/utils/localDiamond.ts.md](../implementation/source/src/utils/localDiamond.ts.md)
 - [implementation/source/src/utils/LocalDiscoveryServer.ts.md](../implementation/source/src/utils/LocalDiscoveryServer.ts.md)
 - [implementation/source/src/utils/LoggerUtils.ts.md](../implementation/source/src/utils/LoggerUtils.ts.md)
 - [implementation/source/src/utils/logging/axiosErrorUtils.ts.md](../implementation/source/src/utils/logging/axiosErrorUtils.ts.md)
@@ -367,10 +372,12 @@
 - [implementation/source/src/utils/participantUtils.ts.md](../implementation/source/src/utils/participantUtils.ts.md)
 - [implementation/source/src/utils/README.md](../implementation/source/src/utils/README.md)
 - [implementation/source/src/utils/retry.ts.md](../implementation/source/src/utils/retry.ts.md)
+- [implementation/source/src/utils/routedFacets.ts.md](../implementation/source/src/utils/routedFacets.ts.md)
 - [implementation/source/src/utils/scheduler.ts.md](../implementation/source/src/utils/scheduler.ts.md)
 - [implementation/source/src/utils/set.ts.md](../implementation/source/src/utils/set.ts.md)
 - [implementation/source/src/utils/SignatureCollectionMap.ts.md](../implementation/source/src/utils/SignatureCollectionMap.ts.md)
 - [implementation/source/src/utils/SignatureUtils.ts.md](../implementation/source/src/utils/SignatureUtils.ts.md)
+- [implementation/source/src/utils/stateChannelManager.ts.md](../implementation/source/src/utils/stateChannelManager.ts.md)
 - [implementation/source/src/utils/TimeoutManager.ts.md](../implementation/source/src/utils/TimeoutManager.ts.md)
 - [implementation/views/architecture/contracts.md](../implementation/views/architecture/contracts.md)
 - [implementation/views/architecture/contracts/architecture.md](../implementation/views/architecture/contracts/architecture.md)
@@ -408,7 +415,7 @@
 - [implementation/views/security/data-availability.md](../implementation/views/security/data-availability.md)
 - [implementation/views/security/trust-model.md](../implementation/views/security/trust-model.md)
 
-### verification (112)
+### verification (118)
 
 - [verification/open-questions.md](../verification/open-questions.md)
 - [verification/README.md](../verification/README.md)
@@ -497,11 +504,14 @@
 - [verification/tests/test/storage/Storage.test.ts.md](../verification/tests/test/storage/Storage.test.ts.md)
 - [verification/tests/test/unit/AgreementManager.test.ts.md](../verification/tests/test/unit/AgreementManager.test.ts.md)
 - [verification/tests/test/unit/BlockProductionService.test.ts.md](../verification/tests/test/unit/BlockProductionService.test.ts.md)
+- [verification/tests/test/unit/ContractSize.test.ts.md](../verification/tests/test/unit/ContractSize.test.ts.md)
 - [verification/tests/test/unit/DeploymentCache.test.ts.md](../verification/tests/test/unit/DeploymentCache.test.ts.md)
 - [verification/tests/test/unit/DisputeManager.test.ts.md](../verification/tests/test/unit/DisputeManager.test.ts.md)
 - [verification/tests/test/unit/EventBarrier.test.ts.md](../verification/tests/test/unit/EventBarrier.test.ts.md)
+- [verification/tests/test/unit/LocalDiamondBinding.test.ts.md](../verification/tests/test/unit/LocalDiamondBinding.test.ts.md)
 - [verification/tests/test/unit/ReductionExecutor.test.ts.md](../verification/tests/test/unit/ReductionExecutor.test.ts.md)
 - [verification/tests/test/unit/SpectateService.test.ts.md](../verification/tests/test/unit/SpectateService.test.ts.md)
+- [verification/tests/test/unit/StateChannelManagerBinding.test.ts.md](../verification/tests/test/unit/StateChannelManagerBinding.test.ts.md)
 - [verification/tests/test/unit/ValidationService.test.ts.md](../verification/tests/test/unit/ValidationService.test.ts.md)
 - [verification/tests/test/utils/Config.test.ts.md](../verification/tests/test/utils/Config.test.ts.md)
 - [verification/tests/test/utils/ContractErrors.test.ts.md](../verification/tests/test/utils/ContractErrors.test.ts.md)
@@ -515,10 +525,13 @@
 - [verification/tests/test/utils/WebRTCTransport.test.ts.md](../verification/tests/test/utils/WebRTCTransport.test.ts.md)
 - [verification/tests/test/utils/WebRTCWorkerBridgeConnectionFactory.test.ts.md](../verification/tests/test/utils/WebRTCWorkerBridgeConnectionFactory.test.ts.md)
 - [verification/tests/test/V1/DiamondProxy/StateChannelManager/OpenChannel.test.ts.md](../verification/tests/test/V1/DiamondProxy/StateChannelManager/OpenChannel.test.ts.md)
+- [verification/tests/test/V1/DiamondProxy/StateChannelManager/SelectorRouting.test.ts.md](../verification/tests/test/V1/DiamondProxy/StateChannelManager/SelectorRouting.test.ts.md)
 - [verification/tests/test/V1/DiamondProxy/StateChannelManager/StateProofVerification.test.ts.md](../verification/tests/test/V1/DiamondProxy/StateChannelManager/StateProofVerification.test.ts.md)
 - [verification/tests/test/V1/DiamondProxy/UtilityLibrary/SignatureVerification.test.ts.md](../verification/tests/test/V1/DiamondProxy/UtilityLibrary/SignatureVerification.test.ts.md)
 - [verification/tests/test/V1/StateChannelDiamondProxy/DisputeVerificationFacet.t.sol.md](../verification/tests/test/V1/StateChannelDiamondProxy/DisputeVerificationFacet.t.sol.md)
 - [verification/tests/test/V1/StateChannelDiamondProxy/FraudProofFacet.t.sol.md](../verification/tests/test/V1/StateChannelDiamondProxy/FraudProofFacet.t.sol.md)
+- [verification/tests/test/V1/StateChannelDiamondProxy/StateChannelManagerProxyOpen.t.sol.md](../verification/tests/test/V1/StateChannelDiamondProxy/StateChannelManagerProxyOpen.t.sol.md)
+- [verification/tests/test/V1/StateChannelDiamondProxy/StateChannelManagerProxyRegistration.t.sol.md](../verification/tests/test/V1/StateChannelDiamondProxy/StateChannelManagerProxyRegistration.t.sol.md)
 - [verification/tests/test/V1/StateChannelDiamondProxy/UtilityFacet.t.sol.md](../verification/tests/test/V1/StateChannelDiamondProxy/UtilityFacet.t.sol.md)
 - [verification/tests/test/V1/StateChannelDiamondProxy/utils/DisputeUtils.t.sol.md](../verification/tests/test/V1/StateChannelDiamondProxy/utils/DisputeUtils.t.sol.md)
 - [verification/tests/test/V1/UniversalDeployment.test.ts.md](../verification/tests/test/V1/UniversalDeployment.test.ts.md)
@@ -539,11 +552,10 @@
 - [specification/storage/progress-markers.md](../specification/storage/progress-markers.md) — Luke Fishman, 2026-08-17
 - [specification/storage/snapshots-and-states.md](../specification/storage/snapshots-and-states.md) — Luke Fishman, 2026-08-17
 
-### implementation (13)
+### implementation (12)
 
 - [implementation/source/src/events/EventBus.ts.md](../implementation/source/src/events/EventBus.ts.md) — Luka, 2026-08-18
 - [implementation/source/src/evm/EvmDiamondStateMachine.ts.md](../implementation/source/src/evm/EvmDiamondStateMachine.ts.md) — Luka, 2026-08-15
-- [implementation/source/src/evm/p2pRuntime/P2pRuntimeHost.ts.md](../implementation/source/src/evm/p2pRuntime/P2pRuntimeHost.ts.md) — Luka, 2026-08-15
 - [implementation/source/src/P2PManager.ts.md](../implementation/source/src/P2PManager.ts.md) — Luka, 2026-08-18
 - [implementation/source/src/ProfileManager.ts.md](../implementation/source/src/ProfileManager.ts.md) — Luka, 2026-08-18
 - [implementation/source/src/rpc/ARpcService.ts.md](../implementation/source/src/rpc/ARpcService.ts.md) — Luka, 2026-08-18

@@ -1,8 +1,8 @@
 import { expect } from "chai";
 import { ethers } from "hardhat";
-import { WebSocketProvider } from "ethers";
+import { type Interface, WebSocketProvider } from "ethers";
 import sinon from "sinon";
-import { StateChannelManagerProxy__factory } from "@typechain-types";
+import { stateChannelManagerAbi } from "@/utils/stateChannelManager";
 
 import { resolveWebSocketProviderUrl } from "@/evm/p2pRuntime/RuntimeChainContext";
 import { startP2pRuntimeHost } from "@/evm/p2pRuntime/P2pRuntimeHost";
@@ -43,8 +43,7 @@ describe("RuntimeChainContext", () => {
         const signer = ethers.Wallet.createRandom();
         const scm = {
             address: ethers.Wallet.createRandom().address,
-            abiJson:
-                StateChannelManagerProxy__factory.createInterface().formatJson()
+            abiJson: new ethers.Interface(stateChannelManagerAbi).formatJson()
         };
         const stateMachine = {
             address: ethers.Wallet.createRandom().address,
@@ -110,10 +109,12 @@ describe("RuntimeChainContext", () => {
         });
         const channel = createRuntimeChannel();
         const signer = ethers.Wallet.createRandom();
+        const consumerAbi = [
+            "function consumerValue(bytes32 key) view returns (uint256)"
+        ];
         const scm = {
             address: ethers.Wallet.createRandom().address,
-            abiJson:
-                StateChannelManagerProxy__factory.createInterface().formatJson()
+            abiJson: new ethers.Interface(consumerAbi).formatJson()
         };
         const client = new P2pRuntimeClient(channel.port1, {
             signerAddress: signer.address,
@@ -124,6 +125,14 @@ describe("RuntimeChainContext", () => {
             },
             provider: ethers.provider
         });
+        const managerInterface: Interface =
+            client.stateChannelManagerContract.interface;
+        expect(managerInterface.getFunction("consumerValue")).to.not.equal(
+            null
+        );
+        expect(managerInterface.getError("ECDSAInvalidSignature")).to.not.equal(
+            null
+        );
         let quiesceRequestId: number | undefined;
         let resolveQuiesceReceived!: () => void;
         const quiesceReceived = new Promise<void>((resolve) => {
@@ -173,8 +182,7 @@ describe("RuntimeChainContext", () => {
         const signer = ethers.Wallet.createRandom();
         const scm = {
             address: ethers.Wallet.createRandom().address,
-            abiJson:
-                StateChannelManagerProxy__factory.createInterface().formatJson()
+            abiJson: new ethers.Interface(stateChannelManagerAbi).formatJson()
         };
         const client = new P2pRuntimeClient(channel.port1, {
             signerAddress: signer.address,

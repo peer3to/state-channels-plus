@@ -27,7 +27,19 @@ atomic composable deposit, appended inbound JOIN block.
 ## Key design decisions
 
 1. **One `_processJoinChannel(…, isTopUp)`** keeps the two admission cases from drifting apart — the membership split is a flag check, everything else shared.
-2. **Membership and countersign eligibility remain separate.** Existing-participant checks use the
+2. **The undisputed-fork gate is an internal call, not an external self-call.** The join branch
+   evaluates [`_isForkDisputed`](../../../../../../../contracts/V1/StateChannelDiamondProxy/StateChannelCommon.sol#L195)
+   on [StateChannelCommon](./StateChannelCommon.sol.md)
+   ([#L66](../../../../../../../contracts/V1/StateChannelDiamondProxy/JoinChannelFacet.sol#L66)); it
+   previously reached the same predicate through an external self-call on the proxy. Same verdict,
+   one call frame fewer, and no dependency on the proxy's type.
+3. **The composable deposit self-call is typed by the interface.** `depositAssetsComposable` is
+   still reached as an external call to `address(this)` — that is what satisfies its `onlySelf`
+   guard — but the call is typed through
+   [StateChannelManagerInterface](../../StateChannelManagerInterface.sol.md) rather than the proxy
+   contract, so this facet no longer imports the proxy
+   ([#L83](../../../../../../../contracts/V1/StateChannelDiamondProxy/JoinChannelFacet.sol#L83)).
+4. **Membership and countersign eligibility remain separate.** Existing-participant checks use the
    full snapshot ∪ pending union, while signature verification uses
    `getOnChainThresholdSet` = (snapshot ∪ pending) − on-chain-slashed. A slash removes veto
    power without making the address absent from the recorded membership union. The top-up branch

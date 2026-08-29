@@ -21,11 +21,13 @@
 
 The storage layout: timing config, machine reference, facet addresses, per-channel balances/
 inbound blocks/snapshot/calldata commitments/dispute data/throttle — the single layout every
-delegatecall path shares.
+delegatecall path shares. It also owns the constructor-populated selector route map.
 
 ## Key design decisions
 
 1. **Minimized to commitments and accounting** — full data lives off-chain; the chain stores what adjudication needs.
+2. **A route stores both address and configured state.** This preserves a configured zero address;
+   only an unconfigured selector falls through to the consumer facet.
 
 ## Inputs, outputs, state, and side effects
 

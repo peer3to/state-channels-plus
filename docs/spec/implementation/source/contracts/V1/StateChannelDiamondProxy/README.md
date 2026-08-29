@@ -21,4 +21,5 @@ _Pending authoring: shared responsibility, design decisions, assumptions, cross-
 - [StateProofFacet.sol](./StateProofFacet.sol.md)
 - [StateSnapshotFacet.sol](./StateSnapshotFacet.sol.md)
 - [UtilityFacet.sol](./UtilityFacet.sol.md)
+- [UtilityFacetInterface.sol](./UtilityFacetInterface.sol.md)
 - [utils/](./utils/README.md)

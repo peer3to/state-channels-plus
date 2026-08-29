@@ -1,4 +1,4 @@
-import { StateChannelManagerProxy } from "@typechain-types";
+import { StateChannelManagerInterface } from "@typechain-types";
 import { MessageBlockStruct } from "@typechain-types/contracts/V1/types/DataTypes";
 import { BytesLike, Filter, Log, Result, hexlify, zeroPadValue } from "ethers";
 
@@ -38,7 +38,8 @@ export type BlockCalldataRecoveryResult = {
     validationScheduled: boolean;
 };
 type BlockStates = Map<BlockNumber, BlockState>;
-type StateChannelManagerEventName = keyof StateChannelManagerProxy["filters"];
+type StateChannelManagerEventName =
+    keyof StateChannelManagerInterface["filters"];
 const STATE_CHANNEL_MANAGER_EVENT_NAMES = [
     "ChannelOpened",
     "StateSnapshotUpdated",
@@ -83,7 +84,7 @@ export default class EventSyncService {
 
     constructor(
         channelId: ChannelId,
-        private readonly stateChannelManagerContract: StateChannelManagerProxy,
+        private readonly stateChannelManagerContract: StateChannelManagerInterface,
         private readonly eventHandler: EventHandler,
         private readonly storage: Storage,
         private readonly timeConfig: TimeConfig,

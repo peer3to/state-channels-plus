@@ -1,35 +1,39 @@
-import { tryDecodeCustomError } from "@/utils";
 import {
     DisputeTampering,
     MathTestSession as TestSession
 } from "@test/harness";
+import { expectDecodedError } from "@test/test_utils/customErrorAssertions";
 import { expect } from "chai";
-
-function expectDecodedError(
-    error: unknown,
-    name: string,
-    failMessage: string
-): void {
-    const customError = tryDecodeCustomError(error);
-    expect(customError, failMessage).to.not.be.null;
-    expect(customError!.errorDescription.name, failMessage).to.equal(name);
-}
+import { ethers } from "ethers";
 
 describe("E2E: dispute validation / uploadRevert / disputeAuditingDataHash", function () {
     it("with calldata: dispute.input.disputeAuditingDataHash tampered → dispute upload fails → ErrorAuditingDataHashMismatch", async function () {
         const h = TestSession.getHarness();
         await h.scenario.preDisputeSetupCalldataPath();
 
+        let tamperedAuditingDataHash = "";
         try {
             await h.tamper.postTamperedDispute(3, (dispute) => {
                 DisputeTampering.tamperAuditingDataHash(dispute);
+                tamperedAuditingDataHash = ethers.hexlify(
+                    dispute.input.disputeAuditingDataHash
+                );
             });
             expect.fail("expected revert");
         } catch (error: unknown) {
-            expectDecodedError(
+            const customError = expectDecodedError(
                 error,
                 "ErrorAuditingDataHashMismatch",
                 "expected ErrorAuditingDataHashMismatch"
+            );
+            const args = customError.errorDescription.args;
+            // the dispute claimed the tampered hash; the uploaded data hashes
+            // to something else, which is exactly the mismatch
+            expect(args.expectedAuditingDataHash).to.equal(
+                tamperedAuditingDataHash
+            );
+            expect(args.providedAuditingDataHash).to.not.equal(
+                tamperedAuditingDataHash
             );
         }
     });
@@ -53,11 +57,14 @@ describe("E2E: dispute validation / uploadRevert / disputeAuditingDataHash", fun
             );
             expect.fail("expected revert");
         } catch (error: unknown) {
-            expectDecodedError(
+            const customError = expectDecodedError(
                 error,
                 "ErrorDisputePostedAuditingDataMismatch",
                 "expected ErrorDisputePostedAuditingDataMismatch"
             );
+            const args = customError.errorDescription.args;
+            expect(args.expectedPostedAuditingData).to.equal(false);
+            expect(args.actualPostedAuditingData).to.equal(true);
         }
     });
 
@@ -78,11 +85,14 @@ describe("E2E: dispute validation / uploadRevert / disputeAuditingDataHash", fun
             );
             expect.fail("expected revert");
         } catch (error: unknown) {
-            expectDecodedError(
+            const customError = expectDecodedError(
                 error,
                 "ErrorDisputePostedAuditingDataMismatch",
                 "expected ErrorDisputePostedAuditingDataMismatch"
             );
+            const args = customError.errorDescription.args;
+            expect(args.expectedPostedAuditingData).to.equal(true);
+            expect(args.actualPostedAuditingData).to.equal(false);
         }
     });
 });

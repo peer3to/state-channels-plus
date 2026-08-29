@@ -4,7 +4,7 @@ import {
 } from "@typechain-types/contracts/V1/types/DataTypes";
 import { Address, Bytes } from "./types/types";
 
-import { LocalDiamond } from "@typechain-types/index";
+import type { LocalDiamondContract } from "./utils/localDiamond";
 type TransitionResponse = {
     success: boolean;
     outboundMessages: MessageStruct[];
@@ -12,9 +12,9 @@ type TransitionResponse = {
 };
 
 abstract class ADiamondStateMachine {
-    localDiamondContract: LocalDiamond;
+    localDiamondContract: LocalDiamondContract;
 
-    constructor(localDiamondContract: LocalDiamond) {
+    constructor(localDiamondContract: LocalDiamondContract) {
         this.localDiamondContract = localDiamondContract;
     }
 

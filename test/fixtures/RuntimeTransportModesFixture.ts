@@ -10,11 +10,8 @@ import {
     slotAccountIndex,
     slotDeployerIndex
 } from "@test/harness/core/slotAccounts";
-import {
-    MathStateMachine,
-    MathStateMachine__factory,
-    StateChannelManagerProxy__factory
-} from "@typechain-types";
+import { MathStateMachine, MathStateMachine__factory } from "@typechain-types";
+import { connectStateChannelManager } from "@/utils/stateChannelManager";
 import { ContractFactory } from "ethers";
 import {
     startHardhatNode,
@@ -91,10 +88,7 @@ async function setupP2pInstance(options: {
     };
 
     return EvmStateMachine.p2pSetup(
-        StateChannelManagerProxy__factory.connect(
-            scmDeployment.address,
-            runtimeSigner
-        ),
+        connectStateChannelManager(scmDeployment.address, runtimeSigner),
         deployedStateMachine,
         deployStateMachine,
         {

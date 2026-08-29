@@ -29,7 +29,7 @@ contract StateProofFacet is StateChannelCommon {
         }
 
         (bool hasGenesisTimestamp, uint256 genesisTimestamp) =
-            getGenesisTimestamp(dispute.input.channelId, genesisStateSnapshotData.originForkId, dispute.input.forkId);
+            _getGenesisTimestamp(dispute.input.channelId, genesisStateSnapshotData.originForkId, dispute.input.forkId);
         if (!hasGenesisTimestamp) {
             return false;
         }
@@ -156,7 +156,7 @@ contract StateProofFacet is StateChannelCommon {
         uint256 blockIndex
     ) internal view returns (bool) {
         SignedBlock memory currentSignedBlock = unfinalized[blockIndex].signedBlock;
-        if (!isBlockAuthentic(currentSignedBlock)) return true;
+        if (!_isBlockAuthentic(currentSignedBlock)) return true;
 
         (bool currentDecoded, Block memory currentBlock) =
             UtilityFacet(utilityFacetAddress).tryDecodeBlock(currentSignedBlock.encodedBlock);

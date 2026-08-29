@@ -1,6 +1,7 @@
 pragma solidity ^0.8.8;
 
 import "./StateChannelManagerProxy.sol";
+import "./UtilityFacet.sol";
 import "../types/DataTypes.sol";
 import "../types/DisputeTypes.sol";
 import "../types/MessageTypeHashes.sol";
@@ -317,7 +318,7 @@ contract LocalDiamond is StateChannelManagerProxy {
         );
 
         // Perform the low-level call with a gas limit
-        (bool success, bytes memory returnData) = disputeVerificationFacetAddress.delegatecall{gas: getGasLimit()}(data);
+        (bool success, bytes memory returnData) = disputeVerificationFacetAddress.delegatecall{gas: _getGasLimit()}(data);
 
         if (!success) {
             assembly ("memory-safe") {
@@ -339,7 +340,7 @@ contract LocalDiamond is StateChannelManagerProxy {
             (disputeInput, latestStateSnapshot, latestStateMachineState, inboundMessageBlocks)
         );
 
-        (bool success, bytes memory returnData) = disputeVerificationFacetAddress.delegatecall{gas: getGasLimit()}(data);
+        (bool success, bytes memory returnData) = disputeVerificationFacetAddress.delegatecall{gas: _getGasLimit()}(data);
 
         if (!success) {
             assembly ("memory-safe") {
@@ -392,7 +393,7 @@ contract LocalDiamond is StateChannelManagerProxy {
             (dispute, latestStateSnapshot, latestFinalizedStateStateMachineState, inboundMessageBlocks)
         );
         // Perform the low-level call with a gas limit
-        (bool success, bytes memory returnData) = disputeVerificationFacetAddress.delegatecall{gas: getGasLimit()}(data);
+        (bool success, bytes memory returnData) = disputeVerificationFacetAddress.delegatecall{gas: _getGasLimit()}(data);
         if (!success) {
             assembly ("memory-safe") {
                 revert(add(returnData, 0x20), mload(returnData))
@@ -435,7 +436,14 @@ contract LocalDiamond is StateChannelManagerProxy {
 
     // ========== Override for debugging - Browser compatible console logs ==========
 
-    function isBlockAuthentic(SignedBlock memory _block) public view override returns (bool) {
+    /// @dev The production `isBlockAuthentic` is routed to `UtilityFacet`; declaring
+    ///     it here keeps local deployments on the debug variant below, since a
+    ///     declared function dispatches before the fallback.
+    function isBlockAuthentic(SignedBlock memory _block) public view returns (bool) {
+        return _isBlockAuthentic(_block);
+    }
+
+    function _isBlockAuthentic(SignedBlock memory _block) internal view override returns (bool) {
         (bool decoded, Block memory decodedBlock) =
             UtilityFacet(utilityFacetAddress).tryDecodeBlock(_block.encodedBlock);
         if (!decoded) {

@@ -1,7 +1,7 @@
 # ValidationService.ts — Source Report
 
-> **Source:** [src/stateManager/ValidationService.ts](../../../../../../src/stateManager/ValidationService.ts) > **Status:** Authored — engineer verification pending.
-> **Design views:** [architecture/sdk/block-confirmation-pipeline.md](../../../views/architecture/sdk/block-confirmation-pipeline.md)
+> **Source:** [src/stateManager/ingest/ValidationService.ts](../../../../../../../src/stateManager/ingest/ValidationService.ts) > **Status:** Authored — engineer verification pending.
+> **Design views:** [architecture/sdk/block-confirmation-pipeline.md](../../../../views/architecture/sdk/block-confirmation-pipeline.md)
 
 ## Contents
 
@@ -27,8 +27,8 @@ post timing, and the subjective agreement window (live only, never evidence).
 
 ## Key design decisions
 
-1. **Every predicate against one pre-state** under the caller's mutex ([`REQ-BLOCK-PIPE-2-PCXNT6`](../../../../specification/block-progression/block-processing.md#req-block-pipe-2-pcxnt6)).
-2. **Objective time checks run the exact fraud-proof struct through the mirrored predicate** — the check and the future proof cannot disagree ([`REQ-MIRROR-1-XCY9CB`](../../../../specification/enforcement/local-mirror.md#req-mirror-1-xcy9cb)).
+1. **Every predicate against one pre-state** under the caller's mutex ([`REQ-BLOCK-PIPE-2-PCXNT6`](../../../../../specification/block-progression/block-processing.md#req-block-pipe-2-pcxnt6)).
+2. **Objective time checks run the exact fraud-proof struct through the mirrored predicate** — the check and the future proof cannot disagree ([`REQ-MIRROR-1-XCY9CB`](../../../../../specification/enforcement/local-mirror.md#req-mirror-1-xcy9cb)).
 3. **Retroactive legitimization:** a failing timestamp first triggers predecessor-calldata recovery and a re-run — an on-chain post can grant the window that makes it valid.
 4. **Conflict taxonomy decides attribution:** same author → double-sign; linked-to-our-predecessor → author's invalid transition; height-0 → wrong genesis; unlinked → nobody to slash.
 
@@ -46,17 +46,17 @@ post timing, and the subjective agreement window (live only, never evidence).
 A file may contribute to several requirements; this report describes the contribution and never
 claims complete conformance for a requirement that depends on other files.
 
-| Source file                                                                     | Specification IDs                                                                                                                                                                                                                                                                                                                                                                                                                                          |
-| ------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| [ValidationService.ts](../../../../../../src/stateManager/ValidationService.ts) | [`REQ-BLOCK-PIPE-2-PCXNT6`](../../../../specification/block-progression/block-processing.md#req-block-pipe-2-pcxnt6), [`REQ-BLOCK-PIPE-3-WW2SB7`](../../../../specification/block-progression/block-processing.md#req-block-pipe-3-ww2sb7), [`REQ-BLOCK-PIPE-8-N529VH`](../../../../specification/block-progression/block-processing.md#req-block-pipe-8-n529vh), [`REQ-LIF-7-0XZBDM`](../../../../specification/settlement/lifecycle.md#req-lif-7-0xzbdm) |
+| Source file                                                                               | Specification IDs                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
+| ----------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| [ValidationService.ts](../../../../../../../src/stateManager/ingest/ValidationService.ts) | [`REQ-BLOCK-PIPE-2-PCXNT6`](../../../../../specification/block-progression/block-processing.md#req-block-pipe-2-pcxnt6), [`REQ-BLOCK-PIPE-3-WW2SB7`](../../../../../specification/block-progression/block-processing.md#req-block-pipe-3-ww2sb7), [`REQ-BLOCK-PIPE-8-N529VH`](../../../../../specification/block-progression/block-processing.md#req-block-pipe-8-n529vh), [`REQ-LIF-7-0XZBDM`](../../../../../specification/settlement/lifecycle.md#req-lif-7-0xzbdm) |
 
 ## Assumptions, dependencies, trust boundaries, and limits
 
-- Runs only under the execution boundary; hooks own consequences ([`REQ-BLOCK-PIPE-3-WW2SB7`](../../../../specification/block-progression/block-processing.md#req-block-pipe-3-ww2sb7)).
+- Runs only under the execution boundary; hooks own consequences ([`REQ-BLOCK-PIPE-3-WW2SB7`](../../../../../specification/block-progression/block-processing.md#req-block-pipe-3-ww2sb7)).
 
 ## Specification adherence
 
-- Complete pre-execution chain in fixed order; subjective lateness isolated from evidence ([`REQ-BLOCK-PIPE-8-N529VH`](../../../../specification/block-progression/block-processing.md#req-block-pipe-8-n529vh)).
+- Complete pre-execution chain in fixed order; subjective lateness isolated from evidence ([`REQ-BLOCK-PIPE-8-N529VH`](../../../../../specification/block-progression/block-processing.md#req-block-pipe-8-n529vh)).
 
 ## Specification contradictions
 
@@ -72,11 +72,11 @@ Status enum: `Covered` | `Partial` | `Contradicts` | `Missing`. Evidence cells a
 **Here:** / **Other files:** so each row is auditable from its links alone; genuine gaps go in the
 Gap column. Audit state is file-level (Status header), never a row status.
 
-| Requirement / invariant                                                                                              | Implementation status | Evidence                                                                                                                                                                                                                                                                                                                                                                                                        | Gap / divergence |
-| -------------------------------------------------------------------------------------------------------------------- | --------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------- |
-| [`REQ-BLOCK-PIPE-2-PCXNT6`](../../../../specification/block-progression/block-processing.md#req-block-pipe-2-pcxnt6) | Covered               | **Here:** the nine-predicate ordered chain on one pre-state. **Other files:** consequences per strategy.                                                                                                                                                                                                                                                                                                        | None.            |
-| [`REQ-BLOCK-PIPE-8-N529VH`](../../../../specification/block-progression/block-processing.md#req-block-pipe-8-n529vh) | Covered               | **Here:** canonical-predicate objective checks; `NOT_ENOUGH_TIME` subjective park.                                                                                                                                                                                                                                                                                                                              | None.            |
-| [`REQ-LIF-7-0XZBDM`](../../../../specification/settlement/lifecycle.md#req-lif-7-0xzbdm)                             | Covered               | **Here:** the standing gate — `validateBlockConfirmation` diverts every block on a disputed fork to the strategy deviation `blockForkIsDisputed` instead of the normal pipeline, for as long as the fork is disputed. **Other files:** [EventHandler.ts.md](../eventHandlers/EventHandler.ts.md) (commitment-time purge and pause surfacing), [BlockQueueManager.ts.md](BlockQueueManager.ts.md) (queue purge). | None.            |
+| Requirement / invariant                                                                                                 | Implementation status | Evidence                                                                                                                                                                                                                                                                                                                                                                                                              | Gap / divergence |
+| ----------------------------------------------------------------------------------------------------------------------- | --------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------- |
+| [`REQ-BLOCK-PIPE-2-PCXNT6`](../../../../../specification/block-progression/block-processing.md#req-block-pipe-2-pcxnt6) | Covered               | **Here:** the nine-predicate ordered chain on one pre-state. **Other files:** consequences per strategy.                                                                                                                                                                                                                                                                                                              | None.            |
+| [`REQ-BLOCK-PIPE-8-N529VH`](../../../../../specification/block-progression/block-processing.md#req-block-pipe-8-n529vh) | Covered               | **Here:** canonical-predicate objective checks; `NOT_ENOUGH_TIME` subjective park.                                                                                                                                                                                                                                                                                                                                    | None.            |
+| [`REQ-LIF-7-0XZBDM`](../../../../../specification/settlement/lifecycle.md#req-lif-7-0xzbdm)                             | Covered               | **Here:** the standing gate — `validateBlockConfirmation` diverts every block on a disputed fork to the strategy deviation `blockForkIsDisputed` instead of the normal pipeline, for as long as the fork is disputed. **Other files:** [EventHandler.ts.md](../../eventHandlers/EventHandler.ts.md) (commitment-time purge and pause surfacing), [BlockQueueManager.ts.md](../BlockQueueManager.ts.md) (queue purge). | None.            |
 
 ## Component test obligations
 
@@ -88,4 +88,4 @@ Exact test evidence is mapped against these IDs in the verification test reports
 
 ## Related source reports
 
-- [StateManager](./StateManager.ts.md), the strategies, [EventSyncService](./EventSyncService.ts.md) (calldata recovery), [EvmDiamondStateMachine](../evm/EvmDiamondStateMachine.ts.md).
+- [StateManager](../StateManager.ts.md), the strategies, [EventSyncService](../eventSync/EventSyncService.ts.md) (calldata recovery), [EvmDiamondStateMachine](../../evm/EvmDiamondStateMachine.ts.md).

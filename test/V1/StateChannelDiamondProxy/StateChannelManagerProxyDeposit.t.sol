@@ -1,7 +1,7 @@
 pragma solidity ^0.8.8;
 
 import {DiamondHarness} from "../harness/DiamondHarness.sol";
-import {StateChannelManagerProxy} from "../../../contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol";
+import {StateChannelManagerInterface} from "../../../contracts/V1/StateChannelManagerInterface.sol";
 import {AConsumerFacet} from "../../../contracts/V1/StateChannelDiamondProxy/AConsumerFacet.sol";
 import {
     ErrorJoinChannelAtomicFailure,
@@ -47,7 +47,7 @@ contract SelectiveDepositConsumerFacet is AConsumerFacet {
 
 // test naming: test_<targetFunction>_<property>
 contract StateChannelManagerProxyDepositTest is DiamondHarness {
-    StateChannelManagerProxy internal diamond;
+    StateChannelManagerInterface internal diamond;
 
     bytes32 internal constant CHANNEL_ID = keccak256("composable-deposit");
 

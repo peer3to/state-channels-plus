@@ -25,6 +25,16 @@ classification.
 ## Key design decisions
 
 1. **Errors are protocol signals:** client race handling keys on these names — renaming is a breaking protocol change, not a refactor.
+2. **Arguments carry the comparison, not just the verdict:** an error that rejects a submission
+   populates the value the caller supplied alongside the value the contract required, so the
+   off-chain log reconstructs the on-chain state at the point of failure without a follow-up
+   chain read. Adding arguments changes the error selector but not its name, so name-keyed
+   client handling is unaffected; the decoded argument names come from the error's own ABI, so
+   no client-side decoder is added per error.
+3. **Duplicate selector registration is exact:** `ErrorDuplicateSelectorRegistration(bytes4)`
+   identifies the constructor entry that collided, so deployment failures are auditable.
+4. **Codeless route rejection is exact:** `ErrorRouteTargetHasNoCode(bytes4,address)` identifies
+   both the selector being installed and the empty target address.
 
 ## Inputs, outputs, state, and side effects
 
@@ -40,9 +50,9 @@ classification.
 A file may contribute to several requirements; this report describes the contribution and never
 claims complete conformance for a requirement that depends on other files.
 
-| Source file                                                                         | Specification IDs                                                                                            |
-| ----------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------ |
-| [Errors.sol](../../../../../../../contracts/V1/StateChannelDiamondProxy/Errors.sol) | [`REQ-ENFADM-2-K6K9SP`](../../../../../specification/enforcement/admission-and-funds.md#req-enfadm-2-k6k9sp) |
+| Source file                                                                         | Specification IDs                                                                                                                                                                                                              |
+| ----------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| [Errors.sol](../../../../../../../contracts/V1/StateChannelDiamondProxy/Errors.sol) | [`REQ-ENFADM-2-K6K9SP`](../../../../../specification/enforcement/admission-and-funds.md#req-enfadm-2-k6k9sp), [`REQ-CONTRACT-ARCH-4-FZ3CJE`](../../../../../specification/enforcement/contracts.md#req-contract-arch-4-fz3cje) |
 
 ## Assumptions, dependencies, trust boundaries, and limits
 
@@ -54,6 +64,10 @@ claims complete conformance for a requirement that depends on other files.
 - Operation semantics per the owning protocol documents; composition rules per [contracts.md](../../../../../specification/enforcement/contracts.md).
 - `ErrorTopUpBalanceParticipantSlashed(address)` identifies the explicit top-up eligibility
   rejection required by [`REQ-ENFADM-2-K6K9SP`](../../../../../specification/enforcement/admission-and-funds.md#req-enfadm-2-k6k9sp).
+- Argument-carrying errors on the dispute-upload, reduction and snapshot paths name their
+  operands `expected*`/`actual*` (or `current*`/`submitted*`) so the pair reads unambiguously
+  once decoded. Errors whose failure carries no operand — an empty-array guard, for example —
+  stay argument-less on purpose.
 
 ## Specification contradictions
 
@@ -69,9 +83,10 @@ Status enum: `Covered` | `Partial` | `Contradicts` | `Missing`. Evidence cells a
 **Here:** / **Other files:** so each row is auditable from its links alone; genuine gaps go in the
 Gap column. Audit state is file-level (Status header), never a row status.
 
-| Requirement / invariant                                                                                      | Implementation status | Evidence                                                                                                                                                     | Gap / divergence |
-| ------------------------------------------------------------------------------------------------------------ | --------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------ | ---------------- |
-| [`REQ-ENFADM-2-K6K9SP`](../../../../../specification/enforcement/admission-and-funds.md#req-enfadm-2-k6k9sp) | Covered               | **Here:** dedicated error for an on-chain-slashed top-up submitter. **Other files:** [JoinChannelFacet](./JoinChannelFacet.sol.md) raises it before deposit. | None.            |
+| Requirement / invariant                                                                                          | Implementation status | Evidence                                                                                                                                                                                                    | Gap / divergence                          |
+| ---------------------------------------------------------------------------------------------------------------- | --------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------- |
+| [`REQ-ENFADM-2-K6K9SP`](../../../../../specification/enforcement/admission-and-funds.md#req-enfadm-2-k6k9sp)     | Covered               | **Here:** dedicated error for an on-chain-slashed top-up submitter. **Other files:** [JoinChannelFacet](./JoinChannelFacet.sol.md) raises it before deposit.                                                | None.                                     |
+| [`REQ-CONTRACT-ARCH-4-FZ3CJE`](../../../../../specification/enforcement/contracts.md#req-contract-arch-4-fz3cje) | Partial               | **Here:** exact errors identify duplicate selector registration and codeless route targets. **Other files:** [StateChannelManagerProxy](./StateChannelManagerProxy.sol.md) raises them during construction. | Expected module identity is not verified. |
 
 ## Component test obligations
 

@@ -139,6 +139,11 @@ the executor; neither can observe the other's internals directly.
 `P2pInstance.getStateManager()` throws in every mode precisely to keep this
 boundary honest ([architecture.md](./architecture.md) [`INV-SDK-1-DE9YED`](architecture.md#inv-sdk-1-de9yed)).
 
+The manager binding follows one ABI rule in both the main thread and host. The SDK manager ABI is
+installed first, then the application ABI serialized as `scm.abiJson` is appended. SDK definitions
+win duplicate signatures; consumer-only functions, events, and errors remain available. This lets
+host-side custom RPC code call consumer-facet extensions without dropping SDK error decoding.
+
 ```mermaid
 flowchart TB
     subgraph MT["Main thread (client realm)"]
