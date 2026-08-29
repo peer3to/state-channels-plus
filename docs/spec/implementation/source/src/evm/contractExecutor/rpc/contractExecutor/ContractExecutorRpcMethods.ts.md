@@ -20,8 +20,8 @@
 ## Responsibility and observable boundary
 
 The executor's operations as endpoints. `init` rebuilds config and logger in the worker, registers
-the link to the thread above before anything that can fail, builds the EVM, and its reply is the
-worker's readiness. `dispose` ends the executor and closes the link once its reply is out. `deploy`,
+the link to the thread above before anything that can fail, files the worker under the owner's
+identity carried in the call, builds the EVM, and its reply is the worker's readiness. `dispose` ends the executor and closes the link once its reply is out. `deploy`,
 `executeCall` and `simulateCall` run on the executor.
 
 ## Key design decisions
@@ -30,6 +30,9 @@ worker's readiness. `dispose` ends the executor and closes the link once its rep
   configuration instead of reading main-thread process state, with the same configured fatal-delay
   threshold as the rest of the runtime ([`init`](../../../../../../../../../src/evm/contractExecutor/rpc/contractExecutor/ContractExecutorRpcMethods.ts#L40)).
 - **The link before the EVM.** A crash while the EVM is still being built already has a way up.
+- **The owner's identity is a parameter, not a race.** The cast the owner's link makes on
+  registration may cross before this link exists; `init` carries the same context, applied by tree
+  side like any inbound one, so link and init may be posted in either order.
 - **Readiness is the `init` reply**; there is no `ready` frame.
 - **Close after the reply**: `dispose` schedules the port's close for after its own return, so the
   drained loop exits on its own ([`dispose`](../../../../../../../../../src/evm/contractExecutor/rpc/contractExecutor/ContractExecutorRpcMethods.ts#L85)).
