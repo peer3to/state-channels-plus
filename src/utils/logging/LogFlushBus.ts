@@ -31,19 +31,6 @@ export class LogFlushBus {
     >();
     /** root -> roots in this realm that follow its channel */
     private readonly contextFollowers = new Map<Logger, Set<Logger>>();
-    private activeRound?: Promise<LogFlushResult>;
-    /** the active round's own upload. a queued round waits on this instead of
-     *  the whole round -> a folded ack never waits on the realm that asked,
-     *  which would close a cycle when two realms originate at once. */
-    private activeLocalFlush?: Promise<LogFlushResult>;
-    /** source port (null = this realm) -> the round queued for requests from it.
-     *  one per source: a request from port A still has to reach port B, whose
-     *  own round covers only B's side. a single queued round that skipped both
-     *  would answer each with the other's subtree missing from its count. */
-    private readonly queuedRounds = new Map<
-        LogControlPort | null,
-        Promise<LogFlushResult>
-    >();
 
     constructor(links: WorkerLinks = new WorkerLinks()) {
         this.links = links;
@@ -131,7 +118,7 @@ export class LogFlushBus {
      *  off" is realm-wide, so there is nothing to collect. */
     public flushAll(reason: string): Promise<LogFlushResult> {
         if (!this.hasUploadTarget()) return Promise.resolve(emptyFlushResult());
-        return this.scheduleRound(reason, undefined);
+        return this.round(reason, undefined);
     }
 
     /** upload this realm's own stores and nothing else. a thread about to end
@@ -160,7 +147,7 @@ export class LogFlushBus {
         reason: string,
         fromPort: LogControlPort | undefined
     ): Promise<LogFlushResult> {
-        return this.scheduleRound(reason, fromPort);
+        return this.round(reason, fromPort);
     }
 
     /** a neighbour's context changed: apply what its side of the tree may set */
@@ -213,56 +200,22 @@ export class LogFlushBus {
         }
     }
 
-    /** run a round, or fold into the one already queued for the same source. a
-     *  folded request acks when that round finishes -> an ack never outruns
-     *  its POST. */
-    private scheduleRound(
+    /** every request is its own round: forward on every port but the one it
+     *  came in on, upload here, add up. nothing is shared between askers and
+     *  no handler waits on another realm's answer, so two realms originating
+     *  at once cannot deadlock. the only coalescing is the uploader's
+     *  depth-one queue -> a request arriving during an upload is answered by
+     *  one that starts after it, never by the one already running. */
+    private async round(
         reason: string,
-        fromPort: LogControlPort | undefined
-    ): Promise<LogFlushResult> {
-        const excluded = fromPort ? new Set([fromPort]) : undefined;
-        if (!this.activeRound) return this.startRound(reason, excluded);
-
-        const source = fromPort ?? null;
-        const folded = this.queuedRounds.get(source);
-        if (folded) return folded;
-
-        // waits on the active round's upload only: waiting on the whole round
-        // would block behind an ack from the realm that is asking
-        const queued = (this.activeLocalFlush ?? this.activeRound)
-            .catch(() => undefined)
-            .then(() => {
-                this.queuedRounds.delete(source);
-                return this.startRound(reason, excluded);
-            });
-        this.queuedRounds.set(source, queued);
-        return queued;
-    }
-
-    private startRound(
-        reason: string,
-        excluded: Set<LogControlPort> | undefined
-    ): Promise<LogFlushResult> {
-        const active = this.runRound(reason, excluded).finally(() => {
-            if (this.activeRound === active) {
-                this.activeRound = undefined;
-                this.activeLocalFlush = undefined;
-            }
-        });
-        this.activeRound = active;
-        return active;
-    }
-
-    private async runRound(
-        reason: string,
-        excluded: Set<LogControlPort> | undefined
+        excluded: LogControlPort | undefined
     ): Promise<LogFlushResult> {
         const forwarded = [...this.portOwners.keys()]
-            .filter((port) => !excluded?.has(port))
+            .filter((port) => port !== excluded)
             .map((port) => this.forward(port, reason));
-        const local = this.localFlush();
-        this.activeLocalFlush = local;
-        return sumFlushResults(await Promise.all([local, ...forwarded]));
+        return sumFlushResults(
+            await Promise.all([this.localFlush(), ...forwarded])
+        );
     }
 
     private async localFlush(): Promise<LogFlushResult> {
