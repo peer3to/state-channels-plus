@@ -1,24 +1,18 @@
 import type { CustomRpcConstructor } from "./rpc/registry";
-import RemoteRpcProxy, { RemoteRpcProxyType } from "./rpc/RemoteRpcProxy";
 import { Address } from "./types/types";
-import { hasRpcService } from "./utils/ObjectChecks";
 import { P2pSigner } from "@/evm";
 import Holepunch from "@/Holepunch";
 import IOnMessage from "@/IOnMessage";
 import ProfileManager from "@/ProfileManager";
-import type ARpcService from "@/rpc/ARpcService";
+import ARpcRouter, { type ServiceFailureKind } from "@/rpc/ARpcRouter";
 import MainRpcService from "@/rpc/MainRpcService";
-import Rpc, {
-    MAX_RPC_FRAME_BYTES,
-    RpcResponse,
-    deserializeRpcFrame
-} from "@/rpc/Rpc";
+import Rpc from "@/rpc/Rpc";
 import type StateManager from "@/stateManager";
 import { ATransport, LoopbackTransport, TransportType } from "@/transport";
 import { Status } from "@/types";
 import { isEngagedStatus } from "@/types/flags";
-import { DebugProxy, getChecksumAddress, LocalDiscoveryServer } from "@/utils";
 import type { Logger } from "@/utils";
+import { DebugProxy, getChecksumAddress, LocalDiscoveryServer } from "@/utils";
 import { requireBytes32 } from "@/utils/bytes32";
 import { config, isNodeRuntime } from "@/utils/config";
 import { errorMessage } from "@/utils/errorMessage";
@@ -26,15 +20,15 @@ import { LoggerUtils } from "@/utils/LoggerUtils";
 import { Buffer } from "buffer";
 import { ethers } from "ethers";
 
+/** the peers' router: one for the realm, one transport per connected peer */
 class P2PManager<TCustomRpc extends MainRpcService = MainRpcService>
+    extends ARpcRouter<TCustomRpc>
     implements IOnMessage
 {
     stateManager: StateManager<TCustomRpc>;
-    logger: Logger;
+    readonly logger: Logger;
     p2pSigner: P2pSigner<TCustomRpc>;
     profileManager = new ProfileManager();
-    localRpc: TCustomRpc;
-    remoteRpc: RemoteRpcProxyType<TCustomRpc>;
     /** In-process transport used for "send to self" (no-target) delivery. */
     loopbackTransport: LoopbackTransport;
     // TODO - route WebRTCSetupService and LocalDiscoveryServer scans through ProfileManager
@@ -42,17 +36,6 @@ class P2PManager<TCustomRpc extends MainRpcService = MainRpcService>
     holepunch: Holepunch;
     self = config.DEBUG_P2P_MANAGER ? DebugProxy.createProxy(this) : this;
     preferredTransport: TransportType = TransportType.HOLEPUNCH;
-
-    private rpcRequestCounter = 0;
-    private pendingRpcRequests = new Map<
-        string,
-        {
-            resolve: (value: any) => void;
-            reject: (reason: Error) => void;
-            transport: ATransport;
-            timeout: ReturnType<typeof setTimeout>;
-        }
-    >();
     private disposalPromise?: Promise<void>;
     private readonly unsubscribeHandshakeCompleted: () => void;
     // Settle the initial-sync wait when the runtime leaves OPENED for any
@@ -77,6 +60,7 @@ class P2PManager<TCustomRpc extends MainRpcService = MainRpcService>
         customRpc?: CustomRpcConstructor<TCustomRpc, any>,
         customRpcOptions?: any
     ) {
+        super();
         this.stateManager = stateManager;
         this.logger = stateManager.logger.child({ component: "P2PManager" });
         if (config.DEBUG_LOCAL_TRANSPORT) {
@@ -89,21 +73,17 @@ class P2PManager<TCustomRpc extends MainRpcService = MainRpcService>
         );
 
         if (customRpc) {
-            this.localRpc = new customRpc(
-                this.self,
-                customRpcOptions
-            ) as TCustomRpc;
+            this.attachRoot(
+                new customRpc(this.self, customRpcOptions) as TCustomRpc
+            );
         } else {
             if (customRpcOptions !== undefined) {
                 throw new Error(
                     "customRpcOptions requires customRpc to be configured"
                 );
             }
-            this.localRpc = new MainRpcService(this.self) as TCustomRpc;
+            this.attachRoot(new MainRpcService(this.self) as TCustomRpc);
         }
-        this.remoteRpc = RemoteRpcProxy.createProxy(
-            this.localRpc
-        ) as unknown as RemoteRpcProxyType<TCustomRpc>;
         this.loopbackTransport = new LoopbackTransport(this.self);
         this.holepunch = new Holepunch(this.self);
 
@@ -284,136 +264,87 @@ class P2PManager<TCustomRpc extends MainRpcService = MainRpcService>
         }
     }
 
-    /**
-     * Sends a request-style RPC to a single peer and resolves with the value the
-     * peer's handler returns. The promise rejects on a remote error, transport
-     * disconnect, or after `timeoutMs` (time safety).
-     */
-    public sendRpcRequest<T = unknown>(
-        rpc: Rpc,
-        transport: ATransport,
-        options?: { timeoutMs?: number }
-    ): Promise<T> {
-        const requestId = `${++this.rpcRequestCounter}`;
-        // `agreementTime` is in seconds; the RPC timeout is in milliseconds.
-        const timeoutMs =
-            options?.timeoutMs ??
-            this.stateManager.timeConfig.agreementTime * 1000;
+    // ----- ARpcRouter hooks: peer policy -----
 
-        return new Promise<T>((resolve, reject) => {
-            const timeout = this.stateManager.timeoutManager.scheduleTask(
-                () => {
-                    if (this.pendingRpcRequests.delete(requestId)) {
-                        reject(
-                            new Error(
-                                `RPC request '${rpc.service}.${rpc.method}' timed out after ${timeoutMs}ms`
-                            )
-                        );
-                    }
-                },
-                timeoutMs,
-                `rpcRequest:${rpc.service}.${rpc.method}`
+    protected scheduleTimeout(
+        fn: () => void,
+        ms: number,
+        label: string
+    ): unknown {
+        return this.stateManager.timeoutManager.scheduleTask(fn, ms, label);
+    }
+
+    protected cancelTimeout(handle: unknown): void {
+        this.stateManager.timeoutManager.cancelTask(
+            handle as Parameters<
+                StateManager["timeoutManager"]["cancelTask"]
+            >[0]
+        );
+    }
+
+    // `agreementTime` is in seconds; the RPC timeout is in milliseconds.
+    protected defaultRequestTimeoutMs(): number {
+        return this.stateManager.timeConfig.agreementTime * 1000;
+    }
+
+    // Only the peer we sent the request to may settle it. Compare by peer
+    // identity (not transport object) so a transport upgrade for the same
+    // peer (e.g. HOLEPUNCH -> WEBRTC) still settles the pending request.
+    protected isResponseFromRequestee(
+        expected: ATransport,
+        actual: ATransport
+    ): boolean {
+        return ATransport.isSamePeer(expected, actual);
+    }
+
+    protected onForeignResponse(transport: ATransport): void {
+        this.disconnectAndBlacklistPeer(transport);
+    }
+
+    public resolveTransport(address: Address): ATransport | undefined {
+        return (
+            this.profileManager.getTransportByEvmAddress(address) ?? undefined
+        );
+    }
+
+    /** every peer transport gets its profile as it is built */
+    public onTransportCreated(transport: ATransport): void {
+        this.profileManager.registerTransport(transport);
+    }
+
+    public onTransportClosed(transport: ATransport, isExpected: boolean): void {
+        if (!isExpected) {
+            this.stateManager.p2pEventHooks?.onDisconnection?.(
+                transport.peerAddress as Address
             );
+        }
+        this.disconnectConnection(transport);
+    }
 
-            this.pendingRpcRequests.set(requestId, {
-                resolve,
-                reject,
-                transport,
-                timeout
-            });
+    /** a peer whose frame or handler failed is disconnected */
+    /** a frame the router refused is a protocol violation: the peer is dropped
+     *  and banned, as it was before the router. one of our own handlers
+     *  failing is not the peer's doing, so that only drops the line. */
+    public onServiceFailure(
+        transport: ATransport,
+        _error: unknown,
+        kind: ServiceFailureKind = "frame"
+    ): void {
+        if (kind === "handler") {
+            this.disconnectConnection(transport);
+            return;
+        }
+        this.disconnectAndBlacklistPeer(transport);
+    }
 
-            try {
-                transport.send({ ...rpc, requestId });
-            } catch (e) {
-                if (this.pendingRpcRequests.delete(requestId)) {
-                    this.stateManager.timeoutManager.cancelTask(timeout);
-                    reject(e instanceof Error ? e : new Error(String(e)));
-                }
-            }
+    protected onFrameDispatched(rpc: Rpc, transport: ATransport): void {
+        this.logger.verbose("onRpc", {
+            rpc: LoggerUtils.getRpcLogMetadata(rpc),
+            transportType: TransportType[transport.transportType],
+            peerAddress: transport.peerAddress
         });
     }
 
-    private handleRpcResponse(response: RpcResponse, transport: ATransport) {
-        const pending = this.pendingRpcRequests.get(response.requestId);
-        if (!pending) return;
-        if (!ATransport.isSamePeer(transport, pending.transport)) {
-            this.disconnectAndBlacklistPeer(transport);
-            return;
-        }
-        this.pendingRpcRequests.delete(response.requestId);
-        this.stateManager.timeoutManager.cancelTask(pending.timeout);
-        if (response.ok) {
-            pending.resolve(response.result);
-        } else {
-            pending.reject(
-                new Error(response.error ?? "RPC request failed on the peer")
-            );
-        }
-    }
-
-    private rejectPendingRpcRequestsForTransport(
-        transport: ATransport,
-        reason: Error
-    ): void {
-        for (const [requestId, pending] of this.pendingRpcRequests) {
-            if (pending.transport !== transport) continue;
-            this.pendingRpcRequests.delete(requestId);
-            this.stateManager.timeoutManager.cancelTask(pending.timeout);
-            pending.reject(reason);
-        }
-    }
-
-    public onRpc(serializedRpc: string, transport: ATransport) {
-        try {
-            // Reject oversized frames before parsing so a peer can't force
-            // unbounded JSON.parse/dispatch work.
-            const frameBytes = Buffer.byteLength(serializedRpc, "utf8");
-            if (frameBytes > MAX_RPC_FRAME_BYTES) {
-                this.logger.warn("Oversized RPC frame; rejecting peer", {
-                    bytes: frameBytes,
-                    transportType: TransportType[transport.transportType],
-                    peerAddress: transport.peerAddress
-                });
-                this.disconnectAndBlacklistPeer(transport);
-                return;
-            }
-            const frame = deserializeRpcFrame(serializedRpc);
-            if (frame?.kind === "response") {
-                this.handleRpcResponse(frame.response, transport);
-                return;
-            }
-            const rpc = frame?.rpc;
-            this.logger.verbose("onRpc", {
-                rpc: rpc ? LoggerUtils.getRpcLogMetadata(rpc) : undefined,
-                transportType: TransportType[transport.transportType],
-                peerAddress: transport.peerAddress
-            });
-            if (!rpc) {
-                this.disconnectAndBlacklistPeer(transport);
-                return;
-            }
-            if (!hasRpcService(this.localRpc, rpc.service)) {
-                this.disconnectAndBlacklistPeer(transport);
-                return;
-            }
-            const service = this.localRpc[
-                rpc.service
-            ] as unknown as ARpcService<any>;
-            const success = service.runRPC(rpc, transport);
-            if (!success) {
-                this.disconnectAndBlacklistPeer(transport);
-                return;
-            }
-        } catch (e) {
-            this.disconnectConnection(transport);
-            this.logger.error("onRpc - error handling RPC frame", {
-                error: errorMessage(e),
-                stack: e instanceof Error ? e.stack : undefined,
-                transportType: TransportType[transport.transportType],
-                peerAddress: transport.peerAddress
-            });
-        }
-    }
     public async joinDiscoveryKey(discoveryKey: string): Promise<void> {
         requireBytes32(discoveryKey, "Discovery key must be exactly 32 bytes");
         const normalizedKey = ethers.hexlify(discoveryKey);

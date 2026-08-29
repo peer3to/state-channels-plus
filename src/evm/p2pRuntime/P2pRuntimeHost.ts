@@ -1,54 +1,47 @@
-import {
-    deserializeTransactionRequest,
-    serializeTransactionResponse
-} from "./chainSignerSerialization";
-import { serializeError } from "./errorWire";
 import { forwardEventHandlerInvocations } from "./host/EventForwarding";
 import type { HostHandlerExecutionContext } from "./HostHandlerExecutionContext";
+import {
+    P2P_RUNTIME_CLIENT_MANIFEST,
+    type P2pRuntimeClientRoot
+} from "./rpc/P2pRuntimeClientRoot";
+import {
+    P2pRuntimeHostRoot,
+    type RuntimeHandle,
+    type RuntimeHost
+} from "./rpc/P2pRuntimeHostRoot";
 import {
     createRuntimeChainContext,
     type RuntimeChainContext
 } from "./RuntimeChainContext";
-import type {
-    HostRpcRequest,
-    RuntimeClientMessage,
-    RuntimeClientRequest,
-    RuntimePort,
-    SetupPayload
-} from "./types";
+import type { RuntimePort, SetupPayload } from "./types";
 import Clock from "@/Clock";
-import {
-    AContractExecutor,
-    type ContractExecutorFactoryOptions
-} from "@/evm/contractExecutor";
+import { AContractExecutor } from "@/evm/contractExecutor";
+import type { ContractExecutorFactoryOptions } from "@/evm/contractExecutor";
 import { createContractExecutor } from "@/evm/contractExecutor/createContractExecutor";
 import type { WorkerContractExecutorDependencies } from "@/evm/contractExecutor/WorkerContractExecutor";
 import EvmDiamondStateMachine from "@/evm/EvmDiamondStateMachine";
 import HostNonceManager from "@/evm/signer/HostNonceManager";
 import LocalContractExecutorSigner from "@/evm/signer/LocalContractExecutorSigner";
 import MainRpcService from "@/rpc/MainRpcService";
+import PortRpcRouter from "@/rpc/PortRpcRouter";
 import { resolveCustomRpcConstructor } from "@/rpc/resolveCustomRpcManifest";
+import { serializeError, type SerializedError } from "@/rpc/serializeError";
 import { doesWorkerNeedMainThreadBridge } from "@/rpc/services/WebRTCSetup/connection/WebRTCProvider";
 import WorkerBridgeWebRTCConnectionFactory from "@/rpc/services/WebRTCSetup/connection/WorkerBridgeWebRTCConnectionFactory";
 import StateManager from "@/stateManager/StateManager";
 import Storage from "@/storage";
+import type ATransport from "@/transport/ATransport";
 import { TimeConfig } from "@/types";
-import type { ForkId, Hash } from "@/types/types";
-import {
-    createLogger,
-    Codec,
-    DebugProxy,
-    DetachedPromises,
-    Type
-} from "@/utils";
+import { createLogger, DebugProxy, DetachedPromises } from "@/utils";
 import { LocalDiscoveryServer } from "@/utils";
 import { config, isNodeRuntime } from "@/utils/config";
 import { LoggerUtils } from "@/utils/LoggerUtils";
 
-import type { LogPortHandle } from "@/utils/logging/logControl";
 import type { Logger } from "@/utils/logging/Logger";
 import { connectStateChannelManager } from "@/utils/stateChannelManager";
 import { ethers, type InterfaceAbi } from "ethers";
+
+export { serializeError };
 
 /**
  * Fully resolved, live context required to build the runtime graph. In inline
@@ -74,6 +67,15 @@ export interface HostContext {
      *  no port there is nothing to carry the context. */
     contextFollower?: Logger;
     /**
+     * the worker end of the WebRTC bridge channel, transferred with the
+     * bootstrap. registered when this worker cannot negotiate WebRTC itself,
+     * closed otherwise. threaded only.
+     */
+    webRTCBridgePort?: MessagePort;
+    /** hook this thread's unhandled errors, so they reach the client as
+     *  hostError casts. threaded only. */
+    onUnhandledError?: (handler: (error: unknown) => void) => void;
+    /**
      * Builds the contract executor. Internal seam: tests supply a factory that
      * loads a scripted contract-executor worker; production leaves it unset
      * and gets the platform factory. The host always passes the dependencies
@@ -85,33 +87,10 @@ export interface HostContext {
     ) => Promise<AContractExecutor>;
 }
 
-/** Live runtime graph while the host is running. */
-interface RuntimeHostState {
-    stateManager: StateManager;
-    evmDiamondStateMachine: EvmDiamondStateMachine;
-}
-
-/**
- * In a worker that can't run WebRTC itself, mint the bridge channel, hand the
- * main-thread end to the client (transferred) so it surfaces on
- * `P2pInstance.webRTCBridgePort`, then register the worker end. Returns that
- * worker-end port (for teardown) or `undefined` when no bridge was set up.
- */
-async function bubbleWebRTCBridgePortIfNeeded(
-    port: RuntimePort
-): Promise<MessagePort | undefined> {
-    if (!(await doesWorkerNeedMainThreadBridge())) return undefined;
-    // The bridge speaks the DOM MessagePort API; in a worker the global
-    // MessageChannel works on both web and Node (worker_threads-backed) and its
-    // ports transfer over the runtime port.
-    const bridge = new MessageChannel();
-    // Transfer the main-thread end first: if the post fails we never register a
-    // half-installed bridge whose worker end has no paired broker.
-    port.post({ type: "webRTCBridgePort", port: bridge.port2 }, [bridge.port2]);
-    WorkerBridgeWebRTCConnectionFactory.getInstance().registerPort(
-        bridge.port1
-    );
-    return bridge.port1;
+/** the "Runtime is not ready" accessor over a piece that exists only later */
+function required<T>(value: T | undefined, what: string): T {
+    if (value === undefined) throw new Error(`Runtime is not ready: ${what}`);
+    return value;
 }
 
 /**
@@ -119,7 +98,7 @@ async function bubbleWebRTCBridgePortIfNeeded(
  *
  * Requests arriving on the port are dispatched to the state manager / internal
  * signer; p2p event hooks and contract events are forwarded back to the client.
- * Emits a `ready` message once fully constructed.
+ * The reply to `lifecycle.deployComplete` is the readiness signal.
  */
 export async function startP2pRuntimeHost<
     TCustomRpc extends MainRpcService = MainRpcService,
@@ -127,27 +106,23 @@ export async function startP2pRuntimeHost<
 >(port: RuntimePort, payload: SetupPayload, ctx: HostContext): Promise<void> {
     const runtimeStartedAt = Date.now();
     const { threadLabel, handlerExecutionContext } = ctx;
-    let chainContext: RuntimeChainContext;
-    try {
-        chainContext = await createRuntimeChainContext(
-            payload.config,
-            payload.signerSecret
-        );
-    } catch (error) {
-        // Provider creation happens before the rest of the runtime graph exists,
-        // but its failure must still settle the paired client's `ready` promise.
-        port.post({ type: "hostError", error: serializeError(error) });
-        port.close();
-        throw error;
-    }
-    const { provider, signer } = chainContext;
+
+    // the pieces the services reach, filled in as they are built
     let logger: Logger | undefined;
+    let signer: ethers.Signer | undefined;
+    let chainSigner: HostNonceManager | undefined;
+    let deploySigner: LocalContractExecutorSigner | undefined;
     let contractExecutor: AContractExecutor | undefined;
-    let runtimeHandle: RuntimeHostState | undefined;
+    let runtimeHandle: RuntimeHandle | undefined;
     let bridgeWorkerPort: MessagePort | undefined;
-    let hostLogHandle: LogPortHandle | undefined;
     let removeLogWiring: (() => void) | undefined;
     let disposed = false;
+    let buildRuntime:
+        | ((
+              localStateMachineAddress: string,
+              diamondStateMachineAddress: string
+          ) => Promise<{ webRTCBridge: boolean }>)
+        | undefined;
 
     const disposeRuntime = async (): Promise<void> => {
         if (disposed) return;
@@ -169,7 +144,9 @@ export async function startP2pRuntimeHost<
                 // listener cleanup schedules unsubscribe microtasks. Explicitly
                 // removing listeners first leaves eth_unsubscribe requests that
                 // destroy then rejects as unhandled.
-                if (!Clock.ownsProvider(provider)) await provider.destroy();
+                if (provider && !Clock.ownsProvider(provider)) {
+                    await provider.destroy();
+                }
                 // TODO: Delegate cleanup through the shared Holepunch/local
                 // discovery lifecycle API once the backend is injected.
                 if (
@@ -191,7 +168,110 @@ export async function startP2pRuntimeHost<
         }
     };
 
+    const host: RuntimeHost = {
+        get logger() {
+            return required(logger, "logger");
+        },
+        get signer() {
+            return required(signer, "signer");
+        },
+        get chainSigner() {
+            return required(chainSigner, "chain signer");
+        },
+        get deploySigner() {
+            return required(deploySigner, "deploy signer");
+        },
+        runtime: () => required(runtimeHandle, "runtime"),
+        buildRuntime: (local, diamond) =>
+            required(buildRuntime, "deploy signer")(local, diamond),
+        disposeRuntime,
+        quiesce: async () => {
+            // Drain this host realm's detached promises and report the ones
+            // that rejected, so the orchestrator can settle and surface
+            // host-side async work over the port.
+            // TODO: Separate operation promises from cleanup promises so
+            // disposal can cancel cleanup without a bounded drain.
+            const settled = runtimeHandle?.stateManager.isDisposed
+                ? await DetachedPromises.collectSettledAndClear()
+                : await DetachedPromises.awaitAllAndClear();
+            return settled
+                .filter((entry) => entry.status === "rejected")
+                .map((entry) =>
+                    serializeError((entry as PromiseRejectedResult).reason)
+                );
+        },
+        closeAfterReply: (transport: ATransport) => {
+            // the reply is posted in the microtasks after the endpoint
+            // returns; the macrotask runs after them
+            setTimeout(() => {
+                transport.close(true);
+                void ctx.onDisposed?.();
+            }, 0);
+        }
+    };
+
+    // the line to the client, up before anything that can fail so a startup
+    // error has a way out
+    const router = new PortRpcRouter<P2pRuntimeHostRoot>(
+        (self) => new P2pRuntimeHostRoot(self, host),
+        undefined,
+        {
+            defaultTimeoutMs: null,
+            wrapInbound: handlerExecutionContext
+                ? (run) => handlerExecutionContext.runHandler(run)
+                : undefined,
+            // Client went away without a clean `dispose` (thread died / port
+            // closed).
+            onClosed: (_transport, isExpected) => {
+                if (isExpected) return;
+                void disposeRuntime().catch((error) => {
+                    logger?.error("Runtime dispose on client close failed", {
+                        error
+                    });
+                });
+            }
+        }
+    );
+    // the client deploys through this line while the host is still being
+    // built; hold its requests until every service can answer
+    router.holdInbound();
+    const transport = router.attach(port);
+    const client = router.endpoint<P2pRuntimeClientRoot>(
+        transport,
+        P2P_RUNTIME_CLIENT_MANIFEST
+    );
+    const reportHostError = (error: unknown) => {
+        try {
+            client.runtimeEvents.hostError(serializeError(error)).sendOne();
+        } catch (postError) {
+            logger?.error("Runtime startup error delivery failed", {
+                postError
+            });
+        }
+    };
+    // Funnel autonomous worker-thread errors to the main-thread orchestrator
+    // so they surface as if the host ran inline.
+    ctx.onUnhandledError?.(reportHostError);
+
+    let provider: RuntimeChainContext["provider"] | undefined;
     try {
+        let chainContext: RuntimeChainContext;
+        try {
+            chainContext = await createRuntimeChainContext(
+                payload.config,
+                payload.signerSecret
+            );
+        } catch (error) {
+            // Provider creation happens before the rest of the runtime graph
+            // exists, but its failure must still settle the paired client's
+            // `ready` promise.
+            reportHostError(error);
+            transport.close(true);
+            throw error;
+        }
+        provider = chainContext.provider;
+        signer = chainContext.signer;
+
         const signerAddress = await signer.getAddress();
         logger = createLogger(
             {
@@ -203,14 +283,17 @@ export async function startP2pRuntimeHost<
             // inline -> the main realm's logger already has the crash hooks
             { attachErrorListener: Boolean(threadLabel) }
         );
+        router.setLogger(logger);
 
         // threadLabel is set only by startP2pRuntimeWorker -> host is threaded
         if (threadLabel) {
-            hostLogHandle = logger.addLogPort({
-                post: (message) => port.post({ type: "logControl", message }),
-                remoteRealm: "parent"
+            removeLogWiring = logger.addLogLink({
+                id: "main",
+                transport,
+                router,
+                remoteRealm: "parent",
+                ownerLogger: logger
             });
-            removeLogWiring = () => hostLogHandle?.remove();
         } else if (ctx.contextFollower) {
             removeLogWiring = logger.followContextTo(ctx.contextFollower);
         }
@@ -219,7 +302,7 @@ export async function startP2pRuntimeHost<
         // on it (the REPLACEMENT_UNDERPRICED race). Used only for the real-chain SCM
         // send + retry paths below; the local-VM signers (deploy/executor, p2p) and
         // the read-only Clock stay on the raw signer.
-        const chainSigner = new HostNonceManager(signer, logger);
+        chainSigner = new HostNonceManager(signer, logger);
 
         const scmContract = connectStateChannelManager(
             payload.scm.address,
@@ -256,7 +339,7 @@ export async function startP2pRuntimeHost<
         await LoggerUtils.logTimestamp(logger, "info", timeConfig);
 
         // A detached error inside the contract-executor worker is reported the
-        // way the sdk worker's own detached errors are: one hostError, and the
+        // way this thread's own detached errors are: one hostError, and the
         // executor keeps serving.
         contractExecutor = await (
             ctx.createContractExecutor ?? createContractExecutor
@@ -266,21 +349,17 @@ export async function startP2pRuntimeHost<
                 customPrecompiles: payload.customPrecompiles,
                 logger
             },
-            {
-                onDetachedError: (error) => {
-                    port.post({
-                        type: "hostError",
-                        error: serializeError(error)
-                    });
-                }
-            }
+            { onDetachedError: reportHostError }
         );
-        const deploySigner = new LocalContractExecutorSigner(
+        deploySigner = new LocalContractExecutorSigner(
             signer,
             contractExecutor
         );
 
-        const buildRuntime = async (
+        const hostSigner = signer;
+        const hostChainSigner = chainSigner;
+        const hostLogger = logger;
+        buildRuntime = async (
             localStateMachineAddress: string,
             diamondStateMachineAddress: string
         ) => {
@@ -295,7 +374,7 @@ export async function startP2pRuntimeHost<
                     localStateMachineAddress,
                     diamondStateMachineAddress,
                     stateMachineContract.interface,
-                    signer,
+                    hostSigner,
                     timeConfig,
                     disputeExecutionGasLimit
                 );
@@ -309,7 +388,7 @@ export async function startP2pRuntimeHost<
                 // Managed signer: becomes StateManager.signer → DisputeManager.signer,
                 // covering the raw evmErrorHandler retry send so it can't bypass the
                 // owned nonce counter and re-open the race.
-                chainSigner,
+                hostChainSigner,
                 signerAddress,
                 connectedScmContract,
                 evmDiamondStateMachine,
@@ -319,7 +398,7 @@ export async function startP2pRuntimeHost<
                 // every event over the port.
                 {},
                 storage,
-                logger!,
+                hostLogger,
                 customRpcResolved?.customRpc,
                 customRpcResolved?.customRpcOptions
             );
@@ -329,9 +408,9 @@ export async function startP2pRuntimeHost<
             // The single port bridge: every bus emission crosses as one
             // uniform payload. It runs after all local listeners; a clone
             // failure propagates to the producer (posting after close is a
-            // silent drop on Node -- remote closure is handled by onClose).
+            // silent drop on Node -- remote closure is handled by onClosed).
             stateManager.events.setBridgeTap((kind, eventName, args) =>
-                port.post({ type: "busEvent", kind, eventName, args })
+                client.runtimeEvents.busEvent(kind, eventName, args).sendOne()
             );
 
             forwardEventHandlerInvocations(
@@ -343,23 +422,26 @@ export async function startP2pRuntimeHost<
             if (handlerExecutionContext) {
                 const p2pManager = stateManager.p2pManager;
                 const onRpc = p2pManager.onRpc.bind(p2pManager);
-                p2pManager.onRpc = (serializedRpc, transport) =>
+                p2pManager.onRpc = (serializedRpc, peerTransport) =>
                     handlerExecutionContext.runHandler(() =>
-                        onRpc(serializedRpc, transport)
+                        onRpc(serializedRpc, peerTransport)
                     );
             }
 
             runtimeHandle = { stateManager, evmDiamondStateMachine };
             await stateManager.p2pManager.localRpc.ready();
-            // A bridge-setup failure must not deadlock `ready`; WebRTC is optional.
+            // A bridge-setup failure must not deadlock readiness; WebRTC is
+            // optional.
+            let webRTCBridge = false;
             try {
-                bridgeWorkerPort = await bubbleWebRTCBridgePortIfNeeded(port);
+                bridgeWorkerPort = await registerWebRTCBridgeIfNeeded(
+                    ctx.webRTCBridgePort
+                );
+                webRTCBridge = bridgeWorkerPort !== undefined;
             } catch (error) {
-                logger!.error(
+                hostLogger.error(
                     "WebRTC bridge setup failed; continuing without it",
-                    {
-                        error
-                    }
+                    { error }
                 );
             }
             // When this host runs in its own worker thread (sdk-in-thread), monitor that
@@ -370,7 +452,7 @@ export async function startP2pRuntimeHost<
                 config.EVENT_LOOP_DELAY_ERROR_THRESHOLD_SECONDS > 0 &&
                 threadLabel
             ) {
-                logger!.startPerformanceMonitoring({ threadLabel });
+                hostLogger.startPerformanceMonitoring({ threadLabel });
             }
             if (
                 typeof process !== "undefined" &&
@@ -383,313 +465,38 @@ export async function startP2pRuntimeHost<
                     })}\n`
                 );
             }
-            port.post({ type: "ready" });
+            return { webRTCBridge };
         };
-
-        const requireP2pSigner = () => {
-            if (!runtimeHandle) throw new Error("Runtime is not ready");
-            return runtimeHandle.stateManager.p2pManager.p2pSigner;
-        };
-
-        const handleRequest = async (
-            request: RuntimeClientRequest
-        ): Promise<void> => {
-            const shouldCloseAfterResponse = request.type === "dispose";
-            try {
-                let result: unknown;
-                switch (request.type) {
-                    case "chainSignerSignTransaction":
-                        result = await chainSigner.signTransaction(
-                            deserializeTransactionRequest(
-                                request.serializedTransaction
-                            )
-                        );
-                        break;
-                    case "chainSignerSendTransaction": {
-                        const response = await chainSigner.sendTransaction(
-                            deserializeTransactionRequest(
-                                request.serializedTransaction
-                            )
-                        );
-                        result = serializeTransactionResponse(response);
-                        break;
-                    }
-                    case "chainSignerSignMessage":
-                        result = await chainSigner.signMessage(
-                            request.message.kind === "string"
-                                ? request.message.value
-                                : ethers.getBytes(request.message.encodedBytes)
-                        );
-                        break;
-                    case "chainSignerSignTypedData":
-                        result = await chainSigner.signTypedData(
-                            request.domain as ethers.TypedDataDomain,
-                            request.types as Record<
-                                string,
-                                ethers.TypedDataField[]
-                            >,
-                            request.value as Record<string, any>
-                        );
-                        break;
-                    case "deploySignerGetAddress":
-                        result = await deploySigner.getAddress();
-                        break;
-                    case "deploySignerGetNonce":
-                        result = await deploySigner.getNonce();
-                        break;
-                    case "deploySignerResolveName":
-                        result = await deploySigner.resolveName(request.name);
-                        break;
-                    case "deploySignerCall":
-                        result = await deploySigner.call(
-                            request.tx as ethers.TransactionRequest
-                        );
-                        break;
-                    case "deploySignerSendTransaction": {
-                        const deployTx = await deploySigner.sendTransaction(
-                            request.tx as ethers.TransactionRequest
-                        );
-                        result = {
-                            hash: deployTx.hash,
-                            to: deployTx.to,
-                            from: deployTx.from,
-                            data: (deployTx as any).data,
-                            receipt: await deployTx.wait()
-                        };
-                        break;
-                    }
-                    case "deployComplete":
-                        await buildRuntime(
-                            request.localStateMachineAddress,
-                            request.diamondStateMachineAddress
-                        );
-                        break;
-                    case "sendTransaction":
-                        await requireP2pSigner().sendTransaction({
-                            data: request.data
-                        });
-                        break;
-                    case "callView":
-                        result = await requireP2pSigner().call({
-                            data: request.data
-                        });
-                        break;
-                    case "connectToChannel":
-                        result = await requireP2pSigner().connectToChannel(
-                            request.channelId,
-                            {
-                                autoOpen: request.options?.autoOpen,
-                                shouldJoin: request.options?.shouldJoin,
-                                balance: request.options?.encodedBalance
-                                    ? Codec.decode(
-                                          request.options.encodedBalance,
-                                          Type.Balance
-                                      )
-                                    : undefined,
-                                timeoutMs: request.options?.timeoutMs
-                            }
-                        );
-                        break;
-                    case "cancelConnectToChannel":
-                        result =
-                            await requireP2pSigner().cancelConnectToChannel(
-                                request.channelId
-                            );
-                        break;
-                    case "leaveChannel":
-                        await requireP2pSigner().leaveChannel();
-                        break;
-                    case "joinLobby":
-                        result = await requireP2pSigner().joinLobby(
-                            request.lobbyTopic,
-                            {
-                                balance: request.options.encodedBalance
-                                    ? Codec.decode(
-                                          request.options.encodedBalance,
-                                          Type.Balance
-                                      )
-                                    : undefined,
-                                matchTimeoutMs: request.options.matchTimeoutMs
-                            }
-                        );
-                        break;
-                    case "leaveLobby":
-                        result = await requireP2pSigner().leaveLobby(
-                            request.lobbyTopic
-                        );
-                        break;
-                    case "joinChannel":
-                        result = await requireP2pSigner().joinChannel(
-                            Codec.decode(
-                                request.encodedJoinChannelConfirmation,
-                                Type.JoinChannelConfirmation
-                            ),
-                            request.expectedSnapshotHash as Hash,
-                            request.expectedForkId as ForkId
-                        );
-                        break;
-                    case "topUpBalance":
-                        result = await requireP2pSigner().topUpBalance(
-                            Codec.decode(
-                                request.encodedJoinChannelConfirmation,
-                                Type.JoinChannelConfirmation
-                            ),
-                            request.expectedSnapshotHash as Hash,
-                            request.expectedForkId as ForkId
-                        );
-                        break;
-                    case "collectJoinChannelConfirmation": {
-                        const prepared =
-                            await requireP2pSigner().collectJoinChannelConfirmation(
-                                Codec.decode(
-                                    request.encodedJoinChannel,
-                                    Type.JoinChannel
-                                )
-                            );
-                        result = {
-                            encodedJoinChannelConfirmation: Codec.encode(
-                                prepared.confirmation,
-                                Type.JoinChannelConfirmation
-                            ),
-                            expectedSnapshotHash: prepared.expectedSnapshotHash,
-                            expectedForkId: prepared.expectedForkId
-                        };
-                        break;
-                    }
-                    case "getChannelStatus":
-                        result = await requireP2pSigner().getChannelStatus();
-                        break;
-                    case "setIsLeader":
-                        requireP2pSigner().setIsLeader(request.value);
-                        break;
-                    case "disconnectFromPeers":
-                        requireP2pSigner().disconnectFromPeers();
-                        break;
-                    case "hostRpc":
-                        if (!runtimeHandle)
-                            throw new Error("Runtime is not ready");
-                        result = await dispatchHostRpc(
-                            runtimeHandle.stateManager.p2pManager,
-                            request
-                        );
-                        break;
-                    case "signMessage":
-                        result = await signer.signMessage(request.message);
-                        break;
-                    case "signTypedData":
-                        result = await signer.signTypedData(
-                            request.domain as never,
-                            request.types as never,
-                            request.value as never
-                        );
-                        break;
-                    case "quiesce": {
-                        // Drain this host realm's detached promises and report the
-                        // ones that rejected, so the orchestrator can settle and
-                        // surface host-side async work over the port.
-                        // TODO: Separate operation promises from cleanup promises
-                        // so disposal can cancel cleanup without a bounded drain.
-                        const settled = runtimeHandle?.stateManager.isDisposed
-                            ? await DetachedPromises.collectSettledAndClear()
-                            : await DetachedPromises.awaitAllAndClear();
-                        result = settled
-                            .filter((entry) => entry.status === "rejected")
-                            .map((entry) =>
-                                serializeError(
-                                    (entry as PromiseRejectedResult).reason
-                                )
-                            );
-                        break;
-                    }
-                    case "dispose":
-                        await disposeRuntime();
-                        break;
-                }
-                port.post({
-                    type: "response",
-                    requestId: request.requestId,
-                    ok: true,
-                    result
-                });
-            } catch (error) {
-                if (request.type === "deployComplete") {
-                    try {
-                        await disposeRuntime();
-                    } catch (cleanupError) {
-                        logger?.error("Runtime readiness cleanup failed", {
-                            cleanupError
-                        });
-                    }
-                }
-                port.post({
-                    type: "response",
-                    requestId: request.requestId,
-                    ok: false,
-                    error: serializeError(error)
-                });
-            }
-            if (shouldCloseAfterResponse) {
-                port.close();
-                await ctx.onDisposed?.();
-            }
-        };
-
-        const onPortMessage = (raw: unknown): void => {
-            const message = raw as RuntimeClientMessage;
-            if (message.type === "logControl") {
-                // inline host has no port -> handle stays undefined
-                hostLogHandle?.receive(message.message);
-                return;
-            }
-            void handleRequest(raw as RuntimeClientRequest);
-        };
-        port.onMessage(
-            handlerExecutionContext
-                ? (raw) =>
-                      handlerExecutionContext.runHandler(() =>
-                          onPortMessage(raw)
-                      )
-                : onPortMessage
-        );
-        // Client went away without a clean `dispose` (thread died / port closed).
-        port.onClose(() => {
-            void disposeRuntime().catch((error) => {
-                logger!.error("Runtime dispose on client close failed", {
-                    error
-                });
-            });
-        });
-        port.start();
+        router.releaseInbound();
     } catch (error) {
         try {
             await disposeRuntime();
         } catch (cleanupError) {
             logger?.error("Runtime startup cleanup failed", { cleanupError });
         }
-        try {
-            port.post({ type: "hostError", error: serializeError(error) });
-        } catch (postError) {
-            logger?.error("Runtime startup error delivery failed", {
-                postError
-            });
-        }
-        port.close();
+        reportHostError(error);
+        transport.close(true);
         throw error;
     }
 }
 
 /**
- * Replays a `hostRpc.<service>.<method>(...params).<delivery>(...args)` call
- * mirrored from the client onto the host's live `remoteRpc` and awaits the
- * result. The port is a pure proxy; all target semantics (omitted target =
- * loopback to self, peer address = relay) are handled by the RPC handler.
+ * In a worker that can't run WebRTC itself, register the worker end of the
+ * bridge channel the main thread transferred with the bootstrap; the client
+ * keeps the other end and installs it on `P2pInstance.webRTCBridgePort` once
+ * `deployComplete` says the bridge is in use. Returns the registered port, or
+ * `undefined` (and closes the port) when no bridge is needed.
  */
-async function dispatchHostRpc(
-    p2pManager: StateManager["p2pManager"],
-    request: HostRpcRequest
-): Promise<unknown> {
-    const service = (p2pManager.remoteRpc as any)[request.service];
-    return await service[request.method](...request.params)[request.delivery](
-        ...request.args
-    );
+async function registerWebRTCBridgeIfNeeded(
+    bridgePort: MessagePort | undefined
+): Promise<MessagePort | undefined> {
+    if (!bridgePort) return undefined;
+    if (!(await doesWorkerNeedMainThreadBridge())) {
+        bridgePort.close();
+        return undefined;
+    }
+    WorkerBridgeWebRTCConnectionFactory.getInstance().registerPort(bridgePort);
+    return bridgePort;
 }
+
+export type { SerializedError };
