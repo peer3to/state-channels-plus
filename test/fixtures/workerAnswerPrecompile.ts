@@ -9,6 +9,8 @@ type WorkerAnswerPrecompileOptions = {
     value: string;
     // unhandled rejection on a timer -> a genuine unhandledRejection in this thread
     crashAsync?: boolean;
+    // answers only after this long -> a call still in flight when the thread ends
+    callDelayMs?: number;
 };
 
 export const WORKER_ASYNC_CRASH_MESSAGE =
@@ -29,6 +31,11 @@ export default async function createWorkerAnswerPrecompile(
             setTimeout(() => {
                 void Promise.reject(new Error(WORKER_ASYNC_CRASH_MESSAGE));
             }, 0);
+        }
+        if (options.callDelayMs) {
+            await new Promise((resolve) =>
+                setTimeout(resolve, options.callDelayMs)
+            );
         }
 
         return {
