@@ -13,10 +13,12 @@ import ProfileManager from "@/ProfileManager";
 import Holepunch from "@/Holepunch";
 import { ethers } from "ethers";
 import { DebugProxy, getChecksumAddress, LocalDiscoveryServer } from "@/utils";
+import { addressesEqual } from "@/utils/address";
 import type { Logger } from "@/utils";
 import { Buffer } from "buffer";
 import { config, isNodeRuntime } from "@/utils/config";
-import { Address } from "./types/types";
+import { Status } from "@/types";
+import { Address, ChannelId } from "./types/types";
 import { hasRpcService } from "./utils/ObjectChecks";
 import type ARpcService from "@/rpc/ARpcService";
 import RemoteRpcProxy, { RemoteRpcProxyType } from "./rpc/RemoteRpcProxy";
@@ -51,6 +53,21 @@ class P2PManager<TCustomRpc extends MainRpcService = MainRpcService>
         }
     >();
     private disposalPromise?: Promise<void>;
+    // Owns the "channel connection" promotion decision: unsubscribed on
+    // dispose() so a disposed P2PManager never promotes a late handshake.
+    private readonly unsubscribeHandshakeCompleted: () => void;
+    // Re-evaluates deferred promotions (see `reevaluatePendingChannelMembership`)
+    // whenever our own status changes; unsubscribed on dispose() alongside the
+    // handshake hook.
+    private readonly unsubscribeStatusChanged: () => void;
+    // Handshaked transports whose peer could not (yet) be resolved as a
+    // member of the channel conversation at handshake time - never promoted
+    // speculatively. Re-checked by `reevaluatePendingChannelMembership` on
+    // every status change (e.g. the channel finally lands on-chain, or we
+    // ourselves become a participant) and promoted once/if
+    // `isChannelConversationMember` turns true. Entries are dropped on
+    // transport close so this can't grow unbounded.
+    private readonly pendingChannelMembershipTransports = new Set<ATransport>();
 
     constructor(
         stateManager: StateManager<TCustomRpc>,
@@ -87,6 +104,31 @@ class P2PManager<TCustomRpc extends MainRpcService = MainRpcService>
         ) as unknown as RemoteRpcProxyType<TCustomRpc>;
         this.loopbackTransport = new LoopbackTransport(this.self);
         this.holepunch = new Holepunch(this.self);
+
+        // Own the promotion decision for every handshake completed on this
+        // P2PManager's transports. A transport can now originate from
+        // joining THIS channel's topic (`tryOpenConnectionToChannel`) OR
+        // from an opt-in `LobbyService` joining its own topic on this SAME
+        // shared swarm (`LobbyService.joinLobby` -> `holepunch.join`) - a
+        // verified peer here is NOT necessarily a channel peer. The
+        // `isChannelConversationMember` check below is what actually decides:
+        // it promotes into `openConnections` only a peer in the on-chain
+        // participant union, so a lobby-only peer's handshake reaches this
+        // hook but is deferred (never promoted) - see the method comment.
+        this.unsubscribeHandshakeCompleted = this.stateManager.events.on(
+            "p2pEventHooks",
+            "handshakeCompleted",
+            (peerAddress) => {
+                void this.onHandshakeCompleted(peerAddress);
+            }
+        );
+        this.unsubscribeStatusChanged = this.stateManager.events.on(
+            "p2pEventHooks",
+            "onStatusChanged",
+            () => {
+                void this.reevaluatePendingChannelMembership();
+            }
+        );
         return this.self;
     }
     //Mark resources for garbage collection
@@ -95,9 +137,270 @@ class P2PManager<TCustomRpc extends MainRpcService = MainRpcService>
             return this.disposalPromise;
         }
 
+        this.unsubscribeHandshakeCompleted();
+        this.unsubscribeStatusChanged();
         this.disconnectAll();
         this.disposalPromise = this.holepunch.dispose();
         return this.disposalPromise;
+    }
+
+    /**
+     * Channel-connection promotion, run once a handshake finishes on this
+     * P2PManager's transport. `ProfileManager` (updated by
+     * `InitHandshakeService` before this hook fires) tracks identity and
+     * transport mapping; `openConnections` is the broadcast/
+     * `getConnectedPeers`/cleanup set - registering a profile must not by
+     * itself grant channel traffic, so promotion happens only here. The hook
+     * only carries the address (it crosses the runtime port, which
+     * structured-clones every payload, so it can never carry a live
+     * transport) - the live transport is resolved host-side, same realm,
+     * via `ProfileManager`.
+     *
+     * Promotion is gated on being part of the channel conversation, not on a
+     * successful handshake alone: a verified identity only earns targeted RPC
+     * (via `ProfileManager`); `openConnections` is reserved for peers that
+     * either are dispute participants, or that we are actively syncing from
+     * because they are one (this same `canParticipateInDisputes` check also
+     * gates the `spectateService.sync` call below, so "participant" and "peer
+     * we sync from" collapse to one condition here). A peer that spectates
+     * *us* is promoted separately, in `SpectateRpcMethods.onSpectateRequest`,
+     * at the moment we actually accept that relationship (it may complete long
+     * after this handshake hook runs).
+     *
+     * A handshake can (and in the harness routinely does) complete before
+     * channel membership can resolve true for anyone - e.g. before the
+     * `openChannel` transaction lands on-chain. That is NOT treated as
+     * license to promote unconditionally (a peer we haven't yet identified as
+     * a participant must never be granted broadcast rights just because we
+     * can't yet prove otherwise - permanent promotion decided at a single
+     * point in time is exactly how a lobby stranger met before we join a
+     * channel would keep receiving our channel broadcasts forever after).
+     * Instead such a peer is deferred into `pendingChannelMembershipTransports`
+     * and re-checked by `reevaluatePendingChannelMembership` whenever our own
+     * status changes (e.g. once the channel is actually on-chain) - promoted
+     * then if and only if it now resolves as a participant.
+     */
+    private async onHandshakeCompleted(peerAddress: Address): Promise<void> {
+        const stateManager = this.stateManager;
+        if (stateManager.isDisposed) return;
+
+        const transport =
+            this.profileManager.getTransportByEvmAddress(peerAddress);
+        if (!transport) return;
+
+        const isChannelOpenedStatus =
+            stateManager.status === Status.OPENED;
+        let isPeerParticipant: boolean;
+        try {
+            isPeerParticipant =
+                await stateManager.diamondStateMachine.localDiamondContract.canParticipateInDisputes(
+                    stateManager.channelId,
+                    peerAddress
+                );
+        } catch (error) {
+            if (stateManager.isDisposed) {
+                this.logger.debug(
+                    "Skipping finalized handshake after state manager disposal"
+                );
+                return;
+            }
+            throw error;
+        }
+        if (stateManager.isDisposed) return;
+
+        let isChannelParticipant: boolean;
+        try {
+            isChannelParticipant = await this.isChannelConversationMember(
+                peerAddress,
+                stateManager.channelId
+            );
+        } catch (error) {
+            if (stateManager.isDisposed) {
+                this.logger.debug(
+                    "Skipping finalized handshake after state manager disposal"
+                );
+                return;
+            }
+            throw error;
+        }
+        if (stateManager.isDisposed) return;
+
+        // Only treat the transport as an "open connection" after handshake is
+        // final, and only once it resolves as a channel participant - see the
+        // method comment for the deferred (never speculative) fallback.
+        if (isChannelParticipant) {
+            this.addConnection(transport);
+        } else {
+            this.pendingChannelMembershipTransports.add(transport);
+        }
+
+        if (isChannelOpenedStatus) {
+            if (isPeerParticipant) {
+                this.logger.debug(
+                    `Initiating sync after handshake with peer ${peerAddress}`
+                );
+                this.localRpc.spectateService.sync(
+                    peerAddress,
+                    stateManager.channelId
+                );
+            } else {
+                this.logger.debug(
+                    `Skipping sync after handshake with peer ${peerAddress} - not a participant`
+                );
+            }
+        }
+
+        stateManager.p2pEventHooks.onConnection?.(
+            peerAddress,
+            isChannelOpenedStatus
+        );
+    }
+
+    /**
+     * Tells every peer we have completed a handshake with that our own join
+     * has landed, so a peer that deferred a promotion decision about us can
+     * take it again.
+     *
+     * Called by `MembershipService` once the join transaction is mined, which
+     * is the only moment that actually matters. Status is not a usable
+     * trigger here: PENDING_PARTICIPANT is set when the join is *submitted*,
+     * so announcing then races the chain - the receiver looks, does not find
+     * us in the union yet, and has no reason to look again. A joiner also
+     * need never reach PARTICIPATING, so there is no later status to fall
+     * back on.
+     *
+     * This is the counterpart to the second trigger described on
+     * `reevaluatePendingChannelMembership`: only the joining peer knows the
+     * moment its join lands, and the peers that need to react are exactly
+     * the ones whose own state is not changing. Fire-and-forget - a peer
+     * that misses it is no worse off than before, and a peer that fakes it
+     * gains nothing, because the receiver re-reads the chain either way.
+     */
+    public announceChannelMembership(): void {
+        const channelId = this.stateManager.channelId;
+        for (const peerAddress of this.getHandshakeCompletedPeers()) {
+            try {
+                this.remoteRpc.joinChannelService
+                    .announceChannelMembership(channelId)
+                    .sendOne(peerAddress);
+            } catch (error) {
+                this.logger.debug("Failed to announce membership to a peer", {
+                    peerAddress,
+                    error:
+                        error instanceof Error ? error.message : String(error)
+                });
+            }
+        }
+    }
+
+    /**
+     * The one question both promotion paths ask: "is this peer in the channel
+     * conversation". That is the on-chain participant union - participants
+     * plus peers whose join is on-chain but not yet finalized.
+     *
+     * Deliberately NOT `canParticipateInDisputes`, which is a NARROWER,
+     * later-forming property: it derives eligibility from the latest inbound
+     * message block hash, so at genesis (height 0, before any inbound block
+     * exists) it is false even for a founding participant. Gating promotion on
+     * it stalled the channel at h=0 - neither peer promoted the other, so
+     * blocks never broadcast and finalization sat at sigs=1 of union=2. Both
+     * checks are unforgeable on-chain reads; the union is simply the right
+     * question for membership, and it is what attribution elsewhere already
+     * uses.
+     *
+     * Single owner on purpose: the immediate path (`onHandshakeCompleted`) and
+     * the deferred path (`reevaluatePendingChannelMembership`) must never
+     * drift onto different definitions of membership - a deferred peer judged
+     * by the narrower rule would sit unpromoted at h=0 forever, reproducing
+     * exactly the stall described above on the path that exists to recover
+     * from it.
+     */
+    private async isChannelConversationMember(
+        peerAddress: Address,
+        channelId: ChannelId
+    ): Promise<boolean> {
+        const union =
+            await this.stateManager.membershipService.getOnChainParticipantUnion(
+                channelId
+            );
+        return union.some((participant) =>
+            addressesEqual(participant, peerAddress)
+        );
+    }
+
+    /**
+     * Re-checks every handshaked-but-not-yet-promoted transport. A peer
+     * deferred in `onHandshakeCompleted` because it did not yet resolve as a
+     * member of the channel conversation (typically: its join wasn't on-chain
+     * yet) gets promoted here once it does - never before, so a peer that
+     * never becomes a participant (a lobby stranger, a fellow spectator we
+     * never accepted) stays deferred, and joining a channel later does not
+     * retroactively grant it broadcast rights.
+     *
+     * Two things drive this, and the second is what makes it complete. Our
+     * own status changing covers "we advanced" (our open or join landed).
+     * That alone leaves a hole: membership also grows when a PEER joins,
+     * which moves that peer's status, not ours - so a peer that defers
+     * someone and then sits idle (a spectator, or any participant while a
+     * newcomer joins) would have no trigger left and would keep the joiner
+     * deferred forever. The joiner closes that itself by announcing its
+     * membership once its join lands, which lands here as the second
+     * trigger. The announcement is only a prompt to look again; what
+     * decides is the on-chain union read below.
+     */
+    public async reevaluatePendingChannelMembership(): Promise<void> {
+        const stateManager = this.stateManager;
+        if (stateManager.isDisposed) return;
+        if (this.pendingChannelMembershipTransports.size === 0) return;
+
+        const channelId = stateManager.channelId;
+
+        // Snapshot: promotion/close during iteration must not corrupt the
+        // live set this loop is walking.
+        for (const transport of [...this.pendingChannelMembershipTransports]) {
+            if (stateManager.isDisposed) return;
+            const peerAddress = transport.peerAddress;
+            if (!peerAddress) {
+                this.pendingChannelMembershipTransports.delete(transport);
+                continue;
+            }
+
+            let isPeerParticipant: boolean;
+            try {
+                isPeerParticipant = await this.isChannelConversationMember(
+                    peerAddress,
+                    channelId
+                );
+            } catch (error) {
+                if (stateManager.isDisposed) return;
+                this.logger.debug(
+                    "reevaluatePendingChannelMembership - participant check failed",
+                    {
+                        peerAddress,
+                        error:
+                            error instanceof Error
+                                ? error.message
+                                : String(error)
+                    }
+                );
+                continue;
+            }
+            if (stateManager.isDisposed) return;
+
+            if (isPeerParticipant) {
+                this.pendingChannelMembershipTransports.delete(transport);
+                this.addConnection(transport);
+                // Mirror the `onConnection` signal `onHandshakeCompleted`
+                // fires on an immediate promotion - a consumer (e.g. a test
+                // harness's connectivity barrier) waiting on that hook must
+                // learn about a deferred promotion too, not only discover it
+                // via its own timeout fallback.
+                stateManager.p2pEventHooks.onConnection?.(
+                    peerAddress,
+                    stateManager.status === Status.OPENED
+                );
+            }
+        }
     }
     public broadcastRpc(rpc: Rpc) {
         const debugConnections = this.openConnections.map((transport) => {
@@ -271,7 +574,13 @@ class P2PManager<TCustomRpc extends MainRpcService = MainRpcService>
         await this.holepunch.join(topic);
     }
     public addConnection(transport: ATransport) {
-        // A "connection" only exists after full handshake completion.
+        // A "connection" only exists after full handshake completion. Every
+        // promotion decision (`onHandshakeCompleted`,
+        // `reevaluatePendingChannelMembership`, an accepted spectate request)
+        // resolves an async check first, so a disconnect/blacklist can land
+        // on this same transport while that check is still in flight - never
+        // resurrect a transport that already closed in the meantime.
+        if (transport.isClosed) return;
         if (!this.openConnections.includes(transport)) {
             this.openConnections.push(transport);
         }
@@ -288,6 +597,16 @@ class P2PManager<TCustomRpc extends MainRpcService = MainRpcService>
         this.openConnections = this.openConnections.filter(
             (t) => t !== transport
         );
+        // A deferred (never-promoted) transport must not linger past its own
+        // close - otherwise the pending set grows unbounded across repeated
+        // handshakes from short-lived peers. (removeTransport is handled by
+        // the profile branch below.)
+        this.pendingChannelMembershipTransports.delete(transport);
+
+        // Case 3 of the Holepunch ban policy: a closing WebRTC transport
+        // releases the Holepunch fallback ban (ProfileManager decides based
+        // on blacklist status; no-op for a non-WebRTC transport).
+        this.profileManager.releaseHolepunchBanOnWebRtcClose(transport);
 
         try {
             if (profile) {
@@ -301,7 +620,8 @@ class P2PManager<TCustomRpc extends MainRpcService = MainRpcService>
     }
 
     public disconnectAndBlacklistPeer(transport: ATransport, cause?: string) {
-        this.profileManager.getProfileByTransport(transport)?.blacklist();
+        const profile = this.profileManager.getProfileByTransport(transport);
+        if (profile) this.profileManager.blacklistProfile(profile);
 
         this.disconnectConnection(transport);
     }
@@ -309,7 +629,7 @@ class P2PManager<TCustomRpc extends MainRpcService = MainRpcService>
     public disconnectAndBlacklistPeerByEvmAddress(evmAddress: Address) {
         const profile = this.profileManager.getProfileByEvmAddress(evmAddress);
         if (!profile) return;
-        profile.blacklist();
+        this.profileManager.blacklistProfile(profile);
         const transport = profile.getTransport();
         if (!transport) return;
         this.disconnectConnection(transport);
@@ -339,7 +659,21 @@ class P2PManager<TCustomRpc extends MainRpcService = MainRpcService>
      */
     public getConnectedPeers(): Set<Address> {
         const addresses = new Set<Address>();
-        for (const transport of this.openConnections) {
+        this.collectPeerAddresses(this.openConnections, addresses);
+        return addresses;
+    }
+
+    /**
+     * Resolves each transport's peer address (transport first, falling back to
+     * its `ProfileManager` profile) into `addresses`. One owner so the
+     * promoted-only and handshake-completed views can never disagree on how an
+     * address is resolved or normalized.
+     */
+    private collectPeerAddresses(
+        transports: Iterable<ATransport>,
+        addresses: Set<Address>
+    ): void {
+        for (const transport of transports) {
             const fromTransport = transport.peerAddress;
             if (fromTransport) {
                 // Boundary: transport.peerAddress can originate outside ethers.
@@ -354,6 +688,24 @@ class P2PManager<TCustomRpc extends MainRpcService = MainRpcService>
                 addresses.add(fromProfile.toString());
             }
         }
+    }
+
+    /**
+     * Every transport that finished the handshake on this P2PManager,
+     * whether or not it was promoted into `openConnections`
+     * (`getConnectedPeers()`). Read-only introspection - never touches the
+     * promotion decision itself. Exists for a consumer that needs "is this
+     * peer authenticated at all" rather than "is this peer a dispute
+     * participant" (e.g. an opt-in service riding this same shared swarm,
+     * like `LobbyService`, discovering a peer whose handshake completed
+     * before it was ever asked to look).
+     */
+    public getHandshakeCompletedPeers(): Set<Address> {
+        const addresses = this.getConnectedPeers();
+        this.collectPeerAddresses(
+            this.pendingChannelMembershipTransports,
+            addresses
+        );
         return addresses;
     }
 }
