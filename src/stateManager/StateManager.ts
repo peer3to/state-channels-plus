@@ -45,7 +45,8 @@ import {
     Mutex,
     Logger,
     DetachedPromises,
-    createEthersResultProxy
+    createEthersResultProxy,
+    getChecksumAddress
 } from "@/utils";
 import type { MutexLockOptions, MutexUnlockOptions } from "@/utils";
 // Types
@@ -345,14 +346,7 @@ class StateManager<
         this.appP2pEventHooks = p2pEventHooks;
     }
 
-    /**
-     * High-level status for SDK consumers.
-     *
-     * - NOT_OPENED: channel not opened on-chain
-     * - OPENED: opened on-chain but local node not yet synced (no fork id)
-     * - SYNCED: opened on-chain and locally synced, but signer is not a participant
-     * - PARTICIPATING: opened on-chain, locally synced, and signer is a participant
-     */
+    /** Current SDK lifecycle status. */
     public get status(): Status {
         return this._status;
     }
@@ -434,6 +428,19 @@ class StateManager<
         this.disputeManager.setChannelId(channelId);
         this.eventSyncService.setChannelId(channelId);
         await this.stateChannelEventListener.setChannelId(channelId);
+    }
+
+    public async clearChannelId(): Promise<void> {
+        this.logger.verbose("Clearing channel ID");
+        this._channelId = NULL;
+        this.logger.updateSharedContext({ channelId: String(NULL) });
+        this.disputeManager.setChannelId(NULL);
+        this.eventSyncService.setChannelId(NULL);
+        await this.stateChannelEventListener.clearChannelId();
+    }
+
+    public get checksumSignerAddress(): string {
+        return getChecksumAddress(String(this.signerAddress));
     }
     public getParticipantsCurrent(): Promise<Address[]> {
         return this.diamondStateMachine.getParticipants();

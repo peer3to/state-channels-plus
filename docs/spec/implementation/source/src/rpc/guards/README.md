@@ -8,6 +8,7 @@ _Pending authoring: shared responsibility, design decisions, assumptions, cross-
 ## Contents
 
 - [AGuard.ts](./AGuard.ts.md)
+- [DeferredAdmissionGuard.ts](./DeferredAdmissionGuard.ts.md)
 - [HandshakeCompletedGuard.ts](./HandshakeCompletedGuard.ts.md)
 - [index.ts](./index.ts.md)
 - [runGuards.ts](./runGuards.ts.md)

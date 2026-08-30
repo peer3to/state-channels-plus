@@ -1,6 +1,7 @@
 import { ethers, type BytesLike } from "ethers";
 import { getChecksumAddress } from "@/utils";
 import type { OpenChannelStruct } from "@typechain-types/contracts/V1/types/DataTypes";
+import type { LobbyMatch } from "@/rpc/services/lobbyMatching/LobbyMatchingTypes";
 
 export type Address = string;
 
@@ -9,6 +10,9 @@ export const NEGOTIATION_TIMEOUT_MS = 20_000;
 // Seconds the proposer adds to the current time for the open-channel deadline.
 // The receiver bounds the proposed deadline against this.
 export const OPEN_CHANNEL_DEADLINE_SECONDS = 60;
+export const NEGOTIATED_CHANNEL_DOMAIN = ethers.id(
+    "peer3.state-channel.negotiated-channel.v1"
+);
 
 export const compareAddresses = (a: Address, b: Address): number => {
     const aBig = BigInt(getChecksumAddress(a));
@@ -17,6 +21,51 @@ export const compareAddresses = (a: Address, b: Address): number => {
     if (aBig > bBig) return 1;
     return 0;
 };
+
+export function deriveNegotiatedChannelId(match: LobbyMatch): string {
+    const selector = getChecksumAddress(match.selectorAddress);
+    const advertiser = getChecksumAddress(match.advertiserAddress);
+    if (selector === advertiser) {
+        throw new Error("Negotiated channel requires two different peers");
+    }
+    if (
+        !ethers.isHexString(match.selectorChallenge, 32) ||
+        !ethers.isHexString(match.advertiserChallenge, 32) ||
+        match.selectorChallenge === ethers.ZeroHash ||
+        match.advertiserChallenge === ethers.ZeroHash
+    ) {
+        throw new Error(
+            "Negotiated channel challenges must be nonzero bytes32"
+        );
+    }
+    if (!ethers.isHexString(match.attemptNonce, 32)) {
+        throw new Error("Negotiated channel attempt must be bytes32");
+    }
+    const [lower, higher] =
+        compareAddresses(selector, advertiser) < 0
+            ? [selector, advertiser]
+            : [advertiser, selector];
+    const lowerChallenge =
+        lower === selector
+            ? match.selectorChallenge
+            : match.advertiserChallenge;
+    const higherChallenge =
+        higher === selector
+            ? match.selectorChallenge
+            : match.advertiserChallenge;
+    return ethers.keccak256(
+        ethers.AbiCoder.defaultAbiCoder().encode(
+            ["bytes32", "address", "address", "bytes32", "bytes32"],
+            [
+                NEGOTIATED_CHANNEL_DOMAIN,
+                lower,
+                higher,
+                lowerChallenge,
+                higherChallenge
+            ]
+        )
+    );
+}
 
 /**
  * Returns a reason string if a peer-proposed OpenChannel does not match the

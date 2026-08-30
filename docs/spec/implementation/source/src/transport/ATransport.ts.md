@@ -22,7 +22,9 @@
 The transport base: `send` and `sendRpcResponse` serialization, idempotent close/disconnection
 delivery, immediate addressless-profile registration, the authenticated `peerAddress` used by network transports, `isSamePeer`
 (checksum-address comparison — the settlement identity rule), `isTrusted` (false for every
-network transport), and the module-graph-independent `isTransport` public-shape predicate.
+network transport), exact-transport close subscriptions, and the module-graph-independent
+`isTransport` public-shape predicate. A network transport may also carry the exact rendezvous key
+that created it; this is transport association, not peer-authenticated message content.
 
 ## Key design decisions
 
@@ -32,6 +34,10 @@ network transport), and the module-graph-independent `isTransport` public-shape 
 4. **Close is first-call-wins.** The first close marks the transport closed, emits an unexpected-disconnection hook when applicable, removes the connection, and invokes concrete cleanup; later closes do nothing ([#L51](../../../../../../src/transport/ATransport.ts#L51)).
 5. **Profile lifetime starts with transport lifetime.** Construction creates an addressless profile;
    handshake authentication adds identity to that same profile later.
+6. **Exact transport close is observable once.** Deferred RPC admission can discard work for a
+   retired transport without treating a healthy replacement as final profile loss.
+7. **Lobby topics are session-scoped.** A transport carries authenticated peer identity and lifecycle,
+   while the active caller topic belongs to the lobby session and is checked on each lobby RPC.
 
 ## Inputs, outputs, state, and side effects
 
@@ -39,7 +45,7 @@ network transport), and the module-graph-independent `isTransport` public-shape 
 | ------------ | ------------------------------------------------------------------------------------------------------------- |
 | Inputs       | RPC envelopes, RPC responses, expected/unexpected close classification, and transport-like values.            |
 | Outputs      | Serialized frames, identity/trust predicates, and structural type-guard results.                              |
-| Owned state  | `isClosed`, `peerAddress`, and the owning `p2pManager` reference.                                             |
+| Owned state  | `isClosed`, `peerAddress`, close listeners, and the owning `p2pManager` reference.                            |
 | Side effects | Profile registration, logging, concrete sends/closes, connection removal, and unexpected-disconnection hooks. |
 
 ## Linked requirements
@@ -47,9 +53,9 @@ network transport), and the module-graph-independent `isTransport` public-shape 
 A file may contribute to several requirements; this report describes the contribution and never
 claims complete conformance for a requirement that depends on other files.
 
-| Source file                                                    | Specification IDs                                                                                                                                                                                                                                                                                                                                                                               |
-| -------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| [ATransport.ts](../../../../../../src/transport/ATransport.ts) | [`INV-RPC-1-SJS2T6`](../../../../specification/peer-communication/rpc.md#inv-rpc-1-sjs2t6), [`REQ-RPC-2-SZDTTM`](../../../../specification/peer-communication/rpc.md#req-rpc-2-szdttm), [`REQ-UPG-4-M2XDBA`](../../../../specification/peer-communication/transport-upgrade.md#req-upg-4-m2xdba), [`REQ-RUNTIME-4-B0N70Y`](../../../../specification/runtime/execution.md#req-runtime-4-b0n70y) |
+| Source file                                                    | Specification IDs                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
+| -------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| [ATransport.ts](../../../../../../src/transport/ATransport.ts) | [`INV-RPC-1-SJS2T6`](../../../../specification/peer-communication/rpc.md#inv-rpc-1-sjs2t6), [`REQ-RPC-2-SZDTTM`](../../../../specification/peer-communication/rpc.md#req-rpc-2-szdttm), [`REQ-UPG-4-M2XDBA`](../../../../specification/peer-communication/transport-upgrade.md#req-upg-4-m2xdba), [`REQ-RUNTIME-4-B0N70Y`](../../../../specification/runtime/execution.md#req-runtime-4-b0n70y), [`REQ-LOBBY-7-BXQ1QA`](../../../../specification/peer-communication/lobby-matching.md#req-lobby-7-bxq1qa) |
 
 ## Assumptions, dependencies, trust boundaries, and limits
 

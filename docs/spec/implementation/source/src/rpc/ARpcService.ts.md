@@ -76,7 +76,7 @@ None demonstrated.
 
 ## Missing behavior
 
-Guard-retry semantics for request-style calls remain the [`OQ-34-FY08V2`](../../../../specification/open-questions.md#oq-34-fy08v2) decision. The former response-send failure defect [`DEF-8-HWJ10N`](../../../../audit/open-findings.md#def-8-hwj10n) is resolved by the single guarded send path.
+None demonstrated for request-style guard deferral. A guard may mark a failed request as deferred, which suppresses the premature error response until replay. The former response-send failure defect [`DEF-8-HWJ10N`](../../../../audit/open-findings.md#def-8-hwj10n) remains resolved by the single guarded send path.
 
 ## Conformance traceability
 

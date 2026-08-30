@@ -19,6 +19,11 @@
 
 ## Responsibility and observable boundary
 
+The client signer mirrors `joinLobby(topic, options)` and boolean `leaveLobby(topic)` across the runtime port.
+Only the serializable caller topic and opening options cross the boundary. The host owns matching,
+negotiation, retry, timers, transports, and cleanup. The client observes only the opened-channel result
+or an undefined matching-cancellation result. A false leave result means matching already handed off.
+
 The client-side signer facade in isolated deployments: forwards signing/collection to the host over `hostRpc` — the key never leaves the host.
 
 ## Key design decisions

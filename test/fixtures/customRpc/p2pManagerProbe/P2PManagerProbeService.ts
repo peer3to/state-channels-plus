@@ -6,9 +6,12 @@ import { MAX_RPC_FRAME_BYTES } from "@/rpc/Rpc";
 import ATransport from "@/transport/ATransport";
 import { TransportType } from "@/transport/TransportType";
 import PeerProfile from "@/PeerProfile";
-import { getChecksumAddress } from "@/utils";
+import { SignatureUtils, getChecksumAddress } from "@/utils";
+import { ethers } from "ethers";
 import { Buffer } from "buffer";
 import { Status } from "@/types";
+import type { Bytes } from "@/types/types";
+import Clock from "@/Clock";
 import sinon from "sinon";
 import type { PingPongRpc } from "../PingPongRpcManifest";
 import { P2PManagerProbeRpcMethods } from "./P2PManagerProbeRpcMethods";
@@ -19,6 +22,13 @@ import {
     RecordingSwarm,
     RecordingWebRTCDataChannel
 } from "@test/fixtures/P2PTransportFixture";
+import LobbyMatchingService from "@/rpc/services/lobbyMatching/LobbyMatchingService";
+import {
+    compareAddresses,
+    deriveNegotiatedChannelId
+} from "@/rpc/services/openChannelNegotiation/OpenChannelNegotiationHelpers";
+import OpenChannelNegotiationService from "@/rpc/services/openChannelNegotiation/OpenChannelNegotiationService";
+import { createOpenChannelTestObject } from "@test/test_utils/testHelpers";
 
 class RecordingTransport extends ATransport {
     public transportType = TransportType.HOLEPUNCH;
@@ -129,6 +139,166 @@ export type ConnectedPeerFallbackProbe = {
     connectedPeers: string[];
 };
 
+export type ProfileDisconnectLifecycleProbe = {
+    unauthenticatedFinalCount: number;
+    authenticatedRebindCount: number;
+    upgradeCountBeforeFinal: number;
+    fallbackWasPromoted: boolean;
+    upgradeFinalCount: number;
+    repeatedCloseCount: number;
+    unsubscribeCount: number;
+};
+
+export type LobbyProtocolProbe = {
+    role: string;
+    firstStatus: string;
+    concurrentStatus: string;
+    malformedCommitStatus: string;
+    validCommitStatus: string;
+    candidateCountAfterSameEpochUnavailable: number;
+    candidateCountAfterSameEpochReadvertisement: number;
+    candidateCountAfterStaleAvailability: number;
+    matchPeer: string;
+    matchHasChannelId: boolean;
+    localChannelId: string;
+    lobbyTransportsExcludedBeforeCommit: boolean;
+    ordinaryHookCountBeforeCommit: number;
+    selectedTransportPromoted: boolean;
+    nonSelectedTransportClosed: boolean;
+    ordinaryHookCountAfterCommit: number;
+    discardedPeerMissedOrdinaryBroadcast: boolean;
+};
+
+export type LobbyRecoveryProbe = {
+    reservationAccepted: boolean;
+    reservedAfterFinalLoss: boolean;
+    matchingAfterFinalLoss: boolean;
+    disconnectedPeerBlacklisted: boolean;
+    abusiveTransportClosed: boolean;
+};
+
+export type LobbyBootstrapValidationProbe = {
+    bothNoneRole: string;
+    bothNoneExpectedRole: string;
+    oneNoneRole: string;
+    malformedCandidateCount: number;
+    wrongTopicCandidateCount: number;
+    unauthenticatedCandidateCount: number;
+    filteredCandidateCount: number;
+    filteredPickStatus: string;
+};
+
+export type LobbyRoleTimerProbe = {
+    defaultRoleDelayMs: number;
+    configuredRoleDelayMs: number;
+    roleWhileReservedAfterTimer: string;
+    commitAfterTimerStatus: string;
+    reservationExpiryBlacklisted: boolean;
+    roleTimerScheduleCount: number;
+    availabilityFramesBeforeExpiry: number;
+    availabilityFramesAfterExpiry: number;
+};
+
+export type LobbySessionCleanupProbe = {
+    defaultTimeoutScheduled: boolean;
+    nullTimeoutScheduled: boolean;
+    replacementResolvedUndefined: boolean;
+    replacementTopicActive: boolean;
+    replacementResolvedOnLeave: boolean;
+    timeoutResolvedUndefined: boolean;
+    timeoutClearedTopic: boolean;
+    timeoutStatus: Status;
+    disposeResolvedUndefined: boolean;
+    disposeClearedTopic: boolean;
+    replacementClosedOldTransport: boolean;
+    leaveClosedSessionTransport: boolean;
+    timeoutClosedSessionTransport: boolean;
+    disposeClosedSessionTransport: boolean;
+};
+
+export type LobbyRetryEpochProbe = {
+    firstRoleEpoch: number;
+    secondRoleEpoch: number;
+    observerCandidateCountAfterFirstSession: number;
+    observerCandidateCountAfterRetry: number;
+};
+
+export type LobbyExhaustionTimerProbe = {
+    scheduledAfterExhaustion: number;
+    scheduledAfterRepeatedAvailability: number;
+};
+
+export type LobbyLatePickProbe = {
+    responseStatus: string;
+    requesterBlacklisted: boolean;
+};
+
+export type MatchedNegotiationAdmissionProbe = {
+    responseBeforeInitialization: boolean;
+    responseAfterInitialization: boolean;
+    selectedChannelId: string;
+    peerBlacklistedAfterLoss: boolean;
+    channelIdAfterLoss: string;
+    statusAfterLoss: Status;
+};
+
+export type InvalidNegotiationAmountProbe = {
+    error: string;
+    peerBlacklisted: boolean;
+    channelId: string;
+    status: Status;
+    rendezvousTopic?: string;
+    matching: boolean;
+    oldLobbyTransportClosed: boolean;
+};
+
+export type NegotiationFailureProbe = {
+    channelIdAfterHigherInit: string;
+    initiatorTimeoutBlacklisted: boolean;
+    initiatorTimeoutCleared: boolean;
+    wrongPeerBlacklisted: boolean;
+    wrongPeerLeftAttemptActive: boolean;
+    wrongAttemptBlacklistedSelectedPeer: boolean;
+    wrongAttemptCleared: boolean;
+    duplicateTermsIdempotent: boolean;
+    conflictingTermsBlacklisted: boolean;
+    malformedProposalBlacklisted: boolean;
+    malformedProposalCleared: boolean;
+    alreadyOpenRejected: boolean;
+    alreadyOpenBlacklisted: boolean;
+    alreadyOpenKeptZeroId: boolean;
+};
+
+export type NegotiationFailureScenario =
+    | "initiator-timeout"
+    | "wrong-peer"
+    | "wrong-attempt"
+    | "terms"
+    | "malformed-proposal"
+    | "already-open";
+
+export type SignedAttemptObservationProbe = {
+    submissionFailureThrew: boolean;
+    higherSubmittedExactPayload: boolean;
+    higherSubmittedBothSignatures: boolean;
+    signedAttemptRetainedAfterSubmissionFailure: boolean;
+    submissionFailureDidNotReportOpen: boolean;
+    higherDidNotBlacklistLowerAfterSubmissionFailure: boolean;
+    higherDidNotBlacklistLowerAfterExpiry: boolean;
+    lowerDidNotBlacklistHigherBeforeExpiry: boolean;
+    lowerBlacklistedHigherAfterExpiry: boolean;
+    signedDisposeOutcomeCancelled: boolean;
+    signedAttemptClearedOnDispose: boolean;
+    signedPeerBlacklistedOnFinalLoss: boolean;
+    signedAttemptRetainedAfterFinalLoss: boolean;
+    signedAttemptClearedAfterExpiry: boolean;
+    signedAttemptIdClearedAfterExpiry: boolean;
+    wrongOpenEventIgnored: boolean;
+    submissionStayedPendingUntilObservation: boolean;
+    matchingOpenEventClearedAttempt: boolean;
+    matchingOpenEventRetainedChannelId: boolean;
+};
+
 export type ForeignResponseProbe = {
     foreignBlacklisted: boolean;
     foreignDisconnected: boolean;
@@ -152,7 +322,6 @@ export type LifecycleProbe = {
     blacklistByAddress: boolean;
     missingAddressIgnored: boolean;
     connectedPeers: string[];
-    discoveryWasNodeNoop: boolean;
 };
 
 export type BanPolicyProbe = {
@@ -1044,9 +1213,6 @@ export class P2PManagerProbeService extends ARpcService<
         this.p2pManager.disconnectAndBlacklistPeerByEvmAddress(secondAddress);
         this.p2pManager.disconnectAndBlacklistPeerByEvmAddress(missingAddress);
 
-        const beforeDiscovery = this.p2pManager.openConnections.length;
-        await this.p2pManager.tryOpenConnectionToChannel("p2p-manager-probe");
-
         return {
             broadcastCounts,
             duplicateAddCount,
@@ -1058,9 +1224,7 @@ export class P2PManagerProbeService extends ARpcService<
             blacklistByAddress: secondProfile.isBlackListed,
             missingAddressIgnored:
                 !this.p2pManager.isBlacklisted(missingAddress),
-            connectedPeers,
-            discoveryWasNodeNoop:
-                this.p2pManager.openConnections.length === beforeDiscovery
+            connectedPeers
         };
     }
 
@@ -1652,5 +1816,1573 @@ export class P2PManagerProbeService extends ARpcService<
         } finally {
             unsubscribeConnection();
         }
+    }
+
+    public probeProfileDisconnectLifecycle(
+        address: string
+    ): ProfileDisconnectLifecycleProbe {
+        const unauthenticated = this.transport();
+        const unauthenticatedProfile =
+            this.p2pManager.profileManager.getProfileByTransport(
+                unauthenticated
+            )!;
+        let unauthenticatedFinalCount = 0;
+        unauthenticatedProfile.onDisconnected(() => {
+            unauthenticatedFinalCount += 1;
+        });
+        this.p2pManager.profileManager.removeTransport(unauthenticated);
+
+        const normalizedAddress = getChecksumAddress(address);
+        const rebinding = this.transport();
+        const temporaryProfile =
+            this.p2pManager.profileManager.getProfileByTransport(rebinding)!;
+        let authenticatedRebindCount = 0;
+        temporaryProfile.onDisconnected(() => {
+            authenticatedRebindCount += 1;
+        });
+        this.p2pManager.profileManager.authenticateTransport(
+            rebinding,
+            normalizedAddress
+        );
+        this.p2pManager.profileManager.removeTransport(rebinding);
+
+        const fallback = this.transport(normalizedAddress);
+        const profile = new PeerProfile(fallback, normalizedAddress);
+        this.p2pManager.profileManager.registerProfile(profile);
+        const replacement = this.transport(normalizedAddress);
+        this.p2pManager.profileManager.updateTransport(
+            normalizedAddress,
+            replacement
+        );
+        let upgradeFinalCount = 0;
+        const unsubscribe = profile.onDisconnected(() => {
+            upgradeFinalCount += 1;
+        });
+        let unsubscribeCount = 0;
+        const removeUnsubscribed = profile.onDisconnected(() => {
+            unsubscribeCount += 1;
+        });
+        removeUnsubscribed();
+
+        this.p2pManager.profileManager.removeTransport(replacement);
+        const upgradeCountBeforeFinal = upgradeFinalCount;
+        const fallbackWasPromoted = profile.getTransport() === fallback;
+        this.p2pManager.profileManager.removeTransport(fallback);
+        this.p2pManager.profileManager.removeTransport(fallback);
+        const repeatedCloseCount = upgradeFinalCount;
+        unsubscribe();
+
+        return {
+            unauthenticatedFinalCount,
+            authenticatedRebindCount,
+            upgradeCountBeforeFinal,
+            fallbackWasPromoted,
+            upgradeFinalCount,
+            repeatedCloseCount,
+            unsubscribeCount
+        };
+    }
+
+    public async probeLobbyProtocol(): Promise<LobbyProtocolProbe> {
+        const service = this.p2pManager.localRpc.lobbyMatchingService;
+        const topic = `0x${"ab".repeat(32)}`;
+        const firstAddress = getChecksumAddress(
+            "0xffffffffffffffffffffffffffffffffffffffff"
+        );
+        const secondAddress = getChecksumAddress(
+            "0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
+        );
+        const first = this.transport(firstAddress);
+        const second = this.transport(secondAddress);
+        this.p2pManager.profileManager.registerProfile(
+            new PeerProfile(first, firstAddress)
+        );
+        this.p2pManager.profileManager.registerProfile(
+            new PeerProfile(second, secondAddress)
+        );
+        let ordinaryHookCount = 0;
+        const unsubscribeConnection = this.p2pManager.stateManager.events.on(
+            "p2pEventHooks",
+            "onConnection",
+            () => {
+                ordinaryHookCount += 1;
+            }
+        );
+        const matchPromise = service.match(topic);
+        await Promise.resolve();
+        service.onAuthenticatedTransport(first);
+        service.onAuthenticatedTransport(second);
+        const lobbyTransportsExcludedBeforeCommit =
+            !this.p2pManager.openConnections.includes(first) &&
+            !this.p2pManager.openConnections.includes(second);
+        const ordinaryHookCountBeforeCommit = ordinaryHookCount;
+        service.receiveAvailability(first, {
+            topic,
+            role: "none",
+            roleEpoch: 0,
+            available: false
+        });
+        const role = service.getAvailability().role;
+        service.receiveAvailability(second, {
+            topic,
+            role: "advertiser",
+            roleEpoch: 2,
+            available: true
+        });
+        service.receiveAvailability(second, {
+            topic,
+            role: "advertiser",
+            roleEpoch: 2,
+            available: false
+        });
+        const candidateCountAfterSameEpochUnavailable =
+            service.getAvailability().candidateCount;
+        service.receiveAvailability(second, {
+            topic,
+            role: "advertiser",
+            roleEpoch: 2,
+            available: true
+        });
+        const candidateCountAfterSameEpochReadvertisement =
+            service.getAvailability().candidateCount;
+        service.receiveAvailability(second, {
+            topic,
+            role: "advertiser",
+            roleEpoch: 1,
+            available: false
+        });
+        const candidateCountAfterStaleAvailability =
+            service.getAvailability().candidateCount;
+        const attemptNonce = `0x${"01".repeat(32)}`;
+        const selectorChallenge = `0x${"02".repeat(32)}`;
+        const firstPick = service.receivePick(
+            first,
+            attemptNonce,
+            1,
+            selectorChallenge
+        );
+        const concurrentPick = service.receivePick(
+            second,
+            `0x${"03".repeat(32)}`,
+            1,
+            `0x${"04".repeat(32)}`
+        );
+        if (firstPick.status !== "accepted") {
+            throw new Error("Expected the first lobby pick to be accepted");
+        }
+        const malformedCommit = service.receiveCommit(
+            first,
+            attemptNonce,
+            1,
+            selectorChallenge,
+            `0x${"05".repeat(32)}`
+        );
+        const validCommit = service.receiveCommit(
+            first,
+            attemptNonce,
+            1,
+            selectorChallenge,
+            firstPick.advertiserChallenge
+        );
+        const match = await matchPromise;
+        if (!match) throw new Error("Expected a committed lobby match");
+        const matchHasChannelId = Object.prototype.hasOwnProperty.call(
+            match,
+            "channelId"
+        );
+        const selectedTransportPromoted =
+            this.p2pManager.openConnections.includes(first);
+        const nonSelectedTransportClosed = second.isClosed;
+        const ordinaryHookCountAfterCommit = ordinaryHookCount;
+        const discardedFramesBeforeBroadcast = second.frames.length;
+        this.p2pManager.broadcastRpc({
+            service: "pingService",
+            method: "recordPing",
+            params: ["post-lobby"]
+        });
+        const discardedPeerMissedOrdinaryBroadcast =
+            second.frames.length === discardedFramesBeforeBroadcast;
+        await service.completeLobby(topic);
+        unsubscribeConnection();
+        return {
+            role,
+            firstStatus: firstPick.status,
+            concurrentStatus: concurrentPick.status,
+            malformedCommitStatus: malformedCommit.status,
+            validCommitStatus: validCommit.status,
+            candidateCountAfterSameEpochUnavailable,
+            candidateCountAfterSameEpochReadvertisement,
+            candidateCountAfterStaleAvailability,
+            matchPeer: String(match.peerAddress),
+            matchHasChannelId,
+            localChannelId: String(this.p2pManager.stateManager.channelId),
+            lobbyTransportsExcludedBeforeCommit,
+            ordinaryHookCountBeforeCommit,
+            selectedTransportPromoted,
+            nonSelectedTransportClosed,
+            ordinaryHookCountAfterCommit,
+            discardedPeerMissedOrdinaryBroadcast
+        };
+    }
+
+    public async probeLobbyRecovery(): Promise<LobbyRecoveryProbe> {
+        const service = this.p2pManager.localRpc.lobbyMatchingService;
+        const topic = `0x${"31".repeat(32)}`;
+        const peerAddress = getChecksumAddress(
+            "0xffffffffffffffffffffffffffffffffffffffff"
+        );
+        const transport = this.transport(peerAddress);
+        const profile = new PeerProfile(transport, peerAddress);
+        this.p2pManager.profileManager.registerProfile(profile);
+        void service.match(topic);
+        await Promise.resolve();
+        service.receiveAvailability(transport, {
+            topic,
+            role: "none",
+            roleEpoch: 0,
+            available: false
+        });
+        const pick = service.receivePick(
+            transport,
+            `0x${"32".repeat(32)}`,
+            1,
+            `0x${"33".repeat(32)}`
+        );
+        this.p2pManager.profileManager.removeTransport(transport);
+        await Promise.resolve();
+
+        const abusiveAddress = getChecksumAddress(
+            "0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
+        );
+        const abusive = this.transport(abusiveAddress);
+        this.p2pManager.profileManager.registerProfile(
+            new PeerProfile(abusive, abusiveAddress)
+        );
+        const wrongTopicRpc: Rpc = {
+            service: "lobbyMatchingService",
+            method: "advertise",
+            params: [`0x${"34".repeat(32)}`, "advertiser", 1, true]
+        };
+        for (let rejected = 0; rejected < 9; rejected += 1) {
+            service.runRPC(wrongTopicRpc, abusive);
+        }
+
+        const availability = service.getAvailability();
+        return {
+            reservationAccepted: pick.status === "accepted",
+            reservedAfterFinalLoss: availability.reserved,
+            matchingAfterFinalLoss: availability.matching,
+            disconnectedPeerBlacklisted: profile.isBlackListed,
+            abusiveTransportClosed: abusive.isClosed
+        };
+    }
+
+    public async probeLobbyBootstrapAndValidation(): Promise<LobbyBootstrapValidationProbe> {
+        const localAddress = getChecksumAddress(
+            String(this.p2pManager.stateManager.signerAddress)
+        );
+        const peerAddress = getChecksumAddress(
+            "0xffffffffffffffffffffffffffffffffffffffff"
+        );
+        const service = this.p2pManager.localRpc.lobbyMatchingService;
+        const firstTopic = `0x${"41".repeat(32)}`;
+        const first = this.transport(peerAddress);
+        this.p2pManager.profileManager.registerProfile(
+            new PeerProfile(first, peerAddress)
+        );
+        void service.match(firstTopic);
+        await Promise.resolve();
+        service.receiveAvailability(first, {
+            topic: firstTopic,
+            role: "none",
+            roleEpoch: 0,
+            available: false
+        });
+        const bothNoneRole = service.getAvailability().role;
+        const bothNoneExpectedRole =
+            compareAddresses(localAddress, peerAddress) < 0
+                ? "advertiser"
+                : "selector";
+        await service.leaveLobby(firstTopic);
+
+        const secondTopic = `0x${"42".repeat(32)}`;
+        const second = this.transport(peerAddress);
+        this.p2pManager.profileManager.registerProfile(
+            new PeerProfile(second, peerAddress)
+        );
+        void service.match(secondTopic);
+        await Promise.resolve();
+        service.receiveAvailability(second, {
+            topic: secondTopic,
+            role: "advertiser",
+            roleEpoch: 1,
+            available: false
+        });
+        const oneNoneRole = service.getAvailability().role;
+        service.receiveAvailability(second, {
+            topic: secondTopic,
+            role: "invalid" as "advertiser",
+            roleEpoch: Number.NaN,
+            available: true
+        });
+        const malformedCandidateCount =
+            service.getAvailability().candidateCount;
+        service.receiveAvailability(second, {
+            topic: `0x${"43".repeat(32)}`,
+            role: "advertiser",
+            roleEpoch: 2,
+            available: true
+        });
+        const wrongTopicCandidateCount =
+            service.getAvailability().candidateCount;
+        const unauthenticated = this.transport();
+        service.receiveAvailability(unauthenticated, {
+            topic: secondTopic,
+            role: "advertiser",
+            roleEpoch: 2,
+            available: true
+        });
+        const unauthenticatedCandidateCount =
+            service.getAvailability().candidateCount;
+        await service.leaveLobby(secondTopic);
+
+        const filteredTopic = `0x${"44".repeat(32)}`;
+        const filtered = new LobbyMatchingService(this.p2pManager, {
+            shouldMatchPeer: () => false
+        });
+        const filteredTransport = this.transport(peerAddress);
+        this.p2pManager.profileManager.registerProfile(
+            new PeerProfile(filteredTransport, peerAddress)
+        );
+        void filtered.match(filteredTopic);
+        await Promise.resolve();
+        filtered.receiveAvailability(filteredTransport, {
+            topic: filteredTopic,
+            role: "advertiser",
+            roleEpoch: 1,
+            available: true
+        });
+        const filteredCandidateCount =
+            filtered.getAvailability().candidateCount;
+        const filteredPickStatus = filtered.receivePick(
+            filteredTransport,
+            `0x${"45".repeat(32)}`,
+            0,
+            `0x${"46".repeat(32)}`
+        ).status;
+        await filtered.leaveLobby(filteredTopic);
+
+        return {
+            bothNoneRole,
+            bothNoneExpectedRole,
+            oneNoneRole,
+            malformedCandidateCount,
+            wrongTopicCandidateCount,
+            unauthenticatedCandidateCount,
+            filteredCandidateCount,
+            filteredPickStatus
+        };
+    }
+
+    public async probeLobbyRoleTimers(): Promise<LobbyRoleTimerProbe> {
+        const timeoutManager = this.p2pManager.stateManager.timeoutManager;
+        const originalScheduleTask =
+            timeoutManager.scheduleTask.bind(timeoutManager);
+        const scheduled: {
+            delayMs: number;
+            taskName?: string;
+            task: () => void | Promise<void>;
+        }[] = [];
+        timeoutManager.scheduleTask = ((task, delayMs, taskName) => {
+            scheduled.push({ delayMs, taskName, task });
+            return originalScheduleTask(task, delayMs, taskName);
+        }) as typeof timeoutManager.scheduleTask;
+        try {
+            const peerAddress = getChecksumAddress(
+                "0xffffffffffffffffffffffffffffffffffffffff"
+            );
+            const defaultTopic = `0x${"51".repeat(32)}`;
+            const defaultService = new LobbyMatchingService(this.p2pManager);
+            const defaultPeer = this.transport(peerAddress);
+            this.p2pManager.profileManager.registerProfile(
+                new PeerProfile(defaultPeer, peerAddress)
+            );
+            void defaultService.match(defaultTopic);
+            await Promise.resolve();
+            defaultService.onAuthenticatedTransport(defaultPeer);
+            defaultService.receiveAvailability(defaultPeer, {
+                topic: defaultTopic,
+                role: "none",
+                roleEpoch: 0,
+                available: false
+            });
+            const defaultRoleDelayMs = scheduled.find(
+                (entry) => entry.taskName === "lobby role duration"
+            )!.delayMs;
+            await defaultService.leaveLobby(defaultTopic);
+
+            scheduled.length = 0;
+            const configuredTopic = `0x${"52".repeat(32)}`;
+            const configuredService = new LobbyMatchingService(
+                this.p2pManager,
+                {
+                    roleDurationMinMs: 37,
+                    roleDurationMaxMs: 37
+                }
+            );
+            const selector = this.transport(peerAddress);
+            this.p2pManager.profileManager.registerProfile(
+                new PeerProfile(selector, peerAddress)
+            );
+            void configuredService.match(configuredTopic);
+            await Promise.resolve();
+            configuredService.onAuthenticatedTransport(selector);
+            configuredService.receiveAvailability(selector, {
+                topic: configuredTopic,
+                role: "none",
+                roleEpoch: 0,
+                available: false
+            });
+            const configuredRoleEntry = scheduled.find(
+                (entry) => entry.taskName === "lobby role duration"
+            )!;
+            const configuredRoleDelayMs = configuredRoleEntry.delayMs;
+            const pick = configuredService.receivePick(
+                selector,
+                `0x${"53".repeat(32)}`,
+                1,
+                `0x${"54".repeat(32)}`
+            );
+            await configuredRoleEntry.task();
+            const roleWhileReservedAfterTimer =
+                configuredService.getAvailability().role;
+            if (pick.status !== "accepted") {
+                throw new Error("Expected held advertiser reservation");
+            }
+            const commitAfterTimerStatus = configuredService.receiveCommit(
+                selector,
+                `0x${"53".repeat(32)}`,
+                1,
+                `0x${"54".repeat(32)}`,
+                pick.advertiserChallenge
+            ).status;
+            await configuredService.completeLobby(configuredTopic);
+
+            scheduled.length = 0;
+            const expiryTopic = `0x${"55".repeat(32)}`;
+            const expiryService = new LobbyMatchingService(this.p2pManager, {
+                roleDurationMinMs: 5000,
+                roleDurationMaxMs: 5000
+            });
+            const silentAddress = getChecksumAddress(
+                "0xdddddddddddddddddddddddddddddddddddddddd"
+            );
+            const silent = this.transport(silentAddress);
+            const silentProfile = new PeerProfile(silent, silentAddress);
+            this.p2pManager.profileManager.registerProfile(silentProfile);
+            const expiryObserverAddress = getChecksumAddress(
+                "0xcccccccccccccccccccccccccccccccccccccccc"
+            );
+            const expiryObserver = this.transport(expiryObserverAddress);
+            this.p2pManager.profileManager.registerProfile(
+                new PeerProfile(expiryObserver, expiryObserverAddress)
+            );
+            void expiryService.match(expiryTopic);
+            await Promise.resolve();
+            expiryService.onAuthenticatedTransport(silent);
+            expiryService.onAuthenticatedTransport(expiryObserver);
+            expiryService.receiveAvailability(silent, {
+                topic: expiryTopic,
+                role: "none",
+                roleEpoch: 0,
+                available: false
+            });
+            const expiryPick = expiryService.receivePick(
+                silent,
+                `0x${"56".repeat(32)}`,
+                1,
+                `0x${"57".repeat(32)}`
+            );
+            if (expiryPick.status !== "accepted") {
+                throw new Error("Expected expiring advertiser reservation");
+            }
+            const roleTimerScheduleCount = scheduled.filter(
+                (entry) => entry.taskName === "lobby role duration"
+            ).length;
+            const availabilityFramesBeforeExpiry = expiryObserver.frames.length;
+            const expiry = scheduled.find(
+                (entry) =>
+                    entry.taskName === "lobby advertiser reservation expiry"
+            )!;
+            await expiry.task();
+            const availabilityFramesAfterExpiry = expiryObserver.frames.length;
+            const reservationExpiryBlacklisted = silentProfile.isBlackListed;
+            await expiryService.leaveLobby(expiryTopic);
+            return {
+                defaultRoleDelayMs,
+                configuredRoleDelayMs,
+                roleWhileReservedAfterTimer,
+                commitAfterTimerStatus,
+                reservationExpiryBlacklisted,
+                roleTimerScheduleCount,
+                availabilityFramesBeforeExpiry,
+                availabilityFramesAfterExpiry
+            };
+        } finally {
+            timeoutManager.scheduleTask = originalScheduleTask;
+        }
+    }
+
+    public async probeLobbySessionCleanup(): Promise<LobbySessionCleanupProbe> {
+        const timeoutManager = this.p2pManager.stateManager.timeoutManager;
+        const originalScheduleTask =
+            timeoutManager.scheduleTask.bind(timeoutManager);
+        const scheduledTaskNames: string[] = [];
+        timeoutManager.scheduleTask = ((task, delayMs, taskName) => {
+            if (taskName) scheduledTaskNames.push(taskName);
+            return originalScheduleTask(task, delayMs, taskName);
+        }) as typeof timeoutManager.scheduleTask;
+        const service = new LobbyMatchingService(this.p2pManager);
+        const firstTopic = `0x${"61".repeat(32)}`;
+        const secondTopic = `0x${"62".repeat(32)}`;
+        const first = service.match(firstTopic);
+        await Promise.resolve();
+        const firstTransport = this.transport(
+            "0xffffffffffffffffffffffffffffffffffffffff"
+        );
+        this.p2pManager.profileManager.registerProfile(
+            new PeerProfile(
+                firstTransport,
+                getChecksumAddress(firstTransport.peerAddress!)
+            )
+        );
+        service.onAuthenticatedTransport(firstTransport);
+        const defaultTimeoutScheduled = scheduledTaskNames.includes(
+            "lobby match timeout"
+        );
+        const second = service.match(secondTopic);
+        const replacementResolvedUndefined = (await first) === undefined;
+        const replacementClosedOldTransport = firstTransport.isClosed;
+        const secondTransport = this.transport(
+            "0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
+        );
+        this.p2pManager.profileManager.registerProfile(
+            new PeerProfile(
+                secondTransport,
+                getChecksumAddress(secondTransport.peerAddress!)
+            )
+        );
+        service.onAuthenticatedTransport(secondTransport);
+        const replacementTopicActive =
+            service.getAvailability().topic === secondTopic &&
+            service.getAvailability().matching;
+        await service.leaveLobby(`0x${"63".repeat(32)}`);
+        await service.leaveLobby(secondTopic);
+        const replacementResolvedOnLeave = (await second) === undefined;
+        const leaveClosedSessionTransport = secondTransport.isClosed;
+        await service.leaveLobby(secondTopic);
+
+        scheduledTaskNames.length = 0;
+        const nullTimeoutService = new LobbyMatchingService(this.p2pManager);
+        const nullTimeoutTopic = `0x${"66".repeat(32)}`;
+        const nullTimeoutPromise = nullTimeoutService.match(
+            nullTimeoutTopic,
+            null
+        );
+        await Promise.resolve();
+        const nullTimeoutScheduled = scheduledTaskNames.includes(
+            "lobby match timeout"
+        );
+        await nullTimeoutService.leaveLobby(nullTimeoutTopic);
+        await nullTimeoutPromise;
+
+        const timeoutService = new LobbyMatchingService(this.p2pManager);
+        const timeoutPromise = timeoutService.match(`0x${"64".repeat(32)}`, 20);
+        await Promise.resolve();
+        const timeoutTransport = this.transport(
+            "0xdddddddddddddddddddddddddddddddddddddddd"
+        );
+        this.p2pManager.profileManager.registerProfile(
+            new PeerProfile(
+                timeoutTransport,
+                getChecksumAddress(timeoutTransport.peerAddress!)
+            )
+        );
+        timeoutService.onAuthenticatedTransport(timeoutTransport);
+        const timeoutResult = await timeoutPromise;
+        const timeoutResolvedUndefined = timeoutResult === undefined;
+        const timeoutClearedTopic =
+            timeoutService.getAvailability().topic === undefined;
+        const timeoutStatus = this.p2pManager.stateManager.status;
+        const timeoutClosedSessionTransport = timeoutTransport.isClosed;
+
+        const disposeService = new LobbyMatchingService(this.p2pManager);
+        const disposePromise = disposeService.match(`0x${"65".repeat(32)}`);
+        await Promise.resolve();
+        const disposeTransport = this.transport(
+            "0xcccccccccccccccccccccccccccccccccccccccc"
+        );
+        this.p2pManager.profileManager.registerProfile(
+            new PeerProfile(
+                disposeTransport,
+                getChecksumAddress(disposeTransport.peerAddress!)
+            )
+        );
+        disposeService.onAuthenticatedTransport(disposeTransport);
+        await disposeService.dispose();
+        const disposeResolvedUndefined = (await disposePromise) === undefined;
+        const disposeClearedTopic =
+            disposeService.getAvailability().topic === undefined;
+        const disposeClosedSessionTransport = disposeTransport.isClosed;
+        timeoutManager.scheduleTask = originalScheduleTask;
+
+        return {
+            defaultTimeoutScheduled,
+            nullTimeoutScheduled,
+            replacementResolvedUndefined,
+            replacementTopicActive,
+            replacementResolvedOnLeave,
+            timeoutResolvedUndefined,
+            timeoutClearedTopic,
+            timeoutStatus,
+            disposeResolvedUndefined,
+            disposeClearedTopic,
+            replacementClosedOldTransport,
+            leaveClosedSessionTransport,
+            timeoutClosedSessionTransport,
+            disposeClosedSessionTransport
+        };
+    }
+
+    public async probeLobbyRetryEpoch(): Promise<LobbyRetryEpochProbe> {
+        const source = new LobbyMatchingService(this.p2pManager, {
+            roleDurationMinMs: 10_000,
+            roleDurationMaxMs: 10_000
+        });
+        const observer = new LobbyMatchingService(this.p2pManager, {
+            roleDurationMinMs: 10_000,
+            roleDurationMaxMs: 10_000
+        });
+        const topic = `0x${"71".repeat(32)}`;
+        const bootstrapAddress = getChecksumAddress(
+            "0xffffffffffffffffffffffffffffffffffffffff"
+        );
+        const sourceAddress = getChecksumAddress(
+            "0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
+        );
+        const bootstrapTransport = this.transport(bootstrapAddress);
+        const sourceTransport = this.transport(sourceAddress);
+        this.p2pManager.profileManager.registerProfile(
+            new PeerProfile(bootstrapTransport, bootstrapAddress)
+        );
+        this.p2pManager.profileManager.registerProfile(
+            new PeerProfile(sourceTransport, sourceAddress)
+        );
+
+        const observerMatch = observer.match(topic);
+        const firstMatch = source.match(topic);
+        await Promise.resolve();
+        observer.receiveAvailability(bootstrapTransport, {
+            topic,
+            role: "selector",
+            roleEpoch: 0,
+            available: false
+        });
+        source.receiveAvailability(bootstrapTransport, {
+            topic,
+            role: "selector",
+            roleEpoch: 0,
+            available: false
+        });
+        const firstAvailability = source.getAvailability();
+        const firstRoleEpoch = firstAvailability.roleEpoch;
+        observer.receiveAvailability(sourceTransport, {
+            topic,
+            role: firstAvailability.role,
+            roleEpoch: firstRoleEpoch,
+            available: true
+        });
+        const observerCandidateCountAfterFirstSession =
+            observer.getAvailability().candidateCount;
+        await source.leaveLobby(topic);
+        await firstMatch;
+
+        const secondMatch = source.match(topic);
+        await Promise.resolve();
+        source.receiveAvailability(bootstrapTransport, {
+            topic,
+            role: "selector",
+            roleEpoch: 1,
+            available: false
+        });
+        const secondAvailability = source.getAvailability();
+        const secondRoleEpoch = secondAvailability.roleEpoch;
+        observer.receiveAvailability(sourceTransport, {
+            topic,
+            role: secondAvailability.role,
+            roleEpoch: secondRoleEpoch,
+            available: true
+        });
+        const observerCandidateCountAfterRetry =
+            observer.getAvailability().candidateCount;
+        await source.leaveLobby(topic);
+        await secondMatch;
+        await observer.leaveLobby(topic);
+        await observerMatch;
+
+        return {
+            firstRoleEpoch,
+            secondRoleEpoch,
+            observerCandidateCountAfterFirstSession,
+            observerCandidateCountAfterRetry
+        };
+    }
+
+    public async probeLobbyExhaustionTimer(): Promise<LobbyExhaustionTimerProbe> {
+        const timeoutManager = this.p2pManager.stateManager.timeoutManager;
+        const originalScheduleTask =
+            timeoutManager.scheduleTask.bind(timeoutManager);
+        let roleTimerSchedules = 0;
+        timeoutManager.scheduleTask = ((task, delayMs, taskName) => {
+            if (taskName === "lobby role duration") roleTimerSchedules += 1;
+            return originalScheduleTask(task, delayMs, taskName);
+        }) as typeof timeoutManager.scheduleTask;
+        const service = new LobbyMatchingService(this.p2pManager, {
+            roleDurationMinMs: 10_000,
+            roleDurationMaxMs: 10_000
+        });
+        const topic = `0x${"72".repeat(32)}`;
+        const peerAddress = getChecksumAddress(
+            "0xffffffffffffffffffffffffffffffffffffffff"
+        );
+        const transport = this.transport(peerAddress);
+        this.p2pManager.profileManager.registerProfile(
+            new PeerProfile(transport, peerAddress)
+        );
+        try {
+            const match = service.match(topic);
+            await Promise.resolve();
+            service.receiveAvailability(transport, {
+                topic,
+                role: "advertiser",
+                roleEpoch: 0,
+                available: false
+            });
+            await Promise.resolve();
+            const scheduledAfterExhaustion = roleTimerSchedules;
+            for (let roleEpoch = 1; roleEpoch <= 5; roleEpoch += 1) {
+                service.receiveAvailability(transport, {
+                    topic,
+                    role: "advertiser",
+                    roleEpoch,
+                    available: false
+                });
+            }
+            await Promise.resolve();
+            const scheduledAfterRepeatedAvailability = roleTimerSchedules;
+            await service.leaveLobby(topic);
+            await match;
+            return {
+                scheduledAfterExhaustion,
+                scheduledAfterRepeatedAvailability
+            };
+        } finally {
+            timeoutManager.scheduleTask = originalScheduleTask;
+            await service.dispose();
+        }
+    }
+
+    public async probeLobbyLatePick(): Promise<LobbyLatePickProbe> {
+        const service = new LobbyMatchingService(this.p2pManager, {
+            roleDurationMinMs: 10_000,
+            roleDurationMaxMs: 10_000
+        });
+        const topic = `0x${"73".repeat(32)}`;
+        const selectorAddress = getChecksumAddress(
+            "0xffffffffffffffffffffffffffffffffffffffff"
+        );
+        const selector = this.transport(selectorAddress);
+        this.p2pManager.profileManager.registerProfile(
+            new PeerProfile(selector, selectorAddress)
+        );
+        const lateRequesterAddress = getChecksumAddress(
+            "0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
+        );
+        const lateRequester = this.transport(lateRequesterAddress);
+        const lateRequesterProfile = new PeerProfile(
+            lateRequester,
+            lateRequesterAddress
+        );
+        this.p2pManager.profileManager.registerProfile(lateRequesterProfile);
+
+        const match = service.match(topic);
+        await Promise.resolve();
+        service.receiveAvailability(selector, {
+            topic,
+            role: "none",
+            roleEpoch: 0,
+            available: false
+        });
+        const attemptNonce = `0x${"74".repeat(32)}`;
+        const selectorChallenge = `0x${"75".repeat(32)}`;
+        const pick = service.receivePick(
+            selector,
+            attemptNonce,
+            service.getAvailability().roleEpoch,
+            selectorChallenge
+        );
+        if (pick.status !== "accepted") {
+            throw new Error("Expected the committed selector to be accepted");
+        }
+        service.receiveCommit(
+            selector,
+            attemptNonce,
+            service.getAvailability().roleEpoch,
+            selectorChallenge,
+            pick.advertiserChallenge
+        );
+        await match;
+
+        service.runRPC(
+            {
+                service: "lobbyMatchingService",
+                method: "pick",
+                params: [
+                    topic,
+                    `0x${"76".repeat(32)}`,
+                    service.getAvailability().roleEpoch,
+                    `0x${"77".repeat(32)}`
+                ],
+                requestId: "late-pick"
+            },
+            lateRequester
+        );
+        await Promise.resolve();
+        const response = lateRequester.frames
+            .map((frame) => JSON.parse(frame) as Record<string, unknown>)
+            .find((frame) => frame.requestId === "late-pick");
+        const result = response?.result as { status?: string } | undefined;
+        await service.leaveLobby(topic);
+        return {
+            responseStatus: result?.status ?? "missing",
+            requesterBlacklisted: lateRequesterProfile.isBlackListed
+        };
+    }
+
+    public async probeMatchedNegotiationAdmission(): Promise<MatchedNegotiationAdmissionProbe> {
+        const service = this.p2pManager.localRpc.openChannelNegotiationService;
+        const localAddress = getChecksumAddress(
+            String(this.p2pManager.stateManager.signerAddress)
+        );
+        const peerAddress = getChecksumAddress(
+            "0x0000000000000000000000000000000000000001"
+        );
+        const transport = this.transport(peerAddress);
+        const profile = new PeerProfile(transport, peerAddress);
+        this.p2pManager.profileManager.registerProfile(profile);
+        this.p2pManager.stateManager.setStatus(Status.DISCOVERING);
+        const attemptNonce = `0x${"11".repeat(32)}`;
+        const selectorChallenge = `0x${"12".repeat(32)}`;
+        const advertiserChallenge = `0x${"13".repeat(32)}`;
+        const rpc: Rpc = {
+            service: "openChannelNegotiationService",
+            method: "exchangeTerms",
+            params: [attemptNonce, selectorChallenge, advertiserChallenge, 1],
+            requestId: "early-negotiation"
+        };
+
+        service.runRPC(rpc, transport);
+        const responseBeforeInitialization = transport.frames.length > 0;
+        await service.initMatchedNegotiation({
+            peerAddress,
+            attemptNonce,
+            selectorAddress: peerAddress,
+            advertiserAddress: localAddress,
+            selectorChallenge,
+            advertiserChallenge
+        });
+        await new Promise((resolve) => setTimeout(resolve, 0));
+        const selectedChannelId = String(
+            this.p2pManager.stateManager.channelId
+        );
+        const responseAfterInitialization = transport.frames.some((frame) => {
+            const parsed = JSON.parse(frame) as { requestId?: string };
+            return parsed.requestId === "early-negotiation";
+        });
+
+        this.p2pManager.profileManager.removeTransport(transport);
+        await Promise.resolve();
+        await Promise.resolve();
+        return {
+            responseBeforeInitialization,
+            responseAfterInitialization,
+            selectedChannelId,
+            peerBlacklistedAfterLoss:
+                this.p2pManager.profileManager.getProfileByEvmAddress(
+                    peerAddress
+                )?.isBlackListed ?? false,
+            channelIdAfterLoss: String(this.p2pManager.stateManager.channelId),
+            statusAfterLoss: this.p2pManager.stateManager.status
+        };
+    }
+
+    public async probeInvalidNegotiationAmount(): Promise<InvalidNegotiationAmountProbe> {
+        const service = this.p2pManager.localRpc.openChannelNegotiationService;
+        const peerAddress = getChecksumAddress(
+            "0xffffffffffffffffffffffffffffffffffffffff"
+        );
+        const transport = this.transport(peerAddress);
+        const profile = new PeerProfile(transport, peerAddress);
+        this.p2pManager.profileManager.registerProfile(profile);
+        const lobby = this.p2pManager.localRpc.lobbyMatchingService;
+        const topic = `0x${"24".repeat(32)}`;
+        const attemptNonce = `0x${"21".repeat(32)}`;
+        const selectorChallenge = `0x${"22".repeat(32)}`;
+        const matchPromise = lobby.match(topic);
+        await Promise.resolve();
+        lobby.receiveAvailability(transport, {
+            topic,
+            role: "none",
+            roleEpoch: 0,
+            available: false
+        });
+        const pick = lobby.receivePick(
+            transport,
+            attemptNonce,
+            1,
+            selectorChallenge
+        );
+        if (pick.status !== "accepted") {
+            throw new Error("Expected lobby reservation before negotiation");
+        }
+        lobby.receiveCommit(
+            transport,
+            attemptNonce,
+            1,
+            selectorChallenge,
+            pick.advertiserChallenge
+        );
+        const match = await matchPromise;
+        if (!match) throw new Error("Expected committed lobby match");
+        await service.initMatchedNegotiation(match);
+        const outcomePromise = service.waitForOutcome(match.attemptNonce);
+
+        let error = "";
+        try {
+            await service.acceptTerms(
+                transport,
+                match.attemptNonce,
+                match.selectorChallenge,
+                match.advertiserChallenge,
+                Number.POSITIVE_INFINITY
+            );
+        } catch (caught) {
+            error = caught instanceof Error ? caught.message : String(caught);
+        }
+        const outcome = await outcomePromise;
+        if (outcome.status === "retry") {
+            void lobby.match(topic);
+        }
+        for (let retry = 0; retry < 50; retry += 1) {
+            if (lobby.getAvailability().matching) break;
+            await new Promise((resolve) => setTimeout(resolve, 0));
+        }
+        const availability = lobby.getAvailability();
+        return {
+            error,
+            peerBlacklisted: profile.isBlackListed,
+            channelId: String(this.p2pManager.stateManager.channelId),
+            status: this.p2pManager.stateManager.status,
+            rendezvousTopic: availability.topic,
+            matching: availability.matching,
+            oldLobbyTransportClosed: transport.isClosed
+        };
+    }
+
+    public async probeNegotiationFailure(
+        scenario: NegotiationFailureScenario
+    ): Promise<Partial<NegotiationFailureProbe>> {
+        const localAddress = getChecksumAddress(
+            String(this.p2pManager.stateManager.signerAddress)
+        );
+        const makeMatch = (peerAddress: string, seed: string) => ({
+            peerAddress: getChecksumAddress(peerAddress),
+            attemptNonce: `0x${seed.repeat(32)}`,
+            selectorAddress: getChecksumAddress(peerAddress),
+            advertiserAddress: localAddress,
+            selectorChallenge: `0x${"a1".repeat(32)}`,
+            advertiserChallenge: `0x${"b1".repeat(32)}`
+        });
+        const resetLifecycle = async () => {
+            await this.p2pManager.stateManager.clearChannelId();
+            this.p2pManager.stateManager.setStatus(Status.DISCOVERING);
+        };
+
+        if (scenario === "initiator-timeout") {
+            await resetLifecycle();
+            const timeoutPeer = getChecksumAddress(
+                "0x0000000000000000000000000000000000000001"
+            );
+            const timeoutTransport = this.transport(timeoutPeer);
+            const timeoutProfile = new PeerProfile(
+                timeoutTransport,
+                timeoutPeer
+            );
+            this.p2pManager.profileManager.registerProfile(timeoutProfile);
+            const timeoutService = new OpenChannelNegotiationService(
+                this.p2pManager
+            );
+            const timeoutManager = this.p2pManager.stateManager.timeoutManager;
+            const originalScheduleTask =
+                timeoutManager.scheduleTask.bind(timeoutManager);
+            let initiatorDeadline: (() => void | Promise<void>) | undefined;
+            timeoutManager.scheduleTask = ((task, delayMs, taskName) => {
+                if (taskName === "matched negotiation initiator deadline") {
+                    initiatorDeadline = task;
+                }
+                return originalScheduleTask(task, delayMs, taskName);
+            }) as typeof timeoutManager.scheduleTask;
+            await timeoutService.initMatchedNegotiation(
+                makeMatch(timeoutPeer, "71")
+            );
+            const channelIdAfterHigherInit = String(
+                this.p2pManager.stateManager.channelId
+            );
+            await initiatorDeadline?.();
+            await Promise.resolve();
+            await Promise.resolve();
+            timeoutManager.scheduleTask = originalScheduleTask;
+            const initiatorTimeoutBlacklisted = timeoutProfile.isBlackListed;
+            const initiatorTimeoutCleared =
+                !timeoutService.state.attempt &&
+                String(this.p2pManager.stateManager.channelId) ===
+                    `0x${"00".repeat(32)}`;
+            return {
+                channelIdAfterHigherInit,
+                initiatorTimeoutBlacklisted,
+                initiatorTimeoutCleared
+            };
+        }
+
+        if (scenario === "wrong-peer") {
+            await resetLifecycle();
+            const selectedPeer = getChecksumAddress(
+                "0x0000000000000000000000000000000000000002"
+            );
+            const wrongPeer = getChecksumAddress(
+                "0x0000000000000000000000000000000000000003"
+            );
+            const selectedTransport = this.transport(selectedPeer);
+            const wrongTransport = this.transport(wrongPeer);
+            const selectedProfile = new PeerProfile(
+                selectedTransport,
+                selectedPeer
+            );
+            const wrongProfile = new PeerProfile(wrongTransport, wrongPeer);
+            this.p2pManager.profileManager.registerProfile(selectedProfile);
+            this.p2pManager.profileManager.registerProfile(wrongProfile);
+            const wrongPeerService = new OpenChannelNegotiationService(
+                this.p2pManager
+            );
+            const selectedMatch = makeMatch(selectedPeer, "72");
+            await wrongPeerService.initMatchedNegotiation(selectedMatch);
+            wrongPeerService.runRPC(
+                {
+                    service: "openChannelNegotiationService",
+                    method: "exchangeTerms",
+                    params: [
+                        selectedMatch.attemptNonce,
+                        selectedMatch.selectorChallenge,
+                        selectedMatch.advertiserChallenge,
+                        1
+                    ]
+                },
+                wrongTransport
+            );
+            const wrongPeerBlacklisted = wrongProfile.isBlackListed;
+            const wrongPeerLeftAttemptActive = !!wrongPeerService.state.attempt;
+            await wrongPeerService.dispose();
+            return { wrongPeerBlacklisted, wrongPeerLeftAttemptActive };
+        }
+
+        if (scenario === "wrong-attempt") {
+            await resetLifecycle();
+            const wrongAttemptPeer = getChecksumAddress(
+                "0x0000000000000000000000000000000000000004"
+            );
+            const wrongAttemptTransport = this.transport(wrongAttemptPeer);
+            const wrongAttemptProfile = new PeerProfile(
+                wrongAttemptTransport,
+                wrongAttemptPeer
+            );
+            this.p2pManager.profileManager.registerProfile(wrongAttemptProfile);
+            const wrongAttemptService = new OpenChannelNegotiationService(
+                this.p2pManager
+            );
+            const wrongAttemptMatch = makeMatch(wrongAttemptPeer, "73");
+            await wrongAttemptService.initMatchedNegotiation(wrongAttemptMatch);
+            wrongAttemptService.runRPC(
+                {
+                    service: "openChannelNegotiationService",
+                    method: "exchangeTerms",
+                    params: [
+                        `0x${"74".repeat(32)}`,
+                        wrongAttemptMatch.selectorChallenge,
+                        wrongAttemptMatch.advertiserChallenge,
+                        1
+                    ]
+                },
+                wrongAttemptTransport
+            );
+            await Promise.resolve();
+            await Promise.resolve();
+            const wrongAttemptBlacklistedSelectedPeer =
+                wrongAttemptProfile.isBlackListed;
+            const wrongAttemptCleared = !wrongAttemptService.state.attempt;
+            return {
+                wrongAttemptBlacklistedSelectedPeer,
+                wrongAttemptCleared
+            };
+        }
+
+        if (scenario === "terms") {
+            await resetLifecycle();
+            const duplicatePeer = getChecksumAddress(
+                "0x0000000000000000000000000000000000000005"
+            );
+            const duplicateTransport = this.transport(duplicatePeer);
+            const duplicateProfile = new PeerProfile(
+                duplicateTransport,
+                duplicatePeer
+            );
+            this.p2pManager.profileManager.registerProfile(duplicateProfile);
+            const duplicateService = new OpenChannelNegotiationService(
+                this.p2pManager
+            );
+            const duplicateMatch = makeMatch(duplicatePeer, "75");
+            await duplicateService.initMatchedNegotiation(duplicateMatch);
+            const firstTerms = await duplicateService.acceptTerms(
+                duplicateTransport,
+                duplicateMatch.attemptNonce,
+                duplicateMatch.selectorChallenge,
+                duplicateMatch.advertiserChallenge,
+                7
+            );
+            const repeatedTerms = await duplicateService.acceptTerms(
+                duplicateTransport,
+                duplicateMatch.attemptNonce,
+                duplicateMatch.selectorChallenge,
+                duplicateMatch.advertiserChallenge,
+                7
+            );
+            const duplicateTermsIdempotent =
+                firstTerms.amount === repeatedTerms.amount &&
+                !!duplicateService.state.attempt;
+            try {
+                await duplicateService.acceptTerms(
+                    duplicateTransport,
+                    duplicateMatch.attemptNonce,
+                    duplicateMatch.selectorChallenge,
+                    duplicateMatch.advertiserChallenge,
+                    8
+                );
+            } catch {}
+            await Promise.resolve();
+            await Promise.resolve();
+            const conflictingTermsBlacklisted = duplicateProfile.isBlackListed;
+            return { duplicateTermsIdempotent, conflictingTermsBlacklisted };
+        }
+
+        if (scenario === "malformed-proposal") {
+            await resetLifecycle();
+            const malformedPeer = getChecksumAddress(
+                "0x0000000000000000000000000000000000000006"
+            );
+            const malformedTransport = this.transport(malformedPeer);
+            const malformedProfile = new PeerProfile(
+                malformedTransport,
+                malformedPeer
+            );
+            this.p2pManager.profileManager.registerProfile(malformedProfile);
+            const malformedService = new OpenChannelNegotiationService(
+                this.p2pManager
+            );
+            const malformedMatch = makeMatch(malformedPeer, "76");
+            await malformedService.initMatchedNegotiation(malformedMatch);
+            await malformedService.acceptTerms(
+                malformedTransport,
+                malformedMatch.attemptNonce,
+                malformedMatch.selectorChallenge,
+                malformedMatch.advertiserChallenge,
+                1
+            );
+            try {
+                await malformedService.acceptOpenProposal(
+                    malformedTransport,
+                    malformedMatch.attemptNonce,
+                    malformedMatch.selectorChallenge,
+                    malformedMatch.advertiserChallenge,
+                    "0x",
+                    "0x"
+                );
+            } catch {}
+            await Promise.resolve();
+            await Promise.resolve();
+            const malformedProposalBlacklisted = malformedProfile.isBlackListed;
+            const malformedProposalCleared = !malformedService.state.attempt;
+            return {
+                malformedProposalBlacklisted,
+                malformedProposalCleared
+            };
+        }
+
+        if (scenario === "already-open") {
+            await resetLifecycle();
+            const collisionWallet = ethers.Wallet.createRandom();
+            const collisionPeer = getChecksumAddress(collisionWallet.address);
+            const collisionTransport = this.transport(collisionPeer);
+            const collisionProfile = new PeerProfile(
+                collisionTransport,
+                collisionPeer
+            );
+            this.p2pManager.profileManager.registerProfile(collisionProfile);
+            const collisionService = new OpenChannelNegotiationService(
+                this.p2pManager
+            );
+            const collisionMatch = makeMatch(collisionPeer, "77");
+            const collisionChannelId =
+                deriveNegotiatedChannelId(collisionMatch);
+            const participants =
+                compareAddresses(localAddress, collisionPeer) < 0
+                    ? [localAddress, collisionPeer]
+                    : [collisionPeer, localAddress];
+            const openChannel = {
+                ...createOpenChannelTestObject(participants),
+                channelId: collisionChannelId
+            };
+            const localOpening = await SignatureUtils.signOpenChannel(
+                openChannel,
+                this.p2pManager.stateManager.signer
+            );
+            const peerOpening = await SignatureUtils.signOpenChannel(
+                openChannel,
+                collisionWallet
+            );
+            await (
+                await this.p2pManager.stateManager.stateChannelManagerContract.open(
+                    {
+                        encodedOpenChannel: localOpening.encoded,
+                        signatures: [
+                            localOpening.signature as Bytes,
+                            peerOpening.signature as Bytes
+                        ]
+                    }
+                )
+            ).wait();
+            let alreadyOpenRejected = false;
+            try {
+                await collisionService.initMatchedNegotiation(collisionMatch);
+            } catch {
+                alreadyOpenRejected = true;
+            }
+            const alreadyOpenBlacklisted = collisionProfile.isBlackListed;
+            const alreadyOpenKeptZeroId =
+                String(this.p2pManager.stateManager.channelId) ===
+                `0x${"00".repeat(32)}`;
+
+            return {
+                alreadyOpenRejected,
+                alreadyOpenBlacklisted,
+                alreadyOpenKeptZeroId
+            };
+        }
+
+        throw new Error(`Unknown negotiation failure scenario: ${scenario}`);
+    }
+
+    public async probeSignedAttemptObservation(): Promise<SignedAttemptObservationProbe> {
+        const localAddress = getChecksumAddress(
+            String(this.p2pManager.stateManager.signerAddress)
+        );
+        const resetLifecycle = async () => {
+            await this.p2pManager.stateManager.clearChannelId();
+            this.p2pManager.stateManager.setStatus(Status.DISCOVERING);
+        };
+        const lowerWallet = () => {
+            let wallet = ethers.Wallet.createRandom();
+            while (compareAddresses(wallet.address, localAddress) >= 0) {
+                wallet = ethers.Wallet.createRandom();
+            }
+            return wallet;
+        };
+        const makeMatch = (peerAddress: string, seed: string) => ({
+            peerAddress: getChecksumAddress(peerAddress),
+            attemptNonce: `0x${seed.repeat(32)}`,
+            selectorAddress: getChecksumAddress(peerAddress),
+            advertiserAddress: localAddress,
+            selectorChallenge: `0x${"c1".repeat(32)}`,
+            advertiserChallenge: `0x${"d1".repeat(32)}`
+        });
+
+        await resetLifecycle();
+        const wallet = lowerWallet();
+        const peerAddress = getChecksumAddress(wallet.address);
+        const transport = this.transport(peerAddress);
+        const profile = new PeerProfile(transport, peerAddress);
+        this.p2pManager.profileManager.registerProfile(profile);
+        const service = new OpenChannelNegotiationService(this.p2pManager);
+        const timeoutManager = this.p2pManager.stateManager.timeoutManager;
+        const originalScheduleTask =
+            timeoutManager.scheduleTask.bind(timeoutManager);
+        let expiryTask: (() => void | Promise<void>) | undefined;
+        timeoutManager.scheduleTask = ((task, delayMs, taskName) => {
+            if (taskName === "opening payload expiry observation") {
+                expiryTask = task;
+            }
+            return originalScheduleTask(task, delayMs, taskName);
+        }) as typeof timeoutManager.scheduleTask;
+        const match = makeMatch(peerAddress, "81");
+        await service.initMatchedNegotiation(match);
+        await service.acceptTerms(
+            transport,
+            match.attemptNonce,
+            match.selectorChallenge,
+            match.advertiserChallenge,
+            500
+        );
+        const channelId = service.state.attempt!.channelId;
+        const proposal = {
+            channelId,
+            participants: [peerAddress, localAddress],
+            balances: [
+                { amount: 500, data: "0x" },
+                { amount: 500, data: "0x" }
+            ],
+            deadlineTimestamp: Clock.getTimeInSeconds() + 60,
+            isAtomic: true,
+            data: "0x"
+        };
+        const signed = await SignatureUtils.signOpenChannel(proposal, wallet);
+        const manager =
+            this.p2pManager.stateManager.stateChannelManagerContract;
+        const originalOpen = manager.open;
+        let submittedOpen:
+            | { encodedOpenChannel: string; signatures: string[] }
+            | undefined;
+        manager.open = (async (request: unknown) => {
+            submittedOpen = request as {
+                encodedOpenChannel: string;
+                signatures: string[];
+            };
+            throw new Error("forced opening submission failure");
+        }) as unknown as typeof manager.open;
+        let submissionFailureThrew = false;
+        try {
+            await service.acceptOpenProposal(
+                transport,
+                match.attemptNonce,
+                match.selectorChallenge,
+                match.advertiserChallenge,
+                signed.encoded.toString(),
+                signed.signature.toString()
+            );
+        } catch {
+            submissionFailureThrew = true;
+        } finally {
+            manager.open = originalOpen;
+        }
+        const higherSubmittedExactPayload =
+            submittedOpen?.encodedOpenChannel === signed.encoded.toString();
+        const higherSubmittedBothSignatures =
+            submittedOpen?.signatures.length === 2 &&
+            submittedOpen.signatures[0] === signed.signature.toString() &&
+            getChecksumAddress(
+                SignatureUtils.getSignerAddress(
+                    signed.encoded,
+                    submittedOpen.signatures[1]
+                ).toString()
+            ) === localAddress;
+        const signedAttemptRetainedAfterSubmissionFailure =
+            !!service.state.attempt;
+        const submissionFailureDidNotReportOpen = !service.state.channelOpened;
+        const higherDidNotBlacklistLowerAfterSubmissionFailure =
+            !profile.isBlackListed;
+        await expiryTask?.();
+        await Promise.resolve();
+        await Promise.resolve();
+        const higherDidNotBlacklistLowerAfterExpiry = !profile.isBlackListed;
+        timeoutManager.scheduleTask = originalScheduleTask;
+        const signedAttemptClearedAfterExpiry = !service.state.attempt;
+        const signedAttemptIdClearedAfterExpiry =
+            String(this.p2pManager.stateManager.channelId) === ethers.ZeroHash;
+
+        await resetLifecycle();
+        const lossWallet = lowerWallet();
+        const lossPeer = getChecksumAddress(lossWallet.address);
+        const lossTransport = this.transport(lossPeer);
+        const lossProfile = new PeerProfile(lossTransport, lossPeer);
+        this.p2pManager.profileManager.registerProfile(lossProfile);
+        const lossService = new OpenChannelNegotiationService(this.p2pManager);
+        const lossMatch = makeMatch(lossPeer, "86");
+        await lossService.initMatchedNegotiation(lossMatch);
+        lossService.state.attempt!.localOpeningSignatureIssued = true;
+        this.p2pManager.profileManager.removeTransport(lossTransport);
+        await Promise.resolve();
+        const signedPeerBlacklistedOnFinalLoss = lossProfile.isBlackListed;
+        const signedAttemptRetainedAfterFinalLoss = !!lossService.state.attempt;
+        await lossService.dispose();
+
+        await resetLifecycle();
+        let higherWallet = ethers.Wallet.createRandom();
+        while (compareAddresses(localAddress, higherWallet.address) >= 0) {
+            higherWallet = ethers.Wallet.createRandom();
+        }
+        const higherPeer = getChecksumAddress(higherWallet.address);
+        const higherTransport = this.transport(higherPeer);
+        const higherProfile = new PeerProfile(higherTransport, higherPeer);
+        this.p2pManager.profileManager.registerProfile(higherProfile);
+        const lowerService = new OpenChannelNegotiationService(this.p2pManager);
+        const lowerMatch = makeMatch(higherPeer, "84");
+        await lowerService.initMatchedNegotiation(lowerMatch);
+        const lowerAttempt = lowerService.state.attempt!;
+        lowerAttempt.localOpeningSignatureIssued = true;
+        let lowerExpiryTask: (() => void | Promise<void>) | undefined;
+        timeoutManager.scheduleTask = ((task, delayMs, taskName) => {
+            if (taskName === "opening payload expiry observation") {
+                lowerExpiryTask = task;
+            }
+            return originalScheduleTask(task, delayMs, taskName);
+        }) as typeof timeoutManager.scheduleTask;
+        (
+            lowerService as unknown as {
+                scheduleDeadlineObservation: (
+                    attempt: typeof lowerAttempt,
+                    deadlineTimestamp: number
+                ) => void;
+            }
+        ).scheduleDeadlineObservation(
+            lowerAttempt,
+            Clock.getTimeInSeconds() + 60
+        );
+        const lowerDidNotBlacklistHigherBeforeExpiry =
+            !higherProfile.isBlackListed;
+        await lowerExpiryTask?.();
+        await Promise.resolve();
+        const lowerBlacklistedHigherAfterExpiry = higherProfile.isBlackListed;
+        timeoutManager.scheduleTask = originalScheduleTask;
+
+        await resetLifecycle();
+        const disposePeer = getChecksumAddress(lowerWallet().address);
+        const disposeTransport = this.transport(disposePeer);
+        this.p2pManager.profileManager.registerProfile(
+            new PeerProfile(disposeTransport, disposePeer)
+        );
+        const disposeService = new OpenChannelNegotiationService(
+            this.p2pManager
+        );
+        const disposeMatch = makeMatch(disposePeer, "85");
+        await disposeService.initMatchedNegotiation(disposeMatch);
+        const disposeAttempt = disposeService.state.attempt!;
+        disposeAttempt.localOpeningSignatureIssued = true;
+        const disposeOutcome = disposeService.waitForOutcome(
+            disposeMatch.attemptNonce
+        );
+        await disposeService.dispose();
+        const signedDisposeOutcomeCancelled =
+            (await disposeOutcome).status === "cancelled";
+        const signedAttemptClearedOnDispose = !disposeService.state.attempt;
+
+        await resetLifecycle();
+        const openWallet = lowerWallet();
+        const openPeer = getChecksumAddress(openWallet.address);
+        const openTransport = this.transport(openPeer);
+        this.p2pManager.profileManager.registerProfile(
+            new PeerProfile(openTransport, openPeer)
+        );
+        const openService = new OpenChannelNegotiationService(this.p2pManager);
+        const openMatch = makeMatch(openPeer, "82");
+        await openService.initMatchedNegotiation(openMatch);
+        await openService.acceptTerms(
+            openTransport,
+            openMatch.attemptNonce,
+            openMatch.selectorChallenge,
+            openMatch.advertiserChallenge,
+            500
+        );
+        const openChannelId = openService.state.attempt!.channelId;
+        const openProposal = {
+            channelId: openChannelId,
+            participants: [openPeer, localAddress],
+            balances: [
+                { amount: 500, data: "0x" },
+                { amount: 500, data: "0x" }
+            ],
+            deadlineTimestamp: Clock.getTimeInSeconds() + 60,
+            isAtomic: true,
+            data: "0x"
+        };
+        const signedOpenProposal = await SignatureUtils.signOpenChannel(
+            openProposal,
+            openWallet
+        );
+        let outcomeResolved = false;
+        const outcome = openService
+            .waitForOutcome(openMatch.attemptNonce)
+            .then((result) => {
+                outcomeResolved = true;
+                return result;
+            });
+        manager.open = (async () => ({
+            wait: async () => undefined
+        })) as unknown as typeof manager.open;
+        await openService.acceptOpenProposal(
+            openTransport,
+            openMatch.attemptNonce,
+            openMatch.selectorChallenge,
+            openMatch.advertiserChallenge,
+            signedOpenProposal.encoded.toString(),
+            signedOpenProposal.signature.toString()
+        );
+        manager.open = originalOpen;
+        await Promise.resolve();
+        const submissionStayedPendingUntilObservation =
+            !outcomeResolved && !!openService.state.attempt;
+        this.p2pManager.stateManager.events.emit(
+            "eventHandler",
+            "onChannelOpened",
+            [`0x${"83".repeat(32)}`]
+        );
+        const wrongOpenEventIgnored = !!openService.state.attempt;
+        this.p2pManager.stateManager.events.emit(
+            "eventHandler",
+            "onChannelOpened",
+            [openChannelId]
+        );
+        await outcome;
+        const matchingOpenEventClearedAttempt = !openService.state.attempt;
+        const matchingOpenEventRetainedChannelId =
+            String(this.p2pManager.stateManager.channelId) === openChannelId;
+
+        return {
+            submissionFailureThrew,
+            higherSubmittedExactPayload,
+            higherSubmittedBothSignatures,
+            signedAttemptRetainedAfterSubmissionFailure,
+            submissionFailureDidNotReportOpen,
+            higherDidNotBlacklistLowerAfterSubmissionFailure,
+            higherDidNotBlacklistLowerAfterExpiry,
+            lowerDidNotBlacklistHigherBeforeExpiry,
+            lowerBlacklistedHigherAfterExpiry,
+            signedDisposeOutcomeCancelled,
+            signedAttemptClearedOnDispose,
+            signedPeerBlacklistedOnFinalLoss,
+            signedAttemptRetainedAfterFinalLoss,
+            signedAttemptClearedAfterExpiry,
+            signedAttemptIdClearedAfterExpiry,
+            wrongOpenEventIgnored,
+            submissionStayedPendingUntilObservation,
+            matchingOpenEventClearedAttempt,
+            matchingOpenEventRetainedChannelId
+        };
     }
 }

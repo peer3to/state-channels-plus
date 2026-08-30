@@ -63,6 +63,14 @@ abstract contract StateChannelManagerInterface is StateChannelManagerEvents {
 
     function getStateSnapshot(bytes32 channelId) public view virtual returns (StateSnapshot memory);
 
+    function getOpenChannelCount() public view virtual returns (uint256);
+
+    function getOpenChannelIds(uint256 offset, uint256 limit)
+        public
+        view
+        virtual
+        returns (bytes32[] memory channelIds);
+
     function getChannelBalance(bytes32 channelId) public view virtual returns (ChannelBalance memory);
 
     function isChannelOpen(bytes32 channelId) public view virtual returns (bool, StateSnapshot memory);

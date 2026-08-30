@@ -1,3 +1,4 @@
+// @spec-test-coverage-ignore: authenticated raw-RPC controls exercised by mapped lobby E2E declarations
 import { ethers } from "ethers";
 
 import ARpcMethods from "@/rpc/ARpcMethods";
@@ -11,7 +12,12 @@ import type {
     SignedBlockStruct,
     TransactionStruct
 } from "@typechain-types/contracts/V1/types/DataTypes";
-import type { ByzantineService } from "./ByzantineService";
+import type {
+    ByzantineService,
+    LobbyRawMethod,
+    NegotiationRawMethod
+} from "./ByzantineService";
+import type Rpc from "@/rpc/Rpc";
 
 /**
  * Byzantine block-submission faults, executed host-side. Only public endpoints
@@ -185,6 +191,32 @@ export class ByzantineRpcMethods extends ARpcMethods {
         await tx.wait();
 
         return { encodedBlock: encodedBlock as string };
+    }
+
+    public sendRawLobbyRpc(
+        targetEvmAddress: string,
+        method: LobbyRawMethod,
+        params: Rpc["params"]
+    ): boolean {
+        return this.service.sendRawRpc(
+            targetEvmAddress,
+            "lobbyMatchingService",
+            method,
+            params
+        );
+    }
+
+    public sendRawNegotiationRpc(
+        targetEvmAddress: string,
+        method: NegotiationRawMethod,
+        params: Rpc["params"]
+    ): boolean {
+        return this.service.sendRawRpc(
+            targetEvmAddress,
+            "openChannelNegotiationService",
+            method,
+            params
+        );
     }
 }
 

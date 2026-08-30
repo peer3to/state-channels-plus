@@ -91,6 +91,47 @@ export class QueryRpcMethods extends ARpcMethods {
         return this.service.sm.signerAddress as string;
     }
 
+    public getLobbyAvailability() {
+        return this.p2pManager.localRpc.lobbyMatchingService.getAvailability();
+    }
+
+    public getNegotiationAttempt(): {
+        peerAddress: string;
+        channelId: string;
+        attemptNonce: string;
+        localOpeningSignatureIssued: boolean;
+    } | null {
+        const attempt =
+            this.p2pManager.localRpc.openChannelNegotiationService.state
+                .attempt;
+        if (!attempt) return null;
+        return {
+            peerAddress: String(attempt.peerAddress),
+            channelId: attempt.channelId,
+            attemptNonce: attempt.attemptNonce,
+            localOpeningSignatureIssued: attempt.localOpeningSignatureIssued
+        };
+    }
+
+    public async isChannelOpen(channelId: string): Promise<boolean> {
+        const [isOpen] =
+            await this.service.sm.stateChannelManagerContract.isChannelOpen(
+                channelId
+            );
+        return isOpen;
+    }
+
+    public async getOpenChannelIds(): Promise<string[]> {
+        const count =
+            await this.service.sm.stateChannelManagerContract.getOpenChannelCount();
+        return (
+            await this.service.sm.stateChannelManagerContract.getOpenChannelIds(
+                0,
+                count
+            )
+        ).map(String);
+    }
+
     public getForkId(): string {
         return this.service.sm.forkId as string;
     }
@@ -604,6 +645,13 @@ export class QueryRpcMethods extends ARpcMethods {
             if (profile?.evmAddress) addresses.push(String(profile.evmAddress));
         }
         return addresses;
+    }
+
+    public getPreferredTransportType(evmAddress: Address): number | null {
+        return (
+            this.p2pManager.profileManager.getTransportByEvmAddress(evmAddress)
+                ?.transportType ?? null
+        );
     }
 
     public isConnectedTo(evmAddress: Address): boolean {

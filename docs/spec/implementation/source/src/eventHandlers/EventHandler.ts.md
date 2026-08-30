@@ -25,13 +25,22 @@ The chain-intake brain: per-event handlers that first replicate into the mirror,
 dispatch, final/expired/auditable branches, evidence-improvement comparison),
 `onDisputeKilled` (record slash, exclude disputer, replacement evidence when the window empties),
 `onChainSlashed`, `onDisputeReducedResultCommitted` (adopt-or-challenge), snapshot-update
-convergence.
+convergence. Snapshot updates for a channel that is no longer selected are ignored before mirror
+replication or lifecycle mutation, so an old subscription cannot disturb a fresh lobby session.
+The runtime publishes each completed handler invocation on its typed internal event bus. Protocol
+services can observe accepted chain events there without creating another ethers subscription.
 
 ## Key design decisions
 
 1. **Mirror-first, act-second** in every handler — replication is unconditional ([`REQ-MIRROR-2-E9F3TM`](../../../../specification/enforcement/local-mirror.md#req-mirror-2-e9f3tm)), decisions follow.
 2. **Kill before counter-dispute, sequentially:** the kill must mine so the replacement has its stated reason; atomic multicall folding is the flagged TODO.
 3. **Evidence improvement by comparative reduction:** upload own dispute only when `reduce([ours,theirs])` differs from `reduce([theirs])` ([`REQ-DISPUTE-PIPE-6-6FZB9M`](../../../../specification/disputes/dispute-processing.md#req-dispute-pipe-6-6fzb9m)).
+4. **Selected-channel gate before snapshot handling.** A delayed close event from a previous role
+   cannot clear `DISCOVERING`, leave its rendezvous topic, or write unrelated state.
+5. **One ethers-backed intake, typed internal fan-out.** `StateChannelEventListener` and
+   `EventSyncService` own provider filters, replay, deduplication, and ordering. The runtime publishes
+   only after this handler completes its mirror and state updates. Consumers subscribe to that
+   internal event instead of duplicating provider lifecycle and race handling.
 
 ## Inputs, outputs, state, and side effects
 

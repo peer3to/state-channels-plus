@@ -19,9 +19,10 @@
 
 ## Responsibility and observable boundary
 
-The five fire-and-forget endpoints (request/accept/busy/proposal/abort): counterparty derived
-from the authenticated transport, wrong-channel and non-counterparty frames silently ignored,
-slot claimed on first contact, proposal delegated to the service.
+Three correlated endpoints exchange terms, validate-and-submit the signed proposal, or acknowledge abort. The
+authenticated transport identifies the peer; attempt nonce and both committed challenges identify
+the only admissible transcript. The proposal response reports submission return only; no separate
+submission acknowledgement exists, and chain observation remains the completion oracle.
 
 ## Key design decisions
 
@@ -43,15 +44,15 @@ claims complete conformance for a requirement that depends on other files.
 
 | Source file                                                                                                                                | Specification IDs                                                                                                |
 | ------------------------------------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------- |
-| [OpenChannelNegotiationRpcMethods.ts](../../../../../../../../src/rpc/services/openChannelNegotiation/OpenChannelNegotiationRpcMethods.ts) | [`REQ-NEG-3-Q5WFAA`](../../../../../../specification/peer-communication/channel-negotiation.md#req-neg-3-q5wfaa) |
+| [OpenChannelNegotiationRpcMethods.ts](../../../../../../../../src/rpc/services/openChannelNegotiation/OpenChannelNegotiationRpcMethods.ts) | [`REQ-NEG-4-ZQ0985`](../../../../../../specification/peer-communication/channel-negotiation.md#req-neg-4-zq0985) |
 
 ## Assumptions, dependencies, trust boundaries, and limits
 
-- Silent-ignore for irrelevant frames is the chosen failure mode for inert signaling.
+- The installed handshake and deferred-admission guards run before these methods.
 
 ## Specification adherence
 
-- Slot discipline at the wire edge ([`REQ-NEG-3-Q5WFAA`](../../../../../../specification/peer-communication/channel-negotiation.md#req-neg-3-q5wfaa)).
+- The wire edge enforces committed-attempt admission under [`REQ-NEG-4-ZQ0985`](../../../../../../specification/peer-communication/channel-negotiation.md#req-neg-4-zq0985).
 
 ## Specification contradictions
 
@@ -59,7 +60,7 @@ None demonstrated.
 
 ## Missing behavior
 
-Requires exact root property name `openChannelNegotiationService` when integrator-wired (typed sends resolve against it).
+None demonstrated. The default root owns the exact `openChannelNegotiationService` property.
 
 ## Conformance traceability
 
@@ -67,9 +68,9 @@ Status enum: `Covered` | `Partial` | `Contradicts` | `Missing`. Evidence cells a
 **Here:** / **Other files:** so each row is auditable from its links alone; genuine gaps go in the
 Gap column. Audit state is file-level (Status header), never a row status.
 
-| Requirement / invariant                                                                                          | Implementation status | Evidence                                                                                                                      | Gap / divergence |
-| ---------------------------------------------------------------------------------------------------------------- | --------------------- | ----------------------------------------------------------------------------------------------------------------------------- | ---------------- |
-| [`REQ-NEG-3-Q5WFAA`](../../../../../../specification/peer-communication/channel-negotiation.md#req-neg-3-q5wfaa) | Covered               | **Here:** busy/ignore/claim routing. **Other files:** [OpenChannelNegotiationService](./OpenChannelNegotiationService.ts.md). | None.            |
+| Requirement / invariant                                                                                          | Implementation status | Evidence                                                                                                                                                                                                               | Gap / divergence |
+| ---------------------------------------------------------------------------------------------------------------- | --------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------- |
+| [`REQ-NEG-4-ZQ0985`](../../../../../../specification/peer-communication/channel-negotiation.md#req-neg-4-zq0985) | Covered               | **Here:** every endpoint carries the attempt nonce and both challenges and delegates to exact transport-bound service checks. **Other files:** [OpenChannelNegotiationService](./OpenChannelNegotiationService.ts.md). | None.            |
 
 ## Component test obligations
 

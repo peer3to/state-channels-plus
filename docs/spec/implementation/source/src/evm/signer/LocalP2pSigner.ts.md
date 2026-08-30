@@ -19,11 +19,22 @@
 
 ## Responsibility and observable boundary
 
+In addition to the existing host-side signing surface, `joinLobby(topic, options)` owns the complete
+host workflow: match one authenticated peer, start guarded negotiation, retry unsigned failures, leave
+the topic after chain-observed opening, and return the opened channel ID and peer address. Matching has
+no default deadline; the caller may pass a finite `matchTimeoutMs`. `leaveLobby` delegates the phase
+decision to matching: it returns `true` and settles the pending join only before commitment, or `false`
+after handoff without cancelling negotiation or chain observation. The caller must supply an exact
+32-byte topic; the signer supplies no default.
+`connectToChannel` rejects while a lobby topic or discovery lifecycle is active, so targeted channel
+selection cannot silently abandon or overlap the lobby session.
+
 The inline signer facade: local key-backed signing plus the join-collection entry (`collectJoinChannelConfirmation` via the service).
 
 ## Key design decisions
 
 1. **One facade for signing + protocol collection** so integrators never touch services directly.
+2. **Host-owned composition** keeps live profiles, attempts, timers, and retry state out of the runtime port.
 
 ## Inputs, outputs, state, and side effects
 

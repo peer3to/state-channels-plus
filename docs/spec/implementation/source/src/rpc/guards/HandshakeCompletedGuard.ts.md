@@ -30,7 +30,7 @@ and excluded. A frame dispatched after its authenticated transport closes is dro
 1. **Authentication belongs to the exact transport.** The check reads `transport.peerAddress`,
    written only after final admission. A replaced but open authenticated pipe remains valid until the upgrade
    protocol retires it ([`REQ-UPG-2-WH7BC7`](../../../../../specification/peer-communication/transport-upgrade.md#req-upg-2-wh7bc7)).
-2. **Deferred delivery for mid-handshake races.** Fire-and-forget rpcs arriving during negotiation replay in arrival order after completion instead of penalizing an honest raced peer.
+2. **Deferred delivery for mid-handshake races.** Requests and fire-and-forget RPCs arriving during negotiation replay in arrival order after completion. `ARpcService` suppresses the premature guard-error response while the shared guard owns the request.
 3. **Waiters cannot outlive their transport or owner.** Success requires exact-transport
    authentication and a live transport. Timeout punishment additionally requires current ownership,
    so a stale waiter cannot punish a healthy replacement.
@@ -67,11 +67,11 @@ claims complete conformance for a requirement that depends on other files.
 
 ## Specification contradictions
 
-**Guard-retry vs request/response interaction ([`OQ-34-FY08V2`](../../../../../specification/open-questions.md#oq-34-fy08v2)):** a queued _request_ was already answered with the guard error, so its replayed response is dropped as already-settled — the retry queue only benefits fire-and-forget; and the non-negotiating branch disconnects before the error response can send. Decision pending; behavior documented, not silently normalized.
+None demonstrated for deferred request admission. The broader protocol-versioning and ban-persistence parts of [`OQ-34-FY08V2`](../../../../../specification/open-questions.md#oq-34-fy08v2) remain open.
 
 ## Missing behavior
 
-None demonstrated beyond the [`OQ-34-FY08V2`](../../../../../specification/open-questions.md#oq-34-fy08v2) decision.
+None demonstrated for this guard. The shared queue remains intentionally unbounded pending [`OQ-SPEC-LOBBY-1-D65YTT`](../../../../../specification/open-questions.md#oq-spec-lobby-1-d65ytt).
 
 ## Conformance traceability
 
@@ -79,10 +79,10 @@ Status enum: `Covered` | `Partial` | `Contradicts` | `Missing`. Evidence cells a
 **Here:** / **Other files:** so each row is auditable from its links alone; genuine gaps go in the
 Gap column. Audit state is file-level (Status header), never a row status.
 
-| Requirement / invariant                                                                       | Implementation status | Evidence                                                                                                                                                                                                                    | Gap / divergence                                                                                                                                                                                         |
-| --------------------------------------------------------------------------------------------- | --------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| [`INV-RPC-1-SJS2T6`](../../../../../specification/peer-communication/rpc.md#inv-rpc-1-sjs2t6) | Covered               | **Here:** exact-transport completion check. **Other files:** completion written by [InitHandshakeService](../services/initHandshake/InitHandshakeService.ts.md) and stored by [ProfileManager](../../ProfileManager.ts.md). | None.                                                                                                                                                                                                    |
-| [`REQ-RPC-7-9CBSHK`](../../../../../specification/peer-communication/rpc.md#req-rpc-7-9cbshk) | Partial               | **Here:** pure check, queue-or-punish consequence split, and post-wait transport/owner lifetime gates.                                                                                                                      | Request-style deferred retry is ineffective ([`OQ-34-FY08V2`](../../../../../specification/open-questions.md#oq-34-fy08v2)) — deterministic settlement happens, but the retry path is dead for requests. |
+| Requirement / invariant                                                                       | Implementation status | Evidence                                                                                                                                                                                                                                                        | Gap / divergence |
+| --------------------------------------------------------------------------------------------- | --------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------- |
+| [`INV-RPC-1-SJS2T6`](../../../../../specification/peer-communication/rpc.md#inv-rpc-1-sjs2t6) | Covered               | **Here:** exact-transport completion check. **Other files:** completion written by [InitHandshakeService](../services/initHandshake/InitHandshakeService.ts.md) and stored by [ProfileManager](../../ProfileManager.ts.md).                                     | None.            |
+| [`REQ-RPC-7-9CBSHK`](../../../../../specification/peer-communication/rpc.md#req-rpc-7-9cbshk) | Covered               | **Here:** named handshake policy over the shared exact-transport queue, queue-or-punish split, and post-wait transport/owner gates. **Other files:** `ARpcService` suppresses early failures and `DeferredAdmissionGuard` replays requests through the service. | None.            |
 
 ## Component test obligations
 

@@ -63,6 +63,105 @@ describe("StateChannelManagerProxy", function () {
     });
 
     describe("Open Channel - MathStateChannel", function () {
+        it("enumerates successful opens in append order with safe page boundaries", async function () {
+            const secondOpenChannel = createOpenChannelTestObject(
+                [firstSigner.address, secondSigner.address],
+                { channelId: "open-channel-registry-second" }
+            );
+
+            await mathChannelManager.open({
+                encodedOpenChannel: (
+                    await SignatureUtils.signOpenChannel(
+                        openChannel,
+                        firstSigner
+                    )
+                ).encoded,
+                signatures: [
+                    (
+                        await SignatureUtils.signOpenChannel(
+                            openChannel,
+                            firstSigner
+                        )
+                    ).signature as Bytes,
+                    (
+                        await SignatureUtils.signOpenChannel(
+                            openChannel,
+                            secondSigner
+                        )
+                    ).signature as Bytes
+                ]
+            });
+            await mathChannelManager.open({
+                encodedOpenChannel: (
+                    await SignatureUtils.signOpenChannel(
+                        secondOpenChannel,
+                        firstSigner
+                    )
+                ).encoded,
+                signatures: [
+                    (
+                        await SignatureUtils.signOpenChannel(
+                            secondOpenChannel,
+                            firstSigner
+                        )
+                    ).signature as Bytes,
+                    (
+                        await SignatureUtils.signOpenChannel(
+                            secondOpenChannel,
+                            secondSigner
+                        )
+                    ).signature as Bytes
+                ]
+            });
+
+            expect(await mathChannelManager.getOpenChannelCount()).to.equal(2);
+            expect(
+                await mathChannelManager.getOpenChannelIds(0, 10)
+            ).to.deep.equal([
+                openChannel.channelId,
+                secondOpenChannel.channelId
+            ]);
+            expect(
+                await mathChannelManager.getOpenChannelIds(1, 1)
+            ).to.deep.equal([secondOpenChannel.channelId]);
+            expect(
+                await mathChannelManager.getOpenChannelIds(0, 0)
+            ).to.deep.equal([]);
+            expect(
+                await mathChannelManager.getOpenChannelIds(2, 1)
+            ).to.deep.equal([]);
+            expect(
+                await mathChannelManager.getOpenChannelIds(1, 100)
+            ).to.deep.equal([secondOpenChannel.channelId]);
+        });
+
+        it("keeps the open-channel registry unchanged after a duplicate open reverts", async function () {
+            const confirmation = {
+                encodedOpenChannel: openChannelSigned.encoded,
+                signatures: [
+                    (
+                        await SignatureUtils.signOpenChannel(
+                            openChannel,
+                            firstSigner
+                        )
+                    ).signature as Bytes,
+                    (
+                        await SignatureUtils.signOpenChannel(
+                            openChannel,
+                            secondSigner
+                        )
+                    ).signature as Bytes
+                ]
+            };
+            await mathChannelManager.open(confirmation);
+            await expect(mathChannelManager.open(confirmation)).to.be.reverted;
+
+            expect(await mathChannelManager.getOpenChannelCount()).to.equal(1);
+            expect(
+                await mathChannelManager.getOpenChannelIds(0, 2)
+            ).to.deep.equal([openChannel.channelId]);
+        });
+
         it("2 participants - success", async function () {
             const res = await mathChannelManager.open({
                 encodedOpenChannel: openChannelSigned.encoded,

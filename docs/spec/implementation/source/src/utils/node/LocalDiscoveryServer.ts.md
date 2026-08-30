@@ -20,8 +20,9 @@
 ## Responsibility and observable boundary
 
 The Node local-discovery server: registry startup, plaintext peer advertisement, bounded local
-WebSocket dialing, and direct `LocalTransport` brokering for development and test topologies. It
-also owns teardown of servers, sockets, retries, and pending handshakes.
+WebSocket dialing, and direct `LocalTransport` brokering for development and test topologies. A
+rendezvous leave stops registry and listener admission while established transports remain owned by
+the channel. Full runtime cleanup owns final server, socket, retry, and pending-handshake teardown.
 
 ## Key design decisions
 
@@ -34,24 +35,29 @@ also owns teardown of servers, sockets, retries, and pending handshakes.
    and an inbound client-ready frame is closed without acknowledgement, transport construction, or
    handshake startup. This covers a retry that reaches the peer server while its runtime is being
    disposed.
+4. **The rendezvous key is generic.** The same exact caller value can represent an existing-channel
+   join or a lobby topic. Only equal keys connect and the lower address dials once. The key stays in
+   discovery-session metadata; it is not copied onto the resulting transport.
+5. **Discovery leave is not transport close.** Leaving removes discovery admission but keeps accepted
+   peer sockets alive. Runtime `cleanup` remains the sole final owner of those sockets.
 
 ## Inputs, outputs, state, and side effects
 
-| Aspect       | Contents                                                                                                               |
-| ------------ | ---------------------------------------------------------------------------------------------------------------------- |
-| Inputs       | Registry configuration, channel and advertised peer metadata, WebSocket registration/ready frames, and a `P2PManager`. |
-| Outputs      | Registry peer lists, brokered `LocalTransport` instances, and handshake starts.                                        |
-| Owned state  | Registry and peer servers, active sockets, discovery state, retry counters/timers, and the cleanup gate.               |
-| Side effects | Opens/closes loopback WebSockets, schedules bounded retries, and starts handshakes through the owning `P2PManager`.    |
+| Aspect       | Contents                                                                                                                      |
+| ------------ | ----------------------------------------------------------------------------------------------------------------------------- |
+| Inputs       | Registry configuration, rendezvous key and advertised peer metadata, WebSocket registration/ready frames, and a `P2PManager`. |
+| Outputs      | Registry peer lists, brokered `LocalTransport` instances, and handshake starts.                                               |
+| Owned state  | Registry and peer servers, active sockets, discovery state, retry counters/timers, and the cleanup gate.                      |
+| Side effects | Opens/closes loopback WebSockets, schedules bounded retries, and starts handshakes through the owning `P2PManager`.           |
 
 ## Linked requirements
 
 A file may contribute to several requirements; this report describes the contribution and never
 claims complete conformance for a requirement that depends on other files.
 
-| Source file                                                                            | Specification IDs                                                                                                                                                                                                                                                                                              |
-| -------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| [LocalDiscoveryServer.ts](../../../../../../../src/utils/node/LocalDiscoveryServer.ts) | [`INV-AUTH-1-J0PRYA`](../../../../../specification/peer-communication/handshake.md#inv-auth-1-j0prya), [`REQ-AUTH-4-JWCF71`](../../../../../specification/peer-communication/handshake.md#req-auth-4-jwcf71), [`REQ-RUNTIME-3-VQXW59`](../../../../../specification/runtime/execution.md#req-runtime-3-vqxw59) |
+| Source file                                                                            | Specification IDs                                                                                                                                                                                                                                                                                                                                                                                                            |
+| -------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| [LocalDiscoveryServer.ts](../../../../../../../src/utils/node/LocalDiscoveryServer.ts) | [`INV-AUTH-1-J0PRYA`](../../../../../specification/peer-communication/handshake.md#inv-auth-1-j0prya), [`REQ-AUTH-4-JWCF71`](../../../../../specification/peer-communication/handshake.md#req-auth-4-jwcf71), [`REQ-RUNTIME-3-VQXW59`](../../../../../specification/runtime/execution.md#req-runtime-3-vqxw59), [`REQ-LOBBY-9-N894C0`](../../../../../specification/peer-communication/lobby-matching.md#req-lobby-9-n894c0) |
 
 ## Assumptions, dependencies, trust boundaries, and limits
 
@@ -86,6 +92,7 @@ Gap column. Audit state is file-level (Status header), never a row status.
 | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ---------------- |
 | [`INV-AUTH-1-J0PRYA`](../../../../../specification/peer-communication/handshake.md#inv-auth-1-j0prya) / [`REQ-AUTH-4-JWCF71`](../../../../../specification/peer-communication/handshake.md#req-auth-4-jwcf71) | Covered               | **Here:** discovery metadata only selects a peer endpoint; accepted sockets start `InitHandshakeService` and teardown rejects pre-handshake work without assigning an identity penalty. **Other files:** the handshake owns proof and penalties. | None.            |
 | [`REQ-RUNTIME-3-VQXW59`](../../../../../specification/runtime/execution.md#req-runtime-3-vqxw59)                                                                                                              | Covered               | **Here:** cleanup gates new registry/peer work, clears retries, terminates sockets, closes servers, and waits for all close operations. The inbound ready-frame gate prevents a late handshake from mutating disposed runtime state.             | None.            |
+| [`REQ-LOBBY-9-N894C0`](../../../../../specification/peer-communication/lobby-matching.md#req-lobby-9-n894c0)                                                                                                  | Covered               | **Here:** rendezvous leave closes registry membership and listener admission while retaining accepted peer sockets for the selected channel. **Other files:** runtime cleanup closes the retained sockets.                                       | None.            |
 
 ## Component test obligations
 

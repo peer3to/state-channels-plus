@@ -47,6 +47,13 @@ class StateChannelEventListener {
         await this.getProvider().on(filter, listener);
     }
 
+    async clearChannelId(): Promise<void> {
+        if (this.disposed) return;
+        this.generation += 1;
+        await this.removeListener();
+        this.currentChannelKey = undefined;
+    }
+
     async dispose(): Promise<void> {
         this.disposed = true;
         this.generation += 1;

@@ -18,7 +18,11 @@ import type { Address, Bytes, ForkId, Hash } from "@/types/types";
 import type { RuntimeRequester } from "../p2pRuntime/types";
 import NoopEventProvider from "./NoopEventProvider";
 import { Codec, Type } from "@/utils";
-import type { PreparedJoinChannelConfirmation } from "@/rpc/services";
+import type {
+    LobbyJoinOptions,
+    LobbyJoinResult,
+    PreparedJoinChannelConfirmation
+} from "@/rpc/services";
 
 const UNSUPPORTED =
     "Operation not supported by the p2p runtime client signer. " +
@@ -140,6 +144,23 @@ class ClientP2pSigner implements Signer {
                 type: "connectToChannel",
                 channelId: channelId.toString()
             },
+            { timeoutMs: null }
+        );
+    }
+
+    joinLobby(
+        lobbyTopic: string,
+        options: LobbyJoinOptions = {}
+    ): Promise<LobbyJoinResult | undefined> {
+        return this.client.request<LobbyJoinResult | undefined>(
+            { type: "joinLobby", lobbyTopic, options },
+            { timeoutMs: null }
+        );
+    }
+
+    leaveLobby(lobbyTopic: string): Promise<boolean> {
+        return this.client.request<boolean>(
+            { type: "leaveLobby", lobbyTopic },
             { timeoutMs: null }
         );
     }

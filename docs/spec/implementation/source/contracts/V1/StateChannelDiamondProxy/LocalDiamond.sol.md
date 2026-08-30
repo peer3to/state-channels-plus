@@ -19,8 +19,10 @@
 
 ## Responsibility and observable boundary
 
-The client-local mirror deployment: extends the proxy with event-driven storage-sync handlers
-and a zero consumer facet — the local half of dual execution. Never production-deployed.
+The temporary client-local mirror deployment: extends the proxy with event-driven storage-sync
+handlers and a zero consumer facet — the local half of dual execution. Never production-deployed.
+It mirrors only events indexed by its selected channel. It does not synchronize or answer global
+manager state such as the enumerable open-channel registry.
 
 Because it derives from [StateChannelManagerProxy](./StateChannelManagerProxy.sol.md), its
 generated ABI carries only its own declarations plus the proxy's; every selector the proxy routes to
@@ -41,6 +43,10 @@ merged ABI in [localDiamond.ts](../../../src/utils/localDiamond.ts.md).
 3. **Channel-open event order preserves genesis deposits.** `InboundMessagesProcessed` is mirrored
    before `ChannelOpened`, so `onChannelOpened` retains the finalized snapshot deposit total instead
    of resetting the local balance mirror to zero.
+4. **Channel-local by design.** Stateful and stateless channel computation stays on participant
+   hardware without repeated RPC reads, but the event feed is not a complete or verified chain
+   view. Consequential decisions retain their chain/RPC fallback. A future verified light-client
+   RPC can replace this temporary mirror instead of extending it into global-state replication.
 
 ## Inputs, outputs, state, and side effects
 

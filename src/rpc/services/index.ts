@@ -34,3 +34,16 @@ export type {
     OpenChannelNegotiationP2PManager
 } from "./openChannelNegotiation/OpenChannelNegotiationRpcMethods";
 export * from "./openChannelNegotiation/OpenChannelNegotiationHelpers";
+
+export { default as LobbyMatchingService } from "./lobbyMatching/LobbyMatchingService";
+export { default as LobbyMatchingRpcMethods } from "./lobbyMatching/LobbyMatchingRpcMethods";
+export type {
+    LobbyAvailability,
+    LobbyCommitResult,
+    LobbyJoinOptions,
+    LobbyJoinResult,
+    LobbyMatch,
+    LobbyMatchingServiceOptions,
+    LobbyPickResult,
+    LobbyRole
+} from "./lobbyMatching/LobbyMatchingTypes";

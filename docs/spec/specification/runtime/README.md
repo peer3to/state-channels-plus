@@ -32,6 +32,16 @@ operational limits. It hosts every other system without changing their observabl
 - **Ordering and concurrency.** One canonical owner per mutable resource; causal order within an
   ordered domain; lifecycle transitions settle every request exactly once
   ([execution.md](./execution.md), [sdk.md](./sdk.md)).
+- **Participant lifecycle status.** `NOT_OPENED` means there is no open selected channel and no
+  active lobby; it may be clean with no ID or hold one concrete pre-open target. `DISCOVERING`
+  means one active caller-supplied lobby topic and no selected channel;
+  `OPENED` means the selected channel is open on-chain but not locally synchronized; `SYNCED`
+  means synchronized without a participant role; `PENDING_PARTICIPANT` means an on-chain join is
+  waiting for state inclusion; and `PARTICIPATING` means synchronized with an active participant
+  role. Discovery and every selected-channel role are mutually exclusive.
+- **Lobby control.** `joinLobby(topic, options)` is indefinite while matching unless the caller supplies
+  a positive finite `matchTimeoutMs`. `leaveLobby(topic)` returns true only when it cancels active matching;
+  after commitment it returns false and the host-owned negotiation continues to its chain-observed outcome.
 - **Invariants (owned).** [`INV-RUNTIME-1-AKRHAK`](execution.md#inv-runtime-1-akrhak), `REQ-RUNTIME-*` ([execution.md](./execution.md));
   [`INV-SDK-ARCH-1-KNAX7F`](sdk.md#inv-sdk-arch-1-knax7f), `REQ-SDK-ARCH-*` ([sdk.md](./sdk.md)); `REQ-CONFIG-*`
   ([configuration.md](./configuration.md)). Durable storage is its own system:

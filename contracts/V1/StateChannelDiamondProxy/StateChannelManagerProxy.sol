@@ -91,6 +91,8 @@ contract StateChannelManagerProxy is StateChannelCommon {
         _registerRoute(UtilityFacet.getOnChainThresholdSet.selector, _utilityFacet);
         _registerRoute(UtilityFacet.canParticipateInDisputes.selector, _utilityFacet);
         _registerRoute(UtilityFacet.getStateSnapshot.selector, _utilityFacet);
+        _registerRoute(UtilityFacet.getOpenChannelCount.selector, _utilityFacet);
+        _registerRoute(UtilityFacet.getOpenChannelIds.selector, _utilityFacet);
         _registerRoute(UtilityFacet.getChannelBalance.selector, _utilityFacet);
         _registerRoute(UtilityFacet.isChannelOpen.selector, _utilityFacet);
         _registerRoute(UtilityFacet.isForkDisputed.selector, _utilityFacet);
@@ -246,6 +248,8 @@ contract StateChannelManagerProxy is StateChannelCommon {
         });
 
         stateSnapshots[openChannelData.channelId] = genesisStateSnapshot;
+
+        _appendOpenChannel(openChannelData.channelId);
 
         emit ChannelOpened(openChannelData.channelId, genesisStateSnapshot, genesisState);
     }

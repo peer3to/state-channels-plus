@@ -35,29 +35,23 @@ describe("HandshakeCompletedGuard", function () {
         expect(result.afterCompletion).to.deep.equal(["first", "second"]);
     });
 
-    it("pins the current immediate guard error and dead request replay contradiction", async function () {
+    it("holds a request response until the queued RPC replays", async function () {
         const result = await fixture
             .control()
             .handshakeCompletedGuardProbe.probeRequestDuringNegotiation()
             .request();
 
-        expect(result.immediateResponses).to.have.length(1);
-        const requestId = result.immediateResponses[0].requestId;
-        expect(result.immediateResponses[0]).to.deep.equal({
-            rpcResponse: true,
-            requestId,
-            ok: false,
-            error: "RPC request rejected by guard"
-        });
-        expect(result.finalResponses).to.have.length(2);
-        expect(result.finalResponses[1]).to.deep.equal({
+        expect(result.immediateResponses).to.deep.equal([]);
+        expect(result.finalResponses).to.have.length(1);
+        const requestId = result.finalResponses[0].requestId;
+        expect(result.finalResponses[0]).to.deep.equal({
             rpcResponse: true,
             requestId,
             ok: true,
             result: "request"
         });
         expect(result.invocations).to.deep.equal(["request"]);
-        expect(result.callerError).to.equal("RPC request rejected by guard");
+        expect(result.callerError).to.equal("resolved");
     });
 
     it("disconnects and blacklists a non-negotiating unverified peer", async function () {

@@ -10,9 +10,13 @@ import type P2PManager from "@/P2PManager";
 import MainRpcService from "@/rpc/MainRpcService";
 import { Address, Bytes } from "@/types/types";
 import { Status } from "@/types";
-import type { Logger } from "@/utils";
+import { channelIdToDiscoveryKey, type Logger } from "@/utils";
 import type { ForkId, Hash } from "@/types/types";
-import type { PreparedJoinChannelConfirmation } from "@/rpc/services";
+import type {
+    LobbyJoinOptions,
+    LobbyJoinResult,
+    PreparedJoinChannelConfirmation
+} from "@/rpc/services";
 import NoopEventProvider from "./NoopEventProvider";
 
 /**
@@ -147,12 +151,74 @@ class LocalP2pSigner<TCustomRpc extends MainRpcService = MainRpcService>
     }
 
     public async connectToChannel(channelId: Bytes) {
+        if (
+            this.p2pManager.stateManager.status === Status.DISCOVERING ||
+            this.p2pManager.localRpc.lobbyMatchingService.rendezvousTopic
+        ) {
+            throw new Error(
+                "Leave the active lobby before connecting to a channel"
+            );
+        }
         await this.setChannelId(channelId);
 
         // Update status to NOT_OPENED/OPENED as soon as we know the channelId.
         await this.p2pManager.stateManager.refreshOpenedStatusFromChain();
 
-        return this.p2pManager.tryOpenConnectionToChannel(channelId.toString());
+        return this.p2pManager.joinDiscoveryKey(
+            channelIdToDiscoveryKey(channelId.toString())
+        );
+    }
+
+    public async joinLobby(
+        lobbyTopic: string,
+        options: LobbyJoinOptions = {}
+    ): Promise<LobbyJoinResult | undefined> {
+        if (
+            this.p2pManager.isDisposed ||
+            this.p2pManager.stateManager.isDisposed
+        ) {
+            throw new Error("Cannot enter discovery after runtime disposal");
+        }
+        if (
+            options.amount !== undefined &&
+            (!Number.isSafeInteger(options.amount) || options.amount < 0)
+        ) {
+            throw new Error("Invalid local opening amount");
+        }
+        const matching = this.p2pManager.localRpc.lobbyMatchingService;
+        const negotiation =
+            this.p2pManager.localRpc.openChannelNegotiationService;
+        let match = await matching.match(lobbyTopic, options.matchTimeoutMs);
+        while (match) {
+            try {
+                await negotiation.initMatchedNegotiation(match, options);
+                const outcome = await negotiation.waitForOutcome(
+                    match.attemptNonce
+                );
+                if (outcome.status === "opened") {
+                    await matching.completeLobby(lobbyTopic);
+                    return outcome.result;
+                }
+                if (outcome.status === "cancelled") return undefined;
+            } catch (error) {
+                this.logger.warn("Matched lobby negotiation failed to start", {
+                    error:
+                        error instanceof Error ? error.message : String(error)
+                });
+                await matching.releaseNegotiationHandoff(lobbyTopic);
+            }
+            // Unsigned failures start from a clean discovery session. The
+            // matching service leaves the old topic and closes all lobby-owned
+            // transports before rejoining this caller-owned topic.
+            match = await matching.match(lobbyTopic, options.matchTimeoutMs);
+        }
+        return undefined;
+    }
+
+    public leaveLobby(lobbyTopic: string): Promise<boolean> {
+        return this.p2pManager.localRpc.lobbyMatchingService.leaveLobby(
+            lobbyTopic
+        );
     }
 
     public async joinChannel(

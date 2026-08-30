@@ -1,3 +1,4 @@
+// @spec-test-coverage-ignore: worker-side raw-RPC support for mapped lobby E2E declarations
 import { ethers } from "ethers";
 
 import ARpcService from "@/rpc/ARpcService";
@@ -5,6 +6,11 @@ import type P2PManager from "@/P2PManager";
 import type ATransport from "@/transport/ATransport";
 import type { ForkId, Hash } from "@/types/types";
 import ByzantineRpcMethods from "./ByzantineRpcMethods";
+import type Rpc from "@/rpc/Rpc";
+import { getChecksumAddress } from "@/utils";
+
+export type LobbyRawMethod = "advertise" | "pick" | "commit";
+export type NegotiationRawMethod = "exchangeTerms" | "openProposal" | "abort";
 
 /**
  * Byzantine block-submission faults exposed to the test harness.
@@ -50,6 +56,21 @@ export class ByzantineService extends ARpcService<ByzantineRpcMethods> {
 
     public createRPCMethods(transport: ATransport): ByzantineRpcMethods {
         return new ByzantineRpcMethods(transport, this);
+    }
+
+    public sendRawRpc(
+        targetEvmAddress: string,
+        service: "lobbyMatchingService" | "openChannelNegotiationService",
+        method: LobbyRawMethod | NegotiationRawMethod,
+        params: Rpc["params"]
+    ): boolean {
+        const transport =
+            this.p2pManager.profileManager.getTransportByEvmAddress(
+                getChecksumAddress(targetEvmAddress)
+            );
+        if (!transport) throw new Error("Target peer is not connected");
+        transport.send({ service, method, params });
+        return true;
     }
 }
 

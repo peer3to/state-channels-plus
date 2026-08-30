@@ -1,3 +1,4 @@
+// @spec-test-coverage-ignore: typed raw-RPC harness actions exercised by mapped lobby E2E declarations
 import { ethers, Signer } from "ethers";
 import { PeerTestHarness } from "@test/fixtures/PeerTestHarness";
 import * as factory from "@test/factory";
@@ -15,6 +16,11 @@ import {
     ConstructDisputeTamper
 } from "@test/harness/actions/DisputeTamperingActions";
 import { DisputeStruct } from "@typechain-types/contracts/V1/types/ProofTypes";
+import type Rpc from "@/rpc/Rpc";
+import type {
+    LobbyRawMethod,
+    NegotiationRawMethod
+} from "@test/fixtures/customRpc/harnessControl/services/byzantine/ByzantineService";
 
 export class ByzantineActions<
     TCustomRpc extends HarnessControlRpc = HarnessControlRpc
@@ -23,6 +29,38 @@ export class ByzantineActions<
         protected harness: PeerTestHarness<TCustomRpc>,
         protected logger: Logger
     ) {}
+
+    async sendRawLobbyRpc(
+        peerIndex: number,
+        targetPeerIndex: number,
+        method: LobbyRawMethod,
+        params: Rpc["params"]
+    ): Promise<void> {
+        await this.harness
+            .control(this.harness.getPeer(peerIndex))
+            .byzantine.sendRawLobbyRpc(
+                this.harness.getPeer(targetPeerIndex).address,
+                method,
+                params
+            )
+            .request();
+    }
+
+    async sendRawNegotiationRpc(
+        peerIndex: number,
+        targetPeerIndex: number,
+        method: NegotiationRawMethod,
+        params: Rpc["params"]
+    ): Promise<void> {
+        await this.harness
+            .control(this.harness.getPeer(peerIndex))
+            .byzantine.sendRawNegotiationRpc(
+                this.harness.getPeer(targetPeerIndex).address,
+                method,
+                params
+            )
+            .request();
+    }
 
     /**
      * Submit a double-signed block (two blocks at the same height that differ

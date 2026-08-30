@@ -22,12 +22,16 @@
 The storage layout: timing config, machine reference, facet addresses, per-channel balances/
 inbound blocks/snapshot/calldata commitments/dispute data/throttle — the single layout every
 delegatecall path shares. It also owns the constructor-populated selector route map.
+The layout keeps the ordered open-channel ID array and its index-plus-one reverse map beside the
+snapshot map, so membership and snapshot existence change at the same lifecycle boundaries.
 
 ## Key design decisions
 
 1. **Minimized to commitments and accounting** — full data lives off-chain; the chain stores what adjudication needs.
 2. **A route stores both address and configured state.** This preserves a configured zero address;
    only an unconfigured selector falls through to the consumer facet.
+3. **The open-channel reverse index uses index plus one.** Zero means absent while array index zero
+   remains valid; the common storage owner supports constant-time membership repair after removal.
 
 ## Inputs, outputs, state, and side effects
 
@@ -43,9 +47,9 @@ delegatecall path shares. It also owns the constructor-populated selector route 
 A file may contribute to several requirements; this report describes the contribution and never
 claims complete conformance for a requirement that depends on other files.
 
-| Source file                                                                                                                 | Specification IDs                                                                                                |
-| --------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------- |
-| [StateChannelManagerStorage.sol](../../../../../../../contracts/V1/StateChannelDiamondProxy/StateChannelManagerStorage.sol) | [`INV-CONTRACT-ARCH-1-TWQHTM`](../../../../../specification/enforcement/contracts.md#inv-contract-arch-1-twqhtm) |
+| Source file                                                                                                                 | Specification IDs                                                                                                                                                                                             |
+| --------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| [StateChannelManagerStorage.sol](../../../../../../../contracts/V1/StateChannelDiamondProxy/StateChannelManagerStorage.sol) | [`INV-CONTRACT-ARCH-1-TWQHTM`](../../../../../specification/enforcement/contracts.md#inv-contract-arch-1-twqhtm), [`REQ-LIF-8-2HDG3A`](../../../../../specification/settlement/lifecycle.md#req-lif-8-2hdg3a) |
 
 ## Assumptions, dependencies, trust boundaries, and limits
 
@@ -70,9 +74,10 @@ Status enum: `Covered` | `Partial` | `Contradicts` | `Missing`. Evidence cells a
 **Here:** / **Other files:** so each row is auditable from its links alone; genuine gaps go in the
 Gap column. Audit state is file-level (Status header), never a row status.
 
-| Requirement / invariant                                                                                          | Implementation status | Evidence                            | Gap / divergence                                                                          |
-| ---------------------------------------------------------------------------------------------------------------- | --------------------- | ----------------------------------- | ----------------------------------------------------------------------------------------- |
-| [`INV-CONTRACT-ARCH-1-TWQHTM`](../../../../../specification/enforcement/contracts.md#inv-contract-arch-1-twqhtm) | Covered               | **Here:** the one canonical layout. | Layout is slot-0 inherited (pre-namespacing); versioned namespaces are the refactor plan. |
+| Requirement / invariant                                                                                          | Implementation status | Evidence                                                                                                                                                              | Gap / divergence                                                                          |
+| ---------------------------------------------------------------------------------------------------------------- | --------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------- |
+| [`INV-CONTRACT-ARCH-1-TWQHTM`](../../../../../specification/enforcement/contracts.md#inv-contract-arch-1-twqhtm) | Covered               | **Here:** the one canonical layout.                                                                                                                                   | Layout is slot-0 inherited (pre-namespacing); versioned namespaces are the refactor plan. |
+| [`REQ-LIF-8-2HDG3A`](../../../../../specification/settlement/lifecycle.md#req-lif-8-2hdg3a)                      | Covered               | **Here:** the ordered IDs and index-plus-one map share the manager layout with snapshots. **Other files:** common helpers own mutation and routed views expose pages. | None.                                                                                     |
 
 ## Component test obligations
 

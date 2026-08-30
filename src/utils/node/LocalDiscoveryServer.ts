@@ -1,7 +1,6 @@
 import WebSocket, { WebSocketServer, AddressInfo } from "ws";
 import type P2PManager from "@/P2PManager";
 import { LocalTransport } from "@/transport";
-import { ChannelId } from "@/types/types";
 import type { Logger } from "@/utils";
 import { addressesEqual } from "@/utils/address";
 import { config } from "@/utils/config";
@@ -24,7 +23,8 @@ type PeerConnectionKey = `${Port}->${Port}`;
 
 type DiscoveryInfo = {
     port: Port;
-    channelId: ChannelId;
+    rendezvousKey: string;
+    channelId?: string;
     peerAddress: string;
 };
 
@@ -81,6 +81,11 @@ export class LocalDiscoveryServer {
     /** Discovery and primary peer-dial retries owned by this server. */
     private static pendingTimers: Set<ReturnType<typeof setTimeout>> =
         new Set();
+
+    private static lobbySessions: WeakMap<
+        P2PManager,
+        Map<string, { server: WebSocketServer; discoveryWs?: WebSocket }>
+    > = new WeakMap();
 
     /** Prevent reconnect loops during/after cleanup */
     private static _cleanupRequested: boolean = false;
@@ -506,7 +511,7 @@ export class LocalDiscoveryServer {
      * Registry Logic: Handles a new Peer connecting to the Registry.
      *
      * Flow:
-     * 1. Receives {port, channelId, peerAddress} from new peer.
+     * 1. Receives {port, rendezvousKey, peerAddress} from new peer.
      * 2. Adds to registeredPeers list.
      * 3. Sends FULL list of existing peers to the new peer.
      * 4. Broadcasts the NEW peer to all other connected peers.
@@ -514,7 +519,7 @@ export class LocalDiscoveryServer {
     private static handleIncomingRegistration(ws: WebSocket): void {
         ws.on("message", (message: Buffer) => {
             try {
-                const { port, channelId, peerAddress } = JSON.parse(
+                const { port, rendezvousKey, peerAddress } = JSON.parse(
                     message.toString()
                 ) as DiscoveryInfo;
                 if (!peerAddress) {
@@ -524,13 +529,17 @@ export class LocalDiscoveryServer {
                 this.logger.debug("Registration received", {
                     mode: "registry",
                     port,
-                    channelId,
+                    rendezvousKey,
                     peerAddress,
                     totalPeers: this.registeredPeers.length + 1
                 });
 
                 // Append to discovery list
-                this.registeredPeers.push({ port, channelId, peerAddress });
+                this.registeredPeers.push({
+                    port,
+                    rendezvousKey,
+                    peerAddress
+                });
 
                 // Send all known discovery entries back to this client
                 for (const entry of this.registeredPeers) {
@@ -568,12 +577,12 @@ export class LocalDiscoveryServer {
      */
     public static async connectToPeers(
         p2pManager: P2PManager,
-        channelId: ChannelId,
+        rendezvousKey: string,
         myPeerAddress: string
     ): Promise<void> {
         const peerLog = {
             mode: "peer" as const,
-            channelId,
+            rendezvousKey,
             myPeerAddress
         };
 
@@ -629,6 +638,9 @@ export class LocalDiscoveryServer {
 
         this.peerServers.add(server);
         this._peerDiscoveryState.set(server, new Set<number>());
+        const sessions = this.lobbySessions.get(p2pManager) ?? new Map();
+        sessions.set(rendezvousKey, { server });
+        this.lobbySessions.set(p2pManager, sessions);
 
         this.logger.info("Peer server started", {
             ...peerLog,
@@ -693,7 +705,9 @@ export class LocalDiscoveryServer {
                     ws.send(
                         JSON.stringify({
                             port,
-                            channelId,
+                            rendezvousKey,
+                            // Compatibility with the standalone local relay protocol.
+                            channelId: rendezvousKey,
                             peerAddress: myPeerAddress
                         })
                     );
@@ -712,7 +726,7 @@ export class LocalDiscoveryServer {
                         server,
                         port,
                         p2pManager,
-                        channelId,
+                        rendezvousKey,
                         myPeerAddress
                     );
                     this.logger.debug("Discovery announcement received", {
@@ -762,9 +776,28 @@ export class LocalDiscoveryServer {
             });
 
             this.activeDiscoveryConnections.add(discoveryWs);
+            const session = this.lobbySessions
+                .get(p2pManager)
+                ?.get(rendezvousKey);
+            if (session) session.discoveryWs = discoveryWs;
         };
 
         connectRegistry(1);
+    }
+
+    public static async leave(
+        rendezvousKey: string,
+        p2pManager?: P2PManager
+    ): Promise<void> {
+        if (!p2pManager) return;
+        const sessions = this.lobbySessions.get(p2pManager);
+        const session = sessions?.get(rendezvousKey);
+        if (!session) return;
+        session.discoveryWs?.close();
+        // Stop accepting peers for this rendezvous without closing transports
+        // that the channel lifecycle now owns. cleanup() closes those sockets.
+        session.server.close();
+        sessions?.delete(rendezvousKey);
     }
 
     /**
@@ -779,17 +812,20 @@ export class LocalDiscoveryServer {
         myServer: WebSocketServer,
         myPort: Port,
         p2pManager: P2PManager,
-        myChannelId: ChannelId,
+        myRendezvousKey: string,
         myPeerAddress: string
     ): void {
         try {
-            const {
-                port: peerPort,
-                channelId: peerChannelId,
-                peerAddress
-            } = JSON.parse(msg) as DiscoveryInfo;
+            const announcement = JSON.parse(msg) as DiscoveryInfo;
+            const peerPort = announcement.port;
+            const peerAddress = announcement.peerAddress;
+            const peerRendezvousKey =
+                announcement.rendezvousKey ?? announcement.channelId;
             if (!peerAddress) {
                 throw new Error("Announcement is missing peerAddress");
+            }
+            if (!peerRendezvousKey) {
+                throw new Error("Announcement is missing rendezvous key");
             }
 
             const logBase = {
@@ -798,7 +834,7 @@ export class LocalDiscoveryServer {
                 myPeerPort: myPort,
                 peerAddress,
                 peerPort,
-                peerChannelId
+                peerRendezvousKey
             };
 
             if (addressesEqual(myPeerAddress, peerAddress)) {
@@ -816,13 +852,16 @@ export class LocalDiscoveryServer {
             }
             seenPorts.add(peerPort);
 
-            const channelMatches = myChannelId === peerChannelId;
+            const rendezvousMatches = myRendezvousKey === peerRendezvousKey;
 
-            if (!channelMatches) {
-                this.logger.debug("Announcement ignored (channel mismatch)", {
-                    ...logBase,
-                    myChannelId
-                });
+            if (!rendezvousMatches) {
+                this.logger.debug(
+                    "Announcement ignored (rendezvous mismatch)",
+                    {
+                        ...logBase,
+                        myRendezvousKey
+                    }
+                );
                 return;
             }
 
@@ -831,7 +870,7 @@ export class LocalDiscoveryServer {
             if (!isPrimaryDialer) {
                 this.logger.debug("Waiting for primary peer dial", {
                     ...logBase,
-                    myChannelId
+                    myRendezvousKey
                 });
                 return;
             }
@@ -840,13 +879,13 @@ export class LocalDiscoveryServer {
                 peerPort,
                 peerAddress,
                 p2pManager,
-                myChannelId,
+                myRendezvousKey,
                 myPeerAddress,
                 myPort
             );
             this.logger.debug("Connecting to announced peer", {
                 ...logBase,
-                myChannelId
+                myRendezvousKey
             });
         } catch {
             // Ignore malformed messages
@@ -876,7 +915,7 @@ export class LocalDiscoveryServer {
         peerPort: Port,
         peerAddress: string,
         p2pManager: P2PManager,
-        channelId: ChannelId,
+        rendezvousKey: string,
         myPeerAddress: string,
         myPeerPort: Port
     ): void {
@@ -895,7 +934,7 @@ export class LocalDiscoveryServer {
                 mode: "peer",
                 peerAddress,
                 peerPort,
-                channelId,
+                rendezvousKey,
                 attempts: retryCount
             });
             return;
@@ -910,7 +949,7 @@ export class LocalDiscoveryServer {
             myPeerPort,
             peerAddress,
             peerPort,
-            channelId,
+            rendezvousKey,
             attempt
         };
 
@@ -945,7 +984,7 @@ export class LocalDiscoveryServer {
                         peerPort,
                         peerAddress,
                         p2pManager,
-                        channelId,
+                        rendezvousKey,
                         myPeerAddress,
                         myPeerPort
                     ),
@@ -1009,7 +1048,7 @@ export class LocalDiscoveryServer {
                     myPeerAddress,
                     myPeerPort,
                     peerPort,
-                    channelId,
+                    rendezvousKey,
                     code,
                     reason: reason?.toString?.() || ""
                 });
@@ -1025,7 +1064,7 @@ export class LocalDiscoveryServer {
                     myPeerAddress,
                     myPeerPort,
                     peerPort,
-                    channelId,
+                    rendezvousKey,
                     message: err?.message
                 });
             },

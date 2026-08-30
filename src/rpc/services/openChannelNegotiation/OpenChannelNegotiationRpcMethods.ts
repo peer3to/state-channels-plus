@@ -1,11 +1,7 @@
-import { ethers } from "ethers";
-
 import ARpcMethods from "@/rpc/ARpcMethods";
 import type ATransport from "@/transport/ATransport";
-import { getChecksumAddress } from "@/utils";
 import type P2PManager from "@/P2PManager";
 import type MainRpcService from "@/rpc/MainRpcService";
-
 import type OpenChannelNegotiationService from "./OpenChannelNegotiationService";
 
 export type OpenChannelNegotiationCustomRpc = MainRpcService & {
@@ -23,125 +19,51 @@ export default class OpenChannelNegotiationRpcMethods extends ARpcMethods<OpenCh
         super(transport, service.p2pManager);
     }
 
-    public async negotiateRequest(
-        channelId: string,
+    public async exchangeTerms(
+        attemptNonce: string,
+        selectorChallenge: string,
+        advertiserChallenge: string,
         amount: number
-    ): Promise<void> {
-        const from = this.senderTransport.peerAddress
-            ? getChecksumAddress(this.senderTransport.peerAddress)
-            : undefined;
-        if (!from) return;
-
-        const currentChannel = ethers.hexlify(
-            this.p2pManager.stateManager.channelId
+    ): Promise<{ amount: number }> {
+        return this.service.acceptTerms(
+            this.senderTransport,
+            attemptNonce,
+            selectorChallenge,
+            advertiserChallenge,
+            amount
         );
-        if (channelId !== currentChannel) return;
-
-        if (
-            this.service.state.negotiatingWith &&
-            this.service.state.negotiatingWith !== from
-        ) {
-            this.remoteRpc.openChannelNegotiationService
-                .negotiateBusy()
-                .sendOne(from);
-            return;
-        }
-
-        if (!this.service.state.negotiatingWith) {
-            this.service.state.negotiatingWith = from;
-            this.service.state.initiatedByMe = false;
-            this.service.state.startedAtMs = Date.now();
-            this.service.startTimeout();
-        }
-
-        this.service.state.theirAmount = amount;
-
-        this.remoteRpc.openChannelNegotiationService
-            .negotiateAccept(currentChannel, this.service.state.myAmount)
-            .sendOne(from);
-
-        await this.service.maybeProgress(from);
-    }
-
-    public async negotiateAccept(
-        channelId: string,
-        amount: number
-    ): Promise<void> {
-        const from = this.senderTransport.peerAddress
-            ? getChecksumAddress(this.senderTransport.peerAddress)
-            : undefined;
-        if (!from) return;
-
-        const currentChannel = ethers.hexlify(
-            this.p2pManager.stateManager.channelId
-        );
-        if (channelId !== currentChannel) return;
-
-        if (
-            !this.service.state.negotiatingWith ||
-            this.service.state.negotiatingWith !== from
-        ) {
-            return;
-        }
-
-        this.service.state.theirAmount = amount;
-        await this.service.maybeProgress(from);
-    }
-
-    public negotiateBusy(): void {
-        const from = this.senderTransport.peerAddress
-            ? getChecksumAddress(this.senderTransport.peerAddress)
-            : undefined;
-        if (!from) return;
-
-        if (this.service.state.negotiatingWith === from) {
-            this.service.resetNegotiation(
-                "remote busy: negotiating with someone else"
-            );
-        }
     }
 
     public async openProposal(
+        attemptNonce: string,
+        selectorChallenge: string,
+        advertiserChallenge: string,
         encodedOpenChannel: string,
         lowerSignature: string
-    ): Promise<void> {
-        const from = this.senderTransport.peerAddress
-            ? getChecksumAddress(this.senderTransport.peerAddress)
-            : undefined;
-        if (!from) return;
-
-        if (
-            this.service.state.negotiatingWith &&
-            this.service.state.negotiatingWith !== from
-        ) {
-            return;
-        }
-
-        if (!this.service.state.negotiatingWith) {
-            this.service.state.negotiatingWith = from;
-            this.service.state.startedAtMs = Date.now();
-            this.service.startTimeout();
-        }
-
-        this.service.state.receivedProposal = {
-            encodedOpenChannel,
-            lowerSignature
-        };
-        await this.service.openProposal(
-            from,
+    ): Promise<{ status: "submitted" }> {
+        return this.service.acceptOpenProposal(
+            this.senderTransport,
+            attemptNonce,
+            selectorChallenge,
+            advertiserChallenge,
             encodedOpenChannel,
             lowerSignature
         );
     }
 
-    public abort(reason: string): void {
-        const from = this.senderTransport.peerAddress
-            ? getChecksumAddress(this.senderTransport.peerAddress)
-            : undefined;
-        if (!from) return;
-
-        if (this.service.state.negotiatingWith === from) {
-            this.service.resetNegotiation(`remote abort: ${reason}`);
-        }
+    public abort(
+        attemptNonce: string,
+        selectorChallenge: string,
+        advertiserChallenge: string,
+        reason: string
+    ): { status: "acknowledged" } {
+        this.service.acceptAbort(
+            this.senderTransport,
+            attemptNonce,
+            selectorChallenge,
+            advertiserChallenge,
+            reason
+        );
+        return { status: "acknowledged" };
     }
 }

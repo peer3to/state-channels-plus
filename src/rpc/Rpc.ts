@@ -10,6 +10,8 @@ type Rpc = {
     requestId?: string;
 };
 
+export const RPC_GUARD_REJECTION_ERROR = "RPC request rejected by guard";
+
 /**
  * Reply to a request-style RPC. Correlated back to the originating
  * `RpcHandler.request(...)` call via `requestId`.

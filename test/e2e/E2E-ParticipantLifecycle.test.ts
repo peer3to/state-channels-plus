@@ -2,8 +2,10 @@ import { MathTestSession as TestSession } from "@test/harness";
 import { expect } from "chai";
 import { Status } from "@/types";
 import { Block } from "@/models";
-import { Codec, Type } from "@/utils";
-import type { Address } from "@/types/types";
+import { Codec, SignatureUtils, Type } from "@/utils";
+import type { Address, Bytes } from "@/types/types";
+import { createOpenChannelTestObject } from "@test/test_utils/testHelpers";
+import { waitFor } from "@test/utils/waitFor";
 import assert from "node:assert/strict";
 
 /**
@@ -23,6 +25,76 @@ import assert from "node:assert/strict";
  */
 describe("E2E: Participant Lifecycle", function () {
     describe("Exit path", function () {
+        it("removes a normally closed channel from registry pages and the event-derived live set", async function () {
+            const h = TestSession.getHarness();
+            await h.lifecycle.start(2);
+            const primaryChannelId = String(h.channelId);
+            const extraParticipants = h.peers.map((peer) => peer.address);
+            const extraChannels = [
+                createOpenChannelTestObject(extraParticipants, {
+                    channelId: "participant-registry-extra-first"
+                }),
+                createOpenChannelTestObject(extraParticipants, {
+                    channelId: "participant-registry-extra-second"
+                })
+            ];
+            for (const channel of extraChannels) {
+                const signed = await Promise.all(
+                    h.peers.map((peer) =>
+                        SignatureUtils.signOpenChannel(channel, peer.signer)
+                    )
+                );
+                await h.channelManager.open({
+                    encodedOpenChannel: signed[0].encoded,
+                    signatures: signed.map((entry) => entry.signature as Bytes)
+                });
+            }
+
+            await h.transition.participantLeaveStateTransition();
+            await h.transition.participantLeaveStateTransition();
+            await waitFor(
+                async () =>
+                    !(await h
+                        .control(h.peers[0])
+                        .query.isChannelOpen(primaryChannelId)
+                        .request()),
+                h.event.protocolEventTimeoutMs({
+                    withFirstBlockGrace: true
+                }),
+                50
+            );
+
+            const liveFromEvents = new Set(
+                (
+                    await h.channelManager.queryFilter(
+                        h.channelManager.filters.ChannelOpened()
+                    )
+                ).map((event) => String(event.args.channelId))
+            );
+            const snapshots = await h.channelManager.queryFilter(
+                h.channelManager.filters.StateSnapshotUpdated()
+            );
+            for (const event of snapshots) {
+                if (
+                    event.args.stateSnapshot.snapshotData.participants
+                        .length === 0
+                ) {
+                    liveFromEvents.delete(String(event.args.channelId));
+                }
+            }
+            const registry = await h
+                .control(h.peers[0])
+                .query.getOpenChannelIds()
+                .request();
+            expect([...liveFromEvents].sort()).to.deep.equal(
+                [...registry].sort()
+            );
+            expect(registry).not.to.include(primaryChannelId);
+            expect(registry).to.include.members(
+                extraChannels.map((channel) => String(channel.channelId))
+            );
+        });
+
         it("should demote exiting participant to SYNCED when state snapshot is updated on-chain", async function () {
             const h = TestSession.getHarness();
             await h.lifecycle.start(3, 2);

@@ -516,6 +516,23 @@ export async function startP2pRuntimeHost<
                             request.channelId
                         );
                         break;
+                    case "joinLobby":
+                        if (!runtimeHandle)
+                            throw new Error("Runtime is not ready");
+                        result =
+                            await runtimeHandle.stateManager.p2pManager.p2pSigner.joinLobby(
+                                request.lobbyTopic,
+                                request.options
+                            );
+                        break;
+                    case "leaveLobby":
+                        if (!runtimeHandle)
+                            throw new Error("Runtime is not ready");
+                        result =
+                            await runtimeHandle.stateManager.p2pManager.p2pSigner.leaveLobby(
+                                request.lobbyTopic
+                            );
+                        break;
                     case "joinChannel":
                         if (!runtimeHandle)
                             throw new Error("Runtime is not ready");
