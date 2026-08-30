@@ -40,19 +40,19 @@
         "date": "2026-08-15"
     },
     "implementation/source/src/evm/p2pRuntime/P2pRuntimeHost.ts.md": {
-        "hash": "f80e1066630a01af",
-        "reviewer": "Luka",
-        "date": "2026-08-15"
+        "hash": "fdad5a4a1bf7caf3",
+        "reviewer": "Luka-discovery-v1",
+        "date": "2026-08-30"
     },
     "implementation/source/src/rpc/MainRpcService.ts.md": {
-        "hash": "cce0dd0bd9915f5d",
-        "reviewer": "Luka",
-        "date": "2026-08-15"
+        "hash": "dd6ebf70104fe085",
+        "reviewer": "Luka-discovery-v1",
+        "date": "2026-08-30"
     },
     "implementation/views/architecture/sdk/runtime-and-concurrency.md": {
-        "hash": "0323c0dfc28ba320",
-        "reviewer": "Luka",
-        "date": "2026-08-15"
+        "hash": "95fa7e749e393037",
+        "reviewer": "Luka-discovery-v1",
+        "date": "2026-08-30"
     },
     "verification/tests/test/e2e/E2E-RuntimeTransportModes.test.ts.md": {
         "hash": "d91b8be1aead3b51",
@@ -65,14 +65,14 @@
         "date": "2026-08-15"
     },
     "implementation/source/src/P2PManager.ts.md": {
-        "hash": "83eadd3963d21239",
-        "reviewer": "Luka-discovery-base",
-        "date": "2026-08-27"
+        "hash": "28956992cecab4c0",
+        "reviewer": "Luka-discovery-v1",
+        "date": "2026-08-30"
     },
     "implementation/source/src/ProfileManager.ts.md": {
-        "hash": "515d6f9a60b60982",
-        "reviewer": "Luka-discovery-base",
-        "date": "2026-08-27"
+        "hash": "6236ca13583d0b61",
+        "reviewer": "Luka-discovery-v1",
+        "date": "2026-08-30"
     },
     "implementation/source/src/events/EventBus.ts.md": {
         "hash": "f0b2dcf4c74a8706",
@@ -80,9 +80,9 @@
         "date": "2026-08-18"
     },
     "implementation/source/src/rpc/ARpcService.ts.md": {
-        "hash": "6453855297752bc1",
-        "reviewer": "Luka",
-        "date": "2026-08-18"
+        "hash": "48c1fc151155e080",
+        "reviewer": "Luka-discovery-v1",
+        "date": "2026-08-30"
     },
     "implementation/source/src/rpc/RemoteRpcProxy.ts.md": {
         "hash": "d7ae9a1b56bee79c",
@@ -100,19 +100,19 @@
         "date": "2026-08-18"
     },
     "implementation/source/src/rpc/guards/HandshakeCompletedGuard.ts.md": {
-        "hash": "1bf503ace5ea59aa",
-        "reviewer": "Luka-discovery-base",
-        "date": "2026-08-27"
+        "hash": "e425125e8ce21e03",
+        "reviewer": "Luka-discovery-v1",
+        "date": "2026-08-30"
     },
     "implementation/source/src/stateManager/StateManager.ts.md": {
-        "hash": "ad30c3f4d09275c0",
-        "reviewer": "Luka",
-        "date": "2026-08-18"
+        "hash": "8eaad36e12b6dd58",
+        "reviewer": "Luka-discovery-v1",
+        "date": "2026-08-30"
     },
     "implementation/source/src/transport/ATransport.ts.md": {
-        "hash": "056f9772e8689f15",
-        "reviewer": "Luka-discovery-base",
-        "date": "2026-08-27"
+        "hash": "9002e958c67d3e0f",
+        "reviewer": "Luka-discovery-v1",
+        "date": "2026-08-30"
     },
     "implementation/source/src/utils/Codec.ts.md": {
         "hash": "122036de836c060b",
@@ -135,9 +135,9 @@
         "date": "2026-08-18"
     },
     "verification/tests/test/P2PManager.test.ts.md": {
-        "hash": "acd2d1f2494ca944",
-        "reviewer": "Luka-discovery-base",
-        "date": "2026-08-27"
+        "hash": "483fe5da546cc700",
+        "reviewer": "Luka-discovery-v1",
+        "date": "2026-08-30"
     },
     "verification/tests/test/e2e/E2E-CustomRpcRequestResponse.test.ts.md": {
         "hash": "55c29cb7f2c79233",
@@ -180,9 +180,9 @@
         "date": "2026-08-18"
     },
     "verification/tests/test/rpc/guards/HandshakeCompletedGuard.test.ts.md": {
-        "hash": "b6ad0e1e76bdf279",
-        "reviewer": "Luka-discovery-base",
-        "date": "2026-08-27"
+        "hash": "f83882a9b64e31c3",
+        "reviewer": "Luka-discovery-v1",
+        "date": "2026-08-30"
     },
     "verification/tests/test/rpc/guards/runGuards.test.ts.md": {
         "hash": "7c942c760dbc45f7",
@@ -325,9 +325,9 @@
         "date": "2026-08-18"
     },
     "implementation/source/src/Holepunch.ts.md": {
-        "hash": "01a0dae8c1675709",
-        "reviewer": "Luka-discovery-base",
-        "date": "2026-08-27"
+        "hash": "bdabe076e00d9e2b",
+        "reviewer": "Luka-discovery-v1",
+        "date": "2026-08-30"
     },
     "implementation/source/src/HolepunchRelay.ts.md": {
         "hash": "f88e93b490ff117e",
@@ -335,9 +335,9 @@
         "date": "2026-08-27"
     },
     "implementation/source/src/PeerProfile.ts.md": {
-        "hash": "d81f2daa668379ef",
-        "reviewer": "Luka-discovery-base",
-        "date": "2026-08-27"
+        "hash": "a9d2e9eb5b4eeb71",
+        "reviewer": "Luka-discovery-v1",
+        "date": "2026-08-30"
     },
     "implementation/source/src/rpc/services/initHandshake/InitHandshakeService.ts.md": {
         "hash": "850f18ebbdafc1ce",
@@ -410,9 +410,9 @@
         "date": "2026-08-27"
     },
     "specification/open-questions.md": {
-        "hash": "ed4c1984b2d344af",
-        "reviewer": "Luka-discovery-base",
-        "date": "2026-08-27"
+        "hash": "4ea41689da371ee4",
+        "reviewer": "Luka-discovery-v1",
+        "date": "2026-08-30"
     },
     "specification/peer-communication/handshake.md": {
         "hash": "9b2faeb467123330",
@@ -458,5 +458,230 @@
         "hash": "1c2cd42c9a84b5e3",
         "reviewer": "Luka-discovery-base",
         "date": "2026-08-27"
+    },
+    "implementation/source/contracts/V1/StateChannelDiamondProxy/LocalDiamond.sol.md": {
+        "hash": "134576c0b3fb2f20",
+        "reviewer": "Luka-discovery-v1",
+        "date": "2026-08-30"
+    },
+    "implementation/source/contracts/V1/StateChannelDiamondProxy/StateChannelCommon.sol.md": {
+        "hash": "52ab500705845a40",
+        "reviewer": "Luka-discovery-v1",
+        "date": "2026-08-30"
+    },
+    "implementation/source/contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol.md": {
+        "hash": "6e8e83458e083ef5",
+        "reviewer": "Luka-discovery-v1",
+        "date": "2026-08-30"
+    },
+    "implementation/source/contracts/V1/StateChannelDiamondProxy/StateChannelManagerStorage.sol.md": {
+        "hash": "6d4ab5360f1b97bb",
+        "reviewer": "Luka-discovery-v1",
+        "date": "2026-08-30"
+    },
+    "implementation/source/contracts/V1/StateChannelDiamondProxy/StateSnapshotFacet.sol.md": {
+        "hash": "78efea9b575102ba",
+        "reviewer": "Luka-discovery-v1",
+        "date": "2026-08-30"
+    },
+    "implementation/source/contracts/V1/StateChannelDiamondProxy/UtilityFacet.sol.md": {
+        "hash": "10ea72506bc5d13b",
+        "reviewer": "Luka-discovery-v1",
+        "date": "2026-08-30"
+    },
+    "implementation/source/src/eventHandlers/EventHandler.ts.md": {
+        "hash": "488b9e67a7fb9fec",
+        "reviewer": "Luka-discovery-v1",
+        "date": "2026-08-30"
+    },
+    "implementation/source/src/evm/signer/ClientP2pSigner.ts.md": {
+        "hash": "f53c6ddc2db7586a",
+        "reviewer": "Luka-discovery-v1",
+        "date": "2026-08-30"
+    },
+    "implementation/source/src/evm/signer/LocalP2pSigner.ts.md": {
+        "hash": "c9bd28f75640e85e",
+        "reviewer": "Luka-discovery-v1",
+        "date": "2026-08-30"
+    },
+    "implementation/source/src/rpc/guards/DeferredAdmissionGuard.ts.md": {
+        "hash": "f92fef3c38eb47df",
+        "reviewer": "Luka-discovery-v1",
+        "date": "2026-08-30"
+    },
+    "implementation/source/src/rpc/guards/README.md": {
+        "hash": "31f24493b91280a4",
+        "reviewer": "Luka-discovery-v1",
+        "date": "2026-08-30"
+    },
+    "implementation/source/src/rpc/services/README.md": {
+        "hash": "36000404211b046b",
+        "reviewer": "Luka-discovery-v1",
+        "date": "2026-08-30"
+    },
+    "implementation/source/src/rpc/services/lobbyMatching/LobbyMatchingRpcMethods.ts.md": {
+        "hash": "a5de57330763c238",
+        "reviewer": "Luka-discovery-v1",
+        "date": "2026-08-30"
+    },
+    "implementation/source/src/rpc/services/lobbyMatching/LobbyMatchingService.ts.md": {
+        "hash": "f8d8293ee8b3c74a",
+        "reviewer": "Luka-discovery-v1",
+        "date": "2026-08-30"
+    },
+    "implementation/source/src/rpc/services/lobbyMatching/LobbyMatchingTypes.ts.md": {
+        "hash": "11d47384429b8614",
+        "reviewer": "Luka-discovery-v1",
+        "date": "2026-08-30"
+    },
+    "implementation/source/src/rpc/services/lobbyMatching/LobbyRpcAdmissionGuard.ts.md": {
+        "hash": "36b50fec3b5b1352",
+        "reviewer": "Luka-discovery-v1",
+        "date": "2026-08-30"
+    },
+    "implementation/source/src/rpc/services/lobbyMatching/README.md": {
+        "hash": "e84e335b0f320f39",
+        "reviewer": "Luka-discovery-v1",
+        "date": "2026-08-30"
+    },
+    "implementation/source/src/rpc/services/openChannelNegotiation/OpenChannelNegotiationHelpers.ts.md": {
+        "hash": "32e23dd364d67af7",
+        "reviewer": "Luka-discovery-v1",
+        "date": "2026-08-30"
+    },
+    "implementation/source/src/rpc/services/openChannelNegotiation/OpenChannelNegotiationRpcMethods.ts.md": {
+        "hash": "f61ef53cda10718d",
+        "reviewer": "Luka-discovery-v1",
+        "date": "2026-08-30"
+    },
+    "implementation/source/src/rpc/services/openChannelNegotiation/OpenChannelNegotiationService.ts.md": {
+        "hash": "14085007686aa409",
+        "reviewer": "Luka-discovery-v1",
+        "date": "2026-08-30"
+    },
+    "implementation/source/src/types/flags.ts.md": {
+        "hash": "466e4e8b48a969ef",
+        "reviewer": "Luka-discovery-v1",
+        "date": "2026-08-30"
+    },
+    "implementation/source/src/utils/browser/LocalDiscoveryServer.ts.md": {
+        "hash": "acf9066c2979b9ed",
+        "reviewer": "Luka-discovery-v1",
+        "date": "2026-08-30"
+    },
+    "implementation/source/src/utils/discoveryKey.ts.md": {
+        "hash": "91820c1d86bcc233",
+        "reviewer": "Luka-discovery-v1",
+        "date": "2026-08-30"
+    },
+    "implementation/source/src/utils/node/LocalDiscoveryServer.ts.md": {
+        "hash": "ae68fea090d18c92",
+        "reviewer": "Luka-discovery-v1",
+        "date": "2026-08-30"
+    },
+    "implementation/views/architecture/contracts/manager-and-facets.md": {
+        "hash": "ec79a2a1c2926127",
+        "reviewer": "Luka-discovery-v1",
+        "date": "2026-08-30"
+    },
+    "implementation/views/architecture/sdk/rpc/open-channel-negotiation.md": {
+        "hash": "e32cadca31615c57",
+        "reviewer": "Luka-discovery-v1",
+        "date": "2026-08-30"
+    },
+    "specification/enforcement/contracts.md": {
+        "hash": "77ec0a42e8e6afb7",
+        "reviewer": "Luka-discovery-v1",
+        "date": "2026-08-30"
+    },
+    "specification/enforcement/local-mirror.md": {
+        "hash": "d47e816a4e77472d",
+        "reviewer": "Luka-discovery-v1",
+        "date": "2026-08-30"
+    },
+    "specification/peer-communication/README.md": {
+        "hash": "b881b7fc72120263",
+        "reviewer": "Luka-discovery-v1",
+        "date": "2026-08-30"
+    },
+    "specification/peer-communication/channel-negotiation.md": {
+        "hash": "5c73bc1831301693",
+        "reviewer": "Luka-discovery-v1",
+        "date": "2026-08-30"
+    },
+    "specification/peer-communication/lobby-matching.md": {
+        "hash": "6ddbd52005c1c611",
+        "reviewer": "Luka-discovery-v1",
+        "date": "2026-08-30"
+    },
+    "specification/runtime/README.md": {
+        "hash": "eeaa2d6627d23742",
+        "reviewer": "Luka-discovery-v1",
+        "date": "2026-08-30"
+    },
+    "specification/settlement/lifecycle.md": {
+        "hash": "11ec94a0496223ba",
+        "reviewer": "Luka-discovery-v1",
+        "date": "2026-08-30"
+    },
+    "verification/tests/test/V1/DiamondProxy/StateChannelManager/OpenChannel.test.ts.md": {
+        "hash": "c9974d5065ad5460",
+        "reviewer": "Luka-discovery-v1",
+        "date": "2026-08-30"
+    },
+    "verification/tests/test/V1/DiamondProxy/StateChannelManager/SelectorRouting.test.ts.md": {
+        "hash": "8d5bc4df1e63bc95",
+        "reviewer": "Luka-discovery-v1",
+        "date": "2026-08-30"
+    },
+    "verification/tests/test/V1/StateChannelDiamondProxy/StateSnapshotFacetOpenChannelRegistry.t.sol.md": {
+        "hash": "f41793d637df5e54",
+        "reviewer": "Luka-discovery-v1",
+        "date": "2026-08-30"
+    },
+    "verification/tests/test/e2e/E2E-LobbyMatching.test.ts.md": {
+        "hash": "c79eea03d4d79284",
+        "reviewer": "Luka-discovery-v1",
+        "date": "2026-08-30"
+    },
+    "verification/tests/test/e2e/E2E-ParticipantLifecycle.test.ts.md": {
+        "hash": "7271d4e62c6fae39",
+        "reviewer": "Luka-discovery-v1",
+        "date": "2026-08-30"
+    },
+    "verification/tests/test/evm/DiscoveryRuntimePort.test.ts.md": {
+        "hash": "695b356a5bbd2514",
+        "reviewer": "Luka-discovery-v1",
+        "date": "2026-08-30"
+    },
+    "verification/tests/test/rpc/guards/DeferredAdmissionGuard.test.ts.md": {
+        "hash": "2cdd73cfc3cc52ad",
+        "reviewer": "Luka-discovery-v1",
+        "date": "2026-08-30"
+    },
+    "verification/tests/test/rpc/lobbyMatching/LobbyMatchingService.test.ts.md": {
+        "hash": "152e796ef86fbae9",
+        "reviewer": "Luka-discovery-v1",
+        "date": "2026-08-30"
+    },
+    "verification/tests/test/rpc/openChannelNegotiation/NegotiatedChannelId.test.ts.md": {
+        "hash": "11ae9cbc67175c66",
+        "reviewer": "Luka-discovery-v1",
+        "date": "2026-08-30"
+    },
+    "verification/tests/test/rpc/openChannelNegotiation/OpenChannelNegotiationService.test.ts.md": {
+        "hash": "40ecde5deb4b047e",
+        "reviewer": "Luka-discovery-v1",
+        "date": "2026-08-30"
+    },
+    "verification/tests/test/unit/OpenChannelRegistryEvents.test.ts.md": {
+        "hash": "f70f5eaabc650c13",
+        "reviewer": "Luka-discovery-v1",
+        "date": "2026-08-30"
+    },
+    "verification/tests/test/utils/discoveryKey.test.ts.md": {
+        "hash": "929fae3c97e8c6b6",
+        "reviewer": "Luka-discovery-v1",
+        "date": "2026-08-30"
     }
 }
