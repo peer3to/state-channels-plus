@@ -4,8 +4,8 @@
 > its content hash with `SPEC_REVIEWER="Name" node docs/spec/tools/review.js <file...>`.
 > Any later edit invalidates the record automatically (the file returns to pending as stale).
 
-- Verified (current): **36/540** (7%)
-- Pending (never reviewed): **475**
+- Verified (current): **36/552** (7%)
+- Pending (never reviewed): **487**
 - Stale (edited since review): **29**
 
 ## Stale — edited since engineer review
@@ -91,7 +91,7 @@
 - [specification/settlement/lifecycle.md](../specification/settlement/lifecycle.md)
 - [specification/settlement/README.md](../specification/settlement/README.md)
 
-### implementation (318)
+### implementation (324)
 
 - [implementation/open-questions.md](../implementation/open-questions.md)
 - [implementation/README.md](../implementation/README.md)
@@ -123,6 +123,7 @@
 - [implementation/source/contracts/V1/StateChannelDiamondProxy/StateProofFacet.sol.md](../implementation/source/contracts/V1/StateChannelDiamondProxy/StateProofFacet.sol.md)
 - [implementation/source/contracts/V1/StateChannelDiamondProxy/StateSnapshotFacet.sol.md](../implementation/source/contracts/V1/StateChannelDiamondProxy/StateSnapshotFacet.sol.md)
 - [implementation/source/contracts/V1/StateChannelDiamondProxy/UtilityFacet.sol.md](../implementation/source/contracts/V1/StateChannelDiamondProxy/UtilityFacet.sol.md)
+- [implementation/source/contracts/V1/StateChannelDiamondProxy/UtilityFacetInterface.sol.md](../implementation/source/contracts/V1/StateChannelDiamondProxy/UtilityFacetInterface.sol.md)
 - [implementation/source/contracts/V1/StateChannelDiamondProxy/utils/BlockUtils.sol.md](../implementation/source/contracts/V1/StateChannelDiamondProxy/utils/BlockUtils.sol.md)
 - [implementation/source/contracts/V1/StateChannelDiamondProxy/utils/DisputeUtils.sol.md](../implementation/source/contracts/V1/StateChannelDiamondProxy/utils/DisputeUtils.sol.md)
 - [implementation/source/contracts/V1/StateChannelDiamondProxy/utils/GeneralUtils.sol.md](../implementation/source/contracts/V1/StateChannelDiamondProxy/utils/GeneralUtils.sol.md)
@@ -261,8 +262,9 @@
 - [implementation/source/src/stateManager/block/BlockProductionService.ts.md](../implementation/source/src/stateManager/block/BlockProductionService.ts.md)
 - [implementation/source/src/stateManager/BlockQueueManager.ts.md](../implementation/source/src/stateManager/BlockQueueManager.ts.md)
 - [implementation/source/src/stateManager/dispute/DisputeValidationService.ts.md](../implementation/source/src/stateManager/dispute/DisputeValidationService.ts.md)
-- [implementation/source/src/stateManager/EventSyncService.ts.md](../implementation/source/src/stateManager/EventSyncService.ts.md)
+- [implementation/source/src/stateManager/eventSync/EventSyncService.ts.md](../implementation/source/src/stateManager/eventSync/EventSyncService.ts.md)
 - [implementation/source/src/stateManager/index.ts.md](../implementation/source/src/stateManager/index.ts.md)
+- [implementation/source/src/stateManager/ingest/ValidationService.ts.md](../implementation/source/src/stateManager/ingest/ValidationService.ts.md)
 - [implementation/source/src/stateManager/README.md](../implementation/source/src/stateManager/README.md)
 - [implementation/source/src/stateManager/reduction/index.ts.md](../implementation/source/src/stateManager/reduction/index.ts.md)
 - [implementation/source/src/stateManager/reduction/README.md](../implementation/source/src/stateManager/reduction/README.md)
@@ -275,7 +277,6 @@
 - [implementation/source/src/stateManager/utils/DisputeFraudProofService.ts.md](../implementation/source/src/stateManager/utils/DisputeFraudProofService.ts.md)
 - [implementation/source/src/stateManager/utils/FraudProofService.ts.md](../implementation/source/src/stateManager/utils/FraudProofService.ts.md)
 - [implementation/source/src/stateManager/utils/README.md](../implementation/source/src/stateManager/utils/README.md)
-- [implementation/source/src/stateManager/ValidationService.ts.md](../implementation/source/src/stateManager/ValidationService.ts.md)
 - [implementation/source/src/stateManager/validationStrategy/AValidationStrategy.ts.md](../implementation/source/src/stateManager/validationStrategy/AValidationStrategy.ts.md)
 - [implementation/source/src/stateManager/validationStrategy/BlockValidationStrategy.ts.md](../implementation/source/src/stateManager/validationStrategy/BlockValidationStrategy.ts.md)
 - [implementation/source/src/stateManager/validationStrategy/CalldataCommittedStrategy.ts.md](../implementation/source/src/stateManager/validationStrategy/CalldataCommittedStrategy.ts.md)
@@ -323,6 +324,8 @@
 - [implementation/source/src/utils/browser/LocalDiscoveryServer.ts.md](../implementation/source/src/utils/browser/LocalDiscoveryServer.ts.md)
 - [implementation/source/src/utils/browser/README.md](../implementation/source/src/utils/browser/README.md)
 - [implementation/source/src/utils/config.ts.md](../implementation/source/src/utils/config.ts.md)
+- [implementation/source/src/utils/contractAbi.ts.md](../implementation/source/src/utils/contractAbi.ts.md)
+- [implementation/source/src/utils/contractSize.ts.md](../implementation/source/src/utils/contractSize.ts.md)
 - [implementation/source/src/utils/DebugProxy.ts.md](../implementation/source/src/utils/DebugProxy.ts.md)
 - [implementation/source/src/utils/DeepCopyProxy.ts.md](../implementation/source/src/utils/DeepCopyProxy.ts.md)
 - [implementation/source/src/utils/DeployUtils.ts.md](../implementation/source/src/utils/DeployUtils.ts.md)
@@ -333,6 +336,7 @@
 - [implementation/source/src/utils/GeneratedArtifacts.ts.md](../implementation/source/src/utils/GeneratedArtifacts.ts.md)
 - [implementation/source/src/utils/hash.ts.md](../implementation/source/src/utils/hash.ts.md)
 - [implementation/source/src/utils/index.ts.md](../implementation/source/src/utils/index.ts.md)
+- [implementation/source/src/utils/localDiamond.ts.md](../implementation/source/src/utils/localDiamond.ts.md)
 - [implementation/source/src/utils/LocalDiscoveryServer.ts.md](../implementation/source/src/utils/LocalDiscoveryServer.ts.md)
 - [implementation/source/src/utils/LoggerUtils.ts.md](../implementation/source/src/utils/LoggerUtils.ts.md)
 - [implementation/source/src/utils/logging/axiosErrorUtils.ts.md](../implementation/source/src/utils/logging/axiosErrorUtils.ts.md)
@@ -371,10 +375,12 @@
 - [implementation/source/src/utils/participantUtils.ts.md](../implementation/source/src/utils/participantUtils.ts.md)
 - [implementation/source/src/utils/README.md](../implementation/source/src/utils/README.md)
 - [implementation/source/src/utils/retry.ts.md](../implementation/source/src/utils/retry.ts.md)
+- [implementation/source/src/utils/routedFacets.ts.md](../implementation/source/src/utils/routedFacets.ts.md)
 - [implementation/source/src/utils/scheduler.ts.md](../implementation/source/src/utils/scheduler.ts.md)
 - [implementation/source/src/utils/set.ts.md](../implementation/source/src/utils/set.ts.md)
 - [implementation/source/src/utils/SignatureCollectionMap.ts.md](../implementation/source/src/utils/SignatureCollectionMap.ts.md)
 - [implementation/source/src/utils/SignatureUtils.ts.md](../implementation/source/src/utils/SignatureUtils.ts.md)
+- [implementation/source/src/utils/stateChannelManager.ts.md](../implementation/source/src/utils/stateChannelManager.ts.md)
 - [implementation/source/src/utils/TimeoutManager.ts.md](../implementation/source/src/utils/TimeoutManager.ts.md)
 - [implementation/views/architecture/contracts.md](../implementation/views/architecture/contracts.md)
 - [implementation/views/architecture/contracts/architecture.md](../implementation/views/architecture/contracts/architecture.md)
@@ -412,7 +418,7 @@
 - [implementation/views/security/data-availability.md](../implementation/views/security/data-availability.md)
 - [implementation/views/security/trust-model.md](../implementation/views/security/trust-model.md)
 
-### verification (119)
+### verification (125)
 
 - [verification/open-questions.md](../verification/open-questions.md)
 - [verification/README.md](../verification/README.md)
@@ -504,11 +510,14 @@
 - [verification/tests/test/storage/Storage.test.ts.md](../verification/tests/test/storage/Storage.test.ts.md)
 - [verification/tests/test/unit/AgreementManager.test.ts.md](../verification/tests/test/unit/AgreementManager.test.ts.md)
 - [verification/tests/test/unit/BlockProductionService.test.ts.md](../verification/tests/test/unit/BlockProductionService.test.ts.md)
+- [verification/tests/test/unit/ContractSize.test.ts.md](../verification/tests/test/unit/ContractSize.test.ts.md)
 - [verification/tests/test/unit/DeploymentCache.test.ts.md](../verification/tests/test/unit/DeploymentCache.test.ts.md)
 - [verification/tests/test/unit/DisputeManager.test.ts.md](../verification/tests/test/unit/DisputeManager.test.ts.md)
 - [verification/tests/test/unit/EventBarrier.test.ts.md](../verification/tests/test/unit/EventBarrier.test.ts.md)
+- [verification/tests/test/unit/LocalDiamondBinding.test.ts.md](../verification/tests/test/unit/LocalDiamondBinding.test.ts.md)
 - [verification/tests/test/unit/ReductionExecutor.test.ts.md](../verification/tests/test/unit/ReductionExecutor.test.ts.md)
 - [verification/tests/test/unit/SpectateService.test.ts.md](../verification/tests/test/unit/SpectateService.test.ts.md)
+- [verification/tests/test/unit/StateChannelManagerBinding.test.ts.md](../verification/tests/test/unit/StateChannelManagerBinding.test.ts.md)
 - [verification/tests/test/unit/ValidationService.test.ts.md](../verification/tests/test/unit/ValidationService.test.ts.md)
 - [verification/tests/test/utils/Config.test.ts.md](../verification/tests/test/utils/Config.test.ts.md)
 - [verification/tests/test/utils/ContractErrors.test.ts.md](../verification/tests/test/utils/ContractErrors.test.ts.md)
@@ -526,10 +535,13 @@
 - [verification/tests/test/utils/WebRTCTransport.test.ts.md](../verification/tests/test/utils/WebRTCTransport.test.ts.md)
 - [verification/tests/test/utils/WebRTCWorkerBridgeConnectionFactory.test.ts.md](../verification/tests/test/utils/WebRTCWorkerBridgeConnectionFactory.test.ts.md)
 - [verification/tests/test/V1/DiamondProxy/StateChannelManager/OpenChannel.test.ts.md](../verification/tests/test/V1/DiamondProxy/StateChannelManager/OpenChannel.test.ts.md)
+- [verification/tests/test/V1/DiamondProxy/StateChannelManager/SelectorRouting.test.ts.md](../verification/tests/test/V1/DiamondProxy/StateChannelManager/SelectorRouting.test.ts.md)
 - [verification/tests/test/V1/DiamondProxy/StateChannelManager/StateProofVerification.test.ts.md](../verification/tests/test/V1/DiamondProxy/StateChannelManager/StateProofVerification.test.ts.md)
 - [verification/tests/test/V1/DiamondProxy/UtilityLibrary/SignatureVerification.test.ts.md](../verification/tests/test/V1/DiamondProxy/UtilityLibrary/SignatureVerification.test.ts.md)
 - [verification/tests/test/V1/StateChannelDiamondProxy/DisputeVerificationFacet.t.sol.md](../verification/tests/test/V1/StateChannelDiamondProxy/DisputeVerificationFacet.t.sol.md)
 - [verification/tests/test/V1/StateChannelDiamondProxy/FraudProofFacet.t.sol.md](../verification/tests/test/V1/StateChannelDiamondProxy/FraudProofFacet.t.sol.md)
+- [verification/tests/test/V1/StateChannelDiamondProxy/StateChannelManagerProxyOpen.t.sol.md](../verification/tests/test/V1/StateChannelDiamondProxy/StateChannelManagerProxyOpen.t.sol.md)
+- [verification/tests/test/V1/StateChannelDiamondProxy/StateChannelManagerProxyRegistration.t.sol.md](../verification/tests/test/V1/StateChannelDiamondProxy/StateChannelManagerProxyRegistration.t.sol.md)
 - [verification/tests/test/V1/StateChannelDiamondProxy/UtilityFacet.t.sol.md](../verification/tests/test/V1/StateChannelDiamondProxy/UtilityFacet.t.sol.md)
 - [verification/tests/test/V1/StateChannelDiamondProxy/utils/DisputeUtils.t.sol.md](../verification/tests/test/V1/StateChannelDiamondProxy/utils/DisputeUtils.t.sol.md)
 - [verification/tests/test/V1/UniversalDeployment.test.ts.md](../verification/tests/test/V1/UniversalDeployment.test.ts.md)
