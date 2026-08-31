@@ -1,6 +1,12 @@
-import { ethers, ContractTransactionResponse, AddressLike } from "ethers";
+// @spec-test-coverage-ignore: shared deployment helpers for test files; declares no runnable case, so no specification or implementation IDs apply
+import { ethers, AddressLike } from "ethers";
 import { HardhatEthersHelpers } from "hardhat/types/runtime";
-import { StateChannelManagerProxy, MathStateMachine } from "@typechain-types";
+import {
+    StateChannelManagerInterface,
+    MathStateMachine
+} from "@typechain-types";
+import { connectStateChannelManager } from "@/utils/stateChannelManager";
+import { routedFacets } from "@/utils/routedFacets";
 
 import {
     JoinChannelStruct,
@@ -78,26 +84,17 @@ export const createOpenChannelTestObject = (
     return oc;
 };
 
+/** Facet contract name -> deployed address of that facet behind the diamond. */
+export type DeployedFacetAddresses = Record<string, string>;
+
 export async function deployMathChannelProxyFixture(
     _ethers: typeof ethers & HardhatEthersHelpers
 ): Promise<{
-    mathChannelManager: StateChannelManagerProxy & {
-        deploymentTransaction(): ContractTransactionResponse;
-    };
+    mathChannelManager: StateChannelManagerInterface;
     mathInstance: MathStateMachine;
+    facetAddresses: DeployedFacetAddresses;
+    consumerFacetAddress: string;
 }> {
-    // Facet configurations in constructor order
-    const facetConfigs = [
-        { name: "DisputeManagerFacet" },
-        { name: "DisputeVerificationFacet" },
-        { name: "FraudProofFacet" },
-        { name: "DisputeFraudProofFacet" },
-        { name: "StateSnapshotFacet" },
-        { name: "JoinChannelFacet" },
-        { name: "StateProofFacet" },
-        { name: "UtilityFacet" }
-    ] as const;
-
     // the generic are here in order to make the spread operator in mathSmcFactory.deploy work
     // typescipt needs to know the keys and the order of the array
     async function deployFacets<T extends readonly any[]>(
@@ -105,9 +102,9 @@ export async function deployMathChannelProxyFixture(
     ): Promise<{ [K in keyof T]: string }> {
         const addresses = await Promise.all(
             configs.map(async (config) => {
-                const factory = await _ethers.getContractFactory(config.name, {
-                    libraries: config.libs
-                });
+                const factory = await _ethers.getContractFactory(
+                    config.facetName
+                );
                 const facet = await factory.deploy();
                 return await facet.getAddress();
             })
@@ -116,7 +113,7 @@ export async function deployMathChannelProxyFixture(
     }
 
     // Deploy all facets in parallel and get addresses in order
-    const facetAddresses = await deployFacets(facetConfigs);
+    const facetAddresses = await deployFacets(routedFacets);
 
     const mathConsumerFactory =
         await _ethers.getContractFactory("MathConsumerFacet");
@@ -141,9 +138,21 @@ export async function deployMathChannelProxyFixture(
         0
     );
 
+    // The proxy only implements a handful of selectors itself and routes the
+    // rest to facets, so bind the diamond's full surface at its address.
     return {
-        mathChannelManager: mathStateChannelContactInstance,
-        mathInstance: mathContactInstance
+        mathChannelManager: connectStateChannelManager(
+            await mathStateChannelContactInstance.getAddress(),
+            mathStateChannelContactInstance.runner
+        ),
+        mathInstance: mathContactInstance,
+        facetAddresses: Object.fromEntries(
+            routedFacets.map((config, index) => [
+                config.facetName,
+                facetAddresses[index]
+            ])
+        ),
+        consumerFacetAddress: await mathConsumerFacet.getAddress()
     };
 }
 

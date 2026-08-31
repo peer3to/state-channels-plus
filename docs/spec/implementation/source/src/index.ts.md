@@ -19,11 +19,13 @@
 
 ## Responsibility and observable boundary
 
-The package's public export surface.
+The package's public export surface, including the supported deployed-manager ABI helpers and the
+structured contract-size error classes and limits thrown by exported deployment functions.
 
 ## Key design decisions
 
-_None — the file is declarative/mechanical; behavior-shaping decisions live with its consumers._
+1. Public deployment failures and their error constructors are exported from the same package root,
+   so consumers can use `instanceof ContractSizeLimitError` without a private path import.
 
 ## Inputs, outputs, state, and side effects
 

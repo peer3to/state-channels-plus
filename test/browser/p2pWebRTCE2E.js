@@ -1,12 +1,11 @@
+// @spec-test-coverage-ignore: browser page driver for the WebRTC E2E run; evidence is mapped from run-p2p-webrtc-e2e.mjs
 import { ethers, NonceManager, ContractFactory } from "ethers";
 
 import { EvmStateMachine } from "@/evm";
 import Clock from "@/Clock";
 import { installWebRTCMainThreadBridge } from "@/rpc/services/WebRTCSetup/connection/WebRTCMainThreadBridge";
-import {
-    MathStateMachine__factory,
-    StateChannelManagerProxy__factory
-} from "@typechain-types";
+import { MathStateMachine__factory } from "@typechain-types";
+import { connectStateChannelManager } from "@/utils/stateChannelManager";
 import { deployFullStack } from "../../scripts/V1/deploy";
 import MathStateMachineArtifact from "../../artifacts/contracts/V1/examples/MathStateMachine/MathStateMachine.sol/MathStateMachine.json";
 import MathConsumerFacetArtifact from "../../artifacts/contracts/V1/examples/MathStateMachine/MathConsumerFacet.sol/MathConsumerFacet.json";
@@ -206,7 +205,7 @@ async function setupPeer(
     );
 
     return EvmStateMachine.p2pSetup(
-        StateChannelManagerProxy__factory.connect(scmAddress, runtimeSigner),
+        connectStateChannelManager(scmAddress, runtimeSigner),
         stateMachineContractInstance,
         deployLocalStateMachine,
         {

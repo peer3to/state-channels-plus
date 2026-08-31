@@ -1,7 +1,7 @@
 pragma solidity ^0.8.8;
 
 import {DiamondHarness} from "../harness/DiamondHarness.sol";
-import {StateChannelManagerProxy} from "../../../contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol";
+import {StateChannelManagerInterface} from "../../../contracts/V1/StateChannelManagerInterface.sol";
 import {DisputeFraudProofFacet} from "../../../contracts/V1/StateChannelDiamondProxy/DisputeFraudProofFacet.sol";
 import {DisputeVerificationFacet} from "../../../contracts/V1/StateChannelDiamondProxy/DisputeVerificationFacet.sol";
 import {StateProofFacet} from "../../../contracts/V1/StateChannelDiamondProxy/StateProofFacet.sol";
@@ -49,7 +49,7 @@ contract DisputeExpiryGuardHarness is DisputeFraudProofFacet, DisputeVerificatio
     {
         DisputeWindow storage window = disputeData[channelId].disputeWindowMap[forkId];
         windowExists = window.evidence.creationTimestamp != 0;
-        (isExpired,) = _isKillPeriodExpired(window, getEvidenceTime());
+        (isExpired,) = _isKillPeriodExpired(window, _getEvidenceTime());
     }
 
     function commitmentCount(bytes32 channelId, bytes32 forkId) external view returns (uint256) {
@@ -62,6 +62,15 @@ contract DisputeExpiryGuardHarness is DisputeFraudProofFacet, DisputeVerificatio
         returns (address)
     {
         return _handleDisputeBlockAuthorNotParticipant(encodedProof, dispute);
+    }
+
+    /// Exposes the internal slash-window read so the shrink behaviour can be asserted directly.
+    function getOnChainSlashedParticipantsUpToTimestamp(bytes32 channelId, uint256 timestamp)
+        external
+        view
+        returns (address[] memory)
+    {
+        return _getOnChainSlashedParticipantsUpToTimestamp(channelId, timestamp);
     }
 }
 
@@ -88,7 +97,7 @@ contract DisputeOutputStateHarness is DisputeVerificationFacet {
 
 // test naming: test_<targetFunction>_<property>
 contract DisputeVerificationFacetTest is DiamondHarness {
-    StateChannelManagerProxy internal diamond;
+    StateChannelManagerInterface internal diamond;
     InboundVerificationHarness internal verificationHarness;
     DisputeOutputStateHarness internal outputHarness;
 
@@ -449,7 +458,9 @@ contract DisputeVerificationFacetTest is DiamondHarness {
         timeoutDispute.input.timeout.minTimeStamp = eligibleAt;
 
         vm.prank(participants[1]);
-        vm.expectRevert(RaceConditionDisputeTimeoutWindowCreatedTooEarly.selector);
+        // the error now carries (windowCreationTimestamp, minTimestamp); this case
+        // pins the identity only -- the argument values are asserted end to end.
+        vm.expectPartialRevert(RaceConditionDisputeTimeoutWindowCreatedTooEarly.selector);
         diamond.uploadDispute(_confirmation(timeoutDispute));
     }
 

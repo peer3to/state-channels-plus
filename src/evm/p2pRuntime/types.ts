@@ -36,7 +36,10 @@ export interface RuntimeChannel {
 /** Serializable description of a deployed contract the host can rebuild. */
 export interface SerializedContract {
     address: string;
-    /** JSON-encoded ABI (ethers `Interface`-compatible fragments). */
+    /**
+     * JSON-encoded ABI supplied by the application. For the manager, both
+     * runtime sides merge it after the SDK-owned manager ABI.
+     */
     abiJson: string;
 }
 

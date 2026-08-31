@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+// @spec-test-coverage-ignore: browser runner configuration; executable assertions live in the browser page drivers
 import { spawn } from "node:child_process";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -62,6 +63,10 @@ const platformAliases = {
     "@platform/DeployUtils": path.join(
         projectRoot,
         "src/utils/browser/DeployUtils.ts"
+    ),
+    "@platform/evmJumpdestCache": path.join(
+        projectRoot,
+        "src/evm/browser/evmJumpdestCache.ts"
     ),
     "@platform/LocalDiscoveryServer": path.join(
         projectRoot,

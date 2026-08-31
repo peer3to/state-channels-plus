@@ -118,4 +118,4 @@ Exact test evidence is mapped against these IDs in the verification test reports
 
 ## Related source reports
 
-- [SpectateRpcMethods](./SpectateRpcMethods.ts.md), [EventSyncService](../../../stateManager/EventSyncService.ts.md), [SpectatingValidationStrategy](../../../stateManager/validationStrategy/SpectatingValidationStrategy.ts.md), [EvmDiamondStateMachine](../../../evm/EvmDiamondStateMachine.ts.md).
+- [SpectateRpcMethods](./SpectateRpcMethods.ts.md), [EventSyncService](../../../stateManager/eventSync/EventSyncService.ts.md), [SpectatingValidationStrategy](../../../stateManager/validationStrategy/SpectatingValidationStrategy.ts.md), [EvmDiamondStateMachine](../../../evm/EvmDiamondStateMachine.ts.md).

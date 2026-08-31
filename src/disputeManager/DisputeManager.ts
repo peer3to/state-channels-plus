@@ -1,6 +1,6 @@
 import { ethers } from "ethers";
 import AgreementManager from "../agreementManager";
-import { StateChannelManagerProxy } from "@typechain-types";
+import { StateChannelManagerInterface } from "@typechain-types";
 import {
     DisputeConfirmationStruct,
     DisputeStruct,
@@ -57,7 +57,7 @@ class DisputeManager {
     signer: ethers.Signer;
     signerAddress: Address;
     agreementManager: AgreementManager;
-    stateChannelManagerContract: StateChannelManagerProxy;
+    stateChannelManagerContract: StateChannelManagerInterface;
     channelId: ChannelId;
     p2pEventHooks: P2pEventHooks;
     self = config.DEBUG_DISPUTE_HANDLER ? DebugProxy.createProxy(this) : this;
@@ -72,7 +72,7 @@ class DisputeManager {
         signer: ethers.Signer,
         signerAddress: Address,
         agreementManager: AgreementManager,
-        stateChannelManagerContract: StateChannelManagerProxy,
+        stateChannelManagerContract: StateChannelManagerInterface,
         p2pEventHooks: P2pEventHooks,
         storage: Storage,
         diamondStateMachine: ADiamondStateMachine,

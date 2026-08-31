@@ -1,14 +1,14 @@
 import {
     ethers,
     EvmStateMachine,
-    P2pEventHooks
+    P2pEventHooks,
+    connectStateChannelManager
 } from "@peer3/state-channels-plus";
 import type {
     Signer,
-    StateChannelManagerProxy
+    StateChannelManagerInterface
 } from "@peer3/state-channels-plus";
 import {
-    TicTacToeStateChannelManagerProxy,
     TicTacToeStateMachine,
     TicTacToeStateMachine__factory
 } from "./typechain-types";
@@ -34,16 +34,17 @@ export const getDltContracts = async (signer: Signer) => {
         signer
     ) as unknown as TicTacToeStateMachine;
 
-    let TicTacToeStateChannelManagerInstance = new ethers.Contract(
+    // The proxy implements only a few selectors itself and routes the rest to
+    // facets, so bind the diamond's full surface instead of the proxy ABI.
+    let TicTacToeStateChannelManagerInstance = connectStateChannelManager(
         ContractsJSON.TicTacToeStateChannelManagerProxy.address,
-        ContractsJSON.TicTacToeStateChannelManagerProxy.abi,
         signer
-    ) as unknown as TicTacToeStateChannelManagerProxy;
+    );
     return { TicTacToeStateChannelManagerInstance, TicTacToeSmInstance };
 };
 
 export const p2pSetup = async (
-    TicTacToeStateChannelManagerInstance: TicTacToeStateChannelManagerProxy,
+    TicTacToeStateChannelManagerInstance: StateChannelManagerInterface,
     TicTacToeSmInstance: TicTacToeStateMachine,
     p2pEventHooks: P2pEventHooks = {}
 ) => {
@@ -71,7 +72,7 @@ export const p2pSetup = async (
         TicTacToeRpc
     >(
         TicTacToeStateChannelManagerInstance.runner as Signer,
-        TicTacToeStateChannelManagerInstance as unknown as StateChannelManagerProxy,
+        TicTacToeStateChannelManagerInstance,
         TicTacToeSmInstance,
         deployStateMachine,
         {

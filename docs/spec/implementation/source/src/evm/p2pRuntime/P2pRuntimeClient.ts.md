@@ -24,6 +24,9 @@ The main-thread client: the application-facing typed surface sending requests to
 ## Key design decisions
 
 1. **The client is a proxy, never an owner** — node state lives host-side; the client correlates and forwards.
+2. **Manager addresses use `connectStateChannelManager`.** The client merges the SDK ABI first and
+   the serialized consumer ABI second. SDK definitions win collisions, while consumer-only calls,
+   events, and errors remain available.
 
 ## Inputs, outputs, state, and side effects
 
@@ -45,7 +48,8 @@ claims complete conformance for a requirement that depends on other files.
 
 ## Assumptions, dependencies, trust boundaries, and limits
 
-- Cross-context values use the canonical transfer-safe encodings; ownership and ordering per the runtime rules.
+- `scm.abiJson` must contain valid JSON ABI supplied by the application. The canonical connector
+  supplies the SDK surface even when that payload contains only consumer extensions.
 
 ## Specification adherence
 

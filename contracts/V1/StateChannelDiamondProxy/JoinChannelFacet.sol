@@ -1,7 +1,6 @@
 pragma solidity ^0.8.8;
 
 import "./StateChannelCommon.sol";
-import "./StateChannelManagerProxy.sol";
 import "./Errors.sol";
 import "./UtilityFacet.sol";
 
@@ -43,29 +42,29 @@ contract JoinChannelFacet is StateChannelCommon {
 
         // Check deadline
         require(jc.deadlineTimestamp >= block.timestamp, RaceConditionJoinChannelExpired());
-        StateSnapshot memory currentSnapshot = getStateSnapshot(channelId);
-        require(expectedForkId == currentSnapshot.forkId, RaceConditionSnapshotForkMismatch());
+        StateSnapshot memory currentSnapshot = _getStateSnapshot(channelId);
+        require(
+            expectedForkId == currentSnapshot.forkId,
+            RaceConditionSnapshotForkMismatch(currentSnapshot.forkId, expectedForkId)
+        );
         require(
             expectedSnapshotHash == keccak256(abi.encode(currentSnapshot)), RaceConditionJoinChannelSnapshotMismatch()
         );
 
         address[] memory participantUnion = UtilityFacet(utilityFacetAddress).concatAddressArraysNoDuplicates(
-            getSnapshotParticipants(channelId), getPendingParticipants(channelId)
+            _getSnapshotParticipants(channelId), _getPendingParticipants(channelId)
         );
         bool isExistingParticipant =
             UtilityFacet(utilityFacetAddress).isAddressInArray(participantUnion, jc.participant);
         if (isTopUp) {
             require(isExistingParticipant, ErrorTopUpBalanceParticipantNotFound());
             require(
-                !isParticipantSlashedOnChain(channelId, jc.participant),
+                !_isParticipantSlashedOnChain(channelId, jc.participant),
                 ErrorTopUpBalanceParticipantSlashed(jc.participant)
             );
         } else {
             require(!isExistingParticipant, ErrorJoinChannelParticipantAlreadyExists());
-            require(
-                !StateChannelManagerProxy(address(this)).isForkDisputed(channelId, expectedForkId),
-                RaceConditionForceInboundJoinForkDisputed()
-            );
+            require(!_isForkDisputed(channelId, expectedForkId), RaceConditionForceInboundJoinForkDisputed());
         }
 
         //verify original signature
@@ -74,7 +73,7 @@ contract JoinChannelFacet is StateChannelCommon {
         require(jc.participant == retrievedAddress && isValidSignature, ErrorJoinChannelInvalidSignature());
 
         // Check threshold from the current eligibility set
-        address[] memory thresholdParticipants = getOnChainThresholdSet(channelId);
+        address[] memory thresholdParticipants = _getOnChainThresholdSet(channelId);
         (bool isValid,) = UtilityFacet(utilityFacetAddress).verifyThresholdSigned(
             thresholdParticipants, sjc.encodedJoinChannel, joinChannelConfirmation.signatures
         );
@@ -83,6 +82,6 @@ contract JoinChannelFacet is StateChannelCommon {
         // Deposit funds
         JoinChannel[] memory jcs = new JoinChannel[](1);
         jcs[0] = jc;
-        StateChannelManagerProxy(address(this)).depositAssetsComposable(jcs, true);
+        StateChannelManagerInterface(address(this)).depositAssetsComposable(jcs, true);
     }
 }

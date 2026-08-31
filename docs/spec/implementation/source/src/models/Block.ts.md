@@ -82,4 +82,4 @@ Exact test evidence is mapped against these IDs in the verification test reports
 
 ## Related source reports
 
-- [BlockStorage](../storage/BlockStorage.ts.md), [ValidationService](../stateManager/ValidationService.ts.md).
+- [BlockStorage](../storage/BlockStorage.ts.md), [ValidationService](../stateManager/ingest/ValidationService.ts.md).

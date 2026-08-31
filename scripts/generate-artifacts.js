@@ -21,6 +21,8 @@ const facets = [
     "JoinChannelFacet",
     "StateChannelCommon",
     "StateSnapshotFacet",
+    "StateProofFacet",
+    "UtilityFacet",
     "LocalDiamond"
 ];
 const stateMachineContracts = ["AStateMachine"];

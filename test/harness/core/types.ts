@@ -1,7 +1,8 @@
+// @spec-test-coverage-ignore: shared harness context and type declarations exercised by owning mapped test declarations
 import { ForkId } from "@/types/types";
 import { StateSnapshot } from "@/models";
 import { DisputeStruct } from "@typechain-types/contracts/V1/types/DisputeTypes";
-import { ChannelBalanceStructOutput } from "@typechain-types/contracts/V1/StateChannelDiamondProxy/StateChannelCommon";
+import { ChannelBalanceStructOutput } from "@typechain-types/contracts/V1/StateChannelManagerInterface";
 import * as sinon from "sinon";
 import { Signer } from "ethers";
 import { P2pInstance, type EvmCustomPrecompileManifest } from "@/evm";

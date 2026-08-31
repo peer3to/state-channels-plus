@@ -17,12 +17,16 @@ http/https optimistically converted, anything else throws). The startup case run
 connection error (not a timeout) is thrown to the host caller and rejected to the paired
 `P2pRuntimeClient.ready`, with the host's `WebSocketProvider.destroy` called exactly once. Two
 fake-timer cases pair a real client with a scripted host port: `quiesce` must not be failed by a
-client-side timer (the host owns the quiesce timeout), and an uncancellable P2P signer
+client-side timer (the host owns the quiesce timeout). That case supplies only a consumer ABI
+fragment and also proves the client binding retains both that fragment and an SDK facet error. An uncancellable P2P signer
 `sendTransaction` mutation outlives the 30s request timeout and still resolves with the local
 p2p result. The startup case demonstrates the runtime lifecycle startup-phase-failure
 permutation and the host-construction-failure invariant's valid case. Full host request-surface
 behavior (inline/worker equivalence, disposal settlement, signing confinement) is out of scope,
 so the remaining host-protocol permutations stay unassigned.
+
+All three manager payloads serialize `stateChannelManagerAbi`, the same combined ABI production
+sends across the worker port. Host reconstruction therefore retains proxy and facet error fragments.
 
 ## Tests and covered test IDs
 
@@ -36,5 +40,5 @@ report but are kept here.
 | [`RuntimeChainContext > accepts WebSocket URLs and optimistically converts HTTP URLs`](../../../../../../test/evm/RuntimeChainContext.test.ts#L19) (line 19)            | —                                                                                                                                                                                                                                          |
 | [`RuntimeChainContext > rejects non-WebSocket-compatible provider URLs`](../../../../../../test/evm/RuntimeChainContext.test.ts#L34) (line 34)                          | —                                                                                                                                                                                                                                          |
 | [`RuntimeChainContext > destroys the host provider and reports the original startup error`](../../../../../../test/evm/RuntimeChainContext.test.ts#L40) (line 40)       | [`REQ-RUNTIME-3-VQXW59.T1.P1`](../../../../specification/runtime/execution.md#req-runtime-3-vqxw59.t1.p1), [`INV-RUN-3-1AKG2E.T1.P1`](../../../../implementation/views/architecture/sdk/runtime-and-concurrency.md#inv-run-3-1akg2e.t1.p1) |
-| [`RuntimeChainContext > lets the host own the quiesce timeout`](../../../../../../test/evm/RuntimeChainContext.test.ts#L107) (line 107)                                 | —                                                                                                                                                                                                                                          |
-| [`RuntimeChainContext > lets an uncancellable P2P signer mutation outlive the request timeout`](../../../../../../test/evm/RuntimeChainContext.test.ts#L168) (line 168) | —                                                                                                                                                                                                                                          |
+| [`RuntimeChainContext > lets the host own the quiesce timeout`](../../../../../../test/evm/RuntimeChainContext.test.ts#L106) (line 106)                                 | [`UNIT-TEST-MANAGER-BINDING-1-WB503Z.P10`](../../../../implementation/source/src/utils/stateChannelManager.ts.md#unit-test-manager-binding-1-wb503z.p10)                                                                                   |
+| [`RuntimeChainContext > lets an uncancellable P2P signer mutation outlive the request timeout`](../../../../../../test/evm/RuntimeChainContext.test.ts#L177) (line 177) | —                                                                                                                                                                                                                                          |

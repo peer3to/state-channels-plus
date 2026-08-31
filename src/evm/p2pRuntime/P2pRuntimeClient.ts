@@ -1,11 +1,9 @@
-import { ethers } from "ethers";
-import {
-    StateChannelManagerProxy,
-    StateChannelManagerProxy__factory
-} from "@typechain-types";
+import { ethers, type InterfaceAbi } from "ethers";
+import { StateChannelManagerInterface } from "@typechain-types";
 
 import { maybeStampErrorWithPeerAddress } from "@/utils/errorPeerAddress";
 import type { Address } from "@/types/types";
+import { connectStateChannelManager } from "@/utils/stateChannelManager";
 import type { Logger } from "@/utils";
 import type { LogPortHandle } from "@/utils/logging/logControl";
 import ClientP2pSigner from "../signer/ClientP2pSigner";
@@ -95,7 +93,7 @@ class P2pRuntimeClient<T = ethers.Contract> {
     readonly signer: ClientP2pSigner;
     readonly contract: T;
     readonly chainSigner: ClientChainSigner;
-    readonly stateChannelManagerContract: StateChannelManagerProxy;
+    readonly stateChannelManagerContract: StateChannelManagerInterface;
     readonly ready: Promise<void>;
 
     /**
@@ -140,11 +138,11 @@ class P2pRuntimeClient<T = ethers.Contract> {
             options.provider,
             options.signerAddress.toString()
         );
-        this.stateChannelManagerContract =
-            StateChannelManagerProxy__factory.connect(
-                options.scm.address,
-                this.chainSigner
-            );
+        this.stateChannelManagerContract = connectStateChannelManager(
+            options.scm.address,
+            this.chainSigner,
+            JSON.parse(options.scm.abiJson) as InterfaceAbi
+        );
         const contract = new ethers.Contract(
             options.stateMachine.address,
             JSON.parse(options.stateMachine.abiJson),

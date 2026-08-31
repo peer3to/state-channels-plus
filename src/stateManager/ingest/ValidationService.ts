@@ -1,4 +1,4 @@
-import { StateChannelManagerProxy } from "@typechain-types";
+import { StateChannelManagerInterface } from "@typechain-types";
 import { ZeroHash } from "ethers";
 
 import ADiamondStateMachine from "@/ADiamondStateMachine";
@@ -38,7 +38,7 @@ export default class ValidationService {
     constructor(
         private readonly storage: Storage,
         private readonly diamondStateMachine: ADiamondStateMachine,
-        private readonly stateChannelManagerContract: StateChannelManagerProxy,
+        private readonly stateChannelManagerContract: StateChannelManagerInterface,
         private readonly timeConfig: TimeConfig,
         private readonly eventSyncService: EventSyncService,
         private readonly stateManager: StateManager,

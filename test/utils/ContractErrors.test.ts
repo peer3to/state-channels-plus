@@ -1,5 +1,5 @@
 import { expect } from "chai";
-import { ethers } from "ethers";
+import { ethers, ZeroAddress, ZeroHash } from "ethers";
 import {
     CustomEvmError,
     tryDecodeCustomError,
@@ -8,9 +8,10 @@ import {
 import { ethers as hre } from "hardhat";
 import { deployMathChannelProxyFixture } from "@test/test_utils/testHelpers";
 import * as factory from "@test/factory";
-import { StateChannelManagerProxy } from "@typechain-types";
+import { StateChannelManagerInterface } from "@typechain-types";
 import { artifacts, errorAbis } from "@/utils/GeneratedArtifacts";
 import { HardhatEthersSigner } from "@nomicfoundation/hardhat-ethers/signers";
+import { routedFacets } from "@/utils/routedFacets";
 
 describe("artifacts loading", () => {
     it("should load all required facet artifacts", () => {
@@ -35,6 +36,36 @@ describe("artifacts loading", () => {
             expect(errorAbi).to.have.property("name");
         });
     });
+
+    it("includes every routed facet in generated artifacts", () => {
+        expect(
+            artifacts.map((artifact) => artifact.contractName)
+        ).to.include.members(routedFacets.map((facet) => facet.facetName));
+    });
+
+    it("includes every ECDSA error reachable through manager facets", () => {
+        const names = new Set(errorAbis.map((errorAbi) => errorAbi.name));
+
+        expect(names).to.include("ECDSAInvalidSignature");
+        expect(names).to.include("ECDSAInvalidSignatureLength");
+        expect(names).to.include("ECDSAInvalidSignatureS");
+    });
+
+    it("decodes ECDSAInvalidSignatureS with its argument", () => {
+        const fragment = errorAbis.find(
+            (errorAbi) => errorAbi.name === "ECDSAInvalidSignatureS"
+        )!;
+        const data = new ethers.Interface([fragment]).encodeErrorResult(
+            "ECDSAInvalidSignatureS",
+            [ZeroHash]
+        );
+        const decoded = tryDecodeCustomError({ data });
+
+        expect(decoded?.errorDescription.name).to.equal(
+            "ECDSAInvalidSignatureS"
+        );
+        expect(decoded?.errorDescription.args[0]).to.equal(ZeroHash);
+    });
 });
 
 describe("ContractCaller and ContractErrors", () => {
@@ -48,11 +79,11 @@ describe("ContractCaller and ContractErrors", () => {
         ];
 
         for (const errorName of testCases) {
-            // Create the error selector (first 4 bytes of keccak256)
-            const fullHash = ethers.keccak256(
-                ethers.toUtf8Bytes(`${errorName}()`)
-            );
-            const errorData = fullHash.slice(0, 10); // 0x + 8 hex chars = 4 bytes
+            // Encoded from the error's own ABI fragment: the list deliberately
+            // mixes argument-less and argument-bearing errors, and a
+            // hand-hashed `Name()` selector stops matching as soon as an error
+            // gains a parameter.
+            const errorData = factory.encodedCustomErrorRevert(errorName);
 
             const mockContract = {
                 testMethod: async () => {
@@ -93,13 +124,9 @@ describe("ContractCaller and ContractErrors", () => {
     });
 
     it("passes the decoded custom error to its handler", async () => {
-        const errorData = ethers
-            .keccak256(
-                ethers.toUtf8Bytes(
-                    "RaceConditionDisputeEvidencePeriodExpired()"
-                )
-            )
-            .slice(0, 10);
+        const errorData = factory.encodedCustomErrorRevert(
+            "RaceConditionDisputeEvidencePeriodExpired"
+        );
         const originalError = Object.assign(new Error("execution reverted"), {
             data: errorData
         });
@@ -121,7 +148,7 @@ describe("ContractCaller and ContractErrors", () => {
     });
 
     describe("Real contract calls", () => {
-        let mathChannelManager: StateChannelManagerProxy;
+        let mathChannelManager: StateChannelManagerInterface;
         let testSigner: HardhatEthersSigner;
 
         beforeEach(async () => {
@@ -230,5 +257,43 @@ describe("ContractCaller and ContractErrors", () => {
                 );
             }
         });
+    });
+});
+
+describe("encodedCustomErrorRevert", () => {
+    it("encodes an argument-less error as its bare selector", () => {
+        const errorData = factory.encodedCustomErrorRevert(
+            "ErrorNoDisputesProvided"
+        );
+
+        // 0x + 8 hex chars: a selector with no argument words after it
+        expect(errorData).to.have.lengthOf(10);
+        const customError = tryDecodeCustomError({ data: errorData });
+        expect(customError!.errorDescription.name).to.equal(
+            "ErrorNoDisputesProvided"
+        );
+        expect(customError!.errorDescription.args.length).to.equal(0);
+    });
+
+    it("encodes an argument-bearing error with a zero value per parameter", () => {
+        const errorData = factory.encodedCustomErrorRevert(
+            "ErrorDisputeAlreadyPosted"
+        );
+
+        const customError = tryDecodeCustomError({ data: errorData });
+        expect(customError!.errorDescription.name).to.equal(
+            "ErrorDisputeAlreadyPosted"
+        );
+        // ErrorDisputeAlreadyPosted(bytes32 forkId, address disputer)
+        expect([...customError!.errorDescription.args]).to.deep.equal([
+            ZeroHash,
+            ZeroAddress
+        ]);
+    });
+
+    it("throws for a name that is not a contract error", () => {
+        expect(() =>
+            factory.encodedCustomErrorRevert("ErrorThatDoesNotExist")
+        ).to.throw("Unknown contract error: ErrorThatDoesNotExist");
     });
 });

@@ -10,13 +10,16 @@ import {
 } from "@test/test_utils/testHelpers";
 import { SignatureUtils } from "@/utils";
 import StateSnapshot from "@/models/StateSnapshot";
-import { StateChannelManagerProxy, MathStateMachine } from "@typechain-types";
+import {
+    StateChannelManagerInterface,
+    MathStateMachine
+} from "@typechain-types";
 import { HardhatEthersSigner } from "@nomicfoundation/hardhat-ethers/signers";
 import { Bytes } from "@/types/types";
 import { JoinChannelStruct } from "@typechain-types/contracts/V1/types/DataTypes";
 
 describe("StateChannelManagerProxy", function () {
-    let mathChannelManager: StateChannelManagerProxy;
+    let mathChannelManager: StateChannelManagerInterface;
     let mathInstance: MathStateMachine;
     let firstSigner: HardhatEthersSigner;
     let secondSigner: HardhatEthersSigner;

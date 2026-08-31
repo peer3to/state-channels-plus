@@ -52,6 +52,15 @@ contract JoinChannelFacetHarness is JoinChannelFacet {
         successfulJoins = joinChannels;
         return (messageBlock, newTotalDeposits, successfulJoins);
     }
+
+    /// Exposes the internal snapshot reads so the facet's storage effects can be asserted directly.
+    function getStateSnapshot(bytes32 channelId) external view returns (StateSnapshot memory) {
+        return _getStateSnapshot(channelId);
+    }
+
+    function getOnChainThresholdSet(bytes32 channelId) external view returns (address[] memory) {
+        return _getOnChainThresholdSet(channelId);
+    }
 }
 
 // test naming: test_<targetFunction>_<property>
@@ -139,7 +148,9 @@ contract JoinChannelFacetTest is Test {
         confirmation.signatures[0] = _sign(ELIGIBLE_PK, encodedJoinChannel);
 
         StateSnapshot memory snapshot = harness.getStateSnapshot(CHANNEL_ID);
-        vm.expectRevert(RaceConditionSnapshotForkMismatch.selector);
+        vm.expectRevert(
+            abi.encodeWithSelector(RaceConditionSnapshotForkMismatch.selector, snapshot.forkId, keccak256("wrong-fork"))
+        );
         vm.prank(joinChannel.participant);
         harness.joinChannel(confirmation, keccak256(abi.encode(snapshot)), keccak256("wrong-fork"));
 

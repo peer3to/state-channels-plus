@@ -76,10 +76,10 @@ describe("LoggerUtils", function () {
         it("an error without args still reports its name", function () {
             expect(
                 LoggerUtils.getCustomEvmErrorMetadata(
-                    factory.customEvmError("ErrorInvalidLatestState")
+                    factory.customEvmError("ErrorNoDisputesProvided")
                 )
             ).to.deep.equal({
-                errorName: "ErrorInvalidLatestState",
+                errorName: "ErrorNoDisputesProvided",
                 args: []
             });
         });

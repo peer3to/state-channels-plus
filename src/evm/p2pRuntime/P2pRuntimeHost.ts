@@ -1,5 +1,4 @@
-import { ethers } from "ethers";
-import { StateChannelManagerProxy } from "@typechain-types";
+import { ethers, type InterfaceAbi } from "ethers";
 
 import StateManager from "@/stateManager/StateManager";
 import EvmDiamondStateMachine from "@/evm/EvmDiamondStateMachine";
@@ -41,6 +40,7 @@ import type { HostHandlerExecutionContext } from "./HostHandlerExecutionContext"
 import type { Logger } from "@/utils/logging/Logger";
 import type { LogPortHandle } from "@/utils/logging/logControl";
 import { LocalDiscoveryServer } from "@/utils";
+import { connectStateChannelManager } from "@/utils/stateChannelManager";
 import type {
     HostRpcRequest,
     RuntimeClientMessage,
@@ -302,11 +302,11 @@ export async function startP2pRuntimeHost<
         // the read-only Clock stay on the raw signer.
         const chainSigner = new HostNonceManager(signer, logger);
 
-        const scmContract = new ethers.Contract(
+        const scmContract = connectStateChannelManager(
             payload.scm.address,
-            JSON.parse(payload.scm.abiJson),
-            chainSigner
-        ) as unknown as StateChannelManagerProxy;
+            chainSigner,
+            JSON.parse(payload.scm.abiJson) as InterfaceAbi
+        );
         const stateMachineContract = new ethers.Contract(
             payload.stateMachine.address,
             JSON.parse(payload.stateMachine.abiJson),

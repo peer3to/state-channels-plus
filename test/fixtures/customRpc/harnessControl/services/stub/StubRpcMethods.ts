@@ -13,7 +13,7 @@ import InitHandshakeRpcMethods from "@/rpc/services/initHandshake/InitHandshakeR
 import type JoinChannelRpcMethods from "@/rpc/services/joinChannel/JoinChannelRpcMethods";
 import type { StateSnapshot } from "@/models";
 import type { MessageBlockStruct } from "@typechain-types/contracts/V1/types/DataTypes";
-import { id } from "ethers";
+import { encodedCustomErrorRevert } from "@test/factory";
 import type { ForkId, Hash, Timestamp } from "@/types/types";
 import type { HarnessControlRpc } from "../../HarnessControlRpc";
 import type {
@@ -1811,13 +1811,18 @@ export class StubRpcMethods extends ARpcMethods<P2PManager<HarnessControlRpc>> {
         ) as NonNullable<typeof runner.call>;
         const multicallSelector =
             contract.interface.getFunction("multicall")!.selector;
+        // Built from the error's own ABI fragment, so an error that takes
+        // arguments still yields revert data the client can decode. A
+        // hand-hashed `Name()` selector decodes to nothing once the error
+        // gains a parameter.
+        const encodedRevert = encodedCustomErrorRevert(errorName);
         runner.call = async (transaction) => {
             if (!String(transaction.data).startsWith(multicallSelector)) {
                 return await original(transaction);
             }
             runner.call = original;
             this.service.stubOriginals.delete("reductionSimulation");
-            throw { data: id(`${errorName}()`).slice(0, 10) };
+            throw { data: encodedRevert };
         };
         return true;
     }

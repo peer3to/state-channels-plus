@@ -1,13 +1,13 @@
 // SPDX-License-Identifier: UNLICENSED
 
 import {DiamondHarness} from "../harness/DiamondHarness.sol";
-import {StateChannelManagerProxy} from "../../../contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol";
+import {StateChannelManagerInterface} from "../../../contracts/V1/StateChannelManagerInterface.sol";
 import "../../../contracts/V1/types/DataTypes.sol";
 import "../../../contracts/V1/types/FraudProofTypes.sol";
 
 // test naming: testFuzz_<targetFunction>_<property>
 contract FraudProofFacetTest is DiamondHarness {
-    StateChannelManagerProxy internal diamond;
+    StateChannelManagerInterface internal diamond;
 
     uint256 internal constant AUTHOR_PK = 0xA11CE;
     bytes32 internal constant CHANNEL_ID = keccak256("channel");

@@ -97,4 +97,4 @@ Exact test evidence is mapped against these IDs in the verification test reports
 
 ## Related source reports
 
-- [EventSyncService](./stateManager/EventSyncService.ts.md) (feeds observations).
+- [EventSyncService](./stateManager/eventSync/EventSyncService.ts.md) (feeds observations).

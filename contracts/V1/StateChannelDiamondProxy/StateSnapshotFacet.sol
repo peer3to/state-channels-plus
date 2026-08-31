@@ -2,7 +2,7 @@ pragma solidity ^0.8.8;
 
 import "./StateChannelCommon.sol";
 import "../types/DataTypes.sol";
-import "./StateChannelManagerProxy.sol";
+import "./UtilityFacet.sol";
 import "./Errors.sol";
 
 contract StateSnapshotFacet is StateChannelCommon {
@@ -20,14 +20,14 @@ contract StateSnapshotFacet is StateChannelCommon {
             ErrorInvalidStateSnapshot()
         );
         (bool hasGenesis, uint256 genesisTimestamp) =
-            getGenesisTimestamp(channelId, newStateSnapshot.snapshotData.originForkId, targetForkId);
+            _getGenesisTimestamp(channelId, newStateSnapshot.snapshotData.originForkId, targetForkId);
         require(hasGenesis && newStateSnapshot.timestamp == genesisTimestamp, ErrorInvalidStateSnapshot());
         mapping(bytes32 forkId => DisputeWindow) storage disputeWindowMap = disputeData.disputeWindowMap;
         DisputeWindow storage disputeWindow = disputeWindowMap[currentStateSnapshot.forkId];
         bool updated = false;
         while (
             disputeWindow.reducedResult.forkId != bytes32(0)
-                && _isReduceChallengePeriodExpired(disputeWindow, getEvidenceTime())
+                && _isReduceChallengePeriodExpired(disputeWindow, _getEvidenceTime())
         ) {
             if (disputeWindow.reducedResult.forkId == targetForkId) {
                 _updateStateSnapshot(channelId, currentStateSnapshot, newStateSnapshot, outboundMessageBlocks, false);
@@ -49,7 +49,10 @@ contract StateSnapshotFacet is StateChannelCommon {
 
         StateSnapshot storage currentStateSnapshot = stateSnapshots[channelId];
         StateSnapshot memory newStateSnapshot = milestoneSnapshots[milestoneSnapshots.length - 1];
-        require(currentStateSnapshot.forkId == newStateSnapshot.forkId, RaceConditionSnapshotForkMismatch());
+        require(
+            currentStateSnapshot.forkId == newStateSnapshot.forkId,
+            RaceConditionSnapshotForkMismatch(currentStateSnapshot.forkId, newStateSnapshot.forkId)
+        );
         require(
             UtilityFacet(utilityFacetAddress).isSnapshotNewer(newStateSnapshot, currentStateSnapshot),
             RaceConditionBlockHeightTooOld()
@@ -61,7 +64,10 @@ contract StateSnapshotFacet is StateChannelCommon {
         require(
             newStateSnapshot.snapshotData.latestInboundMessageBlockHash
                 == channelBalances[channelId].latestInboundMessageBlockHash,
-            RaceConditionPendingInboundNotConsumed()
+            RaceConditionPendingInboundNotConsumed(
+                newStateSnapshot.snapshotData.latestInboundMessageBlockHash,
+                channelBalances[channelId].latestInboundMessageBlockHash
+            )
         );
 
         _updateStateSnapshot(channelId, currentStateSnapshot, newStateSnapshot, outboundMessageBlocks, true);
@@ -113,7 +119,7 @@ contract StateSnapshotFacet is StateChannelCommon {
         StateSnapshot[] memory milestoneSnapshots,
         StateSnapshot memory thresholdStateSnapshot
     ) internal returns (bool) {
-        bool isValid = StateChannelManagerProxy(address(this)).verifyMilestones(
+        bool isValid = StateChannelManagerInterface(address(this)).verifyMilestones(
             forkId, milestoneProofs, milestoneSnapshots, thresholdStateSnapshot
         );
         return isValid;

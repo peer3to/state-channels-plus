@@ -1,7 +1,7 @@
 # test/stateManager/EventSyncService.test.ts — Test Report
 
 > **Test file:** [test/stateManager/EventSyncService.test.ts](../../../../../../test/stateManager/EventSyncService.test.ts) > **Status:** Authored — engineer verification pending.
-> **Exercises:** [EventSyncService.ts](../../../../implementation/source/src/stateManager/EventSyncService.ts.md)
+> **Exercises:** [EventSyncService.ts](../../../../implementation/source/src/stateManager/eventSync/EventSyncService.ts.md)
 
 ## Contents
 

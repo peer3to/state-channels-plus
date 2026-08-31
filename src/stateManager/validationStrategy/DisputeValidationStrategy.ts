@@ -14,7 +14,7 @@ import {
     MessageBlockStruct
 } from "@typechain-types/contracts/V1/types/DataTypes";
 import { Logger } from "@/utils";
-import { LocalDiamond } from "@typechain-types";
+import type { LocalDiamondContract } from "@/utils/localDiamond";
 import type ADiamondStateMachine from "@/ADiamondStateMachine";
 
 export default class DisputeValidationStrategy extends AValidationStrategy {
@@ -26,7 +26,7 @@ export default class DisputeValidationStrategy extends AValidationStrategy {
         private readonly storage: Storage,
         private readonly dispute: DisputeStruct,
         private readonly blockIndexInUnfinalizedPartOfStateProof: number,
-        private readonly localDiamondContract: LocalDiamond,
+        private readonly localDiamondContract: LocalDiamondContract,
         logger: Logger
     ) {
         super();

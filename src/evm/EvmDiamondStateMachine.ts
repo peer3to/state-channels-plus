@@ -1,9 +1,8 @@
 import type { EvmCustomPrecompileManifest } from "./EvmFactory";
 import { ethers, Signer } from "ethers";
 import {
-    StateChannelManagerProxy,
-    AStateMachine as AStateMachineContract,
-    LocalDiamond
+    StateChannelManagerInterface,
+    AStateMachine as AStateMachineContract
 } from "@typechain-types";
 import { TransactionStruct } from "@typechain-types/contracts/V1/types/DataTypes";
 
@@ -15,7 +14,9 @@ import {
     convertEthersValue,
     createLogger,
     Logger,
-    createEthersResultProxy
+    createEthersResultProxy,
+    connectLocalDiamond,
+    type LocalDiamondContract
 } from "@/utils";
 import ADiamondStateMachine from "@/ADiamondStateMachine";
 import P2pInstance from "./P2pInstance";
@@ -34,7 +35,6 @@ import {
     LocalStateMachineDeployer
 } from "scripts/V1/deploy";
 import LocalContractExecutorSigner from "./signer/LocalContractExecutorSigner";
-import { LocalDiamondArtifact } from "@/utils/GeneratedArtifacts";
 
 import { createConfig, Config } from "@/utils/config";
 import MainRpcService from "@/rpc/MainRpcService";
@@ -69,7 +69,7 @@ class EvmDiamondStateMachine extends ADiamondStateMachine {
         contractExecutor: AContractExecutor,
         stateMachineAddress: Address,
         contractInterface: ethers.Interface,
-        localDiamondContract: LocalDiamond
+        localDiamondContract: LocalDiamondContract
     ) {
         super(localDiamondContract);
         this.contractExecutor = contractExecutor;
@@ -415,11 +415,10 @@ class EvmDiamondStateMachine extends ADiamondStateMachine {
             disputeExecutionGasLimit
         );
 
-        const localDiamondContract = new ethers.Contract(
+        const localDiamondContract = connectLocalDiamond(
             diamondResult.address.toString(),
-            LocalDiamondArtifact.abi,
             localSigner
-        ) as unknown as LocalDiamond;
+        );
 
         const proxiedLocalDiamond =
             createEthersResultProxy(localDiamondContract);
@@ -448,7 +447,7 @@ class EvmDiamondStateMachine extends ADiamondStateMachine {
         T extends AStateMachineContract,
         TCustomRpc extends MainRpcService = MainRpcService
     >(
-        deployedStateChannelContractInstance: StateChannelManagerProxy,
+        deployedStateChannelContractInstance: StateChannelManagerInterface,
         stateMachineContractInstance: T,
         deployStateMachine: LocalStateMachineDeployer,
         options?: {
