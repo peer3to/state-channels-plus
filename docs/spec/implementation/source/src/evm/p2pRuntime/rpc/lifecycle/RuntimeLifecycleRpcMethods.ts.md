@@ -28,8 +28,11 @@ once its reply is out.
 
 - **Readiness is a reply, not a message.** The client awaits `deployComplete`; there is no `ready`
   frame to correlate by hand ([`deployComplete`](../../../../../../../../../src/evm/p2pRuntime/rpc/lifecycle/RuntimeLifecycleRpcMethods.ts#L21)).
-- **Close after the reply.** `dispose` schedules the link's close for after its own return, so the
-  reply is never lost ([`dispose`](../../../../../../../../../src/evm/p2pRuntime/rpc/lifecycle/RuntimeLifecycleRpcMethods.ts#L53)).
+- **Close after the reply, on every path.** `dispose` schedules the link's close for after its own
+  return, so the reply is never lost, and schedules it from a `finally` so a teardown that rejects
+  still closes the link — the reply carries the failure, but a held-open port would strand the
+  client waiting on a worker that never exits
+  ([`dispose`](../../../../../../../../../src/evm/p2pRuntime/rpc/lifecycle/RuntimeLifecycleRpcMethods.ts#L56)).
 
 ## Inputs, outputs, state, and side effects
 
@@ -72,10 +75,10 @@ Status enum: `Covered` | `Partial` | `Contradicts` | `Missing`. Evidence cells a
 **Here:** / **Other files:** so each row is auditable from its links alone; genuine gaps go in the
 Gap column. Audit state is file-level (Status header), never a row status.
 
-| Requirement / invariant                                                                                | Implementation status | Evidence                                                                                                                                                                                               | Gap / divergence |
-| ------------------------------------------------------------------------------------------------------ | --------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ---------------- |
-| [`REQ-RUNTIME-3-VQXW59`](../../../../../../../specification/runtime/execution.md#req-runtime-3-vqxw59) | Covered               | **Here:** `deployComplete` cleans up on failure; `dispose` closes after the reply. **Other files:** [../../P2pRuntimeHost.ts.md](../../P2pRuntimeHost.ts.md) owns `buildRuntime` and `disposeRuntime`. | None.            |
-| [`REQ-RUNTIME-1-RSM6MZ`](../../../../../../../specification/runtime/execution.md#req-runtime-1-rsm6mz) | Covered               | **Here:** `quiesce` returns `SerializedError[]`. **Other files:** [../../../../rpc/serializeError.ts.md](../../../../rpc/serializeError.ts.md).                                                        | None.            |
+| Requirement / invariant                                                                                | Implementation status | Evidence                                                                                                                                                                                                                                            | Gap / divergence |
+| ------------------------------------------------------------------------------------------------------ | --------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------- |
+| [`REQ-RUNTIME-3-VQXW59`](../../../../../../../specification/runtime/execution.md#req-runtime-3-vqxw59) | Covered               | **Here:** `deployComplete` cleans up on failure; `dispose` closes after the reply on both the resolving and the rejecting path. **Other files:** [../../P2pRuntimeHost.ts.md](../../P2pRuntimeHost.ts.md) owns `buildRuntime` and `disposeRuntime`. | None.            |
+| [`REQ-RUNTIME-1-RSM6MZ`](../../../../../../../specification/runtime/execution.md#req-runtime-1-rsm6mz) | Covered               | **Here:** `quiesce` returns `SerializedError[]`. **Other files:** [../../../../rpc/serializeError.ts.md](../../../../rpc/serializeError.ts.md).                                                                                                     | None.            |
 
 ## Component test obligations
 

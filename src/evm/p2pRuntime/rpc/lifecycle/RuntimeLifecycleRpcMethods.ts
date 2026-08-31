@@ -49,10 +49,16 @@ export class RuntimeLifecycleRpcMethods extends ARpcMethods<
         return this.service.host.quiesce();
     }
 
-    /** end the runtime; the link closes once this reply is out */
+    /** end the runtime; the link closes once this reply is out. a teardown
+     *  that rejects still closes it -> the reply carries the failure, but a
+     *  held-open port would strand the client waiting on a worker that never
+     *  exits. */
     async dispose(): Promise<void> {
-        await this.service.host.disposeRuntime();
-        this.service.host.closeAfterReply(this.senderTransport);
+        try {
+            await this.service.host.disposeRuntime();
+        } finally {
+            this.service.host.closeAfterReply(this.senderTransport);
+        }
     }
 }
 
