@@ -34,7 +34,7 @@ operational limits. It hosts every other system without changing their observabl
   ([execution.md](./execution.md), [sdk.md](./sdk.md)).
 - **Invariants (owned).** [`INV-RUNTIME-1-AKRHAK`](execution.md#inv-runtime-1-akrhak), `REQ-RUNTIME-*` ([execution.md](./execution.md));
   [`INV-SDK-ARCH-1-KNAX7F`](sdk.md#inv-sdk-arch-1-knax7f), `REQ-SDK-ARCH-*` ([sdk.md](./sdk.md)); `REQ-CONFIG-*`
-  ([configuration.md](./configuration.md)). Durable storage is its own system:
+  ([configuration.md](./configuration.md)); `INV-LOG-*`, `REQ-LOG-*` ([log-collection.md](./log-collection.md)). Durable storage is its own system:
   [../storage/README.md](../storage/README.md).
 - **Failure and recovery outcomes.** Context failure is contained at its boundary; restart recovers
   from the storage system's durable set and re-enters the block-progression pipeline without
@@ -55,6 +55,7 @@ operational limits. It hosts every other system without changing their observabl
 | [execution.md](./execution.md) | Runtime isolation and concurrency: transfer-safe boundaries, ownership/ordering, lifecycle convergence, platform equivalence. |
 | [sdk.md](./sdk.md) | Participant service architecture: coherent state, explicit ownership, ordered lifecycle, event fidelity, execution isolation. |
 | [configuration.md](./configuration.md) | Deployment configuration semantics: timing windows, limits, and their validation. |
+| [log-collection.md](./log-collection.md) | Gathering a session's logs from every execution context into one stored log: coverage, termination, truthful outcome, attribution, effectively-once delivery, bounded expansion. |
 
 Durable storage and recovery were factored out into [System 9 — Storage](../storage/README.md),
 which nearly every system calls; this system consumes it like the others.

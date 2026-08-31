@@ -5,6 +5,7 @@ import { maybeStampErrorWithPeerAddress } from "@/utils/errorPeerAddress";
 import type { Address } from "@/types/types";
 import { connectStateChannelManager } from "@/utils/stateChannelManager";
 import type { Logger } from "@/utils";
+import type { LogPortHandle } from "@/utils/logging/logControl";
 import ClientP2pSigner from "../signer/ClientP2pSigner";
 import ClientChainSigner from "../signer/ClientChainSigner";
 import { attachContractEvents, EventBus } from "@/events/EventBus";
@@ -67,6 +68,9 @@ export interface P2pRuntimeClientOptions {
     logger?: Logger;
     /** Invoked after the port is closed (e.g. to terminate a worker). */
     onClose?: () => void | Promise<void>;
+    /** open a log-control port to the host. threaded hosts only - an inline host
+     *  is on this same bus, so a port would loop a round back here. */
+    openLogControlPort?: boolean;
 }
 
 interface PendingRequest {
@@ -110,6 +114,7 @@ class P2pRuntimeClient<T = ethers.Contract> {
     private rejectReady!: (error: Error) => void;
     private readySettled = false;
     private disposed = false;
+    private logPortHandle?: LogPortHandle;
 
     constructor(port: RuntimePort, options: P2pRuntimeClientOptions) {
         this.events = new EventBus((kind, eventName, error) =>
@@ -155,6 +160,15 @@ class P2pRuntimeClient<T = ethers.Contract> {
             runtimeOwned: true
         });
 
+        if (options.openLogControlPort && options.logger) {
+            // host is a child -> its peer identity stays off the shared main realm
+            this.logPortHandle = options.logger.addLogPort({
+                post: (message) =>
+                    this.port.post({ type: "logControl", message }),
+                remoteRealm: "child"
+            });
+        }
+
         this.port.onMessage((message) =>
             this.handleMessage(message as RuntimeHostMessage)
         );
@@ -164,6 +178,7 @@ class P2pRuntimeClient<T = ethers.Contract> {
 
     private handlePortClosed(): void {
         if (this.disposed) return;
+        this.dropLogPort();
         const error = new Error("P2P runtime host closed the connection");
         for (const listener of this.hostErrorListeners) listener(error);
         void this.dispose();
@@ -258,6 +273,7 @@ class P2pRuntimeClient<T = ethers.Contract> {
             // The host may already be gone; proceed with local teardown.
         }
         this.disposed = true;
+        this.dropLogPort();
         this.rejectAllPending(new Error("P2P runtime client disposed"));
         this.port.close();
         await this.onClose?.();
@@ -281,7 +297,15 @@ class P2pRuntimeClient<T = ethers.Contract> {
             case "webRTCBridgePort":
                 this.webRTCBridgePort = message.port;
                 return;
+            case "logControl":
+                this.logPortHandle?.receive(message.message);
+                return;
         }
+    }
+
+    private dropLogPort(): void {
+        this.logPortHandle?.remove();
+        this.logPortHandle = undefined;
     }
 
     private dispatchHostError(message: RuntimeHostErrorMessage): void {

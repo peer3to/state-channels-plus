@@ -4,8 +4,8 @@
 > its content hash with `SPEC_REVIEWER="Name" node docs/spec/tools/review.js <file...>`.
 > Any later edit invalidates the record automatically (the file returns to pending as stale).
 
-- Verified (current): **36/542** (7%)
-- Pending (never reviewed): **477**
+- Verified (current): **36/552** (7%)
+- Pending (never reviewed): **487**
 - Stale (edited since review): **29**
 
 ## Stale — edited since engineer review
@@ -50,7 +50,7 @@
 
 ## Pending — never reviewed
 
-### specification (37)
+### specification (38)
 
 - [specification/disputes/dispute-processing.md](../specification/disputes/dispute-processing.md)
 - [specification/disputes/fraud-proofs.md](../specification/disputes/fraud-proofs.md)
@@ -84,13 +84,14 @@
 - [specification/protocol-model/time.md](../specification/protocol-model/time.md)
 - [specification/README.md](../specification/README.md)
 - [specification/runtime/configuration.md](../specification/runtime/configuration.md)
+- [specification/runtime/log-collection.md](../specification/runtime/log-collection.md)
 - [specification/runtime/README.md](../specification/runtime/README.md)
 - [specification/runtime/sdk.md](../specification/runtime/sdk.md)
 - [specification/settlement/cross-layer-messages.md](../specification/settlement/cross-layer-messages.md)
 - [specification/settlement/lifecycle.md](../specification/settlement/lifecycle.md)
 - [specification/settlement/README.md](../specification/settlement/README.md)
 
-### implementation (322)
+### implementation (324)
 
 - [implementation/open-questions.md](../implementation/open-questions.md)
 - [implementation/README.md](../implementation/README.md)
@@ -347,7 +348,9 @@
 - [implementation/source/src/utils/logging/createLoggerTypes.ts.md](../implementation/source/src/utils/logging/createLoggerTypes.ts.md)
 - [implementation/source/src/utils/logging/formatUtils.ts.md](../implementation/source/src/utils/logging/formatUtils.ts.md)
 - [implementation/source/src/utils/logging/index.ts.md](../implementation/source/src/utils/logging/index.ts.md)
+- [implementation/source/src/utils/logging/logControl.ts.md](../implementation/source/src/utils/logging/logControl.ts.md)
 - [implementation/source/src/utils/logging/logEncoder.ts.md](../implementation/source/src/utils/logging/logEncoder.ts.md)
+- [implementation/source/src/utils/logging/LogFlushBus.ts.md](../implementation/source/src/utils/logging/LogFlushBus.ts.md)
 - [implementation/source/src/utils/logging/Logger.ts.md](../implementation/source/src/utils/logging/Logger.ts.md)
 - [implementation/source/src/utils/logging/logStore.ts.md](../implementation/source/src/utils/logging/logStore.ts.md)
 - [implementation/source/src/utils/logging/LogUploader.ts.md](../implementation/source/src/utils/logging/LogUploader.ts.md)
@@ -415,7 +418,7 @@
 - [implementation/views/security/data-availability.md](../implementation/views/security/data-availability.md)
 - [implementation/views/security/trust-model.md](../implementation/views/security/trust-model.md)
 
-### verification (118)
+### verification (125)
 
 - [verification/open-questions.md](../verification/open-questions.md)
 - [verification/README.md](../verification/README.md)
@@ -453,10 +456,10 @@
 - [verification/tests/test/e2e/disputeValidation/uploadRevert/latestInboundMessageBlockHash.test.ts.md](../verification/tests/test/e2e/disputeValidation/uploadRevert/latestInboundMessageBlockHash.test.ts.md)
 - [verification/tests/test/e2e/E2E-BlockQueueManager.test.ts.md](../verification/tests/test/e2e/E2E-BlockQueueManager.test.ts.md)
 - [verification/tests/test/e2e/E2E-ByzantineErrorAttribution.test.ts.md](../verification/tests/test/e2e/E2E-ByzantineErrorAttribution.test.ts.md)
+- [verification/tests/test/e2e/E2E-CrashLogUpload.test.ts.md](../verification/tests/test/e2e/E2E-CrashLogUpload.test.ts.md)
 - [verification/tests/test/e2e/E2E-DisputeManager.test.ts.md](../verification/tests/test/e2e/E2E-DisputeManager.test.ts.md)
 - [verification/tests/test/e2e/E2E-FinalDispute.test.ts.md](../verification/tests/test/e2e/E2E-FinalDispute.test.ts.md)
 - [verification/tests/test/e2e/E2E-FirstBlockTimestampGrace.test.ts.md](../verification/tests/test/e2e/E2E-FirstBlockTimestampGrace.test.ts.md)
-- [verification/tests/test/e2e/E2E-Fuzz-Dispute-MVP.test.ts.md](../verification/tests/test/e2e/E2E-Fuzz-Dispute-MVP.test.ts.md)
 - [verification/tests/test/e2e/E2E-IsForkDisputed.test.ts.md](../verification/tests/test/e2e/E2E-IsForkDisputed.test.ts.md)
 - [verification/tests/test/e2e/E2E-MaliciousUpdateSnapshot.test.ts.md](../verification/tests/test/e2e/E2E-MaliciousUpdateSnapshot.test.ts.md)
 - [verification/tests/test/e2e/E2E-ParticipantLifecycle.test.ts.md](../verification/tests/test/e2e/E2E-ParticipantLifecycle.test.ts.md)
@@ -484,6 +487,9 @@
 - [verification/tests/test/models/StateSnapshot.test.ts.md](../verification/tests/test/models/StateSnapshot.test.ts.md)
 - [verification/tests/test/rpc/initHandshake/InitHandshakeChallenge.test.ts.md](../verification/tests/test/rpc/initHandshake/InitHandshakeChallenge.test.ts.md)
 - [verification/tests/test/rpc/openChannelNegotiation/OpenChannelProposal.test.ts.md](../verification/tests/test/rpc/openChannelNegotiation/OpenChannelProposal.test.ts.md)
+- [verification/tests/test/scripts/crashLogServer.test.ts.md](../verification/tests/test/scripts/crashLogServer.test.ts.md)
+- [verification/tests/test/scripts/fetchLogs.test.ts.md](../verification/tests/test/scripts/fetchLogs.test.ts.md)
+- [verification/tests/test/scripts/logChunks.test.ts.md](../verification/tests/test/scripts/logChunks.test.ts.md)
 - [verification/tests/test/stateManager/DisputeReductionStaleEvent.test.ts.md](../verification/tests/test/stateManager/DisputeReductionStaleEvent.test.ts.md)
 - [verification/tests/test/stateManager/DisputeValidationStrategy.test.ts.md](../verification/tests/test/stateManager/DisputeValidationStrategy.test.ts.md)
 - [verification/tests/test/stateManager/EventSyncService.test.ts.md](../verification/tests/test/stateManager/EventSyncService.test.ts.md)
@@ -518,6 +524,10 @@
 - [verification/tests/test/utils/HolepunchRelay.test.ts.md](../verification/tests/test/utils/HolepunchRelay.test.ts.md)
 - [verification/tests/test/utils/logEncoder.test.ts.md](../verification/tests/test/utils/logEncoder.test.ts.md)
 - [verification/tests/test/utils/LoggerUtils.test.ts.md](../verification/tests/test/utils/LoggerUtils.test.ts.md)
+- [verification/tests/test/utils/logging/LogFlushBus.test.ts.md](../verification/tests/test/utils/logging/LogFlushBus.test.ts.md)
+- [verification/tests/test/utils/logging/LoggerThreadContext.test.ts.md](../verification/tests/test/utils/logging/LoggerThreadContext.test.ts.md)
+- [verification/tests/test/utils/logging/logStore.test.ts.md](../verification/tests/test/utils/logging/logStore.test.ts.md)
+- [verification/tests/test/utils/logging/LogUploaderDelta.test.ts.md](../verification/tests/test/utils/logging/LogUploaderDelta.test.ts.md)
 - [verification/tests/test/utils/LogUploader.test.ts.md](../verification/tests/test/utils/LogUploader.test.ts.md)
 - [verification/tests/test/utils/ObjectChecks.test.ts.md](../verification/tests/test/utils/ObjectChecks.test.ts.md)
 - [verification/tests/test/utils/SignatureCollectionMap.test.ts.md](../verification/tests/test/utils/SignatureCollectionMap.test.ts.md)

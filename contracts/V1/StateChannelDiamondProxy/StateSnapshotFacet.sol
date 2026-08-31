@@ -119,8 +119,9 @@ contract StateSnapshotFacet is StateChannelCommon {
         StateSnapshot[] memory milestoneSnapshots,
         StateSnapshot memory thresholdStateSnapshot
     ) internal returns (bool) {
-        bool isValid = StateChannelManagerInterface(address(this))
-            .verifyMilestones(forkId, milestoneProofs, milestoneSnapshots, thresholdStateSnapshot);
+        bool isValid = StateChannelManagerInterface(address(this)).verifyMilestones(
+            forkId, milestoneProofs, milestoneSnapshots, thresholdStateSnapshot
+        );
         return isValid;
     }
 

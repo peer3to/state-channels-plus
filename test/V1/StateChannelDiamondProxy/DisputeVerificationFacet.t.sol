@@ -483,9 +483,8 @@ contract DisputeVerificationFacetTest is DiamondHarness {
     // this edge is beyond the no-grace window and only validates because of the
     // +evidenceTime first-block grace. (Separate tests: each opens the channel once.)
     function _firstBlockGraceWindow() internal view returns (uint256) {
-        return
-            diamond.getEvidenceTime() + diamond.getP2pTime() + diamond.getAgreementTime()
-                + diamond.getChainFallbackTime();
+        return diamond.getEvidenceTime() + diamond.getP2pTime() + diamond.getAgreementTime()
+            + diamond.getChainFallbackTime();
     }
 
     function test_validateTimeoutCalldataPostedProof_firstBlockGraceEdge_valid() public {

@@ -6,6 +6,69 @@ import {
     createContractExecutorFactory,
     type EvmCustomPrecompileManifest
 } from "@/evm";
+import { realmLogFlushBus } from "@/utils/logging/LogFlushBus";
+import type { NodeLogger } from "@/utils/logging/node/NodeLogger";
+import {
+    createUploaderFixture,
+    decodeUpload,
+    startLogReceiver,
+    type LogReceiver
+} from "@test/fixtures/logging/LogUploader.fixture";
+import {
+    applyCrashLogConfig,
+    crashLogUploadOverrides
+} from "@test/fixtures/logging/crashLogConfig";
+import { WORKER_ASYNC_CRASH_MESSAGE } from "@test/fixtures/workerAnswerPrecompile";
+
+// one port hop plus one POST -> above the receiver fixture's 2s default
+const FLUSH_WAIT_MS = 15_000;
+
+// schedules an unhandled rejection inside the worker thread; with a call delay
+// the call that scheduled it is still unanswered when the thread ends
+function crashingPrecompile(
+    address: string,
+    callDelayMs?: number
+): EvmCustomPrecompileManifest {
+    return {
+        address,
+        module: path.resolve(
+            __dirname,
+            "../fixtures/workerAnswerPrecompile.ts"
+        ),
+        options: {
+            expectedData: "0x1234",
+            value: "42",
+            crashAsync: true,
+            ...(callDelayMs ? { callDelayMs } : {})
+        }
+    };
+}
+
+// points every realm's uploader at a real receiver, jitter off. the worker
+// rebuilds config from the init payload.
+function useReceiver(receiver: LogReceiver): {
+    logger: NodeLogger;
+    dispose: () => void;
+} {
+    const restoreConfig = applyCrashLogConfig(
+        crashLogUploadOverrides(receiver.url)
+    );
+    const { logger } = createUploaderFixture({
+        uploadEndpoint: receiver.url,
+        sharedContext: {
+            threadName: "sdk",
+            peerAddress: ethers.Wallet.createRandom().address
+        }
+    });
+    realmLogFlushBus.registerLogger(logger);
+    return {
+        logger,
+        dispose: () => {
+            logger.dispose();
+            restoreConfig();
+        }
+    };
+}
 
 describe("WorkerContractExecutor", function () {
     const createLogOnlyInitCode = (topic: string) => {
@@ -214,6 +277,190 @@ describe("WorkerContractExecutor", function () {
             expect((error as Error).message).to.equal(
                 "Contract executor worker disposed"
             );
+        }
+    });
+
+    it("ends the worker after a fatal so pending calls do not hang", async function () {
+        const customAddress = Address.fromString(
+            "0x00000000000000000000000000000000000000be"
+        );
+        const receiver = await startLogReceiver();
+        const { logger, dispose } = useReceiver(receiver);
+        const executor = await createContractExecutorFactory({
+            dedicatedThread: true,
+            logger,
+            customPrecompiles: [crashingPrecompile(customAddress.toString())]
+        });
+
+        try {
+            await executor.simulateCall("0x1234", customAddress.toString());
+            await receiver.waitForRequests(1, FLUSH_WAIT_MS);
+
+            // the crash hooks the vm logger installs suppress node's fatal
+            // default, so without an explicit end the thread survives and calls
+            // keep succeeding instead of failing the peer
+            const deadline = Date.now() + FLUSH_WAIT_MS;
+            let rejected = false;
+            while (!rejected && Date.now() < deadline) {
+                try {
+                    await executor.simulateCall(
+                        "0x1234",
+                        customAddress.toString()
+                    );
+                } catch {
+                    rejected = true;
+                }
+            }
+
+            expect(
+                rejected,
+                "worker still serving calls after a fatal"
+            ).to.equal(true);
+        } finally {
+            await Promise.resolve(executor.dispose()).catch(() => undefined);
+            dispose();
+            await receiver.close();
+        }
+    });
+
+    it("rejects a call still in flight when the worker crashes", async function () {
+        const customAddress = Address.fromString(
+            "0x00000000000000000000000000000000000000bd"
+        );
+        const receiver = await startLogReceiver();
+        const { logger, dispose } = useReceiver(receiver);
+        const executor = await createContractExecutorFactory({
+            dedicatedThread: true,
+            logger,
+            customPrecompiles: [
+                // the crash lands while this call is still being answered
+                crashingPrecompile(customAddress.toString(), 30_000)
+            ]
+        });
+
+        try {
+            let caught: Error | undefined;
+            try {
+                await executor.simulateCall("0x1234", customAddress.toString());
+            } catch (error) {
+                caught = error as Error;
+            }
+
+            expect(
+                caught,
+                "the call outlived the thread that was answering it"
+            ).to.be.instanceOf(Error);
+        } finally {
+            await Promise.resolve(executor.dispose()).catch(() => undefined);
+            dispose();
+            await receiver.close();
+        }
+    });
+
+    it("keeps the caller's logger working after the worker crashed", async function () {
+        const customAddress = Address.fromString(
+            "0x00000000000000000000000000000000000000bf"
+        );
+        const receiver = await startLogReceiver();
+        const { logger, dispose } = useReceiver(receiver);
+        const executor = await createContractExecutorFactory({
+            dedicatedThread: true,
+            logger,
+            customPrecompiles: [crashingPrecompile(customAddress.toString())]
+        });
+
+        try {
+            await executor.simulateCall("0x1234", customAddress.toString());
+            await receiver.waitForRequests(1, FLUSH_WAIT_MS);
+            await Promise.resolve(executor.dispose()).catch(() => undefined);
+
+            logger.info("after the vm crash");
+            const result = await realmLogFlushBus.flushAll("after crash");
+
+            // the dead link is gone: nothing waits on it, and this realm ships
+            expect(result.timedOut).to.equal(0);
+            const shipped = receiver.requests.some(
+                (request) =>
+                    request.threadName === "sdk" &&
+                    decodeUpload(request).some(
+                        (entry) => entry.message === "after the vm crash"
+                    )
+            );
+            expect(shipped, "the caller's entry was not uploaded").to.equal(
+                true
+            );
+        } finally {
+            dispose();
+            await receiver.close();
+        }
+    });
+
+    it("uploads the worker's logs under the vm thread", async function () {
+        const customAddress = Address.fromString(
+            "0x00000000000000000000000000000000000000bf"
+        );
+        const receiver = await startLogReceiver();
+        const { logger, dispose } = useReceiver(receiver);
+        const executor = await createContractExecutorFactory({
+            dedicatedThread: true,
+            logger,
+            customPrecompiles: [crashingPrecompile(customAddress.toString())]
+        });
+
+        try {
+            // vm logs nothing normally -> an entry here means a real worker failure
+            await executor.simulateCall("0x1234", customAddress.toString());
+            await receiver.waitForRequests(1, FLUSH_WAIT_MS);
+
+            const vmUpload = receiver.requests.find(
+                (request) => request.threadName === "vm"
+            );
+            expect(vmUpload, "no vm upload arrived").to.not.be.undefined;
+            expect(vmUpload!.fromSeq).to.equal(0);
+            // filed under the identity the host pushed on attach; init carries none
+            expect(vmUpload!.peerAddress).to.equal(
+                logger.getSharedContext().peerAddress
+            );
+        } finally {
+            // the crash ends the worker -> dispose meets a failed executor
+            await Promise.resolve(executor.dispose()).catch(() => undefined);
+            dispose();
+            await receiver.close();
+        }
+    });
+
+    it("an unhandled rejection in the worker uploads every linked realm", async function () {
+        const customAddress = Address.fromString(
+            "0x00000000000000000000000000000000000000bf"
+        );
+        const receiver = await startLogReceiver();
+        const { logger, dispose } = useReceiver(receiver);
+        const executor = await createContractExecutorFactory({
+            dedicatedThread: true,
+            logger,
+            customPrecompiles: [crashingPrecompile(customAddress.toString())]
+        });
+
+        try {
+            logger.info("host realm entry");
+            await executor.simulateCall("0x1234", customAddress.toString());
+            await receiver.waitForRequests(2, FLUSH_WAIT_MS);
+
+            const vmUpload = receiver.requests.find(
+                (request) => request.threadName === "vm"
+            );
+            expect(vmUpload, "no vm upload arrived").to.not.be.undefined;
+            expect(JSON.stringify(decodeUpload(vmUpload!))).to.include(
+                WORKER_ASYNC_CRASH_MESSAGE
+            );
+            expect(
+                receiver.requests.map((request) => request.threadName)
+            ).to.include("sdk");
+        } finally {
+            // the crash ends the worker -> dispose meets a failed executor
+            await Promise.resolve(executor.dispose()).catch(() => undefined);
+            dispose();
+            await receiver.close();
         }
     });
 

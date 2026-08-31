@@ -14,18 +14,19 @@ export type ContractExecutorFactoryOptions = {
 export async function createContractExecutorFactory(
     options: ContractExecutorFactoryOptions
 ): Promise<AContractExecutor> {
-    const logger = options.logger || noOpLogger;
-
     if (!options.dedicatedThread) {
         const evm = await createEvm(
             {
                 allowUnlimitedContractSize: true,
                 customPrecompiles: options.customPrecompiles
             },
-            logger
+            options.logger ?? noOpLogger
         );
 
-        return new InlineContractExecutor(evm, logger);
+        return new InlineContractExecutor(evm, options.logger);
     }
-    return WorkerContractExecutor.create(options.customPrecompiles, logger);
+    return WorkerContractExecutor.create(
+        options.customPrecompiles,
+        options.logger
+    );
 }

@@ -101,6 +101,12 @@ export class NodeLogger extends Logger {
             }
         }
 
+        // thread role -> a merged replay shows where a line came from
+        const threadName = logEntry.sharedContext.threadName;
+        if ((threadName ?? "main") !== "main") {
+            prefix += `${Colors.COMPONENT}[${threadName}]${Colors.RESET}`;
+        }
+
         // Component
         if (logEntry.context.component)
             prefix += `${Colors.COMPONENT}[${logEntry.context.component}]${Colors.RESET}`;

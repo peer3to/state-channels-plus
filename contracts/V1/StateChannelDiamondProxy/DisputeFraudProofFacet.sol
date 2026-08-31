@@ -106,8 +106,9 @@ contract DisputeFraudProofFacet is StateChannelCommon {
         returns (bool ok, uint256 deadline)
     {
         uint256 firstBlockGrace = hasBlock ? 0 : _getEvidenceTime();
-        return
-            Math.tryAdd(previousTimestamp, firstBlockGrace + _getP2pTime() + _getAgreementTime() + _getChainFallbackTime());
+        return Math.tryAdd(
+            previousTimestamp, firstBlockGrace + _getP2pTime() + _getAgreementTime() + _getChainFallbackTime()
+        );
     }
 
     function _handleInvalidDisputeFraudProofType(bytes memory, Dispute memory) internal pure returns (address) {

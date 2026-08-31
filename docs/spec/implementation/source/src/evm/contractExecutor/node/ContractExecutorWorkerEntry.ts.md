@@ -39,9 +39,9 @@ _None — the file is declarative/mechanical; behavior-shaping decisions live wi
 A file may contribute to several requirements; this report describes the contribution and never
 claims complete conformance for a requirement that depends on other files.
 
-| Source file                                                                                                            | Specification IDs                                                                                   |
-| ---------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------- |
-| [ContractExecutorWorkerEntry.ts](../../../../../../../../src/evm/contractExecutor/node/ContractExecutorWorkerEntry.ts) | [`REQ-RUNTIME-4-B0N70Y`](../../../../../../specification/runtime/execution.md#req-runtime-4-b0n70y) |
+| Source file                                                                                                            | Specification IDs                                                                                                                                                                                       |
+| ---------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| [ContractExecutorWorkerEntry.ts](../../../../../../../../src/evm/contractExecutor/node/ContractExecutorWorkerEntry.ts) | [`REQ-RUNTIME-4-B0N70Y`](../../../../../../specification/runtime/execution.md#req-runtime-4-b0n70y), [`REQ-LOG-10-69CTN1`](../../../../../../specification/runtime/log-collection.md#req-log-10-69ctn1) |
 
 ## Assumptions, dependencies, trust boundaries, and limits
 
@@ -50,6 +50,8 @@ claims complete conformance for a requirement that depends on other files.
 ## Specification adherence
 
 - Executor semantics identical across contexts per the runtime equivalence rules.
+- On an error this thread asks every reachable thread to send its logs, waits only for its own send,
+  then ends with a non-zero exit ([`REQ-LOG-10-69CTN1`](../../../../../../specification/runtime/log-collection.md#req-log-10-69ctn1)).
 
 ## Specification contradictions
 

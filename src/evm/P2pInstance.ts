@@ -24,6 +24,7 @@ export default class P2pInstance<
     chainSigner: ClientChainSigner;
     stateChannelManagerContract: StateChannelManagerInterface;
     logger: Logger;
+    private readonly ownsLogger: boolean;
 
     /**
      * Typed mirror of the host's `remoteRpc`. Calls are forwarded over the
@@ -70,7 +71,12 @@ export default class P2pInstance<
         });
     }
 
-    constructor(client: P2pRuntimeClient<T>, logger: Logger) {
+    constructor(
+        client: P2pRuntimeClient<T>,
+        logger: Logger,
+        ownsLogger = false
+    ) {
+        this.ownsLogger = ownsLogger;
         this.client = client;
         this.p2pContractInstance = client.contract;
         this.p2pSigner = client.signer;
@@ -82,15 +88,22 @@ export default class P2pInstance<
     }
 
     public async dispose() {
-        try {
-            await Promise.all([
-                this.p2pContractInstance.removeAllListeners(),
-                this.stateChannelManagerContract.removeAllListeners(),
-                this.client.dispose()
-            ]);
-        } finally {
-            this.webRTCBridgeHandle?.dispose();
-            this.webRTCBridgeHandle = undefined;
+        // every teardown runs to the end before the logger goes: a listener
+        // removal that rejects must not take the realm off the bus while the
+        // client is still closing and may still log
+        const outcomes = await Promise.allSettled([
+            this.p2pContractInstance.removeAllListeners(),
+            this.stateChannelManagerContract.removeAllListeners(),
+            this.client.dispose()
+        ]);
+        this.webRTCBridgeHandle?.dispose();
+        this.webRTCBridgeHandle = undefined;
+        // leaves the realm bus with the session: otherwise every closed
+        // session keeps its store and its process crash hooks, and every
+        // later round re-uploads it
+        if (this.ownsLogger) this.logger.dispose();
+        for (const outcome of outcomes) {
+            if (outcome.status === "rejected") throw outcome.reason;
         }
     }
 

@@ -99,9 +99,7 @@ contract StateChannelCommon is StateChannelManagerStorage, StateChannelManagerEv
             // check if current on-chain snapshot.fork == forkId
             if (
                 currentOnChainSnapshot.forkId == forkId
-                    && UtilityFacetInterface(utilityFacetAddress).isGenesisSnapshotWithoutTimeCheck(
-                        currentOnChainSnapshot
-                    )
+                    && UtilityFacetInterface(utilityFacetAddress).isGenesisSnapshotWithoutTimeCheck(currentOnChainSnapshot)
             ) {
                 return (true, currentOnChainSnapshot.timestamp);
             }
@@ -170,8 +168,9 @@ contract StateChannelCommon is StateChannelManagerStorage, StateChannelManagerEv
         address[] memory pendingParticipants =
             _derivePendingParticipantsFromInboundHash(channelId, latestInboundMessageBlockHash, bytes32(0));
 
-        address[] memory participants = UtilityFacetInterface(utilityFacetAddress)
-            .concatAddressArraysNoDuplicates(snapshotParticipants, pendingParticipants);
+        address[] memory participants = UtilityFacetInterface(utilityFacetAddress).concatAddressArraysNoDuplicates(
+            snapshotParticipants, pendingParticipants
+        );
         eligibleParticipants = UtilityFacetInterface(utilityFacetAddress).subtractAddressArrays(
             participants, _getOnChainSlashedParticipants(channelId)
         );

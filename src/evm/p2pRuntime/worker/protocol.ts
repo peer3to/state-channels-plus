@@ -6,6 +6,7 @@ import type {
     SetupPayload
 } from "../types";
 import type { SerializedTransactionRequest } from "../chainSignerSerialization";
+import type { LogControlMessage } from "@/utils/logging/logControl";
 
 /**
  * Worker-level bootstrap message (NOT a runtime-port message). Sent via
@@ -186,6 +187,18 @@ export type RuntimeClientRequest =
     | QuiesceRequest
     | DisposeRequest;
 
+/** log-control message riding the runtime port either way. no requestId - a
+ *  flushRequest is answered by a flushAck coming back, not by the dispatcher. */
+export interface RuntimeLogControlMessage {
+    type: "logControl";
+    message: LogControlMessage;
+}
+
+/** everything the client may send the host */
+export type RuntimeClientMessage =
+    | RuntimeClientRequest
+    | RuntimeLogControlMessage;
+
 /** A request without its correlation id, as supplied by callers. */
 export type RuntimeRequestInput = DistributiveOmit<
     RuntimeClientRequest,
@@ -248,7 +261,8 @@ export type RuntimeHostMessage =
     | RuntimeResponse
     | RuntimeBusEventMessage
     | RuntimeHostErrorMessage
-    | RuntimeWebRTCBridgePortMessage;
+    | RuntimeWebRTCBridgePortMessage
+    | RuntimeLogControlMessage;
 
 export type P2pRuntimeRequestMessage = RuntimeClientRequest;
 export type P2pRuntimeHostMessage = RuntimeHostMessage;
