@@ -3,8 +3,66 @@ import { MathTestSession as TestSession } from "@test/harness";
 import StateSnapshot from "@/models/StateSnapshot";
 import { Status } from "@/types";
 import { Codec, Type } from "@/utils";
+import type { SyncRequest } from "@/rpc/services/spectate/SpectateService";
+import { ethers } from "ethers";
+import { TargetedChannelJoinFixture } from "@test/fixtures/TargetedChannelJoinFixture";
+import { waitFor } from "@test/utils/waitFor";
 
 describe("Unit: SpectateService", function () {
+    describe("sync request policy", function () {
+        const channelId = ethers.id("spectate-policy-channel");
+        const initial: SyncRequest = { channelId };
+        const recovery: SyncRequest = {
+            channelId,
+            forkId: ethers.id("spectate-policy-fork"),
+            blockHeight: 7
+        };
+
+        it("one sync request supports initial load and exact recovery", function () {
+            expect(initial).to.deep.equal({ channelId });
+            expect(recovery).to.include({ blockHeight: 7 });
+            expect(recovery.forkId).to.equal(ethers.id("spectate-policy-fork"));
+            expect(initial).not.to.have.any.keys("timeoutMs", "sentAt");
+        });
+
+        it("exact recovery failure preserves a synced observer runtime", async function () {
+            const h = TestSession.getHarness();
+            const prepared = await h.scenario.syncSpectatorAndPrepareJoin(0);
+            const responder = h.getPeer(0);
+            const restore = await h.rpcStub.stubSpectateJunkPayload([
+                responder.index
+            ]);
+            try {
+                await h
+                    .control(prepared.joiner)
+                    .spectate.startSync(
+                        responder.address,
+                        prepared.expectedForkId,
+                        0
+                    )
+                    .request();
+                await waitFor(
+                    () =>
+                        h
+                            .control(prepared.joiner)
+                            .query.isBlacklisted(responder.address)
+                            .request(),
+                    h.event.protocolEventTimeoutMs()
+                );
+                expect(
+                    await h.control(prepared.joiner).query.getStatus().request()
+                ).to.equal(Status.SYNCED);
+                expect(
+                    await new TargetedChannelJoinFixture(h).isDisposed(
+                        prepared.joiner
+                    )
+                ).to.equal(false);
+            } finally {
+                await restore();
+            }
+        });
+    });
+
     describe("applySyncResponse", function () {
         it("the same-fork target snapshot lands before validation → accepts the proof", async function () {
             const h = TestSession.getHarness();
@@ -13,7 +71,7 @@ describe("Unit: SpectateService", function () {
             const participantIndices = [0, 1, 2, 3];
 
             const requester = await h.join.addSpectatorWait();
-            await h.network.disconnectPeer(requester.index);
+            await h.network.blacklistAndDisconnectPeer(requester.index);
             for (const peerIndex of participantIndices) {
                 await h
                     .control(h.getPeer(peerIndex))

@@ -47,7 +47,8 @@ self.onmessage = async (event) => {
         channelId,
         signerSecret,
         relayUrl,
-        peerId
+        peerId,
+        connectOptions
     } = message;
 
     try {
@@ -97,8 +98,12 @@ self.onmessage = async (event) => {
             bridgePort
         ]);
 
-        await p2pInstance.p2pSigner.connectToChannel(channelId);
-        self.postMessage({ type: "ready" });
+        const result = await p2pInstance.p2pSigner.connectToChannel(
+            channelId,
+            connectOptions
+        );
+        const status = await p2pInstance.p2pSigner.getChannelStatus();
+        self.postMessage({ type: "connectResult", result, status });
     } catch (error) {
         self.postMessage({
             type: "error",

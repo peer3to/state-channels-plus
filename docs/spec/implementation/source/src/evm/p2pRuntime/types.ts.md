@@ -79,3 +79,8 @@ Exact test evidence is mapped against these IDs in the verification test reports
 ## Related source reports
 
 - [P2pRuntimeHost](./P2pRuntimeHost.ts.md).
+
+## Matching-policy boundary
+
+`SetupPayload` has no matching-policy function, allowlist, denylist, or policy enum. Host-local policy is
+installed only by a loaded custom RPC module and cannot cross the structured-clone boundary.

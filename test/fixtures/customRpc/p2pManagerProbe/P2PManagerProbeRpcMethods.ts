@@ -23,6 +23,8 @@ import type {
     BanPolicyProbe,
     RelayAdmissionProbe,
     UpgradeBanPolicyProbe,
+    UnblacklistBanPolicyProbe,
+    UnblacklistBanPolicyScenario,
     HolepunchTopicProbe,
     HandshakeFailureProbe,
     LateHandshakeProbe,
@@ -36,6 +38,7 @@ import type {
     NegotiationFailureProbe,
     NegotiationFailureScenario,
     SignedAttemptObservationProbe,
+    TargetedNegotiationRaceProbe,
     LobbyBootstrapValidationProbe,
     LobbyRoleTimerProbe,
     LobbyRetryEpochProbe,
@@ -190,6 +193,13 @@ export class P2PManagerProbeRpcMethods extends ARpcMethods<
         return this.service.probeExplicitBlacklist(address);
     }
 
+    public probeUnblacklistBanPolicy(
+        address: string,
+        scenario: UnblacklistBanPolicyScenario
+    ): UnblacklistBanPolicyProbe {
+        return this.service.probeUnblacklistBanPolicy(address, scenario);
+    }
+
     public probeHealthyWebRtcRejectsHolepunch(
         address: string
     ): Promise<RelayAdmissionProbe> {
@@ -308,5 +318,9 @@ export class P2PManagerProbeRpcMethods extends ARpcMethods<
 
     public probeSignedAttemptObservation(): Promise<SignedAttemptObservationProbe> {
         return this.service.probeSignedAttemptObservation();
+    }
+
+    public probeTargetedNegotiationRaces(): Promise<TargetedNegotiationRaceProbe> {
+        return this.service.probeTargetedNegotiationRaces();
     }
 }

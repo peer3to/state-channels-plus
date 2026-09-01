@@ -88,18 +88,9 @@ describe("E2E: ReductionManager", function () {
                 h.event.protocolEventTimeoutMs(),
                 50
             );
-            const hostErrors = await h.quiesceHosts();
-            expect(hostErrors.map((error) => error.message)).to.satisfy(
-                (messages: string[]) =>
-                    messages.some((message) =>
-                        message.includes(
-                            "RaceConditionReductionExpectationDoesntMatch"
-                        )
-                    )
-            );
-            await TestSession.expectFirstDetachedError({
-                includes: "RaceConditionReductionExpectationDoesntMatch",
-                timeoutMs: h.event.protocolEventTimeoutMs()
+            await TestSession.settleDetached({
+                expectedErrorIncludes:
+                    "RaceConditionReductionExpectationDoesntMatch"
             });
             expect(
                 await h

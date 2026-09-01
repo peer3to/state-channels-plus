@@ -53,15 +53,20 @@ abstract class ARpcService<
         response: RpcResponse,
         transport: ATransport
     ): void {
+        const responseTransport = transport.peerAddress
+            ? (this.p2pManager.profileManager.getTransportByEvmAddress(
+                  transport.peerAddress
+              ) ?? transport)
+            : transport;
         try {
-            transport.sendRpcResponse(response);
+            responseTransport.sendRpcResponse(response);
         } catch (e: unknown) {
             this.logger.error("Failed to send RPC response", {
                 method: rpc.method,
                 error: e instanceof Error ? e.message : String(e),
                 stack: e instanceof Error ? e.stack : undefined
             });
-            this.p2pManager.disconnectConnection(transport);
+            this.p2pManager.disconnectConnection(responseTransport);
         }
     }
 

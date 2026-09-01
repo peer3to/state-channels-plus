@@ -80,3 +80,9 @@ Exact test evidence is mapped against these IDs in the verification test reports
 ## Related source reports
 
 - [EvmDiamondStateMachine](./evm/EvmDiamondStateMachine.ts.md).
+
+## Balance comparison exposure
+
+The SDK state-machine abstraction exposes the existing Solidity `isBalanceLesserThan` operation beside
+`getZeroBalance`. Negotiation and join trust boundaries use `isBalanceLesserThan(zero, received)` instead of
+inventing a TypeScript numeric comparison.

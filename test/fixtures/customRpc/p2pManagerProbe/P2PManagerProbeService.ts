@@ -6,7 +6,13 @@ import { MAX_RPC_FRAME_BYTES } from "@/rpc/Rpc";
 import ATransport from "@/transport/ATransport";
 import { TransportType } from "@/transport/TransportType";
 import PeerProfile from "@/PeerProfile";
-import { SignatureUtils, getChecksumAddress } from "@/utils";
+import {
+    Codec,
+    DetachedPromises,
+    SignatureUtils,
+    Type,
+    getChecksumAddress
+} from "@/utils";
 import { ethers } from "ethers";
 import { Buffer } from "buffer";
 import { Status } from "@/types";
@@ -28,6 +34,11 @@ import {
     deriveNegotiatedChannelId
 } from "@/rpc/services/openChannelNegotiation/OpenChannelNegotiationHelpers";
 import OpenChannelNegotiationService from "@/rpc/services/openChannelNegotiation/OpenChannelNegotiationService";
+import type {
+    MatchedNegotiationOptions,
+    NegotiationOutcome
+} from "@/rpc/services/openChannelNegotiation/OpenChannelNegotiationService";
+import type { LobbyMatch } from "@/rpc/services/lobbyMatching/LobbyMatchingTypes";
 import { createOpenChannelTestObject } from "@test/test_utils/testHelpers";
 
 class RecordingTransport extends ATransport {
@@ -52,23 +63,30 @@ class RecordingTransport extends ATransport {
 
 export type DispatchHeadProbe = {
     oversizedDisconnected: boolean;
+    oversizedBlacklisted: boolean;
     exactLimitAccepted: boolean;
     malformedDisconnected: boolean;
+    malformedBlacklisted: boolean;
     unknownServiceDisconnected: boolean;
+    unknownServiceBlacklisted: boolean;
     responseClassifiedBeforeDispatch: boolean;
 };
 
 export type FrameByteBoundaryProbe = {
     multibyteExactAccepted: boolean;
     multibyteOverDisconnected: boolean;
+    multibyteOverBlacklisted: boolean;
     validJsonInvalidEnvelopeDisconnected: boolean;
+    validJsonInvalidEnvelopeBlacklisted: boolean;
 };
 
 export type DispatchOutcomeProbe = {
     validMethodStayedConnected: boolean;
     validMethodCalls: number;
     unknownMethodDisconnected: boolean;
+    unknownMethodBlacklisted: boolean;
     throwingServiceDisconnected: boolean;
+    throwingServiceBlacklisted: boolean;
 };
 
 export type RequestSettlementProbe = {
@@ -82,7 +100,6 @@ export type RequestSettlementProbe = {
 
 export type RequestRaceProbe = {
     firstOutcome: string;
-    secondFrameIgnored: boolean;
     connectionPresent: boolean;
     pendingCount: number;
     timerCount: number;
@@ -163,9 +180,12 @@ export type LobbyProtocolProbe = {
     localChannelId: string;
     lobbyTransportsExcludedBeforeCommit: boolean;
     ordinaryHookCountBeforeCommit: number;
-    selectedTransportPromoted: boolean;
+    selectedTransportHeldBeforeCompletion: boolean;
+    selectedTransportHeldAfterExpiredTimeout: boolean;
+    selectedTransportPromotedAfterCompletion: boolean;
     nonSelectedTransportClosed: boolean;
-    ordinaryHookCountAfterCommit: number;
+    ordinaryHookCountAfterCommitBeforeCompletion: number;
+    ordinaryHookCountAfterCompletion: number;
     discardedPeerMissedOrdinaryBroadcast: boolean;
 };
 
@@ -175,6 +195,7 @@ export type LobbyRecoveryProbe = {
     matchingAfterFinalLoss: boolean;
     disconnectedPeerBlacklisted: boolean;
     abusiveTransportClosed: boolean;
+    abusivePeerBlacklisted: boolean;
 };
 
 export type LobbyBootstrapValidationProbe = {
@@ -214,6 +235,12 @@ export type LobbySessionCleanupProbe = {
     leaveClosedSessionTransport: boolean;
     timeoutClosedSessionTransport: boolean;
     disposeClosedSessionTransport: boolean;
+    ordinaryCancellationSucceeded: boolean;
+    targetedCancellationSucceeded: boolean;
+    cancellationNoopAfterHandoff: boolean;
+    handedOffTransportPreservedByCancellationNoop: boolean;
+    negotiationHandoffReleased: boolean;
+    selectedTargetRetainedAfterRelease: boolean;
 };
 
 export type LobbyRetryEpochProbe = {
@@ -299,6 +326,28 @@ export type SignedAttemptObservationProbe = {
     matchingOpenEventRetainedChannelId: boolean;
 };
 
+export type TargetedNegotiationRaceProbe = {
+    signatureOutcome: string;
+    signatureSubmitCalls: number;
+    signaturePeerBlacklisted: boolean;
+    signatureAttemptCleared: boolean;
+    signatureTargetRetained: boolean;
+    receiptOutcome: string;
+    receiptSubmitCalls: number;
+    receiptPeerBlacklisted: boolean;
+    receiptAttemptCleared: boolean;
+    receiptTargetRetained: boolean;
+    detachedErrors: number;
+    unopenedReceiptOutcome: string;
+    unopenedReceiptError: string;
+    unopenedReceiptPeerBlacklisted: boolean;
+    unopenedReceiptTargetRetained: boolean;
+    ordinaryReceiptOutcome: string;
+    ordinaryReceiptError: string;
+    ordinaryReceiptPeerBlacklisted: boolean;
+    ordinaryReceiptChannelCleared: boolean;
+};
+
 export type ForeignResponseProbe = {
     foreignBlacklisted: boolean;
     foreignDisconnected: boolean;
@@ -320,6 +369,8 @@ export type LifecycleProbe = {
     disconnectedCount: number;
     blacklistByTransport: boolean;
     blacklistByAddress: boolean;
+    blacklistByStaleTransportAddress: boolean;
+    staleAndCurrentDisconnected: boolean;
     missingAddressIgnored: boolean;
     connectedPeers: string[];
 };
@@ -335,6 +386,19 @@ export type UpgradeBanPolicyProbe = {
     banCallsAfterStaleClose: boolean[];
     banCallsAfterCurrentClose: boolean[];
     banCallsAfterFallback: boolean[];
+};
+
+export type UnblacklistBanPolicyScenario =
+    | "selected-webrtc"
+    | "selected-holepunch-with-live-webrtc"
+    | "selected-holepunch-without-live-webrtc";
+
+export type UnblacklistBanPolicyProbe = {
+    selectedTransportType: TransportType | null;
+    liveWebRtcCount: number;
+    profileBlacklistedAfterBlacklist: boolean;
+    profileBlacklistedAfterUnblacklist: boolean;
+    banCalls: boolean[];
 };
 
 export type RelayAdmissionProbe = {
@@ -405,6 +469,18 @@ export class P2PManagerProbeService extends ARpcService<
         const transport = new RecordingTransport(this.p2pManager);
         transport.peerAddress = address;
         return transport;
+    }
+
+    private registeredTransport(address: string): {
+        transport: RecordingTransport;
+        profile: PeerProfile;
+    } {
+        const transport = this.transport();
+        const profile = this.authenticateTransport(
+            transport,
+            getChecksumAddress(address)
+        );
+        return { transport, profile };
     }
 
     private requestId(transport: RecordingTransport): string {
@@ -497,7 +573,10 @@ export class P2PManagerProbeService extends ARpcService<
     }
 
     public probeDispatchHead(): DispatchHeadProbe {
-        const oversized = this.transport();
+        const { transport: oversized, profile: oversizedProfile } =
+            this.registeredTransport(
+                "0x5100000000000000000000000000000000000001"
+            );
         this.p2pManager.addConnection(oversized);
         this.p2pManager.onRpc("x".repeat(MAX_RPC_FRAME_BYTES + 1), oversized);
 
@@ -513,11 +592,17 @@ export class P2PManagerProbeService extends ARpcService<
             exact
         );
 
-        const malformed = this.transport();
+        const { transport: malformed, profile: malformedProfile } =
+            this.registeredTransport(
+                "0x5100000000000000000000000000000000000002"
+            );
         this.p2pManager.addConnection(malformed);
         this.p2pManager.onRpc("{", malformed);
 
-        const unknownService = this.transport();
+        const { transport: unknownService, profile: unknownServiceProfile } =
+            this.registeredTransport(
+                "0x5100000000000000000000000000000000000003"
+            );
         this.p2pManager.addConnection(unknownService);
         this.p2pManager.onRpc(
             JSON.stringify({ service: "absent", method: "call", params: [] }),
@@ -542,11 +627,14 @@ export class P2PManagerProbeService extends ARpcService<
         return {
             oversizedDisconnected:
                 !this.p2pManager.openConnections.includes(oversized),
+            oversizedBlacklisted: oversizedProfile.isBlackListed,
             exactLimitAccepted: this.p2pManager.openConnections.includes(exact),
             malformedDisconnected:
                 !this.p2pManager.openConnections.includes(malformed),
+            malformedBlacklisted: malformedProfile.isBlackListed,
             unknownServiceDisconnected:
                 !this.p2pManager.openConnections.includes(unknownService),
+            unknownServiceBlacklisted: unknownServiceProfile.isBlackListed,
             responseClassifiedBeforeDispatch:
                 this.p2pManager.openConnections.includes(responseFirst) &&
                 this.dispatchCalls === callsBefore
@@ -583,11 +671,17 @@ export class P2PManagerProbeService extends ARpcService<
         const exactFrame = this.exactMultibyteFrame();
         this.p2pManager.onRpc(exactFrame, exact);
 
-        const over = this.transport();
+        const { transport: over, profile: overProfile } =
+            this.registeredTransport(
+                "0x5200000000000000000000000000000000000001"
+            );
         this.p2pManager.addConnection(over);
         this.p2pManager.onRpc(`${exactFrame}x`, over);
 
-        const invalidEnvelope = this.transport();
+        const { transport: invalidEnvelope, profile: invalidEnvelopeProfile } =
+            this.registeredTransport(
+                "0x5200000000000000000000000000000000000002"
+            );
         this.p2pManager.addConnection(invalidEnvelope);
         this.p2pManager.onRpc(
             JSON.stringify({ service: "p2pManagerProbe" }),
@@ -599,8 +693,11 @@ export class P2PManagerProbeService extends ARpcService<
                 this.p2pManager.openConnections.includes(exact),
             multibyteOverDisconnected:
                 !this.p2pManager.openConnections.includes(over),
+            multibyteOverBlacklisted: overProfile.isBlackListed,
             validJsonInvalidEnvelopeDisconnected:
-                !this.p2pManager.openConnections.includes(invalidEnvelope)
+                !this.p2pManager.openConnections.includes(invalidEnvelope),
+            validJsonInvalidEnvelopeBlacklisted:
+                invalidEnvelopeProfile.isBlackListed
         };
     }
 
@@ -617,7 +714,10 @@ export class P2PManagerProbeService extends ARpcService<
             valid
         );
 
-        const unknownMethod = this.transport();
+        const { transport: unknownMethod, profile: unknownMethodProfile } =
+            this.registeredTransport(
+                "0x5300000000000000000000000000000000000001"
+            );
         this.p2pManager.addConnection(unknownMethod);
         this.p2pManager.onRpc(
             JSON.stringify({
@@ -628,7 +728,10 @@ export class P2PManagerProbeService extends ARpcService<
             unknownMethod
         );
 
-        const throwing = this.transport();
+        const { transport: throwing, profile: throwingProfile } =
+            this.registeredTransport(
+                "0x5300000000000000000000000000000000000002"
+            );
         this.p2pManager.addConnection(throwing);
         const root = this.p2pManager.localRpc as PingPongRpc & {
             throwingProbe?: {
@@ -663,8 +766,10 @@ export class P2PManagerProbeService extends ARpcService<
             validMethodCalls: this.dispatchCalls - callsBefore,
             unknownMethodDisconnected:
                 !this.p2pManager.openConnections.includes(unknownMethod),
+            unknownMethodBlacklisted: unknownMethodProfile.isBlackListed,
             throwingServiceDisconnected:
-                !this.p2pManager.openConnections.includes(throwing)
+                !this.p2pManager.openConnections.includes(throwing),
+            throwingServiceBlacklisted: throwingProfile.isBlackListed
         };
     }
 
@@ -779,8 +884,6 @@ export class P2PManagerProbeService extends ARpcService<
         await new Promise((resolve) => setTimeout(resolve, 30));
         return {
             firstOutcome,
-            secondFrameIgnored:
-                this.p2pManager.openConnections.includes(transport),
             connectionPresent:
                 this.p2pManager.openConnections.includes(transport),
             ...this.resourceCounts(resourceBaseline)
@@ -806,7 +909,6 @@ export class P2PManagerProbeService extends ARpcService<
         await new Promise((resolve) => setTimeout(resolve, 30));
         return {
             firstOutcome,
-            secondFrameIgnored: true,
             connectionPresent:
                 this.p2pManager.openConnections.includes(transport),
             ...this.resourceCounts(resourceBaseline)
@@ -833,7 +935,6 @@ export class P2PManagerProbeService extends ARpcService<
             firstOutcome: await request.promise.catch(
                 (error: Error) => error.message
             ),
-            secondFrameIgnored: true,
             connectionPresent:
                 this.p2pManager.openConnections.includes(transport),
             ...this.resourceCounts(resourceBaseline)
@@ -860,7 +961,6 @@ export class P2PManagerProbeService extends ARpcService<
             firstOutcome: await request.promise.catch(
                 (error: Error) => error.message
             ),
-            secondFrameIgnored: true,
             connectionPresent:
                 this.p2pManager.openConnections.includes(transport),
             ...this.resourceCounts(resourceBaseline)
@@ -887,7 +987,6 @@ export class P2PManagerProbeService extends ARpcService<
             firstOutcome: await request.promise.catch(
                 (error: Error) => error.message
             ),
-            secondFrameIgnored: true,
             connectionPresent:
                 this.p2pManager.openConnections.includes(transport),
             ...this.resourceCounts(resourceBaseline)
@@ -914,7 +1013,6 @@ export class P2PManagerProbeService extends ARpcService<
             firstOutcome: await request.promise.catch(
                 (error: Error) => error.message
             ),
-            secondFrameIgnored: true,
             connectionPresent:
                 this.p2pManager.openConnections.includes(transport),
             ...this.resourceCounts(resourceBaseline)
@@ -1012,11 +1110,14 @@ export class P2PManagerProbeService extends ARpcService<
         const resourceBaseline = this.resourceCounts();
         const address = getChecksumAddress(addressInput);
         const oldTransport = this.transport(address);
-        const replacement = this.transport();
+        const replacement = this.transport(address);
         const profile = new PeerProfile(oldTransport, address);
         this.p2pManager.profileManager.registerProfile(profile);
         this.p2pManager.addConnection(oldTransport);
         const oldRequest = this.beginRequest(oldTransport, 1000);
+        const oldRequestError = oldRequest.promise.catch(
+            (error: Error) => error.message
+        );
         const originalAgreementTime =
             this.p2pManager.stateManager.timeConfig.agreementTime;
         this.p2pManager.stateManager.timeConfig.agreementTime = 0.005;
@@ -1036,9 +1137,7 @@ export class P2PManagerProbeService extends ARpcService<
                 "replacement-live"
             );
             return {
-                oldRequestError: await oldRequest.promise.catch(
-                    (error: Error) => error.message
-                ),
+                oldRequestError: await oldRequestError,
                 oldConnectionRemoved:
                     !this.p2pManager.openConnections.includes(oldTransport),
                 replacementConnected:
@@ -1132,14 +1231,25 @@ export class P2PManagerProbeService extends ARpcService<
         const resourceBaseline = this.resourceCounts();
         const address = getChecksumAddress(addressInput);
         const original = this.transport(address);
-        const replacement = this.transport(address.toLowerCase());
+        const replacement = this.transport(address);
+        const replacementProfile = new PeerProfile(original, address);
+        this.p2pManager.profileManager.registerProfile(replacementProfile);
+        this.p2pManager.addConnection(original);
         const replacementRequest = this.beginRequest(original);
+        const originalAgreementTime =
+            this.p2pManager.stateManager.timeConfig.agreementTime;
+        this.p2pManager.stateManager.timeConfig.agreementTime = 0.005;
+        this.p2pManager.profileManager.updateTransport(address, replacement);
+        this.p2pManager.addConnection(replacement);
         this.response(
             replacement,
             replacementRequest.requestId,
             true,
             "replacement"
         );
+        await new Promise((resolve) => setTimeout(resolve, 15));
+        this.p2pManager.stateManager.timeConfig.agreementTime =
+            originalAgreementTime;
 
         const unknown = this.transport();
         this.p2pManager.addConnection(unknown);
@@ -1152,7 +1262,9 @@ export class P2PManagerProbeService extends ARpcService<
         await duplicateRequest.promise;
         this.response(duplicate, duplicateRequest.requestId, true, "twice");
 
-        const pending = this.transport(address);
+        const pending = this.transport(
+            "0xB000000000000000000000000000000000000001"
+        );
         this.p2pManager.addConnection(pending);
         const first = this.beginRequest(pending);
         const second = this.beginRequest(pending);
@@ -1209,8 +1321,20 @@ export class P2PManagerProbeService extends ARpcService<
         const secondProfile = new PeerProfile(second, secondAddress);
         this.p2pManager.profileManager.registerProfile(firstProfile);
         this.p2pManager.profileManager.registerProfile(secondProfile);
+
+        const staleAddress = getChecksumAddress(
+            "0x5400000000000000000000000000000000000001"
+        );
+        const current = this.transport(staleAddress);
+        const stale = this.transport(staleAddress);
+        const staleAddressProfile = new PeerProfile(current, staleAddress);
+        this.p2pManager.profileManager.registerProfile(staleAddressProfile);
+        this.p2pManager.addConnection(current);
+        this.p2pManager.addConnection(stale);
+
         this.p2pManager.disconnectAndBlacklistPeer(first);
         this.p2pManager.disconnectAndBlacklistPeerByEvmAddress(secondAddress);
+        this.p2pManager.disconnectAndBlacklistPeer(stale);
         this.p2pManager.disconnectAndBlacklistPeerByEvmAddress(missingAddress);
 
         return {
@@ -1222,6 +1346,10 @@ export class P2PManagerProbeService extends ARpcService<
             ).length,
             blacklistByTransport: firstProfile.isBlackListed,
             blacklistByAddress: secondProfile.isBlackListed,
+            blacklistByStaleTransportAddress: staleAddressProfile.isBlackListed,
+            staleAndCurrentDisconnected:
+                !this.p2pManager.openConnections.includes(stale) &&
+                !this.p2pManager.openConnections.includes(current),
             missingAddressIgnored:
                 !this.p2pManager.isBlacklisted(missingAddress),
             connectedPeers
@@ -1306,6 +1434,47 @@ export class P2PManagerProbeService extends ARpcService<
             banCalls: [...peerInfo.banCalls],
             socketDestroyed: socket.destroyed,
             profileBlacklisted: profile.isBlackListed
+        };
+    }
+
+    public probeUnblacklistBanPolicy(
+        address: string,
+        scenario: UnblacklistBanPolicyScenario
+    ): UnblacklistBanPolicyProbe {
+        const { peerInfo, profile } =
+            this.registeredHolepunchTransport(address);
+        const webRTC = new WebRTCTransport(
+            new RecordingWebRTCDataChannel(),
+            this.p2pManager
+        );
+        this.authenticateTransport(webRTC, address);
+
+        if (scenario !== "selected-webrtc") {
+            const fallback = this.holepunchTransport().transport;
+            profile.attachTransport(fallback);
+            if (scenario === "selected-holepunch-without-live-webrtc") {
+                profile.detachTransport(webRTC);
+                webRTC.close(true);
+            }
+        }
+
+        peerInfo.banCalls.length = 0;
+        this.p2pManager.profileManager.blacklistPeer(address);
+        const profileBlacklistedAfterBlacklist = profile.isBlackListed;
+        this.p2pManager.profileManager.unblacklistPeer(address);
+
+        return {
+            selectedTransportType:
+                profile.getTransport()?.transportType ?? null,
+            liveWebRtcCount: profile
+                .getLiveTransports()
+                .filter(
+                    (transport) =>
+                        transport.transportType === TransportType.WEBRTC
+                ).length,
+            profileBlacklistedAfterBlacklist,
+            profileBlacklistedAfterUnblacklist: profile.isBlackListed,
+            banCalls: [...peerInfo.banCalls]
         };
     }
 
@@ -1640,6 +1809,7 @@ export class P2PManagerProbeService extends ARpcService<
             .stub(this.p2pManager.localRpc.spectateService, "sync")
             .callsFake(() => {
                 syncCallCount += 1;
+                return Promise.resolve(true);
             });
         const debug = sinon
             .stub(this.p2pManager.logger, "debug")
@@ -1908,7 +2078,7 @@ export class P2PManagerProbeService extends ARpcService<
                 ordinaryHookCount += 1;
             }
         );
-        const matchPromise = service.match(topic);
+        const matchPromise = service.match(topic, 200);
         await Promise.resolve();
         service.onAuthenticatedTransport(first);
         service.onAuthenticatedTransport(second);
@@ -1990,10 +2160,14 @@ export class P2PManagerProbeService extends ARpcService<
             match,
             "channelId"
         );
-        const selectedTransportPromoted =
-            this.p2pManager.openConnections.includes(first);
+        const selectedTransportHeldBeforeCompletion =
+            !this.p2pManager.openConnections.includes(first) &&
+            service.isHandedOffTransport(first);
+        await new Promise((resolve) => setTimeout(resolve, 225));
+        const selectedTransportHeldAfterExpiredTimeout =
+            !first.isClosed && service.isHandedOffTransport(first);
         const nonSelectedTransportClosed = second.isClosed;
-        const ordinaryHookCountAfterCommit = ordinaryHookCount;
+        const ordinaryHookCountAfterCommitBeforeCompletion = ordinaryHookCount;
         const discardedFramesBeforeBroadcast = second.frames.length;
         this.p2pManager.broadcastRpc({
             service: "pingService",
@@ -2003,6 +2177,9 @@ export class P2PManagerProbeService extends ARpcService<
         const discardedPeerMissedOrdinaryBroadcast =
             second.frames.length === discardedFramesBeforeBroadcast;
         await service.completeLobby(topic);
+        const selectedTransportPromotedAfterCompletion =
+            this.p2pManager.openConnections.includes(first);
+        const ordinaryHookCountAfterCompletion = ordinaryHookCount;
         unsubscribeConnection();
         return {
             role,
@@ -2018,9 +2195,12 @@ export class P2PManagerProbeService extends ARpcService<
             localChannelId: String(this.p2pManager.stateManager.channelId),
             lobbyTransportsExcludedBeforeCommit,
             ordinaryHookCountBeforeCommit,
-            selectedTransportPromoted,
+            selectedTransportHeldBeforeCompletion,
+            selectedTransportHeldAfterExpiredTimeout,
+            selectedTransportPromotedAfterCompletion,
             nonSelectedTransportClosed,
-            ordinaryHookCountAfterCommit,
+            ordinaryHookCountAfterCommitBeforeCompletion,
+            ordinaryHookCountAfterCompletion,
             discardedPeerMissedOrdinaryBroadcast
         };
     }
@@ -2055,9 +2235,8 @@ export class P2PManagerProbeService extends ARpcService<
             "0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
         );
         const abusive = this.transport(abusiveAddress);
-        this.p2pManager.profileManager.registerProfile(
-            new PeerProfile(abusive, abusiveAddress)
-        );
+        const abusiveProfile = new PeerProfile(abusive, abusiveAddress);
+        this.p2pManager.profileManager.registerProfile(abusiveProfile);
         const wrongTopicRpc: Rpc = {
             service: "lobbyMatchingService",
             method: "advertise",
@@ -2073,7 +2252,8 @@ export class P2PManagerProbeService extends ARpcService<
             reservedAfterFinalLoss: availability.reserved,
             matchingAfterFinalLoss: availability.matching,
             disconnectedPeerBlacklisted: profile.isBlackListed,
-            abusiveTransportClosed: abusive.isClosed
+            abusiveTransportClosed: abusive.isClosed,
+            abusivePeerBlacklisted: abusiveProfile.isBlackListed
         };
     }
 
@@ -2103,7 +2283,7 @@ export class P2PManagerProbeService extends ARpcService<
             compareAddresses(localAddress, peerAddress) < 0
                 ? "advertiser"
                 : "selector";
-        await service.leaveLobby(firstTopic);
+        await service.cancelMatching(firstTopic);
 
         const secondTopic = `0x${"42".repeat(32)}`;
         const second = this.transport(peerAddress);
@@ -2144,7 +2324,7 @@ export class P2PManagerProbeService extends ARpcService<
         });
         const unauthenticatedCandidateCount =
             service.getAvailability().candidateCount;
-        await service.leaveLobby(secondTopic);
+        await service.cancelMatching(secondTopic);
 
         const filteredTopic = `0x${"44".repeat(32)}`;
         const filtered = new LobbyMatchingService(this.p2pManager, {
@@ -2170,7 +2350,7 @@ export class P2PManagerProbeService extends ARpcService<
             0,
             `0x${"46".repeat(32)}`
         ).status;
-        await filtered.leaveLobby(filteredTopic);
+        await filtered.cancelMatching(filteredTopic);
 
         return {
             bothNoneRole,
@@ -2219,7 +2399,7 @@ export class P2PManagerProbeService extends ARpcService<
             const defaultRoleDelayMs = scheduled.find(
                 (entry) => entry.taskName === "lobby role duration"
             )!.delayMs;
-            await defaultService.leaveLobby(defaultTopic);
+            await defaultService.cancelMatching(defaultTopic);
 
             scheduled.length = 0;
             const configuredTopic = `0x${"52".repeat(32)}`;
@@ -2275,7 +2455,7 @@ export class P2PManagerProbeService extends ARpcService<
                 roleDurationMaxMs: 5000
             });
             const silentAddress = getChecksumAddress(
-                "0xdddddddddddddddddddddddddddddddddddddddd"
+                "0xfffffffffffffffffffffffffffffffffffffffd"
             );
             const silent = this.transport(silentAddress);
             const silentProfile = new PeerProfile(silent, silentAddress);
@@ -2317,7 +2497,7 @@ export class P2PManagerProbeService extends ARpcService<
             await expiry.task();
             const availabilityFramesAfterExpiry = expiryObserver.frames.length;
             const reservationExpiryBlacklisted = silentProfile.isBlackListed;
-            await expiryService.leaveLobby(expiryTopic);
+            await expiryService.cancelMatching(expiryTopic);
             return {
                 defaultRoleDelayMs,
                 configuredRoleDelayMs,
@@ -2376,11 +2556,11 @@ export class P2PManagerProbeService extends ARpcService<
         const replacementTopicActive =
             service.getAvailability().topic === secondTopic &&
             service.getAvailability().matching;
-        await service.leaveLobby(`0x${"63".repeat(32)}`);
-        await service.leaveLobby(secondTopic);
+        await service.cancelMatching(`0x${"63".repeat(32)}`);
+        await service.cancelMatching(secondTopic);
         const replacementResolvedOnLeave = (await second) === undefined;
         const leaveClosedSessionTransport = secondTransport.isClosed;
-        await service.leaveLobby(secondTopic);
+        await service.cancelMatching(secondTopic);
 
         scheduledTaskNames.length = 0;
         const nullTimeoutService = new LobbyMatchingService(this.p2pManager);
@@ -2393,7 +2573,7 @@ export class P2PManagerProbeService extends ARpcService<
         const nullTimeoutScheduled = scheduledTaskNames.includes(
             "lobby match timeout"
         );
-        await nullTimeoutService.leaveLobby(nullTimeoutTopic);
+        await nullTimeoutService.cancelMatching(nullTimeoutTopic);
         await nullTimeoutPromise;
 
         const timeoutService = new LobbyMatchingService(this.p2pManager);
@@ -2434,6 +2614,71 @@ export class P2PManagerProbeService extends ARpcService<
         const disposeClearedTopic =
             disposeService.getAvailability().topic === undefined;
         const disposeClosedSessionTransport = disposeTransport.isClosed;
+
+        const cancellationService = new LobbyMatchingService(this.p2pManager);
+        const ordinaryTopic = `0x${"67".repeat(32)}`;
+        const ordinaryMatch = cancellationService.match(ordinaryTopic);
+        await Promise.resolve();
+        const ordinaryCancellationSucceeded =
+            await cancellationService.cancelMatching(ordinaryTopic);
+        await ordinaryMatch;
+        const targetedTopic = `0x${"68".repeat(32)}`;
+        const targetedMatch = cancellationService.match(targetedTopic);
+        await Promise.resolve();
+        const targetedCancellationSucceeded =
+            await cancellationService.cancelMatching(targetedTopic);
+        await targetedMatch;
+
+        const handoffTopic = `0x${"69".repeat(32)}`;
+        const selectedTarget = `0x${"6c".repeat(32)}`;
+        await this.p2pManager.stateManager.setChannelId(selectedTarget);
+        const handoffMatch = cancellationService.match(handoffTopic);
+        await Promise.resolve();
+        const handoffAddress = getChecksumAddress(
+            "0xffffffffffffffffffffffffffffffffffffffff"
+        );
+        const handoffTransport = this.transport(handoffAddress);
+        this.p2pManager.profileManager.registerProfile(
+            new PeerProfile(handoffTransport, handoffAddress)
+        );
+        cancellationService.onAuthenticatedTransport(handoffTransport);
+        cancellationService.receiveAvailability(handoffTransport, {
+            topic: handoffTopic,
+            role: "none",
+            roleEpoch: 0,
+            available: false
+        });
+        const handoffNonce = `0x${"6a".repeat(32)}`;
+        const handoffChallenge = `0x${"6b".repeat(32)}`;
+        const handoffPick = cancellationService.receivePick(
+            handoffTransport,
+            handoffNonce,
+            1,
+            handoffChallenge
+        );
+        if (handoffPick.status !== "accepted") {
+            throw new Error("Expected cancellation handoff reservation");
+        }
+        cancellationService.receiveCommit(
+            handoffTransport,
+            handoffNonce,
+            1,
+            handoffChallenge,
+            handoffPick.advertiserChallenge
+        );
+        await handoffMatch;
+        const cancellationNoopAfterHandoff =
+            !(await cancellationService.cancelMatching(handoffTopic));
+        const handedOffTransportPreservedByCancellationNoop =
+            cancellationService.isHandedOffTransport(handoffTransport) &&
+            !handoffTransport.isClosed;
+        await cancellationService.releaseNegotiationHandoff(handoffTopic);
+        const negotiationHandoffReleased =
+            cancellationService.getAvailability().matching === false &&
+            cancellationService.getAvailability().topic === undefined;
+        const selectedTargetRetainedAfterRelease =
+            String(this.p2pManager.stateManager.channelId) === selectedTarget;
+        await this.p2pManager.stateManager.clearChannelId();
         timeoutManager.scheduleTask = originalScheduleTask;
 
         return {
@@ -2450,7 +2695,13 @@ export class P2PManagerProbeService extends ARpcService<
             replacementClosedOldTransport,
             leaveClosedSessionTransport,
             timeoutClosedSessionTransport,
-            disposeClosedSessionTransport
+            disposeClosedSessionTransport,
+            ordinaryCancellationSucceeded,
+            targetedCancellationSucceeded,
+            cancellationNoopAfterHandoff,
+            handedOffTransportPreservedByCancellationNoop,
+            negotiationHandoffReleased,
+            selectedTargetRetainedAfterRelease
         };
     }
 
@@ -2504,7 +2755,7 @@ export class P2PManagerProbeService extends ARpcService<
         });
         const observerCandidateCountAfterFirstSession =
             observer.getAvailability().candidateCount;
-        await source.leaveLobby(topic);
+        await source.cancelMatching(topic);
         await firstMatch;
 
         const secondMatch = source.match(topic);
@@ -2525,9 +2776,9 @@ export class P2PManagerProbeService extends ARpcService<
         });
         const observerCandidateCountAfterRetry =
             observer.getAvailability().candidateCount;
-        await source.leaveLobby(topic);
+        await source.cancelMatching(topic);
         await secondMatch;
-        await observer.leaveLobby(topic);
+        await observer.cancelMatching(topic);
         await observerMatch;
 
         return {
@@ -2580,7 +2831,7 @@ export class P2PManagerProbeService extends ARpcService<
             }
             await Promise.resolve();
             const scheduledAfterRepeatedAvailability = roleTimerSchedules;
-            await service.leaveLobby(topic);
+            await service.cancelMatching(topic);
             await match;
             return {
                 scheduledAfterExhaustion,
@@ -2662,7 +2913,7 @@ export class P2PManagerProbeService extends ARpcService<
             .map((frame) => JSON.parse(frame) as Record<string, unknown>)
             .find((frame) => frame.requestId === "late-pick");
         const result = response?.result as { status?: string } | undefined;
-        await service.leaveLobby(topic);
+        await service.cancelMatching(topic);
         return {
             responseStatus: result?.status ?? "missing",
             requesterBlacklisted: lateRequesterProfile.isBlackListed
@@ -2671,37 +2922,71 @@ export class P2PManagerProbeService extends ARpcService<
 
     public async probeMatchedNegotiationAdmission(): Promise<MatchedNegotiationAdmissionProbe> {
         const service = this.p2pManager.localRpc.openChannelNegotiationService;
-        const localAddress = getChecksumAddress(
-            String(this.p2pManager.stateManager.signerAddress)
-        );
         const peerAddress = getChecksumAddress(
-            "0x0000000000000000000000000000000000000001"
+            "0xffffffffffffffffffffffffffffffffffffffff"
         );
         const transport = this.transport(peerAddress);
         const profile = new PeerProfile(transport, peerAddress);
         this.p2pManager.profileManager.registerProfile(profile);
         this.p2pManager.stateManager.setStatus(Status.DISCOVERING);
+        const lobby = this.p2pManager.localRpc.lobbyMatchingService;
+        const topic = `0x${"10".repeat(32)}`;
         const attemptNonce = `0x${"11".repeat(32)}`;
         const selectorChallenge = `0x${"12".repeat(32)}`;
-        const advertiserChallenge = `0x${"13".repeat(32)}`;
+        const matchPromise = lobby.match(topic);
+        await Promise.resolve();
+        lobby.receiveAvailability(transport, {
+            topic,
+            role: "none",
+            roleEpoch: 0,
+            available: false
+        });
+        const pick = lobby.receivePick(
+            transport,
+            attemptNonce,
+            1,
+            selectorChallenge
+        );
+        if (pick.status !== "accepted") {
+            throw new Error("Expected lobby reservation before negotiation");
+        }
+        lobby.receiveCommit(
+            transport,
+            attemptNonce,
+            1,
+            selectorChallenge,
+            pick.advertiserChallenge
+        );
+        const match = await matchPromise;
+        if (!match) throw new Error("Expected committed lobby match");
         const rpc: Rpc = {
             service: "openChannelNegotiationService",
             method: "exchangeTerms",
-            params: [attemptNonce, selectorChallenge, advertiserChallenge, 1],
+            params: [
+                match.attemptNonce,
+                match.selectorChallenge,
+                match.advertiserChallenge,
+                this.encodeBalance(1)
+            ],
             requestId: "early-negotiation"
         };
 
         service.runRPC(rpc, transport);
         const responseBeforeInitialization = transport.frames.length > 0;
-        await service.initMatchedNegotiation({
-            peerAddress,
-            attemptNonce,
-            selectorAddress: peerAddress,
-            advertiserAddress: localAddress,
-            selectorChallenge,
-            advertiserChallenge
-        });
-        await new Promise((resolve) => setTimeout(resolve, 0));
+        const { outcome } = await this.startNegotiation(service, match);
+        for (let retry = 0; retry < 50; retry += 1) {
+            if (
+                transport.frames.some((frame) => {
+                    const parsed = JSON.parse(frame) as {
+                        requestId?: string;
+                    };
+                    return parsed.requestId === "early-negotiation";
+                })
+            ) {
+                break;
+            }
+            await new Promise((resolve) => setTimeout(resolve, 0));
+        }
         const selectedChannelId = String(
             this.p2pManager.stateManager.channelId
         );
@@ -2711,8 +2996,7 @@ export class P2PManagerProbeService extends ARpcService<
         });
 
         this.p2pManager.profileManager.removeTransport(transport);
-        await Promise.resolve();
-        await Promise.resolve();
+        await outcome;
         return {
             responseBeforeInitialization,
             responseAfterInitialization,
@@ -2736,6 +3020,7 @@ export class P2PManagerProbeService extends ARpcService<
         this.p2pManager.profileManager.registerProfile(profile);
         const lobby = this.p2pManager.localRpc.lobbyMatchingService;
         const topic = `0x${"24".repeat(32)}`;
+        this.p2pManager.stateManager.setStatus(Status.DISCOVERING);
         const attemptNonce = `0x${"21".repeat(32)}`;
         const selectorChallenge = `0x${"22".repeat(32)}`;
         const matchPromise = lobby.match(topic);
@@ -2764,8 +3049,10 @@ export class P2PManagerProbeService extends ARpcService<
         );
         const match = await matchPromise;
         if (!match) throw new Error("Expected committed lobby match");
-        await service.initMatchedNegotiation(match);
-        const outcomePromise = service.waitForOutcome(match.attemptNonce);
+        const { outcome: outcomePromise } = await this.startNegotiation(
+            service,
+            match
+        );
 
         let error = "";
         try {
@@ -2774,13 +3061,15 @@ export class P2PManagerProbeService extends ARpcService<
                 match.attemptNonce,
                 match.selectorChallenge,
                 match.advertiserChallenge,
-                Number.POSITIVE_INFINITY
+                "0x"
             );
         } catch (caught) {
             error = caught instanceof Error ? caught.message : String(caught);
         }
         const outcome = await outcomePromise;
         if (outcome.status === "retry") {
+            await lobby.releaseNegotiationHandoff(topic);
+            this.p2pManager.stateManager.setStatus(Status.DISCOVERING);
             void lobby.match(topic);
         }
         for (let retry = 0; retry < 50; retry += 1) {
@@ -2842,13 +3131,16 @@ export class P2PManagerProbeService extends ARpcService<
                 }
                 return originalScheduleTask(task, delayMs, taskName);
             }) as typeof timeoutManager.scheduleTask;
-            await timeoutService.initMatchedNegotiation(
-                makeMatch(timeoutPeer, "71")
+            const timeoutMatch = makeMatch(timeoutPeer, "71");
+            const { outcome: timeoutOutcome } = await this.startNegotiation(
+                timeoutService,
+                timeoutMatch
             );
             const channelIdAfterHigherInit = String(
                 this.p2pManager.stateManager.channelId
             );
             await initiatorDeadline?.();
+            await timeoutOutcome;
             await Promise.resolve();
             await Promise.resolve();
             timeoutManager.scheduleTask = originalScheduleTask;
@@ -2885,7 +3177,7 @@ export class P2PManagerProbeService extends ARpcService<
                 this.p2pManager
             );
             const selectedMatch = makeMatch(selectedPeer, "72");
-            await wrongPeerService.initMatchedNegotiation(selectedMatch);
+            await this.startNegotiation(wrongPeerService, selectedMatch);
             wrongPeerService.runRPC(
                 {
                     service: "openChannelNegotiationService",
@@ -2894,7 +3186,7 @@ export class P2PManagerProbeService extends ARpcService<
                         selectedMatch.attemptNonce,
                         selectedMatch.selectorChallenge,
                         selectedMatch.advertiserChallenge,
-                        1
+                        this.encodeBalance(1)
                     ]
                 },
                 wrongTransport
@@ -2920,7 +3212,11 @@ export class P2PManagerProbeService extends ARpcService<
                 this.p2pManager
             );
             const wrongAttemptMatch = makeMatch(wrongAttemptPeer, "73");
-            await wrongAttemptService.initMatchedNegotiation(wrongAttemptMatch);
+            const { outcome: wrongAttemptOutcome } =
+                await this.startNegotiation(
+                    wrongAttemptService,
+                    wrongAttemptMatch
+                );
             wrongAttemptService.runRPC(
                 {
                     service: "openChannelNegotiationService",
@@ -2929,13 +3225,14 @@ export class P2PManagerProbeService extends ARpcService<
                         `0x${"74".repeat(32)}`,
                         wrongAttemptMatch.selectorChallenge,
                         wrongAttemptMatch.advertiserChallenge,
-                        1
+                        this.encodeBalance(1)
                     ]
                 },
                 wrongAttemptTransport
             );
             await Promise.resolve();
             await Promise.resolve();
+            await wrongAttemptOutcome;
             const wrongAttemptBlacklistedSelectedPeer =
                 wrongAttemptProfile.isBlackListed;
             const wrongAttemptCleared = !wrongAttemptService.state.attempt;
@@ -2960,23 +3257,26 @@ export class P2PManagerProbeService extends ARpcService<
                 this.p2pManager
             );
             const duplicateMatch = makeMatch(duplicatePeer, "75");
-            await duplicateService.initMatchedNegotiation(duplicateMatch);
+            const { outcome: duplicateOutcome } = await this.startNegotiation(
+                duplicateService,
+                duplicateMatch
+            );
             const firstTerms = await duplicateService.acceptTerms(
                 duplicateTransport,
                 duplicateMatch.attemptNonce,
                 duplicateMatch.selectorChallenge,
                 duplicateMatch.advertiserChallenge,
-                7
+                this.encodeBalance(7)
             );
             const repeatedTerms = await duplicateService.acceptTerms(
                 duplicateTransport,
                 duplicateMatch.attemptNonce,
                 duplicateMatch.selectorChallenge,
                 duplicateMatch.advertiserChallenge,
-                7
+                this.encodeBalance(7)
             );
             const duplicateTermsIdempotent =
-                firstTerms.amount === repeatedTerms.amount &&
+                firstTerms.encodedBalance === repeatedTerms.encodedBalance &&
                 !!duplicateService.state.attempt;
             try {
                 await duplicateService.acceptTerms(
@@ -2984,11 +3284,12 @@ export class P2PManagerProbeService extends ARpcService<
                     duplicateMatch.attemptNonce,
                     duplicateMatch.selectorChallenge,
                     duplicateMatch.advertiserChallenge,
-                    8
+                    this.encodeBalance(8)
                 );
             } catch {}
             await Promise.resolve();
             await Promise.resolve();
+            await duplicateOutcome;
             const conflictingTermsBlacklisted = duplicateProfile.isBlackListed;
             return { duplicateTermsIdempotent, conflictingTermsBlacklisted };
         }
@@ -3008,13 +3309,16 @@ export class P2PManagerProbeService extends ARpcService<
                 this.p2pManager
             );
             const malformedMatch = makeMatch(malformedPeer, "76");
-            await malformedService.initMatchedNegotiation(malformedMatch);
+            const { outcome: malformedOutcome } = await this.startNegotiation(
+                malformedService,
+                malformedMatch
+            );
             await malformedService.acceptTerms(
                 malformedTransport,
                 malformedMatch.attemptNonce,
                 malformedMatch.selectorChallenge,
                 malformedMatch.advertiserChallenge,
-                1
+                this.encodeBalance(1)
             );
             try {
                 await malformedService.acceptOpenProposal(
@@ -3028,6 +3332,7 @@ export class P2PManagerProbeService extends ARpcService<
             } catch {}
             await Promise.resolve();
             await Promise.resolve();
+            await malformedOutcome;
             const malformedProposalBlacklisted = malformedProfile.isBlackListed;
             const malformedProposalCleared = !malformedService.state.attempt;
             return {
@@ -3080,11 +3385,9 @@ export class P2PManagerProbeService extends ARpcService<
                 )
             ).wait();
             let alreadyOpenRejected = false;
-            try {
+            const collisionOutcome =
                 await collisionService.initMatchedNegotiation(collisionMatch);
-            } catch {
-                alreadyOpenRejected = true;
-            }
+            alreadyOpenRejected = collisionOutcome.status === "retry";
             const alreadyOpenBlacklisted = collisionProfile.isBlackListed;
             const alreadyOpenKeptZeroId =
                 String(this.p2pManager.stateManager.channelId) ===
@@ -3142,13 +3445,16 @@ export class P2PManagerProbeService extends ARpcService<
             return originalScheduleTask(task, delayMs, taskName);
         }) as typeof timeoutManager.scheduleTask;
         const match = makeMatch(peerAddress, "81");
-        await service.initMatchedNegotiation(match);
+        const { outcome: serviceOutcome } = await this.startNegotiation(
+            service,
+            match
+        );
         await service.acceptTerms(
             transport,
             match.attemptNonce,
             match.selectorChallenge,
             match.advertiserChallenge,
-            500
+            this.encodeBalance(500)
         );
         const channelId = service.state.attempt!.channelId;
         const proposal = {
@@ -3215,6 +3521,7 @@ export class P2PManagerProbeService extends ARpcService<
         const signedAttemptClearedAfterExpiry = !service.state.attempt;
         const signedAttemptIdClearedAfterExpiry =
             String(this.p2pManager.stateManager.channelId) === ethers.ZeroHash;
+        await serviceOutcome;
 
         await resetLifecycle();
         const lossWallet = lowerWallet();
@@ -3224,13 +3531,17 @@ export class P2PManagerProbeService extends ARpcService<
         this.p2pManager.profileManager.registerProfile(lossProfile);
         const lossService = new OpenChannelNegotiationService(this.p2pManager);
         const lossMatch = makeMatch(lossPeer, "86");
-        await lossService.initMatchedNegotiation(lossMatch);
+        const { outcome: lossOutcome } = await this.startNegotiation(
+            lossService,
+            lossMatch
+        );
         lossService.state.attempt!.localOpeningSignatureIssued = true;
         this.p2pManager.profileManager.removeTransport(lossTransport);
         await Promise.resolve();
         const signedPeerBlacklistedOnFinalLoss = lossProfile.isBlackListed;
         const signedAttemptRetainedAfterFinalLoss = !!lossService.state.attempt;
         await lossService.dispose();
+        await lossOutcome;
 
         await resetLifecycle();
         let higherWallet = ethers.Wallet.createRandom();
@@ -3243,7 +3554,10 @@ export class P2PManagerProbeService extends ARpcService<
         this.p2pManager.profileManager.registerProfile(higherProfile);
         const lowerService = new OpenChannelNegotiationService(this.p2pManager);
         const lowerMatch = makeMatch(higherPeer, "84");
-        await lowerService.initMatchedNegotiation(lowerMatch);
+        const { outcome: lowerOutcome } = await this.startNegotiation(
+            lowerService,
+            lowerMatch
+        );
         const lowerAttempt = lowerService.state.attempt!;
         lowerAttempt.localOpeningSignatureIssued = true;
         let lowerExpiryTask: (() => void | Promise<void>) | undefined;
@@ -3270,6 +3584,7 @@ export class P2PManagerProbeService extends ARpcService<
         await Promise.resolve();
         const lowerBlacklistedHigherAfterExpiry = higherProfile.isBlackListed;
         timeoutManager.scheduleTask = originalScheduleTask;
+        await lowerOutcome;
 
         await resetLifecycle();
         const disposePeer = getChecksumAddress(lowerWallet().address);
@@ -3281,12 +3596,12 @@ export class P2PManagerProbeService extends ARpcService<
             this.p2pManager
         );
         const disposeMatch = makeMatch(disposePeer, "85");
-        await disposeService.initMatchedNegotiation(disposeMatch);
+        const { outcome: disposeOutcome } = await this.startNegotiation(
+            disposeService,
+            disposeMatch
+        );
         const disposeAttempt = disposeService.state.attempt!;
         disposeAttempt.localOpeningSignatureIssued = true;
-        const disposeOutcome = disposeService.waitForOutcome(
-            disposeMatch.attemptNonce
-        );
         await disposeService.dispose();
         const signedDisposeOutcomeCancelled =
             (await disposeOutcome).status === "cancelled";
@@ -3301,13 +3616,16 @@ export class P2PManagerProbeService extends ARpcService<
         );
         const openService = new OpenChannelNegotiationService(this.p2pManager);
         const openMatch = makeMatch(openPeer, "82");
-        await openService.initMatchedNegotiation(openMatch);
+        const { outcome: openOutcome } = await this.startNegotiation(
+            openService,
+            openMatch
+        );
         await openService.acceptTerms(
             openTransport,
             openMatch.attemptNonce,
             openMatch.selectorChallenge,
             openMatch.advertiserChallenge,
-            500
+            this.encodeBalance(500)
         );
         const openChannelId = openService.state.attempt!.channelId;
         const openProposal = {
@@ -3326,12 +3644,10 @@ export class P2PManagerProbeService extends ARpcService<
             openWallet
         );
         let outcomeResolved = false;
-        const outcome = openService
-            .waitForOutcome(openMatch.attemptNonce)
-            .then((result) => {
-                outcomeResolved = true;
-                return result;
-            });
+        const outcome = openOutcome.then((result) => {
+            outcomeResolved = true;
+            return result;
+        });
         manager.open = (async () => ({
             wait: async () => undefined
         })) as unknown as typeof manager.open;
@@ -3384,5 +3700,287 @@ export class P2PManagerProbeService extends ARpcService<
             matchingOpenEventClearedAttempt,
             matchingOpenEventRetainedChannelId
         };
+    }
+
+    public async probeTargetedNegotiationRaces(): Promise<TargetedNegotiationRaceProbe> {
+        const stateManager = this.p2pManager.stateManager;
+        const localAddress = getChecksumAddress(
+            String(stateManager.signerAddress)
+        );
+        const lowerWallet = () => {
+            let wallet = ethers.Wallet.createRandom();
+            while (compareAddresses(wallet.address, localAddress) >= 0) {
+                wallet = ethers.Wallet.createRandom();
+            }
+            return wallet;
+        };
+        const makeMatch = (peerAddress: string, seed: string): LobbyMatch => ({
+            peerAddress: getChecksumAddress(peerAddress),
+            attemptNonce: `0x${seed.repeat(32)}`,
+            selectorAddress: getChecksumAddress(peerAddress),
+            advertiserAddress: localAddress,
+            selectorChallenge: `0x${"e1".repeat(32)}`,
+            advertiserChallenge: `0x${"f1".repeat(32)}`
+        });
+        const prepare = async (seed: string) => {
+            const wallet = lowerWallet();
+            const peerAddress = getChecksumAddress(wallet.address);
+            const transport = this.transport(peerAddress);
+            const profile = new PeerProfile(transport, peerAddress);
+            this.p2pManager.profileManager.registerProfile(profile);
+            const channelId = `0x${seed.repeat(32)}`;
+            await stateManager.clearChannelId();
+            await stateManager.setChannelId(channelId);
+            stateManager.setStatus(Status.NOT_OPENED);
+            const service = new OpenChannelNegotiationService(this.p2pManager);
+            const match = makeMatch(peerAddress, seed === "91" ? "93" : "94");
+            const { outcome } = await this.startNegotiation(service, match, {
+                mode: "targeted",
+                channelId,
+                balance: { amount: 500n, data: "0x1234" }
+            });
+            await service.acceptTerms(
+                transport,
+                match.attemptNonce,
+                match.selectorChallenge,
+                match.advertiserChallenge,
+                this.encodeBalance(500, "0x5678")
+            );
+            const proposal = {
+                channelId,
+                participants: [peerAddress, localAddress],
+                balances: [
+                    { amount: 500n, data: "0x5678" },
+                    { amount: 500n, data: "0x1234" }
+                ],
+                deadlineTimestamp: Clock.getTimeInSeconds() + 60,
+                isAtomic: true,
+                data: "0x"
+            };
+            const signed = await SignatureUtils.signOpenChannel(
+                proposal,
+                wallet
+            );
+            return {
+                wallet,
+                peerAddress,
+                transport,
+                profile,
+                channelId,
+                service,
+                match,
+                outcome,
+                signed
+            };
+        };
+
+        const signature = await prepare("91");
+        const manager = stateManager.stateChannelManagerContract;
+        const originalOpen = manager.open;
+        let signatureSubmitCalls = 0;
+        manager.open = (async () => {
+            signatureSubmitCalls += 1;
+            return { wait: async () => undefined };
+        }) as unknown as typeof manager.open;
+        const originalSign = SignatureUtils.signOpenChannel;
+        let releaseSign!: () => void;
+        const signGate = new Promise<void>((resolve) => {
+            releaseSign = resolve;
+        });
+        let signEntered = false;
+        SignatureUtils.signOpenChannel = (async (
+            ...args: Parameters<typeof originalSign>
+        ) => {
+            if (args[1] === stateManager.signer) {
+                signEntered = true;
+                await signGate;
+            }
+            return originalSign.call(SignatureUtils, ...args);
+        }) as typeof originalSign;
+        const accepting = signature.service.acceptOpenProposal(
+            signature.transport,
+            signature.match.attemptNonce,
+            signature.match.selectorChallenge,
+            signature.match.advertiserChallenge,
+            signature.signed.encoded.toString(),
+            signature.signed.signature.toString()
+        );
+        for (let index = 0; index < 100 && !signEntered; index += 1) {
+            await new Promise((resolve) => setTimeout(resolve, 0));
+        }
+        stateManager.events.emit("eventHandler", "onChannelOpened", [
+            signature.channelId
+        ]);
+        const signatureOutcome = (await signature.outcome).status;
+        const signatureTargetRetained =
+            String(stateManager.channelId) === signature.channelId;
+        releaseSign();
+        await accepting;
+        SignatureUtils.signOpenChannel = originalSign;
+        manager.open = originalOpen;
+
+        const receipt = await prepare("92");
+        let receiptSubmitCalls = 0;
+        manager.open = (async () => {
+            receiptSubmitCalls += 1;
+            return {
+                wait: async () => {
+                    throw new Error("injected targeted receipt failure");
+                }
+            };
+        }) as unknown as typeof manager.open;
+        const originalRefresh =
+            stateManager.refreshOpenedStatusFromChain.bind(stateManager);
+        stateManager.refreshOpenedStatusFromChain = async () => {
+            stateManager.setStatus(Status.OPENED);
+            return Status.OPENED;
+        };
+        await receipt.service.acceptOpenProposal(
+            receipt.transport,
+            receipt.match.attemptNonce,
+            receipt.match.selectorChallenge,
+            receipt.match.advertiserChallenge,
+            receipt.signed.encoded.toString(),
+            receipt.signed.signature.toString()
+        );
+        const settled = await DetachedPromises.awaitAllAndClear();
+        const receiptOutcome = (await receipt.outcome).status;
+        const receiptTargetRetained =
+            String(stateManager.channelId) === receipt.channelId;
+        stateManager.refreshOpenedStatusFromChain = originalRefresh;
+        manager.open = originalOpen;
+
+        const unopenedReceipt = await prepare("95");
+        manager.open = (async () => ({
+            wait: async () => {
+                throw new Error("targeted receipt failed while unopened");
+            }
+        })) as unknown as typeof manager.open;
+        await unopenedReceipt.service.acceptOpenProposal(
+            unopenedReceipt.transport,
+            unopenedReceipt.match.attemptNonce,
+            unopenedReceipt.match.selectorChallenge,
+            unopenedReceipt.match.advertiserChallenge,
+            unopenedReceipt.signed.encoded.toString(),
+            unopenedReceipt.signed.signature.toString()
+        );
+        const unopenedSettled = await DetachedPromises.awaitAllAndClear();
+        const unopenedReceiptOutcome = (await unopenedReceipt.outcome).status;
+        const unopenedRejected = unopenedSettled.find(
+            (entry): entry is PromiseRejectedResult =>
+                entry.status === "rejected"
+        );
+        const unopenedReceiptError = unopenedRejected
+            ? String(unopenedRejected.reason)
+            : "";
+        const unopenedReceiptTargetRetained =
+            String(stateManager.channelId) === unopenedReceipt.channelId;
+        manager.open = originalOpen;
+
+        const ordinaryWallet = lowerWallet();
+        const ordinaryPeer = getChecksumAddress(ordinaryWallet.address);
+        const ordinaryTransport = this.transport(ordinaryPeer);
+        const ordinaryProfile = new PeerProfile(
+            ordinaryTransport,
+            ordinaryPeer
+        );
+        this.p2pManager.profileManager.registerProfile(ordinaryProfile);
+        await stateManager.clearChannelId();
+        stateManager.setStatus(Status.DISCOVERING);
+        const ordinaryService = new OpenChannelNegotiationService(
+            this.p2pManager
+        );
+        const ordinaryMatch = makeMatch(ordinaryPeer, "96");
+        const { outcome: ordinaryOutcome } = await this.startNegotiation(
+            ordinaryService,
+            ordinaryMatch
+        );
+        await ordinaryService.acceptTerms(
+            ordinaryTransport,
+            ordinaryMatch.attemptNonce,
+            ordinaryMatch.selectorChallenge,
+            ordinaryMatch.advertiserChallenge,
+            this.encodeBalance(500, "0x5678")
+        );
+        const ordinaryProposal = {
+            channelId: ordinaryService.state.attempt!.channelId,
+            participants: [ordinaryPeer, localAddress],
+            balances: [
+                { amount: 500n, data: "0x5678" },
+                { amount: 500n, data: "0x" }
+            ],
+            deadlineTimestamp: Clock.getTimeInSeconds() + 60,
+            isAtomic: true,
+            data: "0x"
+        };
+        const ordinarySigned = await SignatureUtils.signOpenChannel(
+            ordinaryProposal,
+            ordinaryWallet
+        );
+        manager.open = (async () => ({
+            wait: async () => {
+                throw new Error("ordinary receipt failure");
+            }
+        })) as unknown as typeof manager.open;
+        await ordinaryService.acceptOpenProposal(
+            ordinaryTransport,
+            ordinaryMatch.attemptNonce,
+            ordinaryMatch.selectorChallenge,
+            ordinaryMatch.advertiserChallenge,
+            ordinarySigned.encoded.toString(),
+            ordinarySigned.signature.toString()
+        );
+        const ordinarySettled = await DetachedPromises.awaitAllAndClear();
+        const ordinaryReceiptOutcome = (await ordinaryOutcome).status;
+        const ordinaryRejected = ordinarySettled.find(
+            (entry): entry is PromiseRejectedResult =>
+                entry.status === "rejected"
+        );
+        manager.open = originalOpen;
+
+        return {
+            signatureOutcome,
+            signatureSubmitCalls,
+            signaturePeerBlacklisted: signature.profile.isBlackListed,
+            signatureAttemptCleared: !signature.service.state.attempt,
+            signatureTargetRetained,
+            receiptOutcome,
+            receiptSubmitCalls,
+            receiptPeerBlacklisted: receipt.profile.isBlackListed,
+            receiptAttemptCleared: !receipt.service.state.attempt,
+            receiptTargetRetained,
+            detachedErrors: settled.filter(
+                (entry) => entry.status === "rejected"
+            ).length,
+            unopenedReceiptOutcome,
+            unopenedReceiptError,
+            unopenedReceiptPeerBlacklisted:
+                unopenedReceipt.profile.isBlackListed,
+            unopenedReceiptTargetRetained,
+            ordinaryReceiptOutcome,
+            ordinaryReceiptError: ordinaryRejected
+                ? String(ordinaryRejected.reason)
+                : "",
+            ordinaryReceiptPeerBlacklisted: ordinaryProfile.isBlackListed,
+            ordinaryReceiptChannelCleared:
+                String(stateManager.channelId) === ethers.ZeroHash
+        };
+    }
+
+    private async startNegotiation(
+        service: OpenChannelNegotiationService,
+        match: LobbyMatch,
+        options: MatchedNegotiationOptions = {}
+    ): Promise<{ outcome: Promise<NegotiationOutcome> }> {
+        const outcome = service.initMatchedNegotiation(match, options);
+        for (let attempt = 0; attempt < 100; attempt += 1) {
+            if (service.state.attempt) return { outcome };
+            await new Promise((resolve) => setTimeout(resolve, 0));
+        }
+        throw new Error("Negotiation attempt did not initialize");
+    }
+
+    private encodeBalance(amount: bigint | number, data = "0x"): string {
+        return String(Codec.encode({ amount, data }, Type.Balance));
     }
 }

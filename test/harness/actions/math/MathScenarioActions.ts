@@ -386,7 +386,9 @@ export class MathScenarioActions extends ScenarioActions {
         const stateTransitionCount = options?.stateTransitionCount ?? 2;
         const disconnectedPeerIndex = options?.disconnectedPeerIndex ?? 2;
         await this.harness.lifecycle.timeoutSetup(4, 0, { timeConfig });
-        await this.harness.network.disconnectPeer(disconnectedPeerIndex);
+        await this.harness.network.blacklistAndDisconnectPeer(
+            disconnectedPeerIndex
+        );
         const remainingPeerIndices = [0, 1, 2, 3].filter(
             (i) => i !== disconnectedPeerIndex
         );
@@ -593,7 +595,7 @@ export class MathScenarioActions extends ScenarioActions {
     async readyForRedispute() {
         await this.harness.lifecycle.start(4, 0);
 
-        await this.harness.byzantine.disconnect(3);
+        await this.harness.byzantine.blacklistAndDisconnect(3);
         await this.harness.transition.increment(1);
         await this.harness.assert.sync.peersInSyncWait({
             peerIndices: [0, 1, 2]

@@ -2,6 +2,7 @@ import { expect } from "chai";
 
 import { PingPongE2EFixture } from "@test/fixtures/PingPongE2EFixture";
 import { waitFor } from "@test/utils/waitFor";
+import { Status } from "@/types";
 
 describe("E2E: PingPongService (custom RPC)", function () {
     let fixture: PingPongE2EFixture;
@@ -92,7 +93,7 @@ describe("E2E: PingPongService (custom RPC)", function () {
         ).to.equal(1);
     });
 
-    it("disconnects a peer that sends an inherited method name without affecting another session", async function () {
+    it("blacklists a peer that sends an inherited method name without affecting another session", async function () {
         await fixture.setup(3);
 
         const { harness } = fixture;
@@ -109,9 +110,10 @@ describe("E2E: PingPongService (custom RPC)", function () {
             )
             .request();
 
-        await harness.assert.rpc.peerDisconnectedFrom({
-            peerIndex: receiver.index,
-            expectedFinalCount: 1
+        await harness.assert.rpc.peerBlacklistedAndDisconnected({
+            observer: receiver,
+            target: offender,
+            expectedStatus: Status.PARTICIPATING
         });
         expect(
             await ctl(receiver).pingService.getReceivedPingNonces().request()
@@ -165,7 +167,7 @@ describe("E2E: PingPongService (custom RPC)", function () {
         ).to.deep.equal(["empty-id-e2e"]);
     });
 
-    it("disconnects a multibyte oversized sender without affecting another session", async function () {
+    it("blacklists a multibyte oversized sender without affecting another session", async function () {
         await fixture.setup(3);
 
         const { harness } = fixture;
@@ -178,9 +180,10 @@ describe("E2E: PingPongService (custom RPC)", function () {
             .rpcHandlerProbe.sendMultibyteOversizedRpc(receiver.address)
             .request();
 
-        await harness.assert.rpc.peerDisconnectedFrom({
-            peerIndex: receiver.index,
-            expectedFinalCount: 1
+        await harness.assert.rpc.peerBlacklistedAndDisconnected({
+            observer: receiver,
+            target: offender,
+            expectedStatus: Status.PARTICIPATING
         });
         ctl(receiver)
             .pingService.ping("after-oversized-frame")
@@ -194,5 +197,8 @@ describe("E2E: PingPongService (custom RPC)", function () {
                 ).includes("after-oversized-frame"),
             harness.event.protocolEventTimeoutMs()
         );
+        expect(
+            await ctl(receiver).query.isConnectedTo(offender.address).request()
+        ).to.equal(false);
     });
 });

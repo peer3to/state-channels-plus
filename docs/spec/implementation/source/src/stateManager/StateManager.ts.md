@@ -121,4 +121,12 @@ Exact test evidence is mapped against these IDs in the verification test reports
 
 ## Related source reports
 
-- [BlockQueueManager](./BlockQueueManager.ts.md), [ValidationService](./ingest/ValidationService.ts.md), the four strategies, [DisputeManager](../disputeManager/DisputeManager.ts.md), [SnapshotUpdateService](./snapshotUpdate/SnapshotUpdateService.ts.md), [AgreementManager](../agreementManager/AgreementManager.ts.md), [Storage](../storage/Storage.ts.md).
+- [BlockQueueManager](./ingest/BlockQueueManager.ts.md), [ValidationService](./ingest/ValidationService.ts.md), the four strategies, [DisputeManager](../disputeManager/DisputeManager.ts.md), [SnapshotUpdateService](./snapshotUpdate/SnapshotUpdateService.ts.md), [AgreementManager](../agreementManager/AgreementManager.ts.md), [Storage](../storage/Storage.ts.md).
+
+## Targeted connect contribution
+
+`setChannelId` installs the provider-backed listener before targeted matching. Authoritative refresh governs
+preflight and observed-open handoff. Targeted unsigned cleanup skips `clearChannelId`, so the same target and
+listener survive; ordinary derived-ID cleanup clears both. Before disposal tears down P2P state, it lets the
+local signer settle an active connect exactly once with `false`. Fatal observer sync uses the existing abort
+and disposal branch, while pending or participating operational failure preserves state.

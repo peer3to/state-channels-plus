@@ -86,3 +86,8 @@ Exact test evidence is mapped against these IDs in the verification test reports
 ## Related source reports
 
 - [LocalDiamond](../../contracts/V1/StateChannelDiamondProxy/LocalDiamond.sol.md), [ContractExecutor](./contractExecutor/ContractExecutor.ts.md), [ADiamondStateMachine](../ADiamondStateMachine.ts.md).
+
+## Balance comparison exposure
+
+The EVM adapter forwards full balance values to the existing Solidity lesser-than view and returns its
+Boolean unchanged. This preserves application-specific balance algebra for remote-term validation.

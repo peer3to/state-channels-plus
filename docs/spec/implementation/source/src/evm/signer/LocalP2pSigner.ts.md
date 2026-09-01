@@ -19,15 +19,13 @@
 
 ## Responsibility and observable boundary
 
-In addition to the existing host-side signing surface, `joinLobby(topic, options)` owns the complete
-host workflow: match one authenticated peer, start guarded negotiation, retry unsigned failures, leave
-the topic after chain-observed opening, and return the opened channel ID and peer address. Matching has
-no default deadline; the caller may pass a finite `matchTimeoutMs`. `leaveLobby` delegates the phase
-decision to matching: it returns `true` and settles the pending join only before commitment, or `false`
-after handoff without cancelling negotiation or chain observation. The caller must supply an exact
-32-byte topic; the signer supplies no default.
-`connectToChannel` rejects while a lobby topic or discovery lifecycle is active, so targeted channel
-selection cannot silently abandon or overlap the lobby session.
+In addition to the existing host-side signing surface, `joinLobby(topic, options)` owns ordinary discovery
+and `connectToChannel(channelId, options)` separately owns fixed-target selection, optional opening,
+exact-channel synchronization, and optional membership. Both wrappers independently consume the same generic
+matcher and direct negotiation outcome. They never call each other and cannot own matching concurrently.
+Matcher deadlines and both public cancellation routes end unmatched work only. `connectToChannel` returns a
+Boolean at the option-selected sync or receipt-confirmed membership boundary; expected operational failures
+return `false`.
 
 The inline signer facade: local key-backed signing plus the join-collection entry (`collectJoinChannelConfirmation` via the service).
 
@@ -83,9 +81,21 @@ Gap column. Audit state is file-level (Status header), never a row status.
 
 Exact test evidence is mapped against these IDs in the verification test reports.
 
-| Unit test ID | Obligation | Public entry and setup | Oracle and forbidden effects | Required permutations |
-| ------------ | ---------- | ---------------------- | ---------------------------- | --------------------- |
+| Unit test ID                                                                          | Obligation                   | Public entry and setup                                                                              | Oracle and forbidden effects                                                                                        | Required permutations                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
+| ------------------------------------------------------------------------------------- | ---------------------------- | --------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| <a id="unit-test-local-p2p-signer-1-q80vpw"></a>`UNIT-TEST-LOCAL-P2P-SIGNER-1-Q80VPW` | Targeted connect composition | Call the public signer through unopened, matched, opened, synced, pending, and participating states | The signer sequentially delegates each phase and returns the final owner result without retaining an attempt object | <a id="unit-test-local-p2p-signer-1-q80vpw.p1"></a>`UNIT-TEST-LOCAL-P2P-SIGNER-1-Q80VPW.P1` — unopened false; <a id="unit-test-local-p2p-signer-1-q80vpw.p2"></a>`UNIT-TEST-LOCAL-P2P-SIGNER-1-Q80VPW.P2` — targeted opening; <a id="unit-test-local-p2p-signer-1-q80vpw.p3"></a>`UNIT-TEST-LOCAL-P2P-SIGNER-1-Q80VPW.P3` — observer sync; <a id="unit-test-local-p2p-signer-1-q80vpw.p4"></a>`UNIT-TEST-LOCAL-P2P-SIGNER-1-Q80VPW.P4` — pending reuse; <a id="unit-test-local-p2p-signer-1-q80vpw.p5"></a>`UNIT-TEST-LOCAL-P2P-SIGNER-1-Q80VPW.P5` — participating reuse |
 
 ## Related source reports
 
 - [identity.md](../../../../../specification/protocol-model/identity.md), [P2pRuntimeHost](../p2pRuntime/P2pRuntimeHost.ts.md).
+
+## Targeted connect implementation
+
+`connectToChannel` is a sequential composition wrapper. It selects the requested channel, refreshes chain
+state, calls the generic matcher and negotiation only for unopened auto-open work, joins the exact raw topic,
+and delegates sync and membership to their existing owners. It keeps no active-attempt object, waiter,
+normalization copy, or lifecycle engine. `joinLobby` remains a distinct wrapper.
+
+Component obligations use [`UNIT-TEST-LOCAL-P2P-SIGNER-1-Q80VPW`](LocalP2pSigner.ts.md#unit-test-local-p2p-signer-1-q80vpw): `.P1` terminal targeted `false` without
+implicit rematch, `.P2` fresh explicit same-ID pre-sync retry, plus separate disposed-observer and committed
+preservation permutations. See [`REQ-TJOIN-1-5VGR1F`](../../../../../specification/peer-communication/targeted-channel-join.md#req-tjoin-1-5vgr1f)–[`REQ-TJOIN-5-Q795M7`](../../../../../specification/peer-communication/targeted-channel-join.md#req-tjoin-5-q795m7).

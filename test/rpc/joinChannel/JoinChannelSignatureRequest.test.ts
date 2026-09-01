@@ -114,7 +114,7 @@ describe("JoinChannel signature requests", function () {
         }
     });
 
-    it("validates requests, signs exact joins, and fails fast when a threshold transport is missing", async function () {
+    it("validates requests, signs exact joins, and waits through reachability grace for a missing threshold transport", async function () {
         const h = TestSession.getHarness();
         // Spectating is asynchronous to the channel: spawn both spectators
         // detached and await SYNCED only where the assertions below need
@@ -476,14 +476,20 @@ describe("JoinChannel signature requests", function () {
                     .request()
             )
         );
+        const agreementTime = h.options.timeConfig?.agreementTime;
+        if (!agreementTime) {
+            throw new Error("Expected a resolved agreementTime");
+        }
         const startedAt = Date.now();
         await assert.rejects(
             joiner.p2pInstance.p2pSigner.collectJoinChannelConfirmation(
                 joinChannel
             ),
-            /no transport for threshold participant/
+            /threshold participant unavailable/
         );
-        expect(Date.now() - startedAt).to.be.lessThan(1000);
+        expect(Date.now() - startedAt).to.be.greaterThanOrEqual(
+            agreementTime * 2 * 1000 - 250
+        );
         const requestCountsAfterPreflight = await Promise.all(
             [0, 1].map((peerIndex) =>
                 h

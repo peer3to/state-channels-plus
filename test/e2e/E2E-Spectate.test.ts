@@ -1,5 +1,4 @@
 import { MathTestSession as TestSession } from "@test/harness";
-import { tryDecodeCustomError } from "@/utils";
 import { expect } from "chai";
 import { ethers } from "ethers";
 import { Block } from "@/models";
@@ -134,8 +133,7 @@ describe("E2E: Spectate Service", function () {
             const response = await harness
                 .control(peer2)
                 .spectateService.onSpectateRequest({
-                    channelId: harness.channelId!.toString(),
-                    initTime: Date.now()
+                    channelId: harness.channelId!.toString()
                 })
                 .request(peer1.address);
             expect(response.encodedSyncPayload).to.be.a("string");
@@ -192,7 +190,7 @@ describe("E2E: Spectate Service", function () {
                 .query.getNextToWrite()
                 .request();
 
-            await h.network.disconnectPeer(spectatorIndex);
+            await h.network.blacklistAndDisconnectPeer(spectatorIndex);
             await h.transition.advanceState({
                 count: 2,
                 waitForPeers: participantIndices,
@@ -442,7 +440,7 @@ describe("E2E: Spectate Service", function () {
                   )
                 : -1;
 
-            await h.network.disconnectPeer(spectatorIndex);
+            await h.network.blacklistAndDisconnectPeer(spectatorIndex);
             const leaverIndex = await h.transition.participantLeaveDetached({
                 waitForPeers: participantIndices,
                 waitForFinalization: true
@@ -914,22 +912,23 @@ describe("E2E: Spectate Service", function () {
                 participant: joinerB.address
             });
 
-            try {
+            expect(
                 await joinerA.p2pInstance.p2pSigner.joinChannel(
                     prepared.confirmation,
                     prepared.expectedSnapshotHash,
                     prepared.expectedForkId
-                );
-                expect.fail(
-                    "expected joinChannel to revert: pending set changed between confirmation build and submission"
-                );
-            } catch (e) {
-                const customError = tryDecodeCustomError(e);
-                expect(customError).to.not.be.null;
-                expect(customError!.errorDescription.name).to.equal(
-                    "ErrorJoinChannelInvalidSignature"
-                );
-            }
+                )
+            ).to.equal(false);
+            const failedJoinState = await h.execOnHost(
+                h.getPeer(joinerA.index),
+                async (stateManager) => ({
+                    status: stateManager.status,
+                    isDisposed: stateManager.isDisposed
+                }),
+                {}
+            );
+            expect(failedJoinState.status).to.equal(Status.OPENED);
+            expect(failedJoinState.isDisposed).to.equal(true);
         });
     });
 
@@ -1251,7 +1250,7 @@ describe("E2E: Spectate Service", function () {
                 waitForFinalization: true
             });
             await h.event.waitUntilPeerStatus(requester.index, Status.SYNCED);
-            await h.network.disconnectPeer(requester.index);
+            await h.network.blacklistAndDisconnectPeer(requester.index);
             const requesterHeightBefore =
                 (await h
                     .control(requester)
@@ -1384,7 +1383,7 @@ describe("E2E: Spectate Service", function () {
             // the requester has to be behind the requested height, so take it
             // out before any block is produced
             const requester = await h.join.addSpectatorWait();
-            await h.network.disconnectPeer(requester.index);
+            await h.network.blacklistAndDisconnectPeer(requester.index);
             const requesterHeightBefore =
                 (await h
                     .control(requester)

@@ -19,21 +19,19 @@
 
 ## Responsibility and observable boundary
 
-Both halves of verifiable sync. Responder: `generateSyncPayload` proves exactly the requested
-target (dispute-window walk to the target fork, state proof, stream ranges, encoded states) or
-returns nothing. Requester: `sync` (one in-flight per peer) then `applySyncResponse` — the full
-verification chain (decode-in-try, RTT bound, on-chain anchor, window walk with local
-re-reduction, genesis validity, strictly-ahead short-circuit, fork-sensitive range checks, dispute
-status, milestone proof, balance invariant, simulated advance) before mutex-guarded persistence and
-suffix replay. If the exact target snapshot lands during verification, the requester can still
-adopt its local proof after confirming that chain state and any pending reductions remain valid.
+Both halves of verifiable sync. The responder proves the requested current state or optional exact
+fork and height. The requester exposes one `sync` entry with an optional timeout, defaulting to one
+agreement window. It returns a Boolean and leaves abort or recovery policy to its caller. No
+response-age field or second RTT gate exists.
 
 ## Key design decisions
 
 1. **Nothing trusted on receipt.** Every payload element is re-established against the requester's own chain reads and the mirrored canonical predicates — the file is the reference implementation of [`INV-SYNC-1-XCQZ28`](../../../../../../specification/peer-communication/synchronization.md#inv-sync-1-xcqz28).
 2. **Validated against the requester's own request.** The request lives in the `sync` closure; the responder's echo is never consulted ([`INV-SYNC-2-AT3RXE`](../../../../../../specification/peer-communication/synchronization.md#inv-sync-2-at3rxe)).
 3. **Read-only trust establishment.** All contract checks are local-mirror or simulated calls; no step transacts ([`INV-SYNC-4-Z6HER7`](../../../../../../specification/peer-communication/synchronization.md#inv-sync-4-z6her7), [`REQ-MIRROR-1-XCY9CB`](../../../../../../specification/enforcement/local-mirror.md#req-mirror-1-xcy9cb)).
-4. **Fail-closed split by role.** Fresh spectator aborts entirely; recovering participant cuts only the offending peer ([`INV-SYNC-3-A7A2ED`](../../../../../../specification/peer-communication/synchronization.md#inv-sync-3-a7a2ed)).
+4. **Fail-closed service boundary.** Validation failure cuts the offending peer and returns `false`;
+   the caller owns whether that means initial-load abort or exact-recovery queue handling
+   ([`INV-SYNC-3-A7A2ED`](../../../../../../specification/peer-communication/synchronization.md#inv-sync-3-a7a2ed)).
 5. **Malformed heights rejected before any chain walk** so a hostile target cannot buy expensive traversal.
 6. **The pre-genesis outbound segment exists only across forks.** Same-fork payloads encode an
    empty `outboundMessageBlocksUpToLatestGenesis` segment and the requester requires it to be
@@ -49,8 +47,8 @@ adopt its local proof after confirming that chain state and any pending reductio
 | ------------ | ------------------------------------------------------------------------ |
 | Inputs       | Sync requests (responder); encoded payloads (requester).                 |
 | Outputs      | Encoded payloads or refusal; persisted verified state + replayed suffix. |
-| Owned state  | One-in-flight-per-peer set (cleaned in finally).                         |
-| Side effects | Persistence under the state boundary; abort/cut consequences.            |
+| Owned state  | One in-flight request kind per peer, cleaned in `finally`.               |
+| Side effects | Persistence under the state boundary; offending-peer cut on failure.     |
 
 ## Linked requirements
 
@@ -101,7 +99,7 @@ Gap column. Audit state is file-level (Status header), never a row status.
 | Requirement / invariant                                                                                                                                                                                                         | Implementation status | Evidence                                                                                                                                                                                                                                                                                                                                                                 | Gap / divergence                                                                                                                                           |
 | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | [`INV-SYNC-1-XCQZ28`](../../../../../../specification/peer-communication/synchronization.md#inv-sync-1-xcqz28) / [`INV-SYNC-2-AT3RXE`](../../../../../../specification/peer-communication/synchronization.md#inv-sync-2-at3rxe) | Covered               | **Here:** the ordered verification chain against own anchor and own request. Same-fork pre-genesis evidence must be empty; cross-fork evidence is contract-verified. Exact-target race acceptance requires an equal snapshot hash from a fresh chain read. **Other files:** predicates via [EvmDiamondStateMachine](../../../evm/EvmDiamondStateMachine.ts.md) (mirror). | The algorithm prose still says the pre-genesis range is unconditional and that equal-height proofs short-circuit; see Specification contradictions.        |
-| [`INV-SYNC-3-A7A2ED`](../../../../../../specification/peer-communication/synchronization.md#inv-sync-3-a7a2ed)                                                                                                                  | Covered               | **Here:** role-split abort with no partial persistence (skip-if-ahead; conflict aborts).                                                                                                                                                                                                                                                                                 | None.                                                                                                                                                      |
+| [`INV-SYNC-3-A7A2ED`](../../../../../../specification/peer-communication/synchronization.md#inv-sync-3-a7a2ed)                                                                                                                  | Covered               | **Here:** failures return false without partial persistence. **Other files:** [P2PManager](../../../P2PManager.ts.md) owns initial-load abort; [BlockQueueManager](../../../stateManager/ingest/BlockQueueManager.ts.md) owns exact recovery.                                                                                                                            | None.                                                                                                                                                      |
 | [`REQ-SYNC-1-T2589H`](../../../../../../specification/peer-communication/synchronization.md#req-sync-1-t2589h)                                                                                                                  | Partial               | **Here:** exact-target proving and refusal.                                                                                                                                                                                                                                                                                                                              | [`DEF-10-199C7F`](../../../../../../audit/open-findings.md#def-10-199c7f): honest can't-prove-yet refusal punishes the requester (fault taxonomy pending). |
 | [`REQ-SYNC-2-TNT4F4`](../../../../../../specification/peer-communication/synchronization.md#req-sync-2-tnt4f4)                                                                                                                  | Covered               | **Here:** client-side invariant check before adoption. **Other files:** on-chain enforcement absence tracked as [`OQ-19-Y8FDQX`](../../../../../open-questions.md#oq-19-y8fdqx).                                                                                                                                                                                         | None here.                                                                                                                                                 |
 | [`INV-SYNC-4-Z6HER7`](../../../../../../specification/peer-communication/synchronization.md#inv-sync-4-z6her7)                                                                                                                  | Covered               | **Here:** every contract check in the sync chain is a local-mirror read or `staticCall` simulation. The exact-target fallback performs a fresh read and, when needed, a reductions-only simulation; no step transacts.                                                                                                                                                   | None.                                                                                                                                                      |
@@ -119,3 +117,10 @@ Exact test evidence is mapped against these IDs in the verification test reports
 ## Related source reports
 
 - [SpectateRpcMethods](./SpectateRpcMethods.ts.md), [EventSyncService](../../../stateManager/eventSync/EventSyncService.ts.md), [SpectatingValidationStrategy](../../../stateManager/validationStrategy/SpectatingValidationStrategy.ts.md), [EvmDiamondStateMachine](../../../evm/EvmDiamondStateMachine.ts.md).
+
+## Targeted connect contribution
+
+One `sync` method accepts optional fork, height, and timeout arguments. The default timeout is one
+agreement window; `P2PManager` supplies two windows for initial loading. The service returns a Boolean.
+`P2PManager` owns initial-load abort, while `BlockQueueManager` owns exact-recovery failure. The sync
+service owns no participant selection, responder-readiness queue, or lifecycle transition.

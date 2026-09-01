@@ -123,8 +123,8 @@ class InitHandshakeService extends ARpcService<InitHandshakeRpcMethods> {
 
         // Processing verifies a peer-supplied signature; junk (e.g. a malformed
         // signature) makes `ethers.verifyMessage` throw. Guard it so a bad
-        // response disconnects the peer instead of escaping as an unhandled
-        // rejection from this background task.
+        // response rejects the attributable peer instead of escaping as an
+        // unhandled rejection from this background task.
         try {
             await this.handleHandshakeResponse(
                 transport,
@@ -143,7 +143,7 @@ class InitHandshakeService extends ARpcService<InitHandshakeRpcMethods> {
                         ? `invalid handshake response: ${error.message}`
                         : "invalid handshake response"
             });
-            this.p2pManager.disconnectConnection(transport);
+            this.p2pManager.disconnectAndBlacklistPeer(transport);
         }
     }
 
@@ -195,7 +195,7 @@ class InitHandshakeService extends ARpcService<InitHandshakeRpcMethods> {
                 agreementTimeSeconds: agreementTime,
                 reason: "response timestamp outside agreement window"
             });
-            this.p2pManager.disconnectConnection(transport);
+            this.p2pManager.disconnectAndBlacklistPeer(transport);
             return;
         }
         //verify signature

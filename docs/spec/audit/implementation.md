@@ -11,8 +11,9 @@ contained without undoing valid authentication or creating a late connection.
 
 Every transport creates an addressless `PeerProfile` immediately, and the Holepunch ban handle is
 stored there before authentication. `ProfileManager` authenticates and indexes that same profile and
-owns all ban/unban policy. Generic transports expose no SDK ban handle. Fallback release is guarded by the
-profile's current transport, so stale WebRTC close is inert and explicit blacklist state wins.
+owns all ban/unban policy. Generic transports expose no SDK ban handle. Fallback release checks the
+profile's full live transport set, so a non-preferred WebRTC transport in upgrade grace keeps Holepunch
+banned and explicit blacklist state wins.
 Authentication is also a final admission gate: a late Holepunch connection cannot replace healthy
 WebRTC or reattach an excluded identity, while a fallback after current-WebRTC close can become
 current and carry traffic.
@@ -73,3 +74,36 @@ records the complete method, listener, event-log, query, and passthrough boundar
 the structural Result predicate.
 
 Other specification-mirrored implementation subjects, exhaustive source inventories, conformance decisions, and unit variants remain visible in generated coverage.
+
+## Targeted pre-open channel join assessment — 2026-08-31
+
+The implementation keeps `joinLobby` and `connectToChannel` as separate public wrappers over one generic
+matcher and one negotiation service. The targeted wrapper holds a fixed ID, consumes direct mode-specific
+negotiation outcomes, performs one exact-channel post-open entry, and calls existing sync and membership
+owners. Full balances survive client/worker/peer encodings. The state machine's neutral zero and existing
+lesser-than operation remain the remote trust boundary. Match acceptance removes matcher timeout and
+cancellation ownership before negotiation.
+
+SO5 is deliberate: one valid selected-peer response supplies usable state for later enforcement; selected-peer
+failure proves the early cooperation precondition failed and permits no fallback before abort. RO3 is peer
+identity response authority, not rebinding or resend. RY3 is targeted-only and skips opening submission after
+the attempt has handed off to an authoritative open. Pending/participating failures preserve the attached
+runtime. The normal Hyperswarm one-live-connection-per-unique-peer handoff remains an accepted production
+assumption; automated coverage uses `DEBUG_LOCAL_TRANSPORT` and proves only transient duplicate cleanup.
+
+## Focused safety follow-up — 2026-09-01
+
+LocalDiscovery topic sessions now own active dial keys and capped-backoff retry timers. An authenticated close
+recreates an eligible connection only while the exact session remains active; `leave` removes the session and
+cancels its timers before closing registry and listener ownership. The existing `P2PManager` blacklist check
+blocks replacement. `MembershipService.joinChannel` now sets local pending status before contract invocation,
+restores `SYNCED` only after a proven no-commitment result, and preserves pending on uncertainty. Force-join
+checks defer until authoritative on-chain membership and a usable window, with one stored start flag.
+
+## Peer-fault call-site audit — 2026-09-01
+
+The audited ingress and handshake call sites now use `disconnectAndBlacklistPeer` for attributable
+wire violations. The helper prefers the authenticated address, so a fault received on a retired
+transport still blacklists the current profile and closes both current and reporting transports.
+Lifecycle cleanup, network loss, timeouts without proof, response-send failure, and local dispatch
+exceptions continue to call `disconnectConnection`.

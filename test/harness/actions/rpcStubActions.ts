@@ -13,7 +13,8 @@ import type {
 import { waitFor } from "@test/utils/waitFor";
 import type {
     HeldLobbyReplyKind,
-    HeldNegotiationReplyKind
+    HeldNegotiationReplyKind,
+    HeldMembershipReceiptKind
 } from "@test/fixtures/customRpc/harnessControl/services/stub/StubService";
 
 /**
@@ -60,17 +61,101 @@ export class RpcStubActions<
     }
 
     async holdMatchedNegotiation(
-        peerIndex: number
+        peerIndex: number,
+        fail = false
     ): Promise<() => Promise<number>> {
         const peer = this.harness.getPeer(peerIndex);
         await this.harness
             .control(peer)
-            .stub.holdMatchedNegotiation()
+            .stub.holdMatchedNegotiation(fail)
             .request();
         return async () =>
             await this.harness
                 .control(peer)
                 .stub.releaseMatchedNegotiation()
+                .request();
+    }
+
+    async failNextMatchedNegotiation(peerIndex: number): Promise<void> {
+        await this.harness
+            .control(this.harness.getPeer(peerIndex))
+            .stub.failNextMatchedNegotiation()
+            .request();
+    }
+
+    async holdSpectateResponses(
+        peerIndex: number
+    ): Promise<() => Promise<number>> {
+        const peer = this.harness.getPeer(peerIndex);
+        await this.harness.control(peer).stub.holdSpectateResponses().request();
+        return async () =>
+            await this.harness
+                .control(peer)
+                .stub.releaseSpectateResponses()
+                .request();
+    }
+
+    async holdPostMatchTargetRefresh(
+        peerIndex: number
+    ): Promise<() => Promise<number>> {
+        const peer = this.harness.getPeer(peerIndex);
+        await this.harness
+            .control(peer)
+            .stub.holdPostMatchTargetRefresh()
+            .request();
+        return async () =>
+            await this.harness
+                .control(peer)
+                .stub.releasePostMatchTargetRefresh()
+                .request();
+    }
+
+    async holdMembershipReceipt(
+        peerIndex: number,
+        kind: HeldMembershipReceiptKind,
+        fail = false
+    ): Promise<() => Promise<number>> {
+        const peer = this.harness.getPeer(peerIndex);
+        await this.harness
+            .control(peer)
+            .stub.holdMembershipReceipt(kind, fail)
+            .request();
+        return async () =>
+            await this.harness
+                .control(peer)
+                .stub.releaseMembershipReceipt()
+                .request();
+    }
+
+    async holdMembershipSubmission(
+        peerIndex: number,
+        kind: HeldMembershipReceiptKind
+    ): Promise<() => Promise<number>> {
+        const peer = this.harness.getPeer(peerIndex);
+        await this.harness
+            .control(peer)
+            .stub.holdMembershipSubmission(kind)
+            .request();
+        return async () =>
+            await this.harness
+                .control(peer)
+                .stub.releaseMembershipReceipt()
+                .request();
+    }
+
+    async failMembershipReceipt(
+        peerIndex: number,
+        kind: HeldMembershipReceiptKind
+    ): Promise<() => Promise<number>> {
+        const peer = this.harness.getPeer(peerIndex);
+        await this.harness
+            .control(peer)
+            .stub.failMembershipReceipt(kind)
+            .request();
+        return async () =>
+            await this.harness
+                .control(peer)
+                .stub.releaseMembershipReceipt()
                 .request();
     }
 
@@ -97,6 +182,23 @@ export class RpcStubActions<
             await this.harness
                 .control(peer)
                 .stub.restoreLobbyRoleDuration()
+                .request();
+        };
+    }
+
+    async failMembershipSubmissionUncertain(
+        peerIndex: number,
+        kind: HeldMembershipReceiptKind
+    ): Promise<() => Promise<void>> {
+        const peer = this.harness.getPeer(peerIndex);
+        await this.harness
+            .control(peer)
+            .stub.failMembershipSubmissionUncertain(kind)
+            .request();
+        return async () => {
+            await this.harness
+                .control(peer)
+                .stub.releaseMembershipReceipt()
                 .request();
         };
     }

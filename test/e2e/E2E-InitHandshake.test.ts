@@ -113,7 +113,7 @@ describe("E2E: Init Handshake", function () {
     });
 
     describe("Time Validation", function () {
-        it("should disconnect peer when handshake request time difference exceeds agreementTime", async function () {
+        it("should blacklist peer when handshake request time difference exceeds agreementTime", async function () {
             const h = TestSession.getHarness();
             await h.lifecycle.start(3, 0, { autoConnect: false });
             await h.rpc.connectPeers([0, 1]);
@@ -122,14 +122,21 @@ describe("E2E: Init Handshake", function () {
                 newPeerIndex: 2,
                 observingPeerIndex: 1
             });
+            const observer = h.getPeer(1);
+            const offender = h.getPeer(2);
+            const expectedStatus = await h
+                .control(observer)
+                .query.getStatus()
+                .request();
             await h.rpc.sendInvalidTimeHandshakeRequest({
                 fromPeer: 2,
                 toPeer: 1,
                 timeOffset: 2000
             });
-            await h.assert.rpc.peerDisconnectedFrom({
-                peerIndex: 1,
-                expectedFinalCount: 1
+            await h.assert.rpc.peerBlacklistedAndDisconnected({
+                observer,
+                target: offender,
+                expectedStatus
             });
         });
 
@@ -154,9 +161,15 @@ describe("E2E: Init Handshake", function () {
                 peerIndex: 0,
                 expectedFinalCount: 1
             });
+            expect(
+                await h
+                    .control(h.getPeer(0))
+                    .query.isBlacklisted(h.getPeer(2).address)
+                    .request()
+            ).to.equal(false);
         });
 
-        it("should disconnect peer when handshake response time doesn't match init time", async function () {
+        it("should blacklist peer when handshake response time doesn't match init time", async function () {
             const h = TestSession.getHarness();
             await h.lifecycle.start(3, 0, { autoConnect: false });
             await h.rpc.connectPeers([0, 1]);
@@ -165,20 +178,27 @@ describe("E2E: Init Handshake", function () {
                 newPeerIndex: 2,
                 observingPeerIndex: 0
             });
+            const observer = h.getPeer(0);
+            const offender = h.getPeer(2);
+            const expectedStatus = await h
+                .control(observer)
+                .query.getStatus()
+                .request();
             // Peer 2 answers promptly but with a response timestamp far outside
-            // the agreement window -> peer 0 rejects and disconnects peer 2.
+            // the agreement window, so peer 0 rejects and blacklists peer 2.
             await h.rpc.initiateHandshakeWithFaultyResponse({
                 initiatorPeer: 0,
                 responderPeer: 2,
                 responseTimeOffsetSeconds: 1000
             });
-            await h.assert.rpc.peerDisconnectedFrom({
-                peerIndex: 0,
-                expectedFinalCount: 1
+            await h.assert.rpc.peerBlacklistedAndDisconnected({
+                observer,
+                target: offender,
+                expectedStatus
             });
         });
 
-        it("should disconnect peer answering with an undecodable (junk) signature", async function () {
+        it("should blacklist peer answering with an undecodable (junk) signature", async function () {
             const h = TestSession.getHarness();
             await h.lifecycle.start(3, 0, { autoConnect: false });
             await h.rpc.connectPeers([0, 1]);
@@ -187,17 +207,23 @@ describe("E2E: Init Handshake", function () {
                 newPeerIndex: 2,
                 observingPeerIndex: 0
             });
-            // Peer 2 replies with junk bytes for the signature -> peer 0's
-            // signature verification throws and it disconnects peer 2 instead of
-            // crashing with an unhandled rejection.
+            const observer = h.getPeer(0);
+            const offender = h.getPeer(2);
+            const expectedStatus = await h
+                .control(observer)
+                .query.getStatus()
+                .request();
+            // Peer 2 replies with junk bytes for the signature, so peer 0
+            // blacklists it instead of crashing with an unhandled rejection.
             await h.rpc.initiateHandshakeWithFaultyResponse({
                 initiatorPeer: 0,
                 responderPeer: 2,
                 corruptSignature: true
             });
-            await h.assert.rpc.peerDisconnectedFrom({
-                peerIndex: 0,
-                expectedFinalCount: 1
+            await h.assert.rpc.peerBlacklistedAndDisconnected({
+                observer,
+                target: offender,
+                expectedStatus
             });
         });
     });
@@ -212,10 +238,17 @@ describe("E2E: Init Handshake", function () {
             // The handshake already exchanged acks; a second ack from peer 0
             // over the already-acked transport is a protocol violation, so
             // peer 1 must disconnect + blacklist peer 0.
+            const observer = h.getPeer(1);
+            const offender = h.getPeer(0);
+            const expectedStatus = await h
+                .control(observer)
+                .query.getStatus()
+                .request();
             await h.rpc.sendDuplicateHandshakeAck({ fromPeer: 0, toPeer: 1 });
-            await h.assert.rpc.peerDisconnectedFrom({
-                peerIndex: 1,
-                expectedFinalCount: 0
+            await h.assert.rpc.peerBlacklistedAndDisconnected({
+                observer,
+                target: offender,
+                expectedStatus
             });
         });
     });

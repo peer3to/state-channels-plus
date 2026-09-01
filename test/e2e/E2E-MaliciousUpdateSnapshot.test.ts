@@ -256,15 +256,15 @@ describe("E2E: Malicious updateSnapshot", function () {
         // getPeer to recover the harness's typed peer handle.
         const added = await h.join.addSpectator();
         const spectator = h.getPeer(added.index);
-        await h.control(spectator).stub.stubRecordSpectateAbort().request();
+        await h.control(spectator).stub.stubRecordAbort().request();
 
         // Wait for abort.
         await waitFor(
-            () => h.control(spectator).stub.wasSpectateAbortCalled().request(),
+            () => h.control(spectator).stub.wasAbortCalled().request(),
             h.event.protocolEventTimeoutMs()
         );
         expect(
-            await h.control(spectator).stub.wasSpectateAbortCalled().request()
+            await h.control(spectator).stub.wasAbortCalled().request()
         ).to.equal(true, "SpectateService.abort must be called");
 
         expect(
@@ -276,5 +276,8 @@ describe("E2E: Malicious updateSnapshot", function () {
             0,
             "spectator should have 0 open connections after aborting on balance invariant"
         );
+        await TestSession.settleDetached({
+            expectedErrorIncludes: "connectToChannel failed"
+        });
     });
 });

@@ -1,5 +1,5 @@
+// @spec-test-coverage-ignore: test-only spectate controls exercised by mapped targeted-channel cases
 import ARpcService from "@/rpc/ARpcService";
-import Clock from "@/Clock";
 import type P2PManager from "@/P2PManager";
 import type { SyncRequest } from "@/rpc/services/spectate/SpectateService";
 import type ATransport from "@/transport/ATransport";
@@ -45,11 +45,10 @@ export class SpectateControlService extends ARpcService<
         return this.p2pManager.localRpc.spectateService;
     }
 
-    /** A targeted sync request for this peer's own channel, stamped now. */
+    /** An exact recovery request for this peer's own channel. */
     buildSyncRequest(forkId: ForkId, blockHeight: number): SyncRequest {
         return {
             channelId: this.sm.channelId,
-            initTime: Clock.getTimeInSeconds(),
             forkId,
             blockHeight
         };

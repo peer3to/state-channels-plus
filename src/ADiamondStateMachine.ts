@@ -39,6 +39,11 @@ abstract class ADiamondStateMachine {
         balance2: BalanceStruct
     ): Promise<boolean>;
 
+    public abstract isBalanceLesserThan(
+        balance1: BalanceStruct,
+        balance2: BalanceStruct
+    ): Promise<boolean>;
+
     public abstract processInboundMessage(
         message: MessageStruct
     ): Promise<boolean>;

@@ -1,3 +1,5 @@
+// @spec-test-coverage-ignore: repository-local test guidance; it contains no executable evidence
+
 # Test harness guide (`test/`)
 
 Root conventions still apply (see `../AGENTS.md`). This file covers the
@@ -86,6 +88,19 @@ TStateMachine>` — the base is `HarnessControlRpc` (not `MainRpcService`), so
   `registerPeerEventListeners` drives the sinon spies / `eventCountsBarrier` from
   the client.
 
+### Intentional network isolation
+
+- `network.blacklistAndDisconnectPeer(index)` is persistent test isolation, not a raw
+  transport failure. It blacklists the peer pair in both directions and closes
+  the current transports, so joined Holepunch topics cannot reconnect it.
+- `network.reconnectPeers(indices)` is the explicit inverse. It clears the
+  pairwise harness blacklist on both hosts before it rejoins discovery.
+- `network.connectPeers(indices)` performs initial connection only and does not
+  change blacklist policy.
+- Raw transport-close controls are only for component tests that exercise
+  natural LocalDiscovery reconnect behavior. Do not use them to stage an
+  offline peer in a protocol test.
+
 ### Typing model — why `control()` has the one cast
 
 `peer.p2pInstance.hostRpc` is `RemoteRpcProxyType<TCustomRpc>`. That proxy type is
@@ -173,6 +188,12 @@ is capped at `prev + p2pTime` while validators only accept it within
 transitions burns the author's window and ends in a rejected block, a
 participant-timeout dispute, and a dead fork. Widening the timeConfig to fit the
 setup is not a fix; it hides the modeling error.
+
+Harness `network.connectToChannel` dispatches detached work. Its immediate RPC
+acknowledgement does not mean the signer connected or synced. A full-flow test
+must drive the real attempt to its terminal boundary and call
+`TestSession.settleDetached()` before returning. Teardown only reports forgotten
+work; it does not cancel or dispose the feature operation.
 
 - `addSpectatorDetached` is the default way to add a spectator.
   `addSpectatorWait` is reserved for tests whose subject is the sync flow

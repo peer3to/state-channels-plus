@@ -1,0 +1,20 @@
+# test/utils/LocalDiscoveryServer.test.ts — Test Report
+
+> **Test file:** [test/utils/LocalDiscoveryServer.test.ts](../../../../../../test/utils/LocalDiscoveryServer.test.ts)  
+> **Status:** Authored — engineer verification pending.  
+> **Exercises:** [LocalDiscoveryServer.ts](../../../../implementation/source/src/utils/node/LocalDiscoveryServer.ts.md)
+
+## Overview
+
+These component cases run real loopback discovery and real authenticated `P2PManager` instances. They compare
+transport identities across an explicit raw close, prove that close does not blacklist the remote identity,
+then observe the same topic after leave or explicit blacklist. The tests
+exercise the production session, canonical dialer, retry timer, handshake, and blacklist checks; no synthetic
+transport or precomputed result boolean stands in for discovery.
+
+## Tests and covered test IDs
+
+| Test declaration                                                                                                                                                                                                 | Covers                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
+| ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| [`LocalDiscoveryServer topic lifecycle > redials an eligible disconnected peer while the topic remains observed and stops after leave`](../../../../../../test/utils/LocalDiscoveryServer.test.ts#L10) (line 10) | [`UNIT-TEST-LOCAL-DISCOVERY-SERVER-1-1W1GY5.P5`](../../../../implementation/source/src/utils/node/LocalDiscoveryServer.ts.md#unit-test-local-discovery-server-1-1w1gy5.p5), [`UNIT-TEST-LOCAL-DISCOVERY-SERVER-1-1W1GY5.P6`](../../../../implementation/source/src/utils/node/LocalDiscoveryServer.ts.md#unit-test-local-discovery-server-1-1w1gy5.p6), [`REQ-LOBBY-9-N894C0.T1.P13`](../../../../specification/peer-communication/lobby-matching.md#req-lobby-9-n894c0.t1.p13) |
+| [`LocalDiscoveryServer topic lifecycle > does not redial a peer blacklisted before its transport closes`](../../../../../../test/utils/LocalDiscoveryServer.test.ts#L85) (line 85)                               | [`UNIT-TEST-LOCAL-DISCOVERY-SERVER-1-1W1GY5.P7`](../../../../implementation/source/src/utils/node/LocalDiscoveryServer.ts.md#unit-test-local-discovery-server-1-1w1gy5.p7), [`REQ-LOBBY-9-N894C0.T1.P16`](../../../../specification/peer-communication/lobby-matching.md#req-lobby-9-n894c0.t1.p16)                                                                                                                                                                             |

@@ -84,7 +84,9 @@ describe("E2E: dispute validation / disputeInputFields / latestStateSnapshotHash
                     const forkId = h.activeForkId!;
 
                     const disconnectedAuditorIndex = 3;
-                    await h.network.disconnectPeer(disconnectedAuditorIndex);
+                    await h.network.blacklistAndDisconnectPeer(
+                        disconnectedAuditorIndex
+                    );
 
                     await h.tamper.stubConstructDispute(1, (d, sm) => {
                         const svc = sm.p2pManager.localRpc.dispute;
@@ -285,7 +287,9 @@ describe("E2E: dispute validation / disputeInputFields / latestStateSnapshotHash
                         count: 3
                     });
 
-                    await h.network.disconnectPeer(disconnectedAuditorIndex);
+                    await h.network.blacklistAndDisconnectPeer(
+                        disconnectedAuditorIndex
+                    );
                     await h.transition.advanceState({
                         waitForPeers: [0, 3],
                         count: 1

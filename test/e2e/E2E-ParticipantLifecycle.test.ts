@@ -6,7 +6,6 @@ import { Codec, SignatureUtils, Type } from "@/utils";
 import type { Address, Bytes } from "@/types/types";
 import { createOpenChannelTestObject } from "@test/test_utils/testHelpers";
 import { waitFor } from "@test/utils/waitFor";
-import assert from "node:assert/strict";
 
 /**
  * E2E Tests for Participant Lifecycle (Exit + Join)
@@ -191,30 +190,38 @@ describe("E2E: Participant Lifecycle", function () {
                 channelId: h.channelId
             });
 
-            // Fire joinChannel WITHOUT awaiting — the synchronous portion of
-            // StateManager.joinChannel() calls setStatus(PENDING_PARTICIPANT)
-            // before the first `await`, so the promotion is observable
-            // immediately after the call starts.
+            const releaseReceipt = await h.rpcStub.holdMembershipReceipt(
+                spectator.index,
+                "joinChannel"
+            );
             const joinPromise = spectator.p2pInstance.p2pSigner.joinChannel(
                 prepared.confirmation,
                 prepared.expectedSnapshotHash,
                 prepared.expectedForkId
             );
-
-            // Status flips to PENDING_PARTICIPANT host-side on broadcast (the
-            // join RPC sets it before the tx is mined); read it back over the port.
+            await waitFor(
+                async () =>
+                    (await h
+                        .control(spectator)
+                        .stub.getHeldMembershipReceiptCount()
+                        .request()) === 1,
+                h.event.protocolEventTimeoutMs()
+            );
             expect(
                 await h
                     .control(h.getPeer(spectator.index))
                     .query.getStatus()
                     .request()
-            ).to.equal(
-                Status.PENDING_PARTICIPANT,
-                "Status should be PENDING_PARTICIPANT immediately on broadcast, before tx is mined"
-            );
+            ).to.equal(Status.PENDING_PARTICIPANT);
 
-            // Wait for the tx to land on-chain
-            await joinPromise;
+            await releaseReceipt();
+            expect(await joinPromise).to.equal(true);
+            expect(
+                await h
+                    .control(h.getPeer(spectator.index))
+                    .query.getStatus()
+                    .request()
+            ).to.equal(Status.PENDING_PARTICIPANT);
 
             // Ensure all honest peers have stored the inbound message before
             // the block producer runs, so the join is included in the block
@@ -233,6 +240,131 @@ describe("E2E: Participant Lifecycle", function () {
                 Status.PARTICIPATING,
                 "Joiner should be PARTICIPATING after the first block that includes them"
             );
+        });
+
+        it("pending join fault survives until a failed receipt restores SYNCED", async function () {
+            const h = TestSession.getHarness();
+            await h.lifecycle.start(2);
+            const spectator = await h.join.addSpectatorDetached();
+            await h.event.waitUntilPeerStatus(spectator.index, Status.SYNCED);
+            const prepared = await h.join.buildJoinChannelConfirmation({
+                joiner: spectator,
+                channelId: h.channelId
+            });
+            await h.control(spectator).stub.stubRecordAbort().request();
+            const releaseReceipt = await h.rpcStub.holdMembershipReceipt(
+                spectator.index,
+                "joinChannel",
+                true
+            );
+            const join = spectator.p2pInstance.p2pSigner.joinChannel(
+                prepared.confirmation,
+                prepared.expectedSnapshotHash,
+                prepared.expectedForkId
+            );
+            await waitFor(
+                async () =>
+                    (await h
+                        .control(spectator)
+                        .stub.getHeldMembershipReceiptCount()
+                        .request()) === 1,
+                h.event.protocolEventTimeoutMs()
+            );
+            expect(
+                await h.control(spectator).query.getStatus().request()
+            ).to.equal(Status.PENDING_PARTICIPANT);
+
+            const restoreJunk = await h.rpcStub.stubSpectateJunkPayload([0]);
+            try {
+                await h
+                    .control(spectator)
+                    .spectate.startSync(
+                        h.getPeer(0).address,
+                        prepared.expectedForkId,
+                        0
+                    )
+                    .request();
+                await waitFor(
+                    () =>
+                        h
+                            .control(spectator)
+                            .query.isBlacklisted(h.getPeer(0).address)
+                            .request(),
+                    h.event.protocolEventTimeoutMs()
+                );
+                expect(
+                    await h.control(spectator).stub.wasAbortCalled().request()
+                ).to.equal(false);
+                await releaseReceipt();
+                expect(await join).to.equal(false);
+                expect(
+                    await h.control(spectator).query.getStatus().request()
+                ).to.equal(Status.SYNCED);
+            } finally {
+                await restoreJunk();
+                await releaseReceipt();
+            }
+        });
+
+        it("pending join fault preserves the successful on-chain join and inbound message", async function () {
+            const h = TestSession.getHarness();
+            await h.lifecycle.start(2);
+            const spectator = await h.join.addSpectatorDetached();
+            await h.event.waitUntilPeerStatus(spectator.index, Status.SYNCED);
+            const prepared = await h.join.buildJoinChannelConfirmation({
+                joiner: spectator,
+                channelId: h.channelId
+            });
+            await h.control(spectator).stub.stubRecordAbort().request();
+            const releaseReceipt = await h.rpcStub.holdMembershipReceipt(
+                spectator.index,
+                "joinChannel"
+            );
+            const join = spectator.p2pInstance.p2pSigner.joinChannel(
+                prepared.confirmation,
+                prepared.expectedSnapshotHash,
+                prepared.expectedForkId
+            );
+            await waitFor(
+                async () =>
+                    (await h
+                        .control(spectator)
+                        .stub.getHeldMembershipReceiptCount()
+                        .request()) === 1,
+                h.event.protocolEventTimeoutMs()
+            );
+
+            const restoreJunk = await h.rpcStub.stubSpectateJunkPayload([0]);
+            try {
+                await h
+                    .control(spectator)
+                    .spectate.startSync(
+                        h.getPeer(0).address,
+                        prepared.expectedForkId,
+                        0
+                    )
+                    .request();
+                await waitFor(
+                    () =>
+                        h
+                            .control(spectator)
+                            .query.isBlacklisted(h.getPeer(0).address)
+                            .request(),
+                    h.event.protocolEventTimeoutMs()
+                );
+                expect(
+                    await h.control(spectator).stub.wasAbortCalled().request()
+                ).to.equal(false);
+                await releaseReceipt();
+                expect(await join).to.equal(true);
+                expect(
+                    await h.channelManager.getPendingParticipants(h.channelId)
+                ).to.include(spectator.address);
+                await h.assert.storage.honestPeersObserveInboundMessageWait();
+            } finally {
+                await restoreJunk();
+                await releaseReceipt();
+            }
         });
 
         it("preserves a landed pending join when the same confirmation is retried", async function () {
@@ -262,14 +394,13 @@ describe("E2E: Participant Lifecycle", function () {
                 { status: Status.SYNCED }
             );
 
-            await assert.rejects(
-                spectator.p2pInstance.p2pSigner.joinChannel(
+            expect(
+                await spectator.p2pInstance.p2pSigner.joinChannel(
                     prepared.confirmation,
                     prepared.expectedSnapshotHash,
                     prepared.expectedForkId
-                ),
-                /ErrorJoinChannelParticipantAlreadyExists/
-            );
+                )
+            ).to.equal(true);
             const retryState = await h.execOnHost(
                 h.getPeer(spectator.index),
                 async (sm) => ({

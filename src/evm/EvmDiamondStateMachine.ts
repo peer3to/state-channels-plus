@@ -344,6 +344,28 @@ class EvmDiamondStateMachine extends ADiamondStateMachine {
         }
     }
 
+    async isBalanceLesserThan(
+        balance1: BalanceStruct,
+        balance2: BalanceStruct
+    ): Promise<boolean> {
+        const callData = this.getEncodedCalldata("isBalanceLesserThan", [
+            balance1,
+            balance2
+        ]);
+
+        try {
+            return Codec.decodeEvmResult<boolean>(
+                await this.contractExecutor.simulateCall(
+                    callData,
+                    this.stateMachineAddress
+                ),
+                "bool"
+            );
+        } catch (error) {
+            throw this.createContextError("isBalanceLesserThan", error);
+        }
+    }
+
     async processInboundMessage(message: MessageStruct): Promise<boolean> {
         const callData = this.getEncodedCalldata("processInboundMessage", [
             message

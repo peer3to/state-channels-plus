@@ -9,7 +9,6 @@ import {
 import { waitFor } from "@test/utils/waitFor";
 import { expect } from "chai";
 import Clock from "@/Clock";
-import assert from "node:assert/strict";
 
 describe("E2E: Join channel race conditions", function () {
     describe("Snapshot vs join race", function () {
@@ -234,25 +233,13 @@ describe("E2E: Join channel race conditions", function () {
             // Existing peers open a dispute on the latest fork
             await h.tamper.postTamperedDispute(0, async () => {});
 
-            let revertError: unknown;
-            try {
+            expect(
                 await joiner.p2pInstance.p2pSigner.joinChannel(
                     confirmation,
                     expectedSnapshotHash,
                     expectedForkId
-                );
-                expect.fail(
-                    "expected joinChannel to revert: spectator built confirmation against a fork that is now disputed"
-                );
-            } catch (e) {
-                revertError = e;
-            }
-
-            const customError = tryDecodeCustomError(revertError);
-            expect(customError).to.not.be.null;
-            expect(customError!.errorDescription.name).to.equal(
-                "RaceConditionForceInboundJoinForkDisputed"
-            );
+                )
+            ).to.equal(false);
 
             expect(
                 await h
@@ -489,7 +476,7 @@ describe("E2E: Join channel race conditions", function () {
             ).to.equal(Status.PARTICIPATING);
         });
 
-        it("rethrows a stale top-up guard without aborting participation", async function () {
+        it("returns false for a stale top-up guard without aborting participation", async function () {
             const h = TestSession.getHarness();
             await h.lifecycle.start(2, 1);
             const participant = h.getPeer(0);
@@ -505,14 +492,13 @@ describe("E2E: Join channel race conditions", function () {
                     }
                 );
 
-            await assert.rejects(
-                participant.p2pInstance.p2pSigner.topUpBalance(
+            expect(
+                await participant.p2pInstance.p2pSigner.topUpBalance(
                     prepared.confirmation,
                     `0x${"77".repeat(32)}`,
                     prepared.expectedForkId
-                ),
-                /RaceConditionJoinChannelSnapshotMismatch/
-            );
+                )
+            ).to.equal(false);
             const state = await h.execOnHost(
                 participant,
                 async (sm) => ({

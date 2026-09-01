@@ -37,7 +37,8 @@ import type {
     ReductionChallengeProbe,
     IsDisputedForkProbe,
     HeldLobbyReplyKind,
-    HeldNegotiationReplyKind
+    HeldNegotiationReplyKind,
+    HeldMembershipReceiptKind
 } from "./StubService";
 import type { StubService } from "./StubService";
 import { protocolEventTimeoutMs } from "@test/harness/core/testTimeConfig";
@@ -719,33 +720,29 @@ export class StubRpcMethods extends ARpcMethods<P2PManager<HarnessControlRpc>> {
         return true;
     }
 
-    /**
-     * Wrap `spectateService.abort` to record when it fires (queried via
-     * `wasSpectateAbortCalled`) while still running the original — the host-side
-     * stand-in for spying on abort from the main thread.
-     */
-    public stubRecordSpectateAbort(): boolean {
-        const service = this.p2pManager.localRpc.spectateService;
-        if (!this.service.stubOriginals.has("spectateAbort")) {
+    /** Record calls to the runtime abort owner while preserving its behavior. */
+    public stubRecordAbort(): boolean {
+        const stateManager = this.p2pManager.stateManager;
+        if (!this.service.stubOriginals.has("stateManagerAbort")) {
             this.service.stubOriginals.set(
-                "spectateAbort",
-                service.abort.bind(service)
+                "stateManagerAbort",
+                stateManager.abort.bind(stateManager)
             );
         }
-        this.service.spectateAbortCalled = false;
+        this.service.abortCalled = false;
         const original = this.service.stubOriginals.get(
-            "spectateAbort"
-        ) as typeof service.abort;
+            "stateManagerAbort"
+        ) as typeof stateManager.abort;
         const stubService = this.service;
-        service.abort = (peerAddress) => {
-            stubService.spectateAbortCalled = true;
-            return original(peerAddress);
+        stateManager.abort = () => {
+            stubService.abortCalled = true;
+            return original();
         };
         return true;
     }
 
-    public wasSpectateAbortCalled(): boolean {
-        return this.service.spectateAbortCalled;
+    public wasAbortCalled(): boolean {
+        return this.service.abortCalled;
     }
 
     /**
@@ -780,7 +777,7 @@ export class StubRpcMethods extends ARpcMethods<P2PManager<HarnessControlRpc>> {
      * - `delayMs` delays the reply; only a delay that exceeds the initiator's
      *   request window (agreementTime) makes its `.request(...)` time out — a
      *   small delay just slows a still-successful response.
-     * - `corruptSignature` flips the signature's recovery byte so the
+     * - `corruptSignature` replaces the signature with undecodable bytes so the
      *   initiator's `ethers.verifyMessage` throws.
      * The real handler still runs first (validates + signs), so only the reply
      * is corrupted.
@@ -818,13 +815,7 @@ export class StubRpcMethods extends ARpcMethods<P2PManager<HarnessControlRpc>> {
                     response.responseTime += responseTimeOffsetSeconds;
                 }
                 if (corruptSignature) {
-                    // Keep the real 65-byte signature shape but flip its
-                    // recovery (v) byte to an invalid value, so
-                    // ethers.verifyMessage throws — closer to a real corrupted
-                    // signature than an obviously-fake short value. (The handler
-                    // signs to a hex string, so String() is identity here.)
-                    const sigHex = String(response.signature);
-                    response.signature = `${sigHex.slice(0, -2)}ff`;
+                    response.signature = "0x00";
                 }
                 if (delayMs > 0) {
                     await sleep(delayMs);
@@ -1840,11 +1831,7 @@ export class StubRpcMethods extends ARpcMethods<P2PManager<HarnessControlRpc>> {
         return true;
     }
 
-    /**
-     * Count `spectateService.sync` requests and record who was asked; `forward`
-     * keeps the real sync running (record-only otherwise — the punishment path
-     * stays quiet).
-     */
+    /** Count spectate sync requests and record their selected peer. */
     public stubRecordSpectateSync(forward: boolean): boolean {
         const spectate = this.p2pManager.localRpc.spectateService;
         if (!this.service.stubOriginals.has("spectateSync")) {
@@ -1861,6 +1848,7 @@ export class StubRpcMethods extends ARpcMethods<P2PManager<HarnessControlRpc>> {
         spectate.sync = ((...args: Parameters<typeof spectate.sync>) => {
             this.service.recordSpectateSyncCall(String(args[0]));
             if (forward) return original(...args);
+            return Promise.resolve(true);
         }) as typeof spectate.sync;
         return true;
     }
@@ -1985,8 +1973,8 @@ export class StubRpcMethods extends ARpcMethods<P2PManager<HarnessControlRpc>> {
         return this.service.getHeldNegotiationReplyCount();
     }
 
-    public holdMatchedNegotiation(): boolean {
-        this.service.holdMatchedNegotiation();
+    public holdMatchedNegotiation(fail = false): boolean {
+        this.service.holdMatchedNegotiation(fail);
         return true;
     }
 
@@ -1996,6 +1984,79 @@ export class StubRpcMethods extends ARpcMethods<P2PManager<HarnessControlRpc>> {
 
     public getHeldMatchedNegotiationCount(): number {
         return this.service.getHeldMatchedNegotiationCount();
+    }
+
+    public failNextMatchedNegotiation(): boolean {
+        this.service.failNextMatchedNegotiation();
+        return true;
+    }
+
+    public holdSpectateResponses(): boolean {
+        this.service.holdSpectateResponses();
+        return true;
+    }
+
+    public releaseSpectateResponses(): number {
+        return this.service.releaseSpectateResponses();
+    }
+
+    public getHeldSpectateResponseCount(): number {
+        return this.service.getHeldSpectateResponseCount();
+    }
+
+    public holdPostMatchTargetRefresh(): boolean {
+        this.service.holdPostMatchTargetRefresh();
+        return true;
+    }
+
+    public releasePostMatchTargetRefresh(): number {
+        return this.service.releasePostMatchTargetRefresh();
+    }
+
+    public getHeldPostMatchTargetRefreshCount(): number {
+        return this.service.getHeldPostMatchTargetRefreshCount();
+    }
+
+    public holdMembershipReceipt(
+        kind: HeldMembershipReceiptKind,
+        fail = false
+    ): boolean {
+        this.service.holdMembershipReceipt(kind, fail);
+        return true;
+    }
+
+    public holdMembershipSubmission(kind: HeldMembershipReceiptKind): boolean {
+        this.service.holdMembershipSubmission(kind);
+        return true;
+    }
+
+    public countInitHandshakeCalls(): boolean {
+        this.service.countInitHandshakeCalls();
+        return true;
+    }
+
+    public getInitHandshakeCallCount(): number {
+        return this.service.getInitHandshakeCallCount();
+    }
+
+    public failMembershipReceipt(kind: HeldMembershipReceiptKind): boolean {
+        this.service.failMembershipReceipt(kind);
+        return true;
+    }
+
+    public failMembershipSubmissionUncertain(
+        kind: HeldMembershipReceiptKind
+    ): boolean {
+        this.service.failMembershipSubmissionUncertain(kind);
+        return true;
+    }
+
+    public releaseMembershipReceipt(): number {
+        return this.service.releaseMembershipReceipt();
+    }
+
+    public getHeldMembershipReceiptCount(): number {
+        return this.service.getHeldMembershipReceiptCount();
     }
 
     public holdSetChannelId(): boolean {

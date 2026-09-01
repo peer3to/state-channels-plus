@@ -25,7 +25,7 @@ Existing `OQ-*` IDs are preserved; new questions use the layer-scoped namespace 
 | [`OQ-7-M5G9M3`](open-questions.md#oq-7-m5g9m3)                       | Whether adjudication requires a self-call-only authorization boundary                                                                                       | Specification analysis | [security/trust-model.md](./security/trust-model.md)                                                                                                   | Open                              |
 | [`OQ-8-PEYAAQ`](open-questions.md#oq-8-peyaaq)                       | Clock-skew and bias values to be validated empirically                                                                                                      | Specification analysis | [protocol/time.md](./protocol-model/time.md)                                                                                                           | Open                              |
 | [`OQ-9-XR1MFS`](open-questions.md#oq-9-xr1mfs)                       | Timeout precedence edge rules: same-fork definition, height comparison, evidence timing                                                                     | Specification analysis | [protocol/disputes.md](./disputes/disputes.md)                                                                                                         | Resolved (implementation pending) |
-| [`OQ-10-04YNC4`](open-questions.md#oq-10-04ync4)                     | Spectate/join failure-point details: deadlines, refunds, forced-inclusion proof                                                                             | Specification analysis | [protocol/cross-layer-messages.md](./settlement/cross-layer-messages.md)                                                                               | Open                              |
+| [`OQ-10-04YNC4`](open-questions.md#oq-10-04ync4)                     | Spectate/join failure-point details: deadlines, refunds, forced-inclusion proof                                                                             | Specification analysis | [protocol/cross-layer-messages.md](./settlement/cross-layer-messages.md)                                                                               | Partially resolved                |
 | [`OQ-11-38S3SE`](open-questions.md#oq-11-38s3se)                     | Channel-balance invariant: definition per balance model and check points                                                                                    | Specification analysis | [protocol/cross-layer-messages.md](./settlement/cross-layer-messages.md), [concepts/state-machines.md](./protocol-model/state-machines.md)             | Open                              |
 | [`OQ-12-B45Q7N`](open-questions.md#oq-12-b45q7n)                     | Book-like overview vs. tree as the authoritative reference                                                                                                  | Specification analysis | [README.md](../README.md), [governance.md](../governance.md)                                                                                           | Provisionally resolved            |
 | [`OQ-16-6AVF5B`](open-questions.md#oq-16-6avf5b)                     | Slash-set lifetime: cleared on channel-storage clear, questioned in code                                                                                    | Code                   | [protocol/fraud-proofs.md](./disputes/fraud-proofs.md)                                                                                                 | Open                              |
@@ -239,6 +239,13 @@ canonical event, roll back on reorg); and the spectate path **blacklists a peer 
 failure**, including plain timeouts and transport errors — conflating unavailability with
 Byzantine behavior, contrary to the fault taxonomy in
 [security/trust-model.md](./security/trust-model.md).
+
+**Partially resolved (2026-08-31):** initial channel load now selects one authenticated peer and uses
+two independent local agreement windows; selected-peer failure aborts the uncommitted runtime without
+fallback. First-join and top-up deadlines are assigned internally, and `PENDING_PARTICIPANT` is set only
+after the membership receipt succeeds. Accepted pending or participating state is preserved after later
+operational failure. Refund/exit behavior for a deposit that is never included, and the full forced-inclusion
+proof contract, remain open.
 
 <a id="oq-11-38s3se"></a>
 

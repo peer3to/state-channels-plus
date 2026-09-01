@@ -41,6 +41,9 @@ describe("E2E: Spectate stale-proof guard", function () {
             true,
             "Spectator should not have reached SYNCED with stale proofs"
         );
+        await TestSession.settleDetached({
+            expectedErrorIncludes: "connectToChannel failed"
+        });
 
         const spectator = h.getPeer(2);
         expect(
@@ -76,6 +79,9 @@ describe("E2E: Spectate stale-proof guard", function () {
             true,
             "Spectator should not have reached SYNCED with junk payloads"
         );
+        await TestSession.settleDetached({
+            expectedErrorIncludes: "connectToChannel failed"
+        });
 
         const spectator = h.getPeer(2);
         expect(

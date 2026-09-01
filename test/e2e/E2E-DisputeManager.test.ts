@@ -249,7 +249,7 @@ describe("E2E: Dispute Manager", function () {
                 .control(h.getPeer(missedPeerIndex))
                 .stub.stubSuppressDisputeInitiation()
                 .request();
-            await h.byzantine.disconnect(missedPeerIndex);
+            await h.byzantine.blacklistAndDisconnect(missedPeerIndex);
             await h.transition.advanceState({
                 waitForPeers: connectedPeerIndices
             });
@@ -284,7 +284,9 @@ describe("E2E: Dispute Manager", function () {
             await sleep(h.event.evidencePeriodWaitMs());
             // The peer missed the event while disconnected, then reconnects so
             // event recovery can fetch the committed dispute payloads.
-            await h.network.connectPeers([missedPeerIndex]);
+            // The missed peer↔connected-peer bans are reversed after the
+            // dispute commits so the missed peer can recover its event.
+            await h.network.reconnectPeers([missedPeerIndex]);
             await restoreEvents(false);
             const missedPeer = h.getPeer(missedPeerIndex);
             const recoveredCount = await h
@@ -378,7 +380,7 @@ describe("E2E: Dispute Manager", function () {
             await h.lifecycle.start(3, 0);
             await h.byzantine.stubCalldataHandler(2);
             await h.contextApi.storeSnapshotCount(2, "before_isolation");
-            await h.byzantine.disconnect(2);
+            await h.byzantine.blacklistAndDisconnect(2);
             h.event.resetEventSpies();
 
             await h.transition.advanceState({ waitForPeers: [0, 1], count: 2 });

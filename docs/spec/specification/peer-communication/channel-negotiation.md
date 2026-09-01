@@ -90,6 +90,24 @@ recovery. A healthy transport replacement is not profile loss.
 
 ## Failure outcomes
 
+Ordinary negotiation derives its channel ID from the authenticated transcript. An already-open derived ID
+therefore represents transcript disclosure or reuse, not a harmless collision: the peer is punished, the
+ID and provider listener are cleared, raw discovery and sync do not start, and only the ordinary wrapper
+may rematch. Ordinary terms carry a full encoded balance and preserve both `amount` and `data`.
+
+Targeted negotiation binds both peers to their independently selected fixed ID and never accepts an ID from
+a peer message. Authoritative evidence that this ID opened at preflight, during negotiation or signing, or
+after receipt failure resolves one observed-open outcome without blacklisting either matched loser. The
+connect wrapper leaves the derived topic and enters its selected-channel post-open branch once. A late local
+signature is discarded after an attempt-identity and handoff-state check immediately before submission.
+If a targeted receipt fails while the target is still unopened, the original error remains an unexpected
+failure. Targeted unsigned failure keeps the ID and provider listener and returns terminal `false`; another
+attempt begins only after a fresh explicit same-ID connect.
+
+Every received balance is canonically decoded, compared with repeated terms by exact `amount` and `data`,
+and accepted only after `getZeroBalance` plus `isBalanceLesserThan(zero, received)`. Invalid or non-positive
+remote terms are rejected and blacklisted. Opening deadlines are assigned internally.
+
 | Failure                                                                          | Outcome                                                                                                                                                                                                                                                                                                                  |
 | -------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | Request arrives before local attempt readiness from the committed peer           | Queue in arrival order for at most two agreement windows, then replay when ready.                                                                                                                                                                                                                                        |

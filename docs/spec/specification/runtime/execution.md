@@ -30,6 +30,21 @@ encoding that preserves large integers, binary data, optional branches, errors, 
 **<a id="req-runtime-2-kbxktg"></a>`REQ-RUNTIME-2-KBXKTG` — Ownership and ordering.** Mutable resources have one context owner; requests affecting the
 same ordered domain MUST execute in causal order without late or duplicate completion.
 
+One connect operation crosses the runtime boundary with a channel identifier and an optional serializable
+record containing independent opening permission, membership intent, full balance, and unmatched matcher
+timeout. Inline and isolated routes return the same Boolean. Balance is dormant unless membership is
+requested. A separate targeted cancellation operation carries only the channel identifier and returns a
+Boolean; it owns unmatched matching only. Neither operation adds a second targeted membership owner.
+
+Initial channel load starts from the first connected authenticated participant resolved from authoritative
+chain state, passes a two-window timeout to the shared sync call, and aborts an uncommitted runtime on failure.
+Exact-peer block recovery uses the same call with its default one-window timeout and preserves the runtime.
+After accepted pending or participating state, later operational failure preserves the live runtime and
+channel. An observed fixed-target open causes one bounded entry into that operation's locked post-open
+branch, never general matching or target reselection. Request handlers route replies by authenticated peer
+address when present, with the inbound transport as the addressless fallback. Original-transport retirement
+rejects its pending requests.
+
 **<a id="req-runtime-3-vqxw59"></a>`REQ-RUNTIME-3-VQXW59` — Lifecycle convergence.** Startup, readiness, failure, cancellation, disposal, and restart
 MUST settle every request and release every owned resource exactly once. Readiness MUST remain pending until the application lifecycle hook and all resources it declares ready have completed. A failed readiness hook MUST preserve its original error and close partially created resources. Each isolated context's performance monitor MUST start only after that context has completed its own readiness work and MUST enforce the configured fatal-delay threshold.
 

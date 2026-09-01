@@ -99,8 +99,9 @@ Handshake completion no longer accepts a peer-supplied membership announcement a
 can promote a transport outside the local-status dispatcher. This removes an authorization-shaped
 remote input from connection admission. Every transport starts with an addressless `PeerProfile`,
 and its Holepunch ban handle stays on that profile while `ProfileManager` alone applies policy.
-Ordinary unauthenticated close cannot ban a peer, while explicit unauthenticated blacklist can. A stale WebRTC close cannot release the active
-fallback ban. Final identity attachment independently refuses a late bootstrap connection while
+Ordinary unauthenticated close cannot ban a peer, while explicit unauthenticated blacklist can. Policy
+release checks every live transport, so neither a selected WebRTC transport nor a non-preferred WebRTC
+transport in upgrade grace can release the active fallback ban. Final identity attachment independently refuses a late bootstrap connection while
 WebRTC is healthy and refuses every transport for an excluded identity, so an in-flight connection
 cannot bypass the SDK ban handle. Authenticated-RPC queues also die with their original transport
 or manager and cannot execute or punish after disposal. A late frame dispatched after local transport
@@ -213,3 +214,28 @@ _Non-normative._
 | [`REQ-SEC-3-NPPJN5`](security-assessment.md#req-sec-3-nppjn5) | Design pending | Review separates objective slashable violations from non-Byzantine failures.                                    | `none — gap`                                                                                            | `none — gap`                                                                                                                                  |
 | [`REQ-SEC-4-VF81QD`](security-assessment.md#req-sec-4-vf81qd) | Design pending | Every gap classified as proof / validation / dispute input / recovery / trust assumption / accepted limitation. | `none — gap`                                                                                            | `none — gap`                                                                                                                                  |
 | [`REQ-SEC-5-1JPJ3C`](security-assessment.md#req-sec-5-1jpj3c) | Design pending | Gossip rate-limiting policy designed and enforced before the P2P security model is complete.                    | `none — gap` ([src/P2PManager.ts](../../../src/P2PManager.ts) has frame-size and blacklist guards only) | `none — gap` (flood tests required)                                                                                                           |
+
+## Targeted-join security disposition — 2026-08-31
+
+Knowledge of the 256-bit fixed target is topic secrecy, not authorization. Authenticated eligible peers are
+allowed by default; a host-loaded custom RPC module may install a local `shouldMatchPeer` filter without
+serializing policy. Remote balances must decode and compare greater than the state machine's neutral zero
+before signing. A foreign transport cannot settle another peer's pending RPC. While the original request
+transport remains live, a response with an authenticated address is routed through that peer's current
+transport; retiring the original request transport rejects the pending request. Initial sync starts from the
+first connected authoritative participant. Its Boolean result lets `P2PManager` abort an uncommitted observer
+on failure.
+
+The accepted residual is the unverified normal-Hyperswarm deduplication assumption. No new peer-supplied
+clock, target, matching policy, or post-match cancellation authority is introduced.
+
+LocalDiscovery replacement uses authenticated identity only after the normal handshake; untrusted registry
+metadata cannot promote a connection. One canonical active dial and capped backoff prevent a tight retry loop,
+and the existing blacklist prevents a rejected peer from being recreated. Pre-submission pending status closes
+the disposal window around potentially funded join work. Force-join escalation requires authoritative on-chain
+membership and a usable dispute window, so local-only pending state cannot trigger a premature dispute.
+
+Authenticated protocol faults now exclude the peer address instead of allowing discovery to
+reconnect it immediately. Address-based attribution also covers a retired transport after upgrade.
+No identity penalty is applied for network loss, silence before identity proof, response-send
+failure, cleanup, or an unclassified local handler exception.

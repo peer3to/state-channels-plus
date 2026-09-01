@@ -77,6 +77,22 @@ export class LifecycleActions<
         return this.submitOpenChannel(openChannel, signatures);
     }
 
+    async openChannelForParticipants(peerIndices: number[]): Promise<ForkId> {
+        this.logger.info("Opening channel for selected participants...");
+        await Clock.init(this.harness.peers[0].signer.provider!);
+        const participantAddresses = peerIndices.map(
+            (index) => this.harness.getPeer(index).address
+        );
+        const openChannel = this.buildOpenChannelStruct({
+            participantAddresses
+        });
+        const signatures = await this.signOpenChannelStruct(
+            openChannel,
+            peerIndices
+        );
+        return this.submitOpenChannel(openChannel, signatures);
+    }
+
     // ************** PRIVATE HELPERS ****************
 
     private buildOpenChannelStruct(
@@ -128,15 +144,6 @@ export class LifecycleActions<
             });
         }
 
-        if (this.harness.options.autoConnect) {
-            const networkController = new NetworkController(
-                this.harness,
-                this.logger
-            );
-            await networkController.connectAllPeers();
-            await this.harness.network.waitForP2PConnections();
-        }
-
         this.logger.debug(
             "Submitting channel open transaction to blockchain..."
         );
@@ -147,25 +154,32 @@ export class LifecycleActions<
 
         await Promise.all([tx.wait(), sleep(100)]);
 
-        const isValidForkId = (forkId: ForkId | undefined): boolean =>
-            !!forkId && forkId !== "0x00" && forkId !== "0x0";
-
-        const getPeerForkIds = () => this.harness.peerForkIds();
-
-        this.logger.debug("Waiting for fork ID to be set on all peers...");
-
-        // Wait for onSetState event on all peers (called when forkId is set)
         const eventCounts = this.harness.peers.map((_, index: number) => ({
             peerId: index,
             expectedCount: 1
         }));
-
         await this.harness.event.waitForEventCounts(
             "onSetState",
             eventCounts,
             2000,
             { mode: "atLeast" }
         );
+
+        if (this.harness.options.autoConnect) {
+            const networkController = new NetworkController(
+                this.harness,
+                this.logger
+            );
+            await networkController.connectAllPeers();
+            await this.harness.network.waitForP2PConnections();
+        }
+
+        const isValidForkId = (forkId: ForkId | undefined): boolean =>
+            !!forkId && forkId !== "0x00" && forkId !== "0x0";
+
+        const getPeerForkIds = () => this.harness.peerForkIds();
+
+        this.logger.debug("Waiting for fork ID to be set on all peers...");
 
         // Verify all peers have the same valid fork ID
         const peerForkIds = await getPeerForkIds();

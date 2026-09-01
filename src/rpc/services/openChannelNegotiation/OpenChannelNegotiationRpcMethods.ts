@@ -23,14 +23,14 @@ export default class OpenChannelNegotiationRpcMethods extends ARpcMethods<OpenCh
         attemptNonce: string,
         selectorChallenge: string,
         advertiserChallenge: string,
-        amount: number
-    ): Promise<{ amount: number }> {
+        encodedBalance: string
+    ): Promise<{ encodedBalance: string }> {
         return this.service.acceptTerms(
             this.senderTransport,
             attemptNonce,
             selectorChallenge,
             advertiserChallenge,
-            amount
+            encodedBalance
         );
     }
 

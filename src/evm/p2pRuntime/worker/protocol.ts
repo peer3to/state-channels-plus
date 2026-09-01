@@ -6,7 +6,12 @@ import type {
     SetupPayload
 } from "../types";
 import type { SerializedTransactionRequest } from "../chainSignerSerialization";
-import type { LobbyJoinOptions } from "@/rpc/services";
+import type { ConnectToChannelOptions } from "@/evm/signer/ConnectToChannelOptions";
+
+export type JoinLobbyWireOptions = {
+    encodedBalance?: string;
+    matchTimeoutMs?: number | null;
+};
 
 /**
  * Worker-level bootstrap message (NOT a runtime-port message). Sent via
@@ -33,11 +38,19 @@ export interface CallViewRequest extends RuntimeRequest<"callView"> {
 export interface ConnectToChannelRequest
     extends RuntimeRequest<"connectToChannel"> {
     channelId: string;
+    options?: Omit<ConnectToChannelOptions, "balance"> & {
+        encodedBalance?: string;
+    };
+}
+
+export interface CancelConnectToChannelRequest
+    extends RuntimeRequest<"cancelConnectToChannel"> {
+    channelId: string;
 }
 
 export interface JoinLobbyRequest extends RuntimeRequest<"joinLobby"> {
     lobbyTopic: string;
-    options: LobbyJoinOptions;
+    options: JoinLobbyWireOptions;
 }
 
 export interface LeaveLobbyRequest extends RuntimeRequest<"leaveLobby"> {
@@ -173,6 +186,7 @@ export type RuntimeClientRequest =
     | SendTransactionRequest
     | CallViewRequest
     | ConnectToChannelRequest
+    | CancelConnectToChannelRequest
     | JoinLobbyRequest
     | LeaveLobbyRequest
     | JoinChannelRequest

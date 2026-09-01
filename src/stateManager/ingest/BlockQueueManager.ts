@@ -572,7 +572,7 @@ export default class BlockQueueManager {
         const block = entry.block;
 
         for (const peer of sourcePeersAndAuthor(entry)) {
-            this.stateManager.p2pManager.localRpc.spectateService.sync(
+            void this.stateManager.p2pManager.localRpc.spectateService.sync(
                 peer,
                 block.channelId,
                 block.forkId,

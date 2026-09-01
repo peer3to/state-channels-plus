@@ -364,6 +364,13 @@ across concurrent inbound/outbound activity.
 
 ## Requirements and invariants
 
+The join-authorization service constructs and signs a full-balance join request; the membership service alone
+submits the first-join transaction and classifies its receipt. A successful receipt establishes
+`PENDING_PARTICIPANT` and satisfies requested membership. Block commit later owns cooperative promotion to
+`PARTICIPATING`; dispute and forced-inclusion owners remain available if cooperation stops. A pending or
+participating top-up remains a membership-service transaction and cannot detach the committed runtime on
+failure.
+
 **<a id="inv-msg-1-36y41q"></a>`INV-MSG-1-36Y41Q`.** Each stream is one hash-linked chain per channel; heights +1; identity = `keccak256(abi.encode(block))`
 
 **<a id="inv-msg-2-pq0t1k"></a>`INV-MSG-2-PQ0T1K`.** No replay, no omission: each block processed exactly once, in order

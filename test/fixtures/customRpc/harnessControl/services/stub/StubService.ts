@@ -30,10 +30,11 @@ import { BlockValidationResult } from "@/types";
 import { Block, StateSnapshot } from "@/models";
 import Clock from "@/Clock";
 import { recordValidationBoundary } from "./RecordingValidationStrategy";
+import type { LobbyMatch } from "@/rpc/services/lobbyMatching/LobbyMatchingTypes";
 import type {
-    LobbyJoinOptions,
-    LobbyMatch
-} from "@/rpc/services/lobbyMatching/LobbyMatchingTypes";
+    MatchedNegotiationOptions,
+    NegotiationOutcome
+} from "@/rpc/services/openChannelNegotiation/OpenChannelNegotiationService";
 import type LobbyMatchingRpcMethods from "@/rpc/services/lobbyMatching/LobbyMatchingRpcMethods";
 import type OpenChannelNegotiationRpcMethods from "@/rpc/services/openChannelNegotiation/OpenChannelNegotiationRpcMethods";
 
@@ -50,6 +51,7 @@ export type StubKey =
     | "pendingInboundInclusion"
     | "selectiveDisconnect"
     | "spectateCreateRpcMethods"
+    | "heldSpectateCreateRpcMethods"
     | "joinSignatureCreateRpcMethods"
     | "disputeAckCreateRpcMethods"
     | "postStateSnapshot"
@@ -58,7 +60,7 @@ export type StubKey =
     | "captureInitHandshake"
     | "initHandshakeCreateRpcMethods"
     | "maybePostBlockOnChain"
-    | "spectateAbort"
+    | "stateManagerAbort"
     | "reductionTasks"
     | "snapshotUpdatedEvents"
     | "inboundMessageEvents"
@@ -70,6 +72,7 @@ export type StubKey =
     | "reductionSimulation"
     | "finalDisputePreparation"
     | "spectateSync"
+    | "spectateExactRecoverySync"
     | "pausedReduction"
     | "pausedReductionKillPeriod"
     | "constructDisputeStateProof"
@@ -89,14 +92,20 @@ export type StubKey =
     | "lobbyCreateRpcMethods"
     | "negotiationCreateRpcMethods"
     | "matchedNegotiation"
+    | "failMatchedNegotiation"
     | "setChannelId"
+    | "postMatchTargetRefresh"
+    | "membershipJoinReceipt"
+    | "membershipTopUpReceipt"
+    | "countInitHandshake"
     | "lobbyRoleDuration";
 
 export type HeldLobbyReplyKind = "pick" | "commit";
 export type HeldNegotiationReplyKind = "exchangeTerms" | "openProposal";
+export type HeldMembershipReceiptKind = "joinChannel" | "topUpBalance";
 
 type HeldRpcReply = {
-    kind: HeldLobbyReplyKind | HeldNegotiationReplyKind;
+    kind: HeldLobbyReplyKind | HeldNegotiationReplyKind | "spectate";
     entered: number;
     gate: Promise<void>;
     release: () => void;
@@ -357,8 +366,10 @@ export class StubService extends ARpcService<
     spectateGuardBlocked = false;
     /** Transport captured by the init-handshake capture stub (pre-handshake). */
     capturedInitHandshakeTransport?: ATransport;
+    /** Real init-handshake calls observed by the counting wrapper. */
+    initHandshakeCallCount = 0;
     /** Set by the record-spectate-abort stub when `abort` fires. */
-    spectateAbortCalled = false;
+    abortCalled = false;
     /** Incremented by the count-spectate-requests stub per onSpectateRequest. */
     spectateRequestCount = 0;
     /** Incremented per join-signature request by the recording wrapper. */
@@ -438,6 +449,11 @@ export class StubService extends ARpcService<
     private heldNegotiationReply?: HeldRpcReply;
     private heldMatchedNegotiation?: HeldRpcReply;
     private heldSetChannelId?: HeldRpcReply;
+    private heldSpectateResponse?: HeldRpcReply;
+    private heldPostMatchTargetRefresh?: HeldRpcReply;
+    private postMatchTargetRefreshCallCount = 0;
+    private heldMembershipReceipt?: HeldRpcReply;
+    private heldMembershipReceiptKind?: HeldMembershipReceiptKind;
 
     constructor(p2pManager: P2PManager<HarnessControlRpc>) {
         super(
@@ -555,7 +571,7 @@ export class StubService extends ARpcService<
         return this.heldNegotiationReply?.entered ?? 0;
     }
 
-    public holdMatchedNegotiation(): void {
+    public holdMatchedNegotiation(fail = false): void {
         this.releaseMatchedNegotiation();
         const service = this.p2pManager.localRpc.openChannelNegotiationService;
         const original = service.initMatchedNegotiation.bind(service);
@@ -564,10 +580,11 @@ export class StubService extends ARpcService<
         this.heldMatchedNegotiation = hold;
         service.initMatchedNegotiation = async (
             match: LobbyMatch,
-            options: LobbyJoinOptions = {}
+            options: MatchedNegotiationOptions = {}
         ) => {
             hold.entered += 1;
             await hold.gate;
+            if (fail) return { status: "targeted-failed" } as const;
             return original(match, options);
         };
     }
@@ -580,8 +597,8 @@ export class StubService extends ARpcService<
             this.p2pManager.localRpc.openChannelNegotiationService.initMatchedNegotiation =
                 original as (
                     match: LobbyMatch,
-                    options?: LobbyJoinOptions
-                ) => Promise<void>;
+                    options?: MatchedNegotiationOptions
+                ) => Promise<NegotiationOutcome>;
             this.stubOriginals.delete("matchedNegotiation");
         }
         this.heldMatchedNegotiation = undefined;
@@ -590,6 +607,250 @@ export class StubService extends ARpcService<
 
     public getHeldMatchedNegotiationCount(): number {
         return this.heldMatchedNegotiation?.entered ?? 0;
+    }
+
+    public failNextMatchedNegotiation(): void {
+        this.restoreFailedMatchedNegotiation();
+        const service = this.p2pManager.localRpc.openChannelNegotiationService;
+        const original = service.initMatchedNegotiation.bind(service);
+        this.stubOriginals.set("failMatchedNegotiation", original);
+        service.initMatchedNegotiation = async () => {
+            this.restoreFailedMatchedNegotiation();
+            return { status: "targeted-failed" };
+        };
+    }
+
+    private restoreFailedMatchedNegotiation(): void {
+        const original = this.stubOriginals.get("failMatchedNegotiation");
+        if (!original) return;
+        this.p2pManager.localRpc.openChannelNegotiationService.initMatchedNegotiation =
+            original as (
+                match: LobbyMatch,
+                options?: MatchedNegotiationOptions
+            ) => Promise<NegotiationOutcome>;
+        this.stubOriginals.delete("failMatchedNegotiation");
+    }
+
+    public holdSpectateResponses(): void {
+        this.releaseSpectateResponses();
+        const service = this.p2pManager.localRpc.spectateService;
+        const original = service.createRPCMethods.bind(service);
+        this.stubOriginals.set("heldSpectateCreateRpcMethods", original);
+        const hold = this.createRpcHold("spectate");
+        this.heldSpectateResponse = hold;
+        service.createRPCMethods = (transport) => {
+            const methods = original(transport);
+            const endpoint = methods.onSpectateRequest.bind(methods);
+            methods.onSpectateRequest = async (request) => {
+                const response = await endpoint(request);
+                hold.entered += 1;
+                await hold.gate;
+                return response;
+            };
+            return methods;
+        };
+    }
+
+    public releaseSpectateResponses(): number {
+        const entered = this.heldSpectateResponse?.entered ?? 0;
+        this.heldSpectateResponse?.release();
+        const original = this.stubOriginals.get("heldSpectateCreateRpcMethods");
+        if (original) {
+            this.p2pManager.localRpc.spectateService.createRPCMethods =
+                original as typeof this.p2pManager.localRpc.spectateService.createRPCMethods;
+            this.stubOriginals.delete("heldSpectateCreateRpcMethods");
+        }
+        this.heldSpectateResponse = undefined;
+        return entered;
+    }
+
+    public getHeldSpectateResponseCount(): number {
+        return this.heldSpectateResponse?.entered ?? 0;
+    }
+
+    public holdPostMatchTargetRefresh(): void {
+        this.releasePostMatchTargetRefresh();
+        const original = this.sm.refreshOpenedStatusFromChain.bind(this.sm);
+        this.stubOriginals.set("postMatchTargetRefresh", original);
+        const hold = this.createRpcHold("exchangeTerms");
+        this.heldPostMatchTargetRefresh = hold;
+        this.postMatchTargetRefreshCallCount = 0;
+        this.sm.refreshOpenedStatusFromChain = async () => {
+            this.postMatchTargetRefreshCallCount += 1;
+            if (this.postMatchTargetRefreshCallCount === 2) {
+                hold.entered += 1;
+                await hold.gate;
+            }
+            return original();
+        };
+    }
+
+    public releasePostMatchTargetRefresh(): number {
+        const entered = this.heldPostMatchTargetRefresh?.entered ?? 0;
+        this.heldPostMatchTargetRefresh?.release();
+        const original = this.stubOriginals.get("postMatchTargetRefresh");
+        if (original) {
+            this.sm.refreshOpenedStatusFromChain =
+                original as typeof this.sm.refreshOpenedStatusFromChain;
+            this.stubOriginals.delete("postMatchTargetRefresh");
+        }
+        this.heldPostMatchTargetRefresh = undefined;
+        return entered;
+    }
+
+    public getHeldPostMatchTargetRefreshCount(): number {
+        return this.heldPostMatchTargetRefresh?.entered ?? 0;
+    }
+
+    public holdMembershipReceipt(
+        kind: HeldMembershipReceiptKind,
+        fail = false
+    ): void {
+        this.releaseMembershipReceipt();
+        const contract = this.sm.stateChannelManagerContract;
+        const original = contract[kind].bind(contract);
+        const key =
+            kind === "joinChannel"
+                ? "membershipJoinReceipt"
+                : "membershipTopUpReceipt";
+        this.stubOriginals.set(key, original);
+        const hold = this.createRpcHold("exchangeTerms");
+        this.heldMembershipReceipt = hold;
+        this.heldMembershipReceiptKind = kind;
+        Reflect.set(contract, kind, async (...parameters: unknown[]) => {
+            if (fail) {
+                return {
+                    wait: async () => {
+                        hold.entered += 1;
+                        await hold.gate;
+                        throw Object.assign(
+                            new Error(`injected ${kind} receipt failure`),
+                            {
+                                code: "CALL_EXCEPTION",
+                                receipt: { status: 0 }
+                            }
+                        );
+                    }
+                };
+            }
+            const tx = await Reflect.apply(original, contract, parameters);
+            const originalWait = tx.wait.bind(tx);
+            tx.wait = async (...waitParameters: unknown[]) => {
+                hold.entered += 1;
+                await hold.gate;
+                return Reflect.apply(originalWait, tx, waitParameters);
+            };
+            return tx;
+        });
+    }
+
+    public holdMembershipSubmission(kind: HeldMembershipReceiptKind): void {
+        this.releaseMembershipReceipt();
+        const contract = this.sm.stateChannelManagerContract;
+        const original = contract[kind].bind(contract);
+        const key =
+            kind === "joinChannel"
+                ? "membershipJoinReceipt"
+                : "membershipTopUpReceipt";
+        this.stubOriginals.set(key, original);
+        const hold = this.createRpcHold("exchangeTerms");
+        this.heldMembershipReceipt = hold;
+        this.heldMembershipReceiptKind = kind;
+        Reflect.set(contract, kind, async (...parameters: unknown[]) => {
+            hold.entered += 1;
+            await hold.gate;
+            return Reflect.apply(original, contract, parameters);
+        });
+    }
+
+    public countInitHandshakeCalls(): void {
+        const service = this.p2pManager.localRpc.initHandshakeService;
+        if (!this.stubOriginals.has("countInitHandshake")) {
+            this.stubOriginals.set(
+                "countInitHandshake",
+                service.initHandshake.bind(service)
+            );
+        }
+        const original = this.stubOriginals.get(
+            "countInitHandshake"
+        ) as typeof service.initHandshake;
+        this.initHandshakeCallCount = 0;
+        service.initHandshake = (transport) => {
+            this.initHandshakeCallCount += 1;
+            return original(transport);
+        };
+    }
+
+    public getInitHandshakeCallCount(): number {
+        return this.initHandshakeCallCount;
+    }
+
+    public failMembershipReceipt(kind: HeldMembershipReceiptKind): void {
+        this.releaseMembershipReceipt();
+        const contract = this.sm.stateChannelManagerContract;
+        const original = contract[kind].bind(contract);
+        const key =
+            kind === "joinChannel"
+                ? "membershipJoinReceipt"
+                : "membershipTopUpReceipt";
+        this.stubOriginals.set(key, original);
+        this.heldMembershipReceiptKind = kind;
+        Reflect.set(contract, kind, async () => ({
+            wait: async () => {
+                throw Object.assign(
+                    new Error(`injected ${kind} receipt failure`),
+                    {
+                        code: "CALL_EXCEPTION",
+                        receipt: { status: 0 }
+                    }
+                );
+            }
+        }));
+    }
+
+    public failMembershipSubmissionUncertain(
+        kind: HeldMembershipReceiptKind
+    ): void {
+        this.releaseMembershipReceipt();
+        const contract = this.sm.stateChannelManagerContract;
+        const original = contract[kind].bind(contract);
+        const key =
+            kind === "joinChannel"
+                ? "membershipJoinReceipt"
+                : "membershipTopUpReceipt";
+        this.stubOriginals.set(key, original);
+        this.heldMembershipReceiptKind = kind;
+        Reflect.set(contract, kind, async () => {
+            throw new Error(`injected uncertain ${kind} submission failure`);
+        });
+    }
+
+    public releaseMembershipReceipt(): number {
+        const entered = this.heldMembershipReceipt?.entered ?? 0;
+        this.heldMembershipReceipt?.release();
+        const kind = this.heldMembershipReceiptKind;
+        if (kind) {
+            const key =
+                kind === "joinChannel"
+                    ? "membershipJoinReceipt"
+                    : "membershipTopUpReceipt";
+            const original = this.stubOriginals.get(key);
+            if (original) {
+                Reflect.set(
+                    this.sm.stateChannelManagerContract,
+                    kind,
+                    original
+                );
+                this.stubOriginals.delete(key);
+            }
+        }
+        this.heldMembershipReceipt = undefined;
+        this.heldMembershipReceiptKind = undefined;
+        return entered;
+    }
+
+    public getHeldMembershipReceiptCount(): number {
+        return this.heldMembershipReceipt?.entered ?? 0;
     }
 
     public holdSetChannelId(): void {

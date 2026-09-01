@@ -84,3 +84,9 @@ Exact test evidence is mapped against these IDs in the verification test reports
 ## Related source reports
 
 - Each service report under [services/](./services/); [resolveCustomRpcManifest](./resolveCustomRpcManifest.ts.md).
+
+## Matching policy construction
+
+Default construction supplies no peer filter, so authenticated eligible peers are allowed. A host-loaded
+custom RPC root may synchronously replace `lobbyMatchingService` before `ready`; normal disposal still owns
+the replacement through the same property.

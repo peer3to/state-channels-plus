@@ -72,7 +72,13 @@ export default class LobbyMatchingService extends ARpcService<LobbyMatchingRpcMe
     private deferredRoleSwitch = false;
     private exhaustionSwitchScheduled = false;
     private matchResolve?: (match: LobbyMatch | undefined) => void;
-    private matchPromise?: Promise<LobbyMatch | undefined>;
+    private commitInFlight = false;
+    private pendingCancellation?: {
+        promise: Promise<boolean>;
+        resolve: (cancelled: boolean) => void;
+    };
+    private observedTargetChannelId?: string;
+    private unsubscribeTargetOpened?: () => void;
 
     constructor(
         p2pManager: P2PManager,
@@ -107,20 +113,14 @@ export default class LobbyMatchingService extends ARpcService<LobbyMatchingRpcMe
 
     public async match(
         topic: string,
-        matchTimeoutMs?: number | null
+        matchTimeoutMs?: number | null,
+        observedTargetChannelId?: string
     ): Promise<LobbyMatch | undefined> {
         const normalizedTopic = this.validateTopic(topic);
         const normalizedTimeout = this.validateMatchTimeout(matchTimeoutMs);
-        const stateManager = this.p2pManager.stateManager;
-        if (
-            String(stateManager.channelId) !== ZeroHash ||
-            (stateManager.status !== Status.NOT_OPENED &&
-                stateManager.status !== Status.DISCOVERING)
-        ) {
-            throw new Error(
-                "Discovery requires a clean instance with no selected channel"
-            );
-        }
+        const normalizedTarget = observedTargetChannelId
+            ? this.validateTopic(observedTargetChannelId)
+            : undefined;
 
         if (this.activeTopic && !this.matchResolve) {
             throw new Error(
@@ -128,13 +128,28 @@ export default class LobbyMatchingService extends ARpcService<LobbyMatchingRpcMe
             );
         }
         if (this.activeTopic) await this.cleanup(true, undefined);
-        return this.startMatching(normalizedTopic, normalizedTimeout);
+        return this.startMatching(
+            normalizedTopic,
+            normalizedTimeout,
+            normalizedTarget
+        );
     }
 
-    public async leaveLobby(topic: string): Promise<boolean> {
+    public async cancelMatching(topic: string): Promise<boolean> {
         const normalizedTopic = this.validateTopic(topic);
         if (normalizedTopic !== this.activeTopic || !this.matchResolve) {
             return false;
+        }
+        if (this.commitInFlight) {
+            if (this.pendingCancellation) {
+                return this.pendingCancellation.promise;
+            }
+            let resolve!: (cancelled: boolean) => void;
+            const promise = new Promise<boolean>((settle) => {
+                resolve = settle;
+            });
+            this.pendingCancellation = { promise, resolve };
+            return promise;
         }
         await this.cleanup(true, undefined);
         return true;
@@ -144,6 +159,12 @@ export default class LobbyMatchingService extends ARpcService<LobbyMatchingRpcMe
     public async completeLobby(topic: string): Promise<void> {
         const normalizedTopic = this.validateTopic(topic);
         if (normalizedTopic !== this.activeTopic || this.matchResolve) return;
+        if (this.handedOffPeerAddress) {
+            this.p2pManager.promoteLobbyConnections(
+                this.handedOffTransports,
+                this.handedOffPeerAddress
+            );
+        }
         await this.cleanup(true, undefined, true);
     }
 
@@ -156,6 +177,26 @@ export default class LobbyMatchingService extends ARpcService<LobbyMatchingRpcMe
 
     public get rendezvousTopic(): string | undefined {
         return this.activeTopic;
+    }
+
+    public get hasActiveMatcherAttempt(): boolean {
+        return !!this.activeTopic && !!this.matchResolve;
+    }
+
+    public ownsNegotiationPeer(transport: ATransport): boolean {
+        const peerAddress = this.peerAddress(transport);
+        return (
+            !!peerAddress &&
+            !this.matchResolve &&
+            this.handedOffPeerAddress === peerAddress
+        );
+    }
+
+    public takeObservedTargetOpen(channelId: string): boolean {
+        const normalizedChannelId = this.validateTopic(channelId);
+        if (this.observedTargetChannelId !== normalizedChannelId) return false;
+        this.observedTargetChannelId = undefined;
+        return true;
     }
 
     public getAvailability(): {
@@ -199,18 +240,14 @@ export default class LobbyMatchingService extends ARpcService<LobbyMatchingRpcMe
             return false;
         }
         if (rpc.method === "pick" || rpc.method === "commit") return true;
-        return (
-            rpc.method === "advertise" &&
-            this.p2pManager.stateManager.status === Status.DISCOVERING &&
-            !!this.matchResolve
-        );
+        return rpc.method === "advertise" && !!this.matchResolve;
     }
 
     public recordRejectedRpc(transport: ATransport): void {
         const count = (this.rejectedRpcCounts.get(transport) ?? 0) + 1;
         this.rejectedRpcCounts.set(transport, count);
         if (count > MAX_REJECTED_RPCS_PER_TRANSPORT) {
-            this.p2pManager.disconnectConnection(transport);
+            this.p2pManager.disconnectAndBlacklistPeer(transport);
         }
     }
 
@@ -226,10 +263,6 @@ export default class LobbyMatchingService extends ARpcService<LobbyMatchingRpcMe
         ) {
             if (this.handedOffTransports.has(transport)) return;
             this.handedOffTransports.add(transport);
-            this.p2pManager.promoteLobbyConnections(
-                [transport],
-                handedOffPeerAddress
-            );
             return;
         }
         if (!this.activeTopic || !this.matchResolve) {
@@ -423,15 +456,33 @@ export default class LobbyMatchingService extends ARpcService<LobbyMatchingRpcMe
 
     private async startMatching(
         topic: string,
-        matchTimeoutMs?: number
+        matchTimeoutMs?: number,
+        observedTargetChannelId?: string
     ): Promise<LobbyMatch | undefined> {
         this.activeTopic = topic;
         this.role = "none";
-        this.p2pManager.stateManager.setStatus(Status.DISCOVERING);
+        this.observedTargetChannelId = undefined;
+        if (observedTargetChannelId) {
+            this.unsubscribeTargetOpened =
+                this.p2pManager.stateManager.events.on(
+                    "eventHandler",
+                    "onChannelOpened",
+                    (openedChannelId) => {
+                        if (
+                            ethers.hexlify(String(openedChannelId)) !==
+                                observedTargetChannelId ||
+                            !this.matchResolve
+                        ) {
+                            return;
+                        }
+                        this.observedTargetChannelId = observedTargetChannelId;
+                        void this.cleanup(true, undefined);
+                    }
+                );
+        }
         const matchPromise = new Promise<LobbyMatch | undefined>((resolve) => {
             this.matchResolve = resolve;
         });
-        this.matchPromise = matchPromise;
         if (matchTimeoutMs !== undefined) {
             this.matchTimer =
                 this.p2pManager.stateManager.timeoutManager.scheduleTask(
@@ -525,6 +576,7 @@ export default class LobbyMatchingService extends ARpcService<LobbyMatchingRpcMe
                 void this.selectNextCandidate();
                 return;
             }
+            this.commitInFlight = true;
             const commit = await this.remoteRpc.lobbyMatchingService
                 .commit(
                     this.activeTopic,
@@ -534,6 +586,7 @@ export default class LobbyMatchingService extends ARpcService<LobbyMatchingRpcMe
                     pick.advertiserChallenge
                 )
                 .request(selection.transport);
+            this.commitInFlight = false;
             if (
                 this.inFlightSelection !== selection ||
                 commit.status !== "acknowledged"
@@ -554,6 +607,7 @@ export default class LobbyMatchingService extends ARpcService<LobbyMatchingRpcMe
                 advertiserChallenge: pick.advertiserChallenge
             });
         } catch (error) {
+            this.commitInFlight = false;
             if (this.inFlightSelection !== selection) {
                 this.neutralProfileLosses.delete(peerAddress);
                 return;
@@ -572,6 +626,10 @@ export default class LobbyMatchingService extends ARpcService<LobbyMatchingRpcMe
                 );
             } else {
                 this.neutralProfileLosses.delete(peerAddress);
+            }
+            if (this.pendingCancellation) {
+                await this.cleanup(true, undefined);
+                return;
             }
             this.applyDeferredRoleSwitch();
             void this.selectNextCandidate();
@@ -638,11 +696,12 @@ export default class LobbyMatchingService extends ARpcService<LobbyMatchingRpcMe
     private finishMatch(match: LobbyMatch): void {
         const resolve = this.matchResolve;
         if (!resolve) return;
+        this.commitInFlight = false;
+        this.resolvePendingCancellation(false);
         this.broadcastUnavailable();
         this.stopMatchingWork();
         this.handoffSelectedPeer(match.peerAddress);
         this.matchResolve = undefined;
-        this.matchPromise = undefined;
         resolve(match);
     }
 
@@ -657,7 +716,8 @@ export default class LobbyMatchingService extends ARpcService<LobbyMatchingRpcMe
         this.stopMatchingWork();
         this.activeTopic = undefined;
         this.matchResolve = undefined;
-        this.matchPromise = undefined;
+        this.unsubscribeTargetOpened?.();
+        this.unsubscribeTargetOpened = undefined;
         this.disconnectSessionTransports();
         if (!preserveHandedOffTransports) {
             this.disconnectHandedOffTransports();
@@ -675,6 +735,7 @@ export default class LobbyMatchingService extends ARpcService<LobbyMatchingRpcMe
             this.p2pManager.stateManager.setStatus(Status.NOT_OPENED);
         }
         resolve?.(result);
+        if (resolve) this.resolvePendingCancellation(result === undefined);
     }
 
     private stopMatchingWork(): void {
@@ -698,6 +759,7 @@ export default class LobbyMatchingService extends ARpcService<LobbyMatchingRpcMe
             this.removeCandidate(peerAddress);
         }
         this.neutralProfileLosses.clear();
+        this.commitInFlight = false;
         this.deferredRoleSwitch = false;
         this.exhaustionSwitchScheduled = false;
         this.role = "none";
@@ -726,7 +788,6 @@ export default class LobbyMatchingService extends ARpcService<LobbyMatchingRpcMe
     }
 
     private handoffSelectedPeer(peerAddress: Address): void {
-        const selected: ATransport[] = [];
         this.handedOffPeerAddress = peerAddress;
         for (const [transport, unsubscribe] of [
             ...this.sessionTransports.entries()
@@ -735,13 +796,11 @@ export default class LobbyMatchingService extends ARpcService<LobbyMatchingRpcMe
             unsubscribe();
             this.sessionTransports.delete(transport);
             if (address === peerAddress && !transport.isClosed) {
-                selected.push(transport);
                 this.handedOffTransports.add(transport);
             } else {
                 this.p2pManager.disconnectConnection(transport);
             }
         }
-        this.p2pManager.promoteLobbyConnections(selected, peerAddress);
     }
 
     private disconnectSessionTransports(): void {
@@ -776,6 +835,13 @@ export default class LobbyMatchingService extends ARpcService<LobbyMatchingRpcMe
 
     private randomBytes32(): string {
         return ethers.hexlify(ethers.randomBytes(32));
+    }
+
+    private resolvePendingCancellation(cancelled: boolean): void {
+        const pending = this.pendingCancellation;
+        if (!pending) return;
+        this.pendingCancellation = undefined;
+        pending.resolve(cancelled);
     }
 
     private validateTopic(topic: string): string {
