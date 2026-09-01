@@ -4,17 +4,12 @@ import { Worker } from "node:worker_threads";
 import { resolveWorkerResourceLimits } from "../../node/workerResourceLimits";
 import { instrumentWorkerStartup } from "../../node/workerStartupTiming";
 import { createWorkerShutdown } from "../../node/workerShutdown";
-import type { WorkerLike } from "../types";
-import type { WorkerHostMessage } from "../worker/protocol";
+import type { RuntimePort } from "@/transport/RuntimePort";
+import type { ContractExecutorWorkerErrorHandler, WorkerLike } from "../types";
 
-export type ContractExecutorWorkerMessageHandler = (
-    message: WorkerHostMessage
-) => void;
-
-export type ContractExecutorWorkerErrorHandler = (error: Error) => void;
+export type { ContractExecutorWorkerErrorHandler };
 
 export function createContractExecutorWorker(
-    onMessage: ContractExecutorWorkerMessageHandler,
     onError: ContractExecutorWorkerErrorHandler
 ): WorkerLike {
     const jsWorkerPath = path.join(__dirname, "ContractExecutorWorkerEntry.js");
@@ -39,7 +34,6 @@ export function createContractExecutorWorker(
         resourceLimits: resolveWorkerResourceLimits("vm")
     });
     const shutdownWorker = createWorkerShutdown(worker);
-    let shuttingDown = false;
     instrumentWorkerStartup(
         worker,
         "vm",
@@ -47,17 +41,23 @@ export function createContractExecutorWorker(
             ? "ts-node-swc-transpile-only"
             : "compiled-js"
     );
-    worker.on("message", onMessage);
     worker.on("error", onError);
-    worker.on("exit", (code: number) => {
-        if (!shuttingDown && code !== 0) {
-            onError(new Error(`Contract executor worker exited with ${code}`));
-        }
-    });
+    // the worker as a port: what it posts is a frame, and its exit is the
+    // line closing - the router settles what was pending on it
+    const port: RuntimePort = {
+        post: (message) => worker.postMessage(message),
+        onMessage: (handler) => {
+            worker.on("message", handler);
+        },
+        start: () => {},
+        onClose: (handler) => {
+            worker.on("exit", () => handler());
+        },
+        close: () => {}
+    };
     return {
-        postMessage: (message) => worker.postMessage(message),
+        port,
         shutdown: async () => {
-            shuttingDown = true;
             await shutdownWorker();
         }
     };

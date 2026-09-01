@@ -3,31 +3,17 @@
 > **Source:** [src/rpc/RpcHandler.ts](../../../../../../src/rpc/RpcHandler.ts) > **Status:** Authored — engineer verification pending.
 > **Design views:** [architecture/sdk/rpc/README.md](../../../views/architecture/sdk/rpc/README.md)
 
-## Contents
-
-- [Responsibility and observable boundary](#responsibility-and-observable-boundary)
-- [Key design decisions](#key-design-decisions)
-- [Inputs, outputs, state, and side effects](#inputs-outputs-state-and-side-effects)
-- [Linked requirements](#linked-requirements)
-- [Assumptions, dependencies, trust boundaries, and limits](#assumptions-dependencies-trust-boundaries-and-limits)
-- [Specification adherence](#specification-adherence)
-- [Specification contradictions](#specification-contradictions)
-- [Missing behavior](#missing-behavior)
-- [Conformance traceability](#conformance-traceability)
-- [Component test obligations](#component-test-obligations)
-- [Related source reports](#related-source-reports)
-
 ## Responsibility and observable boundary
 
 The sender-side delivery handle: one constructed envelope plus the delivery verbs — broadcast,
-sendOne (transport, address, or loopback-self), sendMultiple, and `request(target)` which registers
-correlation state and returns the remote handler's value.
+sendOne (transport, address, or the router's default target), sendMultiple, and `request(target)`
+which registers correlation state on the router and returns the remote handler's value.
 
 ## Key design decisions
 
 1. **Delivery is the caller's choice, constrained by type.** The typed proxy exposes fire-and-forget verbs only for `void` methods and `request` only for value-returning ones — misuse is a compile error, not a runtime surprise ([#L7](../../../../../../src/rpc/RpcHandler.ts#L7)).
-2. **Omitting the target means loopback self.** Local invocation uses the same envelope and dispatch path as remote calls — one code path, trusted transport ([#L12](../../../../../../src/rpc/RpcHandler.ts#L12)).
-3. **Address targets resolve to the live transport** via the profile manager, so callers survive transport churn ([#L70](../../../../../../src/rpc/RpcHandler.ts#L70)).
+2. **Omitting the target means the router's default.** For a peer router that is loopback self — local invocation uses the same envelope and dispatch path as remote calls, one code path, trusted transport; for a worker-link endpoint it is the link's far end ([#L12](../../../../../../src/rpc/RpcHandler.ts#L12)).
+3. **Address targets resolve to the live transport** via `router.resolveTransport`, so callers survive transport churn ([#L70](../../../../../../src/rpc/RpcHandler.ts#L70)).
 4. **Transport overloads use the public transport shape.** Direct transport targets loaded through another module graph remain distinct from request options and addresses without relying on constructor identity ([#L61](../../../../../../src/rpc/RpcHandler.ts#L61), [#L91](../../../../../../src/rpc/RpcHandler.ts#L91), [#L125](../../../../../../src/rpc/RpcHandler.ts#L125)).
 
 ## Inputs, outputs, state, and side effects
@@ -40,9 +26,6 @@ correlation state and returns the remote handler's value.
 | Side effects | Transport sends; correlation registration (delegated). |
 
 ## Linked requirements
-
-A file may contribute to several requirements; this report describes the contribution and never
-claims complete conformance for a requirement that depends on other files.
 
 | Source file                                              | Specification IDs                                                                                                                                                                                                                                                                     |
 | -------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -64,19 +47,7 @@ claims complete conformance for a requirement that depends on other files.
 
 - Delivery-mode identification per [`REQ-RPC-1-FF89Z0`](../../../../specification/peer-communication/rpc.md#req-rpc-1-ff89z0); single-settlement requests delegated per [`REQ-RPC-2-SZDTTM`](../../../../specification/peer-communication/rpc.md#req-rpc-2-szdttm).
 
-## Specification contradictions
-
-None demonstrated.
-
-## Missing behavior
-
-None demonstrated.
-
 ## Conformance traceability
-
-Status enum: `Covered` | `Partial` | `Contradicts` | `Missing`. Evidence cells are structured
-**Here:** / **Other files:** so each row is auditable from its links alone; genuine gaps go in the
-Gap column. Audit state is file-level (Status header), never a row status.
 
 | Requirement / invariant                                                                       | Implementation status | Evidence                                                                                                                                                             | Gap / divergence |
 | --------------------------------------------------------------------------------------------- | --------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------- |
@@ -84,8 +55,6 @@ Gap column. Audit state is file-level (Status header), never a row status.
 | [`REQ-RUNTIME-4-B0N70Y`](../../../../specification/runtime/execution.md#req-runtime-4-b0n70y) | Covered               | **Here:** transport overload classification delegates to the structural predicate. **Other files:** [ATransport](../transport/ATransport.ts.md) owns that predicate. | None.            |
 
 ## Component test obligations
-
-Exact test evidence is mapped against these IDs in the verification test reports.
 
 | Unit test ID                                                                | Obligation                      | Public entry and setup                                                                                                                                                               | Oracle and forbidden effects                                                                                                                                                                                 | Required permutations                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
 | --------------------------------------------------------------------------- | ------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |

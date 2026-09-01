@@ -4,9 +4,9 @@
 > its content hash with `SPEC_REVIEWER="Name" node docs/spec/tools/review.js <file...>`.
 > Any later edit invalidates the record automatically (the file returns to pending as stale).
 
-- Verified (current): **36/552** (7%)
-- Pending (never reviewed): **487**
-- Stale (edited since review): **29**
+- Verified (current): **29/579** (5%)
+- Pending (never reviewed): **516**
+- Stale (edited since review): **34**
 
 ## Stale — edited since engineer review
 
@@ -20,16 +20,21 @@
 - [specification/storage/queue.md](../specification/storage/queue.md) — Luke Fishman, 2026-08-17
 - [specification/storage/README.md](../specification/storage/README.md) — Luke Fishman, 2026-08-17
 
-### implementation (10)
+### implementation (15)
 
 - [implementation/source/contracts/V1/StateChannelDiamondProxy/JoinChannelFacet.sol.md](../implementation/source/contracts/V1/StateChannelDiamondProxy/JoinChannelFacet.sol.md) — Luka, 2026-08-19
-- [implementation/source/src/evm/contractExecutor/worker/ContractExecutorWorkerHostCore.ts.md](../implementation/source/src/evm/contractExecutor/worker/ContractExecutorWorkerHostCore.ts.md) — Luka, 2026-08-15
-- [implementation/source/src/evm/contractExecutor/worker/protocol.ts.md](../implementation/source/src/evm/contractExecutor/worker/protocol.ts.md) — Luka, 2026-08-15
 - [implementation/source/src/evm/contractExecutor/WorkerContractExecutor.ts.md](../implementation/source/src/evm/contractExecutor/WorkerContractExecutor.ts.md) — Luka, 2026-08-15
+- [implementation/source/src/evm/EvmDiamondStateMachine.ts.md](../implementation/source/src/evm/EvmDiamondStateMachine.ts.md) — Luka, 2026-08-15
 - [implementation/source/src/evm/p2pRuntime/P2pRuntimeHost.ts.md](../implementation/source/src/evm/p2pRuntime/P2pRuntimeHost.ts.md) — Luka, 2026-08-15
+- [implementation/source/src/P2PManager.ts.md](../implementation/source/src/P2PManager.ts.md) — Luka, 2026-08-18
+- [implementation/source/src/rpc/ARpcService.ts.md](../implementation/source/src/rpc/ARpcService.ts.md) — Luka, 2026-08-18
 - [implementation/source/src/rpc/guards/HandshakeCompletedGuard.ts.md](../implementation/source/src/rpc/guards/HandshakeCompletedGuard.ts.md) — Luka, 2026-08-18
+- [implementation/source/src/rpc/RemoteRpcProxy.ts.md](../implementation/source/src/rpc/RemoteRpcProxy.ts.md) — Luka, 2026-08-18
+- [implementation/source/src/rpc/Rpc.ts.md](../implementation/source/src/rpc/Rpc.ts.md) — Luka, 2026-08-18
+- [implementation/source/src/rpc/RpcHandler.ts.md](../implementation/source/src/rpc/RpcHandler.ts.md) — Luka, 2026-08-18
 - [implementation/source/src/rpc/services/joinChannel/JoinChannelService.ts.md](../implementation/source/src/rpc/services/joinChannel/JoinChannelService.ts.md) — Luka, 2026-08-19
 - [implementation/source/src/stateManager/StateManager.ts.md](../implementation/source/src/stateManager/StateManager.ts.md) — Luka, 2026-08-18
+- [implementation/source/src/transport/ATransport.ts.md](../implementation/source/src/transport/ATransport.ts.md) — Luka, 2026-08-18
 - [implementation/source/src/utils/Codec.ts.md](../implementation/source/src/utils/Codec.ts.md) — Luka, 2026-08-18
 - [implementation/views/architecture/sdk/runtime-and-concurrency.md](../implementation/views/architecture/sdk/runtime-and-concurrency.md) — Luka, 2026-08-15
 
@@ -91,7 +96,7 @@
 - [specification/settlement/lifecycle.md](../specification/settlement/lifecycle.md)
 - [specification/settlement/README.md](../specification/settlement/README.md)
 
-### implementation (324)
+### implementation (350)
 
 - [implementation/open-questions.md](../implementation/open-questions.md)
 - [implementation/README.md](../implementation/README.md)
@@ -165,8 +170,11 @@
 - [implementation/source/src/evm/contractExecutor/node/README.md](../implementation/source/src/evm/contractExecutor/node/README.md)
 - [implementation/source/src/evm/contractExecutor/NoOpLogger.ts.md](../implementation/source/src/evm/contractExecutor/NoOpLogger.ts.md)
 - [implementation/source/src/evm/contractExecutor/README.md](../implementation/source/src/evm/contractExecutor/README.md)
+- [implementation/source/src/evm/contractExecutor/rpc/contractExecutor/ContractExecutorRpcMethods.ts.md](../implementation/source/src/evm/contractExecutor/rpc/contractExecutor/ContractExecutorRpcMethods.ts.md)
+- [implementation/source/src/evm/contractExecutor/rpc/contractExecutor/ContractExecutorService.ts.md](../implementation/source/src/evm/contractExecutor/rpc/contractExecutor/ContractExecutorService.ts.md)
+- [implementation/source/src/evm/contractExecutor/rpc/ContractExecutorClientRoot.ts.md](../implementation/source/src/evm/contractExecutor/rpc/ContractExecutorClientRoot.ts.md)
+- [implementation/source/src/evm/contractExecutor/rpc/ContractExecutorRoot.ts.md](../implementation/source/src/evm/contractExecutor/rpc/ContractExecutorRoot.ts.md)
 - [implementation/source/src/evm/contractExecutor/types.ts.md](../implementation/source/src/evm/contractExecutor/types.ts.md)
-- [implementation/source/src/evm/contractExecutor/worker/README.md](../implementation/source/src/evm/contractExecutor/worker/README.md)
 - [implementation/source/src/evm/EvmFactory.ts.md](../implementation/source/src/evm/EvmFactory.ts.md)
 - [implementation/source/src/evm/index.ts.md](../implementation/source/src/evm/index.ts.md)
 - [implementation/source/src/evm/node/evmJumpdestCache.ts.md](../implementation/source/src/evm/node/evmJumpdestCache.ts.md)
@@ -189,11 +197,24 @@
 - [implementation/source/src/evm/p2pRuntime/node/README.md](../implementation/source/src/evm/p2pRuntime/node/README.md)
 - [implementation/source/src/evm/p2pRuntime/P2pRuntimeClient.ts.md](../implementation/source/src/evm/p2pRuntime/P2pRuntimeClient.ts.md)
 - [implementation/source/src/evm/p2pRuntime/README.md](../implementation/source/src/evm/p2pRuntime/README.md)
+- [implementation/source/src/evm/p2pRuntime/rpc/chainSigner/ChainSignerRpcMethods.ts.md](../implementation/source/src/evm/p2pRuntime/rpc/chainSigner/ChainSignerRpcMethods.ts.md)
+- [implementation/source/src/evm/p2pRuntime/rpc/chainSigner/ChainSignerService.ts.md](../implementation/source/src/evm/p2pRuntime/rpc/chainSigner/ChainSignerService.ts.md)
+- [implementation/source/src/evm/p2pRuntime/rpc/deploySigner/DeploySignerRpcMethods.ts.md](../implementation/source/src/evm/p2pRuntime/rpc/deploySigner/DeploySignerRpcMethods.ts.md)
+- [implementation/source/src/evm/p2pRuntime/rpc/deploySigner/DeploySignerService.ts.md](../implementation/source/src/evm/p2pRuntime/rpc/deploySigner/DeploySignerService.ts.md)
+- [implementation/source/src/evm/p2pRuntime/rpc/hostRpc/HostRpcMirrorRpcMethods.ts.md](../implementation/source/src/evm/p2pRuntime/rpc/hostRpc/HostRpcMirrorRpcMethods.ts.md)
+- [implementation/source/src/evm/p2pRuntime/rpc/hostRpc/HostRpcMirrorService.ts.md](../implementation/source/src/evm/p2pRuntime/rpc/hostRpc/HostRpcMirrorService.ts.md)
+- [implementation/source/src/evm/p2pRuntime/rpc/lifecycle/RuntimeLifecycleRpcMethods.ts.md](../implementation/source/src/evm/p2pRuntime/rpc/lifecycle/RuntimeLifecycleRpcMethods.ts.md)
+- [implementation/source/src/evm/p2pRuntime/rpc/lifecycle/RuntimeLifecycleService.ts.md](../implementation/source/src/evm/p2pRuntime/rpc/lifecycle/RuntimeLifecycleService.ts.md)
+- [implementation/source/src/evm/p2pRuntime/rpc/P2pRuntimeClientRoot.ts.md](../implementation/source/src/evm/p2pRuntime/rpc/P2pRuntimeClientRoot.ts.md)
+- [implementation/source/src/evm/p2pRuntime/rpc/P2pRuntimeHostRoot.ts.md](../implementation/source/src/evm/p2pRuntime/rpc/P2pRuntimeHostRoot.ts.md)
+- [implementation/source/src/evm/p2pRuntime/rpc/p2pSigner/P2pSignerRpcMethods.ts.md](../implementation/source/src/evm/p2pRuntime/rpc/p2pSigner/P2pSignerRpcMethods.ts.md)
+- [implementation/source/src/evm/p2pRuntime/rpc/p2pSigner/P2pSignerService.ts.md](../implementation/source/src/evm/p2pRuntime/rpc/p2pSigner/P2pSignerService.ts.md)
+- [implementation/source/src/evm/p2pRuntime/rpc/runtimeEvents/RuntimeEventsRpcMethods.ts.md](../implementation/source/src/evm/p2pRuntime/rpc/runtimeEvents/RuntimeEventsRpcMethods.ts.md)
+- [implementation/source/src/evm/p2pRuntime/rpc/runtimeEvents/RuntimeEventsService.ts.md](../implementation/source/src/evm/p2pRuntime/rpc/runtimeEvents/RuntimeEventsService.ts.md)
 - [implementation/source/src/evm/p2pRuntime/RuntimeChainContext.ts.md](../implementation/source/src/evm/p2pRuntime/RuntimeChainContext.ts.md)
 - [implementation/source/src/evm/p2pRuntime/types.ts.md](../implementation/source/src/evm/p2pRuntime/types.ts.md)
 - [implementation/source/src/evm/p2pRuntime/worker/nodeGlobalsShim.ts.md](../implementation/source/src/evm/p2pRuntime/worker/nodeGlobalsShim.ts.md)
 - [implementation/source/src/evm/p2pRuntime/worker/P2pRuntimeWorkerEntry.ts.md](../implementation/source/src/evm/p2pRuntime/worker/P2pRuntimeWorkerEntry.ts.md)
-- [implementation/source/src/evm/p2pRuntime/worker/protocol.ts.md](../implementation/source/src/evm/p2pRuntime/worker/protocol.ts.md)
 - [implementation/source/src/evm/p2pRuntime/worker/README.md](../implementation/source/src/evm/p2pRuntime/worker/README.md)
 - [implementation/source/src/evm/p2pRuntime/worker/startP2pRuntimeWorker.ts.md](../implementation/source/src/evm/p2pRuntime/worker/startP2pRuntimeWorker.ts.md)
 - [implementation/source/src/evm/README.md](../implementation/source/src/evm/README.md)
@@ -218,15 +239,18 @@
 - [implementation/source/src/PeerProfile.ts.md](../implementation/source/src/PeerProfile.ts.md)
 - [implementation/source/src/README.md](../implementation/source/src/README.md)
 - [implementation/source/src/rpc/ARpcMethods.ts.md](../implementation/source/src/rpc/ARpcMethods.ts.md)
+- [implementation/source/src/rpc/ARpcRouter.ts.md](../implementation/source/src/rpc/ARpcRouter.ts.md)
 - [implementation/source/src/rpc/guards/AGuard.ts.md](../implementation/source/src/rpc/guards/AGuard.ts.md)
 - [implementation/source/src/rpc/guards/index.ts.md](../implementation/source/src/rpc/guards/index.ts.md)
 - [implementation/source/src/rpc/guards/README.md](../implementation/source/src/rpc/guards/README.md)
 - [implementation/source/src/rpc/guards/runGuards.ts.md](../implementation/source/src/rpc/guards/runGuards.ts.md)
 - [implementation/source/src/rpc/index.ts.md](../implementation/source/src/rpc/index.ts.md)
+- [implementation/source/src/rpc/PortRpcRouter.ts.md](../implementation/source/src/rpc/PortRpcRouter.ts.md)
 - [implementation/source/src/rpc/README.md](../implementation/source/src/rpc/README.md)
 - [implementation/source/src/rpc/registry.ts.md](../implementation/source/src/rpc/registry.ts.md)
 - [implementation/source/src/rpc/resolveCustomRpcManifest.ts.md](../implementation/source/src/rpc/resolveCustomRpcManifest.ts.md)
 - [implementation/source/src/rpc/RpcHandleProxy.ts.md](../implementation/source/src/rpc/RpcHandleProxy.ts.md)
+- [implementation/source/src/rpc/serializeError.ts.md](../implementation/source/src/rpc/serializeError.ts.md)
 - [implementation/source/src/rpc/services/index.ts.md](../implementation/source/src/rpc/services/index.ts.md)
 - [implementation/source/src/rpc/services/initHandshake/InitHandshakeRpcMethods.ts.md](../implementation/source/src/rpc/services/initHandshake/InitHandshakeRpcMethods.ts.md)
 - [implementation/source/src/rpc/services/initHandshake/InitHandshakeService.ts.md](../implementation/source/src/rpc/services/initHandshake/InitHandshakeService.ts.md)
@@ -258,6 +282,7 @@
 - [implementation/source/src/rpc/services/WebRTCSetup/README.md](../implementation/source/src/rpc/services/WebRTCSetup/README.md)
 - [implementation/source/src/rpc/services/WebRTCSetup/WebRTCSetupRpcMethods.ts.md](../implementation/source/src/rpc/services/WebRTCSetup/WebRTCSetupRpcMethods.ts.md)
 - [implementation/source/src/rpc/services/WebRTCSetup/WebRTCSetupService.ts.md](../implementation/source/src/rpc/services/WebRTCSetup/WebRTCSetupService.ts.md)
+- [implementation/source/src/rpc/WorkerLinks.ts.md](../implementation/source/src/rpc/WorkerLinks.ts.md)
 - [implementation/source/src/StateChannelEventListener.ts.md](../implementation/source/src/StateChannelEventListener.ts.md)
 - [implementation/source/src/stateManager/block/BlockProductionService.ts.md](../implementation/source/src/stateManager/block/BlockProductionService.ts.md)
 - [implementation/source/src/stateManager/BlockQueueManager.ts.md](../implementation/source/src/stateManager/BlockQueueManager.ts.md)
@@ -305,7 +330,9 @@
 - [implementation/source/src/transport/index.ts.md](../implementation/source/src/transport/index.ts.md)
 - [implementation/source/src/transport/LocalTransport.ts.md](../implementation/source/src/transport/LocalTransport.ts.md)
 - [implementation/source/src/transport/LoopbackTransport.ts.md](../implementation/source/src/transport/LoopbackTransport.ts.md)
+- [implementation/source/src/transport/MessagePortTransport.ts.md](../implementation/source/src/transport/MessagePortTransport.ts.md)
 - [implementation/source/src/transport/README.md](../implementation/source/src/transport/README.md)
+- [implementation/source/src/transport/RuntimePort.ts.md](../implementation/source/src/transport/RuntimePort.ts.md)
 - [implementation/source/src/transport/TransportType.ts.md](../implementation/source/src/transport/TransportType.ts.md)
 - [implementation/source/src/transport/WebRTCTransport.ts.md](../implementation/source/src/transport/WebRTCTransport.ts.md)
 - [implementation/source/src/types/artifacts.ts.md](../implementation/source/src/types/artifacts.ts.md)
@@ -360,7 +387,11 @@
 - [implementation/source/src/utils/logging/node/NodeLogUploader.ts.md](../implementation/source/src/utils/logging/node/NodeLogUploader.ts.md)
 - [implementation/source/src/utils/logging/node/README.md](../implementation/source/src/utils/logging/node/README.md)
 - [implementation/source/src/utils/logging/node/uploadDiagnostics.ts.md](../implementation/source/src/utils/logging/node/uploadDiagnostics.ts.md)
+- [implementation/source/src/utils/logging/noOpLogger.ts.md](../implementation/source/src/utils/logging/noOpLogger.ts.md)
 - [implementation/source/src/utils/logging/README.md](../implementation/source/src/utils/logging/README.md)
+- [implementation/source/src/utils/logging/rpc/logControl/logControlPort.ts.md](../implementation/source/src/utils/logging/rpc/logControl/logControlPort.ts.md)
+- [implementation/source/src/utils/logging/rpc/logControl/LogControlRpcMethods.ts.md](../implementation/source/src/utils/logging/rpc/logControl/LogControlRpcMethods.ts.md)
+- [implementation/source/src/utils/logging/rpc/logControl/LogControlService.ts.md](../implementation/source/src/utils/logging/rpc/logControl/LogControlService.ts.md)
 - [implementation/source/src/utils/moduleLoader/browser/importModuleFromManifest.ts.md](../implementation/source/src/utils/moduleLoader/browser/importModuleFromManifest.ts.md)
 - [implementation/source/src/utils/moduleLoader/browser/README.md](../implementation/source/src/utils/moduleLoader/browser/README.md)
 - [implementation/source/src/utils/moduleLoader/node/importModuleFromManifest.ts.md](../implementation/source/src/utils/moduleLoader/node/importModuleFromManifest.ts.md)
@@ -418,7 +449,7 @@
 - [implementation/views/security/data-availability.md](../implementation/views/security/data-availability.md)
 - [implementation/views/security/trust-model.md](../implementation/views/security/trust-model.md)
 
-### verification (125)
+### verification (128)
 
 - [verification/open-questions.md](../verification/open-questions.md)
 - [verification/README.md](../verification/README.md)
@@ -480,6 +511,7 @@
 - [verification/tests/test/evm/EvmJumpdestCache.test.ts.md](../verification/tests/test/evm/EvmJumpdestCache.test.ts.md)
 - [verification/tests/test/evm/HostNonceManager.test.ts.md](../verification/tests/test/evm/HostNonceManager.test.ts.md)
 - [verification/tests/test/evm/nodeGlobalsShim.test.ts.md](../verification/tests/test/evm/nodeGlobalsShim.test.ts.md)
+- [verification/tests/test/evm/P2pRuntimeClient.test.ts.md](../verification/tests/test/evm/P2pRuntimeClient.test.ts.md)
 - [verification/tests/test/evm/RuntimeChainContext.test.ts.md](../verification/tests/test/evm/RuntimeChainContext.test.ts.md)
 - [verification/tests/test/evm/workerShutdown.test.ts.md](../verification/tests/test/evm/workerShutdown.test.ts.md)
 - [verification/tests/test/harness/testTimeConfig.test.ts.md](../verification/tests/test/harness/testTimeConfig.test.ts.md)
@@ -487,6 +519,7 @@
 - [verification/tests/test/models/StateSnapshot.test.ts.md](../verification/tests/test/models/StateSnapshot.test.ts.md)
 - [verification/tests/test/rpc/initHandshake/InitHandshakeChallenge.test.ts.md](../verification/tests/test/rpc/initHandshake/InitHandshakeChallenge.test.ts.md)
 - [verification/tests/test/rpc/openChannelNegotiation/OpenChannelProposal.test.ts.md](../verification/tests/test/rpc/openChannelNegotiation/OpenChannelProposal.test.ts.md)
+- [verification/tests/test/rpc/PortRpcRouter.test.ts.md](../verification/tests/test/rpc/PortRpcRouter.test.ts.md)
 - [verification/tests/test/scripts/crashLogServer.test.ts.md](../verification/tests/test/scripts/crashLogServer.test.ts.md)
 - [verification/tests/test/scripts/fetchLogs.test.ts.md](../verification/tests/test/scripts/fetchLogs.test.ts.md)
 - [verification/tests/test/scripts/logChunks.test.ts.md](../verification/tests/test/scripts/logChunks.test.ts.md)
@@ -508,6 +541,7 @@
 - [verification/tests/test/storage/StateMachineStateStorage.test.ts.md](../verification/tests/test/storage/StateMachineStateStorage.test.ts.md)
 - [verification/tests/test/storage/StateSnapshotStorage.test.ts.md](../verification/tests/test/storage/StateSnapshotStorage.test.ts.md)
 - [verification/tests/test/storage/Storage.test.ts.md](../verification/tests/test/storage/Storage.test.ts.md)
+- [verification/tests/test/transport/MessagePortTransport.test.ts.md](../verification/tests/test/transport/MessagePortTransport.test.ts.md)
 - [verification/tests/test/unit/AgreementManager.test.ts.md](../verification/tests/test/unit/AgreementManager.test.ts.md)
 - [verification/tests/test/unit/BlockProductionService.test.ts.md](../verification/tests/test/unit/BlockProductionService.test.ts.md)
 - [verification/tests/test/unit/ContractSize.test.ts.md](../verification/tests/test/unit/ContractSize.test.ts.md)
@@ -562,18 +596,11 @@
 - [specification/storage/progress-markers.md](../specification/storage/progress-markers.md) — Luke Fishman, 2026-08-17
 - [specification/storage/snapshots-and-states.md](../specification/storage/snapshots-and-states.md) — Luke Fishman, 2026-08-17
 
-### implementation (12)
+### implementation (5)
 
 - [implementation/source/src/events/EventBus.ts.md](../implementation/source/src/events/EventBus.ts.md) — Luka, 2026-08-18
-- [implementation/source/src/evm/EvmDiamondStateMachine.ts.md](../implementation/source/src/evm/EvmDiamondStateMachine.ts.md) — Luka, 2026-08-15
-- [implementation/source/src/P2PManager.ts.md](../implementation/source/src/P2PManager.ts.md) — Luka, 2026-08-18
 - [implementation/source/src/ProfileManager.ts.md](../implementation/source/src/ProfileManager.ts.md) — Luka, 2026-08-18
-- [implementation/source/src/rpc/ARpcService.ts.md](../implementation/source/src/rpc/ARpcService.ts.md) — Luka, 2026-08-18
 - [implementation/source/src/rpc/MainRpcService.ts.md](../implementation/source/src/rpc/MainRpcService.ts.md) — Luka, 2026-08-15
-- [implementation/source/src/rpc/RemoteRpcProxy.ts.md](../implementation/source/src/rpc/RemoteRpcProxy.ts.md) — Luka, 2026-08-18
-- [implementation/source/src/rpc/Rpc.ts.md](../implementation/source/src/rpc/Rpc.ts.md) — Luka, 2026-08-18
-- [implementation/source/src/rpc/RpcHandler.ts.md](../implementation/source/src/rpc/RpcHandler.ts.md) — Luka, 2026-08-18
-- [implementation/source/src/transport/ATransport.ts.md](../implementation/source/src/transport/ATransport.ts.md) — Luka, 2026-08-18
 - [implementation/source/src/utils/EthersResultProxy.ts.md](../implementation/source/src/utils/EthersResultProxy.ts.md) — Luka, 2026-08-18
 - [implementation/source/src/utils/ObjectChecks.ts.md](../implementation/source/src/utils/ObjectChecks.ts.md) — Luka, 2026-08-18
 

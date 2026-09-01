@@ -84,7 +84,7 @@ export default class P2pInstance<
         this.stateChannelManagerContract = client.stateChannelManagerContract;
         this.logger = logger;
         this.events = client.events;
-        this.hostRpc = createHostRpc<TCustomRpc>(client);
+        this.hostRpc = createHostRpc<TCustomRpc>(client.host);
     }
 
     public async dispose() {

@@ -1,16 +1,12 @@
 import { parentPort } from "node:worker_threads";
+import PortRpcRouter from "@/rpc/PortRpcRouter";
 import { realmLogFlushBus } from "@/utils/logging/LogFlushBus";
-import { startContractExecutorWorkerHost } from "../worker/ContractExecutorWorkerHostCore";
-import type {
-    WorkerHostMessage,
-    WorkerRequestMessage
-} from "../worker/protocol";
+import { adaptWorkerScope } from "@platform/p2pRuntimeChannel";
+import { ContractExecutorRoot } from "../rpc/ContractExecutorRoot";
 
 if (!parentPort) {
     throw new Error("Contract executor worker host requires a parent port");
 }
-
-const port = parentPort;
 
 // This worker's logger installs crash hooks so a VM failure uploads its logs.
 // Any uncaughtException listener also suppresses node's fatal default, which
@@ -40,12 +36,10 @@ process.on(
     endThreadAfterCollecting("vm unhandledRejection")
 );
 
-startContractExecutorWorkerHost(
-    (response: WorkerHostMessage) => port.postMessage(response),
-    (handler: (message: WorkerRequestMessage) => void) => {
-        port.on("message", handler);
-    },
-    // Close the port so the drained loop can exit naturally (see
-    // workerShutdown.ts for why the loop must never be force-stopped).
-    () => port.close()
+// the whole protocol: this root, over the parent port
+const router = new PortRpcRouter<ContractExecutorRoot>(
+    (self) => new ContractExecutorRoot(self),
+    // the worker's logger exists once init brought the config
+    undefined
 );
+router.attach(adaptWorkerScope());

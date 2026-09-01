@@ -3,33 +3,20 @@
 > **Source:** [src/transport/ATransport.ts](../../../../../../src/transport/ATransport.ts) > **Status:** Authored — engineer verification pending.
 > **Design views:** [architecture/sdk/rpc/README.md](../../../views/architecture/sdk/rpc/README.md)
 
-## Contents
-
-- [Responsibility and observable boundary](#responsibility-and-observable-boundary)
-- [Key design decisions](#key-design-decisions)
-- [Inputs, outputs, state, and side effects](#inputs-outputs-state-and-side-effects)
-- [Linked requirements](#linked-requirements)
-- [Assumptions, dependencies, trust boundaries, and limits](#assumptions-dependencies-trust-boundaries-and-limits)
-- [Specification adherence](#specification-adherence)
-- [Specification contradictions](#specification-contradictions)
-- [Missing behavior](#missing-behavior)
-- [Conformance traceability](#conformance-traceability)
-- [Component test obligations](#component-test-obligations)
-- [Related source reports](#related-source-reports)
-
 ## Responsibility and observable boundary
 
 The transport base: `send` and `sendRpcResponse` serialization, idempotent close/disconnection
 delivery, the authenticated `peerAddress` used by network transports, `isSamePeer`
 (checksum-address comparison — the settlement identity rule), `isTrusted` (false for every
-network transport), and the module-graph-independent `isTransport` public-shape predicate.
+network transport), the `router` it delivers to (the peer manager or a port router; `p2pManager`
+remains as the peer-only view), and the module-graph-independent `isTransport` public-shape predicate.
 
 ## Key design decisions
 
 1. **`isSamePeer` compares identities, not objects** — response settlement survives transport upgrades ([`REQ-RPC-2-SZDTTM`](../../../../specification/peer-communication/rpc.md#req-rpc-2-szdttm)).
-2. **`isTrusted` defaults false**; only loopback overrides — the guard-bypass boundary is a transport property, not a call-site decision.
+2. **`isTrusted` defaults false**; only loopback and the worker port override — the guard-bypass boundary is a transport property, not a call-site decision.
 3. **`isTransport` checks the stable delivery surface.** Compatible transports are identified by `transportType`, `send`, and `sendRpcResponse`, not by one module graph's constructor ([#L89](../../../../../../src/transport/ATransport.ts#L89)).
-4. **Close is first-call-wins.** The first close marks the transport closed, emits an unexpected-disconnection hook when applicable, removes the connection, and invokes concrete cleanup; later closes do nothing ([#L51](../../../../../../src/transport/ATransport.ts#L51)).
+4. **Close is first-call-wins.** The first close marks the transport closed, tells the router (`onTransportClosed`: pending requests reject, a peer router emits the disconnection hook and removes the connection), and invokes concrete cleanup; later closes do nothing ([#L51](../../../../../../src/transport/ATransport.ts#L51)).
 
 ## Inputs, outputs, state, and side effects
 
@@ -41,9 +28,6 @@ network transport), and the module-graph-independent `isTransport` public-shape 
 | Side effects | Logging, concrete sends/closes, connection removal, and unexpected-disconnection hooks.            |
 
 ## Linked requirements
-
-A file may contribute to several requirements; this report describes the contribution and never
-claims complete conformance for a requirement that depends on other files.
 
 | Source file                                                    | Specification IDs                                                                                                                                                                                                                                                                     |
 | -------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -62,19 +46,7 @@ claims complete conformance for a requirement that depends on other files.
 
 - Identity-bearing surface for identity-bound dispatch ([`INV-RPC-1-SJS2T6`](../../../../specification/peer-communication/rpc.md#inv-rpc-1-sjs2t6)).
 
-## Specification contradictions
-
-None demonstrated.
-
-## Missing behavior
-
-None demonstrated.
-
 ## Conformance traceability
-
-Status enum: `Covered` | `Partial` | `Contradicts` | `Missing`. Evidence cells are structured
-**Here:** / **Other files:** so each row is auditable from its links alone; genuine gaps go in the
-Gap column. Audit state is file-level (Status header), never a row status.
 
 | Requirement / invariant                                                                       | Implementation status | Evidence                                                                                                                         | Gap / divergence |
 | --------------------------------------------------------------------------------------------- | --------------------- | -------------------------------------------------------------------------------------------------------------------------------- | ---------------- |
@@ -83,8 +55,6 @@ Gap column. Audit state is file-level (Status header), never a row status.
 | [`REQ-RUNTIME-4-B0N70Y`](../../../../specification/runtime/execution.md#req-runtime-4-b0n70y) | Covered               | **Here:** `isTransport` recognizes the stable public delivery surface across module graphs.                                      | None.            |
 
 ## Component test obligations
-
-Exact test evidence is mapped against these IDs in the verification test reports.
 
 | Unit test ID                                                              | Obligation                                       | Public entry and setup                                                                                                                                                                                               | Oracle and forbidden effects                                                                                                                                                                                  | Required permutations                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
 | ------------------------------------------------------------------------- | ------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |

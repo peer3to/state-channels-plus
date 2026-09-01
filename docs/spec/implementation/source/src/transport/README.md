@@ -12,6 +12,8 @@ _Pending authoring: shared responsibility, design decisions, assumptions, cross-
 - [HolepunchTransport.ts](./HolepunchTransport.ts.md)
 - [LocalTransport.ts](./LocalTransport.ts.md)
 - [LoopbackTransport.ts](./LoopbackTransport.ts.md)
+- [MessagePortTransport.ts](./MessagePortTransport.ts.md)
+- [RuntimePort.ts](./RuntimePort.ts.md)
 - [TransportType.ts](./TransportType.ts.md)
 - [WebRTCTransport.ts](./WebRTCTransport.ts.md)
 - [index.ts](./index.ts.md)

@@ -3,35 +3,23 @@
 > **Source:** [src/P2PManager.ts](../../../../../src/P2PManager.ts) > **Status:** Authored — engineer verification pending.
 > **Design views:** [architecture/sdk/rpc/README.md](../../views/architecture/sdk/rpc/README.md), [architecture/sdk/components.md](../../views/architecture/sdk/components.md)
 
-## Contents
-
-- [Responsibility and observable boundary](#responsibility-and-observable-boundary)
-- [Key design decisions](#key-design-decisions)
-- [Inputs, outputs, state, and side effects](#inputs-outputs-state-and-side-effects)
-- [Linked requirements](#linked-requirements)
-- [Assumptions, dependencies, trust boundaries, and limits](#assumptions-dependencies-trust-boundaries-and-limits)
-- [Specification adherence](#specification-adherence)
-- [Specification contradictions](#specification-contradictions)
-- [Missing behavior](#missing-behavior)
-- [Conformance traceability](#conformance-traceability)
-- [Component test obligations](#component-test-obligations)
-- [Related source reports](#related-source-reports)
-
 ## Responsibility and observable boundary
 
-The frame dispatcher and correlation owner: `onRpc` runs stages 1–4 of the ingress order (16 MiB
-UTF-8 byte gate before parsing, response-first classification, envelope verification, service
-resolution) before handing to the service base; `sendRpcRequest` owns the pending-request table,
-per-call timeouts, the addressed-peer settlement rule (peer identity, not transport object),
-late-response silent ignore, and disconnect settlement; plus broadcast/addressed delivery and
-connection registry.
+The peers' router: `ARpcRouter` specialised with peer policy. The inherited core runs stages 1–4
+of the ingress order (16 MiB UTF-8 byte gate before parsing, response-first classification,
+envelope verification, service resolution) before handing to the service base, and owns the
+pending-request table, per-call timeouts and late-response silent ignore; this file supplies the
+timer manager and the agreement-time default, the addressed-peer settlement rule (peer identity,
+not transport object), the foreign-response penalty, disconnect settlement, address resolution
+through the profile manager, plus broadcast/addressed delivery and the connection registry.
 
 ## Key design decisions
 
 1. **Response-first classification** keeps response frames out of service dispatch entirely ([`REQ-RPC-6-E60S4J`](../../../specification/peer-communication/rpc.md#req-rpc-6-e60s4j)).
 2. **Settlement by peer identity, not transport identity** — a WebRTC upgrade cannot orphan pending requests; a response from any _other_ peer penalizes the responder ([`REQ-RPC-2-SZDTTM`](../../../specification/peer-communication/rpc.md#req-rpc-2-szdttm)).
 3. **Unknown/late responses are penalty-free by design** (must therefore stay cheap; bounded by the frame gate).
-4. **Service resolution uses the shared public-shape predicate.** A valid custom root loaded from a separate application module graph reaches the same guard and dispatch pipeline; constructor identity is not part of the wire contract ([#L228](../../../../../src/P2PManager.ts#L228)).
+4. **Peer policy is a set of hooks, not a fork of the core.** `defaultRequestTimeoutMs`, `isResponseFromRequestee`, `onForeignResponse`, `resolveTransport`, `onTransportClosed` and `onServiceFailure` are the only places peer semantics enter; the same core serves the worker links under `PortRpcRouter` ([ARpcRouter.ts.md](./rpc/ARpcRouter.ts.md)).
+5. **Service resolution uses the shared public-shape predicate.** A valid custom root loaded from a separate application module graph reaches the same guard and dispatch pipeline; constructor identity is not part of the wire contract ([#L228](../../../../../src/P2PManager.ts#L228)).
 
 ## Inputs, outputs, state, and side effects
 
@@ -43,9 +31,6 @@ connection registry.
 | Side effects | Per role above. |
 
 ## Linked requirements
-
-A file may contribute to several requirements; this report describes the contribution and never
-claims complete conformance for a requirement that depends on other files.
 
 | Source file                                       | Specification IDs                                                                                                                                                                                                                                                                                                                                                  |
 | ------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
@@ -59,19 +44,11 @@ claims complete conformance for a requirement that depends on other files.
 
 - Stages 1–4 with their per-stage consequences; correlation single-settlement.
 
-## Specification contradictions
-
-None demonstrated.
-
 ## Missing behavior
 
 Per-peer rate limiting is the designated missing admission control ([`OQ-6-4JPNE5`](../../../specification/open-questions.md#oq-6-4jpne5)); request cancellation API absent (timeout-only) — documented limitation.
 
 ## Conformance traceability
-
-Status enum: `Covered` | `Partial` | `Contradicts` | `Missing`. Evidence cells are structured
-**Here:** / **Other files:** so each row is auditable from its links alone; genuine gaps go in the
-Gap column. Audit state is file-level (Status header), never a row status.
 
 | Requirement / invariant                                                                 | Implementation status | Evidence                                                                                                                                                                                                                    | Gap / divergence                |
 | --------------------------------------------------------------------------------------- | --------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------- |
@@ -79,8 +56,6 @@ Gap column. Audit state is file-level (Status header), never a row status.
 | [`REQ-RPC-2-SZDTTM`](../../../specification/peer-communication/rpc.md#req-rpc-2-szdttm) | Partial               | **Here:** pending table, timeout, addressed-peer rule, disconnect settlement, and disposal cleanup.                                                                                                                         | No cancellation beyond timeout. |
 
 ## Component test obligations
-
-Exact test evidence is mapped against these IDs in the verification test reports.
 
 | Unit test ID                                                                | Obligation                  | Public entry and setup                                                                                                                             | Oracle and forbidden effects                                                                                                           | Required permutations                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
 | --------------------------------------------------------------------------- | --------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |

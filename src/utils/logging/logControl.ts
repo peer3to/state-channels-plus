@@ -1,22 +1,9 @@
+import type { WorkerLinkSide } from "@/rpc/WorkerLinks";
 import type { SharedLoggerContext } from "./Logger";
 
-/** ties a round to its acks */
-export type FlushId = string;
-
-/** which end of the tree the realm across a port sits on -> how much of its
+/** which end of the tree the realm across a link sits on -> how much of its
  *  context this realm trusts */
-export type LogRemoteRealm = "parent" | "child";
-
-export interface LogControl<TType extends string> {
-    type: TType;
-}
-
-/** upload every store reachable from the receiving realm */
-export interface LogFlushRequest extends LogControl<"flushRequest"> {
-    flushId: FlushId;
-    /** human-readable trigger */
-    reason: string;
-}
+export type LogRemoteRealm = WorkerLinkSide;
 
 /** what a round achieved across every realm it reached */
 export interface LogFlushResult {
@@ -24,41 +11,23 @@ export interface LogFlushResult {
     ok: number;
     /** realms whose POST failed after its retry */
     failed: number;
-    /** ports that never acked in time */
+    /** links that never answered in time */
     timedOut: number;
     /** entries the server accepted */
     entries: number;
 }
 
-/** sent back on the port a round arrived on */
-export interface LogFlushAck extends LogControl<"flushAck"> {
-    flushId: FlushId;
-    /** rolled up from this subtree */
-    result: LogFlushResult;
-}
-
-/** the sender's channel or identity changed */
-export interface LogContextUpdate extends LogControl<"contextUpdate"> {
-    context: SharedLoggerContext;
-}
-
-export type LogControlMessage =
-    | LogFlushRequest
-    | LogFlushAck
-    | LogContextUpdate;
-
-/** this realm's end of a thread boundary */
+/** this realm's end of a link, as the bus sees it: one call that collects the
+ *  far subtree and answers with its totals, one cast that pushes context */
 export interface LogControlPort {
-    post(message: LogControlMessage): void;
+    flush(reason: string): Promise<LogFlushResult>;
+    postContext(context: SharedLoggerContext): void;
     remoteRealm: LogRemoteRealm;
 }
 
-/** what a transport keeps for its port. receive() closes over the port, so it
- *  can't be paired with the wrong one. */
+/** what the bus hands back for a port: the way to take it off again */
 export interface LogPortHandle {
-    /** feed the bus a message that arrived on this port */
-    receive(message: LogControlMessage): void;
-    /** detach; waiters on its ack settle now */
+    /** detach; a round in flight over it settles when the link closes */
     remove(): void;
 }
 

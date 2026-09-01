@@ -1,20 +1,21 @@
 import type MainRpcService from "@/rpc/MainRpcService";
 import type { RemoteRpcProxyType } from "@/rpc/RemoteRpcProxy";
-import type { RuntimeRequester } from "./types";
+import type { RuntimeHostEndpoint } from "./P2pRuntimeClient";
 
 /**
  * Builds the client-side `hostRpc` proxy. It mirrors the host's `remoteRpc`
  * surface exactly ({@link RemoteRpcProxyType}); the runtime port is a pure
  * proxy. A call such as `hostRpc.svc.m(...params).request(addr?, opts?)` is
- * forwarded verbatim and the host replays the identical chained call on its own
- * `remoteRpc`, awaiting and returning the result for `request`.
+ * forwarded verbatim through the host's `hostRpc.call` service and the host
+ * replays the identical chained call on its own `remoteRpc`, awaiting and
+ * returning the result for `request`.
  *
  * As on the host, an omitted delivery target runs the method on the host itself
  * (loopback); a peer address relays it. Only addresses can be used as targets
  * from the client (transports are not serializable across the port).
  */
 export function createHostRpc<TCustomRpc extends MainRpcService>(
-    requester: RuntimeRequester
+    host: RuntimeHostEndpoint
 ): RemoteRpcProxyType<TCustomRpc> {
     const serviceCache = new Map<string, unknown>();
 
@@ -27,7 +28,7 @@ export function createHostRpc<TCustomRpc extends MainRpcService>(
                 if (!serviceCache.has(service)) {
                     serviceCache.set(
                         service,
-                        createServiceProxy(requester, service)
+                        createServiceProxy(host, service)
                     );
                 }
                 return serviceCache.get(service);
@@ -38,7 +39,7 @@ export function createHostRpc<TCustomRpc extends MainRpcService>(
     return root as unknown as RemoteRpcProxyType<TCustomRpc>;
 }
 
-function createServiceProxy(requester: RuntimeRequester, service: string) {
+function createServiceProxy(host: RuntimeHostEndpoint, service: string) {
     return new Proxy(
         {},
         {
@@ -46,14 +47,14 @@ function createServiceProxy(requester: RuntimeRequester, service: string) {
                 if (typeof methodProp === "symbol") return undefined;
                 const method = methodProp.toString();
                 return (...params: unknown[]) =>
-                    createDeliveryHandle(requester, service, method, params);
+                    createDeliveryHandle(host, service, method, params);
             }
         }
     );
 }
 
 function createDeliveryHandle(
-    requester: RuntimeRequester,
+    host: RuntimeHostEndpoint,
     service: string,
     method: string,
     params: unknown[]
@@ -68,14 +69,9 @@ function createDeliveryHandle(
                 if (typeof deliveryProp === "symbol") return undefined;
                 const delivery = deliveryProp.toString();
                 return (...args: unknown[]) =>
-                    requester.request({
-                        type: "hostRpc",
-                        service,
-                        method,
-                        params,
-                        delivery,
-                        args
-                    });
+                    host.hostRpc
+                        .call(service, method, params, delivery, args)
+                        .request();
             }
         }
     );

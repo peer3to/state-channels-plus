@@ -1,9 +1,12 @@
 import type ARpcService from "@/rpc/ARpcService";
 import type MainRpcService from "@/rpc/MainRpcService";
+import type ATransport from "@/transport/ATransport";
 import { hasRpcService } from "@/utils/ObjectChecks";
+import type { RpcRouterLike } from "./ARpcRouter";
 import RpcMethodsProxy, { RpcHandleMethods } from "./RpcHandleProxy";
 
-type RemoteRpcServices<T extends object> = {
+/** every service on a root, seen as its delivery handles */
+export type RemoteRpcServices<T extends object> = {
     [K in keyof T as T[K] extends ARpcService<any, any>
         ? K
         : never]: T[K] extends ARpcService<infer R, any>
@@ -51,7 +54,7 @@ class RemoteRpcProxy {
                 if (!proxyCache.has(serviceName)) {
                     const ctx = {
                         serviceName,
-                        service: val
+                        router: val.p2pManager as RpcRouterLike
                     };
                     proxyCache.set(
                         serviceName,
@@ -62,6 +65,27 @@ class RemoteRpcProxy {
                 return proxyCache.get(serviceName)!;
             }
         }) as unknown as RemoteRpcProxyType<TLocalRpcRoot>;
+    }
+
+    /**
+     * the far end of one transport, typed by the root it serves. the far root
+     * is never instantiated here: `manifest` names its services, `TRemoteRoot`
+     * types them, and every handle targets `transport` unless told otherwise.
+     */
+    public static createEndpoint<TRemoteRoot extends object>(
+        router: RpcRouterLike,
+        transport: ATransport,
+        manifest: readonly (keyof TRemoteRoot & string)[]
+    ): RemoteRpcServices<TRemoteRoot> {
+        const services: Record<string, unknown> = {};
+        for (const serviceName of manifest) {
+            services[serviceName] = RpcMethodsProxy.createProxy({
+                serviceName,
+                router,
+                defaultTarget: transport
+            });
+        }
+        return services as RemoteRpcServices<TRemoteRoot>;
     }
 }
 export default RemoteRpcProxy;

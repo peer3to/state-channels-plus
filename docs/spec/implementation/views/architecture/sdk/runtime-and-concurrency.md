@@ -54,8 +54,8 @@ communication contract identical whether it runs inline or in a worker
 
 **Transport neutrality between inline and worker deployment.** Communication
 across a context boundary is defined once, as serialized bidirectional messages
-over a **paired port** ([`RuntimePort`](../../../../../../src/evm/p2pRuntime/types.ts#L14)
-/ [`RuntimeChannel`](../../../../../../src/evm/p2pRuntime/types.ts#L31)). The two
+over a **paired port** ([`RuntimePort`](../../../../../../src/transport/RuntimePort.ts#L5)
+/ [`RuntimeChannel`](../../../../../../src/transport/RuntimePort.ts#L22)). The two
 endpoints of a pair may:
 
 - both live in one execution context — an **in-process** `MessageChannel` pair
@@ -65,6 +65,12 @@ endpoints of a pair may:
   ([`createTransferableChannel`](../../../../../../src/evm/p2pRuntime/node/P2pRuntimeChannel.ts#L43)
   plus [`createP2pRuntimeWorker`](../../../../../../src/evm/p2pRuntime/node/P2pRuntimeWorkerRuntime.ts#L15)).
 
+What crosses the pair is the SDK's own RPC envelope: a
+[`MessagePortTransport`](../../../../../../src/transport/MessagePortTransport.ts#L1)
+under a [`PortRpcRouter`](../../../../../../src/rpc/PortRpcRouter.ts#L1), with each
+side's operations composed as ordinary typed services on a root
+([`P2pRuntimeHostRoot`](../../../../../../src/evm/p2pRuntime/rpc/P2pRuntimeHostRoot.ts#L1),
+[`P2pRuntimeClientRoot`](../../../../../../src/evm/p2pRuntime/rpc/P2pRuntimeClientRoot.ts#L1)).
 The message protocol and the observable behavior are **identical in both
 cases**. The consequences are the whole point of the design:
 
@@ -86,7 +92,7 @@ cost, instead of being baked into the type graph.
 
 ### 1.2 Observable contract of a port
 
-[`RuntimePort`](../../../../../../src/evm/p2pRuntime/types.ts#L14) is the minimal surface
+[`RuntimePort`](../../../../../../src/transport/RuntimePort.ts#L5) is the minimal surface
 that both a Node `worker_threads` `MessagePort` and a browser `MessagePort`
 satisfy through a thin adapter (`adaptPort`):
 
@@ -108,9 +114,10 @@ Three execution contexts, connected only by serialized ports:
 
 1. **Main thread (client realm).** Holds the application and
    [`P2pRuntimeClient`](../../../../../../src/evm/p2pRuntime/P2pRuntimeClient.ts#L88). It
-   **sends requests** (enshrined-contract calls, signer calls, channel
-   lifecycle, `hostRpc`, `quiesce`, `dispose`) and **receives** responses, bus
-   events, host errors, and — in worker mode — the WebRTC bridge port. It owns
+   **calls the host's services** (enshrined-contract calls, signer calls, channel
+   lifecycle, `hostRpc`, `quiesce`, `dispose`) over a typed endpoint and **serves
+   the host's pushes** (bus events, host errors) on its own root; in worker mode
+   it also hands the WebRTC bridge port over in the bootstrap. It owns
    only client-realm proxy objects: the two client signers, a main-thread
    contract mirror, and the client `EventBus`. It owns **no node state**.
 2. **SDK runtime host.** Built by
@@ -163,10 +170,10 @@ flowchart TB
         DIAMOND["LocalDiamond + dispute state machine instance"]
     end
 
-    CLIENT <-->|"RuntimePort — inline MessageChannel OR transferred worker port<br/>requests ↔ response / busEvent / hostError / webRTCBridgePort"| HOSTENTRY
-    SM <-->|"executor port — inline call OR WorkerContractExecutor worker port<br/>deploy / executeCall / simulateCall"| LIVE
+    CLIENT <-->|"RuntimePort — inline MessageChannel OR transferred worker port<br/>RPC envelopes ↔ replies; runtimeEvents.busEvent / hostError casts"| HOSTENTRY
+    SM <-->|"executor port — inline call OR WorkerContractExecutor worker port<br/>contractExecutor.deploy / executeCall / simulateCall"| LIVE
     SM <--> DIAMOND
-    HOSTENTRY -. "webRTCBridgePort (worker host only): main-thread MessageChannel end, transferred back" .-> CLIENT
+    CLIENT -. "webRTCBridgePort (worker host only): worker end of a main-thread MessageChannel, transferred in the bootstrap" .-> HOSTENTRY
     HOSTENTRY -->|"peer transports (Holepunch / WebRTC / Loopback)"| PEERS["Peers / chain"]
 ```
 
@@ -214,16 +221,15 @@ deliberately does not.
 
 ### 3.2 Ordering & correlation ([`INV-RUN-2-AF430Q`](runtime-and-concurrency.md#inv-run-2-af430q), [`REQ-RUN-5-DC7M8E`](runtime-and-concurrency.md#req-run-5-dc7m8e))
 
-- **One handler per port.** `onMessage` registers a single dispatch function
-  ([`P2pRuntimeHost`](../../../../../../src/evm/p2pRuntime/P2pRuntimeHost.ts#L263)
-  `onPortMessage`, [`P2pRuntimeClient`](../../../../../../src/evm/p2pRuntime/P2pRuntimeClient.ts#L88)
-  `handleMessage`). There is no second listener that could race it.
-- **Correlation ids.** Every client→host request carries a `requestId` — a
-  client-local monotonically increasing counter (`nextRequestId`), stamped in
-  `P2pRuntimeClient.request`. The host echoes it in the `response` message; the
-  pending-request map resolves/rejects exactly that entry. The executor boundary
-  uses the same scheme with its own counter
-  ([`WorkerContractExecutor`](../../../../../../src/evm/contractExecutor/WorkerContractExecutor.ts#L51)).
+- **One handler per port.** [`MessagePortTransport`](../../../../../../src/transport/MessagePortTransport.ts#L20)
+  registers the single inbound handler and hands every frame to its router's
+  `onRpcFrame`. There is no second listener that could race it.
+- **Correlation ids.** Every request carries the `requestId` the shared router
+  core stamps ([`ARpcRouter.sendRpcRequest`](../../../../../../src/rpc/ARpcRouter.ts#L129)),
+  the same counter and pending map the peer RPC uses. The reply echoes it and
+  settles exactly that entry. The executor boundary is the same core over its own
+  `PortRpcRouter` ([`WorkerContractExecutor`](../../../../../../src/evm/contractExecutor/WorkerContractExecutor.ts#L1));
+  no boundary keeps a counter of its own.
 - **Paired endpoints only.** Because the port pair is 1:1 and never a network,
   correlation needs no authenticity check — the only writer to the other end is
   the paired context. This is the **trusted-loopback** property (§7); contrast
@@ -242,13 +248,14 @@ deliberately does not.
 
 The lifecycle coverage uses [ReadyLifecycleRpcManifest.ts](../../../../../../test/fixtures/customRpc/ReadyLifecycleRpcManifest.ts), [PeerTestHarness.ts](../../../../../../test/fixtures/PeerTestHarness.ts), [workerAnswerPrecompile.ts](../../../../../../test/fixtures/workerAnswerPrecompile.ts), and [harness core types](../../../../../../test/harness/core/types.ts). These are test-only inputs for delayed application readiness, delayed precompile initialization, and bounded peer setup; they do not define production protocol behavior.
 
-The production lifecycle crosses [EvmDiamondStateMachine.ts](../../../../../../src/evm/EvmDiamondStateMachine.ts), [P2pRuntimeHost.ts](../../../../../../src/evm/p2pRuntime/P2pRuntimeHost.ts), [MainRpcService.ts](../../../../../../src/rpc/MainRpcService.ts), and the contract executor's [worker host](../../../../../../src/evm/contractExecutor/worker/ContractExecutorWorkerHostCore.ts).
+The production lifecycle crosses [EvmDiamondStateMachine.ts](../../../../../../src/evm/EvmDiamondStateMachine.ts), [P2pRuntimeHost.ts](../../../../../../src/evm/p2pRuntime/P2pRuntimeHost.ts), [MainRpcService.ts](../../../../../../src/rpc/MainRpcService.ts), and the contract executor's [worker service](../../../../../../src/evm/contractExecutor/rpc/contractExecutor/ContractExecutorRpcMethods.ts).
 
 Startup is a fixed handshake, summarized in [architecture.md](./architecture.md)
 §2.1: config → resolve signer → start host (inline or worker) → client connects
 → `deployStateMachine` runs **twice** through the deployment-bridge signer →
-`deployComplete` triggers `buildRuntime` → the host awaits the custom root's
-`ready()` hook → host posts `ready` → `P2pInstance` returned. The base root
+`lifecycle.deployComplete` builds the runtime → the host awaits the custom root's
+`ready()` hook → the `deployComplete` reply is the readiness signal →
+`P2pInstance` returned. The base root
 hook resolves immediately. Application roots use it to prewarm owned workers
 and precompiles before admission. A hook rejection disposes the partial graph
 and preserves the hook error. The client's `ready` promise is the single
@@ -258,27 +265,32 @@ ready work completes and uses the configured fatal-delay guard. The test harness
 initial peer setup calls finish. A peer added later starts independently and
 does not change existing peers' monitors.
 In worker mode a single
-`WorkerBootstrapMessage {type:"connect", payload, port}` transfers the port into
+`WorkerBootstrapMessage {type:"connect", payload, port, webRTCBridgePort}` transfers
+the runtime port — and, when the worker needs the bridge, the bridge port — into
 the worker before the request protocol begins
 ([`onWorkerBootstrap`](../../../../../../src/evm/p2pRuntime/node/P2pRuntimeWorkerRuntime.ts#L69)).
 
 ### 3.4 Error semantics ([`INV-RUN-3-1AKG2E`](runtime-and-concurrency.md#inv-run-3-1akg2e))
 
-- **Request failures** return `{type:"response", ok:false, error}`. Errors are
-  serialized by `serializeError` — `message`/`name`/`stack`, a contract revert's
+- **Request failures** return an `ok: false` reply whose `error` is a
+  `SerializedError` ([`serializeError.ts`](../../../../../../src/rpc/serializeError.ts#L1);
+  peers get only a message string, trusted ports the full shape) —
+  `message`/`name`/`stack`, a contract revert's
   ABI `data` (recovered by `extractRevertData` so custom errors decode
   client-side), ethers metadata (`code`, `shortMessage`, `reason`,
   `transaction`, `receipt`, `info`), and an originating-peer stamp — and
-  restored to a real `Error` by `deserializeError` on the client. The
+  restored to a real `Error` by `deserializeError` in the router core. The
   in-process peer-address stamp is carried explicitly because the non-enumerable
   property does not survive structured clone.
-- **Host construction failure** posts a `hostError` and closes the port; the
-  client's unsettled `ready` rejects and all pending requests reject
-  (`dispatchHostError`). A provider-creation failure before the graph exists is
-  handled the same way ([`startP2pRuntimeHost`](../../../../../../src/evm/p2pRuntime/P2pRuntimeHost.ts#L200)
+- **Host construction failure** rejects the `deployComplete` reply, which is
+  the client's `ready`; a failure before the graph exists is pushed as
+  `runtimeEvents.hostError` and the port closed, so `ready` and every pending
+  request reject (`onHostError`). A provider-creation failure is handled the
+  same way ([`startP2pRuntimeHost`](../../../../../../src/evm/p2pRuntime/P2pRuntimeHost.ts#L200)
   early `catch`).
 - **Autonomous host errors** (a worker `unhandledRejection`/`uncaughtException`
-  not tied to a request) are funnelled over the port as `hostError`
+  not tied to a request) are funnelled over the port as the
+  `runtimeEvents.hostError` cast
   ([`onUnhandledWorkerError`](../../../../../../src/evm/p2pRuntime/node/P2pRuntimeWorkerRuntime.ts#L139)).
   After `ready`, they go to `onHostError` listeners; with **no** listener they
   re-throw as a main-thread unhandled rejection, so a worker fault surfaces the
@@ -287,8 +299,8 @@ the worker before the request protocol begins
 
 ### 3.5 Disposal
 
-- **Graceful:** `P2pInstance.dispose()` → `client.dispose()` sends a `dispose`
-  request with **no timeout** (`timeoutMs: null`), lets the host tear down its
+- **Graceful:** `P2pInstance.dispose()` → `client.dispose()` calls
+  `lifecycle.dispose` with **no timeout** (`timeoutMs: null`), lets the host tear down its
   graph and reply, then closes the port and (worker mode) awaits
   `worker.shutdown()`. Disposal owns its own bounds because the generic 30 s
   request timeout could otherwise force shutdown while provider/transport
@@ -332,8 +344,8 @@ be canonical:
   objects. `ethers.Signer` objects are intentionally unsupported for the same
   reason ([architecture.md](./architecture.md) [`REQ-SDK-1-JKC9W7`](architecture.md#req-sdk-1-jkc9w7)).
 - **Transferables.** Only two things are transferred (ownership moved, not
-  cloned): the runtime port itself at bootstrap, and the **WebRTC bridge port**
-  (§4).
+  cloned), both in the bootstrap message: the runtime port itself and the
+  **WebRTC bridge port** (§4). An RPC frame never carries a transferable.
 - **Application event names.** The hook-publishing proxy accepts every string
   property name and emits `{kind: "p2pEventHooks", eventName, args}` before
   calling the current application hook target. Cloneable application payloads
@@ -341,8 +353,8 @@ be canonical:
   to the SDK's base hook type.
 - **Best-effort clone with silent loss.** Bus-event handler `args` are a
   best-effort clone and arrive **empty when not serializable**
-  ([`worker/protocol.ts`](../../../../../../src/evm/p2pRuntime/worker/protocol.ts#L17)
-  `RuntimeBusEventMessage`); and a main-thread contract subscription that filters
+  ([`P2pRuntimeHost`](../../../../../../src/evm/p2pRuntime/P2pRuntimeHost.ts#L396)
+  `runtimeEvents.busEvent`); and a main-thread contract subscription that filters
   on an _indexed_ argument (`contract.filters.X(indexedValue)`) will **not**
   match, because only `{name, args}` are forwarded, not the original ethers
   topics ([`P2pRuntimeClient`](../../../../../../src/evm/p2pRuntime/P2pRuntimeClient.ts#L88)
@@ -356,10 +368,12 @@ be canonical:
 The client↔host and host↔executor ports carry **no guards and no
 authentication**: they are the same user's own contexts, a **trusted local
 loopback**. This is the deliberate counterpart to the peer boundary, where every
-frame is adversarial ([rpc/README.md](./rpc/README.md) §1). The
-[`LoopbackTransport`](../../../../../../src/transport/LoopbackTransport.ts#L13)
-(`isTrusted = true`) is the existing seed of this distinction inside the RPC
-layer and the model §44's future work builds on (§7).
+frame is adversarial ([rpc/README.md](./rpc/README.md) §1). Inside the RPC
+layer the distinction is one flag:
+[`MessagePortTransport`](../../../../../../src/transport/MessagePortTransport.ts#L1)
+is `isTrusted = true` exactly like
+[`LoopbackTransport`](../../../../../../src/transport/LoopbackTransport.ts#L13), and
+guards, the frame bound and the full error shape all read that flag and nothing else.
 
 ## 4. Browser vs. Node divergence: the WebRTC bridge
 
@@ -367,10 +381,11 @@ The port abstraction is uniform, but one host capability is not portable: an
 `RTCPeerConnection` cannot be driven from inside a worker. When the host runs in
 a worker that cannot negotiate WebRTC itself
 ([`doesWorkerNeedMainThreadBridge`](../../../../../../src/rpc/services/WebRTCSetup/connection/WebRTCProvider.ts#L35)),
-the host mints a second `MessageChannel`, **transfers its main-thread end back to
-the client** as a `webRTCBridgePort` message, and registers the worker end with
+the client mints a second `MessageChannel` and **transfers its worker end into
+the worker in the bootstrap message**; the host registers that end with
 [`WorkerBridgeWebRTCConnectionFactory`](../../../../../../src/rpc/services/WebRTCSetup/connection/WorkerBridgeWebRTCConnectionFactory.ts#L255).
-The client surfaces it on `P2pInstance.webRTCBridgePort`;
+The `deployComplete` reply says whether the bridge is in use; the client keeps
+its end as `P2pInstance.webRTCBridgePort` or closes it.
 `installMainThreadBridgeIfOnMainThread()` (called automatically by `p2pSetup`)
 wires it to the real `RTCPeerConnection`
 ([`WebRTCMainThreadBridge`](../../../../../../src/rpc/services/WebRTCSetup/connection/WebRTCMainThreadBridge.ts#L1)),
@@ -535,76 +550,29 @@ These are concrete component-level tests required by the implementation obligati
 
 _Non-normative._
 
-- **Replace bespoke port request types with a trusted-loopback RPC router.** The
-  client→host protocol is a growing hand-written set of request cases (the
-  enumeration in [architecture.md](./architecture.md) §2.1). §44's direction is
-  to carry these over the **same type-safe custom-RPC abstraction used for peer
-  RPC**: a minimal **trusted loopback transport** plus a router service over the
-  port, so ordinary typed services handle local cross-context calls and new
-  local operations stop minting bespoke messages. `hostRpc` already proves the
-  shape is proxyable across the port with no per-method stubs
-  ([`ClientHostRpc`](../../../../../../src/evm/p2pRuntime/ClientHostRpc.ts#L1)), and
-  [`LoopbackTransport`](../../../../../../src/transport/LoopbackTransport.ts#L13)
-  (`isTrusted`) is the seed. Any such design MUST preserve the
-  **trusted-local-loopback vs. untrusted-peer** distinction (§3.7): the router
-  skips peer guards because the caller is the local app, exactly as loopback does
-  today ([rpc/README.md](./rpc/README.md) §3). This couples to the RPC subtree
-  ([sdk/rpc/](./rpc/README.md)); a shared versioning decision would also cover
-  the local boundary ([rpc/README.md](./rpc/README.md) §6.9).
-- **Runtime worker feature-detection and auto-fallback**, so worker mode
-  degrades to inline where workers are unavailable instead of requiring a static
-  flag (§6).
-- **A measurement harness that gates each worker boundary** (§6): turn the
-  existing startup/timing instrumentation into a benchmark that justifies
-  `RUN_SDK_IN_THREAD` / `VM_DEDICATED_THREAD` per target device, and record the
-  performance target and device envelope the gaps in §6 flag.
-- **A written cross-kind ordering guarantee** for responses vs. bus events over
-  the port (§3.2), and an explicit contract for bus-event arg serialization loss
-  and indexed-filter matching (§3.6).
-- **A trusted-transport guard for the harness-control root** and exclusion of the
-  fixture tree from the published build (§11.4), so a privileged test surface
-  cannot be dispatched from a network transport or shipped to consumers by
-  default.
-- **An equivalence oracle rather than an equivalence matrix** (§11.6): record a
-  scenario's observable outputs in one mode and diff them against the other
-  three, over the observation set [`REQ-RUN-12-AYGVM7`](runtime-and-concurrency.md#req-run-12-aygvm7) settles on, including at least one
-  multi-peer protocol scenario.
-- **A cross-peer scheduling mechanism** if deterministic multi-peer interleaving
-  is wanted (§11.5) — today only the per-peer cooperative hold/release stubs
-  exist, and coordination is polling-based.
-
-## 8. Assumptions, constraints & dependencies
-
-- Single-threaded JS realm per context; parallelism is inter-context message
-  passing only. No shared mutable memory is assumed anywhere ([`REQ-RUN-2-GBCZ5B`](runtime-and-concurrency.md#req-run-2-gbcz5b)).
-- One runtime host per signer identity; `createConfig` is process-global and
-  called once per runtime, and the same resolved config is shipped to the worker
-  ([architecture.md](./architecture.md) §3, §3.1 here).
-- `onClose` is reliable on Node, best-effort in the browser; correctness under a
-  missed close depends on the request timeout backstop (default 30 s;
-  `dispose`/`quiesce` opt out with `timeoutMs: null`).
-- The chain provider, signer ownership, and nonce discipline are the host's
-  ([architecture.md](./architecture.md) [`REQ-SDK-1-JKC9W7`](architecture.md#req-sdk-1-jkc9w7)/2, [`INV-SDK-2-NH0YGE`](architecture.md#inv-sdk-2-nh0yge)); this document
-  assumes them and does not restate them.
-- Depends on: [architecture.md](./architecture.md) (host/client split, two SM
-  instances), [block-confirmation-pipeline.md](./block-confirmation-pipeline.md)
-  §3.1 (host-internal mutex), [rpc/README.md](./rpc/README.md) (peer boundary and
-  loopback), [../reference/configuration.md](../../operations/configuration.md)
-  (flags, worker env vars, test runners).
-
-## 9. Invariants
-
-- **[`INV-RUN-1-JM2D9F`](runtime-and-concurrency.md#inv-run-1-jm2d9f)** — Ports parallelize work across contexts; the host-internal
-  `StateManager` mutex serializes live-state mutation. Moving the EVM behind a
-  worker preserves total-order application because executor calls are awaited
-  under that mutex.
+- **Bespoke port request types are gone (done).** The client→host protocol is now
+  the same type-safe RPC abstraction the peer RPC uses: a trusted
+  [`MessagePortTransport`](../../../../../../src/transport/MessagePortTransport.ts#L1)
+  under a [`PortRpcRouter`](../../../../../../src/rpc/PortRpcRouter.ts#L1), with the
+  host's operations composed as services on
+  [`P2pRuntimeHostRoot`](../../../../../../src/evm/p2pRuntime/rpc/P2pRuntimeHostRoot.ts#L1)
+  and the client's pushes on
+  [`P2pRuntimeClientRoot`](../../../../../../src/evm/p2pRuntime/rpc/P2pRuntimeClientRoot.ts#L1);
+  the executor boundary and log collection ride the same pair. A new local
+  operation is a method on a service, not a new message type. The
+  **trusted-local-loopback vs. untrusted-peer** distinction (§3.7) is preserved:
+  guards are skipped because `isTrusted` is set by the transport, exactly as
+  loopback does under that mutex. What remains open is whether the runtime port
+  should expose a _general_ trusted loopback for application services (a custom
+  root callable from the main thread without the `hostRpc` mirror).
 - **[`INV-RUN-2-AF430Q`](runtime-and-concurrency.md#inv-run-2-af430q)** — A runtime channel is a 1:1 pair; a transferred port is owned by
   exactly one context; each port has exactly one message handler. Correlation by
   `requestId` needs no authenticity check because the paired context is the only
   writer.
-- **[`INV-RUN-3-1AKG2E`](runtime-and-concurrency.md#inv-run-3-1akg2e)** — A host construction failure posts `hostError` and closes the
-  port so the client's `ready` rejects and pending requests reject; a dead client
-  port triggers host self-disposal.
+- **[`INV-RUN-3-1AKG2E`](runtime-and-concurrency.md#inv-run-3-1akg2e)** — A host construction failure rejects the readiness reply, or
+  before the graph exists pushes `hostError` and closes the port, so the client's
+  `ready` rejects and pending requests reject; a dead client port triggers host
+  self-disposal.
 - **[`INV-RUN-4-4M27AP`](runtime-and-concurrency.md#inv-run-4-4m27ap)** — The signing key and chain nonce never cross a boundary; only
   the host signs, and the client realm holds proxy signers that forward requests
   (cross-ref [architecture.md](./architecture.md) [`INV-SDK-2-NH0YGE`](architecture.md#inv-sdk-2-nh0yge)).
@@ -714,7 +682,7 @@ default; the SDK's own defaults in §6 are unaffected.)
 observations are required to be identical_ across the four combinations, and the
 matrix test must be the oracle for that statement rather than four independent
 smoke tests. The candidate observation set, from what already crosses the port:
-the sequence and payload of `busEvent` messages for a fixed scenario; the
+the sequence and payload of `runtimeEvents.busEvent` casts for a fixed scenario; the
 response value of every request kind; the error identity of a failing request
 (name, code, revert data) per §3.4; and the peer's final observable state
 (sync tip, stored block chain, snapshot set) read back through the harness-control

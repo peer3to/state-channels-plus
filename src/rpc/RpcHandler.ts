@@ -1,9 +1,9 @@
-import type P2PManager from "../P2PManager";
 import ATransport, { isTransport } from "../transport/ATransport";
 import { Address } from "../types/types";
+import type { RpcRequestOptions, RpcRouterLike } from "./ARpcRouter";
 import Rpc from "./Rpc";
 
-export type RpcRequestOptions = { timeoutMs?: number };
+export type { RpcRequestOptions } from "./ARpcRouter";
 
 /**
  * Type face exposed for RPC methods that return `void`/`Promise<void>`.
@@ -34,14 +34,17 @@ export interface RequestRpcHandler<TResult> {
 
 class RpcHandler {
     rpc: Rpc;
-    p2pManager: P2PManager;
-    constructor(rpc: Rpc, p2pManager: P2PManager) {
+    router: RpcRouterLike;
+    /** where an omitted target goes: the far end of a bound endpoint */
+    private readonly defaultTarget?: ATransport;
+    constructor(rpc: Rpc, router: RpcRouterLike, defaultTarget?: ATransport) {
         this.rpc = rpc;
-        this.p2pManager = p2pManager;
+        this.router = router;
+        this.defaultTarget = defaultTarget;
     }
 
     public broadcast() {
-        this.p2pManager.broadcastRpc(this.rpc);
+        this.router.broadcastRpc(this.rpc);
     }
 
     public sendOne(): void;
@@ -66,10 +69,7 @@ class RpcHandler {
         }
 
         (targets as Address[]).forEach((address) => {
-            const transport =
-                this.p2pManager.profileManager.getTransportByEvmAddress(
-                    address
-                );
+            const transport = this.router.resolveTransport(address);
             if (!transport) return;
             transport.send(this.rpc);
         });
@@ -107,7 +107,7 @@ class RpcHandler {
                 )
             );
         }
-        return this.p2pManager.sendRpcRequest<TResult>(
+        return this.router.sendRpcRequest<TResult>(
             this.rpc,
             transport,
             options
@@ -116,17 +116,17 @@ class RpcHandler {
 
     /**
      * Resolves a delivery target to a transport. An omitted target delivers to
-     * self via the in-process loopback transport.
+     * the bound far end of an endpoint, else to self via the in-process
+     * loopback transport.
      */
     private resolveTarget(
         target?: ATransport | Address
     ): ATransport | undefined {
-        if (target === undefined) return this.p2pManager.loopbackTransport;
+        if (target === undefined) {
+            return this.defaultTarget ?? this.router.loopbackTransport;
+        }
         if (isTransport(target)) return target;
-        return (
-            this.p2pManager.profileManager.getTransportByEvmAddress(target) ??
-            undefined
-        );
+        return this.router.resolveTransport(target);
     }
 }
 

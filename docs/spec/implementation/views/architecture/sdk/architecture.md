@@ -98,25 +98,27 @@ Top to bottom:
   wraps every host handler (port messages and `P2PManager.onRpc`) — used by
   hosts embedding several peers in one thread.
 - **Worker (`RUN_SDK_IN_THREAD=true`).** `createTransferableChannel()` +
-  `createP2pRuntimeWorker()`; a `WorkerBootstrapMessage {type:"connect", payload, port}`
+  `createP2pRuntimeWorker()`; a `WorkerBootstrapMessage {type:"connect", payload, port, webRTCBridgePort}`
   transfers the port into the worker. `dispose()` shuts the worker down. WebRTC
-  cannot run in a worker, so the host mints a bridge `MessageChannel` and posts
-  the main-thread end to the client (`webRTCBridgePort`).
+  cannot run in a worker, so the client mints a bridge `MessageChannel`, sends
+  the worker end in the bootstrap, and keeps the main-thread end as
+  `webRTCBridgePort` when the `deployComplete` reply says the bridge is in use.
 
-Client → host request types (verified in [`P2pRuntimeHost.handleRequest`](../../../../../../src/evm/p2pRuntime/P2pRuntimeHost.ts#L412)):
-deployment bridge (`deploySigner*`, `deployComplete`), chain signer
-(`chainSignerSignTransaction/SendTransaction/SignMessage/SignTypedData`),
-p2p signer (`signMessage`, `signTypedData`), enshrined-contract execution
-(`sendTransaction`, `callView`), channel lifecycle (`connectToChannel`,
+Client → host services (the root in [`P2pRuntimeHostRoot`](../../../../../../src/evm/p2pRuntime/rpc/P2pRuntimeHostRoot.ts#L1)):
+`deploySigner` (address, nonce, call, deploy), `lifecycle` (`deployComplete`,
+`quiesce`, `dispose`), `chainSigner` (sign/send transaction, sign message,
+sign typed data), `p2pSigner` (`signMessage`, `signTypedData`, enshrined-contract
+execution `sendTransaction`/`callView`, channel lifecycle `connectToChannel`,
 `setChannelId`, `joinChannel`, `topUpBalance`, `collectJoinChannelConfirmation`,
-`getChannelStatus`, `setIsLeader`, `disconnectFromPeers`), `hostRpc`, `quiesce`,
-`dispose`. Host → client messages: `ready`, `response`, `busEvent`,
-`hostError`, `webRTCBridgePort`.
+`getChannelStatus`, `setIsLeader`, `disconnectFromPeers`), `hostRpc`, `logControl`.
+Host → client services ([`P2pRuntimeClientRoot`](../../../../../../src/evm/p2pRuntime/rpc/P2pRuntimeClientRoot.ts#L1)):
+`runtimeEvents` (`busEvent`, `hostError` casts) and `logControl`. Readiness is
+the `deployComplete` reply; there is no `ready` message.
 
 Startup sequence: config → resolve signer → start host (inline or worker) →
 client connects → `deployStateMachine` runs twice through the deployment
-bridge signer → `deployComplete` triggers `buildRuntime` → host posts `ready`
-→ `P2pInstance` returned.
+bridge signer → `lifecycle.deployComplete` builds the runtime and its reply is
+readiness → `P2pInstance` returned.
 
 ## 3. Assumptions, constraints & dependencies
 
@@ -179,7 +181,7 @@ sides of the port. It carries three kinds:
 
 Dispatch order per emission: exact-name listeners → kind-wide listeners (both
 isolated; one failing listener never blocks others) → the single host-only
-**bridge tap**, which posts a `busEvent` over the port and whose failure
+**bridge tap**, which casts `runtimeEvents.busEvent` over the port and whose failure
 propagates to the producer. Contract events are emitted synchronously inside
 the transition success path, before the next `onTurn`, and a bridge failure is
 logged without failing the transition.
@@ -256,8 +258,9 @@ per-component contracts in [components.md](./components.md).
 
 - **[`INV-SDK-3-87WK8P`](architecture.md#inv-sdk-3-87wk8p)** — Dispute re-execution never runs against the live replicated
   state machine (two separate deployments; §4).
-- **Failure behavior.** Host construction failures post `hostError` and close
-  the port (the client's `ready` settles rejected). A dead client port triggers
+- **Failure behavior.** Host construction failures reject the readiness reply
+  (or, before the graph exists, cast `hostError` and close the port); the
+  client's `ready` settles rejected. A dead client port triggers
   host self-disposal. `StateManager.abort()` (slashed/removed, unrecoverable
   sync failure, fatal reduction error) fires `onAbort`, drops status to
   `OPENED`, and disposes the runtime graph; a code TODO notes that abort does

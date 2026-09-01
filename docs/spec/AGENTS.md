@@ -88,7 +88,8 @@ requirements (a `Source file | Specification IDs` table listing only IDs actuall
 file, plus a per-ID contribution note); Assumptions, dependencies, trust boundaries, and limits;
 then three separate sections for static analysis — **Specification adherence** (good, ignored by
 gap analysis), **Specification contradictions**, and **Missing behavior** (both flagged when
-non-empty; write exactly `None demonstrated.` when a section has no findings); Conformance
+non-empty; omit the section entirely when it has no findings — absence is the claim, and a section
+whose body reads `None demonstrated.` is scaffolding); Conformance
 traceability (status enum: `Covered` | `Partial` | `Contradicts` | `Missing`. `Covered` means
 everything required exists — in this file or across the linked files; `Partial` is used only when
 something is genuinely missing and the Gap column states exactly what; audit state is file-level
@@ -100,10 +101,30 @@ anchor here, making the file report the definition site all other references jum
 source reports. Every requirement/permutation reference is a linked inline-code label jumping to
 its definition anchor. Exact test evidence lives only in verification, mapped against these IDs. A file may contribute to several requirements — describe
 the contribution, never claim complete conformance for a requirement that depends on other files;
-the generated requirement view computes the complete status. Directory `README.md`s own the shared
-subsystem responsibility and `INTEGRATION-TEST-*` cases among that directory's files. Cross-subsystem
-and E2E cases belong to verification. Link conformance evidence to the narrowest relevant source
+the generated requirement view computes the complete status. A directory `README.md` owns the shared
+subsystem responsibility and `INTEGRATION-TEST-*` cases among that directory's files, and exists only
+once it is authored — never add a `Skeleton — pending authoring` placeholder, and a missing README is
+not a gap. Cross-subsystem and E2E cases belong to verification. Link conformance evidence to the narrowest relevant source
 line (`#L…`). If a requirement is integrator-owned or cannot be enforced generically, say so.
+
+**Only two tables in a report are machine-read**: Conformance traceability
+(`Requirement / invariant | Implementation status | …`) and Component test obligations
+(`Unit test ID | … | Required permutations`). They are the contract: Conformance traceability is
+always present, and Component test obligations whenever the file owns obligations — omit that table
+rather than shipping a header row with nothing under it. Every prose section exists for a human
+reader and is **discretionary — include it only when the file gives it something to say**.
+Consequences, all of them required:
+
+- **No table of contents.** A file report is one screen of prose; a `## Contents` list of its own
+  headings is pure scaffolding and nothing parses it.
+- **Do not restate these rules inside a report.** The template explanations ("a file may contribute
+  to several requirements…", the status enum, "exact test evidence is mapped…") live here, once.
+- **A mechanical file gets a stub report.** When a file has no branches, no state and no decision of
+  its own — a service class that only names its methods class, a root that only composes services, a
+  type-only module — write the header, a one-line Responsibility, Linked requirements, Assumptions
+  when non-obvious, Specification adherence, Conformance traceability and Related source reports.
+  Skip Key design decisions and Inputs/outputs rather than filling them with `_None_` or a table that
+  restates the constructor signature. Such a report should land near 20-35 lines, not 80.
 
 Keep every permutation for one `UNIT-TEST-*` or `INTEGRATION-TEST-*` family in that family's single
 owning table row. Add new permutations to its existing `Required permutations` cell. Never create a

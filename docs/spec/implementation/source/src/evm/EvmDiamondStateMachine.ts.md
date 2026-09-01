@@ -3,20 +3,6 @@
 > **Source:** [src/evm/EvmDiamondStateMachine.ts](../../../../../../src/evm/EvmDiamondStateMachine.ts) > **Status:** Authored — engineer verification pending.
 > **Design views:** [architecture/sdk/runtime-and-concurrency.md](../../../views/architecture/sdk/runtime-and-concurrency.md), [architecture/sdk/architecture.md](../../../views/architecture/sdk/architecture.md)
 
-## Contents
-
-- [Responsibility and observable boundary](#responsibility-and-observable-boundary)
-- [Key design decisions](#key-design-decisions)
-- [Inputs, outputs, state, and side effects](#inputs-outputs-state-and-side-effects)
-- [Linked requirements](#linked-requirements)
-- [Assumptions, dependencies, trust boundaries, and limits](#assumptions-dependencies-trust-boundaries-and-limits)
-- [Specification adherence](#specification-adherence)
-- [Specification contradictions](#specification-contradictions)
-- [Missing behavior](#missing-behavior)
-- [Conformance traceability](#conformance-traceability)
-- [Component test obligations](#component-test-obligations)
-- [Related source reports](#related-source-reports)
-
 ## Responsibility and observable boundary
 
 The concrete local mirror: deploys the LocalDiamond plus the dedicated state-machine instance
@@ -28,7 +14,7 @@ mirror, and controls the local execution context (time) for window predicates.
 
 1. **The mirror deployment is the check engine** — every service's staticCall lands here; nothing protocol-shaped is evaluated outside contract logic ([`INV-MIRROR-1-VAF778`](../../../../specification/enforcement/local-mirror.md#inv-mirror-1-vaf778)).
 2. **Local context control is explicit** so time-driven predicates evaluate under the intended clock (the equivalence constraint of [`REQ-MIRROR-1-XCY9CB`](../../../../specification/enforcement/local-mirror.md#req-mirror-1-xcy9cb)).
-3. **`p2pSetup` returns only after host readiness** and disposes the runtime client if deployment completion or application readiness rejects.
+3. **`p2pSetup` returns only after host readiness** — the `deployComplete` reply — and disposes the runtime client if deployment completion or application readiness rejects. In worker mode it mints the WebRTC bridge channel here and sends the worker end in the bootstrap.
 
 ## Inputs, outputs, state, and side effects
 
@@ -40,9 +26,6 @@ mirror, and controls the local execution context (time) for window predicates.
 | Side effects | Per role above. |
 
 ## Linked requirements
-
-A file may contribute to several requirements; this report describes the contribution and never
-claims complete conformance for a requirement that depends on other files.
 
 | Source file                                                                      | Specification IDs                                                                                                                                                                                                                                                                                          |
 | -------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -56,19 +39,11 @@ claims complete conformance for a requirement that depends on other files.
 
 - Replication-driven advancement; controlled-context evaluation.
 
-## Specification contradictions
-
-None demonstrated.
-
 ## Missing behavior
 
 [`DEF-3-1XWQ30`](../../../../audit/open-findings.md#def-3-1xwq30)'s persistence gap manifests through this path (the mirror's `onChannelOpened` genesis inbound block — finding recorded at [LocalDiamond](../../contracts/V1/StateChannelDiamondProxy/LocalDiamond.sol.md)).
 
 ## Conformance traceability
-
-Status enum: `Covered` | `Partial` | `Contradicts` | `Missing`. Evidence cells are structured
-**Here:** / **Other files:** so each row is auditable from its links alone; genuine gaps go in the
-Gap column. Audit state is file-level (Status header), never a row status.
 
 | Requirement / invariant                                                                            | Implementation status | Evidence                                                       | Gap / divergence                                                                                         |
 | -------------------------------------------------------------------------------------------------- | --------------------- | -------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------- |
@@ -76,8 +51,6 @@ Gap column. Audit state is file-level (Status header), never a row status.
 | [`REQ-MIRROR-2-E9F3TM`](../../../../specification/enforcement/local-mirror.md#req-mirror-2-e9f3tm) | Partial               | **Here:** event-driven replication entry points.               | [`DEF-3-1XWQ30`](../../../../audit/open-findings.md#def-3-1xwq30) (recorded at the LocalDiamond report). |
 
 ## Component test obligations
-
-Exact test evidence is mapped against these IDs in the verification test reports.
 
 | Unit test ID                                                                      | Obligation         | Public entry and setup                                                                       | Oracle and forbidden effects                                                         | Required permutations                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
 | --------------------------------------------------------------------------------- | ------------------ | -------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |

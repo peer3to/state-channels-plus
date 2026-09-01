@@ -1,4 +1,8 @@
-import { MessageChannel, type MessagePort } from "node:worker_threads";
+import {
+    MessageChannel,
+    parentPort,
+    type MessagePort
+} from "node:worker_threads";
 import type { RuntimeChannel, RuntimePort } from "../types";
 
 /**
@@ -49,4 +53,14 @@ export function createTransferableChannel(): {
         localPort: adaptPort(channel.port1),
         transferablePort: channel.port2
     };
+}
+
+/** this worker's parent port, for an entry that serves the thread above it */
+export function adaptWorkerScope(): RuntimePort {
+    if (!parentPort) {
+        throw new Error(
+            "adaptWorkerScope must be executed inside a worker thread"
+        );
+    }
+    return adaptPort(parentPort);
 }

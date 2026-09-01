@@ -2,6 +2,7 @@
 import type { PrecompileInput } from "@ethereumjs/evm";
 import { ethers } from "ethers";
 import { isMainThread } from "node:worker_threads";
+import type { EvmCustomPrecompileManifest } from "@/evm";
 
 type WorkerAnswerPrecompileOptions = {
     delayMs?: number;
@@ -11,14 +12,50 @@ type WorkerAnswerPrecompileOptions = {
     crashAsync?: boolean;
     // answers only after this long -> a call still in flight when the thread ends
     callDelayMs?: number;
+    // the same, raised while the factory is still building -> during evm init
+    crashOnInit?: boolean;
 };
 
 export const WORKER_ASYNC_CRASH_MESSAGE =
     "worker answer precompile async crash";
+export const WORKER_INIT_CRASH_MESSAGE = "worker answer precompile init crash";
+
+/** a manifest for this module that crashes its thread: on the first call, or
+ *  while the evm is still being built */
+export function crashingWorkerPrecompile(
+    address: string,
+    crash: "onCall" | "onInit",
+    callDelayMs?: number
+): EvmCustomPrecompileManifest {
+    return {
+        address,
+        module: __filename,
+        options: {
+            expectedData: "0x1234",
+            value: "42",
+            ...(crash === "onCall"
+                ? { crashAsync: true }
+                : { crashOnInit: true, delayMs: 100 }),
+            ...(callDelayMs ? { callDelayMs } : {})
+        }
+    };
+}
+
+/** a manifest whose module has no factory export -> evm init fails outright */
+export function unloadableWorkerPrecompile(
+    address: string
+): EvmCustomPrecompileManifest {
+    return { address, module: __filename, exportName: "missing" };
+}
 
 export default async function createWorkerAnswerPrecompile(
     options: WorkerAnswerPrecompileOptions
 ) {
+    if (options.crashOnInit) {
+        setTimeout(() => {
+            void Promise.reject(new Error(WORKER_INIT_CRASH_MESSAGE));
+        }, 0);
+    }
     if (options.delayMs) {
         await new Promise((resolve) => setTimeout(resolve, options.delayMs));
     }

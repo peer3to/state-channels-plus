@@ -1,3 +1,5 @@
+import type { SerializedError } from "./serializeError";
+
 type Rpc = {
     service: string;
     method: string;
@@ -19,7 +21,8 @@ export type RpcResponse = {
     requestId: string;
     ok: boolean;
     result?: any;
-    error?: string;
+    /** a peer gets the message alone; a trusted line the whole error */
+    error?: string | SerializedError;
 };
 
 // Upper bound on a single RPC frame's size, enforced before parsing/dispatch so
@@ -38,21 +41,25 @@ export const MAX_RPC_FRAME_BYTES = 16 * 1024 * 1024;
 export function serializeRpc(rpc: Rpc): string {
     return JSON.stringify(rpc);
 }
+/** the request shape, whether it arrived as bytes or as an object */
+export function isRpc(value: unknown): value is Rpc {
+    const rpc = value as Rpc | null;
+    return Boolean(
+        rpc &&
+            typeof rpc === "object" &&
+            typeof rpc.service === "string" &&
+            typeof rpc.method === "string" &&
+            // `params` must be an array — the dispatcher spreads it
+            // (`method(...rpc.params)`), so a non-array would mis-dispatch.
+            Array.isArray(rpc.params) &&
+            (rpc.requestId === undefined || typeof rpc.requestId === "string")
+    );
+}
+
 export function deserializeRpc(serializedRpc: string): Rpc | undefined {
     try {
         const rpc = JSON.parse(serializedRpc);
-        if (
-            !rpc ||
-            typeof rpc.service !== "string" ||
-            typeof rpc.method !== "string" ||
-            // `params` must be an array — the dispatcher spreads it
-            // (`method(...rpc.params)`), so a non-array would mis-dispatch.
-            !Array.isArray(rpc.params) ||
-            (rpc.requestId !== undefined && typeof rpc.requestId !== "string")
-        ) {
-            return undefined;
-        }
-        return rpc as Rpc;
+        return isRpc(rpc) ? rpc : undefined;
     } catch {
         return undefined;
     }
@@ -61,20 +68,23 @@ export function deserializeRpc(serializedRpc: string): Rpc | undefined {
 export function serializeRpcResponse(response: RpcResponse): string {
     return JSON.stringify(response);
 }
+export function isRpcResponse(value: unknown): value is RpcResponse {
+    const response = value as RpcResponse | null;
+    return Boolean(
+        response &&
+            typeof response === "object" &&
+            response.rpcResponse === true &&
+            typeof response.requestId === "string" &&
+            typeof response.ok === "boolean"
+    );
+}
+
 export function deserializeRpcResponse(
     serialized: string
 ): RpcResponse | undefined {
     try {
         const response = JSON.parse(serialized);
-        if (
-            !response ||
-            response.rpcResponse !== true ||
-            typeof response.requestId !== "string" ||
-            typeof response.ok !== "boolean"
-        ) {
-            return undefined;
-        }
-        return response as RpcResponse;
+        return isRpcResponse(response) ? response : undefined;
     } catch {
         return undefined;
     }

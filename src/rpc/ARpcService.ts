@@ -6,11 +6,13 @@ import { Logger } from "@/utils";
 import type { AGuard } from "@/rpc/guards/AGuard";
 import { runGuards } from "@/rpc/guards/runGuards";
 import type { RpcResponse } from "./Rpc";
+import type { RpcRouterLike } from "./ARpcRouter";
+import { serializeError } from "./serializeError";
 
 type RpcEndpoint = (...params: Rpc["params"]) => unknown;
 
 function resolveRpcEndpoint(
-    rpcMethods: ARpcMethods,
+    rpcMethods: ARpcMethods<any>,
     methodName: string
 ): RpcEndpoint | undefined {
     if (methodName === "constructor") return undefined;
@@ -33,16 +35,22 @@ function resolveRpcEndpoint(
 }
 
 abstract class ARpcService<
-    R extends ARpcMethods<TP2PManager>,
-    TP2PManager extends P2PManager = P2PManager
+    R extends ARpcMethods<TRouter>,
+    TRouter extends RpcRouterLike = P2PManager
 > {
-    p2pManager: TP2PManager;
+    /** what dispatches to this service: the peer manager or a port router */
+    readonly router: TRouter;
     logger: Logger;
     protected guards: AGuard[] = [];
 
-    constructor(p2pManager: TP2PManager, logger: Logger) {
-        this.p2pManager = p2pManager;
+    constructor(router: TRouter, logger: Logger) {
+        this.router = router;
         this.logger = logger;
+    }
+
+    /** the peer services know their router as the manager; same object */
+    get p2pManager(): TRouter {
+        return this.router;
     }
 
     public abstract createRPCMethods(transport: ATransport): R;
@@ -60,7 +68,7 @@ abstract class ARpcService<
                 error: e instanceof Error ? e.message : String(e),
                 stack: e instanceof Error ? e.stack : undefined
             });
-            this.p2pManager.disconnectConnection(transport);
+            this.router.onServiceFailure(transport, e);
         }
     }
 
@@ -113,11 +121,17 @@ abstract class ARpcService<
                         error: e instanceof Error ? e.message : String(e),
                         stack: e instanceof Error ? e.stack : undefined
                     });
+                    // a stranger learns the message; our own thread the
+                    // whole error, so it can classify what happened
                     response = {
                         rpcResponse: true,
                         requestId,
                         ok: false,
-                        error: e instanceof Error ? e.message : String(e)
+                        error: transport.isTrusted
+                            ? serializeError(e)
+                            : e instanceof Error
+                              ? e.message
+                              : String(e)
                     };
                 }
                 this.sendRpcResponseSafely(rpc, response, transport);
@@ -134,7 +148,7 @@ abstract class ARpcService<
                     error: e instanceof Error ? e.message : String(e),
                     stack: e instanceof Error ? e.stack : undefined
                 });
-                this.p2pManager.disconnectConnection(transport);
+                this.router.onServiceFailure(transport, e);
             });
         } catch (e) {
             this.logger.error("Unhandled RPC handler exception", {
@@ -147,8 +161,8 @@ abstract class ARpcService<
         return true;
     }
 
-    get remoteRpc(): TP2PManager["remoteRpc"] {
-        return this.p2pManager.remoteRpc;
+    get remoteRpc(): TRouter["remoteRpc"] {
+        return this.router.remoteRpc;
     }
 }
 
