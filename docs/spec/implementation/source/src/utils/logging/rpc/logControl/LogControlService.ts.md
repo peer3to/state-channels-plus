@@ -3,20 +3,6 @@
 > **Source:** [LogControlService.ts](../../../../../../../../../src/utils/logging/rpc/logControl/LogControlService.ts) > **Status:** Authored — engineer verification pending.
 > **Design views:** [architecture/sdk/components.md](../../../../../../views/architecture/sdk/components.md)
 
-## Contents
-
-- [Responsibility and observable boundary](#responsibility-and-observable-boundary)
-- [Key design decisions](#key-design-decisions)
-- [Inputs, outputs, state, and side effects](#inputs-outputs-state-and-side-effects)
-- [Linked requirements](#linked-requirements)
-- [Assumptions, dependencies, trust boundaries, and limits](#assumptions-dependencies-trust-boundaries-and-limits)
-- [Specification adherence](#specification-adherence)
-- [Specification contradictions](#specification-contradictions)
-- [Missing behavior](#missing-behavior)
-- [Conformance traceability](#conformance-traceability)
-- [Component test obligations](#component-test-obligations)
-- [Related source reports](#related-source-reports)
-
 ## Responsibility and observable boundary
 
 Log collection over a worker link, as a service every root that serves a link composes. It is bound
@@ -42,9 +28,6 @@ one in a fixture — so a call arriving on a link runs on the bus that holds the
 
 ## Linked requirements
 
-A file may contribute to several requirements; this report describes the contribution and never
-claims complete conformance for a requirement that depends on other files.
-
 | Source file                                                                                              | Specification IDs                                                                                                                                                                                                                                                                                                                                                                                                  |
 | -------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | [LogControlService.ts](../../../../../../../../../src/utils/logging/rpc/logControl/LogControlService.ts) | [`INV-LOG-1-P4WT6R`](../../../../../../../specification/runtime/log-collection.md#inv-log-1-p4wt6r), [`REQ-LOG-2-N6BJ3D`](../../../../../../../specification/runtime/log-collection.md#req-log-2-n6bj3d), [`REQ-LOG-4-W5XR7Q`](../../../../../../../specification/runtime/log-collection.md#req-log-4-w5xr7q), [`REQ-LOG-8-B7VN3J`](../../../../../../../specification/runtime/log-collection.md#req-log-8-b7vn3j) |
@@ -59,19 +42,7 @@ claims complete conformance for a requirement that depends on other files.
 - Identity arriving on a link is applied by tree side ({{REQ:[`REQ-LOG-4-W5XR7Q`](../../../../../../../specification/runtime/log-collection.md#req-log-4-w5xr7q)}}).
 - Nothing platform-specific: the same service on every host ({{REQ:[`REQ-LOG-8-B7VN3J`](../../../../../../../specification/runtime/log-collection.md#req-log-8-b7vn3j)}}).
 
-## Specification contradictions
-
-None demonstrated.
-
-## Missing behavior
-
-None demonstrated.
-
 ## Conformance traceability
-
-Status enum: `Covered` | `Partial` | `Contradicts` | `Missing`. Evidence cells are structured
-**Here:** / **Other files:** so each row is auditable from its links alone; genuine gaps go in the
-Gap column. Audit state is file-level (Status header), never a row status.
 
 | Requirement / invariant                                                                             | Implementation status | Evidence                                                                                                                                                         | Gap / divergence                                |
 | --------------------------------------------------------------------------------------------------- | --------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------- |
@@ -81,8 +52,6 @@ Gap column. Audit state is file-level (Status header), never a row status.
 | [`REQ-LOG-8-B7VN3J`](../../../../../../../specification/runtime/log-collection.md#req-log-8-b7vn3j) | Covered               | **Here:** imports nothing platform-specific.                                                                                                                     | Browser paths are written but not yet executed. |
 
 ## Component test obligations
-
-Exact test evidence is mapped against these IDs in the verification test reports.
 
 | Unit test ID                                                                | Obligation                                                                                          | Public entry and setup                                                                                  | Oracle and forbidden effects                                              | Required permutations                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
 | --------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |

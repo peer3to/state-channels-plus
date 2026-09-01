@@ -3,20 +3,6 @@
 > **Source:** [RuntimeLifecycleRpcMethods.ts](../../../../../../../../../src/evm/p2pRuntime/rpc/lifecycle/RuntimeLifecycleRpcMethods.ts) > **Status:** Authored — engineer verification pending.
 > **Design views:** [architecture/sdk/runtime-and-concurrency.md](../../../../../../views/architecture/sdk/runtime-and-concurrency.md)
 
-## Contents
-
-- [Responsibility and observable boundary](#responsibility-and-observable-boundary)
-- [Key design decisions](#key-design-decisions)
-- [Inputs, outputs, state, and side effects](#inputs-outputs-state-and-side-effects)
-- [Linked requirements](#linked-requirements)
-- [Assumptions, dependencies, trust boundaries, and limits](#assumptions-dependencies-trust-boundaries-and-limits)
-- [Specification adherence](#specification-adherence)
-- [Specification contradictions](#specification-contradictions)
-- [Missing behavior](#missing-behavior)
-- [Conformance traceability](#conformance-traceability)
-- [Component test obligations](#component-test-obligations)
-- [Related source reports](#related-source-reports)
-
 ## Responsibility and observable boundary
 
 `deployComplete` builds the runtime graph and its reply is the host's readiness; a failure before
@@ -45,9 +31,6 @@ once its reply is out.
 
 ## Linked requirements
 
-A file may contribute to several requirements; this report describes the contribution and never
-claims complete conformance for a requirement that depends on other files.
-
 | Source file                                                                                                                | Specification IDs                                                                                                                                                                                              |
 | -------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | [RuntimeLifecycleRpcMethods.ts](../../../../../../../../../src/evm/p2pRuntime/rpc/lifecycle/RuntimeLifecycleRpcMethods.ts) | [`REQ-RUNTIME-3-VQXW59`](../../../../../../../specification/runtime/execution.md#req-runtime-3-vqxw59), [`REQ-RUNTIME-1-RSM6MZ`](../../../../../../../specification/runtime/execution.md#req-runtime-1-rsm6mz) |
@@ -61,33 +44,12 @@ claims complete conformance for a requirement that depends on other files.
 - Startup failure disposes partial state and surfaces as the readiness rejection ({{REQ:[`REQ-RUNTIME-3-VQXW59`](../../../../../../../specification/runtime/execution.md#req-runtime-3-vqxw59)}}).
 - The drained rejections cross as serialized errors ({{REQ:[`REQ-RUNTIME-1-RSM6MZ`](../../../../../../../specification/runtime/execution.md#req-runtime-1-rsm6mz)}}).
 
-## Specification contradictions
-
-None demonstrated.
-
-## Missing behavior
-
-None demonstrated.
-
 ## Conformance traceability
-
-Status enum: `Covered` | `Partial` | `Contradicts` | `Missing`. Evidence cells are structured
-**Here:** / **Other files:** so each row is auditable from its links alone; genuine gaps go in the
-Gap column. Audit state is file-level (Status header), never a row status.
 
 | Requirement / invariant                                                                                | Implementation status | Evidence                                                                                                                                                                                                                                            | Gap / divergence |
 | ------------------------------------------------------------------------------------------------------ | --------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------- |
 | [`REQ-RUNTIME-3-VQXW59`](../../../../../../../specification/runtime/execution.md#req-runtime-3-vqxw59) | Covered               | **Here:** `deployComplete` cleans up on failure; `dispose` closes after the reply on both the resolving and the rejecting path. **Other files:** [../../P2pRuntimeHost.ts.md](../../P2pRuntimeHost.ts.md) owns `buildRuntime` and `disposeRuntime`. | None.            |
 | [`REQ-RUNTIME-1-RSM6MZ`](../../../../../../../specification/runtime/execution.md#req-runtime-1-rsm6mz) | Covered               | **Here:** `quiesce` returns `SerializedError[]`. **Other files:** [../../../../rpc/serializeError.ts.md](../../../../rpc/serializeError.ts.md).                                                                                                     | None.            |
-
-## Component test obligations
-
-Exact test evidence is mapped against these IDs in the verification test reports.
-
-_None: exercised through the obligations of the files listed under Related source reports._
-
-| Unit test ID | Obligation | Public entry and setup | Oracle and forbidden effects | Required permutations |
-| ------------ | ---------- | ---------------------- | ---------------------------- | --------------------- |
 
 ## Related source reports
 
