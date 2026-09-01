@@ -3,20 +3,6 @@
 > **Source:** [src/utils/logging/LogFlushBus.ts](../../../../../../../src/utils/logging/LogFlushBus.ts) > **Status:** Authored — engineer verification pending.
 > **Design views:** [architecture/sdk/components.md](../../../../views/architecture/sdk/components.md)
 
-## Contents
-
-- [Responsibility and observable boundary](#responsibility-and-observable-boundary)
-- [Key design decisions](#key-design-decisions)
-- [Inputs, outputs, state, and side effects](#inputs-outputs-state-and-side-effects)
-- [Linked requirements](#linked-requirements)
-- [Assumptions, dependencies, trust boundaries, and limits](#assumptions-dependencies-trust-boundaries-and-limits)
-- [Specification adherence](#specification-adherence)
-- [Specification contradictions](#specification-contradictions)
-- [Missing behavior](#missing-behavior)
-- [Conformance traceability](#conformance-traceability)
-- [Component test obligations](#component-test-obligations)
-- [Related source reports](#related-source-reports)
-
 ## Responsibility and observable boundary
 
 One instance per thread. It holds that thread's root loggers and, through its `WorkerLinks`, one
@@ -65,9 +51,6 @@ neighbours; loggers never see ports and ports never see loggers.
 
 ## Linked requirements
 
-A file may contribute to several requirements; this report describes the contribution and never
-claims complete conformance for a requirement that depends on other files.
-
 | Source file                                                             | Specification IDs                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
 | ----------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | [LogFlushBus.ts](../../../../../../../src/utils/logging/LogFlushBus.ts) | [`INV-LOG-1-P4WT6R`](../../../../../specification/runtime/log-collection.md#inv-log-1-p4wt6r), [`INV-LOG-2-C7KZ9M`](../../../../../specification/runtime/log-collection.md#inv-log-2-c7kz9m), [`REQ-LOG-1-H2VQ8X`](../../../../../specification/runtime/log-collection.md#req-log-1-h2vq8x), [`REQ-LOG-2-N6BJ3D`](../../../../../specification/runtime/log-collection.md#req-log-2-n6bj3d), [`REQ-LOG-4-W5XR7Q`](../../../../../specification/runtime/log-collection.md#req-log-4-w5xr7q), [`REQ-LOG-8-B7VN3J`](../../../../../specification/runtime/log-collection.md#req-log-8-b7vn3j), [`REQ-LOG-9-V6SMAC`](../../../../../specification/runtime/log-collection.md#req-log-9-v6smac), [`REQ-LOG-10-69CTN1`](../../../../../specification/runtime/log-collection.md#req-log-10-69ctn1) |
@@ -100,10 +83,6 @@ claims complete conformance for a requirement that depends on other files.
 - A caller can start a collection and wait only on this thread's own upload
   ([`REQ-LOG-10-69CTN1`](../../../../../specification/runtime/log-collection.md#req-log-10-69ctn1)).
 
-## Specification contradictions
-
-None demonstrated.
-
 ## Missing behavior
 
 - Nothing prevents a caller from wiring a cycle, which
@@ -111,10 +90,6 @@ None demonstrated.
   forbids the _behaviour_ of. Today the precondition is documented and reviewed, not enforced.
 
 ## Conformance traceability
-
-Status enum: `Covered` | `Partial` | `Contradicts` | `Missing`. Evidence cells are structured
-**Here:** / **Other files:** so each row is auditable from its links alone; genuine gaps go in the
-Gap column. Audit state is file-level (Status header), never a row status.
 
 | Requirement / invariant                                                                         | Implementation status | Evidence                                                                                                                                                                                                                                                                                                                                             | Gap / divergence                                                                     |
 | ----------------------------------------------------------------------------------------------- | --------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------ |
@@ -128,8 +103,6 @@ Gap column. Audit state is file-level (Status header), never a row status.
 | [`REQ-LOG-10-69CTN1`](../../../../../specification/runtime/log-collection.md#req-log-10-69ctn1) | Partial               | **Here:** `flushOwnRealm` resolves on this thread's own upload, the neighbours having already been asked. **Other files:** the worker entry pairs it with a collection before exiting.                                                                                                                                                               | A collection running in another thread counts the exiting thread as never answering. |
 
 ## Component test obligations
-
-Exact test evidence is mapped against these IDs in the verification test reports.
 
 | Unit test ID                                                      | Obligation                                                          | Public entry and setup                                                                        | Oracle and forbidden effects                                                                    | Required permutations                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
 | ----------------------------------------------------------------- | ------------------------------------------------------------------- | --------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |

@@ -3,20 +3,6 @@
 > **Source:** [ARpcRouter.ts](../../../../../../src/rpc/ARpcRouter.ts) > **Status:** Authored — engineer verification pending.
 > **Design views:** [architecture/sdk/rpc/README.md](../../../views/architecture/sdk/rpc/README.md)
 
-## Contents
-
-- [Responsibility and observable boundary](#responsibility-and-observable-boundary)
-- [Key design decisions](#key-design-decisions)
-- [Inputs, outputs, state, and side effects](#inputs-outputs-state-and-side-effects)
-- [Linked requirements](#linked-requirements)
-- [Assumptions, dependencies, trust boundaries, and limits](#assumptions-dependencies-trust-boundaries-and-limits)
-- [Specification adherence](#specification-adherence)
-- [Specification contradictions](#specification-contradictions)
-- [Missing behavior](#missing-behavior)
-- [Conformance traceability](#conformance-traceability)
-- [Component test obligations](#component-test-obligations)
-- [Related source reports](#related-source-reports)
-
 ## Responsibility and observable boundary
 
 The request/response core every line shares: request ids and the pending map, the timeout each
@@ -55,9 +41,6 @@ the far end is a stranger on a socket or this process's own thread.
 
 ## Linked requirements
 
-A file may contribute to several requirements; this report describes the contribution and never
-claims complete conformance for a requirement that depends on other files.
-
 | Source file                                              | Specification IDs                                                                                                                                                                                                                                                                                                                                                                 |
 | -------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | [ARpcRouter.ts](../../../../../../src/rpc/ARpcRouter.ts) | [`REQ-RPC-1-FF89Z0`](../../../../specification/peer-communication/rpc.md#req-rpc-1-ff89z0), [`REQ-RPC-2-SZDTTM`](../../../../specification/peer-communication/rpc.md#req-rpc-2-szdttm), [`REQ-RPC-6-E60S4J`](../../../../specification/peer-communication/rpc.md#req-rpc-6-e60s4j), [`INV-RUNTIME-1-AKRHAK`](../../../../specification/runtime/execution.md#inv-runtime-1-akrhak) |
@@ -79,19 +62,7 @@ claims complete conformance for a requirement that depends on other files.
   before parsing ({{REQ:[`REQ-RPC-6-E60S4J`](../../../../specification/peer-communication/rpc.md#req-rpc-6-e60s4j)}}).
 - The same core serves the inline and the worker deployment of every line ({{REQ:[`INV-RUNTIME-1-AKRHAK`](../../../../specification/runtime/execution.md#inv-runtime-1-akrhak)}}).
 
-## Specification contradictions
-
-None demonstrated.
-
-## Missing behavior
-
-None demonstrated.
-
 ## Conformance traceability
-
-Status enum: `Covered` | `Partial` | `Contradicts` | `Missing`. Evidence cells are structured
-**Here:** / **Other files:** so each row is auditable from its links alone; genuine gaps go in the
-Gap column. Audit state is file-level (Status header), never a row status.
 
 | Requirement / invariant                                                                       | Implementation status | Evidence                                                                                                                                                                    | Gap / divergence |
 | --------------------------------------------------------------------------------------------- | --------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------- |
@@ -99,15 +70,6 @@ Gap column. Audit state is file-level (Status header), never a row status.
 | [`REQ-RPC-2-SZDTTM`](../../../../specification/peer-communication/rpc.md#req-rpc-2-szdttm)    | Covered               | **Here:** one pending entry per request, deleted on the first of reply, timer and close. **Other files:** [P2PManager.ts.md](../P2PManager.ts.md) settles by peer identity. | None.            |
 | [`REQ-RPC-6-E60S4J`](../../../../specification/peer-communication/rpc.md#req-rpc-6-e60s4j)    | Covered               | **Here:** `onRpc` bounds and parses bytes, `onRpcFrame` classifies reply before request. **Other files:** [ARpcService.ts.md](./ARpcService.ts.md) runs guards.             | None.            |
 | [`INV-RUNTIME-1-AKRHAK`](../../../../specification/runtime/execution.md#inv-runtime-1-akrhak) | Covered               | **Here:** no branch on where the far end runs. **Other files:** [PortRpcRouter.ts.md](./PortRpcRouter.ts.md), [P2PManager.ts.md](../P2PManager.ts.md).                      | None.            |
-
-## Component test obligations
-
-Exact test evidence is mapped against these IDs in the verification test reports.
-
-_None: exercised through the obligations of the files listed under Related source reports._
-
-| Unit test ID | Obligation | Public entry and setup | Oracle and forbidden effects | Required permutations |
-| ------------ | ---------- | ---------------------- | ---------------------------- | --------------------- |
 
 ## Related source reports
 

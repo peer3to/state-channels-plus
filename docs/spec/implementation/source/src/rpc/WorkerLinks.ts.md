@@ -3,20 +3,6 @@
 > **Source:** [WorkerLinks.ts](../../../../../../src/rpc/WorkerLinks.ts) > **Status:** Authored — engineer verification pending.
 > **Design views:** [architecture/sdk/rpc/README.md](../../../views/architecture/sdk/rpc/README.md)
 
-## Contents
-
-- [Responsibility and observable boundary](#responsibility-and-observable-boundary)
-- [Key design decisions](#key-design-decisions)
-- [Inputs, outputs, state, and side effects](#inputs-outputs-state-and-side-effects)
-- [Linked requirements](#linked-requirements)
-- [Assumptions, dependencies, trust boundaries, and limits](#assumptions-dependencies-trust-boundaries-and-limits)
-- [Specification adherence](#specification-adherence)
-- [Specification contradictions](#specification-contradictions)
-- [Missing behavior](#missing-behavior)
-- [Conformance traceability](#conformance-traceability)
-- [Component test obligations](#component-test-obligations)
-- [Related source reports](#related-source-reports)
-
 ## Responsibility and observable boundary
 
 The realm's neighbours in the worker tree: at most one parent and children by id, each with the
@@ -45,9 +31,6 @@ runs over a link.
 
 ## Linked requirements
 
-A file may contribute to several requirements; this report describes the contribution and never
-claims complete conformance for a requirement that depends on other files.
-
 | Source file                                                | Specification IDs                                                                          |
 | ---------------------------------------------------------- | ------------------------------------------------------------------------------------------ |
 | [WorkerLinks.ts](../../../../../../src/rpc/WorkerLinks.ts) | [`INV-LOG-1-P4WT6R`](../../../../specification/runtime/log-collection.md#inv-log-1-p4wt6r) |
@@ -62,32 +45,11 @@ claims complete conformance for a requirement that depends on other files.
 - A collection walks every link but the one it arrived on, which is what makes it reach every thread
   ({{REQ:[`INV-LOG-1-P4WT6R`](../../../../specification/runtime/log-collection.md#inv-log-1-p4wt6r)}}).
 
-## Specification contradictions
-
-None demonstrated.
-
-## Missing behavior
-
-None demonstrated.
-
 ## Conformance traceability
-
-Status enum: `Covered` | `Partial` | `Contradicts` | `Missing`. Evidence cells are structured
-**Here:** / **Other files:** so each row is auditable from its links alone; genuine gaps go in the
-Gap column. Audit state is file-level (Status header), never a row status.
 
 | Requirement / invariant                                                                    | Implementation status | Evidence                                                                                                                                                                         | Gap / divergence                           |
 | ------------------------------------------------------------------------------------------ | --------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------ |
 | [`INV-LOG-1-P4WT6R`](../../../../specification/runtime/log-collection.md#inv-log-1-p4wt6r) | Partial               | **Here:** `neighbours(except)` is the walk. **Other files:** [../utils/logging/LogFlushBus.ts.md](../utils/logging/LogFlushBus.ts.md) turns links into ports and runs the round. | The tree precondition is not checked here. |
-
-## Component test obligations
-
-Exact test evidence is mapped against these IDs in the verification test reports.
-
-_None: exercised through the obligations of the files listed under Related source reports._
-
-| Unit test ID | Obligation | Public entry and setup | Oracle and forbidden effects | Required permutations |
-| ------------ | ---------- | ---------------------- | ---------------------------- | --------------------- |
 
 ## Related source reports
 

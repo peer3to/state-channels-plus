@@ -1,0 +1,2 @@
+# projections of the maintained spec layers - regenerate with `yarn spec:refresh`, never hand-edit
+docs/spec/generated/*.md linguist-generated=true

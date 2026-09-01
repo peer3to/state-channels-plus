@@ -3,20 +3,6 @@
 > **Source:** [src/evm/p2pRuntime/ClientHostRpc.ts](../../../../../../../src/evm/p2pRuntime/ClientHostRpc.ts) > **Status:** Authored — engineer verification pending.
 > **Design views:** [architecture/sdk/runtime-and-concurrency.md](../../../../views/architecture/sdk/runtime-and-concurrency.md)
 
-## Contents
-
-- [Responsibility and observable boundary](#responsibility-and-observable-boundary)
-- [Key design decisions](#key-design-decisions)
-- [Inputs, outputs, state, and side effects](#inputs-outputs-state-and-side-effects)
-- [Linked requirements](#linked-requirements)
-- [Assumptions, dependencies, trust boundaries, and limits](#assumptions-dependencies-trust-boundaries-and-limits)
-- [Specification adherence](#specification-adherence)
-- [Specification contradictions](#specification-contradictions)
-- [Missing behavior](#missing-behavior)
-- [Conformance traceability](#conformance-traceability)
-- [Component test obligations](#component-test-obligations)
-- [Related source reports](#related-source-reports)
-
 ## Responsibility and observable boundary
 
 The `hostRpc` back-channel: no target → loopback into the local host's service root; peer target → relay the same typed call — local interaction without exposing service objects. The call crosses the port as one `hostRpc.call` on the host root's mirror service, which replays it on the host's `remoteRpc`.
@@ -36,9 +22,6 @@ The `hostRpc` back-channel: no target → loopback into the local host's service
 
 ## Linked requirements
 
-A file may contribute to several requirements; this report describes the contribution and never
-claims complete conformance for a requirement that depends on other files.
-
 | Source file                                                                  | Specification IDs                                                                             |
 | ---------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------- |
 | [ClientHostRpc.ts](../../../../../../../src/evm/p2pRuntime/ClientHostRpc.ts) | [`INV-RPC-1-SJS2T6`](../../../../../specification/peer-communication/rpc.md#inv-rpc-1-sjs2t6) |
@@ -51,26 +34,12 @@ claims complete conformance for a requirement that depends on other files.
 
 - Port-protocol semantics identical across platforms.
 
-## Specification contradictions
-
-None demonstrated.
-
-## Missing behavior
-
-None demonstrated.
-
 ## Conformance traceability
-
-Status enum: `Covered` | `Partial` | `Contradicts` | `Missing`. Evidence cells are structured
-**Here:** / **Other files:** so each row is auditable from its links alone; genuine gaps go in the
-Gap column. Audit state is file-level (Status header), never a row status.
 
 | Requirement / invariant | Implementation status | Evidence | Gap / divergence |
 | ----------------------- | --------------------- | -------- | ---------------- |
 
 ## Component test obligations
-
-Exact test evidence is mapped against these IDs in the verification test reports.
 
 | Unit test ID | Obligation | Public entry and setup | Oracle and forbidden effects | Required permutations |
 | ------------ | ---------- | ---------------------- | ---------------------------- | --------------------- |

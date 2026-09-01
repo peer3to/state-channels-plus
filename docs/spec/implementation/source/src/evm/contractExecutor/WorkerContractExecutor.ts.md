@@ -3,20 +3,6 @@
 > **Source:** [src/evm/contractExecutor/WorkerContractExecutor.ts](../../../../../../../src/evm/contractExecutor/WorkerContractExecutor.ts) > **Status:** Authored — engineer verification pending.
 > **Design views:** [architecture/sdk/runtime-and-concurrency.md](../../../../views/architecture/sdk/runtime-and-concurrency.md)
 
-## Contents
-
-- [Responsibility and observable boundary](#responsibility-and-observable-boundary)
-- [Key design decisions](#key-design-decisions)
-- [Inputs, outputs, state, and side effects](#inputs-outputs-state-and-side-effects)
-- [Linked requirements](#linked-requirements)
-- [Assumptions, dependencies, trust boundaries, and limits](#assumptions-dependencies-trust-boundaries-and-limits)
-- [Specification adherence](#specification-adherence)
-- [Specification contradictions](#specification-contradictions)
-- [Missing behavior](#missing-behavior)
-- [Conformance traceability](#conformance-traceability)
-- [Component test obligations](#component-test-obligations)
-- [Related source reports](#related-source-reports)
-
 ## Responsibility and observable boundary
 
 The worker-backed executor: the owner's end of the vm worker link — a `PortRpcRouter` serving
@@ -41,9 +27,6 @@ what was pending.
 
 ## Linked requirements
 
-A file may contribute to several requirements; this report describes the contribution and never
-claims complete conformance for a requirement that depends on other files.
-
 | Source file                                                                                          | Specification IDs                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
 | ---------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | [WorkerContractExecutor.ts](../../../../../../../src/evm/contractExecutor/WorkerContractExecutor.ts) | [`INV-RUNTIME-1-AKRHAK`](../../../../../specification/runtime/execution.md#inv-runtime-1-akrhak), [`REQ-RUNTIME-2-KBXKTG`](../../../../../specification/runtime/execution.md#req-runtime-2-kbxktg), [`REQ-RUNTIME-3-VQXW59`](../../../../../specification/runtime/execution.md#req-runtime-3-vqxw59), [`INV-LOG-1-P4WT6R`](../../../../../specification/runtime/log-collection.md#inv-log-1-p4wt6r), [`REQ-LOG-4-W5XR7Q`](../../../../../specification/runtime/log-collection.md#req-log-4-w5xr7q), [`REQ-LOG-10-69CTN1`](../../../../../specification/runtime/log-collection.md#req-log-10-69ctn1) |
@@ -62,19 +45,7 @@ claims complete conformance for a requirement that depends on other files.
 - A worker that hit a fatal ends after its own upload; the pending calls here reject on its exit
   instead of hanging ([`REQ-LOG-10-69CTN1`](../../../../../specification/runtime/log-collection.md#req-log-10-69ctn1)).
 
-## Specification contradictions
-
-None demonstrated.
-
-## Missing behavior
-
-None demonstrated.
-
 ## Conformance traceability
-
-Status enum: `Covered` | `Partial` | `Contradicts` | `Missing`. Evidence cells are structured
-**Here:** / **Other files:** so each row is auditable from its links alone; genuine gaps go in the
-Gap column. Audit state is file-level (Status header), never a row status.
 
 | Requirement / invariant                                                                         | Implementation status | Evidence                                                                                                                                                                                                                                                                                                                                                                                                                     | Gap / divergence |
 | ----------------------------------------------------------------------------------------------- | --------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------- |
@@ -83,8 +54,6 @@ Gap column. Audit state is file-level (Status header), never a row status.
 | [`REQ-LOG-10-69CTN1`](../../../../../specification/runtime/log-collection.md#req-log-10-69ctn1) | Covered               | **Here:** a non-zero worker exit rejects every pending call and drops the link; `dispose` on a failed worker skips the request and waits for the thread. **Other files:** [node/ContractExecutorWorkerEntry.ts.md](./node/ContractExecutorWorkerEntry.ts.md) asks the tree, waits on its own upload, and exits.                                                                                                              | None.            |
 
 ## Component test obligations
-
-Exact test evidence is mapped against these IDs in the verification test reports.
 
 | Unit test ID                                                                                          | Obligation                | Public entry and setup                                                    | Oracle and forbidden effects                                                                                         | Required permutations                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
 | ----------------------------------------------------------------------------------------------------- | ------------------------- | ------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |

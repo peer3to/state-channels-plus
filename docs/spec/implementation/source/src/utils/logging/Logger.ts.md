@@ -3,20 +3,6 @@
 > **Source:** [src/utils/logging/Logger.ts](../../../../../../../src/utils/logging/Logger.ts) > **Status:** Authored — engineer verification pending.
 > **Design views:** [architecture/sdk/components.md](../../../../views/architecture/sdk/components.md)
 
-## Contents
-
-- [Responsibility and observable boundary](#responsibility-and-observable-boundary)
-- [Key design decisions](#key-design-decisions)
-- [Inputs, outputs, state, and side effects](#inputs-outputs-state-and-side-effects)
-- [Linked requirements](#linked-requirements)
-- [Assumptions, dependencies, trust boundaries, and limits](#assumptions-dependencies-trust-boundaries-and-limits)
-- [Specification adherence](#specification-adherence)
-- [Specification contradictions](#specification-contradictions)
-- [Missing behavior](#missing-behavior)
-- [Conformance traceability](#conformance-traceability)
-- [Component test obligations](#component-test-obligations)
-- [Related source reports](#related-source-reports)
-
 ## Responsibility and observable boundary
 
 The structured logger every realm writes through: levels, child contexts, one session context
@@ -51,9 +37,6 @@ store, and leaving the bus when disposed.
 
 ## Linked requirements
 
-A file may contribute to several requirements; this report describes the contribution and never
-claims complete conformance for a requirement that depends on other files.
-
 | Source file                                                   | Specification IDs                                                                                                                                                                                                                                                                                                                                                                          |
 | ------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | [Logger.ts](../../../../../../../src/utils/logging/Logger.ts) | [`REQ-LOG-1-H2VQ8X`](../../../../../specification/runtime/log-collection.md#req-log-1-h2vq8x), [`REQ-LOG-3-T9FM2K`](../../../../../specification/runtime/log-collection.md#req-log-3-t9fm2k), [`REQ-LOG-4-W5XR7Q`](../../../../../specification/runtime/log-collection.md#req-log-4-w5xr7q), [`REQ-LOG-9-V6SMAC`](../../../../../specification/runtime/log-collection.md#req-log-9-v6smac) |
@@ -70,19 +53,7 @@ claims complete conformance for a requirement that depends on other files.
 - A requested collection leaves a stored record of what it reached ([`REQ-LOG-9-V6SMAC`](../../../../../specification/runtime/log-collection.md#req-log-9-v6smac)).
 - A root stays on the bus until disposed, and leaves it then ([`REQ-LOG-1-H2VQ8X`](../../../../../specification/runtime/log-collection.md#req-log-1-h2vq8x)).
 
-## Specification contradictions
-
-None demonstrated.
-
-## Missing behavior
-
-None demonstrated.
-
 ## Conformance traceability
-
-Status enum: `Covered` | `Partial` | `Contradicts` | `Missing`. Evidence cells are structured
-**Here:** / **Other files:** so each row is auditable from its links alone; genuine gaps go in the
-Gap column. Audit state is file-level (Status header), never a row status.
 
 | Requirement / invariant                                                                       | Implementation status | Evidence                                                                                                                                                                                                                         | Gap / divergence |
 | --------------------------------------------------------------------------------------------- | --------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------- |
@@ -92,8 +63,6 @@ Gap column. Audit state is file-level (Status header), never a row status.
 | [`REQ-LOG-1-H2VQ8X`](../../../../../specification/runtime/log-collection.md#req-log-1-h2vq8x) | Covered               | **Here:** `dispose` unregisters from the bus after stopping monitoring. **Other files:** [../../evm/P2pInstance.ts.md](../../evm/P2pInstance.ts.md) disposes only after every teardown settled.                                  | None.            |
 
 ## Component test obligations
-
-Exact test evidence is mapped against these IDs in the verification test reports.
 
 | Unit test ID                                                      | Obligation                                                               | Public entry and setup                                                                                                     | Oracle and forbidden effects                                                                       | Required permutations                                                                                                                                                                                                                                                                                                                           |
 | ----------------------------------------------------------------- | ------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |

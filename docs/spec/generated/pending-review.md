@@ -4,8 +4,8 @@
 > its content hash with `SPEC_REVIEWER="Name" node docs/spec/tools/review.js <file...>`.
 > Any later edit invalidates the record automatically (the file returns to pending as stale).
 
-- Verified (current): **29/590** (5%)
-- Pending (never reviewed): **527**
+- Verified (current): **29/579** (5%)
+- Pending (never reviewed): **516**
 - Stale (edited since review): **34**
 
 ## Stale — edited since engineer review
@@ -96,7 +96,7 @@
 - [specification/settlement/lifecycle.md](../specification/settlement/lifecycle.md)
 - [specification/settlement/README.md](../specification/settlement/README.md)
 
-### implementation (361)
+### implementation (350)
 
 - [implementation/open-questions.md](../implementation/open-questions.md)
 - [implementation/README.md](../implementation/README.md)
@@ -172,10 +172,8 @@
 - [implementation/source/src/evm/contractExecutor/README.md](../implementation/source/src/evm/contractExecutor/README.md)
 - [implementation/source/src/evm/contractExecutor/rpc/contractExecutor/ContractExecutorRpcMethods.ts.md](../implementation/source/src/evm/contractExecutor/rpc/contractExecutor/ContractExecutorRpcMethods.ts.md)
 - [implementation/source/src/evm/contractExecutor/rpc/contractExecutor/ContractExecutorService.ts.md](../implementation/source/src/evm/contractExecutor/rpc/contractExecutor/ContractExecutorService.ts.md)
-- [implementation/source/src/evm/contractExecutor/rpc/contractExecutor/README.md](../implementation/source/src/evm/contractExecutor/rpc/contractExecutor/README.md)
 - [implementation/source/src/evm/contractExecutor/rpc/ContractExecutorClientRoot.ts.md](../implementation/source/src/evm/contractExecutor/rpc/ContractExecutorClientRoot.ts.md)
 - [implementation/source/src/evm/contractExecutor/rpc/ContractExecutorRoot.ts.md](../implementation/source/src/evm/contractExecutor/rpc/ContractExecutorRoot.ts.md)
-- [implementation/source/src/evm/contractExecutor/rpc/README.md](../implementation/source/src/evm/contractExecutor/rpc/README.md)
 - [implementation/source/src/evm/contractExecutor/types.ts.md](../implementation/source/src/evm/contractExecutor/types.ts.md)
 - [implementation/source/src/evm/EvmFactory.ts.md](../implementation/source/src/evm/EvmFactory.ts.md)
 - [implementation/source/src/evm/index.ts.md](../implementation/source/src/evm/index.ts.md)
@@ -201,23 +199,16 @@
 - [implementation/source/src/evm/p2pRuntime/README.md](../implementation/source/src/evm/p2pRuntime/README.md)
 - [implementation/source/src/evm/p2pRuntime/rpc/chainSigner/ChainSignerRpcMethods.ts.md](../implementation/source/src/evm/p2pRuntime/rpc/chainSigner/ChainSignerRpcMethods.ts.md)
 - [implementation/source/src/evm/p2pRuntime/rpc/chainSigner/ChainSignerService.ts.md](../implementation/source/src/evm/p2pRuntime/rpc/chainSigner/ChainSignerService.ts.md)
-- [implementation/source/src/evm/p2pRuntime/rpc/chainSigner/README.md](../implementation/source/src/evm/p2pRuntime/rpc/chainSigner/README.md)
 - [implementation/source/src/evm/p2pRuntime/rpc/deploySigner/DeploySignerRpcMethods.ts.md](../implementation/source/src/evm/p2pRuntime/rpc/deploySigner/DeploySignerRpcMethods.ts.md)
 - [implementation/source/src/evm/p2pRuntime/rpc/deploySigner/DeploySignerService.ts.md](../implementation/source/src/evm/p2pRuntime/rpc/deploySigner/DeploySignerService.ts.md)
-- [implementation/source/src/evm/p2pRuntime/rpc/deploySigner/README.md](../implementation/source/src/evm/p2pRuntime/rpc/deploySigner/README.md)
 - [implementation/source/src/evm/p2pRuntime/rpc/hostRpc/HostRpcMirrorRpcMethods.ts.md](../implementation/source/src/evm/p2pRuntime/rpc/hostRpc/HostRpcMirrorRpcMethods.ts.md)
 - [implementation/source/src/evm/p2pRuntime/rpc/hostRpc/HostRpcMirrorService.ts.md](../implementation/source/src/evm/p2pRuntime/rpc/hostRpc/HostRpcMirrorService.ts.md)
-- [implementation/source/src/evm/p2pRuntime/rpc/hostRpc/README.md](../implementation/source/src/evm/p2pRuntime/rpc/hostRpc/README.md)
-- [implementation/source/src/evm/p2pRuntime/rpc/lifecycle/README.md](../implementation/source/src/evm/p2pRuntime/rpc/lifecycle/README.md)
 - [implementation/source/src/evm/p2pRuntime/rpc/lifecycle/RuntimeLifecycleRpcMethods.ts.md](../implementation/source/src/evm/p2pRuntime/rpc/lifecycle/RuntimeLifecycleRpcMethods.ts.md)
 - [implementation/source/src/evm/p2pRuntime/rpc/lifecycle/RuntimeLifecycleService.ts.md](../implementation/source/src/evm/p2pRuntime/rpc/lifecycle/RuntimeLifecycleService.ts.md)
 - [implementation/source/src/evm/p2pRuntime/rpc/P2pRuntimeClientRoot.ts.md](../implementation/source/src/evm/p2pRuntime/rpc/P2pRuntimeClientRoot.ts.md)
 - [implementation/source/src/evm/p2pRuntime/rpc/P2pRuntimeHostRoot.ts.md](../implementation/source/src/evm/p2pRuntime/rpc/P2pRuntimeHostRoot.ts.md)
 - [implementation/source/src/evm/p2pRuntime/rpc/p2pSigner/P2pSignerRpcMethods.ts.md](../implementation/source/src/evm/p2pRuntime/rpc/p2pSigner/P2pSignerRpcMethods.ts.md)
 - [implementation/source/src/evm/p2pRuntime/rpc/p2pSigner/P2pSignerService.ts.md](../implementation/source/src/evm/p2pRuntime/rpc/p2pSigner/P2pSignerService.ts.md)
-- [implementation/source/src/evm/p2pRuntime/rpc/p2pSigner/README.md](../implementation/source/src/evm/p2pRuntime/rpc/p2pSigner/README.md)
-- [implementation/source/src/evm/p2pRuntime/rpc/README.md](../implementation/source/src/evm/p2pRuntime/rpc/README.md)
-- [implementation/source/src/evm/p2pRuntime/rpc/runtimeEvents/README.md](../implementation/source/src/evm/p2pRuntime/rpc/runtimeEvents/README.md)
 - [implementation/source/src/evm/p2pRuntime/rpc/runtimeEvents/RuntimeEventsRpcMethods.ts.md](../implementation/source/src/evm/p2pRuntime/rpc/runtimeEvents/RuntimeEventsRpcMethods.ts.md)
 - [implementation/source/src/evm/p2pRuntime/rpc/runtimeEvents/RuntimeEventsService.ts.md](../implementation/source/src/evm/p2pRuntime/rpc/runtimeEvents/RuntimeEventsService.ts.md)
 - [implementation/source/src/evm/p2pRuntime/RuntimeChainContext.ts.md](../implementation/source/src/evm/p2pRuntime/RuntimeChainContext.ts.md)
@@ -401,8 +392,6 @@
 - [implementation/source/src/utils/logging/rpc/logControl/logControlPort.ts.md](../implementation/source/src/utils/logging/rpc/logControl/logControlPort.ts.md)
 - [implementation/source/src/utils/logging/rpc/logControl/LogControlRpcMethods.ts.md](../implementation/source/src/utils/logging/rpc/logControl/LogControlRpcMethods.ts.md)
 - [implementation/source/src/utils/logging/rpc/logControl/LogControlService.ts.md](../implementation/source/src/utils/logging/rpc/logControl/LogControlService.ts.md)
-- [implementation/source/src/utils/logging/rpc/logControl/README.md](../implementation/source/src/utils/logging/rpc/logControl/README.md)
-- [implementation/source/src/utils/logging/rpc/README.md](../implementation/source/src/utils/logging/rpc/README.md)
 - [implementation/source/src/utils/moduleLoader/browser/importModuleFromManifest.ts.md](../implementation/source/src/utils/moduleLoader/browser/importModuleFromManifest.ts.md)
 - [implementation/source/src/utils/moduleLoader/browser/README.md](../implementation/source/src/utils/moduleLoader/browser/README.md)
 - [implementation/source/src/utils/moduleLoader/node/importModuleFromManifest.ts.md](../implementation/source/src/utils/moduleLoader/node/importModuleFromManifest.ts.md)
