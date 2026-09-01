@@ -68,7 +68,7 @@ The protocol distinguishes two categories of misbehavior:
 **<a id="req-trust-1-k5ps99"></a>`REQ-TRUST-1-K5PS99`.** Version one uses only objective, deterministic, mathematically verifiable
 on-chain claims for enforcement — fraud proofs and every slashable behavior. Subjective reputation
 MUST NEVER contribute to slashing or adjudication. (Non-authoritative reputation for choosing
-counterparties is Future Work and must not change enforcement; see §9.)
+counterparties is [Future Work](trust-model.md#future-work) and must not change enforcement.)
 
 ## 4. Consolidated trust assumptions
 
@@ -158,8 +158,9 @@ to monitor the channel, detect an invalid on-chain action, contest it within the
 and invoke the available enforcement or slashing mechanism.
 
 The concrete version-one design is the **selected watchtower** of
-[../runtime/watchtowers.md](../runtime/watchtowers.md): a participant may bind one bonded tower
-on-chain ([`REQ-WT-1-TXW328`](../runtime/watchtowers.md#req-wt-1-txw328)). The tower's
+[../runtime/watchtowers.md](../runtime/watchtowers.md): a participant may select one bonded tower
+in its accepted channel join, frozen per membership interval
+([`REQ-WT-1-TXW328`](../runtime/watchtowers.md#req-wt-1-txw328)). The tower's
 per-participant authority covers the restricted AFK removal block, audited dispute approvals, and
 delegated dispute submission for its own participant
 ([`REQ-WT-9-GKFQXZ`](../runtime/watchtowers.md#req-wt-9-gkfqxz)); its block acknowledgements are
@@ -180,12 +181,14 @@ of which MUST be specified for any concrete watchtower design, are answered by t
   ([`REQ-WT-2-HNZA3Y`](../runtime/watchtowers.md#req-wt-2-hnza3y)).
 - **Privacy:** a selected tower learns the channel content it spectates — the same view as a
   spectator. The on-chain binding reveals which key serves a participant but exposes no dialable
-  endpoint; third parties cannot reach the tower from the assignment alone
+  endpoint; third parties cannot reach the tower from the selection record alone
   ([`REQ-WT-5-T5ZFTZ`](../runtime/watchtowers.md#req-wt-5-t5zftz)).
 - **Availability:** selection is a real availability trust choice. A participant may self-host the
-  tower as redundant infrastructure under its own control or select an external provider, and may
-  replace it only while participating in no channel; a tower slashed mid-channel keeps its
-  authority and duties for that channel's full lifetime. A fully unavailable tower cannot sign any
+  tower as redundant infrastructure under its own control or select an external provider; the
+  binding is frozen per channel membership interval by the accepted join, and a different tower
+  may be selected only by a later join (another channel, or a new membership interval after
+  leaving). A tower slashed mid-interval keeps its
+  authority and duties for that interval's full lifetime. A fully unavailable tower cannot sign any
   delegated artifact and only degrades the service to the ordinary fallback path.
 - **Authorization:** selected-tower signatures carry the defined availability acknowledgements,
   the restricted AFK removal block, and exact-timeout-dispute approvals
@@ -233,6 +236,17 @@ of which MUST be specified for any concrete watchtower design, are answered by t
   ([`INV-WT-1-ST9SHX`](../runtime/watchtowers.md#inv-wt-1-st9shx)), and replacement after it
   leaves active channels.
 
+**Shared-tower trust concentration is a deliberate deployment choice, not a protocol defect.** A
+selected tower holds real delegated authority for its participant: it may submit that
+participant's dispute and provide the participant-side approval that can complete threshold
+finalization of that exact dispute. When every participant in one channel selects the same tower,
+every participant has deliberately placed that channel partition inside the same operator's trust
+boundary for the tower's delegated dispute and removal powers. Tower selection stays optional and
+permissionless — a participant may remain towerless, select another provider, or run its own
+tower — and the concentration is scoped: compromise or failure of a shared tower affects only the
+channels and membership intervals whose accepted joins selected it, and grants no authority over
+unrelated channels and no global protocol authority.
+
 A participant may also join **without** a selected tower and remain on the existing protocol path
 unchanged: no delegated receipt, restricted AFK block, or signature substitution exists for it, no
 other actor may remove its threshold role or author a removal on its behalf, it has no
@@ -246,7 +260,7 @@ Tower misconduct is punishable only when objectively contradictory: a valid cont
 over the tower's **own** signed operations — a participant's signature or conduct is never fraud
 evidence against its tower — submitted by any observer through a punishment entry point separate
 from the channel protocol, destroys the tower identity's permanent registration bond and bars it
-from future selection, without touching any existing channel's assignment, disputes, or settlement
+from future selection, without touching any existing membership interval's binding, disputes, or settlement
 ([`REQ-WT-8-W3YP4R`](../runtime/watchtowers.md#req-wt-8-w3yp4r)). Every failure that produces no
 accepted delegated artifact — silence, refusal, late delivery — is subjective non-cooperation with
 no protocol penalty, no bond effect, no threshold effect, and no current-channel outcome effect; an
@@ -278,15 +292,16 @@ participant sets under this full-mesh topology.
 
 ## 9. Threat model
 
-| Threat                               | Defense                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
-| ------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Invalid state transition             | Deterministic on-chain re-execution via `BlockInvalidStateTransition` fraud proof → author slashed.                                                                                                                                                                                                                                                                                                                                                                                                                                       |
-| Equivocation / double-signing        | `BlockDoubleSign` fraud proof over two distinct same-height blocks with two explicit signatures recovering to the same participant key (any author or confirmation role) → full-stake slash; the **separately keyed** legal normal/AFK split carries no qualifying pair (a manually reused key falls under the ordinary same-key rule — central key policy, [identity.md](../protocol-model/identity.md#identity)), and unpaired conflicting commitments are the bounded residual of [`OQ-49-2Z3FAS`](../open-questions.md#oq-49-2z3fas). |
-| Forged history                       | `WrongGenesis`, `InvalidTimestamp`, `ForgedInboundMessageBlock` fraud proofs reject blocks chaining from bad genesis, violating timing rules, or citing non-persisted inbound messages.                                                                                                                                                                                                                                                                                                                                                   |
-| Unavailability / griefing by silence | Deterministic author timeouts feed the dispute game; the channel progresses without the silent participant ([../protocol/disputes.md](../disputes/disputes.md)).                                                                                                                                                                                                                                                                                                                                                                          |
-| Fraudulent disputes                  | Fraud-proof claims disprove disputes claiming a non-latest state, bad output, invalid state proof, broken balance invariant, or unjustified timeout.                                                                                                                                                                                                                                                                                                                                                                                      |
-| Spam / bogus proofs                  | Non-overwritable block-calldata commitments, the dispute-window kill period, and self-slashing of submitters of invalid proofs. Rate limiting at the P2P layer is NOT designed yet — see [security-assessment](../../audit/security-assessment.md).                                                                                                                                                                                                                                                                                       |
-| Value creation / theft               | Balance-algebra underflow rejection, settlement capped at deposits, `DisputeInvalidBalanceInvariant` on-chain.                                                                                                                                                                                                                                                                                                                                                                                                                            |
+| Threat                                | Defense                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
+| ------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Invalid state transition              | Deterministic on-chain re-execution via `BlockInvalidStateTransition` fraud proof → author slashed.                                                                                                                                                                                                                                                                                                                                                                                                                                       |
+| Equivocation / double-signing         | `BlockDoubleSign` fraud proof over two distinct same-height blocks with two explicit signatures recovering to the same participant key (any author or confirmation role) → full-stake slash; the **separately keyed** legal normal/AFK split carries no qualifying pair (a manually reused key falls under the ordinary same-key rule — central key policy, [identity.md](../protocol-model/identity.md#identity)), and unpaired conflicting commitments are the bounded residual of [`OQ-49-2Z3FAS`](../open-questions.md#oq-49-2z3fas). |
+| Forged history                        | `WrongGenesis`, `InvalidTimestamp`, `ForgedInboundMessageBlock` fraud proofs reject blocks chaining from bad genesis, violating timing rules, or citing non-persisted inbound messages.                                                                                                                                                                                                                                                                                                                                                   |
+| Unavailability / griefing by silence  | Deterministic author timeouts feed the dispute game; the channel progresses without the silent participant ([../protocol/disputes.md](../disputes/disputes.md)).                                                                                                                                                                                                                                                                                                                                                                          |
+| Fraudulent disputes                   | Fraud-proof claims disprove disputes claiming a non-latest state, bad output, invalid state proof, broken balance invariant, or unjustified timeout.                                                                                                                                                                                                                                                                                                                                                                                      |
+| Spam / bogus proofs                   | Non-overwritable block-calldata commitments, the dispute-window kill period, and self-slashing of submitters of invalid proofs. Rate limiting at the P2P layer is NOT designed yet — see [security-assessment](../../audit/security-assessment.md).                                                                                                                                                                                                                                                                                       |
+| Value creation / theft                | Balance-algebra underflow rejection, settlement capped at deposits, `DisputeInvalidBalanceInvariant` on-chain.                                                                                                                                                                                                                                                                                                                                                                                                                            |
+| Shared-watchtower trust concentration | Accepted deployment choice, not a defect: participants whose accepted joins select one shared tower jointly trust that operator for its delegated dispute and removal powers in that channel (§7). Alternatives are no tower, another provider, or a self-run tower; compromise or failure is scoped to the channels and membership intervals that selected the tower, never global authority. Objective tower equivocation still burns the bond ([`INV-WT-1-ST9SHX`](../runtime/watchtowers.md#inv-wt-1-st9shx)).                        |
 
 The table defines required defense categories; it does not by itself prove that every objectively
 provable violation is covered. Fraud-proof completeness therefore remains an explicit audit claim.

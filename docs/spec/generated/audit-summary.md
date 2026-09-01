@@ -24,10 +24,10 @@ Detailed statements, source evidence, design analysis, and test mappings remain 
 - Current security-accepted paths: **0/259** (0%)
 - Final ready paths: **0/259** (0%)
 - Source files assigned to implementation subjects: **240/258** (93%)
-- Test declarations mapped or explicitly ignored: **804/1513** (53%)
-- Open questions: 41
+- Test declarations mapped or explicitly ignored: **831/1540** (54%)
+- Open questions: 40
 - Active findings: 17
-- Strict blocking items: 5580
+- Strict blocking items: 5582
 
 ## Requirement paths
 
@@ -284,7 +284,7 @@ Detailed statements, source evidence, design analysis, and test mappings remain 
 | [`REQ-UPG-3-T1SRMS`](../specification/peer-communication/transport-upgrade.md#req-upg-3-t1srms) | [REQ-UPG-3-T1SRMS · 1 plan](../specification/peer-communication/transport-upgrade.md#req-upg-3-t1srms) | [Covered](../implementation/source/src/rpc/services/initHandshake/InitHandshakeService.ts.md#conformance-traceability) | 0/6 permutations evidenced | 0 | None linked | Gap | Approval pending | Assessment pending | Not ready |
 | [`REQ-WT-1-TXW328`](../specification/runtime/watchtowers.md#req-wt-1-txw328) | [REQ-WT-1-TXW328 · 1 plan](../specification/runtime/watchtowers.md#req-wt-1-txw328) | No claim | 0/6 permutations evidenced | 0 | None linked | Gap | Approval pending | Assessment pending | Not ready |
 | [`REQ-WT-10-GNG79P`](../specification/runtime/watchtowers.md#req-wt-10-gng79p) | [REQ-WT-10-GNG79P · 2 plan](../specification/runtime/watchtowers.md#req-wt-10-gng79p) | No claim | 0/15 permutations evidenced | 0 | None linked | Gap | Approval pending | Assessment pending | Not ready |
-| [`REQ-WT-2-HNZA3Y`](../specification/runtime/watchtowers.md#req-wt-2-hnza3y) | [REQ-WT-2-HNZA3Y · 1 plan](../specification/runtime/watchtowers.md#req-wt-2-hnza3y) | No claim | 0/6 permutations evidenced | 0 | None linked | Gap | Approval pending | Assessment pending | Not ready |
+| [`REQ-WT-2-HNZA3Y`](../specification/runtime/watchtowers.md#req-wt-2-hnza3y) | [REQ-WT-2-HNZA3Y · 1 plan](../specification/runtime/watchtowers.md#req-wt-2-hnza3y) | No claim | 0/9 permutations evidenced | 0 | None linked | Gap | Approval pending | Assessment pending | Not ready |
 | [`REQ-WT-3-DT0GDX`](../specification/runtime/watchtowers.md#req-wt-3-dt0gdx) | [REQ-WT-3-DT0GDX · 2 plan](../specification/runtime/watchtowers.md#req-wt-3-dt0gdx) | No claim | 0/23 permutations evidenced | 0 | None linked | Gap | Approval pending | Assessment pending | Not ready |
 | [`REQ-WT-4-PNMYMP`](../specification/runtime/watchtowers.md#req-wt-4-pnmymp) | [REQ-WT-4-PNMYMP · 2 plan](../specification/runtime/watchtowers.md#req-wt-4-pnmymp) | No claim | 0/18 permutations evidenced | 0 | None linked | Gap | Approval pending | Assessment pending | Not ready |
 | [`REQ-WT-5-T5ZFTZ`](../specification/runtime/watchtowers.md#req-wt-5-t5zftz) | [REQ-WT-5-T5ZFTZ · 1 plan](../specification/runtime/watchtowers.md#req-wt-5-t5zftz) | No claim | 0/3 permutations evidenced | 0 | None linked | Gap | Approval pending | Assessment pending | Not ready |
@@ -297,7 +297,7 @@ Detailed statements, source evidence, design analysis, and test mappings remain 
 
 - 18 source/contract file(s) have no implementation-subject owner.
 - 709 test declaration(s) are unaccounted.
-- 41 open question(s) require decisions.
+- 40 open question(s) require decisions.
 - 17 active finding(s) remain.
 - 259 requirement path(s) lack current engineer approval.
 - 259 requirement path(s) lack current security-risk acceptance.

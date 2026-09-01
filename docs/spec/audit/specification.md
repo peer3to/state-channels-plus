@@ -91,8 +91,30 @@ tower-authored removal design are all decided
 [`OQ-48-CS3JNE`](../specification/open-questions.md#oq-48-cs3jne) stays separate future-work
 context, and the bounded open details are
 [`OQ-49-2Z3FAS`](../specification/open-questions.md#oq-49-2z3fas),
-[`OQ-50-YSDG8S`](../specification/open-questions.md#oq-50-ysdg8s),
-[`OQ-51-BCKA50`](../specification/open-questions.md#oq-51-bcka50), and
-[`OQ-52-SNJKP1`](../specification/open-questions.md#oq-52-snjkp1); none gates the version-one
+[`OQ-50-YSDG8S`](../specification/open-questions.md#oq-50-ysdg8s), and
+[`OQ-51-BCKA50`](../specification/open-questions.md#oq-51-bcka50); none gates the version-one
 watchtower requirements. The settled redesign creates no new audit question or finding beyond
 those recorded entries.
+
+**Review updates (2026-09-01, still specified-but-not-implemented).** The staged watchtower model
+was revised from the engineer-reviewed decisions: the separately signed `assignmentEpoch` was
+removed — the frozen participant-to-tower binding is owned per membership interval by the accepted
+inbound `JoinChannel` (which now names the selected tower;
+[`REQ-WT-1-TXW328`](../specification/runtime/watchtowers.md#req-wt-1-txw328)), and every delegated
+artifact verifies against the historical join of the relevant interval; the restricted AFK
+issuance scope was resolved as ordinary per-slot validity with per-interval recurrence
+([`OQ-52-SNJKP1`](../specification/open-questions.md#oq-52-snjkp1), resolved;
+[`REQ-WT-2-HNZA3Y`](../specification/runtime/watchtowers.md#req-wt-2-hnza3y)); the dispute
+lifecycle gained the explicit kill section
+([disputes.md §4.2](../specification/disputes/disputes.md#42-killing-an-invalid-committed-dispute),
+[`REQ-DIS-3-C4KYSF`](../specification/disputes/disputes.md#req-dis-3-c4kysf)) with slash-set
+routing through `slashParticipant`, no dispute bond, and no challenger reward, narrowing
+[`OQ-1-NTJBA1`](../specification/open-questions.md#oq-1-ntjba1) to the kill-window edges; the
+availability set received its one authoritative definition
+([`REQ-DIS-12-1ZN453`](../specification/disputes/disputes.md#req-dis-12-1zn453)); the
+failed-dispute penalty under own-tower relay failure is confirmed as deliberate with no waiver;
+shared-tower trust concentration is stated directly in the trust model with a threat-table row
+([trust-model.md §7, §9](../specification/security/trust-model.md)); and the unrewarded
+public-good model for contradiction-proof submission is recorded as an accepted low-priority
+incentive risk with subsidy options kept as future work
+([`REQ-WT-8-W3YP4R`](../specification/runtime/watchtowers.md#req-wt-8-w3yp4r)).

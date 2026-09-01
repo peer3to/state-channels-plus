@@ -7,7 +7,7 @@ A permutation counts as tested only when an exact repository test declaration is
 ## Score
 
 - Specification IDs with test evidence: **80/259** (31%)
-- Test IDs (planned permutations) evidenced: **762/4805** (16%)
+- Test IDs (planned permutations) evidenced: **762/4808** (16%)
 - Test files with verification reports: **135/145** (93%)
 - Test declarations covering at least one test ID: **463/1172** (40%)
 - Assigned test IDs with exactly one owning test: **762/762** (100%)
@@ -3411,11 +3411,14 @@ Every planned test permutation — specification black-box plans and implementat
 | [`REQ-WT-10-GNG79P.T2.P4`](../specification/interactions.md#req-wt-10-gng79p.t2.p4) | Specification | [specification/interactions.md](../specification/interactions.md#req-wt-10-gng79p.t2.p4) |
 | [`REQ-WT-10-GNG79P.T2.P5`](../specification/interactions.md#req-wt-10-gng79p.t2.p5) | Specification | [specification/interactions.md](../specification/interactions.md#req-wt-10-gng79p.t2.p5) |
 | [`REQ-WT-2-HNZA3Y.T1.P1`](../specification/runtime/watchtowers.md#req-wt-2-hnza3y.t1.p1) | Specification | [specification/runtime/watchtowers.md](../specification/runtime/watchtowers.md#req-wt-2-hnza3y.t1.p1) |
+| [`REQ-WT-2-HNZA3Y.T1.P10`](../specification/runtime/watchtowers.md#req-wt-2-hnza3y.t1.p10) | Specification | [specification/runtime/watchtowers.md](../specification/runtime/watchtowers.md#req-wt-2-hnza3y.t1.p10) |
+| [`REQ-WT-2-HNZA3Y.T1.P11`](../specification/runtime/watchtowers.md#req-wt-2-hnza3y.t1.p11) | Specification | [specification/runtime/watchtowers.md](../specification/runtime/watchtowers.md#req-wt-2-hnza3y.t1.p11) |
 | [`REQ-WT-2-HNZA3Y.T1.P3`](../specification/runtime/watchtowers.md#req-wt-2-hnza3y.t1.p3) | Specification | [specification/runtime/watchtowers.md](../specification/runtime/watchtowers.md#req-wt-2-hnza3y.t1.p3) |
 | [`REQ-WT-2-HNZA3Y.T1.P5`](../specification/runtime/watchtowers.md#req-wt-2-hnza3y.t1.p5) | Specification | [specification/runtime/watchtowers.md](../specification/runtime/watchtowers.md#req-wt-2-hnza3y.t1.p5) |
 | [`REQ-WT-2-HNZA3Y.T1.P6`](../specification/runtime/watchtowers.md#req-wt-2-hnza3y.t1.p6) | Specification | [specification/runtime/watchtowers.md](../specification/runtime/watchtowers.md#req-wt-2-hnza3y.t1.p6) |
 | [`REQ-WT-2-HNZA3Y.T1.P7`](../specification/runtime/watchtowers.md#req-wt-2-hnza3y.t1.p7) | Specification | [specification/runtime/watchtowers.md](../specification/runtime/watchtowers.md#req-wt-2-hnza3y.t1.p7) |
 | [`REQ-WT-2-HNZA3Y.T1.P8`](../specification/runtime/watchtowers.md#req-wt-2-hnza3y.t1.p8) | Specification | [specification/runtime/watchtowers.md](../specification/runtime/watchtowers.md#req-wt-2-hnza3y.t1.p8) |
+| [`REQ-WT-2-HNZA3Y.T1.P9`](../specification/runtime/watchtowers.md#req-wt-2-hnza3y.t1.p9) | Specification | [specification/runtime/watchtowers.md](../specification/runtime/watchtowers.md#req-wt-2-hnza3y.t1.p9) |
 | [`REQ-WT-3-DT0GDX.T1.P1`](../specification/runtime/watchtowers.md#req-wt-3-dt0gdx.t1.p1) | Specification | [specification/runtime/watchtowers.md](../specification/runtime/watchtowers.md#req-wt-3-dt0gdx.t1.p1) |
 | [`REQ-WT-3-DT0GDX.T1.P10`](../specification/runtime/watchtowers.md#req-wt-3-dt0gdx.t1.p10) | Specification | [specification/runtime/watchtowers.md](../specification/runtime/watchtowers.md#req-wt-3-dt0gdx.t1.p10) |
 | [`REQ-WT-3-DT0GDX.T1.P11`](../specification/runtime/watchtowers.md#req-wt-3-dt0gdx.t1.p11) | Specification | [specification/runtime/watchtowers.md](../specification/runtime/watchtowers.md#req-wt-3-dt0gdx.t1.p11) |

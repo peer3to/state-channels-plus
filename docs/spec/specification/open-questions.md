@@ -12,13 +12,13 @@ Existing `OQ-*` IDs are preserved; new questions use the layer-scoped namespace 
 - [Register assumptions and constraints](#register-assumptions-and-constraints)
 - [Security impact](#security-impact)
 - [Verification impact](#verification-impact)
-- [Detailed open questions](#oq-1-ntjba1--kill-period-and-dispute-fraud-proof-slashing-semantics)
+- [Detailed open questions](#oq-1-ntjba1--kill-window-edge-rules)
 
 ## Index
 
 | ID                                               | Question                                                                                                                                                               | Source                 | Affected documents                                                                                                                         | Status                             |
 | ------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------- | ------------------------------------------------------------------------------------------------------------------------------------------ | ---------------------------------- |
-| [`OQ-1-NTJBA1`](open-questions.md#oq-1-ntjba1)   | Exact kill-period and dispute-fraud-proof slashing semantics                                                                                                           | Specification analysis | [protocol/disputes.md](./disputes/disputes.md), [protocol/fraud-proofs.md](./disputes/fraud-proofs.md)                                     | Open                               |
+| [`OQ-1-NTJBA1`](open-questions.md#oq-1-ntjba1)   | Kill-window edge rules: reopen after all commitments killed, kill/counter-dispute ordering, auditing-data and calldata races, fast-path sign-off                       | Specification analysis | [protocol/disputes.md](./disputes/disputes.md), [protocol/fraud-proofs.md](./disputes/fraud-proofs.md)                                     | Open (narrowed)                    |
 | [`OQ-2-7WTV16`](open-questions.md#oq-2-7wtv16)   | Penalty for submitting an invalid fraud proof                                                                                                                          | Specification analysis | [protocol/fraud-proofs.md](./disputes/fraud-proofs.md)                                                                                     | Resolved                           |
 | [`OQ-3-1AHKGW`](open-questions.md#oq-3-1ahkgw)   | Leader election beyond round-robin: revert attribution, long-range proofs                                                                                              | Specification analysis | [protocol/finality.md](./protocol-model/finality.md), [protocol/state-proofs.md](./disputes/state-proofs.md)                               | Open                               |
 | [`OQ-6-4JPNE5`](open-questions.md#oq-6-4jpne5)   | P2P gossip rate-limiting policy                                                                                                                                        | Specification analysis | [security/trust-model.md](./security/trust-model.md)                                                                                       | Open                               |
@@ -51,7 +51,7 @@ Existing `OQ-*` IDs are preserved; new questions use the layer-scoped namespace 
 | [`OQ-49-2Z3FAS`](open-questions.md#oq-49-2z3fas) | Participant equivocation: explicit same-key same-height pairs resolved into `BlockDoubleSign` (any role, full penalty); indirect unpaired conflicts remain open        | Engineer question      | [protocol-model/finality.md](./protocol-model/finality.md), [disputes/fraud-proofs.md](./disputes/fraud-proofs.md)                         | Partially resolved (indirect open) |
 | [`OQ-50-YSDG8S`](open-questions.md#oq-50-ysdg8s) | Moving-checkpoint treatment of already committed claims, signed outputs, and finalized reduction references                                                            | Engineer question      | [settlement/lifecycle.md](./settlement/lifecycle.md), [disputes/disputes.md](./disputes/disputes.md)                                       | Open                               |
 | [`OQ-51-BCKA50`](open-questions.md#oq-51-bcka50) | Timeout-target tie at equal descendant heights: reachability unproved, no new target ordering approved                                                                 | Engineer question      | [disputes/disputes.md](./disputes/disputes.md)                                                                                             | Open                               |
-| [`OQ-52-SNJKP1`](open-questions.md#oq-52-snjkp1) | Tower AFK issuance limit: exact once-per scope across repeats, rejoin, replay, and successor forks                                                                     | Engineer question      | [runtime/watchtowers.md](./runtime/watchtowers.md)                                                                                         | Open                               |
+| [`OQ-52-SNJKP1`](open-questions.md#oq-52-snjkp1) | Tower AFK issuance limit: exact once-per scope across repeats, rejoin, replay, and successor forks                                                                     | Engineer question      | [runtime/watchtowers.md](./runtime/watchtowers.md)                                                                                         | Resolved                           |
 
 ## Register assumptions and constraints
 
@@ -75,33 +75,36 @@ implementation mirrors, exact test mappings, generated reports, and any invalida
 
 <a id="oq-1-ntjba1"></a>
 
-## OQ-1-NTJBA1 — Kill-period and dispute-fraud-proof slashing semantics
+## OQ-1-NTJBA1 — Kill-window edge rules
 
-The dispute-window "kill" flow needs an exact, engineer-confirmed rule. An uploaded dispute
-records the opener's commitment immediately, so the earlier "no commitments before kill → spammer
-slashed" description is wrong; implementation evidence suggests the kill period is the interval in
-which an invalid committed dispute can be challenged with a dispute fraud proof and killed. The
-open decision: the precise kill semantics, and **who is slashed when a dispute fraud proof is
-valid, and when it is invalid**. The reconstructed window lifecycle in
-[protocol/disputes.md](./disputes/disputes.md) depends on this rule.
+**Narrowed (2026-09-01, engineer decision recorded in review):** the kill step and its penalty
+routing are now specified in
+[protocol/disputes.md §4.2](./disputes/disputes.md#42-killing-an-invalid-committed-dispute): during
+the live kill period anyone may present a valid dispute fraud proof against a committed dispute; a
+valid proof removes that commitment and adds the named disputer to the channel's on-chain slash
+set (a delegated upload penalizes the represented participant); an invalid proof follows the
+separate fraud-proof self-slashing rule ([`OQ-2-7WTV16`](open-questions.md#oq-2-7wtv16),
+resolved); and the base protocol defines no dispute bond, no challenger reward, and no universal
+slashed-value recipient — the slash-set entry is applied at reduction through the application
+state machine's `slashParticipant` hook, which owns the balance disposition. Those points are no
+longer open.
 
-Code-derived edges folded into this decision: a window whose commitments are all killed stays
-open and never reduces until new evidence arrives; whether kill and the follow-up counter-dispute
-should be one atomic multicall (the SDK deliberately sequences them so the slash lands first);
-the `postedAuditingData` rule under early finalization; and the calldata-posted-after-kill-decision
-race. See [protocol/disputes.md](./disputes/disputes.md) §4 and
-sdk/dispute-pipeline.md.
+Still open are the kill-window edge rules:
 
-Additional implementation evidence: **an expired evidence window reopens when
-its commitments were all killed** — `DisputeManagerFacet` bypasses the expiry check when the
-commitment list is empty, so new evidence is accepted arbitrarily late and each acceptance
-restarts the kill period (safety/griefing exposure, not only the liveness gap above; candidate
-rule: reject all evidence once the window close rule is met). The economics half should also
-settle: whether disputing requires a bond, whether the penalty attaches to the disputer or to a
-signer whose data the disputer relayed, the malformed-vs-objectively-false distinction, where
-slash value goes, and an explicit sign-off on the threshold-signed fast path (it backdates both
-windows, deletes prior commitments, and trusts the dispute's own output hash — sound only under
-N-of-N signatures).
+- **Window reopen after all commitments are killed:** an expired evidence window reopens when its
+  commitments were all killed — `DisputeManagerFacet` bypasses the expiry check when the
+  commitment list is empty, so new evidence is accepted arbitrarily late and each acceptance
+  restarts the kill period (safety/griefing exposure; candidate rule: reject all evidence once the
+  window close rule is met).
+- **Kill-versus-counter-dispute ordering:** whether kill and the follow-up counter-dispute should
+  be one atomic multicall (the SDK deliberately sequences them so the slash lands first).
+- **`postedAuditingData` under early finalization**, and the
+  **calldata-posted-after-kill-decision race**.
+- **Explicit sign-off on the threshold-signed fast path** (it backdates both windows, deletes
+  prior commitments, and trusts the dispute's own output hash — sound only under N-of-N
+  signatures).
+
+See [protocol/disputes.md](./disputes/disputes.md) §4 and sdk/dispute-pipeline.md.
 
 <a id="oq-2-7wtv16"></a>
 
@@ -647,9 +650,9 @@ concern is resolved by the two existing proof carrier forms and the last-milesto
 tail ([disputes/state-proofs.md](./disputes/state-proofs.md)); no general tower finality remains.
 Bounded remaining details are tracked separately:
 [`OQ-49-2Z3FAS`](open-questions.md#oq-49-2z3fas),
-[`OQ-50-YSDG8S`](open-questions.md#oq-50-ysdg8s),
-[`OQ-51-BCKA50`](open-questions.md#oq-51-bcka50), and
-[`OQ-52-SNJKP1`](open-questions.md#oq-52-snjkp1).
+[`OQ-50-YSDG8S`](open-questions.md#oq-50-ysdg8s), and
+[`OQ-51-BCKA50`](open-questions.md#oq-51-bcka50); the former issuance-scope question
+[`OQ-52-SNJKP1`](open-questions.md#oq-52-snjkp1) is resolved.
 
 <a id="oq-46-zxr2v3"></a>
 
@@ -666,7 +669,7 @@ required mechanics are specified in the watchtower and dispute rules
 ([runtime/watchtowers.md](./runtime/watchtowers.md),
 [disputes/disputes.md](./disputes/disputes.md)): permitted types are the participant's protective
 dispute and counter-dispute with no participant-owned voluntary effects; scope is the exact
-channel, fork, and frozen assignment; the tower signs the exact encoded dispute with its registered
+channel, fork, and frozen membership-interval binding; the tower signs the exact encoded dispute with its registered
 key, needing no participant funds key, with replay bounded by the dispute bindings and the shared
 one-dispute-per-participant-per-fork slot (first-ordered valid transaction wins, the duplicate
 reverts with a clear already-submitted error); eligibility, throttling, `hasPosted`, stake,
@@ -777,7 +780,17 @@ ordering is approved.
 
 "Once per peer per fork" was discussed for the restricted AFK block of
 [runtime/watchtowers.md](./runtime/watchtowers.md), but the exact scope — repeats at later slots,
-rejoin, replay, and successor-fork lifecycles — is unconfirmed. No once-per-channel or permanent
-law is imposed, and this open possibility must not be used as a proof that the timeout-target tie
-of [`OQ-51-BCKA50`](open-questions.md#oq-51-bcka50) is impossible. Requested decision: the exact
-issuance scope.
+rejoin, replay, and successor-fork lifecycles — was unconfirmed.
+
+**Resolved (2026-09-01, engineer decision recorded in review):** no separate issuance quota
+exists — ordinary per-slot validity defines the scope completely. For each proved pre-state in
+which the represented participant is present and scheduled as the slot's author, the selected
+tower may author one canonical restricted AFK block after the peer-to-peer and agreement windows
+expire without receiving the participant's normal block; duplicate delivery of the same block is
+idempotent; once the applied block removes the participant on a branch, no further AFK block for
+that participant is valid there until a later accepted inbound join establishes a new membership
+interval. The normative rule lives in
+[runtime/watchtowers.md](./runtime/watchtowers.md)
+([`REQ-WT-2-HNZA3Y`](runtime/watchtowers.md#req-wt-2-hnza3y)). No once-per-channel or lifetime
+law exists, so this rule proves nothing about the timeout-target tie of
+[`OQ-51-BCKA50`](open-questions.md#oq-51-bcka50).

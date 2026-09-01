@@ -14,7 +14,7 @@ Each row links the question ID to its source register. Partially or provisionall
 
 | Question ID | Layer | Question | Status | Register |
 | --- | --- | --- | --- | --- |
-| [`OQ-1-NTJBA1`](../specification/open-questions.md#oq-1-ntjba1) | specification | Exact kill-period and dispute-fraud-proof slashing semantics | Open | [specification/open-questions.md](../specification/open-questions.md#oq-1-ntjba1) |
+| [`OQ-1-NTJBA1`](../specification/open-questions.md#oq-1-ntjba1) | specification | Kill-window edge rules: reopen after all commitments killed, kill/counter-dispute ordering, auditing-data and calldata races, fast-path sign-off | Open (narrowed) | [specification/open-questions.md](../specification/open-questions.md#oq-1-ntjba1) |
 | [`OQ-10-04YNC4`](../specification/open-questions.md#oq-10-04ync4) | specification | Spectate/join failure-point details: deadlines, refunds, forced-inclusion proof | Open | [specification/open-questions.md](../specification/open-questions.md#oq-10-04ync4) |
 | [`OQ-11-38S3SE`](../specification/open-questions.md#oq-11-38s3se) | specification | Channel-balance invariant: definition per balance model and check points | Open | [specification/open-questions.md](../specification/open-questions.md#oq-11-38s3se) |
 | [`OQ-12-B45Q7N`](../specification/open-questions.md#oq-12-b45q7n) | specification | Book-like overview vs. tree as the authoritative reference | Provisionally resolved | [specification/open-questions.md](../specification/open-questions.md#oq-12-b45q7n) |
@@ -51,7 +51,6 @@ Each row links the question ID to its source register. Partially or provisionall
 | [`OQ-5-4Q38M5`](../audit/open-questions.md#oq-5-4q38m5) | audit | Fraud-proof completeness security review | Open | [audit/open-questions.md](../audit/open-questions.md#oq-5-4q38m5) |
 | [`OQ-50-YSDG8S`](../specification/open-questions.md#oq-50-ysdg8s) | specification | Moving-checkpoint treatment of already committed claims, signed outputs, and finalized reduction references | Open | [specification/open-questions.md](../specification/open-questions.md#oq-50-ysdg8s) |
 | [`OQ-51-BCKA50`](../specification/open-questions.md#oq-51-bcka50) | specification | Timeout-target tie at equal descendant heights: reachability unproved, no new target ordering approved | Open | [specification/open-questions.md](../specification/open-questions.md#oq-51-bcka50) |
-| [`OQ-52-SNJKP1`](../specification/open-questions.md#oq-52-snjkp1) | specification | Tower AFK issuance limit: exact once-per scope across repeats, rejoin, replay, and successor forks | Open | [specification/open-questions.md](../specification/open-questions.md#oq-52-snjkp1) |
 | [`OQ-6-4JPNE5`](../specification/open-questions.md#oq-6-4jpne5) | specification | P2P gossip rate-limiting policy | Open | [specification/open-questions.md](../specification/open-questions.md#oq-6-4jpne5) |
 | [`OQ-7-M5G9M3`](../specification/open-questions.md#oq-7-m5g9m3) | specification | Whether adjudication requires a self-call-only authorization boundary | Open | [specification/open-questions.md](../specification/open-questions.md#oq-7-m5g9m3) |
 | [`OQ-8-PEYAAQ`](../specification/open-questions.md#oq-8-peyaaq) | specification | Clock-skew and bias values to be validated empirically | Open | [specification/open-questions.md](../specification/open-questions.md#oq-8-peyaaq) |
