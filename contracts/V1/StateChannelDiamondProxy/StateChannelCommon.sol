@@ -99,9 +99,7 @@ contract StateChannelCommon is StateChannelManagerStorage, StateChannelManagerEv
             // check if current on-chain snapshot.fork == forkId
             if (
                 currentOnChainSnapshot.forkId == forkId
-                    && UtilityFacetInterface(utilityFacetAddress).isGenesisSnapshotWithoutTimeCheck(
-                        currentOnChainSnapshot
-                    )
+                    && UtilityFacetInterface(utilityFacetAddress).isGenesisSnapshotWithoutTimeCheck(currentOnChainSnapshot)
             ) {
                 return (true, currentOnChainSnapshot.timestamp);
             }
@@ -170,8 +168,9 @@ contract StateChannelCommon is StateChannelManagerStorage, StateChannelManagerEv
         address[] memory pendingParticipants =
             _derivePendingParticipantsFromInboundHash(channelId, latestInboundMessageBlockHash, bytes32(0));
 
-        address[] memory participants = UtilityFacetInterface(utilityFacetAddress)
-            .concatAddressArraysNoDuplicates(snapshotParticipants, pendingParticipants);
+        address[] memory participants = UtilityFacetInterface(utilityFacetAddress).concatAddressArraysNoDuplicates(
+            snapshotParticipants, pendingParticipants
+        );
         eligibleParticipants = UtilityFacetInterface(utilityFacetAddress).subtractAddressArrays(
             participants, _getOnChainSlashedParticipants(channelId)
         );
@@ -180,6 +179,28 @@ contract StateChannelCommon is StateChannelManagerStorage, StateChannelManagerEv
 
     function _getStateSnapshot(bytes32 channelId) internal view virtual returns (StateSnapshot memory) {
         return stateSnapshots[channelId];
+    }
+
+    function _appendOpenChannel(bytes32 channelId) internal {
+        if (openChannelIndexPlusOne[channelId] != 0) return;
+        openChannelIds.push(channelId);
+        openChannelIndexPlusOne[channelId] = openChannelIds.length;
+    }
+
+    function _removeOpenChannel(bytes32 channelId) internal {
+        uint256 indexPlusOne = openChannelIndexPlusOne[channelId];
+        if (indexPlusOne == 0) return;
+
+        uint256 index = indexPlusOne - 1;
+        uint256 lastIndex = openChannelIds.length - 1;
+        if (index != lastIndex) {
+            bytes32 lastChannelId = openChannelIds[lastIndex];
+            openChannelIds[index] = lastChannelId;
+            openChannelIndexPlusOne[lastChannelId] = index + 1;
+        }
+
+        openChannelIds.pop();
+        delete openChannelIndexPlusOne[channelId];
     }
 
     function _getChannelBalance(bytes32 channelId) internal view virtual returns (ChannelBalance memory) {

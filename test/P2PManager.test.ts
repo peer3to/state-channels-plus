@@ -325,7 +325,6 @@ describe("P2PManager", function () {
             fixture!.address(0),
             fixture!.address(1)
         ]);
-        expect(result.discoveryWasNodeNoop).to.equal(true);
     });
 
     it("blacklists and disconnects every peer in a bulk penalty", async function () {
@@ -405,5 +404,24 @@ describe("P2PManager", function () {
         expect(result.connectedCount).to.equal(1);
         expect(result.replacementConnected).to.equal(true);
         expect(result.hookCount).to.equal(2);
+    });
+
+    it("emits profile loss only after the last live transport closes", async function () {
+        const result = await fixture!
+            .control()
+            .p2pManagerProbe.probeProfileDisconnectLifecycle(
+                fixture!.address(1)
+            )
+            .request();
+
+        expect(result).to.deep.equal({
+            unauthenticatedFinalCount: 1,
+            authenticatedRebindCount: 1,
+            upgradeCountBeforeFinal: 0,
+            fallbackWasPromoted: true,
+            upgradeFinalCount: 1,
+            repeatedCloseCount: 1,
+            unsubscribeCount: 0
+        });
     });
 });

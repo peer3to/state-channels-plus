@@ -1,7 +1,7 @@
 // @spec-test-coverage-ignore: harness network setup exercised by owning mapped test declarations
 import ARpcMethods from "@/rpc/ARpcMethods";
 import type ATransport from "@/transport/ATransport";
-import { LocalDiscoveryServer } from "@/utils";
+import { DetachedPromises } from "@/utils";
 import { Status } from "@/types";
 import type { Address, ChannelId } from "@/types/types";
 import type { NetworkService } from "./NetworkService";
@@ -15,35 +15,29 @@ export class NetworkRpcMethods extends ARpcMethods {
         super(transport, service.p2pManager);
     }
 
-    /**
-     * Connect this peer to a channel. Runs host-side, where the live
-     * `p2pManager` is, and drives discovery the way the harness used to: under
-     * `DEBUG_LOCAL_TRANSPORT` the SDK's own `tryOpenConnectionToChannel` is a
-     * no-op, so the in-process discovery server is started and peers are wired
-     * here using the host's own `self`. Idempotent (`tryStart` returns early if
-     * already running).
-     */
+    /** Connect this peer to the selected channel. */
     public async connectToChannel(
         channelId: string,
         handshakeStatus?: Status
     ): Promise<boolean> {
-        await LocalDiscoveryServer.tryStart();
-        // Use the SDK's connectToChannel (setChannelId +
-        // refreshOpenedStatusFromChain + tryOpenConnectionToChannel) so a
-        // spectator actually enters the spectating flow, then wire discovery
-        // (tryOpenConnectionToChannel is a no-op under DEBUG_LOCAL_TRANSPORT).
         await this.p2pManager.p2pSigner.connectToChannel(
             channelId as ChannelId
         );
         if (handshakeStatus !== undefined) {
             this.p2pManager.stateManager.setStatus(handshakeStatus);
         }
-        await LocalDiscoveryServer.connectToPeers(
-            this.p2pManager.self,
-            channelId as ChannelId,
-            String(this.p2pManager.stateManager.signerAddress)
+        return true;
+    }
+
+    public async joinLobby(rendezvousTopic: string): Promise<boolean> {
+        DetachedPromises.collect(
+            this.p2pManager.p2pSigner.joinLobby(rendezvousTopic)
         );
         return true;
+    }
+
+    public async leaveLobby(rendezvousTopic: string): Promise<boolean> {
+        return this.p2pManager.p2pSigner.leaveLobby(rendezvousTopic);
     }
 
     /** Disconnect every open connection (peer isolation). Returns the count. */
@@ -52,7 +46,10 @@ export class NetworkRpcMethods extends ARpcMethods {
         for (const transport of connections) {
             this.p2pManager.disconnectConnection(transport);
         }
-        return connections.length;
+        return (
+            connections.length +
+            this.p2pManager.localRpc.lobbyMatchingService.disconnectLobbyTransports()
+        );
     }
 
     /** Disconnect the open connection toward a specific peer address, if any. */

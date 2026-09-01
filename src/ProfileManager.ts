@@ -76,9 +76,14 @@ class ProfileManager {
         this.registerProfile(profile);
         return profile;
     }
-    public unregisterProfile(profile: PeerProfile) {
+    public unregisterProfile(
+        profile: PeerProfile,
+        detachedTransport?: ATransport
+    ) {
         const transport = profile.getTransport();
         if (transport) this.mapTransportToProfile.delete(transport);
+        if (detachedTransport)
+            this.mapTransportToProfile.delete(detachedTransport);
         const evmAddress = profile.getEvmAddress();
         if (evmAddress)
             this.mapEvmAddressToProfile.delete(getChecksumAddress(evmAddress));
@@ -107,6 +112,7 @@ class ProfileManager {
             stateManager.timeoutManager.scheduleTask(
                 () => {
                     // allow agreementTime for everyone to update transport and start using new one, before closing this one
+                    if (profile.getTransport() === oldTransport) return;
                     this.removeTransport(oldTransport, true);
                 },
                 stateManager.timeConfig.agreementTime * 1000,
@@ -114,14 +120,19 @@ class ProfileManager {
             );
         }
 
-        profile.setTransport(newTransport);
         this.attachTransportProfile(newTransport, profile);
     }
     public removeTransport(transport: ATransport, isUpgraded = false) {
         const profile = this.mapTransportToProfile.get(transport);
         if (!profile) return;
         this.mapTransportToProfile.delete(transport);
-        transport.close(isUpgraded);
+        profile.detachTransport(transport);
+        try {
+            transport.close(isUpgraded);
+        } catch (error) {
+            this.mapTransportToProfile.set(transport, profile);
+            throw error;
+        }
     }
     public getProfileByTransport(
         transport: ATransport
@@ -133,7 +144,7 @@ class ProfileManager {
         const identityProfile = this.mapEvmAddressToProfile.get(
             getChecksumAddress(transport.peerAddress)
         );
-        if (identityProfile?.getTransport() !== transport) return undefined;
+        if (!identityProfile?.hasLiveTransport(transport)) return undefined;
 
         this.mapTransportToProfile.set(transport, identityProfile);
         return identityProfile;
@@ -148,7 +159,9 @@ class ProfileManager {
     }
 
     public getTransportByEvmAddress(evmAddress: Address): ATransport | null {
-        return this.getProfileByEvmAddress(evmAddress)?.getTransport() ?? null;
+        const transport =
+            this.getProfileByEvmAddress(evmAddress)?.getTransport() ?? null;
+        return transport && !transport.isClosed ? transport : null;
     }
 
     public setBannablePeerInfo(
@@ -176,7 +189,7 @@ class ProfileManager {
         const profile = this.getProfileByTransport(transport);
         if (
             !profile ||
-            profile.getTransport() !== transport ||
+            !profile.isPreferredTransport(transport) ||
             profile.isBlackListed
         ) {
             return;
@@ -216,11 +229,11 @@ class ProfileManager {
     ): void {
         const transportProfile = this.mapTransportToProfile.get(transport);
         if (transportProfile && transportProfile !== profile) {
-            const peerInfo = transportProfile.takeHolepunchPeerInfo();
-            if (peerInfo) profile.setHolepunchPeerInfo(peerInfo);
-            if (transportProfile.isBlackListed) profile.blacklist();
+            profile.absorbLifecycleFrom(transportProfile);
+            transportProfile.detachTransport(transport);
         }
         this.mapTransportToProfile.set(transport, profile);
+        profile.attachTransport(transport);
     }
 }
 

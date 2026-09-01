@@ -17,6 +17,9 @@ abstract class ATransport {
     // A set address authenticates this exact transport for guarded RPC.
     peerAddress?: string;
     p2pManager: P2PManager;
+    private readonly closedListeners = new Set<
+        (transport: ATransport) => void
+    >();
 
     constructor(p2pManager: P2PManager) {
         this.p2pManager = p2pManager;
@@ -55,6 +58,8 @@ abstract class ATransport {
         if (!this.isClosed) {
             LoggerUtils.logTransportDisconnect(this, isExpected);
             this.isClosed = true;
+            for (const listener of [...this.closedListeners]) listener(this);
+            this.closedListeners.clear();
             if (!isExpected) {
                 this.p2pManager.stateManager.p2pEventHooks?.onDisconnection?.(
                     this.peerAddress as Address
@@ -63,6 +68,15 @@ abstract class ATransport {
             this.p2pManager.disconnectConnection(this);
             this._close();
         }
+    }
+
+    onClosed(listener: (transport: ATransport) => void): () => void {
+        if (this.isClosed) {
+            listener(this);
+            return () => undefined;
+        }
+        this.closedListeners.add(listener);
+        return () => this.closedListeners.delete(listener);
     }
 
     send(rpc: Rpc): void {

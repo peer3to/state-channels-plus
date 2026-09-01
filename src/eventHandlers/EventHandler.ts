@@ -89,6 +89,12 @@ export class EventHandler {
                 ),
             { taskName: "onChannelOpened.setGenesisState" }
         );
+
+        // This remains the single ethers-backed channel-event intake. After
+        // this handler finishes mirror/state updates, the runtime publishes
+        // the completed invocation on its typed event bus. Protocol services
+        // subscribe there instead of owning duplicate provider listeners,
+        // replay rules, ordering, and cleanup.
     }
 
     async onStateSnapshotUpdated(
@@ -96,6 +102,13 @@ export class EventHandler {
         stateSnapshot: StateSnapshotStruct,
         coordinate: EventCoordinate
     ): Promise<void> {
+        if (String(this.stateManager.channelId) !== String(channelId)) {
+            this.logger.debug(
+                "Ignoring state snapshot for a channel that is no longer selected",
+                { channelId }
+            );
+            return;
+        }
         await this.diamondStateMachine.localDiamondContract.onStateSnapshotUpdated(
             channelId,
             stateSnapshot,

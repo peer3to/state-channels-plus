@@ -41,6 +41,10 @@ contract StateChannelManagerStorage {
     /// @dev stateSnapshot Data
     mapping(bytes32 channelId => StateSnapshot) stateSnapshots;
 
+    /// @dev Enumerable set of channels whose snapshot currently exists on-chain.
+    bytes32[] openChannelIds;
+    mapping(bytes32 channelId => uint256 indexPlusOne) openChannelIndexPlusOne;
+
     // =================== Block on chain storage ==================
 
     /// @notice BlockCalldata Commitment

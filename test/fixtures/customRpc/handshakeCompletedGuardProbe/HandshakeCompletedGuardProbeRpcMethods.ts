@@ -18,7 +18,8 @@ import type {
     ExactTransportQueueGuardProbe,
     ClosedTransportDispatchGuardProbe,
     LateCompletionGuardProbe,
-    TimeoutGuardProbe
+    TimeoutGuardProbe,
+    DeferredAdmissionProbe
 } from "./HandshakeCompletedGuardProbeService";
 
 export class HandshakeCompletedGuardProbeRpcMethods extends ARpcMethods<
@@ -33,6 +34,10 @@ export class HandshakeCompletedGuardProbeRpcMethods extends ARpcMethods<
 
     public probeCompleted(): Promise<CompletedGuardProbe> {
         return this.service.probeCompleted();
+    }
+
+    public probeDeferredAdmission(): Promise<DeferredAdmissionProbe> {
+        return this.service.probeDeferredAdmission();
     }
 
     public probeQueueReplay(): Promise<QueueGuardProbe> {

@@ -120,7 +120,7 @@ describe("ProfileManager Holepunch ban policy", function () {
         expect(result.attemptedSocketDestroyed).to.equal(false);
         expect(result.currentTransportType).to.equal(TransportType.HOLEPUNCH);
         expect(result.activePeerConnections).to.equal(1);
-        expect(result.originalBanCalls).to.deep.equal([true, false, false]);
+        expect(result.originalBanCalls).to.deep.equal([true, false]);
         expect(result.attemptedBanCalls).to.deep.equal([]);
         expect(result.profileBlacklisted).to.equal(false);
         expect(result.handshakeCompleted).to.equal(true);

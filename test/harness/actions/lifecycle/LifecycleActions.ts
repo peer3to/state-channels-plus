@@ -116,15 +116,16 @@ export class LifecycleActions<
         this.harness.setChannelId(openChannel.channelId);
         this.logger.debug(`Channel created with ID: ${openChannel.channelId}`);
 
-        // Connect peers to the channel
+        // Select the channel on every runtime. Tests that request automatic
+        // networking use the public connection path below; autoConnect: false
+        // intentionally stops before discovery.
         for (const peer of this.harness.peers) {
-            await peer.p2pInstance.p2pSigner.connectToChannel(
+            await peer.p2pInstance.p2pSigner.setChannelId(
                 openChannel.channelId
             );
-            peer.logger.verbose(
-                `Connected to channel ${openChannel.channelId}`,
-                { component: "ChannelActions" }
-            );
+            peer.logger.verbose(`Selected channel ${openChannel.channelId}`, {
+                component: "ChannelActions"
+            });
         }
 
         if (this.harness.options.autoConnect) {

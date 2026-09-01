@@ -144,6 +144,18 @@ installed first, then the application ABI serialized as `scm.abiJson` is appende
 win duplicate signatures; consumer-only functions, events, and errors remain available. This lets
 host-side custom RPC code call consumer-facet extensions without dropping SDK error decoding.
 
+Discovery uses the same ownership boundary. `joinLobby` and `leaveLobby` cross the runtime port
+with one structured-clone-safe 32-byte topic and serializable opening options. The host owns matching,
+negotiation, retries, timers, peer profiles, transports, reputation policy, and cleanup; the client sends
+no callback, transport, abort signal, or live manager object. Matching has no implicit deadline; an optional
+finite timeout crosses with the options. Replacing a join settles an earlier active match as `undefined`.
+`leaveLobby` returns the host's phase decision: true during cancellable matching and false after handoff.
+Lobby-authenticated transports remain host-side and outside ordinary connection tracking until one selected
+profile is promoted at commitment. Every non-success cleanup closes the session set, and unsigned retry
+leaves and freshly rejoins the topic. The internal match transcript never crosses the port.
+The host derives the channel ID during negotiation, observes the opening on-chain, leaves the topic, and
+returns the opened channel ID and selected peer address for the client to observe.
+
 ```mermaid
 flowchart TB
     subgraph MT["Main thread (client realm)"]

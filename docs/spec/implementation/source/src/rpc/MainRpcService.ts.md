@@ -61,7 +61,7 @@ None demonstrated.
 
 ## Missing behavior
 
-`OpenChannelNegotiationService` is exported but not instantiated here — reachable only via a custom root; default-wiring decision open ([`OQ-34-FY08V2`](../../../../specification/open-questions.md#oq-34-fy08v2)).
+None demonstrated. Lobby matching and committed open-channel negotiation are both installed on every default root.
 
 ## Conformance traceability
 
@@ -69,9 +69,9 @@ Status enum: `Covered` | `Partial` | `Contradicts` | `Missing`. Evidence cells a
 **Here:** / **Other files:** so each row is auditable from its links alone; genuine gaps go in the
 Gap column. Audit state is file-level (Status header), never a row status.
 
-| Requirement / invariant                                                                    | Implementation status | Evidence                                                                                                           | Gap / divergence                                           |
-| ------------------------------------------------------------------------------------------ | --------------------- | ------------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------------- |
-| [`REQ-RPC-3-ZM9WR5`](../../../../specification/peer-communication/rpc.md#req-rpc-3-zm9wr5) | Covered               | **Here:** the reachable-service roster. **Other files:** per-service guards and validation in each service report. | Negotiation service unwired (open decision, not a defect). |
+| Requirement / invariant                                                                    | Implementation status | Evidence                                                                                                                                                                | Gap / divergence |
+| ------------------------------------------------------------------------------------------ | --------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------- |
+| [`REQ-RPC-3-ZM9WR5`](../../../../specification/peer-communication/rpc.md#req-rpc-3-zm9wr5) | Covered               | **Here:** the reachable-service roster includes lobby matching and open-channel negotiation. **Other files:** per-service guards and validation in each service report. | None.            |
 
 ## Component test obligations
 

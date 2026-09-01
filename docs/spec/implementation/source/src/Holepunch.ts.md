@@ -19,14 +19,18 @@
 
 ## Responsibility and observable boundary
 
-Holepunch discovery/NAT-traversal wiring producing bootstrap transports and owning the ordered
-set of joined discovery topics.
+Holepunch discovery/NAT-traversal wiring produces bootstrap transports and owns the ordered set of
+joined discovery topics. The caller's lobby topic is the Hyperswarm rendezvous itself; it is not copied
+onto each transport. Every resulting connection still requires identity proof, and the lobby session
+checks the topic carried by each lobby RPC.
 
 ## Key design decisions
 
 1. **Discovery metadata proves nothing** — every produced transport still runs the handshake.
 2. **Topics stay byte values.** Join stores every supplied `Buffer`; leave removes the first
    byte-equal entry before forwarding the leave, so removed topics do not return on restart.
+3. **Topic membership is rendezvous only.** It forms connections but does not authenticate the peer
+   or replace the active-session topic check on lobby messages.
 
 ## Inputs, outputs, state, and side effects
 

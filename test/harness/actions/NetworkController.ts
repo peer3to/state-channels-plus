@@ -1,3 +1,4 @@
+// @spec-test-coverage-ignore: shared lobby transport actions exercised by owning mapped E2E declarations
 import { PeerTestHarness } from "@test/fixtures/PeerTestHarness";
 import type { HarnessControlRpc } from "@test/fixtures/customRpc/harnessControl/HarnessControlRpc";
 import { Logger } from "@/utils";
@@ -7,8 +8,8 @@ import { Logger } from "@/utils";
  *
  * All peer-internal connection work runs host-side via the harness-control
  * `network` RPC (the live `p2pManager` is behind the runtime port). Discovery
- * wiring under `DEBUG_LOCAL_TRANSPORT` is performed by the host inside
- * `network.connectToChannel`.
+ * `autoConnect: false` is implemented by not calling the public connection
+ * operation. Channel and lobby joins remain self-contained SDK operations.
  */
 export class NetworkController<
     TCustomRpc extends HarnessControlRpc = HarnessControlRpc
@@ -40,6 +41,30 @@ export class NetworkController<
                 this.harness
                     .control(peer)
                     .network.connectToChannel(channelId)
+                    .request()
+            )
+        );
+    }
+
+    async joinLobby(peerIndices: number[], rendezvousTopic: string) {
+        const peers = this.harness.getFilteredPeers(peerIndices);
+        await Promise.all(
+            peers.map((peer) =>
+                this.harness
+                    .control(peer)
+                    .network.joinLobby(rendezvousTopic)
+                    .request()
+            )
+        );
+    }
+
+    async leaveLobby(peerIndices: number[], rendezvousTopic: string) {
+        const peers = this.harness.getFilteredPeers(peerIndices);
+        await Promise.all(
+            peers.map((peer) =>
+                this.harness
+                    .control(peer)
+                    .network.leaveLobby(rendezvousTopic)
                     .request()
             )
         );

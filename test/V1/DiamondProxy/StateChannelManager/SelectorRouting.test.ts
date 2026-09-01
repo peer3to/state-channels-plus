@@ -104,6 +104,20 @@ describe("StateChannelManagerProxy selector routing", function () {
         );
     });
 
+    it("routes both open-channel enumeration selectors through the utility facet", async function () {
+        const countSelector = diamond.interface.getFunction(
+            "getOpenChannelCount"
+        ).selector;
+        const pageSelector =
+            diamond.interface.getFunction("getOpenChannelIds").selector;
+        expect(await diamond.facetAddressForSelector(countSelector)).to.equal(
+            facetAddresses.UtilityFacet
+        );
+        expect(await diamond.facetAddressForSelector(pageSelector)).to.equal(
+            facetAddresses.UtilityFacet
+        );
+    });
+
     it("leaves the utility facet's stateless helpers off the routing table", async function () {
         await expectFacetSelectorsNotRouted(
             diamond,

@@ -7,6 +7,10 @@ import {
     HandshakeCompletedGuard,
     type HandshakeCompletedGuardOptions
 } from "@/rpc/guards/HandshakeCompletedGuard";
+import {
+    DeferredAdmissionGuard,
+    type DeferredAdmissionPolicy
+} from "@/rpc/guards/DeferredAdmissionGuard";
 import type Rpc from "@/rpc/Rpc";
 import type { RpcResponse } from "@/rpc/Rpc";
 import ATransport from "@/transport/ATransport";
@@ -42,10 +46,17 @@ class GuardTransport extends ATransport {
     }
 }
 
-class GuardTargetRpcMethods extends ARpcMethods<P2PManager<PingPongRpc>> {
+type GuardTarget = {
+    p2pManager: P2PManager<PingPongRpc>;
+    invocations: string[];
+};
+
+class GuardTargetRpcMethods<
+    TService extends GuardTarget = GuardTargetService
+> extends ARpcMethods<P2PManager<PingPongRpc>> {
     constructor(
         transport: ATransport,
-        private readonly service: GuardTargetService
+        private readonly service: TService
     ) {
         super(transport, service.p2pManager);
     }
@@ -57,7 +68,7 @@ class GuardTargetRpcMethods extends ARpcMethods<P2PManager<PingPongRpc>> {
 }
 
 class GuardTargetService extends ARpcService<
-    GuardTargetRpcMethods,
+    GuardTargetRpcMethods<GuardTargetService>,
     P2PManager<PingPongRpc>
 > {
     public readonly invocations: string[] = [];
@@ -75,7 +86,68 @@ class GuardTargetService extends ARpcService<
         this.guards = [new HandshakeCompletedGuard(this, options)];
     }
 
-    public createRPCMethods(transport: ATransport): GuardTargetRpcMethods {
+    public createRPCMethods(
+        transport: ATransport
+    ): GuardTargetRpcMethods<GuardTargetService> {
+        return new GuardTargetRpcMethods(transport, this);
+    }
+}
+
+class ControlledAdmissionPolicy implements DeferredAdmissionPolicy {
+    public ready = false;
+    public eligible = true;
+    public waitCalls = 0;
+    public rejected = 0;
+    public expired = 0;
+    public readonly timeoutMs: number[] = [];
+    public resolveWait?: (ready: boolean) => void;
+
+    isReady(): boolean {
+        return this.ready;
+    }
+    canDefer(): boolean {
+        return this.eligible;
+    }
+    waitUntilReady(
+        _transport: ATransport,
+        timeoutMs: number
+    ): Promise<boolean> {
+        this.waitCalls += 1;
+        this.timeoutMs.push(timeoutMs);
+        return new Promise((resolve) => {
+            this.resolveWait = resolve;
+        });
+    }
+    onRejected(): void {
+        this.rejected += 1;
+    }
+    onExpired(): void {
+        this.expired += 1;
+    }
+}
+
+class DeferredTargetService extends ARpcService<
+    GuardTargetRpcMethods<DeferredTargetService>,
+    P2PManager<PingPongRpc>
+> {
+    public readonly invocations: string[] = [];
+
+    constructor(
+        p2pManager: P2PManager<PingPongRpc>,
+        policy: ControlledAdmissionPolicy
+    ) {
+        super(
+            p2pManager,
+            p2pManager.stateManager.logger.child({
+                component: "DeferredAdmissionGuardTarget"
+            })
+        );
+        this.guards = [new DeferredAdmissionGuard(this, policy)];
+    }
+
+    public createRPCMethods(
+        transport: ATransport
+    ): GuardTargetRpcMethods<DeferredTargetService> {
         return new GuardTargetRpcMethods(transport, this);
     }
 }
@@ -89,6 +161,18 @@ export type QueueGuardProbe = {
     waitCalls: number;
     beforeCompletion: string[];
     afterCompletion: string[];
+};
+
+export type DeferredAdmissionProbe = {
+    immediateInvocations: string[];
+    beforeReplay: string[];
+    afterReplay: string[];
+    waitCalls: number;
+    rejected: number;
+    expired: number;
+    transportCloseExpired: number;
+    timeoutMs: number[];
+    expectedTimeoutMs: number;
 };
 
 export type RequestGuardProbe = {
@@ -273,6 +357,66 @@ export class HandshakeCompletedGuardProbeService extends ARpcService<
         return { consumed, invocations: [...target.invocations] };
     }
 
+    public async probeDeferredAdmission(): Promise<DeferredAdmissionProbe> {
+        const transport = this.transport(
+            "0xA000000000000000000000000000000000000020"
+        );
+        this.register(transport, true);
+        const policy = new ControlledAdmissionPolicy();
+        const target = new DeferredTargetService(this.p2pManager, policy);
+
+        policy.ready = true;
+        target.runRPC(this.rpc("immediate"), transport);
+        await this.flush();
+        const immediateInvocations = [...target.invocations];
+
+        policy.ready = false;
+        target.runRPC(this.rpc("first"), transport);
+        target.runRPC(this.rpc("second"), transport);
+        await this.flush();
+        const beforeReplay = [...target.invocations];
+        policy.ready = true;
+        policy.resolveWait?.(true);
+        await this.flush();
+        const afterReplay = [...target.invocations];
+
+        policy.ready = false;
+        policy.eligible = false;
+        target.runRPC(this.rpc("ineligible"), transport);
+        policy.eligible = true;
+        target.runRPC(this.rpc("expires"), transport);
+        await this.flush();
+        policy.resolveWait?.(false);
+        await this.flush();
+
+        const closeTransport = this.transport(
+            "0xA000000000000000000000000000000000000021"
+        );
+        this.register(closeTransport, true);
+        const closePolicy = new ControlledAdmissionPolicy();
+        const closeTarget = new DeferredTargetService(
+            this.p2pManager,
+            closePolicy
+        );
+        closeTarget.runRPC(this.rpc("transport-close"), closeTransport);
+        await this.flush();
+        closeTransport.close();
+        await this.flush();
+
+        return {
+            immediateInvocations,
+            beforeReplay,
+            afterReplay,
+            waitCalls: policy.waitCalls,
+            rejected: policy.rejected,
+            expired: policy.expired,
+            transportCloseExpired: closePolicy.expired,
+            timeoutMs: policy.timeoutMs,
+            expectedTimeoutMs:
+                this.p2pManager.stateManager.timeConfig.agreementTime * 2 * 1000
+        };
+    }
+
     public async probeQueueReplay(): Promise<QueueGuardProbe> {
         const transport = this.transport(
             "0xA000000000000000000000000000000000000002"
@@ -338,15 +482,17 @@ export class HandshakeCompletedGuardProbeService extends ARpcService<
                 transport,
                 { timeoutMs: 1_000 }
             );
-            const callerError = await caller.then(
+            const callerOutcome = caller.then(
                 () => "resolved",
                 (error: unknown) =>
                     error instanceof Error ? error.message : String(error)
             );
+            await this.flush();
             const immediateResponses = [...transport.responses];
             this.completeProfile(profile);
             resolveWait?.(true);
             await this.flush();
+            const callerError = await callerOutcome;
             return {
                 immediateResponses,
                 finalResponses: [...transport.responses],
@@ -554,7 +700,10 @@ export class HandshakeCompletedGuardProbeService extends ARpcService<
             target.runRPC(this.rpc("retired-first"), retired);
             target.runRPC(this.rpc("retired-second"), retired);
             retired.close();
-            this.p2pManager.profileManager.unregisterProfile(retiredProfile);
+            this.p2pManager.profileManager.unregisterProfile(
+                retiredProfile,
+                retired
+            );
 
             const replacement = this.transport(address);
             const replacementProfile = this.register(replacement, true);

@@ -1,3 +1,4 @@
+// @spec-test-coverage-ignore: restorable timing controls exercised by mapped lobby and negotiation tests
 import { Logger } from "@/utils";
 import type { ForkId } from "@/types/types";
 import type { Status } from "@/types";
@@ -10,6 +11,10 @@ import type {
     ReductionSimulationErrorName
 } from "@test/fixtures/customRpc/harnessControl/services/stub/StubService";
 import { waitFor } from "@test/utils/waitFor";
+import type {
+    HeldLobbyReplyKind,
+    HeldNegotiationReplyKind
+} from "@test/fixtures/customRpc/harnessControl/services/stub/StubService";
 
 /**
  * RPC-method stubs that wrap a service's `createRPCMethods` host-side.
@@ -27,6 +32,74 @@ export class RpcStubActions<
         private harness: PeerTestHarness<TCustomRpc>,
         private logger: Logger
     ) {}
+
+    async holdLobbyReply(
+        peerIndex: number,
+        kind: HeldLobbyReplyKind
+    ): Promise<() => Promise<number>> {
+        const peer = this.harness.getPeer(peerIndex);
+        await this.harness.control(peer).stub.holdLobbyReply(kind).request();
+        return async () =>
+            await this.harness.control(peer).stub.releaseLobbyReply().request();
+    }
+
+    async holdNegotiationReply(
+        peerIndex: number,
+        kind: HeldNegotiationReplyKind
+    ): Promise<() => Promise<number>> {
+        const peer = this.harness.getPeer(peerIndex);
+        await this.harness
+            .control(peer)
+            .stub.holdNegotiationReply(kind)
+            .request();
+        return async () =>
+            await this.harness
+                .control(peer)
+                .stub.releaseNegotiationReply()
+                .request();
+    }
+
+    async holdMatchedNegotiation(
+        peerIndex: number
+    ): Promise<() => Promise<number>> {
+        const peer = this.harness.getPeer(peerIndex);
+        await this.harness
+            .control(peer)
+            .stub.holdMatchedNegotiation()
+            .request();
+        return async () =>
+            await this.harness
+                .control(peer)
+                .stub.releaseMatchedNegotiation()
+                .request();
+    }
+
+    async holdSetChannelId(peerIndex: number): Promise<() => Promise<number>> {
+        const peer = this.harness.getPeer(peerIndex);
+        await this.harness.control(peer).stub.holdSetChannelId().request();
+        return async () =>
+            await this.harness
+                .control(peer)
+                .stub.releaseSetChannelId()
+                .request();
+    }
+
+    async overrideLobbyRoleDuration(
+        peerIndex: number,
+        durationMs: number
+    ): Promise<() => Promise<void>> {
+        const peer = this.harness.getPeer(peerIndex);
+        await this.harness
+            .control(peer)
+            .stub.overrideLobbyRoleDuration(durationMs)
+            .request();
+        return async () => {
+            await this.harness
+                .control(peer)
+                .stub.restoreLobbyRoleDuration()
+                .request();
+        };
+    }
 
     /**
      * Make the given peers answer every spectate request with a proof at

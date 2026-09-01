@@ -20,4 +20,8 @@ export abstract class AGuard<
     abstract check(rpc: Rpc, transport: ATransport): boolean;
 
     abstract onFailure(rpc: Rpc, transport: ATransport): void;
+
+    suppressesFailureResponse(_rpc: Rpc, _transport: ATransport): boolean {
+        return false;
+    }
 }

@@ -30,6 +30,12 @@ import { BlockValidationResult } from "@/types";
 import { Block, StateSnapshot } from "@/models";
 import Clock from "@/Clock";
 import { recordValidationBoundary } from "./RecordingValidationStrategy";
+import type {
+    LobbyJoinOptions,
+    LobbyMatch
+} from "@/rpc/services/lobbyMatching/LobbyMatchingTypes";
+import type LobbyMatchingRpcMethods from "@/rpc/services/lobbyMatching/LobbyMatchingRpcMethods";
+import type OpenChannelNegotiationRpcMethods from "@/rpc/services/openChannelNegotiation/OpenChannelNegotiationRpcMethods";
 
 // `ATransport` is used both for `createRPCMethods` and the captured transport.
 
@@ -79,7 +85,22 @@ export type StubKey =
     | "inboundMessageLogs"
     | "chainLogQueries"
     | "disputeWindowTimestamp"
-    | "disputeCommittedHandler";
+    | "disputeCommittedHandler"
+    | "lobbyCreateRpcMethods"
+    | "negotiationCreateRpcMethods"
+    | "matchedNegotiation"
+    | "setChannelId"
+    | "lobbyRoleDuration";
+
+export type HeldLobbyReplyKind = "pick" | "commit";
+export type HeldNegotiationReplyKind = "exchangeTerms" | "openProposal";
+
+type HeldRpcReply = {
+    kind: HeldLobbyReplyKind | HeldNegotiationReplyKind;
+    entered: number;
+    gate: Promise<void>;
+    release: () => void;
+};
 
 export type ReductionSimulationErrorName =
     | "RaceConditionDisputeAlreadyReduced"
@@ -413,6 +434,10 @@ export class StubService extends ARpcService<
      * overlapping probes would restore each other's replacements.
      */
     private readonly blockValidationProbeMutex = new Mutex();
+    private heldLobbyReply?: HeldRpcReply;
+    private heldNegotiationReply?: HeldRpcReply;
+    private heldMatchedNegotiation?: HeldRpcReply;
+    private heldSetChannelId?: HeldRpcReply;
 
     constructor(p2pManager: P2PManager<HarnessControlRpc>) {
         super(
@@ -468,6 +493,189 @@ export class StubService extends ARpcService<
                 resolve: () => resolve([...this.spectateSyncTargets])
             })
         );
+    }
+
+    public holdLobbyReply(kind: HeldLobbyReplyKind): void {
+        this.restoreLobbyReply();
+        const service = this.p2pManager.localRpc.lobbyMatchingService;
+        const original = service.createRPCMethods.bind(service);
+        this.stubOriginals.set("lobbyCreateRpcMethods", original);
+        const hold = this.createRpcHold(kind);
+        this.heldLobbyReply = hold;
+        service.createRPCMethods = (transport) => {
+            const methods = original(transport);
+            const endpoint = methods[kind].bind(methods);
+            Reflect.set(methods, kind, async (...parameters: unknown[]) => {
+                hold.entered += 1;
+                await hold.gate;
+                return Reflect.apply(endpoint, methods, parameters);
+            });
+            return methods;
+        };
+    }
+
+    public releaseLobbyReply(): number {
+        const entered = this.heldLobbyReply?.entered ?? 0;
+        this.heldLobbyReply?.release();
+        this.restoreLobbyReply();
+        return entered;
+    }
+
+    public getHeldLobbyReplyCount(): number {
+        return this.heldLobbyReply?.entered ?? 0;
+    }
+
+    public holdNegotiationReply(kind: HeldNegotiationReplyKind): void {
+        this.restoreNegotiationReply();
+        const service = this.p2pManager.localRpc.openChannelNegotiationService;
+        const original = service.createRPCMethods.bind(service);
+        this.stubOriginals.set("negotiationCreateRpcMethods", original);
+        const hold = this.createRpcHold(kind);
+        this.heldNegotiationReply = hold;
+        service.createRPCMethods = (transport) => {
+            const methods = original(transport);
+            const endpoint = methods[kind].bind(methods);
+            Reflect.set(methods, kind, async (...parameters: unknown[]) => {
+                hold.entered += 1;
+                await hold.gate;
+                return Reflect.apply(endpoint, methods, parameters);
+            });
+            return methods;
+        };
+    }
+
+    public releaseNegotiationReply(): number {
+        const entered = this.heldNegotiationReply?.entered ?? 0;
+        this.heldNegotiationReply?.release();
+        this.restoreNegotiationReply();
+        return entered;
+    }
+
+    public getHeldNegotiationReplyCount(): number {
+        return this.heldNegotiationReply?.entered ?? 0;
+    }
+
+    public holdMatchedNegotiation(): void {
+        this.releaseMatchedNegotiation();
+        const service = this.p2pManager.localRpc.openChannelNegotiationService;
+        const original = service.initMatchedNegotiation.bind(service);
+        this.stubOriginals.set("matchedNegotiation", original);
+        const hold = this.createRpcHold("exchangeTerms");
+        this.heldMatchedNegotiation = hold;
+        service.initMatchedNegotiation = async (
+            match: LobbyMatch,
+            options: LobbyJoinOptions = {}
+        ) => {
+            hold.entered += 1;
+            await hold.gate;
+            return original(match, options);
+        };
+    }
+
+    public releaseMatchedNegotiation(): number {
+        const entered = this.heldMatchedNegotiation?.entered ?? 0;
+        this.heldMatchedNegotiation?.release();
+        const original = this.stubOriginals.get("matchedNegotiation");
+        if (original) {
+            this.p2pManager.localRpc.openChannelNegotiationService.initMatchedNegotiation =
+                original as (
+                    match: LobbyMatch,
+                    options?: LobbyJoinOptions
+                ) => Promise<void>;
+            this.stubOriginals.delete("matchedNegotiation");
+        }
+        this.heldMatchedNegotiation = undefined;
+        return entered;
+    }
+
+    public getHeldMatchedNegotiationCount(): number {
+        return this.heldMatchedNegotiation?.entered ?? 0;
+    }
+
+    public holdSetChannelId(): void {
+        this.releaseSetChannelId();
+        const original = this.sm.setChannelId.bind(this.sm);
+        this.stubOriginals.set("setChannelId", original);
+        const hold = this.createRpcHold("exchangeTerms");
+        this.heldSetChannelId = hold;
+        this.sm.setChannelId = async (channelId) => {
+            hold.entered += 1;
+            await hold.gate;
+            return original(channelId);
+        };
+    }
+
+    public releaseSetChannelId(): number {
+        const entered = this.heldSetChannelId?.entered ?? 0;
+        this.heldSetChannelId?.release();
+        const original = this.stubOriginals.get("setChannelId");
+        if (original) {
+            this.sm.setChannelId = original as typeof this.sm.setChannelId;
+            this.stubOriginals.delete("setChannelId");
+        }
+        this.heldSetChannelId = undefined;
+        return entered;
+    }
+
+    public getHeldSetChannelIdCount(): number {
+        return this.heldSetChannelId?.entered ?? 0;
+    }
+
+    public overrideLobbyRoleDuration(durationMs: number): void {
+        if (!Number.isSafeInteger(durationMs) || durationMs <= 0) {
+            throw new Error("Role duration must be a positive integer");
+        }
+        const service = this.p2pManager.localRpc.lobbyMatchingService;
+        if (!this.stubOriginals.has("lobbyRoleDuration")) {
+            this.stubOriginals.set("lobbyRoleDuration", {
+                min: Reflect.get(service, "roleDurationMinMs"),
+                max: Reflect.get(service, "roleDurationMaxMs")
+            });
+        }
+        Reflect.set(service, "roleDurationMinMs", durationMs);
+        Reflect.set(service, "roleDurationMaxMs", durationMs);
+    }
+
+    public restoreLobbyRoleDuration(): boolean {
+        const original = this.stubOriginals.get("lobbyRoleDuration") as
+            | { min: number; max: number }
+            | undefined;
+        if (!original) return false;
+        const service = this.p2pManager.localRpc.lobbyMatchingService;
+        Reflect.set(service, "roleDurationMinMs", original.min);
+        Reflect.set(service, "roleDurationMaxMs", original.max);
+        this.stubOriginals.delete("lobbyRoleDuration");
+        return true;
+    }
+
+    private createRpcHold(kind: HeldRpcReply["kind"]): HeldRpcReply {
+        let release: () => void = () => undefined;
+        const gate = new Promise<void>((resolve) => {
+            release = resolve;
+        });
+        return { kind, entered: 0, gate, release };
+    }
+
+    private restoreLobbyReply(): void {
+        const original = this.stubOriginals.get("lobbyCreateRpcMethods");
+        if (original) {
+            this.p2pManager.localRpc.lobbyMatchingService.createRPCMethods =
+                original as (transport: ATransport) => LobbyMatchingRpcMethods;
+            this.stubOriginals.delete("lobbyCreateRpcMethods");
+        }
+        this.heldLobbyReply = undefined;
+    }
+
+    private restoreNegotiationReply(): void {
+        const original = this.stubOriginals.get("negotiationCreateRpcMethods");
+        if (original) {
+            this.p2pManager.localRpc.openChannelNegotiationService.createRPCMethods =
+                original as (
+                    transport: ATransport
+                ) => OpenChannelNegotiationRpcMethods;
+            this.stubOriginals.delete("negotiationCreateRpcMethods");
+        }
+        this.heldNegotiationReply = undefined;
     }
 
     public notifyCalldataPostedEventHeld(): void {

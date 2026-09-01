@@ -6,6 +6,7 @@ import { Logger } from "@/utils";
 import type { AGuard } from "@/rpc/guards/AGuard";
 import { runGuards } from "@/rpc/guards/runGuards";
 import type { RpcResponse } from "./Rpc";
+import { RPC_GUARD_REJECTION_ERROR } from "./Rpc";
 
 type RpcEndpoint = (...params: Rpc["params"]) => unknown;
 
@@ -69,14 +70,17 @@ abstract class ARpcService<
             const guardsPassed = runGuards(this.guards, rpc, transport);
             if (!guardsPassed) {
                 // Guard failure means we consumed the rpc but refused to process it.
-                if (rpc.requestId !== undefined) {
+                const suppressResponse = this.guards.some((guard) =>
+                    guard.suppressesFailureResponse(rpc, transport)
+                );
+                if (rpc.requestId !== undefined && !suppressResponse) {
                     this.sendRpcResponseSafely(
                         rpc,
                         {
                             rpcResponse: true,
                             requestId: rpc.requestId,
                             ok: false,
-                            error: "RPC request rejected by guard"
+                            error: RPC_GUARD_REJECTION_ERROR
                         },
                         transport
                     );

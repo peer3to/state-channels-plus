@@ -19,11 +19,13 @@
 
 ## Responsibility and observable boundary
 
-Feature/debug flag types.
+Canonical enum declarations for block outcomes and SDK lifecycle status. Each `Status` member owns its
+short lifecycle meaning here, so state holders and consumers do not repeat a second taxonomy.
 
 ## Key design decisions
 
-_None — the file is declarative/mechanical; behavior-shaping decisions live with its consumers._
+`Status` is listed in lifecycle order. `DISCOVERING` is the only active caller-topic state and has no
+selected channel ID; later members describe targeted or open-channel progress.
 
 ## Inputs, outputs, state, and side effects
 

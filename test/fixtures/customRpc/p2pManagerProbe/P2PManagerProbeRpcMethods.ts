@@ -26,7 +26,21 @@ import type {
     HolepunchTopicProbe,
     HandshakeFailureProbe,
     LateHandshakeProbe,
-    ReplacementHandshakeProbe
+    ReplacementHandshakeProbe,
+    ProfileDisconnectLifecycleProbe,
+    LobbyProtocolProbe,
+    LobbyRecoveryProbe,
+    LobbySessionCleanupProbe,
+    MatchedNegotiationAdmissionProbe,
+    InvalidNegotiationAmountProbe,
+    NegotiationFailureProbe,
+    NegotiationFailureScenario,
+    SignedAttemptObservationProbe,
+    LobbyBootstrapValidationProbe,
+    LobbyRoleTimerProbe,
+    LobbyRetryEpochProbe,
+    LobbyExhaustionTimerProbe,
+    LobbyLatePickProbe
 } from "./P2PManagerProbeService";
 
 export class P2PManagerProbeRpcMethods extends ARpcMethods<
@@ -238,5 +252,61 @@ export class P2PManagerProbeRpcMethods extends ARpcMethods<
         address: string
     ): Promise<ReplacementHandshakeProbe> {
         return this.service.probeReplacementHandshake(address);
+    }
+
+    public probeProfileDisconnectLifecycle(
+        address: string
+    ): ProfileDisconnectLifecycleProbe {
+        return this.service.probeProfileDisconnectLifecycle(address);
+    }
+
+    public probeLobbyProtocol(): Promise<LobbyProtocolProbe> {
+        return this.service.probeLobbyProtocol();
+    }
+
+    public probeLobbyRecovery(): Promise<LobbyRecoveryProbe> {
+        return this.service.probeLobbyRecovery();
+    }
+
+    public probeLobbyBootstrapAndValidation(): Promise<LobbyBootstrapValidationProbe> {
+        return this.service.probeLobbyBootstrapAndValidation();
+    }
+
+    public probeLobbyRoleTimers(): Promise<LobbyRoleTimerProbe> {
+        return this.service.probeLobbyRoleTimers();
+    }
+
+    public probeLobbySessionCleanup(): Promise<LobbySessionCleanupProbe> {
+        return this.service.probeLobbySessionCleanup();
+    }
+
+    public probeLobbyRetryEpoch(): Promise<LobbyRetryEpochProbe> {
+        return this.service.probeLobbyRetryEpoch();
+    }
+
+    public probeLobbyExhaustionTimer(): Promise<LobbyExhaustionTimerProbe> {
+        return this.service.probeLobbyExhaustionTimer();
+    }
+
+    public probeLobbyLatePick(): Promise<LobbyLatePickProbe> {
+        return this.service.probeLobbyLatePick();
+    }
+
+    public probeMatchedNegotiationAdmission(): Promise<MatchedNegotiationAdmissionProbe> {
+        return this.service.probeMatchedNegotiationAdmission();
+    }
+
+    public probeInvalidNegotiationAmount(): Promise<InvalidNegotiationAmountProbe> {
+        return this.service.probeInvalidNegotiationAmount();
+    }
+
+    public probeNegotiationFailure(
+        scenario: NegotiationFailureScenario
+    ): Promise<Partial<NegotiationFailureProbe>> {
+        return this.service.probeNegotiationFailure(scenario);
+    }
+
+    public probeSignedAttemptObservation(): Promise<SignedAttemptObservationProbe> {
+        return this.service.probeSignedAttemptObservation();
     }
 }

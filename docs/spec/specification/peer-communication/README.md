@@ -33,7 +33,8 @@ through this system.
   block progression and hand validated input to the owning system, which enforces its own ordering.
 - **Invariants (owned).** [`INV-RPC-1-SJS2T6`](rpc.md#inv-rpc-1-sjs2t6), [`REQ-RPC-1-FF89Z0`](rpc.md#req-rpc-1-ff89z0)–[`REQ-RPC-8-44XECF`](rpc.md#req-rpc-8-44xecf) ([rpc.md](./rpc.md)), plus the
   per-service requirements: `INV-AUTH-*`/`REQ-AUTH-*`, `REQ-GOSSIP-*`, `INV-JOINSIG-*`/`REQ-JOINSIG-*`,
-  `REQ-DACK-*`, `INV-SYNC-*`/`REQ-SYNC-*`, `INV-NEG-*`/`REQ-NEG-*`, `INV-UPG-*`/`REQ-UPG-*`.
+  `REQ-DACK-*`, `INV-SYNC-*`/`REQ-SYNC-*`, `INV-LOBBY-*`/`REQ-LOBBY-*`,
+  `INV-NEG-*`/`REQ-NEG-*`, `INV-UPG-*`/`REQ-UPG-*`.
 - **Failure and recovery outcomes.** Every endpoint failure has a defined consequence class —
   disconnect, blacklist, request error, silent ignore, or escalation — and a peer-controlled failure
   never corrupts another session ([`REQ-RPC-5-CV1R1Y`](rpc.md#req-rpc-5-cv1r1y), [`REQ-RPC-6-E60S4J`](rpc.md#req-rpc-6-e60s4j)).
@@ -56,7 +57,8 @@ with its algorithm, system interactions, failure outcomes, and test plan.
 | [join-authorization.md](./join-authorization.md) | Unanimous join-signature collection: pinned-state authorization, identity triple-binding, all-or-nothing assembly. |
 | [dispute-acknowledgment.md](./dispute-acknowledgment.md) | One-round dispute acknowledgment: bilateral records that gate dead-fork consequences on proven knowledge. |
 | [synchronization.md](./synchronization.md) | Verifiable state sync (spectate): exact-target proving and the requester's full verification chain before any effect. |
-| [channel-negotiation.md](./channel-negotiation.md) | Two-party open-terms negotiation: deterministic proposer, negotiated-terms-only signing, chain-observed completion. |
+| [lobby-matching.md](./lobby-matching.md) | Caller-topic discovery: authenticated availability, convergent roles, exclusive pair selection, and mutual commitment. |
+| [channel-negotiation.md](./channel-negotiation.md) | Guarded two-party opening: transcript-derived channel identity, negotiated-terms-only signing, deterministic submission, and chain-observed completion. |
 | [transport-upgrade.md](./transport-upgrade.md) | Direct-transport upgrade signaling: protocol-inert best-effort, identity-bound state, re-authentication before cutover. |
 
 ## Interaction contracts

@@ -1,7 +1,6 @@
 //@ts-ignore
 import Hyperswarm from "hyperswarm";
 //@ts-ignore
-//@ts-ignore
 import type P2PManager from "@/P2PManager";
 import { HolepunchTransport, TransportType } from "@/transport";
 import { Buffer } from "buffer";

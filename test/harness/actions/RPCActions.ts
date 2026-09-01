@@ -1,3 +1,4 @@
+// @spec-test-coverage-ignore: shared lobby query actions exercised by owning mapped E2E declarations
 import { PeerTestHarness } from "@test/fixtures/PeerTestHarness";
 import type { HarnessControlRpc } from "@test/fixtures/customRpc/harnessControl/HarnessControlRpc";
 import { Logger } from "@/utils";
@@ -169,6 +170,20 @@ export class RPCActions<
 
     async connectPeers(peerIndices: number[]): Promise<void> {
         await this.harness.network.connectPeers(peerIndices);
+    }
+
+    async joinLobby(
+        peerIndices: number[],
+        rendezvousTopic: string
+    ): Promise<void> {
+        await this.harness.network.joinLobby(peerIndices, rendezvousTopic);
+    }
+
+    async leaveLobby(
+        peerIndices: number[],
+        rendezvousTopic: string
+    ): Promise<void> {
+        await this.harness.network.leaveLobby(peerIndices, rendezvousTopic);
     }
 
     async newPeerJoins(options: {

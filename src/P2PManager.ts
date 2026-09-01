@@ -125,6 +125,29 @@ class P2PManager<TCustomRpc extends MainRpcService = MainRpcService>
 
         const status = stateManager.status;
         const isChannelOpened = status === Status.OPENED;
+        if (status === Status.DISCOVERING) {
+            // Lobby transports stay outside the ordinary connection set until
+            // matching commits one peer. The lobby service owns their complete
+            // lifecycle and promotes only the selected profile.
+            const profile =
+                this.profileManager.getProfileByEvmAddress(peerAddress);
+            for (const lobbyTransport of profile?.getLiveTransports() ?? [
+                transport
+            ]) {
+                if (
+                    this.localRpc.lobbyMatchingService.isHandedOffTransport(
+                        lobbyTransport
+                    )
+                ) {
+                    continue;
+                }
+                this.localRpc.lobbyMatchingService.onAuthenticatedTransport(
+                    lobbyTransport
+                );
+            }
+            return;
+        }
+
         this.addConnection(transport);
 
         if (isChannelOpened) {
@@ -164,6 +187,22 @@ class P2PManager<TCustomRpc extends MainRpcService = MainRpcService>
         }
 
         stateManager.p2pEventHooks.onConnection?.(peerAddress, isChannelOpened);
+    }
+
+    /** Promotes the committed lobby profile into the normal connection set. */
+    public promoteLobbyConnections(
+        transports: Iterable<ATransport>,
+        peerAddress: Address
+    ): void {
+        let promoted = false;
+        for (const transport of transports) {
+            if (transport.isClosed) continue;
+            this.addConnection(transport);
+            promoted = true;
+        }
+        if (promoted) {
+            this.stateManager.p2pEventHooks.onConnection?.(peerAddress, false);
+        }
     }
     public broadcastRpc(rpc: Rpc) {
         const debugConnections = this.openConnections.map((transport) => {
@@ -314,27 +353,40 @@ class P2PManager<TCustomRpc extends MainRpcService = MainRpcService>
             });
         }
     }
-    public async tryOpenConnectionToChannel(channelId: string) {
+    public async joinDiscoveryKey(discoveryKey: string): Promise<void> {
+        if (!ethers.isHexString(discoveryKey, 32)) {
+            throw new Error("Discovery key must be exactly 32 bytes");
+        }
+        const normalizedKey = ethers.hexlify(discoveryKey);
         // TODO: Give Holepunch and LocalDiscoveryServer the same lifecycle API
         // and inject the selected backend so P2PManager does not know which
         // discovery implementation it is using.
         if (config.DEBUG_LOCAL_TRANSPORT) {
-            // In the browser there's no harness fixture to drive discovery, so
-            // form the local mesh here via the relay hub. In node the harness
-            // drives LocalDiscoveryServer.connectToPeers itself (and also sets a
-            // registry URL for its own peer-mesh), so stay a no-op there.
-            if (!isNodeRuntime() && config.LOCAL_DISCOVERY_REGISTRY_URL) {
+            if (isNodeRuntime() || config.LOCAL_DISCOVERY_REGISTRY_URL) {
                 await LocalDiscoveryServer.tryStart();
                 await LocalDiscoveryServer.connectToPeers(
                     this.self,
-                    channelId,
+                    normalizedKey,
                     this.stateManager.signerAddress.toString()
                 );
             }
             return;
         }
-        const topic = Buffer.alloc(32).fill(channelId);
+        const topic = Buffer.from(normalizedKey.slice(2), "hex");
         await this.holepunch.join(topic);
+    }
+
+    public async leaveDiscoveryKey(discoveryKey: string): Promise<void> {
+        if (!ethers.isHexString(discoveryKey, 32)) {
+            throw new Error("Discovery key must be exactly 32 bytes");
+        }
+        const normalizedKey = ethers.hexlify(discoveryKey);
+        if (config.DEBUG_LOCAL_TRANSPORT) {
+            await LocalDiscoveryServer.leave(normalizedKey, this.self);
+            return;
+        }
+        const topic = Buffer.from(normalizedKey.slice(2), "hex");
+        await this.holepunch.leave(topic);
     }
     public addConnection(transport: ATransport) {
         // Do not revive a transport that closed while handshake work was pending.

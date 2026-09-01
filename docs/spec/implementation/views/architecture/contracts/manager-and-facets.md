@@ -403,6 +403,12 @@ Because routed selectors are absent from the proxy's own compiled ABI, SDK calle
 (`LocalDiamond & StateChannelManagerInterface`), the merged de-duplicated `localDiamondAbi`, and
 `connectLocalDiamond(address, runner)`.
 
+`LocalDiamond` is a temporary channel-local, event-fed mirror. Its handlers observe only the
+selected channel, so it intentionally does not replicate the deployed manager's global
+open-channel enumeration. This keeps channel computation on participant hardware, but event
+observation is not proof of completeness. Chain/RPC reads remain authoritative where required;
+the planned replacement is a verified light-client RPC, not a globally synchronized local mirror.
+
 ## 5. Storage model
 
 [`StateChannelManagerStorage`](../../../../../../contracts/V1/StateChannelDiamondProxy/StateChannelManagerStorage.sol#L7) —

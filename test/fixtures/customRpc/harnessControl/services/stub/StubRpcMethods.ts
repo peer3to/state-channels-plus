@@ -35,7 +35,9 @@ import type {
     BlockCalldataRecoveryProbe,
     InboundRunRecoveryProbe,
     ReductionChallengeProbe,
-    IsDisputedForkProbe
+    IsDisputedForkProbe,
+    HeldLobbyReplyKind,
+    HeldNegotiationReplyKind
 } from "./StubService";
 import type { StubService } from "./StubService";
 import { protocolEventTimeoutMs } from "@test/harness/core/testTimeConfig";
@@ -1955,6 +1957,67 @@ export class StubRpcMethods extends ARpcMethods<P2PManager<HarnessControlRpc>> {
     public setPeerStatus(status: Status): boolean {
         this.service.sm.setStatus(status);
         return true;
+    }
+
+    public holdLobbyReply(kind: HeldLobbyReplyKind): boolean {
+        this.service.holdLobbyReply(kind);
+        return true;
+    }
+
+    public releaseLobbyReply(): number {
+        return this.service.releaseLobbyReply();
+    }
+
+    public getHeldLobbyReplyCount(): number {
+        return this.service.getHeldLobbyReplyCount();
+    }
+
+    public holdNegotiationReply(kind: HeldNegotiationReplyKind): boolean {
+        this.service.holdNegotiationReply(kind);
+        return true;
+    }
+
+    public releaseNegotiationReply(): number {
+        return this.service.releaseNegotiationReply();
+    }
+
+    public getHeldNegotiationReplyCount(): number {
+        return this.service.getHeldNegotiationReplyCount();
+    }
+
+    public holdMatchedNegotiation(): boolean {
+        this.service.holdMatchedNegotiation();
+        return true;
+    }
+
+    public releaseMatchedNegotiation(): number {
+        return this.service.releaseMatchedNegotiation();
+    }
+
+    public getHeldMatchedNegotiationCount(): number {
+        return this.service.getHeldMatchedNegotiationCount();
+    }
+
+    public holdSetChannelId(): boolean {
+        this.service.holdSetChannelId();
+        return true;
+    }
+
+    public releaseSetChannelId(): number {
+        return this.service.releaseSetChannelId();
+    }
+
+    public getHeldSetChannelIdCount(): number {
+        return this.service.getHeldSetChannelIdCount();
+    }
+
+    public overrideLobbyRoleDuration(durationMs: number): boolean {
+        this.service.overrideLobbyRoleDuration(durationMs);
+        return true;
+    }
+
+    public restoreLobbyRoleDuration(): boolean {
+        return this.service.restoreLobbyRoleDuration();
     }
 }
 
