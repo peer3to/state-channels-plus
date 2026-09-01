@@ -397,6 +397,12 @@ security gaps tracked by the linked questions and audit findings.
 
 ## Requirements and invariants
 
+One validated initial-sync response is sufficient to make state available for ordinary dispute and
+enforcement mechanisms. Failure by the one selected initial peer instead fails the uncommitted observer's
+early cooperation precondition and disposes that runtime without fallback probing. This does not weaken later
+threshold requirements: accepted pending and participating signers retain the channel so cooperative or
+forced inclusion and dispute remedies remain available after operational failure.
+
 **<a id="req-dis-1-xaj1va"></a>`REQ-DIS-1-XAJ1VA`.** A dispute MUST state at least one of the four valid inputs (timeout, valid on-chain slashes, self-removal, forced inbound inclusion); fraud proofs are not a dispute input.
 
 **<a id="req-dis-2-pkvz7e"></a>`REQ-DIS-2-PKVZ7E`.** Upload is limited to eligible disputers: `disputer == msg.sender`, dispute-eligible, ≤1 dispute per window per participant, throttled to one upload per `evidenceTime` per sender.

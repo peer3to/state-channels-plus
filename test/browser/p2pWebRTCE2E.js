@@ -4,8 +4,10 @@ import { ethers, NonceManager, ContractFactory } from "ethers";
 import { EvmStateMachine } from "@/evm";
 import Clock from "@/Clock";
 import { installWebRTCMainThreadBridge } from "@/rpc/services/WebRTCSetup/connection/WebRTCMainThreadBridge";
+import { Status } from "@/types";
 import { MathStateMachine__factory } from "@typechain-types";
 import { connectStateChannelManager } from "@/utils/stateChannelManager";
+import { Codec, SignatureUtils, Type } from "@/utils";
 import { deployFullStack } from "../../scripts/V1/deploy";
 import MathStateMachineArtifact from "../../artifacts/contracts/V1/examples/MathStateMachine/MathStateMachine.sol/MathStateMachine.json";
 import MathConsumerFacetArtifact from "../../artifacts/contracts/V1/examples/MathStateMachine/MathConsumerFacet.sol/MathConsumerFacet.json";
@@ -116,6 +118,17 @@ function waitFor(predicate, label, timeoutMs = 45_000) {
     });
 }
 
+async function waitForAsync(predicate, label, timeoutMs = 45_000) {
+    const startedAt = Date.now();
+    for (;;) {
+        if (await predicate()) return;
+        if (Date.now() - startedAt > timeoutMs) {
+            throw new Error(typeof label === "function" ? label() : label);
+        }
+        await new Promise((resolve) => setTimeout(resolve, 50));
+    }
+}
+
 // Generous agreement window: the handshake round-trip (and the peers' clock
 // difference) must fit inside `agreementTime`, and browser workers running the
 // EVM are far slower than node — a tight 2s window flakes on RTT.
@@ -128,22 +141,21 @@ const timeConfig = {
 
 /**
  * Deploy the full stack against the external hardhat node (reached through the
- * same-origin RPC proxy) and derive a shared channel id for discovery. The two
- * peers rendezvous on this id and connect over WebRTC; the on-chain channel
- * open / state sync is a separate concern from the WebRTC transport this test
- * exercises, so it's intentionally left out (no channel => the post-handshake
- * participant sync is skipped and can't tear the transport down mid-negotiation).
+ * same-origin RPC proxy) and derive a shared channel id for discovery. The
+ * existing-channel case opens that ID on-chain after the genesis runtime has
+ * selected it, so the observer exercises the real sync boundary over WebRTC.
  */
-async function deployStack(providerUrl) {
+async function deployStack(providerUrl, openExistingChannel) {
     const provider = new ethers.JsonRpcProvider(providerUrl);
-    const wallets = [0, 1, 2].map((index) =>
+    const wallets = [0, 1, 2, 3].map((index) =>
         ethers.HDNodeWallet.fromPhrase(
             DEFAULT_HARDHAT_MNEMONIC,
             undefined,
             `m/44'/60'/0'/0/${index}`
         )
     );
-    const [deployerWallet, peerAWallet, peerBWallet] = wallets;
+    const [deployerWallet, peerAWallet, peerBWallet, genesisPeerWallet] =
+        wallets;
     const deployerSigner = new NonceManager(deployerWallet.connect(provider));
 
     const scmDeployment = await deployFullStack(deployerSigner, {
@@ -157,8 +169,6 @@ async function deployStack(providerUrl) {
 
     await Clock.init(provider);
 
-    // A stable 32-byte channel id both peers rendezvous on (same derivation the
-    // channel-open path uses), without opening an on-chain channel.
     const channelId = ethers.keccak256(
         ethers.AbiCoder.defaultAbiCoder().encode(
             ["string"],
@@ -166,11 +176,44 @@ async function deployStack(providerUrl) {
         )
     );
 
+    const openConfirmedChannel = async () => {
+        const latestBlock = await provider.getBlock("latest");
+        const openChannel = {
+            channelId,
+            participants: [deployerWallet.address, genesisPeerWallet.address],
+            balances: [
+                { amount: 500n, data: "0x1234" },
+                { amount: 500n, data: "0x5678" }
+            ],
+            deadlineTimestamp: BigInt(latestBlock.timestamp + 120),
+            isAtomic: true,
+            data: "0x"
+        };
+        const signatures = await Promise.all(
+            [deployerWallet, genesisPeerWallet].map((wallet) =>
+                SignatureUtils.signOpenChannel(openChannel, wallet)
+            )
+        );
+        const manager = connectStateChannelManager(
+            scmDeployment.address,
+            deployerSigner
+        );
+        await (
+            await manager.open({
+                encodedOpenChannel: Codec.encode(openChannel, Type.OpenChannel),
+                signatures: signatures.map(({ signature }) => signature)
+            })
+        ).wait();
+    };
+
     return {
         provider,
         scmAddress: scmDeployment.address,
         channelId,
-        peerWallets: [peerAWallet, peerBWallet]
+        peerWallets: openExistingChannel
+            ? [deployerWallet, peerAWallet]
+            : [peerAWallet, peerBWallet],
+        openConfirmedChannel
     };
 }
 
@@ -237,9 +280,8 @@ globalThis.runP2pWebRTCMainThreadE2E = async () => {
     installRTCPeerConnectionSpy();
     rtcConnections.length = 0;
 
-    const { scmAddress, channelId, peerWallets } = await deployStack(
-        config.providerUrl
-    );
+    const { scmAddress, channelId, peerWallets, openConfirmedChannel } =
+        await deployStack(config.providerUrl, true);
 
     const peerInstances = await Promise.all(
         peerWallets.map((wallet, index) =>
@@ -252,7 +294,16 @@ globalThis.runP2pWebRTCMainThreadE2E = async () => {
             )
         )
     );
-    const [peerA, peerB] = peerInstances;
+    // Select the channel on the genesis runtime before the external opening so
+    // its provider listener applies genesis and can serve the observers.
+    await peerInstances[0].p2pSigner.setChannelId(channelId);
+    await openConfirmedChannel();
+    await waitForAsync(
+        async () =>
+            (await peerInstances[0].p2pSigner.getChannelStatus()) ===
+            Status.PARTICIPATING,
+        "genesis participant did not apply the confirmed opening"
+    );
 
     const connectedBy = peerInstances.map(() => new Set());
     peerInstances.forEach((peer, index) => {
@@ -268,10 +319,34 @@ globalThis.runP2pWebRTCMainThreadE2E = async () => {
     );
 
     try {
-        await Promise.all(
-            peerInstances.map((peer) =>
-                peer.p2pSigner.connectToChannel(channelId)
+        // The genesis signer and observers must join the raw topic together.
+        // A local discovery join remains pending until another peer appears.
+        const connectResults = await Promise.race([
+            Promise.all(
+                peerInstances.map((peer) =>
+                    peer.p2pSigner.connectToChannel(channelId)
+                )
+            ),
+            new Promise((_, reject) =>
+                setTimeout(
+                    async () =>
+                        reject(
+                            new Error(
+                                `existing-channel connects stuck at ${(
+                                    await Promise.all(
+                                        peerInstances.map((peer) =>
+                                            peer.p2pSigner.getChannelStatus()
+                                        )
+                                    )
+                                ).join(",")}`
+                            )
+                        ),
+                    90_000
+                )
             )
+        ]);
+        const connectStatuses = await Promise.all(
+            peerInstances.map((peer) => peer.p2pSigner.getChannelStatus())
         );
 
         const addrA = peerWallets[0].address.toLowerCase();
@@ -295,12 +370,14 @@ globalThis.runP2pWebRTCMainThreadE2E = async () => {
             bridgePortB: bridgePorts[1],
             connectedAtoB: connectedBy[0].has(addrB),
             connectedBtoA: connectedBy[1].has(addrA),
+            connectResults,
+            connectStatuses,
             rtcCreated: rtcConnections.length,
             rtcConnected: rtcConnections.filter((r) => r.reachedConnected)
                 .length
         };
     } finally {
-        await Promise.allSettled([peerA.dispose(), peerB.dispose()]);
+        await Promise.allSettled(peerInstances.map((peer) => peer.dispose()));
     }
 };
 
@@ -323,7 +400,8 @@ globalThis.runP2pWebRTCWorkerBubbleUpE2E = async () => {
     rtcConnections.length = 0;
 
     const { scmAddress, channelId, peerWallets } = await deployStack(
-        config.providerUrl
+        config.providerUrl,
+        false
     );
 
     const connectedBy = [new Set(), new Set()];
@@ -349,8 +427,8 @@ globalThis.runP2pWebRTCWorkerBubbleUpE2E = async () => {
                     connectedBy[index].add(
                         String(message.address).toLowerCase()
                     );
-                } else if (message.type === "ready") {
-                    resolve();
+                } else if (message.type === "connectResult") {
+                    resolve(message);
                 } else if (message.type === "error") {
                     reject(
                         new Error(`app worker ${index}: ${message.message}`)
@@ -370,12 +448,17 @@ globalThis.runP2pWebRTCWorkerBubbleUpE2E = async () => {
                 channelId,
                 signerSecret: peerWallets[index].privateKey,
                 relayUrl: config.relayUrl,
-                peerId: index
+                peerId: index,
+                connectOptions: {
+                    autoOpen: true,
+                    shouldJoin: true,
+                    balance: { amount: 777n, data: "0x1234" }
+                }
             });
         });
 
     try {
-        await Promise.all([spawnPeer(0), spawnPeer(1)]);
+        const connectResults = await Promise.all([spawnPeer(0), spawnPeer(1)]);
 
         const addrA = peerWallets[0].address.toLowerCase();
         const addrB = peerWallets[1].address.toLowerCase();
@@ -398,6 +481,7 @@ globalThis.runP2pWebRTCWorkerBubbleUpE2E = async () => {
             bridgesInstalled: bridgeHandles.length,
             connectedAtoB: connectedBy[0].has(addrB),
             connectedBtoA: connectedBy[1].has(addrA),
+            connectResults,
             rtcCreated: rtcConnections.length,
             rtcConnected: rtcConnections.filter((r) => r.reachedConnected)
                 .length

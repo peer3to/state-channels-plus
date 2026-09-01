@@ -83,3 +83,9 @@ Exact test evidence is mapped against these IDs in the verification test reports
 ## Related source reports
 
 - [OpenChannelNegotiationService](./OpenChannelNegotiationService.ts.md).
+
+## Full-balance term exchange
+
+The peer endpoint accepts and returns `encodedBalance`. It decodes through `Codec.Type.Balance`, preserves
+both `amount` and `data`, and relies on the negotiation service's authenticated-peer zero-balance comparison
+before signing. Numeric amount-only fields and forced empty data are removed.

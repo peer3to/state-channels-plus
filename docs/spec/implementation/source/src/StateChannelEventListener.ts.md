@@ -73,9 +73,18 @@ Gap column. Audit state is file-level (Status header), never a row status.
 
 Exact test evidence is mapped against these IDs in the verification test reports.
 
-| Unit test ID | Obligation | Public entry and setup | Oracle and forbidden effects | Required permutations |
-| ------------ | ---------- | ---------------------- | ---------------------------- | --------------------- |
+| Unit test ID                                                                                                  | Obligation                               | Public entry and setup                                                            | Oracle and forbidden effects                                                        | Required permutations                                                                                                                                                                                                                                                                                                               |
+| ------------------------------------------------------------------------------------------------------------- | ---------------------------------------- | --------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| <a id="unit-test-state-channel-event-listener-1-xhnmvw"></a>`UNIT-TEST-STATE-CHANNEL-EVENT-LISTENER-1-XHNMVW` | Mode-specific channel-listener ownership | Install a selected-channel filter, then run targeted or ordinary unsigned cleanup | Targeted cleanup retains exact-target delivery; ordinary cleanup removes the filter | <a id="unit-test-state-channel-event-listener-1-xhnmvw.p1"></a>`UNIT-TEST-STATE-CHANNEL-EVENT-LISTENER-1-XHNMVW.P1` — retained same-target subscription and event delivery; <a id="unit-test-state-channel-event-listener-1-xhnmvw.p2"></a>`UNIT-TEST-STATE-CHANNEL-EVENT-LISTENER-1-XHNMVW.P2` — ordinary clear removes the filter |
 
 ## Related source reports
 
 - [EventSyncService](./stateManager/eventSync/EventSyncService.ts.md), [EventHandler](./eventHandlers/EventHandler.ts.md).
+
+## Targeted listener ownership
+
+Targeted selection installs the existing provider subscription before pre-open matching. Unsigned targeted
+cleanup retains it, so later `ChannelOpened(target)` still reaches the live runtime. Ordinary derived-ID
+cleanup calls `clearChannelId` and removes the filter. Obligations use
+[`UNIT-TEST-STATE-CHANNEL-EVENT-LISTENER-1-XHNMVW.P1`](StateChannelEventListener.ts.md#unit-test-state-channel-event-listener-1-xhnmvw.p1) for retained same-target delivery and `.P2` for ordinary
+clear.

@@ -1,14 +1,6 @@
 import ARpcService from "@/rpc/ARpcService";
-import {
-    Address,
-    Bytes,
-    ChannelId,
-    Timestamp,
-    Hash,
-    ForkId
-} from "@/types/types";
+import { Address, Bytes, ChannelId, Hash, ForkId } from "@/types/types";
 import { Block, StateSnapshot } from "@/models";
-import Clock from "@/Clock";
 import ATransport from "@/transport/ATransport";
 import {
     Codec,
@@ -22,20 +14,16 @@ import { StateProofStruct } from "@typechain-types/contracts/V1/types/ProofTypes
 import { StateSnapshotStruct } from "@typechain-types/contracts/V1/types/DataTypes";
 import SpectateServiceRpcMethods from "./SpectateRpcMethods";
 import type P2PManager from "@/P2PManager";
-import { Status } from "@/types";
 import { HandshakeCompletedGuard } from "@/rpc/guards";
 import { DisputeWindowVerification, SyncPayload } from "@/types";
+
 export interface SyncRequest {
     channelId: ChannelId;
-    initTime: Timestamp;
     forkId?: ForkId;
     blockHeight?: number;
 }
+
 class SpectateService extends ARpcService<SpectateServiceRpcMethods> {
-    // Peers with a sync request currently in flight. Guards against launching a
-    // second concurrent sync to the same peer. The request payload itself now
-    // lives in `sync`'s closure (request/response), so no per-peer request map
-    // is needed.
     private readonly inFlightByPeerAddress: Set<string> = new Set();
 
     constructor(p2pManager: P2PManager) {
@@ -52,19 +40,22 @@ class SpectateService extends ARpcService<SpectateServiceRpcMethods> {
         return new SpectateServiceRpcMethods(transport, this);
     }
 
-    // Called locally to initiate spectate sync. Fire-and-forget entry point: the
-    // request/response exchange and payload verification run in the background.
-    public sync(
+    public async sync(
         peerAddress: Address,
         channelId: ChannelId,
         forkId?: ForkId,
-        blockHeight?: number
-    ) {
-        this.logger.debug("spectateSync - starting", {
-            peerAddress,
+        blockHeight?: number,
+        timeoutMs = this.p2pManager.stateManager.timeConfig.agreementTime * 1000
+    ): Promise<boolean> {
+        const syncRequest: SyncRequest = {
             channelId,
             forkId,
             blockHeight
+        };
+        this.logger.debug("spectateSync - starting", {
+            peerAddress,
+            syncRequest,
+            timeoutMs
         });
         const normalizedPeerAddress = getChecksumAddress(peerAddress);
 
@@ -73,52 +64,32 @@ class SpectateService extends ARpcService<SpectateServiceRpcMethods> {
                 "spectateSync - sync already in-flight; ignoring",
                 { peerAddress: normalizedPeerAddress }
             );
-            return;
+            return false;
         }
 
-        const syncRequest: SyncRequest = {
-            channelId,
-            initTime: Clock.getTimeInSeconds(),
-            forkId,
-            blockHeight
-        };
         this.inFlightByPeerAddress.add(normalizedPeerAddress);
-        const timeoutMs =
-            this.p2pManager.stateManager.timeConfig.agreementTime * 1000;
+        try {
+            const { encodedSyncPayload } = await this.remoteRpc.spectateService
+                .onSpectateRequest(syncRequest)
+                .request(normalizedPeerAddress, { timeoutMs });
 
-        void (async () => {
-            try {
-                // Transport can change (e.g. WebRTC upgrade). Always send by
-                // address. p2p sync is mutual-cooperation: a request must be
-                // answered with a valid proof. Any rejection - timeout,
-                // transport error, or the responder cutting us because it can't
-                // prove the target - means the peer didn't help us sync, so we
-                // blacklist it. `applySyncResponse` handles payload-validation
-                // failures itself (via abort), so the catch here is the request
-                // path plus a defensive backstop.
-                const { encodedSyncPayload } =
-                    await this.remoteRpc.spectateService
-                        .onSpectateRequest(syncRequest)
-                        .request(normalizedPeerAddress, { timeoutMs });
-
-                await this.applySyncResponse(
-                    normalizedPeerAddress,
-                    syncRequest,
-                    encodedSyncPayload
-                );
-            } catch (error) {
-                this.logger.debug("spectateSync - failed; blacklisting peer", {
-                    peerAddress: normalizedPeerAddress,
-                    error:
-                        error instanceof Error ? error.message : String(error)
-                });
-                this.p2pManager.disconnectAndBlacklistPeerByEvmAddress(
-                    normalizedPeerAddress
-                );
-            } finally {
-                this.inFlightByPeerAddress.delete(normalizedPeerAddress);
-            }
-        })();
+            return await this.applySyncResponse(
+                normalizedPeerAddress,
+                syncRequest,
+                encodedSyncPayload
+            );
+        } catch (error) {
+            this.logger.debug("spectateSync - failed", {
+                peerAddress: normalizedPeerAddress,
+                error: error instanceof Error ? error.message : String(error)
+            });
+            this.p2pManager.disconnectAndBlacklistPeerByEvmAddress(
+                normalizedPeerAddress
+            );
+            return false;
+        } finally {
+            this.inFlightByPeerAddress.delete(normalizedPeerAddress);
+        }
     }
 
     /**
@@ -126,13 +97,14 @@ class SpectateService extends ARpcService<SpectateServiceRpcMethods> {
      * body of the old `onSpectateResponse` endpoint; the request now lives in
      * `sync`'s closure, so the channel is taken from our own `syncRequest`
      * (never the peer's echo) and the previous channel-binding check is moot.
-     * Any failure aborts the spectate sync.
+     * Validation failures reject the peer and return false. The caller owns
+     * the lifecycle consequence of a failed sync.
      */
     public async applySyncResponse(
         peerAddress: string,
         syncRequest: SyncRequest,
         encodedSyncPayload: Bytes
-    ): Promise<void> {
+    ): Promise<boolean> {
         const channelId = syncRequest.channelId;
 
         try {
@@ -145,21 +117,6 @@ class SpectateService extends ARpcService<SpectateServiceRpcMethods> {
                 Type.SyncPayload
             );
             this.logger.debug(`Sync payload received`, { syncPayload });
-
-            const localTime = Clock.getTimeInSeconds();
-            const rtt = localTime - syncRequest.initTime;
-
-            this.logger.debug(
-                `applySyncResponse - RTT: ${rtt}s, initTime: ${syncRequest.initTime}, responseTime: ${localTime}`
-            );
-
-            // If RTT is too high, abort.
-            if (rtt > this.p2pManager.stateManager.timeConfig.agreementTime) {
-                this.logger.debug(
-                    `applySyncResponse - RTT too high (${rtt}s), aborting`
-                );
-                return this.abort(peerAddress);
-            }
 
             // What we ultimately want to do here is:
             // 1) Sync/Fetch all the relevant EVM storage data from the chain and persist it in our localEVM
@@ -224,7 +181,8 @@ class SpectateService extends ARpcService<SpectateServiceRpcMethods> {
                         channelId,
                         dw.forkId
                     );
-                if (!windowExists || !isExpired) return this.abort(peerAddress);
+                if (!windowExists || !isExpired)
+                    return this.rejectSync(peerAddress);
 
                 // 2.3) reduce them if they're not already reduced
                 const isReducedAndFinal =
@@ -248,7 +206,8 @@ class SpectateService extends ARpcService<SpectateServiceRpcMethods> {
                         dw.reducedForkId
                     );
                     // 2.4) ** If more than 1  has to be reduced -> abort **
-                    if (++notReducedCount > 1) return this.abort(peerAddress);
+                    if (++notReducedCount > 1)
+                        return this.rejectSync(peerAddress);
                 }
 
                 // 2.5) verify that they reduce to the correct forks as given in the SyncPayload
@@ -259,7 +218,7 @@ class SpectateService extends ARpcService<SpectateServiceRpcMethods> {
                     )
                 )[0];
                 if (_dw.reducedResult.forkId != dw.reducedForkId)
-                    return this.abort(peerAddress);
+                    return this.rejectSync(peerAddress);
                 // if the above call fails -> local evm will throw -> catch and abort
                 finalForkId = dw.reducedForkId;
             }
@@ -282,7 +241,7 @@ class SpectateService extends ARpcService<SpectateServiceRpcMethods> {
                 isGenesisValid &&
                 stateHashMatch;
 
-            if (!isCorrectGenesis) return this.abort(peerAddress);
+            if (!isCorrectGenesis) return this.rejectSync(peerAddress);
 
             // optimization: if the on-chain snapshot is on the same fork but more advanced than what
             // peers proved, reject before running any contract verification.
@@ -299,7 +258,7 @@ class SpectateService extends ARpcService<SpectateServiceRpcMethods> {
                 this.logger.debug(
                     `applySyncResponse - on-chain block height (${onChainSnapshot.blockHeight}) exceeds proved height (${Number(latestFinalizedSnapshot.blockHeight)}); aborting`
                 );
-                return this.abort(peerAddress);
+                return this.rejectSync(peerAddress);
             }
 
             // 2.7) verify outboundMessageBlocks from onChainSnapshot (lower/older) to final genesisSnapshot (upper/newer)
@@ -322,7 +281,7 @@ class SpectateService extends ARpcService<SpectateServiceRpcMethods> {
                     );
             }
 
-            if (!areValidExitBlocks) return this.abort(peerAddress);
+            if (!areValidExitBlocks) return this.rejectSync(peerAddress);
 
             // 2.8) Depending are we syncing to the 'latest state' (spectating) or some requested state (forkId,blockHeight), verify that:
             // 2.8.1) (spectating) genesisSnapshot.forkId is not disputed on-chain -> abort otherwise
@@ -334,11 +293,12 @@ class SpectateService extends ARpcService<SpectateServiceRpcMethods> {
                         channelId,
                         finalForkId
                     );
-                if (Number(_timestamp) != 0) return this.abort(peerAddress);
+                if (Number(_timestamp) != 0)
+                    return this.rejectSync(peerAddress);
             } else {
                 // 2.8.2) (requested)
                 if (finalForkId != syncRequest.forkId)
-                    return this.abort(peerAddress);
+                    return this.rejectSync(peerAddress);
             }
 
             // 2.9) verify stateProof proves latest state -> abort otherwise
@@ -349,13 +309,13 @@ class SpectateService extends ARpcService<SpectateServiceRpcMethods> {
                     syncPayload.milestoneSnapshots,
                     syncPayload.latestForkGenesisSnapshot
                 );
-            if (!isValid) return this.abort(peerAddress);
+            if (!isValid) return this.rejectSync(peerAddress);
 
             if (
                 latestFinalizedSnapshot.snapshotData.stateMachineStateHash !=
                 hash(syncPayload.latestFinalizedEncodedState)
             )
-                return this.abort(peerAddress);
+                return this.rejectSync(peerAddress);
 
             // 2.10) verify outboundMessageBlocks from final genesisSnapshot to latestFinalizedSnapshot
             areValidExitBlocks =
@@ -364,7 +324,7 @@ class SpectateService extends ARpcService<SpectateServiceRpcMethods> {
                     syncPayload.latestForkGenesisSnapshot.snapshotData,
                     latestFinalizedSnapshot.snapshotData
                 );
-            if (!areValidExitBlocks) return this.abort(peerAddress);
+            if (!areValidExitBlocks) return this.rejectSync(peerAddress);
 
             // 2.11) verify balance invariant of the latestFinalizedState -> abort otherwise
             const isValidBalance =
@@ -373,7 +333,7 @@ class SpectateService extends ARpcService<SpectateServiceRpcMethods> {
                     latestFinalizedSnapshot.snapshotData,
                     syncPayload.latestFinalizedEncodedState
                 );
-            if (!isValidBalance) return this.abort(peerAddress);
+            if (!isValidBalance) return this.rejectSync(peerAddress);
 
             // 3) Finally - staticcall multicall to deduct failure/success -> on failure abort
             const isMulticallSuccess = await this.tryMulticallSnapshotUpdate(
@@ -382,11 +342,11 @@ class SpectateService extends ARpcService<SpectateServiceRpcMethods> {
                 syncPayload,
                 disputeWindowsThatNeedToBeReducedOnChain
             );
-            if (!isMulticallSuccess) return this.abort(peerAddress);
+            if (!isMulticallSuccess) return this.rejectSync(peerAddress);
 
             // 4) Deconstruct the SyncPayload and persist its component normally in our local 'storage'
             const { shouldAbort } = await this.persistSyncPayload(syncPayload);
-            if (shouldAbort) return this.abort(peerAddress);
+            if (shouldAbort) return this.rejectSync(peerAddress);
 
             // 5) Start executing the onBlockConfirmation pipeline with unfinalized blocks
             const blockConfirmations =
@@ -412,13 +372,13 @@ class SpectateService extends ARpcService<SpectateServiceRpcMethods> {
                         await stateManager.blockIngestService.onBlockConfirmationStruct(
                             bc
                         );
-                    if (!isOk) return this.abort(peerAddress);
+                    if (!isOk) return this.rejectSync(peerAddress);
                 } catch (e) {
                     this.logger.error(
                         `Error processing block confirmation during spectate sync`,
                         { error: e }
                     );
-                    return this.abort(peerAddress);
+                    return this.rejectSync(peerAddress);
                 }
             }
             this.logger.debug(
@@ -430,19 +390,20 @@ class SpectateService extends ARpcService<SpectateServiceRpcMethods> {
                     await diamondStateMachine.localDiamondContract.getLatestBlockFromStateProof(
                         syncPayload.stateProof
                     );
-                if (!hasBlock) return this.abort(peerAddress);
+                if (!hasBlock) return this.rejectSync(peerAddress);
                 if (
                     Number(latestBlock.transaction.header.transactionCnt) !=
                     syncRequest.blockHeight
                 )
-                    return this.abort(peerAddress);
+                    return this.rejectSync(peerAddress);
             }
             this.logger.debug(
                 "Spectator successfully synced to latest proven state"
             );
+            return true;
         } catch (e) {
             this.logger.warn(e);
-            return this.abort(peerAddress);
+            return this.rejectSync(peerAddress);
         }
     }
 
@@ -1016,26 +977,9 @@ class SpectateService extends ARpcService<SpectateServiceRpcMethods> {
             : { lowerOutboundSnapshot: b, upperOutboundSnapshot: a };
     }
 
-    public abort(peerAddress: string) {
-        // HandshakeCompletedGuard guarantees stable peer identity.
-        // If we're not actively participating, treat this as a fatal sync failure.
-        this.logger.warn(`Aborting spectate sync with peer ${peerAddress}`, {
-            peerAddress,
-            myStatus: Status[this.p2pManager.stateManager.status]
-        });
-        const status = this.p2pManager.stateManager.status;
-        if (
-            status !== Status.PARTICIPATING &&
-            status !== Status.PENDING_PARTICIPANT
-        ) {
-            this.p2pManager.stateManager.abort();
-            return;
-        }
-
-        // If participating, punish only the offending peer.
-        return this.p2pManager.disconnectAndBlacklistPeerByEvmAddress(
-            peerAddress
-        );
+    private rejectSync(peerAddress: string): false {
+        this.p2pManager.disconnectAndBlacklistPeerByEvmAddress(peerAddress);
+        return false;
     }
 }
 

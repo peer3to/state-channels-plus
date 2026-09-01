@@ -5,6 +5,578 @@ import { Status } from "@/types";
 import { MathTestSession as TestSession } from "@test/harness";
 import { waitFor } from "@test/utils/waitFor";
 import { compareAddresses } from "@/rpc/services/openChannelNegotiation/OpenChannelNegotiationHelpers";
+import { channelIdToTargetedJoinTopic } from "@/utils";
+import { TargetedChannelJoinFixture } from "@test/fixtures/TargetedChannelJoinFixture";
+import { sleep } from "@/utils";
+
+describe("connectToChannel input validation", function () {
+    const setup = async () => {
+        const h = TestSession.getHarness();
+        await h.setup(2, { autoConnect: false });
+        return { h, signer: h.peers[0].p2pInstance.p2pSigner };
+    };
+
+    const assertClean = async (
+        h: ReturnType<typeof TestSession.getHarness>
+    ) => {
+        expect(
+            await h.control(h.peers[0]).query.getChannelId().request()
+        ).to.equal(ethers.ZeroHash);
+        expect(
+            await h.control(h.peers[0]).query.getStatus().request()
+        ).to.equal(Status.NOT_OPENED);
+    };
+
+    it("invalid channel ID rejects before state mutation", async function () {
+        const { h, signer } = await setup();
+        await expect(signer.connectToChannel("0x12")).to.be.rejectedWith(
+            "exactly 32 bytes"
+        );
+        await assertClean(h);
+    });
+
+    it("non-boolean autoOpen rejects before state mutation", async function () {
+        const { h, signer } = await setup();
+        await expect(
+            signer.connectToChannel(ethers.id("bad-auto-open"), {
+                autoOpen: "yes" as never
+            })
+        ).to.be.rejectedWith("autoOpen must be a boolean");
+        await assertClean(h);
+    });
+
+    it("balance missing amount rejects before port dispatch", async function () {
+        const { h, signer } = await setup();
+        await expect(
+            signer.connectToChannel(ethers.id("missing-amount"), {
+                balance: { data: "0x" } as never
+            })
+        ).to.be.rejected;
+        await assertClean(h);
+    });
+
+    it("balance missing data rejects before port dispatch", async function () {
+        const { h, signer } = await setup();
+        await expect(
+            signer.connectToChannel(ethers.id("missing-data"), {
+                balance: { amount: 1n } as never
+            })
+        ).to.be.rejected;
+        await assertClean(h);
+    });
+
+    it("negative balance amount rejects before port dispatch", async function () {
+        const { h, signer } = await setup();
+        await expect(
+            signer.connectToChannel(ethers.id("negative-balance"), {
+                balance: { amount: -1n, data: "0x" }
+            })
+        ).to.be.rejected;
+        await assertClean(h);
+    });
+
+    it("fractional numeric balance amount rejects before port dispatch", async function () {
+        const { h, signer } = await setup();
+        await expect(
+            signer.connectToChannel(ethers.id("fractional-balance"), {
+                balance: { amount: 1.5, data: "0x" }
+            })
+        ).to.be.rejected;
+        await assertClean(h);
+    });
+
+    it("unsafe numeric balance amount rejects before port dispatch", async function () {
+        const { h, signer } = await setup();
+        await expect(
+            signer.connectToChannel(ethers.id("unsafe-balance"), {
+                balance: { amount: Number.MAX_SAFE_INTEGER + 1, data: "0x" }
+            })
+        ).to.be.rejected;
+        await assertClean(h);
+    });
+
+    it("uint256-overflow balance amount rejects before port dispatch", async function () {
+        const { h, signer } = await setup();
+        await expect(
+            signer.connectToChannel(ethers.id("overflow-balance"), {
+                balance: { amount: ethers.MaxUint256 + 1n, data: "0x" }
+            })
+        ).to.be.rejected;
+        await assertClean(h);
+    });
+
+    it("invalid balance data rejects before port dispatch", async function () {
+        const { h, signer } = await setup();
+        await expect(
+            signer.connectToChannel(ethers.id("bad-balance-data"), {
+                balance: { amount: 1n, data: "not-hex" }
+            })
+        ).to.be.rejected;
+        await assertClean(h);
+    });
+
+    it("zero timeout rejects before matching", async function () {
+        const { h, signer } = await setup();
+        await expect(
+            signer.connectToChannel(ethers.id("zero-timeout"), {
+                timeoutMs: 0
+            })
+        ).to.be.rejectedWith("positive finite integer");
+        await assertClean(h);
+    });
+
+    it("negative timeout rejects before matching", async function () {
+        const { h, signer } = await setup();
+        await expect(
+            signer.connectToChannel(ethers.id("negative-timeout"), {
+                timeoutMs: -1
+            })
+        ).to.be.rejectedWith("positive finite integer");
+        await assertClean(h);
+    });
+
+    it("fractional timeout rejects before matching", async function () {
+        const { h, signer } = await setup();
+        await expect(
+            signer.connectToChannel(ethers.id("fractional-timeout"), {
+                timeoutMs: 1.5
+            })
+        ).to.be.rejectedWith("positive finite integer");
+        await assertClean(h);
+    });
+
+    it("non-finite timeout rejects before matching", async function () {
+        const { h, signer } = await setup();
+        await expect(
+            signer.connectToChannel(ethers.id("infinite-timeout"), {
+                timeoutMs: Number.POSITIVE_INFINITY
+            })
+        ).to.be.rejectedWith("positive finite integer");
+        await assertClean(h);
+    });
+
+    it("omitted matchmaking timeout behaves as null", async function () {
+        const { h, signer } = await setup();
+        const channelId = ethers.id("omitted-and-null-timeout");
+        const assertUnbounded = async (timeoutMs?: null) => {
+            const pending = signer.connectToChannel(channelId, {
+                autoOpen: true,
+                ...(timeoutMs === null ? { timeoutMs } : {})
+            });
+            await waitFor(async () => {
+                const availability = await h
+                    .control(h.peers[0])
+                    .query.getLobbyAvailability()
+                    .request();
+                return (
+                    availability.topic ===
+                        channelIdToTargetedJoinTopic(channelId) &&
+                    availability.matching
+                );
+            });
+            await sleep(50);
+            expect(
+                await h
+                    .control(h.peers[0])
+                    .query.getLobbyAvailability()
+                    .request()
+            ).to.include({ matching: true });
+            expect(await signer.cancelConnectToChannel(channelId)).to.equal(
+                true
+            );
+            expect(await pending).to.equal(false);
+        };
+
+        await assertUnbounded();
+        await assertUnbounded(null);
+    });
+
+    it("null timeout is accepted as unbounded matching", async function () {
+        const { h, signer } = await setup();
+        const channelId = ethers.id("null-timeout");
+        const pending = signer.connectToChannel(channelId, {
+            autoOpen: true,
+            timeoutMs: null
+        });
+        await waitFor(async () => {
+            const availability = await h
+                .control(h.peers[0])
+                .query.getLobbyAvailability()
+                .request();
+            return (
+                availability.topic ===
+                    channelIdToTargetedJoinTopic(channelId) &&
+                availability.matching
+            );
+        });
+        expect(await signer.cancelConnectToChannel(channelId)).to.equal(true);
+        expect(await pending).to.equal(false);
+    });
+});
+
+describe("connectToChannel signer contract", function () {
+    it("worker ports round-trip the full balance for joinLobby and connectToChannel", async function () {
+        const h = TestSession.getHarness();
+        await h.setup(4, { autoConnect: false });
+        const balance = { amount: 321n, data: "0x1234" };
+        const lobbyTopic = ethers.id("full-balance-worker-lobby");
+        const target = ethers.id("full-balance-worker-target");
+
+        const [ordinary, targeted] = await Promise.all([
+            Promise.all(
+                h.peers.slice(0, 2).map((peer) =>
+                    peer.p2pInstance.p2pSigner.joinLobby(lobbyTopic, {
+                        balance
+                    })
+                )
+            ),
+            Promise.all(
+                h.peers.slice(2).map((peer) =>
+                    peer.p2pInstance.p2pSigner.connectToChannel(target, {
+                        autoOpen: true,
+                        shouldJoin: true,
+                        balance
+                    })
+                )
+            )
+        ]);
+
+        expect(
+            ordinary.every((match) => match?.channelId !== undefined)
+        ).to.equal(true);
+        expect(targeted).to.deep.equal([true, true]);
+    });
+
+    it("worker direct joinChannel receipt failure restores SYNCED", async function () {
+        const h = TestSession.getHarness();
+        const prepared = await h.scenario.syncSpectatorAndPrepareJoin(0);
+        const restore = await h.rpcStub.failMembershipReceipt(
+            prepared.joiner.index,
+            "joinChannel"
+        );
+        try {
+            expect(
+                await prepared.joiner.p2pInstance.p2pSigner.joinChannel(
+                    prepared.confirmation,
+                    prepared.expectedSnapshotHash,
+                    prepared.expectedForkId
+                )
+            ).to.equal(false);
+            expect(
+                await h.control(prepared.joiner).query.getStatus().request()
+            ).to.equal(Status.SYNCED);
+            expect(
+                await new TargetedChannelJoinFixture(h).isDisposed(
+                    prepared.joiner
+                )
+            ).to.equal(false);
+        } finally {
+            await restore();
+        }
+    });
+
+    it("already-open target with balance but no shouldJoin syncs without membership", async function () {
+        const h = TestSession.getHarness();
+        await h.setup(3, { autoConnect: false });
+        const channelId = ethers.id("observer-dormant-balance");
+        const opened = await Promise.all(
+            h.peers.slice(0, 2).map((peer) =>
+                peer.p2pInstance.p2pSigner.connectToChannel(channelId, {
+                    autoOpen: true
+                })
+            )
+        );
+        expect(opened).to.deep.equal([true, true]);
+
+        expect(
+            await h.peers[2].p2pInstance.p2pSigner.connectToChannel(channelId, {
+                balance: { amount: 321n, data: "0x1234" }
+            })
+        ).to.equal(true);
+        expect(
+            await h.control(h.peers[2]).query.getStatus().request()
+        ).to.equal(Status.SYNCED);
+        const participants = await h.channelManager.getParticipants(channelId);
+        expect(
+            participants
+                .map(String)
+                .map((address: string) => address.toLowerCase())
+        ).not.to.include(h.peers[2].address.toLowerCase());
+    });
+
+    it("autoOpen without shouldJoin opens and syncs without membership", async function () {
+        const h = TestSession.getHarness();
+        await h.setup(2, { autoConnect: false });
+        const channelId = ethers.id("auto-open-without-join");
+        expect(
+            await Promise.all(
+                h.peers.map((peer) =>
+                    peer.p2pInstance.p2pSigner.connectToChannel(channelId, {
+                        autoOpen: true,
+                        balance: { amount: 654n, data: "0xabcd" }
+                    })
+                )
+            )
+        ).to.deep.equal([true, true]);
+        const participants = await h.channelManager.getParticipants(channelId);
+        expect(participants).to.have.length(2);
+    });
+
+    it("shouldJoin on an already-open target uses the default balance when omitted", async function () {
+        const h = TestSession.getHarness();
+        await h.setup(3, { autoConnect: false });
+        const channelId = ethers.id("already-open-default-join");
+        await Promise.all(
+            h.peers.slice(0, 2).map((peer) =>
+                peer.p2pInstance.p2pSigner.connectToChannel(channelId, {
+                    autoOpen: true
+                })
+            )
+        );
+
+        expect(
+            await h.peers[2].p2pInstance.p2pSigner.connectToChannel(channelId, {
+                shouldJoin: true
+            })
+        ).to.equal(true);
+        expect(
+            await h.control(h.peers[2]).query.getStatus().request()
+        ).to.equal(Status.PENDING_PARTICIPANT);
+    });
+
+    it("shouldJoin on an already-open target preserves supplied amount and data", async function () {
+        const h = TestSession.getHarness();
+        await h.setup(3, { autoConnect: false });
+        const channelId = ethers.id("already-open-full-balance-join");
+        await Promise.all(
+            h.peers.slice(0, 2).map((peer) =>
+                peer.p2pInstance.p2pSigner.connectToChannel(channelId, {
+                    autoOpen: true
+                })
+            )
+        );
+
+        expect(
+            await h.peers[2].p2pInstance.p2pSigner.connectToChannel(channelId, {
+                shouldJoin: true,
+                balance: { amount: 321n, data: "0x1234" }
+            })
+        ).to.equal(true);
+        expect(
+            await h.control(h.peers[2]).query.getStatus().request()
+        ).to.equal(Status.PENDING_PARTICIPANT);
+    });
+
+    it("autoOpen with shouldJoin uses the default balance when omitted", async function () {
+        const h = TestSession.getHarness();
+        await h.setup(2, { autoConnect: false });
+        const channelId = ethers.id("auto-open-default-join");
+        expect(
+            await Promise.all(
+                h.peers.map((peer) =>
+                    peer.p2pInstance.p2pSigner.connectToChannel(channelId, {
+                        autoOpen: true,
+                        shouldJoin: true
+                    })
+                )
+            )
+        ).to.deep.equal([true, true]);
+    });
+
+    it("autoOpen with shouldJoin preserves supplied amount and data", async function () {
+        const h = TestSession.getHarness();
+        await h.setup(2, { autoConnect: false });
+        const channelId = ethers.id("auto-open-full-balance-join");
+        expect(
+            await Promise.all(
+                h.peers.map((peer) =>
+                    peer.p2pInstance.p2pSigner.connectToChannel(channelId, {
+                        autoOpen: true,
+                        shouldJoin: true,
+                        balance: { amount: 432n, data: "0x4321" }
+                    })
+                )
+            )
+        ).to.deep.equal([true, true]);
+    });
+
+    it("cancelConnectToChannel uses its own worker request and channel ID", async function () {
+        const h = TestSession.getHarness();
+        await h.setup(2, { autoConnect: false });
+        const signer = h.peers[0].p2pInstance.p2pSigner;
+        const channelId = ethers.id("dedicated-target-cancel-route");
+        const connect = signer.connectToChannel(channelId, {
+            autoOpen: true
+        });
+        await waitFor(async () => {
+            const availability = await h
+                .control(h.peers[0])
+                .query.getLobbyAvailability()
+                .request();
+            return availability.matching;
+        });
+
+        expect(await signer.cancelConnectToChannel(channelId)).to.equal(true);
+        expect(await connect).to.equal(false);
+        expect(await signer.leaveLobby(channelId)).to.equal(false);
+    });
+
+    it("matching cancellation returns true and settles false before acceptance", async function () {
+        const h = TestSession.getHarness();
+        await h.setup(2, { autoConnect: false });
+        const signer = h.peers[0].p2pInstance.p2pSigner;
+        const channelId = ethers.id("cancel-before-target-match");
+        const connect = signer.connectToChannel(channelId, {
+            autoOpen: true,
+            timeoutMs: null
+        });
+        await waitFor(async () => {
+            const availability = await h
+                .control(h.peers[0])
+                .query.getLobbyAvailability()
+                .request();
+            return availability.matching;
+        });
+
+        expect(await signer.cancelConnectToChannel(channelId)).to.equal(true);
+        expect(await connect).to.equal(false);
+        expect(
+            await h.control(h.peers[0]).query.getChannelId().request()
+        ).to.equal(channelId);
+    });
+
+    it("matching cancellation returns false after acceptance", async function () {
+        const h = TestSession.getHarness();
+        await h.setup(2, { autoConnect: false });
+        const channelId = ethers.id("cancel-after-target-match");
+        const releases = await Promise.all(
+            h.peers.map((_, index) => h.rpcStub.holdMatchedNegotiation(index))
+        );
+        const connects = h.peers.map((peer) =>
+            peer.p2pInstance.p2pSigner.connectToChannel(channelId, {
+                autoOpen: true
+            })
+        );
+        try {
+            await waitFor(async () => {
+                const counts = await Promise.all(
+                    h.peers.map((peer) =>
+                        h
+                            .control(peer)
+                            .stub.getHeldMatchedNegotiationCount()
+                            .request()
+                    )
+                );
+                return counts.every((count) => count === 1);
+            });
+            expect(
+                await h.peers[0].p2pInstance.p2pSigner.cancelConnectToChannel(
+                    channelId
+                )
+            ).to.equal(false);
+            await Promise.all(releases.map((release) => release()));
+            expect(await Promise.all(connects)).to.deep.equal([true, true]);
+        } finally {
+            await Promise.all(releases.map((release) => release()));
+        }
+    });
+
+    it("targeted connect starts fixed-ID negotiation from the returned match", async function () {
+        const h = TestSession.getHarness();
+        await h.setup(2, { autoConnect: false });
+        const target = ethers.id("fixed-id-negotiation-owner");
+        const releases = await Promise.all(
+            h.peers.map((_, index) => h.rpcStub.holdMatchedNegotiation(index))
+        );
+        const connects = h.peers.map((peer) =>
+            peer.p2pInstance.p2pSigner.connectToChannel(target, {
+                autoOpen: true
+            })
+        );
+        try {
+            await waitFor(
+                async () =>
+                    (
+                        await Promise.all(
+                            h.peers.map((peer) =>
+                                h
+                                    .control(peer)
+                                    .stub.getHeldMatchedNegotiationCount()
+                                    .request()
+                            )
+                        )
+                    ).every((count) => count === 1),
+                h.event.protocolEventTimeoutMs()
+            );
+            expect(
+                await Promise.all(
+                    h.peers.map((peer) =>
+                        h.control(peer).query.getChannelId().request()
+                    )
+                )
+            ).to.deep.equal([target, target]);
+            await Promise.all(releases.map((release) => release()));
+            expect(await Promise.all(connects)).to.deep.equal([true, true]);
+        } finally {
+            await Promise.all(releases.map((release) => release()));
+        }
+    });
+
+    it("targeted cancellation and leaveLobby do not cross-cancel", async function () {
+        const h = TestSession.getHarness();
+        await h.setup(2, { autoConnect: false });
+        const signer = h.peers[0].p2pInstance.p2pSigner;
+        const channelId = ethers.id("target-cancel-isolation");
+        const connect = signer.connectToChannel(channelId, {
+            autoOpen: true
+        });
+        await waitFor(async () => {
+            const availability = await h
+                .control(h.peers[0])
+                .query.getLobbyAvailability()
+                .request();
+            return availability.matching;
+        });
+
+        expect(await signer.leaveLobby(ethers.id("ordinary-topic"))).to.equal(
+            false
+        );
+        expect(
+            await signer.cancelConnectToChannel(ethers.id("wrong-channel"))
+        ).to.equal(false);
+        expect(await signer.cancelConnectToChannel(channelId)).to.equal(true);
+        expect(await connect).to.equal(false);
+    });
+
+    it("manifest-loaded custom RPC filter rejects an authenticated peer before matching", async function () {
+        const h = TestSession.getHarness();
+        await h.setup(2, {
+            autoConnect: false,
+            customRpcManifest: {
+                module: `${__dirname}/../fixtures/customRpc/RejectAllLobbyRpcManifest.ts`,
+                exportName: "RejectAllLobbyRpc"
+            }
+        });
+        const channelId = ethers.id("manifest-filtered-target");
+        const results = await Promise.all(
+            h.peers.map((peer) =>
+                peer.p2pInstance.p2pSigner.connectToChannel(channelId, {
+                    autoOpen: true,
+                    timeoutMs: 150
+                })
+            )
+        );
+
+        expect(results).to.deep.equal([false, false]);
+        expect(
+            await Promise.all(
+                h.peers.map((peer) =>
+                    h.control(peer).query.getNegotiationAttempt().request()
+                )
+            )
+        ).to.deep.equal([null, null]);
+    });
+});
 
 describe("discovery runtime port", function () {
     it("rejects invalid join input before changing lifecycle state", async function () {
@@ -17,9 +589,12 @@ describe("discovery runtime port", function () {
         );
         await expect(
             signer.joinLobby(ethers.id("invalid-lobby-options"), {
-                amount: Number.POSITIVE_INFINITY
+                balance: {
+                    amount: Number.POSITIVE_INFINITY,
+                    data: "0x"
+                }
             })
-        ).to.be.rejectedWith("Invalid local opening amount");
+        ).to.be.rejectedWith("Codec.encode failed for Type.Balance");
         await expect(
             signer.joinLobby(ethers.id("invalid-lobby-timeout"), {
                 matchTimeoutMs: 0
@@ -75,7 +650,7 @@ describe("discovery runtime port", function () {
         ).to.be.rejectedWith("no selected channel");
     });
 
-    it("rejects a targeted channel connection while discovery is active", async function () {
+    it("targeted connect leaves an unmatched ordinary lobby to its owner", async function () {
         const h = TestSession.getHarness();
         await h.setup(2, { autoConnect: false });
         const peer = h.peers[0];
@@ -90,18 +665,19 @@ describe("discovery runtime port", function () {
                 .request();
             return availability.topic === topic && availability.matching;
         });
-        await expect(
-            signer.connectToChannel(ethers.id("blocked-target-channel"))
-        ).to.be.rejectedWith("Leave the active lobby");
+        const target = ethers.id("replacement-target-channel");
+        expect(await signer.connectToChannel(target)).to.equal(false);
+        expect(
+            await h.control(peer).query.getLobbyAvailability().request()
+        ).to.deep.include({ topic, matching: true });
+        expect(await signer.leaveLobby(topic)).to.equal(true);
+        expect(await pendingJoin).to.equal(undefined);
         expect(await h.control(peer).query.getChannelId().request()).to.equal(
-            ethers.ZeroHash
+            target
         );
         expect(await h.control(peer).query.getStatus().request()).to.equal(
-            Status.DISCOVERING
+            Status.NOT_OPENED
         );
-
-        await signer.leaveLobby(topic);
-        expect(await pendingJoin).to.equal(undefined);
     });
 
     it("settles and cleans the previous lobby before replacement entry", async function () {
@@ -203,14 +779,16 @@ describe("discovery runtime port", function () {
         }
     });
 
-    it("chains matching and negotiation on the host and returns the opened channel", async function () {
+    it("joinLobby starts ordinary negotiation from the returned match", async function () {
         const h = TestSession.getHarness();
         await h.setup(2, { autoConnect: false });
         const topic = ethers.id("runtime-port-host-owned-lobby");
 
         const [first, second] = await Promise.all(
             h.peers.map((peer) =>
-                peer.p2pInstance.p2pSigner.joinLobby(topic, { amount: 321 })
+                peer.p2pInstance.p2pSigner.joinLobby(topic, {
+                    balance: { amount: 321, data: "0x" }
+                })
             )
         );
 

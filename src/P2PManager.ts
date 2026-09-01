@@ -53,6 +53,9 @@ class P2PManager<TCustomRpc extends MainRpcService = MainRpcService>
     >();
     private disposalPromise?: Promise<void>;
     private readonly unsubscribeHandshakeCompleted: () => void;
+    private initialSyncStarted = false;
+    private initialSyncPromise?: Promise<boolean>;
+    private resolveInitialSync?: (success: boolean) => void;
 
     constructor(
         stateManager: StateManager<TCustomRpc>,
@@ -106,6 +109,7 @@ class P2PManager<TCustomRpc extends MainRpcService = MainRpcService>
         }
 
         this.unsubscribeHandshakeCompleted();
+        this.resolveInitialSync?.(false);
         this.disconnectAll();
         this.disposalPromise = this.holepunch.dispose();
         return this.disposalPromise;
@@ -125,7 +129,7 @@ class P2PManager<TCustomRpc extends MainRpcService = MainRpcService>
 
         const status = stateManager.status;
         const isChannelOpened = status === Status.OPENED;
-        if (status === Status.DISCOVERING) {
+        if (this.localRpc.lobbyMatchingService.rendezvousTopic) {
             // Lobby transports stay outside the ordinary connection set until
             // matching commits one peer. The lobby service owns their complete
             // lifecycle and promotes only the selected profile.
@@ -159,13 +163,7 @@ class P2PManager<TCustomRpc extends MainRpcService = MainRpcService>
                     );
                 if (stateManager.isDisposed || transport.isClosed) return;
                 if (isPeerParticipant) {
-                    this.logger.debug(
-                        `Initiating sync after handshake with peer ${peerAddress}`
-                    );
-                    this.localRpc.spectateService.sync(
-                        peerAddress,
-                        stateManager.channelId
-                    );
+                    await this.syncConnectedParticipant(peerAddress);
                 } else {
                     this.logger.debug(
                         `Skipping sync after handshake with peer ${peerAddress} - not a participant`
@@ -187,6 +185,30 @@ class P2PManager<TCustomRpc extends MainRpcService = MainRpcService>
         }
 
         stateManager.p2pEventHooks.onConnection?.(peerAddress, isChannelOpened);
+    }
+
+    private async syncConnectedParticipant(
+        peerAddress: Address
+    ): Promise<void> {
+        if (this.initialSyncStarted) return;
+        this.initialSyncStarted = true;
+        const stateManager = this.stateManager;
+        const success = await this.localRpc.spectateService.sync(
+            peerAddress,
+            stateManager.channelId,
+            undefined,
+            undefined,
+            stateManager.timeConfig.agreementTime * 2 * 1000
+        );
+        if (
+            !success &&
+            !stateManager.isDisposed &&
+            stateManager.status !== Status.PENDING_PARTICIPANT &&
+            stateManager.status !== Status.PARTICIPATING
+        ) {
+            stateManager.abort();
+        }
+        this.resolveInitialSync?.(success);
     }
 
     /** Promotes the committed lobby profile into the normal connection set. */
@@ -272,10 +294,7 @@ class P2PManager<TCustomRpc extends MainRpcService = MainRpcService>
     private handleRpcResponse(response: RpcResponse, transport: ATransport) {
         const pending = this.pendingRpcRequests.get(response.requestId);
         if (!pending) return;
-        // Only the peer we sent the request to may settle it. Compare by peer
-        // identity (not transport object) so a transport upgrade for the same
-        // peer (e.g. HOLEPUNCH -> WEBRTC) still settles the pending request.
-        if (!ATransport.isSamePeer(pending.transport, transport)) {
+        if (!ATransport.isSamePeer(transport, pending.transport)) {
             this.disconnectAndBlacklistPeer(transport);
             return;
         }
@@ -308,12 +327,12 @@ class P2PManager<TCustomRpc extends MainRpcService = MainRpcService>
             // unbounded JSON.parse/dispatch work.
             const frameBytes = Buffer.byteLength(serializedRpc, "utf8");
             if (frameBytes > MAX_RPC_FRAME_BYTES) {
-                this.logger.warn("Oversized RPC frame; disconnecting", {
+                this.logger.warn("Oversized RPC frame; rejecting peer", {
                     bytes: frameBytes,
                     transportType: TransportType[transport.transportType],
                     peerAddress: transport.peerAddress
                 });
-                this.disconnectConnection(transport);
+                this.disconnectAndBlacklistPeer(transport);
                 return;
             }
             const response = deserializeRpcResponse(serializedRpc);
@@ -328,11 +347,11 @@ class P2PManager<TCustomRpc extends MainRpcService = MainRpcService>
                 peerAddress: transport.peerAddress
             });
             if (!rpc) {
-                this.disconnectConnection(transport);
+                this.disconnectAndBlacklistPeer(transport);
                 return;
             }
             if (!hasRpcService(this.localRpc, rpc.service)) {
-                this.disconnectConnection(transport);
+                this.disconnectAndBlacklistPeer(transport);
                 return;
             }
             const service = this.localRpc[
@@ -340,7 +359,7 @@ class P2PManager<TCustomRpc extends MainRpcService = MainRpcService>
             ] as unknown as ARpcService<any>;
             const success = service.runRPC(rpc, transport);
             if (!success) {
-                this.disconnectConnection(transport);
+                this.disconnectAndBlacklistPeer(transport);
                 return;
             }
         } catch (e) {
@@ -358,6 +377,10 @@ class P2PManager<TCustomRpc extends MainRpcService = MainRpcService>
             throw new Error("Discovery key must be exactly 32 bytes");
         }
         const normalizedKey = ethers.hexlify(discoveryKey);
+        const waitForInitialSync = this.stateManager.status === Status.OPENED;
+        const initialSync = waitForInitialSync
+            ? this.getInitialSyncPromise()
+            : undefined;
         // TODO: Give Holepunch and LocalDiscoveryServer the same lifecycle API
         // and inject the selected backend so P2PManager does not know which
         // discovery implementation it is using.
@@ -370,10 +393,27 @@ class P2PManager<TCustomRpc extends MainRpcService = MainRpcService>
                     this.stateManager.signerAddress.toString()
                 );
             }
-            return;
+        } else {
+            const topic = Buffer.from(normalizedKey.slice(2), "hex");
+            await this.holepunch.join(topic);
         }
-        const topic = Buffer.from(normalizedKey.slice(2), "hex");
-        await this.holepunch.join(topic);
+
+        if (!initialSync) return;
+        for (const transport of [...this.openConnections]) {
+            if (transport.peerAddress && !transport.isClosed) {
+                void this.onHandshakeCompleted(transport.peerAddress);
+            }
+        }
+        await initialSync;
+    }
+
+    private getInitialSyncPromise(): Promise<boolean> {
+        if (!this.initialSyncPromise) {
+            this.initialSyncPromise = new Promise<boolean>((resolve) => {
+                this.resolveInitialSync = resolve;
+            });
+        }
+        return this.initialSyncPromise;
     }
 
     public async leaveDiscoveryKey(discoveryKey: string): Promise<void> {
@@ -420,11 +460,14 @@ class P2PManager<TCustomRpc extends MainRpcService = MainRpcService>
         }
     }
 
-    public disconnectAndBlacklistPeer(transport: ATransport, cause?: string) {
-        const transportToDisconnect =
-            this.profileManager.blacklistPeer(transport);
-        if (transportToDisconnect)
+    public disconnectAndBlacklistPeer(transport: ATransport) {
+        const transportToDisconnect = transport.peerAddress
+            ? this.profileManager.blacklistPeer(transport.peerAddress)
+            : this.profileManager.blacklistPeer(transport);
+        if (transportToDisconnect && transportToDisconnect !== transport) {
             this.disconnectConnection(transportToDisconnect);
+        }
+        this.disconnectConnection(transport);
     }
 
     public disconnectAndBlacklistPeerByEvmAddress(evmAddress: Address) {

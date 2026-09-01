@@ -11,9 +11,9 @@
 
 A single large test builds two full `EvmStateMachine.p2pSetup` instances by hand (no shared
 harness): it deploys the full contract stack, loads the PingPong custom RPC manifest by module
-path (a default export resolved host-side via `resolveCustomRpcManifest`), opens a channel, and
-waits for mutual handshakes using only client-side `p2pEventHooks` forwarded over the runtime
-port. It then drives the custom `pingService` entirely from the client through
+path (a default export resolved host-side via `resolveCustomRpcManifest`), preselects the channel
+through the harness-only selected-key control, opens it, dispatches the detached connection setup, and waits for mutual handshakes using only client-side
+`p2pEventHooks` forwarded over the runtime port. It then drives the custom `pingService` entirely from the client through
 `hostRpc.<service>.<method>()`: a self-call with no target (loopback on the peer's own host),
 request/response in both directions targeted by EVM address with the typed `SumResponse` payload
 (sum, nonce, requester) asserted exactly, a fire-and-forget `sendOne` that must resolve without
@@ -22,6 +22,9 @@ carrying the original message. The oracles are the returned payload values and t
 delivery of the fire-and-forget message and guard/dispatch internals are out of scope (the
 PingService suite covers one-way delivery, and the RPC unit suites cover wire shape and
 dispatch).
+
+The test quiesces both runtime hosts before returning and requires the detached connect operations
+to have settled without errors. Teardown remains leak detection rather than feature cleanup.
 
 Both manager-address connections use `connectStateChannelManager` with the consumer facet ABI. The
 client can resolve `deposit`, and a host-side custom RPC calls that consumer function through

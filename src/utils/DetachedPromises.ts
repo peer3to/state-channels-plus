@@ -63,9 +63,9 @@ export class DetachedPromises {
 
         return allSettled;
     }
-    public static async awaitAllAndClear(): Promise<
-        PromiseSettledResult<any>[]
-    > {
+    public static async awaitAllAndClear(
+        timeoutMs = DetachedPromises.AWAIT_ALL_TIMEOUT_MS
+    ): Promise<PromiseSettledResult<any>[]> {
         const batch = DetachedPromises.getAndClear();
         if (batch.length === 0) {
             return [];
@@ -107,7 +107,7 @@ export class DetachedPromises {
                         : "");
 
                 reject(new Error(message));
-            }, DetachedPromises.AWAIT_ALL_TIMEOUT_MS);
+            }, timeoutMs);
 
             Promise.allSettled(trackedPromises)
                 .then((results) => {

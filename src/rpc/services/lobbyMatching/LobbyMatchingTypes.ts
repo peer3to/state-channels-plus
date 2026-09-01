@@ -1,3 +1,4 @@
+import type { BalanceStruct } from "@typechain-types/contracts/V1/types/DataTypes";
 import type { Address } from "@/types/types";
 
 export type LobbyRole = "none" | "advertiser" | "selector";
@@ -38,7 +39,7 @@ export type LobbyMatchingServiceOptions = {
 };
 
 export type LobbyJoinOptions = {
-    amount?: number;
+    balance?: BalanceStruct;
     /** Omit or pass null to keep matching until a match or explicit leave. */
     matchTimeoutMs?: number | null;
 };

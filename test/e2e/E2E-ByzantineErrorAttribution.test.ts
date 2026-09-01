@@ -1,3 +1,4 @@
+// @spec-test-coverage-ignore: harness-only detached-error attribution regression; no protocol behavior is specified here
 import { expect } from "chai";
 
 import { MathTestSession as TestSession } from "@test/harness";
@@ -31,9 +32,8 @@ describe("E2E: Byzantine error attribution", function () {
 
         // honest-peer errors must still be recorded
 
-        await TestSession.expectFirstDetachedError({
-            includes: "honest peer stray error",
-            timeoutMs: h.event.protocolEventTimeoutMs()
+        await TestSession.settleDetached({
+            expectedErrorIncludes: "honest peer stray error"
         });
     });
 });

@@ -7,3 +7,14 @@ export function channelIdToDiscoveryKey(channelId: string): string {
     }
     return ethers.hexlify(channelId);
 }
+
+/** Uses a separate rendezvous namespace before the selected channel opens. */
+export function channelIdToTargetedJoinTopic(channelId: string): string {
+    if (!ethers.isHexString(channelId, 32)) {
+        throw new Error("Channel ID must be exactly 32 bytes");
+    }
+    return ethers.solidityPackedKeccak256(
+        ["string", "bytes32"],
+        ["targeted-channel-join", ethers.hexlify(channelId)]
+    );
+}

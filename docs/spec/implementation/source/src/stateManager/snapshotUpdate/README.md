@@ -7,5 +7,6 @@ _Pending authoring: shared responsibility, design decisions, assumptions, cross-
 
 ## Contents
 
+- [StateApplicationService.ts](./StateApplicationService.ts.md)
 - [SnapshotUpdateService.ts](./SnapshotUpdateService.ts.md)
 - [index.ts](./index.ts.md)

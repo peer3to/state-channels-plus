@@ -39,7 +39,7 @@ describe("Unit: AgreementManager", function () {
             const h = TestSession.getHarness();
 
             await h.lifecycle.start(4, 1); // peer 3 signs block 0, then...
-            await h.network.disconnectPeer(3);
+            await h.network.blacklistAndDisconnectPeer(3);
             await h.transition.advanceState({
                 count: 2, // blocks 1..2 land without peer 3's signature
                 waitForPeers: [0, 1, 2]
@@ -123,7 +123,7 @@ describe("Unit: AgreementManager", function () {
         it("a block missing a participant's signature → false", async function () {
             const h = TestSession.getHarness();
             await h.lifecycle.start(4, 1);
-            await h.network.disconnectPeer(3);
+            await h.network.blacklistAndDisconnectPeer(3);
             await h.transition.advanceState({
                 count: 1, // block 1 lands without peer 3's signature
                 waitForPeers: [0, 1, 2],
@@ -171,7 +171,7 @@ describe("Unit: AgreementManager", function () {
             const h = TestSession.getHarness();
             await h.lifecycle.start(3, 0);
 
-            await h.network.disconnectPeer(2);
+            await h.network.blacklistAndDisconnectPeer(2);
             await h.transition.advanceState({
                 count: 2,
                 waitForPeers: [0, 1]
@@ -576,7 +576,7 @@ describe("Unit: AgreementManager", function () {
             await h.lifecycle.start(3, 0);
 
             // peer 2 disconnected before any block -> nothing ever finalizes
-            await h.network.disconnectPeer(2);
+            await h.network.blacklistAndDisconnectPeer(2);
             await h.transition.advanceState({
                 count: 2, // blocks 0..1 land unfinalized
                 waitForPeers: [0, 1]
@@ -640,7 +640,7 @@ describe("Unit: AgreementManager", function () {
             const h = TestSession.getHarness();
             await h.lifecycle.start(3, 0);
 
-            await h.network.disconnectPeer(2); // no finality -> signedBlocks carrier
+            await h.network.blacklistAndDisconnectPeer(2); // no finality -> signedBlocks carrier
             await h.transition.advanceState({
                 count: 2, // latest = block 1
                 waitForPeers: [0, 1]
@@ -708,7 +708,7 @@ describe("Unit: AgreementManager", function () {
             await h.lifecycle.start(4, 0, {
                 timeConfig: { chainFallbackTime: 60 }
             });
-            await h.network.disconnectPeer(3);
+            await h.network.blacklistAndDisconnectPeer(3);
             await h.transition.advanceState({
                 count: 3,
                 waitForPeers: [0, 1, 2]
@@ -718,7 +718,9 @@ describe("Unit: AgreementManager", function () {
             // d returns and syncs. d now holds:  [a] -> [b] -> [c]
             // (d sometimes also countersigns a synced block - varies per run,
             // harmless: d only ever signs the latest block)
-            await h.network.connectPeers([3]);
+            // Peer 3↔peers 0/1/2 is reopened after peer 3 missed three
+            // blocks so it can sync for the virtual-voting assertion.
+            await h.network.reconnectPeers([3]);
             await waitFor(
                 async () =>
                     (await h

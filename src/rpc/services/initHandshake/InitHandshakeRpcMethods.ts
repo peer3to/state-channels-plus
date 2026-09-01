@@ -54,7 +54,7 @@ class InitHandshakeRpcMethods extends ARpcMethods {
                     reason: "malformed handshake request (challenge/time)"
                 }
             );
-            this.p2pManager.disconnectConnection(this.senderTransport);
+            this.p2pManager.disconnectAndBlacklistPeer(this.senderTransport);
             throw new Error("malformed handshake request (challenge/time)");
         }
         const timeDifference = time - localTime;
@@ -73,7 +73,7 @@ class InitHandshakeRpcMethods extends ARpcMethods {
                     reason: "request time outside agreement window"
                 }
             );
-            this.p2pManager.disconnectConnection(this.senderTransport);
+            this.p2pManager.disconnectAndBlacklistPeer(this.senderTransport);
             throw new Error("request time outside agreement window");
         }
         const challengeMessage =
@@ -132,10 +132,7 @@ class InitHandshakeRpcMethods extends ARpcMethods {
                     reason: "duplicate handshake ack"
                 }
             );
-            this.p2pManager.disconnectAndBlacklistPeer(
-                this.senderTransport,
-                "protocol violation: duplicate handshake ack"
-            );
+            this.p2pManager.disconnectAndBlacklistPeer(this.senderTransport);
             return;
         }
 

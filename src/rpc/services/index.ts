@@ -24,6 +24,7 @@ export { default as IsForkDisputedService } from "./isForkDisputedService/IsFork
 export { default as IsForkDisputedRpcMethods } from "./isForkDisputedService/IsForkDisputedRpcMethods";
 
 export { default as JoinChannelService } from "./joinChannel/JoinChannelService";
+export { DEFAULT_JOIN_CHANNEL_DEADLINE_SECONDS } from "./joinChannel/JoinChannelService";
 export { default as JoinChannelRpcMethods } from "./joinChannel/JoinChannelRpcMethods";
 export type { PreparedJoinChannelConfirmation } from "./joinChannel/JoinChannelService";
 

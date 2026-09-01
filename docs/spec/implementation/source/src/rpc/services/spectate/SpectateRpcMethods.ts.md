@@ -81,3 +81,9 @@ Exact test evidence is mapped against these IDs in the verification test reports
 ## Related source reports
 
 - [SpectateService](./SpectateService.ts.md).
+
+## Sync request shape
+
+The endpoint accepts the existing sync request with optional `forkId` and `blockHeight`. Omitted recovery
+fields request any valid current state; supplied fields request the exact fork and height. The responder uses
+the same payload path in both cases.

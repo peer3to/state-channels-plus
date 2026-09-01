@@ -43,3 +43,9 @@ The focused discovery-key utility suite covers exact bytes32 preservation and in
 ## Related source reports
 
 - [P2PManager](../P2PManager.ts.md), [LocalP2pSigner](../evm/signer/LocalP2pSigner.ts.md).
+
+## Targeted topic
+
+`channelIdToTargetedJoinTopic` validates the same bytes32 input and returns the domain-separated packed hash
+of `"targeted-channel-join"` and the channel ID. The raw `channelIdToDiscoveryKey` remains unchanged and is
+used only after authoritative opening.

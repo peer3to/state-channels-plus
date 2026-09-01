@@ -37,7 +37,7 @@ describe("E2E: Block Fraud Proofs", function () {
 
         const observerIndex = 3;
         const observer = h.getPeer(observerIndex);
-        await h.network.disconnectPeer(observerIndex);
+        await h.network.blacklistAndDisconnectPeer(observerIndex);
         const observerInitialSum = await observer.contractInstance.getSum();
 
         await h.transition.advanceState({
@@ -351,7 +351,7 @@ describe("E2E: Block Fraud Proofs", function () {
         // tainted copy of it.
         const observerIndex = 3;
         const observer = h.getPeer(observerIndex);
-        await h.network.disconnectPeer(observerIndex);
+        await h.network.blacklistAndDisconnectPeer(observerIndex);
         const observerInitialSum = await observer.contractInstance.getSum();
 
         await h.transition.advanceState({
@@ -366,6 +366,20 @@ describe("E2E: Block Fraud Proofs", function () {
             .query.getBlockByHeight(forkId!, 0)
             .request();
         expect(block).to.not.be.null;
+
+        // Isolation kept the observer blind to block 0. Re-enable
+        // observer→peers 0/1/2 after the miss so only the stray-signature
+        // supplier can be attributed by the ingest fault.
+        await Promise.all(
+            [0, 1, 2].map((peerIndex) =>
+                h
+                    .control(observer)
+                    .network.unblacklistPeerByAddress(
+                        h.getPeer(peerIndex).address
+                    )
+                    .request()
+            )
+        );
 
         const outsider = ethers.Wallet.createRandom();
         const badSignature = await outsider.signMessage(

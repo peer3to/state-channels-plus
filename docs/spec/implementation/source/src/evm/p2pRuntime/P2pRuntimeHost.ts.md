@@ -94,3 +94,10 @@ Exact test evidence is mapped against these IDs in the verification test reports
 ## Related source reports
 
 - [P2pRuntimeClient](./P2pRuntimeClient.ts.md), [ClientHostRpc](./ClientHostRpc.ts.md), platform channels.
+
+## Targeted connect routing
+
+The host decodes the full balance and forwards all connect options once to the local signer. Its dedicated
+cancellation dispatch requires a ready runtime and calls the local targeted API, never the lobby leave route.
+The port request remains unbounded while matcher, negotiation, sync, and membership owners apply their own
+deadlines. Runtime disposal lets the local signer settle connect `false` before pending port rejection.

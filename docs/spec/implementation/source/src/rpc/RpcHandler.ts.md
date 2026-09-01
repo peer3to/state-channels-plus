@@ -78,10 +78,10 @@ Status enum: `Covered` | `Partial` | `Contradicts` | `Missing`. Evidence cells a
 **Here:** / **Other files:** so each row is auditable from its links alone; genuine gaps go in the
 Gap column. Audit state is file-level (Status header), never a row status.
 
-| Requirement / invariant                                                                       | Implementation status | Evidence                                                                                                                                                             | Gap / divergence |
-| --------------------------------------------------------------------------------------------- | --------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------- |
-| [`REQ-RPC-2-SZDTTM`](../../../../specification/peer-communication/rpc.md#req-rpc-2-szdttm)    | Covered               | **Here:** request registration/routing. **Other files:** [P2PManager](../P2PManager.ts.md) owns the pending table, timeout, and addressed-peer settlement.           | None.            |
-| [`REQ-RUNTIME-4-B0N70Y`](../../../../specification/runtime/execution.md#req-runtime-4-b0n70y) | Covered               | **Here:** transport overload classification delegates to the structural predicate. **Other files:** [ATransport](../transport/ATransport.ts.md) owns that predicate. | None.            |
+| Requirement / invariant                                                                       | Implementation status | Evidence                                                                                                                                                                                        | Gap / divergence |
+| --------------------------------------------------------------------------------------------- | --------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------- |
+| [`REQ-RPC-2-SZDTTM`](../../../../specification/peer-communication/rpc.md#req-rpc-2-szdttm)    | Covered               | **Here:** request registration/routing. **Other files:** [P2PManager](../P2PManager.ts.md) owns the pending table, timeout, authenticated-address routing, and transport-retirement settlement. | None.            |
+| [`REQ-RUNTIME-4-B0N70Y`](../../../../specification/runtime/execution.md#req-runtime-4-b0n70y) | Covered               | **Here:** transport overload classification delegates to the structural predicate. **Other files:** [ATransport](../transport/ATransport.ts.md) owns that predicate.                            | None.            |
 
 ## Component test obligations
 

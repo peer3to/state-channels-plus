@@ -134,7 +134,7 @@ class DeferredTargetService extends ARpcService<
 
     constructor(
         p2pManager: P2PManager<PingPongRpc>,
-        policy: ControlledAdmissionPolicy
+        policy: DeferredAdmissionPolicy
     ) {
         super(
             p2pManager,

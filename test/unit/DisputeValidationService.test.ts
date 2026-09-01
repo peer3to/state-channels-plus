@@ -1378,7 +1378,7 @@ describe("Unit: DisputeValidationService", function () {
             await Promise.all(
                 [0, 1, 2, 3].map((i) => h.rpcStub.suppressTimeoutCheck(i))
             );
-            await h.network.disconnectPeer(3);
+            await h.network.blacklistAndDisconnectPeer(3);
             await h.transition.advanceState({
                 count: 1,
                 waitForPeers: [0, 1, 2],
@@ -1491,7 +1491,7 @@ describe("Unit: DisputeValidationService", function () {
             await Promise.all(
                 [0, 1, 2, 3].map((i) => h.rpcStub.suppressTimeoutCheck(i))
             );
-            await h.network.disconnectPeer(3);
+            await h.network.blacklistAndDisconnectPeer(3);
             await h.transition.advanceState({
                 count: 1,
                 waitForPeers: [0, 1, 2],
@@ -1558,7 +1558,7 @@ describe("Unit: DisputeValidationService", function () {
             await Promise.all(
                 [0, 1, 2, 3].map((i) => h.rpcStub.suppressTimeoutCheck(i))
             );
-            await h.network.disconnectPeer(3);
+            await h.network.blacklistAndDisconnectPeer(3);
             await h.transition.advanceState({
                 count: 1,
                 waitForPeers: [0, 1, 2],

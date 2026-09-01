@@ -93,6 +93,9 @@ describe("E2E: spectating strategy junk-block handling", function () {
             target: attacker,
             expectedStatus: Status.PENDING_PARTICIPANT
         });
+        await TestSession.settleDetached({
+            expectedErrorIncludes: "connectToChannel failed"
+        });
     });
 
     it("cuts the sender of an authenticated outsider-authored block over the live queue and keeps a SYNCED spectator running", async function () {

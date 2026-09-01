@@ -221,7 +221,7 @@ describe("E2E: BlockQueueManager", function () {
 
         const observerIndex = 3;
         const observer = h.getPeer(observerIndex);
-        await h.network.disconnectPeer(observerIndex);
+        await h.network.blacklistAndDisconnectPeer(observerIndex);
 
         await h.transition.advanceState({
             count: 2,
@@ -235,7 +235,24 @@ describe("E2E: BlockQueueManager", function () {
             .query.getBlockByHeight(forkId!, 1)
             .request();
         expect(block1).to.not.be.null;
-
+        const supplier = h.getPeer(1);
+        // Isolation blacklisted observer→all peers. Restore only supplier 1
+        // so this test can observe whether queue eviction punishes it.
+        expect(
+            await h
+                .control(observer)
+                .network.unblacklistPeerByAddress(supplier.address)
+                .request()
+        ).to.equal(true);
+        expect(
+            await h
+                .control(observer)
+                .query.isBlacklisted(supplier.address)
+                .request()
+        ).to.equal(false);
+        const restoreSync = await h.rpcStub.recordSpectateSync(observerIndex, {
+            forward: false
+        });
         // Future block (height 1 > observer's nextHeight 0) queues.
         await h.transition.ingestBlockConfirmationWait({
             peerIndex: observerIndex,
@@ -243,7 +260,7 @@ describe("E2E: BlockQueueManager", function () {
                 block1!.encodedBlockConfirmation,
                 Type.BlockConfirmation
             ),
-            ingestOptions: { senderAddress: h.getPeer(1).address },
+            ingestOptions: { senderAddress: supplier.address },
             keepConnection: true,
             waitForProcessed: false
         });
@@ -254,8 +271,8 @@ describe("E2E: BlockQueueManager", function () {
                 .request()
         ).to.equal(true);
 
-        // Once the agreement window lapses the entry is evicted - gossip is
-        // free to forge, so unexecutable blocks must not accumulate.
+        // Once the agreement window lapses the entry is evicted. The record-only
+        // sync probe keeps separate recovery-failure punishment out of scope.
         await waitFor(
             async () =>
                 !(await h
@@ -270,13 +287,13 @@ describe("E2E: BlockQueueManager", function () {
                 .query.getBlockByHash(block1!.hash)
                 .request()
         ).to.be.null;
-        // Eviction is hygiene, not punishment.
         expect(
             await h
                 .control(observer)
-                .query.isBlacklisted(h.getPeer(1).address)
+                .query.isBlacklisted(supplier.address)
                 .request()
         ).to.equal(false);
+        await restoreSync();
     });
 
     it("queued entry that becomes stored merges at queue timeout: strays stripped, supplier blacklisted", async function () {
@@ -295,7 +312,7 @@ describe("E2E: BlockQueueManager", function () {
         // Keep the observer blind so the block stays queued as a future block.
         const observerIndex = 3;
         const observer = h.getPeer(observerIndex);
-        await h.network.disconnectPeer(observerIndex);
+        await h.network.blacklistAndDisconnectPeer(observerIndex);
 
         await h.transition.advanceState({
             count: 2,
@@ -309,6 +326,14 @@ describe("E2E: BlockQueueManager", function () {
             .query.getBlockByHeight(forkId!, 1)
             .request();
         expect(block1).to.not.be.null;
+        // Isolation blacklisted observer→all peers. Restore only peer 1 so
+        // the bad-signature path, not harness setup, owns its later blacklist.
+        expect(
+            await h
+                .control(observer)
+                .network.unblacklistPeerByAddress(h.getPeer(1).address)
+                .request()
+        ).to.equal(true);
 
         // Tainted copy of h1 queues (height 1 > observer's nextHeight 0) with
         // the stray signature attributed to its supplier.

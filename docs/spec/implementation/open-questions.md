@@ -24,6 +24,17 @@ Existing `OQ-*` IDs are preserved; new questions use the layer-scoped namespace 
 | [`OQ-35-E5RRDF`](open-questions.md#oq-35-e5rrdf) | Handshake has no channel/identity binding — relay/reflection MITM; the signature is the whole root of trust                       | Code   | [sdk/rpc/handshake.md](./views/architecture/sdk/rpc/handshake.md), [security/trust-model.md](../specification/security/trust-model.md)                                                                | Open                              |
 | [`OQ-36-WEN9T1`](open-questions.md#oq-36-wen9t1) | `onDisputeAcknowledgmentRequest` never binds `channelId` to the local channel — cross-channel ack pollution and chain-read oracle | Code   | [sdk/rpc/is-fork-disputed.md](./views/architecture/sdk/rpc/is-fork-disputed.md)                                                                                                                       | Open                              |
 | [`OQ-37-0Y7YWS`](open-questions.md#oq-37-0y7yws) | Harness-control RPC root: unguarded, network-reachable, and published in the package                                              | Code   | [sdk/runtime-and-concurrency.md](./views/architecture/sdk/runtime-and-concurrency.md) §11.4, [security/open-security-review.md](../audit/security-assessment.md)                                      | Open                              |
+| [`OQ-38-1RBXV3`](open-questions.md#oq-38-1rbxv3) | Production transport deduplication during targeted derived-to-raw topic handoff lacks automated evidence                          | Code   | [targeted-channel-join.md](../specification/peer-communication/targeted-channel-join.md)                                                                                                              | Accepted evidence gap             |
+
+<a id="oq-38-1rbxv3"></a>
+
+## OQ-38-1RBXV3 — Production targeted-handoff transport deduplication evidence
+
+The targeted opening handoff relies on Hyperswarm's one-live-connection-per-unique-peer behavior when the
+same peer moves from the domain-separated matching topic to the raw channel topic. Current automated tests
+force `DEBUG_LOCAL_TRANSPORT`; they prove that a transient duplicate authenticates safely and one transport
+retires, but they do not prove normal Hyperswarm deduplication. This is an accepted production assumption and
+verification gap. It does not authorize a second preservation mechanism or local discovery changes.
 
 <a id="oq-13-fe5ct4"></a>
 

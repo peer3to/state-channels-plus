@@ -390,7 +390,7 @@ flowchart TD
     F[transport frame] --> S{size ≤ 16 MiB?}
     S -- no --> D1[disconnect]
     S -- yes --> R{RpcResponse shape?}
-    R -- yes --> C[correlation: requestId + addressed-peer check]
+    R -- yes --> C[correlation: requestId + authenticated sender check]
     R -- no --> E{valid Rpc envelope?}
     E -- no --> D2[disconnect]
     E -- yes --> SV{service exists on root?}

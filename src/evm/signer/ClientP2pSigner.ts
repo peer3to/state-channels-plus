@@ -23,6 +23,7 @@ import type {
     LobbyJoinResult,
     PreparedJoinChannelConfirmation
 } from "@/rpc/services";
+import type { ConnectToChannelOptions } from "./ConnectToChannelOptions";
 
 const UNSUPPORTED =
     "Operation not supported by the p2p runtime client signer. " +
@@ -138,11 +139,61 @@ class ClientP2pSigner implements Signer {
         return this.isLeader;
     }
 
-    connectToChannel(channelId: Bytes): Promise<void> {
-        return this.client.request<void>(
+    connectToChannel(
+        channelId: Bytes,
+        options: ConnectToChannelOptions = {}
+    ): Promise<boolean> {
+        let normalizedChannelId: string;
+        let encodedBalance: string | undefined;
+        try {
+            normalizedChannelId = ethers.hexlify(channelId);
+            if (!ethers.isHexString(normalizedChannelId, 32)) {
+                throw new Error("Channel ID must be exactly 32 bytes");
+            }
+            this.validateConnectOptions(options);
+            encodedBalance =
+                options.balance === undefined
+                    ? undefined
+                    : String(Codec.encode(options.balance, Type.Balance));
+        } catch (error) {
+            return Promise.reject(error);
+        }
+        const hasOptions =
+            options.autoOpen !== undefined ||
+            options.shouldJoin !== undefined ||
+            options.balance !== undefined ||
+            options.timeoutMs !== undefined;
+        return this.client.request<boolean>(
             {
                 type: "connectToChannel",
-                channelId: channelId.toString()
+                channelId: normalizedChannelId,
+                options: hasOptions
+                    ? {
+                          autoOpen: options.autoOpen,
+                          shouldJoin: options.shouldJoin,
+                          encodedBalance,
+                          timeoutMs: options.timeoutMs
+                      }
+                    : undefined
+            },
+            { timeoutMs: null }
+        );
+    }
+
+    cancelConnectToChannel(channelId: Bytes): Promise<boolean> {
+        let normalizedChannelId: string;
+        try {
+            normalizedChannelId = ethers.hexlify(channelId);
+            if (!ethers.isHexString(normalizedChannelId, 32)) {
+                throw new Error("Channel ID must be exactly 32 bytes");
+            }
+        } catch (error) {
+            return Promise.reject(error);
+        }
+        return this.client.request<boolean>(
+            {
+                type: "cancelConnectToChannel",
+                channelId: normalizedChannelId
             },
             { timeoutMs: null }
         );
@@ -152,8 +203,24 @@ class ClientP2pSigner implements Signer {
         lobbyTopic: string,
         options: LobbyJoinOptions = {}
     ): Promise<LobbyJoinResult | undefined> {
+        let encodedBalance: string | undefined;
+        try {
+            encodedBalance =
+                options.balance === undefined
+                    ? undefined
+                    : String(Codec.encode(options.balance, Type.Balance));
+        } catch (error) {
+            return Promise.reject(error);
+        }
         return this.client.request<LobbyJoinResult | undefined>(
-            { type: "joinLobby", lobbyTopic, options },
+            {
+                type: "joinLobby",
+                lobbyTopic,
+                options: {
+                    encodedBalance,
+                    matchTimeoutMs: options.matchTimeoutMs
+                }
+            },
             { timeoutMs: null }
         );
     }
@@ -169,8 +236,8 @@ class ClientP2pSigner implements Signer {
         confirmation: JoinChannelConfirmationStruct,
         expectedSnapshotHash: Hash,
         expectedForkId: ForkId
-    ): Promise<void> {
-        await this.client.request<void>(
+    ): Promise<boolean> {
+        return this.client.request<boolean>(
             {
                 type: "joinChannel",
                 encodedJoinChannelConfirmation: String(
@@ -187,8 +254,8 @@ class ClientP2pSigner implements Signer {
         confirmation: JoinChannelConfirmationStruct,
         expectedSnapshotHash: Hash,
         expectedForkId: ForkId
-    ): Promise<void> {
-        await this.client.request<void>(
+    ): Promise<boolean> {
+        return this.client.request<boolean>(
             {
                 type: "topUpBalance",
                 encodedJoinChannelConfirmation: String(
@@ -230,6 +297,30 @@ class ClientP2pSigner implements Signer {
 
     getChannelStatus(): Promise<Status> {
         return this.client.request<Status>({ type: "getChannelStatus" });
+    }
+
+    private validateConnectOptions(options: ConnectToChannelOptions): void {
+        if (
+            options.autoOpen !== undefined &&
+            typeof options.autoOpen !== "boolean"
+        ) {
+            throw new Error("autoOpen must be a boolean");
+        }
+        if (
+            options.shouldJoin !== undefined &&
+            typeof options.shouldJoin !== "boolean"
+        ) {
+            throw new Error("shouldJoin must be a boolean");
+        }
+        if (
+            options.timeoutMs !== undefined &&
+            options.timeoutMs !== null &&
+            (!Number.isSafeInteger(options.timeoutMs) || options.timeoutMs <= 0)
+        ) {
+            throw new Error(
+                "timeoutMs must be a positive finite integer or null"
+            );
+        }
     }
 }
 

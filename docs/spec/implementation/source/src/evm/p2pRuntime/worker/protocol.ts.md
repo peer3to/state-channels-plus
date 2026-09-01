@@ -78,3 +78,9 @@ Exact test evidence is mapped against these IDs in the verification test reports
 ## Related source reports
 
 - [P2pRuntimeHost](../P2pRuntimeHost.ts.md).
+
+## Targeted connect wire contract
+
+The existing connect request has one optional serializable option field carrying `autoOpen`, `shouldJoin`,
+`encodedBalance`, and `timeoutMs`. A separate `cancelConnectToChannel` discriminant carries `channelId`.
+Both responses remain bare Booleans. No targeted join, deadline, peer policy, or function field exists.

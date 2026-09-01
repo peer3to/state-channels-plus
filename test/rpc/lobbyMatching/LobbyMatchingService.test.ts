@@ -3,6 +3,8 @@ import { ethers } from "ethers";
 
 import { Status } from "@/types";
 import { P2PManagerFixture } from "@test/fixtures/P2PManagerFixture";
+import { waitFor } from "@test/utils/waitFor";
+import { slotAccountIndex } from "@test/harness/core/slotAccounts";
 
 describe("LobbyMatchingService", function () {
     let fixture: P2PManagerFixture;
@@ -37,9 +39,12 @@ describe("LobbyMatchingService", function () {
         expect(result.localChannelId).to.equal(ethers.ZeroHash);
         expect(result.lobbyTransportsExcludedBeforeCommit).to.equal(true);
         expect(result.ordinaryHookCountBeforeCommit).to.equal(0);
-        expect(result.selectedTransportPromoted).to.equal(true);
+        expect(result.selectedTransportHeldBeforeCompletion).to.equal(true);
+        expect(result.selectedTransportHeldAfterExpiredTimeout).to.equal(true);
+        expect(result.selectedTransportPromotedAfterCompletion).to.equal(true);
         expect(result.nonSelectedTransportClosed).to.equal(true);
-        expect(result.ordinaryHookCountAfterCommit).to.equal(1);
+        expect(result.ordinaryHookCountAfterCommitBeforeCompletion).to.equal(0);
+        expect(result.ordinaryHookCountAfterCompletion).to.equal(1);
         expect(result.discardedPeerMissedOrdinaryBroadcast).to.equal(true);
     });
 
@@ -54,6 +59,7 @@ describe("LobbyMatchingService", function () {
         expect(result.matchingAfterFinalLoss).to.equal(true);
         expect(result.disconnectedPeerBlacklisted).to.equal(false);
         expect(result.abusiveTransportClosed).to.equal(true);
+        expect(result.abusivePeerBlacklisted).to.equal(true);
     });
 
     it("assigns opposite bootstrap roles and rejects invalid lobby candidates", async function () {
@@ -109,8 +115,189 @@ describe("LobbyMatchingService", function () {
             replacementClosedOldTransport: true,
             leaveClosedSessionTransport: true,
             timeoutClosedSessionTransport: true,
-            disposeClosedSessionTransport: true
+            disposeClosedSessionTransport: true,
+            ordinaryCancellationSucceeded: true,
+            targetedCancellationSucceeded: true,
+            cancellationNoopAfterHandoff: true,
+            handedOffTransportPreservedByCancellationNoop: true,
+            negotiationHandoffReleased: true,
+            selectedTargetRetainedAfterRelease: true
         });
+    });
+
+    it("returns a committed match without starting negotiation", async function () {
+        const result = await fixture
+            .control()
+            .p2pManagerProbe.probeLobbyProtocol()
+            .request();
+
+        expect(result.matchHasChannelId).to.equal(false);
+        expect(result.ordinaryHookCountAfterCommitBeforeCompletion).to.equal(0);
+    });
+
+    it("unmatched finite timeout cleans only matcher-owned resources", async function () {
+        const result = await fixture
+            .control()
+            .p2pManagerProbe.probeLobbySessionCleanup()
+            .request();
+
+        expect(result.timeoutResolvedUndefined).to.equal(true);
+        expect(result.timeoutClearedTopic).to.equal(true);
+        expect(result.timeoutStatus).to.equal(Status.NOT_OPENED);
+    });
+
+    it("accepted match cancels timeout before resolving", async function () {
+        const result = await fixture
+            .control()
+            .p2pManagerProbe.probeLobbyProtocol()
+            .request();
+
+        expect(result.selectedTransportHeldAfterExpiredTimeout).to.equal(true);
+    });
+
+    it("accepted match disarms finite timeout before negotiation", async function () {
+        const result = await fixture
+            .control()
+            .p2pManagerProbe.probeLobbyProtocol()
+            .request();
+
+        expect(result.selectedTransportHeldAfterExpiredTimeout).to.equal(true);
+        expect(result.ordinaryHookCountAfterCommitBeforeCompletion).to.equal(0);
+    });
+
+    it("accepted match has no matchmaking timeout during negotiation", async function () {
+        const result = await fixture
+            .control()
+            .p2pManagerProbe.probeLobbyProtocol()
+            .request();
+
+        expect(result.selectedTransportHeldAfterExpiredTimeout).to.equal(true);
+        expect(result.selectedTransportHeldBeforeCompletion).to.equal(true);
+    });
+
+    it("finite matchmaking timeout returns false while unmatched", async function () {
+        const result = await fixture
+            .control()
+            .p2pManagerProbe.probeLobbySessionCleanup()
+            .request();
+
+        expect(result.timeoutResolvedUndefined).to.equal(true);
+        expect(result.timeoutClearedTopic).to.equal(true);
+    });
+
+    it("completeLobby preserves the handed-off transport after targeted completion", async function () {
+        const result = await fixture
+            .control()
+            .p2pManagerProbe.probeLobbyProtocol()
+            .request();
+
+        expect(result.selectedTransportHeldBeforeCompletion).to.equal(true);
+        expect(result.selectedTransportPromotedAfterCompletion).to.equal(true);
+        expect(result.nonSelectedTransportClosed).to.equal(true);
+    });
+
+    it("default lobby matching allows an authenticated peer without a filter", async function () {
+        const result = await fixture
+            .control()
+            .p2pManagerProbe.probeLobbyProtocol()
+            .request();
+
+        expect(result.matchPeer).to.equal(
+            ethers.getAddress("0xffffffffffffffffffffffffffffffffffffffff")
+        );
+    });
+
+    it("ordinary and targeted callers share one unmatched cancellation owner", async function () {
+        const result = await fixture
+            .control()
+            .p2pManagerProbe.probeLobbySessionCleanup()
+            .request();
+
+        expect(result.ordinaryCancellationSucceeded).to.equal(true);
+        expect(result.targetedCancellationSucceeded).to.equal(true);
+    });
+
+    it("matcher cancellation is a no-op after handoff", async function () {
+        const result = await fixture
+            .control()
+            .p2pManagerProbe.probeLobbySessionCleanup()
+            .request();
+
+        expect(result.cancellationNoopAfterHandoff).to.equal(true);
+        expect(result.handedOffTransportPreservedByCancellationNoop).to.equal(
+            true
+        );
+    });
+
+    it("pre-open targeted lobby frames do not reach peers on the raw channel key", async function () {
+        const h = fixture.getHarness();
+        const target = ethers.keccak256(
+            ethers.AbiCoder.defaultAbiCoder().encode(
+                ["string"],
+                [h.options.channelId]
+            )
+        );
+        const rawPeerIndex = h.peers.length;
+        await h.createPeer(
+            rawPeerIndex,
+            h.signerFor(slotAccountIndex(rawPeerIndex))
+        );
+        await h.network.joinSelectedKey([rawPeerIndex], target);
+        const releases = await Promise.all(
+            [0, 1].map((index) => h.rpcStub.holdMatchedNegotiation(index))
+        );
+        const connects = [0, 1].map((index) =>
+            h.getPeer(index).p2pInstance.p2pSigner.connectToChannel(target, {
+                autoOpen: true
+            })
+        );
+        try {
+            await waitFor(
+                async () =>
+                    (
+                        await Promise.all(
+                            [0, 1].map((index) =>
+                                h
+                                    .control(h.getPeer(index))
+                                    .stub.getHeldMatchedNegotiationCount()
+                                    .request()
+                            )
+                        )
+                    ).every((count) => count === 1),
+                h.event.protocolEventTimeoutMs()
+            );
+            expect(await h.query.getConnectionCount(rawPeerIndex)).to.equal(0);
+            expect(
+                await h
+                    .control(h.getPeer(rawPeerIndex))
+                    .query.getLobbyAvailability()
+                    .request()
+            ).to.include({ matching: false });
+            await Promise.all(releases.map((release) => release()));
+            expect(await Promise.all(connects)).to.deep.equal([true, true]);
+        } finally {
+            await Promise.all(releases.map((release) => release()));
+        }
+    });
+
+    it("pre-open routing probe settles after the raw-topic peer receives no frame", async function () {
+        const result = await fixture
+            .control()
+            .p2pManagerProbe.probeLobbyProtocol()
+            .request();
+
+        expect(result.discardedPeerMissedOrdinaryBroadcast).to.equal(true);
+        expect(result.ordinaryHookCountAfterCommitBeforeCompletion).to.equal(0);
+    });
+
+    it("observed-open loser releases matching ownership for the selected channel", async function () {
+        const result = await fixture
+            .control()
+            .p2pManagerProbe.probeLobbySessionCleanup()
+            .request();
+
+        expect(result.negotiationHandoffReleased).to.equal(true);
+        expect(result.selectedTargetRetainedAfterRelease).to.equal(true);
     });
 
     it("keeps the local role epoch monotonic across same-topic retries", async function () {

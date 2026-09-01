@@ -229,8 +229,8 @@ describe("E2E: custom RPC request/response over the runtime port", function () {
         );
 
         const channelId = ethers.hexlify(openChannel.channelId);
-        await peer0.hostRpc.network.connectToChannel(channelId).request();
-        await peer1.hostRpc.network.connectToChannel(channelId).request();
+        await peer0.hostRpc.network.joinSelectedKey(channelId).request();
+        await peer1.hostRpc.network.joinSelectedKey(channelId).request();
 
         const channelManager = connectStateChannelManager(
             scmDeployment.address,
@@ -241,6 +241,9 @@ describe("E2E: custom RPC request/response over the runtime port", function () {
             signatures
         });
         await openTx.wait();
+
+        await peer0.hostRpc.network.connectToChannel(channelId).request();
+        await peer1.hostRpc.network.connectToChannel(channelId).request();
 
         // Wait until both peers report a completed handshake to each other.
         await waitFor(
@@ -306,5 +309,10 @@ describe("E2E: custom RPC request/response over the runtime port", function () {
         expect((requestError as Error).message).to.include(
             "intentional-request-failure"
         );
+
+        expect([
+            ...(await peer0.quiesce()),
+            ...(await peer1.quiesce())
+        ]).to.deep.equal([]);
     });
 });

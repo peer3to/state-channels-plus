@@ -512,9 +512,29 @@ export async function startP2pRuntimeHost<
                     case "connectToChannel":
                         if (!runtimeHandle)
                             throw new Error("Runtime is not ready");
-                        await runtimeHandle.stateManager.p2pManager.p2pSigner.connectToChannel(
-                            request.channelId
-                        );
+                        result =
+                            await runtimeHandle.stateManager.p2pManager.p2pSigner.connectToChannel(
+                                request.channelId,
+                                {
+                                    autoOpen: request.options?.autoOpen,
+                                    shouldJoin: request.options?.shouldJoin,
+                                    balance: request.options?.encodedBalance
+                                        ? Codec.decode(
+                                              request.options.encodedBalance,
+                                              Type.Balance
+                                          )
+                                        : undefined,
+                                    timeoutMs: request.options?.timeoutMs
+                                }
+                            );
+                        break;
+                    case "cancelConnectToChannel":
+                        if (!runtimeHandle)
+                            throw new Error("Runtime is not ready");
+                        result =
+                            await runtimeHandle.stateManager.p2pManager.p2pSigner.cancelConnectToChannel(
+                                request.channelId
+                            );
                         break;
                     case "joinLobby":
                         if (!runtimeHandle)
@@ -522,7 +542,16 @@ export async function startP2pRuntimeHost<
                         result =
                             await runtimeHandle.stateManager.p2pManager.p2pSigner.joinLobby(
                                 request.lobbyTopic,
-                                request.options
+                                {
+                                    balance: request.options.encodedBalance
+                                        ? Codec.decode(
+                                              request.options.encodedBalance,
+                                              Type.Balance
+                                          )
+                                        : undefined,
+                                    matchTimeoutMs:
+                                        request.options.matchTimeoutMs
+                                }
                             );
                         break;
                     case "leaveLobby":
@@ -536,26 +565,28 @@ export async function startP2pRuntimeHost<
                     case "joinChannel":
                         if (!runtimeHandle)
                             throw new Error("Runtime is not ready");
-                        await runtimeHandle.stateManager.p2pManager.p2pSigner.joinChannel(
-                            Codec.decode(
-                                request.encodedJoinChannelConfirmation,
-                                Type.JoinChannelConfirmation
-                            ),
-                            request.expectedSnapshotHash as Hash,
-                            request.expectedForkId as ForkId
-                        );
+                        result =
+                            await runtimeHandle.stateManager.p2pManager.p2pSigner.joinChannel(
+                                Codec.decode(
+                                    request.encodedJoinChannelConfirmation,
+                                    Type.JoinChannelConfirmation
+                                ),
+                                request.expectedSnapshotHash as Hash,
+                                request.expectedForkId as ForkId
+                            );
                         break;
                     case "topUpBalance":
                         if (!runtimeHandle)
                             throw new Error("Runtime is not ready");
-                        await runtimeHandle.stateManager.p2pManager.p2pSigner.topUpBalance(
-                            Codec.decode(
-                                request.encodedJoinChannelConfirmation,
-                                Type.JoinChannelConfirmation
-                            ),
-                            request.expectedSnapshotHash as Hash,
-                            request.expectedForkId as ForkId
-                        );
+                        result =
+                            await runtimeHandle.stateManager.p2pManager.p2pSigner.topUpBalance(
+                                Codec.decode(
+                                    request.encodedJoinChannelConfirmation,
+                                    Type.JoinChannelConfirmation
+                                ),
+                                request.expectedSnapshotHash as Hash,
+                                request.expectedForkId as ForkId
+                            );
                         break;
                     case "collectJoinChannelConfirmation": {
                         if (!runtimeHandle)

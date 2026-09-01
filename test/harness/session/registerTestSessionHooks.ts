@@ -1,3 +1,4 @@
+// @spec-test-coverage-ignore: shared hook wiring exercised by mapped TestSession and full-flow tests
 import { DetachedPromises, maybeStampErrorWithPeerAddress } from "@/utils";
 
 import { PeerIdentityExecutionContext } from "../core/peerErrorAttribution";
@@ -77,17 +78,11 @@ export function registerTestSessionHooks(testSession: TestSessionClass): void {
                 // whether a peer's host is inline, in a worker, or remote), then
                 // drain the orchestrator's own realm. Host rejections surface via
                 // the same first-detached-error channel.
-                const hostErrors = await testSession
-                    .getHarness()
-                    .quiesceHosts();
-                for (const error of hostErrors) {
-                    testSession.setFirstDetachedError(error);
-                }
-                await DetachedPromises.awaitAllAndClear();
+                await testSession.settleDetached({ throwOnError: false });
                 hookTrace("All detached promises settled for passing test.");
             }
             DetachedPromises.clear();
-            const firstDetachedError = testSession.getFirstDetachedError();
+            const firstDetachedError = testSession.consumeDetachedFailure();
 
             if (this.currentTest?.state === "failed" || firstDetachedError) {
                 hookTrace("Test failed - trying to upload logs!");

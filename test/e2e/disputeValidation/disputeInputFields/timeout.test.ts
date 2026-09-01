@@ -253,7 +253,7 @@ describe("E2E: dispute validation / disputeInputFields / timeout", function () {
 
         // isolate peer 0 so it stops receiving p2p blocks -> its timeout timer
         // for the next block fires naturally.
-        await h.byzantine.disconnect(0);
+        await h.byzantine.blacklistAndDisconnect(0);
         h.contextApi.markAfkPeer({ afkPeerIndex: 0 });
 
         // remaining peers advance past peer 0.
@@ -292,7 +292,7 @@ describe("E2E: dispute validation / disputeInputFields / timeout", function () {
                 h.rpcStub.suppressTimeoutCheck(peerIndex)
             )
         );
-        await h.network.disconnectPeer(3);
+        await h.network.blacklistAndDisconnectPeer(3);
         await h.transition.advanceState({
             count: 1,
             waitForPeers: [0, 1, 2],

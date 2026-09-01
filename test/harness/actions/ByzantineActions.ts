@@ -189,8 +189,8 @@ export class ByzantineActions<
         await this.harness.tamper.restoreConstructDispute(peerIndex);
     }
 
-    async disconnect(peerIndex: number): Promise<void> {
-        await this.harness.network.disconnectPeer(peerIndex);
+    async blacklistAndDisconnect(peerIndex: number): Promise<void> {
+        await this.harness.network.blacklistAndDisconnectPeer(peerIndex);
     }
 
     async stubCalldataHandler(peerIndex: number): Promise<void> {

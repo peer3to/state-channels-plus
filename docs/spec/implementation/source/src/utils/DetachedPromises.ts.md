@@ -19,11 +19,15 @@
 
 ## Responsibility and observable boundary
 
-Tracked detached async work so fire-and-forget tasks stay drainable at disposal.
+Tracked detached async work so fire-and-forget tasks stay drainable at disposal. Production callers use the
+standard drain bound. Harness leak tests may pass a shorter local drain bound without cancelling the tracked
+work.
 
 ## Key design decisions
 
 1. **Detached ≠ forgotten:** disposal can await the registry, keeping lifecycle convergence honest.
+2. **A drain timeout is diagnostic:** expiry reports unresolved origins and leaves the underlying promises
+   untouched.
 
 ## Inputs, outputs, state, and side effects
 

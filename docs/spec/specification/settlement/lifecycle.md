@@ -256,6 +256,12 @@ therefore trades this pause length against the evidence and kill periods' own re
 
 ## Requirements and invariants
 
+Targeted connection follows [`REQ-TJOIN-1-5VGR1F`](../peer-communication/targeted-channel-join.md#req-tjoin-1-5vgr1f),
+[`REQ-TJOIN-3-DCZKS6`](../peer-communication/targeted-channel-join.md#req-tjoin-3-dczks6), and
+[`REQ-TJOIN-5-Q795M7`](../peer-communication/targeted-channel-join.md#req-tjoin-5-q795m7).
+Submitted first joins use the local pending protection in
+[`INV-MEMBERSHIP-PENDING-1-2H1T75`](../peer-communication/join-authorization.md#inv-membership-pending-1-2h1t75).
+
 **[`REQ-LIF-1-A5BN02`](lifecycle.md#req-lif-1-a5bn02).** Best-case complete lifecycle needs at least two base-layer txs: open/deposit and settlement via a snapshot update that processes the outbound stream.
 
 **[`REQ-LIF-2-Z3Z9Y3`](lifecycle.md#req-lif-2-z3z9y3).** Only two paths yield a snapshot-updating state: same-fork finality proof, or dispute reduction after the challenge window.

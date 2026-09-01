@@ -15,7 +15,7 @@ describe("E2E: dispute validation / stateProof / milestone block content integri
                 // transactions from several peers between those two steps.
                 timeConfig: { evidenceTime: 6 }
             });
-            await h.byzantine.disconnect(3);
+            await h.byzantine.blacklistAndDisconnect(3);
             await h.transition.advanceState({ waitForPeers: [0, 1, 2, 4] });
             const disputedForkId = h.activeForkId;
             if (!disputedForkId) throw new Error("Expected an active fork");

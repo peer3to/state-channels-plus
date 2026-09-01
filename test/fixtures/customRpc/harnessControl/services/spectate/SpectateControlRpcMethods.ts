@@ -1,3 +1,4 @@
+// @spec-test-coverage-ignore: test-only spectate controls exercised by mapped targeted-channel cases
 import { ZeroHash } from "ethers";
 
 import ARpcMethods from "@/rpc/ARpcMethods";
@@ -56,7 +57,8 @@ export class SpectateControlRpcMethods extends ARpcMethods<
     public startSync(
         peerAddress: Address,
         forkId?: ForkId,
-        blockHeight?: number
+        blockHeight?: number,
+        timeoutMs?: number
     ): boolean {
         const channelId = this.service.sm.channelId;
         if (channelId === ZeroHash) {
@@ -64,7 +66,13 @@ export class SpectateControlRpcMethods extends ARpcMethods<
                 "startSync - host peer has no channel; cannot start sync"
             );
         }
-        this.service.spectate.sync(peerAddress, channelId, forkId, blockHeight);
+        void this.service.spectate.sync(
+            peerAddress,
+            channelId,
+            forkId,
+            blockHeight,
+            timeoutMs
+        );
         return true;
     }
 
@@ -74,12 +82,11 @@ export class SpectateControlRpcMethods extends ARpcMethods<
         blockHeight: number,
         encodedSyncPayload: string
     ): Promise<boolean> {
-        await this.service.spectate.applySyncResponse(
+        return this.service.spectate.applySyncResponse(
             String(responderAddress),
             this.service.buildSyncRequest(forkId, blockHeight),
             encodedSyncPayload
         );
-        return true;
     }
 
     /** Persist an encoded sync payload; returns whether spectating aborted. */

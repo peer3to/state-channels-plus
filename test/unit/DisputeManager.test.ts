@@ -311,7 +311,7 @@ describe("Unit: DisputeManager", function () {
         it("a peer behind the head → constructDispute builds a complete dispute over what it has", async function () {
             const h = TestSession.getHarness();
             await h.lifecycle.start(3, 0);
-            await h.network.disconnectPeer(2); // peer 2 misses blocks 0..1
+            await h.network.blacklistAndDisconnectPeer(2); // peer 2 misses blocks 0..1
             await h.transition.advanceState({ count: 2, waitForPeers: [0, 1] });
             const forkId = h.activeForkId!;
 
@@ -502,7 +502,7 @@ describe("Unit: DisputeManager", function () {
         it("a peer fed a proof for blocks it never stored → isPartial true", async function () {
             const h = TestSession.getHarness();
             await h.lifecycle.start(3, 0);
-            await h.network.disconnectPeer(2); // peer 2 misses blocks 0..1
+            await h.network.blacklistAndDisconnectPeer(2); // peer 2 misses blocks 0..1
             await h.transition.advanceState({ count: 2, waitForPeers: [0, 1] });
             const forkId = h.activeForkId!;
 

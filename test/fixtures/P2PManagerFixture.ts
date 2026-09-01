@@ -7,6 +7,7 @@ import { PeerTestHarness } from "@test/fixtures/PeerTestHarness";
 import type { PingPongRpc } from "@test/fixtures/customRpc/PingPongRpcManifest";
 import type { RemoteRpcProxyType } from "@/rpc/RemoteRpcProxy";
 import { Status } from "@/types";
+import type { HarnessOptions } from "@test/harness/core/types";
 
 export type HandshakeRoutingFixtureResult = {
     connected: boolean;
@@ -18,6 +19,7 @@ export type HandshakeRoutingFixtureResult = {
 
 export type P2PManagerFixtureSetup = {
     openChannel?: boolean;
+    timeConfig?: HarnessOptions["timeConfig"];
 };
 
 export class P2PManagerFixture {
@@ -29,6 +31,7 @@ export class P2PManagerFixture {
     public async setup(options: P2PManagerFixtureSetup = {}): Promise<void> {
         await this.harness.setup(2, {
             autoConnect: false,
+            timeConfig: options.timeConfig,
             customRpcManifest: {
                 module: path.resolve(
                     __dirname,
@@ -53,6 +56,10 @@ export class P2PManagerFixture {
         return String(this.harness.getPeerAddresses()[index]);
     }
 
+    public getHarness(): PeerTestHarness<PingPongRpc, MathStateMachine> {
+        return this.harness;
+    }
+
     public async runHandshakeRouting(
         status: Status
     ): Promise<HandshakeRoutingFixtureResult> {
@@ -61,15 +68,13 @@ export class P2PManagerFixture {
         await this.control().stub.stubRecordSpectateSync(false).request();
         this.harness.event.resetEventSpies(0);
 
+        await this.control().stub.setPeerStatus(status).request();
         await this.control()
-            .network.connectToChannel(
-                this.harness.channelId!.toString(),
-                status
-            )
+            .network.joinSelectedKey(this.harness.channelId!.toString())
             .request();
         await this.harness
             .control(this.harness.getPeer(1))
-            .network.connectToChannel(this.harness.channelId!.toString())
+            .network.joinSelectedKey(this.harness.channelId!.toString())
             .request();
         await this.harness.event.waitForEventCounts(
             "onConnection",

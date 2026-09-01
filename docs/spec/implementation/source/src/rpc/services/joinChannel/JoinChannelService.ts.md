@@ -103,3 +103,11 @@ Exact test evidence is mapped against these IDs in the verification test reports
 ## Related source reports
 
 - [JoinChannelRpcMethods](./JoinChannelRpcMethods.ts.md), [SignatureUtils](../../../utils/SignatureUtils.ts.md), signer facades under [evm/signer](../../../evm/signer/).
+
+## Targeted connect contribution
+
+`prepareJoinChannelConfirmation` is the canonical first-join constructor. It preserves the supplied full
+balance and derives `deadlineTimestamp` from chain time plus
+`DEFAULT_JOIN_CHANNEL_DEADLINE_SECONDS`. Before signature requests it allows two agreement windows for the
+full threshold to become reachable. Remote join terms are accepted only after zero/lesser-than validation.
+The service never receives matcher `timeoutMs`.

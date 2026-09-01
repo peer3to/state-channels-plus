@@ -31,9 +31,9 @@
 Synchronization lets a node without current channel state — a prospective joiner spectating, an
 observer, or a lagging participant recovering — obtain the latest provable state from one peer and
 adopt it safely. A successful sync moves the requester to the peer's latest provable finalized
-snapshot and replays the unfinalized suffix through the standard block-progression pipeline. Any
-failure aborts with nothing at risk (fail-closed, [`REQ-MSG-9-BFN9P5`](../settlement/cross-layer-messages.md#req-msg-9-bfn9p5)). Liveness is _not_ guaranteed: a
-responder may honestly be unable to prove the requested target.
+snapshot and replays the unfinalized suffix through the standard block-progression pipeline. The
+service returns success or failure; the caller owns the lifecycle consequence. Liveness is _not_
+guaranteed: a responder may honestly be unable to prove the requested target.
 
 The exchange is one request/response round per attempt: the requester names a channel and,
 optionally, a pinned fork and height; the responder returns a self-contained **sync payload** or
@@ -67,8 +67,6 @@ participation.
   session engaged without starting this sync.
 - **Responder.** Any authenticated peer asked to prove; serving requires only the ability to prove
   the target from its own stores and chain view.
-- At most one sync per requester–responder pair may be in flight; a second concurrent attempt to
-  the same peer is ignored (concurrency-limited class, [rpc.md](./rpc.md)).
 
 ## Responder algorithm: proving the latest state
 
@@ -97,7 +95,9 @@ responder cannot strengthen it by assertion; every element exists only to be re-
 Ordered verification; any failure aborts the sync with no partial effect:
 
 1. **Decode** the payload inside failure handling; undecodable bytes are an abort, not a crash.
-2. **Bound the round trip** against the agreement window; a stale response aborts.
+2. **Apply the caller-selected request deadline.** The sync service defaults to one agreement
+   window. Initial channel loading explicitly supplies two windows. Payload application adds no
+   second round-trip deadline.
 3. **Anchor on chain truth.** Fetch the current on-chain snapshot through the requester's own chain
    view; every later check runs against this anchor.
 4. **Verify the fork lineage.** Each claimed dispute window must exist on-chain with its kill
@@ -126,15 +126,10 @@ Ordered verification; any failure aborts the sync with no partial effect:
     spectating validation context; any replay failure aborts.
 14. **Pinned-height completion.** In pinned mode the proof must reach the requested height exactly.
 
-**Abort semantics.** A fresh spectator aborts by stopping entirely — it has no channel obligations
-to unwind. A participant using sync for recovery aborts by cutting only the offending peer and
-retaining its own state. In both cases no funds, obligations, or partial local commitments remain
-([`REQ-MSG-9-BFN9P5`](../settlement/cross-layer-messages.md#req-msg-9-bfn9p5)). For a prospective joiner, an early abort is the point of
-spectating, not a defect: participant non-cooperation is discovered while nothing is committed,
-and the joiner walks away and interacts with someone else
-([cross-layer-messages.md](../settlement/cross-layer-messages.md) §3). Only misbehavior
-attributable to a participant justifies an abort — junk from non-participants merely drops the
-sender, so an outsider can never force one.
+**Failure semantics.** Validation and transport failures return `false` after the offending peer is
+cut. The initial-load caller aborts an uncommitted runtime. Exact block recovery keeps the
+established runtime and applies its existing queue recovery. The sync service does not choose
+between those consequences.
 
 ## System interactions
 
@@ -148,6 +143,18 @@ sender, so an outsider can never force one.
 | [Protocol model](../protocol-model/history-and-commitments.md) | Commitment relationships every hash check relies on.                                                                  |
 
 ## Failure outcomes
+
+Initial channel load and exact block recovery call the same sync entry. Omitting `forkId` and
+`blockHeight` requests any valid current state; supplying both pins recovery to an exact block.
+The service defaults to one `agreementTime` request deadline, while the initial-load caller supplies
+two windows. No deadline metadata crosses the wire.
+
+Initial load stays in the connection-established path. While the runtime is uncommitted, the first
+connected peer that authoritative chain state identifies as a participant receives one ordinary
+sync request. One validated response makes local state available. Silence, disconnect, timeout,
+invalid response, or protocol-breaking data makes that request fail; the connection owner aborts
+the uncommitted runtime and does not start another initial request. Exact recovery returns failure
+to its queue owner without disposing a synchronized observer.
 
 | Path      | Failure                                                          | Outcome                                                                                                                                                    |
 | --------- | ---------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -167,19 +174,19 @@ responder's assertions carry no weight.
 request (channel, pinned fork/height) and the requester's own on-chain anchor, never against values
 echoed by the responder.
 
-**<a id="inv-sync-3-a7a2ed"></a>`INV-SYNC-3-A7A2ED` — Fail-closed with no residue.** Any failure at any step aborts with no partial local
-or on-chain commitment; a fresh spectator's abort is a full stop, a recovering participant's abort
-cuts only the offending peer.
+**<a id="inv-sync-3-a7a2ed"></a>`INV-SYNC-3-A7A2ED` — Fail-closed with caller-owned consequence.** Any failure
+returns false with no partial sync effect. The initial-load owner aborts an uncommitted runtime;
+the exact-recovery owner preserves the established runtime and handles its queue.
 
 **<a id="inv-sync-4-z6her7"></a>`INV-SYNC-4-Z6HER7` — Read-only trust establishment.** No step of a sync sends an on-chain transaction;
 all contract verification is performed read-only or by simulation.
 
 **<a id="req-auth-5-bqg9ag"></a>`REQ-AUTH-5-BQG9AG` — Post-authentication engagement follows the local lifecycle.** A node MUST keep
 every live authenticated peer session engaged for channel communication regardless of its own
-channel lifecycle state. Only a node whose channel is opened resolves the peer's dispute-eligible
-participation and starts catch-up toward resolved participants; a negative or failed resolution
-leaves the session engaged without catch-up. Engagement and catch-up MUST NOT depend on a
-peer-supplied membership claim.
+channel lifecycle state. While an opened node is uncommitted, the first connected peer resolved as
+a dispute-eligible participant starts exactly one initial sync request. Later connections start no
+second initial request. A negative or failed resolution leaves the session engaged without catch-up.
+Engagement and catch-up MUST NOT depend on a peer-supplied membership claim.
 
 **<a id="req-sync-1-t2589h"></a>`REQ-SYNC-1-T2589H` — Exact-target proving.** A responder MUST prove exactly the requested target or
 refuse; substituting a different fork or height is prohibited.
@@ -232,7 +239,6 @@ disclosure to any authenticated peer is accepted under the open-observer model.
 
 ## Future Work
 
-_Non-normative._ Penalty-free "cannot prove yet" refusals with retry semantics (resolving the [`DEF-5-E8TP9N`](../../audit/open-findings.md#def-5-e8tp9n)
-family in both directions); admission cost weighting for proof serving under the future rate
+_Non-normative._ Admission cost weighting for proof serving under the future rate
 limiter; optional access-control guards for restricted channels; on-chain balance-invariant
 enforcement so protection no longer depends on the client always spectating ([`OQ-19-Y8FDQX`](../../implementation/open-questions.md#oq-19-y8fdqx)).

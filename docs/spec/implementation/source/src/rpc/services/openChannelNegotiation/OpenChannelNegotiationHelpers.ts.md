@@ -85,3 +85,9 @@ Exact test evidence is mapped against these IDs in the verification test reports
 ## Related source reports
 
 - [OpenChannelNegotiationService](./OpenChannelNegotiationService.ts.md).
+
+## Fixed and derived channel identity
+
+Ordinary negotiation derives its ID from the authenticated transcript. Targeted negotiation receives the
+application-selected fixed ID and never replaces it with peer input. The helper constructs opening payloads
+with exact full balances and the negotiation owner's internal deadline.

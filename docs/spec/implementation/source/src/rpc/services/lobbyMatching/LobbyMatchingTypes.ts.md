@@ -19,3 +19,10 @@ This file defines the serializable lobby protocol values: roles, availability, a
 | --------------------------------------------------------------------------------------------------------------- | --------------------- | -------------------------------------------------------------------------- | ---------------- |
 | [`INV-LOBBY-1-TW7RZT`](../../../../../../specification/peer-communication/lobby-matching.md#inv-lobby-1-tw7rzt) | Covered               | The public match type has no channel-ID field.                             | None.            |
 | [`REQ-LOBBY-4-E0TARV`](../../../../../../specification/peer-communication/lobby-matching.md#req-lobby-4-e0tarv) | Covered               | Pick and commit types carry correlated attempt, epoch, and challenge data. | None.            |
+
+## Targeted-connect additions
+
+`LobbyJoinOptions` remains the ordinary lobby contract and now carries an optional full `BalanceStruct`.
+`LobbyMatchingServiceOptions.shouldMatchPeer` is a host-local function with an allow-all default. Neither the
+fixed target nor any serializable allow/deny policy is part of these types. The generic `LobbyMatch` remains
+the only output consumed independently by ordinary and targeted wrappers.

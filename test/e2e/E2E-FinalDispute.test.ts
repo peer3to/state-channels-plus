@@ -226,18 +226,9 @@ describe("E2E: final dispute resolution", function () {
                 honestPeerIndices: [2, 3],
                 syntheticOnChainParticipants: 1
             });
-            const hostErrors = await h.quiesceHosts();
-            expect(hostErrors.map((error) => error.message)).to.include(
-                "Forced final-dispute output preparation failure"
-            );
-            // The fatal host rejection is the behavior under test. Depending
-            // on worker scheduling it may also reach the session's detached
-            // error hook before or after quiesce; claim either copy so the
-            // global afterEach does not report this expected failure again.
-            await TestSession.expectFirstDetachedError({
-                includes: "Forced final-dispute output preparation failure",
-                timeoutMs: 100,
-                required: false
+            await TestSession.settleDetached({
+                expectedErrorIncludes:
+                    "Forced final-dispute output preparation failure"
             });
             expect(
                 await h

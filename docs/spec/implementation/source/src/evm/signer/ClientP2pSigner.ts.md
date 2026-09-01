@@ -83,3 +83,10 @@ Exact test evidence is mapped against these IDs in the verification test reports
 ## Related source reports
 
 - [identity.md](../../../../../specification/protocol-model/identity.md), [P2pRuntimeHost](../p2pRuntime/P2pRuntimeHost.ts.md).
+
+## Targeted connect implementation
+
+The client validates programmer input before port dispatch, encodes full balances with the SDK codec, sends
+one connect request with an optional option record, and keeps the runtime-client deadline disabled. The
+dedicated cancellation request carries the normalized channel ID and cannot route through `leaveLobby`.
+Boolean results are preserved across the port. See [`REQ-TJOIN-1-5VGR1F`](../../../../../specification/peer-communication/targeted-channel-join.md#req-tjoin-1-5vgr1f).

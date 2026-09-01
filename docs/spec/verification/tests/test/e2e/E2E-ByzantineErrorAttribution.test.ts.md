@@ -27,5 +27,5 @@ report but are kept here.
 
 | Test declaration                                                                                                                                                                          | Covers |
 | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------ |
-| [`E2E: Byzantine error attribution > suppresses a stray detached error originating on a malicious peer`](../../../../../../test/e2e/E2E-ByzantineErrorAttribution.test.ts#L6) (line 6)    | —      |
-| [`E2E: Byzantine error attribution > does not suppress the same error when it comes from an honest peer`](../../../../../../test/e2e/E2E-ByzantineErrorAttribution.test.ts#L24) (line 24) | —      |
+| [`E2E: Byzantine error attribution > suppresses a stray detached error originating on a malicious peer`](../../../../../../test/e2e/E2E-ByzantineErrorAttribution.test.ts#L7) (line 7)    | —      |
+| [`E2E: Byzantine error attribution > does not suppress the same error when it comes from an honest peer`](../../../../../../test/e2e/E2E-ByzantineErrorAttribution.test.ts#L25) (line 25) | —      |

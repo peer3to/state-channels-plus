@@ -184,6 +184,22 @@ class ProfileManager {
         return profile.getTransport();
     }
 
+    public unblacklistPeer(evmAddress: Address): boolean {
+        const profile = this.getProfileByEvmAddress(evmAddress);
+        if (!profile) return false;
+
+        profile.unblacklist();
+        const hasLiveWebRtc = profile
+            .getLiveTransports()
+            .some(
+                (transport) => transport.transportType === TransportType.WEBRTC
+            );
+        if (!hasLiveWebRtc) {
+            profile.getHolepunchPeerInfo()?.ban(false);
+        }
+        return true;
+    }
+
     public releaseHolepunchBanOnWebRtcClose(transport: ATransport): void {
         if (transport.transportType !== TransportType.WEBRTC) return;
         const profile = this.getProfileByTransport(transport);
