@@ -42,6 +42,7 @@ crash-logs
 # generated files
 src/types/sol-enums.ts
 src/utils/GeneratedArtifacts.ts
+docs/spec/generated/
 
 # TypeScript incremental build info
 *.tsbuildinfo
