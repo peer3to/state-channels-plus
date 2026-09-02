@@ -110,8 +110,10 @@ export default class StateApplicationService {
             currentTimestamp: Clock.getTimeInSeconds(),
             timeConfig: sm.timeConfig,
             p2pEventHooks: sm.p2pEventHooks,
-            logger: this.logger
+            logger: this.logger,
+            leaveChannelService: sm.leaveChannelService
         });
+        await sm.leaveChannelService.onSettledStateObserved();
     }
 
     public async unsafeSetGenesisState(

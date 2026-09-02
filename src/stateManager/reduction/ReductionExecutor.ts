@@ -4,6 +4,7 @@ import type { DisputeStruct } from "@typechain-types/contracts/V1/types/DisputeT
 
 import Clock from "@/Clock";
 import { StateSnapshot } from "@/models";
+import { Status } from "@/types";
 import type { ForkId, Timestamp } from "@/types/types";
 import { DetachedPromises, Logger, Mutex } from "@/utils";
 import {
@@ -248,7 +249,14 @@ export default class ReductionExecutor {
                     outboundMessageBlock: candidate.reducedOutboundMessageBlock
                 }
             );
-        if (installed && submissionStatus === "submit") {
+        if (
+            installed &&
+            submissionStatus === "submit" &&
+            !(
+                this.stateManager.leaveChannelService.isLeaving &&
+                this.stateManager.status === Status.SYNCED
+            )
+        ) {
             this.submitDetached(forkId, candidate, submission);
         }
     }

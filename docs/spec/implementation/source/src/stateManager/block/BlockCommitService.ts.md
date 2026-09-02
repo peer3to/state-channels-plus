@@ -24,3 +24,6 @@ receipt when later inclusion is delayed.
 
 Block-commit tests cover cooperative pending-to-participating promotion; forced-inclusion evidence remains
 owned by the dispute suite.
+# Terminal leave contribution
+
+After each accepted block, the service advances the fixed leave block bound and passes the leave owner into turn notification. This contributes to [`REQ-TJOIN-7-NNGTAY`](../../../../../specification/peer-communication/targeted-channel-join.md#req-tjoin-7-nngtay).

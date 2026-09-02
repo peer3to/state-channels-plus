@@ -105,3 +105,11 @@ Ordinary derived-ID failures clear selection and keep ordinary retry policy. Tar
 only attempt-local work and retains the target/listener. Authoritative fixed-target open produces one
 no-blacklist handoff, including the post-sign no-submission guard and targeted receipt-race reclassification.
 No matcher cleanup or `timeoutMs` enters this service.
+
+Observed target-open classification is retained on the active attempt. If signing completes after the event,
+submission waits for participant lookup and rechecks the handoff. A targeted handoff submits no opening
+transaction; the existing contract-level already-open recovery still covers the final race.
+
+| Unit test ID | Obligation | Public entry and setup | Oracle and forbidden effects | Required permutations |
+| --- | --- | --- | --- | --- |
+| <a id="unit-test-observed-open-classification-1-2wwp73"></a>`UNIT-TEST-OBSERVED-OPEN-CLASSIFICATION-1-2WWP73` | Await target-open classification | Hold participant lookup, observe target open, release signing, then finish classification. | No opening submits before or after targeted handoff; exactly one handoff occurs and no peer is blacklisted. | <a id="unit-test-observed-open-classification-1-2wwp73.p1"></a>`UNIT-TEST-OBSERVED-OPEN-CLASSIFICATION-1-2WWP73.P1` — signature completes while target participant lookup is pending. |

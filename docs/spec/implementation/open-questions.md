@@ -33,8 +33,11 @@ Existing `OQ-*` IDs are preserved; new questions use the layer-scoped namespace 
 The targeted opening handoff relies on Hyperswarm's one-live-connection-per-unique-peer behavior when the
 same peer moves from the domain-separated matching topic to the raw channel topic. Current automated tests
 force `DEBUG_LOCAL_TRANSPORT`; they prove that a transient duplicate authenticates safely and one transport
-retires, but they do not prove normal Hyperswarm deduplication. This is an accepted production assumption and
-verification gap. It does not authorize a second preservation mechanism or local discovery changes.
+retires, but they do not prove normal Hyperswarm deduplication. The local discovery backend now enforces the
+same one-live-connection-per-peer rule across every observed topic
+([`UNIT-TEST-LOCAL-DISCOVERY-SERVER-1-1W1GY5.P8`](source/src/utils/node/LocalDiscoveryServer.ts.md#unit-test-local-discovery-server-1-1w1gy5.p8)),
+so the local mirror is covered; the production Hyperswarm behavior remains an accepted assumption and
+verification gap. It does not authorize a second preservation mechanism.
 
 <a id="oq-13-fe5ct4"></a>
 

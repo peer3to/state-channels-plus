@@ -87,3 +87,6 @@ Exact test evidence is mapped against these IDs in the verification test reports
 ## Related source reports
 
 - [ReductionComputationService](./ReductionComputationService.ts.md), [EventSyncService](../EventSyncService.ts.md), [SnapshotUpdateService](../snapshotUpdate/SnapshotUpdateService.ts.md).
+# Terminal leave contribution
+
+After a settled self-removal reduction installs a successor where the leaving signer is `SYNCED`, the removed runtime does not submit a redundant reduction transaction. This prevents terminal disposal from interrupting an obsolete provider transaction while remaining participants retain normal reduction submission. This contributes to [`REQ-LIF-10-QR8NQ9`](../../../../../specification/settlement/lifecycle.md#req-lif-10-qr8nq9).

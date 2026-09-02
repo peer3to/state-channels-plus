@@ -100,3 +100,6 @@ Exact test evidence is mapped against these IDs in the verification test reports
 ## Related source reports
 
 - [DisputeValidationService](../stateManager/dispute/DisputeValidationService.ts.md), [DisputeManager](../disputeManager/DisputeManager.ts.md), [ReductionManager](../stateManager/reduction/ReductionManager.ts.md), [IsForkDisputedService](../rpc/services/isForkDisputedService/IsForkDisputedService.ts.md).
+# Terminal leave contribution
+
+`StateSnapshotUpdated` accepts an otherwise unknown snapshot when it proves removal for a runtime with a pending terminal leave. It lets reduction converge instead of aborting, then rechecks leave completion after snapshot and reduced-fork event processing. This contributes to [`REQ-TJOIN-7-NNGTAY`](../../../../specification/peer-communication/targeted-channel-join.md#req-tjoin-7-nngtay) and [`REQ-LIF-10-QR8NQ9`](../../../../specification/settlement/lifecycle.md#req-lif-10-qr8nq9).

@@ -77,3 +77,6 @@ exists returns success while preserving pending state.
 `topUpBalance` is the one receipt-gated update
 for a supplied balance on pending or participating state; failure preserves that committed runtime. Omitted
 balance reuse sends no transaction in the signer wrapper. This service never receives matcher `timeoutMs`.
+# Terminal leave contribution
+
+The fully signed exit path now waits for snapshot submission. If it fails, it preserves self-removal and starts the existing dispute path. This contributes to [`REQ-LIF-10-QR8NQ9`](../../../../../specification/settlement/lifecycle.md#req-lif-10-qr8nq9).

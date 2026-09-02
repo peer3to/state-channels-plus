@@ -4,9 +4,9 @@
 > its content hash with `SPEC_REVIEWER="Name" node docs/spec/tools/review.js <file...>`.
 > Any later edit invalidates the record automatically (the file returns to pending as stale).
 
-- Verified (current): **65/580** (11%)
-- Pending (never reviewed): **443**
-- Stale (edited since review): **72**
+- Verified (current): **63/582** (11%)
+- Pending (never reviewed): **445**
+- Stale (edited since review): **74**
 
 ## Stale — edited since engineer review
 
@@ -30,9 +30,10 @@
 - [specification/storage/queue.md](../specification/storage/queue.md) — Luke Fishman, 2026-08-17
 - [specification/storage/README.md](../specification/storage/README.md) — Luke Fishman, 2026-08-17
 
-### implementation (30)
+### implementation (32)
 
 - [implementation/source/contracts/V1/StateChannelDiamondProxy/JoinChannelFacet.sol.md](../implementation/source/contracts/V1/StateChannelDiamondProxy/JoinChannelFacet.sol.md) — Luka, 2026-08-19
+- [implementation/source/src/eventHandlers/EventHandler.ts.md](../implementation/source/src/eventHandlers/EventHandler.ts.md) — Luka-discovery-v1, 2026-08-30
 - [implementation/source/src/evm/contractExecutor/worker/ContractExecutorWorkerHostCore.ts.md](../implementation/source/src/evm/contractExecutor/worker/ContractExecutorWorkerHostCore.ts.md) — Luka, 2026-08-15
 - [implementation/source/src/evm/contractExecutor/worker/protocol.ts.md](../implementation/source/src/evm/contractExecutor/worker/protocol.ts.md) — Luka, 2026-08-15
 - [implementation/source/src/evm/contractExecutor/WorkerContractExecutor.ts.md](../implementation/source/src/evm/contractExecutor/WorkerContractExecutor.ts.md) — Luka, 2026-08-15
@@ -53,6 +54,7 @@
 - [implementation/source/src/rpc/services/openChannelNegotiation/OpenChannelNegotiationRpcMethods.ts.md](../implementation/source/src/rpc/services/openChannelNegotiation/OpenChannelNegotiationRpcMethods.ts.md) — Luka-discovery-v1, 2026-08-30
 - [implementation/source/src/rpc/services/openChannelNegotiation/OpenChannelNegotiationService.ts.md](../implementation/source/src/rpc/services/openChannelNegotiation/OpenChannelNegotiationService.ts.md) — Luka-discovery-v1, 2026-08-30
 - [implementation/source/src/stateManager/membership/MembershipService.ts.md](../implementation/source/src/stateManager/membership/MembershipService.ts.md) — Luka-discovery-base, 2026-08-27
+- [implementation/source/src/stateManager/membership/README.md](../implementation/source/src/stateManager/membership/README.md) — Luka-discovery-base, 2026-08-27
 - [implementation/source/src/stateManager/README.md](../implementation/source/src/stateManager/README.md) — Luka-discovery-base, 2026-08-27
 - [implementation/source/src/stateManager/StateManager.ts.md](../implementation/source/src/stateManager/StateManager.ts.md) — Luka-discovery-v1, 2026-08-30
 - [implementation/source/src/transport/relay/RelayerPool.ts.md](../implementation/source/src/transport/relay/RelayerPool.ts.md) — Luka-discovery-base, 2026-08-27
@@ -124,7 +126,7 @@
 - [specification/settlement/cross-layer-messages.md](../specification/settlement/cross-layer-messages.md)
 - [specification/settlement/README.md](../specification/settlement/README.md)
 
-### implementation (295)
+### implementation (297)
 
 - [implementation/open-questions.md](../implementation/open-questions.md)
 - [implementation/README.md](../implementation/README.md)
@@ -284,6 +286,8 @@
 - [implementation/source/src/stateManager/ingest/BlockQueueManager.ts.md](../implementation/source/src/stateManager/ingest/BlockQueueManager.ts.md)
 - [implementation/source/src/stateManager/ingest/README.md](../implementation/source/src/stateManager/ingest/README.md)
 - [implementation/source/src/stateManager/ingest/ValidationService.ts.md](../implementation/source/src/stateManager/ingest/ValidationService.ts.md)
+- [implementation/source/src/stateManager/membership/index.ts.md](../implementation/source/src/stateManager/membership/index.ts.md)
+- [implementation/source/src/stateManager/membership/LeaveChannelService.ts.md](../implementation/source/src/stateManager/membership/LeaveChannelService.ts.md)
 - [implementation/source/src/stateManager/reduction/index.ts.md](../implementation/source/src/stateManager/reduction/index.ts.md)
 - [implementation/source/src/stateManager/reduction/README.md](../implementation/source/src/stateManager/reduction/README.md)
 - [implementation/source/src/stateManager/reduction/ReductionComputationService.ts.md](../implementation/source/src/stateManager/reduction/ReductionComputationService.ts.md)
@@ -562,7 +566,7 @@
 - [specification/storage/progress-markers.md](../specification/storage/progress-markers.md) — Luke Fishman, 2026-08-17
 - [specification/storage/snapshots-and-states.md](../specification/storage/snapshots-and-states.md) — Luke Fishman, 2026-08-17
 
-### implementation (35)
+### implementation (33)
 
 - [implementation/source/contracts/V1/StateChannelDiamondProxy/LocalDiamond.sol.md](../implementation/source/contracts/V1/StateChannelDiamondProxy/LocalDiamond.sol.md) — Luka-discovery-v1, 2026-08-30
 - [implementation/source/contracts/V1/StateChannelDiamondProxy/StateChannelCommon.sol.md](../implementation/source/contracts/V1/StateChannelDiamondProxy/StateChannelCommon.sol.md) — Luka-discovery-v1, 2026-08-30
@@ -570,7 +574,6 @@
 - [implementation/source/contracts/V1/StateChannelDiamondProxy/StateChannelManagerStorage.sol.md](../implementation/source/contracts/V1/StateChannelDiamondProxy/StateChannelManagerStorage.sol.md) — Luka-discovery-v1, 2026-08-30
 - [implementation/source/contracts/V1/StateChannelDiamondProxy/StateSnapshotFacet.sol.md](../implementation/source/contracts/V1/StateChannelDiamondProxy/StateSnapshotFacet.sol.md) — Luka-discovery-v1, 2026-08-30
 - [implementation/source/contracts/V1/StateChannelDiamondProxy/UtilityFacet.sol.md](../implementation/source/contracts/V1/StateChannelDiamondProxy/UtilityFacet.sol.md) — Luka-discovery-v1, 2026-08-30
-- [implementation/source/src/eventHandlers/EventHandler.ts.md](../implementation/source/src/eventHandlers/EventHandler.ts.md) — Luka-discovery-v1, 2026-08-30
 - [implementation/source/src/events/EventBus.ts.md](../implementation/source/src/events/EventBus.ts.md) — Luka, 2026-08-18
 - [implementation/source/src/Holepunch.ts.md](../implementation/source/src/Holepunch.ts.md) — Luka-discovery-v1, 2026-08-30
 - [implementation/source/src/PeerProfile.ts.md](../implementation/source/src/PeerProfile.ts.md) — Luka-discovery-v1, 2026-08-30
@@ -584,7 +587,6 @@
 - [implementation/source/src/rpc/services/lobbyMatching/LobbyRpcAdmissionGuard.ts.md](../implementation/source/src/rpc/services/lobbyMatching/LobbyRpcAdmissionGuard.ts.md) — Luka-discovery-v1, 2026-08-30
 - [implementation/source/src/rpc/services/lobbyMatching/README.md](../implementation/source/src/rpc/services/lobbyMatching/README.md) — Luka-discovery-v1, 2026-08-30
 - [implementation/source/src/rpc/services/README.md](../implementation/source/src/rpc/services/README.md) — Luka-discovery-v1, 2026-08-30
-- [implementation/source/src/stateManager/membership/README.md](../implementation/source/src/stateManager/membership/README.md) — Luka-discovery-base, 2026-08-27
 - [implementation/source/src/transport/ATransport.ts.md](../implementation/source/src/transport/ATransport.ts.md) — Luka-discovery-v1, 2026-08-30
 - [implementation/source/src/transport/HolepunchTransport.ts.md](../implementation/source/src/transport/HolepunchTransport.ts.md) — Luka-discovery-base, 2026-08-27
 - [implementation/source/src/transport/README.md](../implementation/source/src/transport/README.md) — Luka-discovery-base, 2026-08-27

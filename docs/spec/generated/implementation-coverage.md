@@ -4,8 +4,8 @@
 
 ## Score
 
-- Specification IDs fully implemented (only `Covered` claims): **218/270** (81%)
-- Source files with a file report: **258/272** (95%)
+- Specification IDs fully implemented (only `Covered` claims): **222/274** (81%)
+- Source files with a file report: **260/273** (95%)
 
 ## Contents
 
@@ -93,4 +93,3 @@ Every file under `src/` and `contracts/` needs one maintained report at
 | [src/stateManager/ingest/BlockIngestService.ts](../../../src/stateManager/ingest/BlockIngestService.ts) |
 | [src/stateManager/ingest/index.ts](../../../src/stateManager/ingest/index.ts) |
 | [src/stateManager/ingest/StoredBlockMergeService.ts](../../../src/stateManager/ingest/StoredBlockMergeService.ts) |
-| [src/stateManager/membership/index.ts](../../../src/stateManager/membership/index.ts) |

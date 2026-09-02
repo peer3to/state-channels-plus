@@ -14,6 +14,7 @@ import {
 import { addressesEqual, getChecksumAddress } from "@/utils/address";
 import type { Logger } from "@/utils/logging";
 import { DisputeStruct } from "@typechain-types/contracts/V1/types/DisputeTypes";
+import type LeaveChannelService from "@/stateManager/membership/LeaveChannelService";
 
 type NotifyDisputeUpdateOptions = {
     channelId: ChannelId;
@@ -45,6 +46,7 @@ type NotifyTurnOptions = {
     timeConfig: TimeConfig;
     p2pEventHooks: P2pEventHooks;
     logger: Logger;
+    leaveChannelService: LeaveChannelService;
 };
 
 export default class P2pEventHooksUtils {
@@ -165,7 +167,8 @@ export default class P2pEventHooksUtils {
         currentTimestamp,
         timeConfig,
         p2pEventHooks,
-        logger
+        logger,
+        leaveChannelService
     }: NotifyTurnOptions): void {
         logger.info(`onTurn signal txHeight: #${nextBlockHeight}`, {
             currentTimestamp,
@@ -175,8 +178,11 @@ export default class P2pEventHooksUtils {
         });
 
         // The StateManager's hooks object is a bus-publishing proxy, so this
-        // one call also reaches every realm-local
-        // `events.on("p2pEventHooks", "onTurn", ...)` subscriber.
+        // call also reaches every realm-local event-bus subscriber.
+        if (leaveChannelService.takeLeaveTurn(nextToWrite)) {
+            p2pEventHooks.onLeaveTurn?.();
+            return;
+        }
         p2pEventHooks.onTurn?.(
             nextToWrite,
             timeConfig.p2pTime,

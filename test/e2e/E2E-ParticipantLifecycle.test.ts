@@ -166,6 +166,66 @@ describe("E2E: Participant Lifecycle", function () {
                 }
             }
         });
+
+        it("public terminal leave settles before disposal and excludes the former signer", async function () {
+            const h = TestSession.getHarness();
+            await h.lifecycle.start(3, 0);
+            const leaver = h.getPeer(1);
+            const remaining = [0, 2];
+            let exitPromise: Promise<unknown> | undefined;
+            leaver.p2pInstance.events.on(
+                "p2pEventHooks",
+                "onLeaveTurn",
+                () => {
+                    exitPromise =
+                        leaver.p2pInstance.p2pContractInstance.leaveChannel();
+                }
+            );
+
+            const leave = leaver.p2pInstance.leaveChannel();
+            await h.transition.advanceState();
+            await waitFor(() => exitPromise !== undefined);
+            await exitPromise;
+            await leave;
+            expect(
+                (await h.channelManager.getParticipants(h.channelId)).includes(
+                    leaver.address
+                )
+            ).to.equal(false);
+
+            h.contextApi.markAfkPeer({ afkPeerIndex: leaver.index });
+            await h.transition.advanceState({
+                count: 1,
+                waitForPeers: remaining,
+                waitForFinalization: true
+            });
+            const bundle = await h
+                .control(h.getPeer(remaining[0]))
+                .query.getLatestBlockBundle(h.activeForkId!)
+                .request();
+            expect(bundle).to.not.equal(null);
+            const block = Block.fromBlockConfirmation({
+                signedBlock: Codec.decode(
+                    bundle!.encodedSignedBlock,
+                    Type.SignedBlock
+                ),
+                signatures: bundle!.confirmationSignatures
+            });
+            expect(block.allSignerAddresses.has(leaver.address as Address)).to.equal(
+                false
+            );
+            for (const peerIndex of remaining) {
+                const otherIndex = remaining.find(
+                    (candidate) => candidate !== peerIndex
+                )!;
+                expect(
+                    await h
+                        .control(h.getPeer(peerIndex))
+                        .query.isBlacklisted(h.getPeer(otherIndex).address)
+                        .request()
+                ).to.equal(false);
+            }
+        });
     });
 
     describe("Join path", function () {

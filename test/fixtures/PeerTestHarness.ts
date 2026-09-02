@@ -356,9 +356,14 @@ export class PeerTestHarness<
         this.logger.info("Test harness setup completed");
     }
 
-    setChannelId(channelId: ChannelId) {
+    async setChannelId(channelId: ChannelId): Promise<void> {
         this.channelId = channelId;
         this.logger.updateSharedContext({ channelId: String(channelId) });
+        await Promise.all(
+            this.peers.map((peer) =>
+                this.control(peer).lifecycle.stageChannelId(channelId).request()
+            )
+        );
     }
 
     public get canAddPeer(): boolean {
@@ -1044,11 +1049,19 @@ export class PeerTestHarness<
             responsivePeers.map(async (peer) => {
                 const errors = await peer.p2pInstance
                     .quiesce()
-                    .catch((error: unknown) => [
-                        error instanceof Error
-                            ? error
-                            : new Error(String(error))
-                    ]);
+                    .catch((error: unknown) => {
+                        if (
+                            error instanceof Error &&
+                            error.message.includes("disposed")
+                        ) {
+                            return [];
+                        }
+                        return [
+                            error instanceof Error
+                                ? error
+                                : new Error(String(error))
+                        ];
+                    });
                 if (stampPerHostThread) {
                     for (const error of errors) {
                         maybeStampErrorWithPeerAddress(error, peer.address);

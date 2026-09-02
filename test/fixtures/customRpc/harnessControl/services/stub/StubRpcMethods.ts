@@ -322,6 +322,33 @@ export class StubRpcMethods extends ARpcMethods<P2PManager<HarnessControlRpc>> {
         return true;
     }
 
+    /** Make the fully-signed snapshot path fail so exit falls back to dispute. */
+    public failPostStateSnapshotWait(): boolean {
+        const snapshotUpdateService = this.service.sm.snapshotUpdateService;
+        if (!this.service.stubOriginals.has("postStateSnapshotWait")) {
+            this.service.stubOriginals.set(
+                "postStateSnapshotWait",
+                snapshotUpdateService.postStateSnapshotWait
+            );
+        }
+        snapshotUpdateService.postStateSnapshotWait = async () => {
+            throw new Error("injected state snapshot post failure");
+        };
+        return true;
+    }
+
+    public restorePostStateSnapshotWait(): boolean {
+        const original = this.service.stubOriginals.get(
+            "postStateSnapshotWait"
+        );
+        if (original === undefined) return false;
+        const snapshotUpdateService = this.service.sm.snapshotUpdateService;
+        snapshotUpdateService.postStateSnapshotWait =
+            original as typeof snapshotUpdateService.postStateSnapshotWait;
+        this.service.stubOriginals.delete("postStateSnapshotWait");
+        return true;
+    }
+
     /**
      * Wrap `unsafeSetLatestState` so it records when it fires (queried via
      * `wasUnsafeSetLatestStateCalled`) but still runs the original.

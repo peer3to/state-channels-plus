@@ -1,3 +1,4 @@
+// @spec-test-coverage-ignore: harness service composition exercised by owning mapped tests
 import MainRpcService from "@/rpc/MainRpcService";
 import type P2PManager from "@/P2PManager";
 
@@ -12,6 +13,7 @@ import { ScenarioService } from "./services/scenario/ScenarioService";
 import { DisputeService } from "./services/dispute/DisputeService";
 import { TransitionService } from "./services/transition/TransitionService";
 import { BalanceService } from "./services/balance/BalanceService";
+import { LifecycleService } from "./services/lifecycle/LifecycleService";
 
 /**
  * Host-side harness-control RPC.
@@ -47,6 +49,7 @@ export class HarnessControlRpc extends MainRpcService {
     dispute: DisputeService;
     transition: TransitionService;
     balance: BalanceService;
+    lifecycle: LifecycleService;
 
     constructor(p2pManager: P2PManager<HarnessControlRpc>) {
         super(p2pManager);
@@ -61,6 +64,7 @@ export class HarnessControlRpc extends MainRpcService {
         this.dispute = new DisputeService(p2pManager, this.signer);
         this.transition = new TransitionService(p2pManager);
         this.balance = new BalanceService(p2pManager);
+        this.lifecycle = new LifecycleService(p2pManager);
     }
 }
 

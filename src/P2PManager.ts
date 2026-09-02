@@ -56,6 +56,9 @@ class P2PManager<TCustomRpc extends MainRpcService = MainRpcService>
     private initialSyncStarted = false;
     private initialSyncPromise?: Promise<boolean>;
     private resolveInitialSync?: (success: boolean) => void;
+    // Bounds the wait for the first cooperating participant handshake. An
+    // observer that never reaches a sync request must not wait forever.
+    private initialSyncDeadline?: ReturnType<typeof setTimeout>;
 
     constructor(
         stateManager: StateManager<TCustomRpc>,
@@ -109,6 +112,7 @@ class P2PManager<TCustomRpc extends MainRpcService = MainRpcService>
         }
 
         this.unsubscribeHandshakeCompleted();
+        this.cancelInitialSyncDeadline();
         this.resolveInitialSync?.(false);
         this.disconnectAll();
         this.disposalPromise = this.holepunch.dispose();
@@ -192,6 +196,7 @@ class P2PManager<TCustomRpc extends MainRpcService = MainRpcService>
     ): Promise<void> {
         if (this.initialSyncStarted) return;
         this.initialSyncStarted = true;
+        this.cancelInitialSyncDeadline();
         const stateManager = this.stateManager;
         const success = await this.localRpc.spectateService.sync(
             peerAddress,
@@ -404,7 +409,45 @@ class P2PManager<TCustomRpc extends MainRpcService = MainRpcService>
                 void this.onHandshakeCompleted(transport.peerAddress);
             }
         }
+        this.armInitialSyncDeadline();
         await initialSync;
+    }
+
+    /**
+     * The initial sync request carries its own two-window timeout. This bound
+     * covers the phase before that request exists: if no participant completes
+     * a handshake within the same two windows, the observer stops waiting and
+     * aborts, exactly as a timed-out sync request would.
+     */
+    private armInitialSyncDeadline(): void {
+        this.cancelInitialSyncDeadline();
+        if (this.initialSyncStarted) return;
+        const stateManager = this.stateManager;
+        this.initialSyncDeadline = stateManager.timeoutManager.scheduleTask(
+            () => {
+                this.initialSyncDeadline = undefined;
+                if (
+                    this.initialSyncStarted ||
+                    stateManager.isDisposed ||
+                    stateManager.status !== Status.OPENED
+                ) {
+                    return;
+                }
+                this.logger.warn(
+                    "No participant completed a handshake within the initial sync window; aborting"
+                );
+                stateManager.abort();
+                this.resolveInitialSync?.(false);
+            },
+            stateManager.timeConfig.agreementTime * 2 * 1000,
+            "P2PManager - initial sync participant deadline"
+        );
+    }
+
+    private cancelInitialSyncDeadline(): void {
+        if (!this.initialSyncDeadline) return;
+        this.stateManager.timeoutManager.cancelTask(this.initialSyncDeadline);
+        this.initialSyncDeadline = undefined;
     }
 
     private getInitialSyncPromise(): Promise<boolean> {

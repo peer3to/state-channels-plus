@@ -62,6 +62,24 @@ describe("LobbyMatchingService", function () {
         expect(result.abusivePeerBlacklisted).to.equal(true);
     });
 
+    it("settles cancellation when the selected peer disconnects during commit", async function () {
+        const result = await fixture
+            .control()
+            .p2pManagerProbe.probeLobbyCommitCancellation()
+            .request();
+
+        expect(result).to.deep.equal({
+            cancellationResult: true,
+            matchResultMissing: true,
+            topicCleared: true,
+            matchingCleared: true,
+            selectionCleared: true,
+            candidateCount: 0,
+            transportClosed: true,
+            peerBlacklisted: false
+        });
+    });
+
     it("assigns opposite bootstrap roles and rejects invalid lobby candidates", async function () {
         const result = await fixture
             .control()

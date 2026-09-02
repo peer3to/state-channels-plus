@@ -340,7 +340,7 @@ export default class MembershipService {
                         { blockHeight: block.height, forkId: block.forkId }
                     );
                     try {
-                        await sm.snapshotUpdateService.postStateSnapshot(
+                        await sm.snapshotUpdateService.postStateSnapshotWait(
                             block.forkId
                         );
                     } catch (error) {
@@ -353,6 +353,20 @@ export default class MembershipService {
                                         : String(error)
                             }
                         );
+                        try {
+                            sm.storage.forceExit.setForceExit(true);
+                            await sm.disputeManager.dispute(block.forkId);
+                        } catch (disputeError) {
+                            this.logger.error(
+                                "startMaybeExitOnChain - failed to create self-removal dispute after snapshot failure",
+                                {
+                                    error:
+                                        disputeError instanceof Error
+                                            ? disputeError.message
+                                            : String(disputeError)
+                                }
+                            );
+                        }
                     }
                 } else {
                     // Slow path: not everyone signed - create a self-removal dispute

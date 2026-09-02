@@ -133,6 +133,10 @@ export class EventHandler {
         if (!knownSnapshot) {
             const status = this.stateManager.status;
             if (status === Status.SYNCED) {
+                if (this.stateManager.leaveChannelService.isLeaving) {
+                    await this.stateManager.leaveChannelService.onSettledStateObserved();
+                    return;
+                }
                 // TODO: call stateManager.abort() here; it drops to OPENED and disposes,
                 // but no resync path exists yet.
 
@@ -152,20 +156,40 @@ export class EventHandler {
                     addressesEqual(p, this.stateManager.signerAddress)
                 );
                 if (signerRemoved) {
-                    // We were removed from the channel (e.g. slashed by dispute
-                    // resolution): a new snapshot we never produced no longer
-                    // lists us. This is a legitimate exit, not a desync — abort
-                    // participation instead of treating it as fatal.
-                    this.logger.warn(
-                        "onStateSnapshotUpdated - unknown snapshot excludes signer (slashed/removed), aborting",
-                        {
-                            channelId,
-                            status,
-                            hash: updatedSnapshot.hash
+                    if (this.stateManager.leaveChannelService.isLeaving) {
+                        this.logger.info(
+                            "onStateSnapshotUpdated - pending leave observed signer removal",
+                            { channelId, status, hash: updatedSnapshot.hash }
+                        );
+                        const localParticipants =
+                            await this.stateManager.getParticipantsCurrent();
+                        const inLocal = localParticipants.some((participant) =>
+                            addressesEqual(
+                                participant,
+                                this.stateManager.signerAddress
+                            )
+                        );
+                        if (!inLocal) {
+                            this.stateManager.setStatus(Status.SYNCED);
+                            await this.stateManager.leaveChannelService.onSettledStateObserved();
+                            return;
                         }
-                    );
-                    this.stateManager.abort();
-                    return;
+                    } else {
+                        // We were removed from the channel (e.g. slashed by dispute
+                        // resolution): a new snapshot we never produced no longer
+                        // lists us. This is a legitimate exit, not a desync — abort
+                        // participation instead of treating it as fatal.
+                        this.logger.warn(
+                            "onStateSnapshotUpdated - unknown snapshot excludes signer (slashed/removed), aborting",
+                            {
+                                channelId,
+                                status,
+                                hash: updatedSnapshot.hash
+                            }
+                        );
+                        this.stateManager.abort();
+                        return;
+                    }
                 }
                 const currentForkId = this.stateManager.forkId;
                 if (updatedSnapshot.forkID !== currentForkId) {
@@ -240,6 +264,7 @@ export class EventHandler {
             );
             await this.handleChannelClose(channelId);
         }
+        await this.stateManager.leaveChannelService.onSettledStateObserved();
     }
 
     private async handleChannelClose(channelId: ChannelId): Promise<void> {
@@ -774,6 +799,7 @@ export class EventHandler {
         ) {
             // If final, set fork and start building on it
             await this.stateManager.reductionManager.tryReduce(forkId);
+            await this.stateManager.leaveChannelService.onSettledStateObserved();
             return;
         }
 

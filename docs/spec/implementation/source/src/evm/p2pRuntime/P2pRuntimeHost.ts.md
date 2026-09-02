@@ -93,6 +93,12 @@ Exact test evidence is mapped against these IDs in the verification test reports
 
 ## Related source reports
 
+## Terminal leave dispatch
+
+The host dispatches the serializable leave request and waits for settled departure. It returns success without
+disposing itself, leaving outer teardown to `P2pInstance`. The former public setter dispatch is absent. This
+contributes to [`REQ-TJOIN-6-0HEVYH`](../../../../../specification/peer-communication/targeted-channel-join.md#req-tjoin-6-0hevyh), [`REQ-TJOIN-7-NNGTAY`](../../../../../specification/peer-communication/targeted-channel-join.md#req-tjoin-7-nngtay), and [`REQ-LIF-10-QR8NQ9`](../../../../../specification/settlement/lifecycle.md#req-lif-10-qr8nq9).
+
 - [P2pRuntimeClient](./P2pRuntimeClient.ts.md), [ClientHostRpc](./ClientHostRpc.ts.md), platform channels.
 
 ## Targeted connect routing

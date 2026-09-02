@@ -198,6 +198,17 @@ export type LobbyRecoveryProbe = {
     abusivePeerBlacklisted: boolean;
 };
 
+export type LobbyCommitCancellationProbe = {
+    cancellationResult: boolean;
+    matchResultMissing: boolean;
+    topicCleared: boolean;
+    matchingCleared: boolean;
+    selectionCleared: boolean;
+    candidateCount: number;
+    transportClosed: boolean;
+    peerBlacklisted: boolean;
+};
+
 export type LobbyBootstrapValidationProbe = {
     bothNoneRole: string;
     bothNoneExpectedRole: string;
@@ -332,6 +343,7 @@ export type TargetedNegotiationRaceProbe = {
     signaturePeerBlacklisted: boolean;
     signatureAttemptCleared: boolean;
     signatureTargetRetained: boolean;
+    signatureLookupBlockedBeforeRelease: boolean;
     receiptOutcome: string;
     receiptSubmitCalls: number;
     receiptPeerBlacklisted: boolean;
@@ -2257,6 +2269,79 @@ export class P2PManagerProbeService extends ARpcService<
         };
     }
 
+    public async probeLobbyCommitCancellation(): Promise<LobbyCommitCancellationProbe> {
+        const service = new LobbyMatchingService(this.p2pManager, {
+            roleDurationMinMs: 10_000,
+            roleDurationMaxMs: 10_000
+        });
+        const topic = `0x${"35".repeat(32)}`;
+        const peerAddress = getChecksumAddress(
+            "0xffffffffffffffffffffffffffffffffffffffff"
+        );
+        const transport = this.transport(peerAddress);
+        const profile = new PeerProfile(transport, peerAddress);
+        this.p2pManager.profileManager.registerProfile(profile);
+        const match = service.match(topic);
+        await Promise.resolve();
+        service.receiveAvailability(transport, {
+            topic,
+            role: "advertiser",
+            roleEpoch: 1,
+            available: true
+        });
+
+        for (let retry = 0; retry < 50 && transport.frames.length === 0; retry += 1) {
+            await new Promise((resolve) => setTimeout(resolve, 0));
+        }
+        const pickRequestId = this.requestId(transport);
+        this.p2pManager.onRpc(
+            JSON.stringify({
+                rpcResponse: true,
+                requestId: pickRequestId,
+                ok: true,
+                result: {
+                    status: "accepted",
+                    advertiserChallenge: `0x${"36".repeat(32)}`
+                }
+            }),
+            transport
+        );
+
+        for (let retry = 0; retry < 50 && transport.frames.length < 2; retry += 1) {
+            await new Promise((resolve) => setTimeout(resolve, 0));
+        }
+        const commitRequestId = this.requestId(transport);
+        const cancellation = service.cancelMatching(topic);
+        this.p2pManager.profileManager.removeTransport(transport);
+        this.p2pManager.onRpc(
+            JSON.stringify({
+                rpcResponse: true,
+                requestId: commitRequestId,
+                ok: false,
+                error: "selected peer disconnected"
+            }),
+            transport
+        );
+
+        const [cancellationResult, matchResult] = await Promise.all([
+            cancellation,
+            match
+        ]);
+        const availability = service.getAvailability();
+        const result = {
+            cancellationResult,
+            matchResultMissing: matchResult === undefined,
+            topicCleared: availability.topic === undefined,
+            matchingCleared: !availability.matching,
+            selectionCleared: !availability.inFlight,
+            candidateCount: availability.candidateCount,
+            transportClosed: transport.isClosed,
+            peerBlacklisted: profile.isBlackListed
+        };
+        await service.dispose();
+        return result;
+    }
+
     public async probeLobbyBootstrapAndValidation(): Promise<LobbyBootstrapValidationProbe> {
         const localAddress = getChecksumAddress(
             String(this.p2pManager.stateManager.signerAddress)
@@ -3788,6 +3873,20 @@ export class P2PManagerProbeService extends ARpcService<
             releaseSign = resolve;
         });
         let signEntered = false;
+        const originalGetParticipants = manager.getParticipants;
+        let releaseParticipantLookup!: () => void;
+        const participantLookupGate = new Promise<void>((resolve) => {
+            releaseParticipantLookup = resolve;
+        });
+        let participantLookupEntered = false;
+        manager.getParticipants = (async (channelId: string) => {
+            if (channelId === signature.channelId) {
+                participantLookupEntered = true;
+                await participantLookupGate;
+                return [];
+            }
+            return originalGetParticipants(channelId);
+        }) as unknown as typeof manager.getParticipants;
         SignatureUtils.signOpenChannel = (async (
             ...args: Parameters<typeof originalSign>
         ) => {
@@ -3811,12 +3910,25 @@ export class P2PManagerProbeService extends ARpcService<
         stateManager.events.emit("eventHandler", "onChannelOpened", [
             signature.channelId
         ]);
+        for (
+            let index = 0;
+            index < 100 && !participantLookupEntered;
+            index += 1
+        ) {
+            await new Promise((resolve) => setTimeout(resolve, 0));
+        }
+        releaseSign();
+        await Promise.resolve();
+        await Promise.resolve();
+        const signatureLookupBlockedBeforeRelease =
+            participantLookupEntered && signatureSubmitCalls === 0;
+        releaseParticipantLookup();
         const signatureOutcome = (await signature.outcome).status;
         const signatureTargetRetained =
             String(stateManager.channelId) === signature.channelId;
-        releaseSign();
         await accepting;
         SignatureUtils.signOpenChannel = originalSign;
+        manager.getParticipants = originalGetParticipants;
         manager.open = originalOpen;
 
         const receipt = await prepare("92");
@@ -3944,6 +4056,7 @@ export class P2PManagerProbeService extends ARpcService<
             signaturePeerBlacklisted: signature.profile.isBlackListed,
             signatureAttemptCleared: !signature.service.state.attempt,
             signatureTargetRetained,
+            signatureLookupBlockedBeforeRelease,
             receiptOutcome,
             receiptSubmitCalls,
             receiptPeerBlacklisted: receipt.profile.isBlackListed,

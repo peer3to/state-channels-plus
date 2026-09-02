@@ -132,6 +132,11 @@ export default class BlockCommitService {
             options?.outboundMessageBlock
         );
 
+        await sm.leaveChannelService.onBlockCommitted(
+            block,
+            participantChanges
+        );
+
         // step 9 - success callback
         successCallback();
 
@@ -145,7 +150,8 @@ export default class BlockCommitService {
             currentTimestamp: Clock.getTimeInSeconds(),
             timeConfig: sm.timeConfig,
             p2pEventHooks: sm.p2pEventHooks,
-            logger: this.logger
+            logger: this.logger,
+            leaveChannelService: sm.leaveChannelService
         });
 
         // step 11 - maybe post block on chain

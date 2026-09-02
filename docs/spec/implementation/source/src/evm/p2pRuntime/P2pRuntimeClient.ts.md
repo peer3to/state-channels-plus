@@ -81,4 +81,9 @@ Exact test evidence is mapped against these IDs in the verification test reports
 
 ## Related source reports
 
+## Terminal leave contribution
+
+The existing client request registry carries the timeout-free leave response and the existing disposal route
+still owns port and worker teardown. This contributes to [`REQ-TJOIN-7-NNGTAY`](../../../../../specification/peer-communication/targeted-channel-join.md#req-tjoin-7-nngtay).
+
 - [P2pRuntimeHost](./P2pRuntimeHost.ts.md).

@@ -179,10 +179,6 @@ export default class LobbyMatchingService extends ARpcService<LobbyMatchingRpcMe
         return this.activeTopic;
     }
 
-    public get hasActiveMatcherAttempt(): boolean {
-        return !!this.activeTopic && !!this.matchResolve;
-    }
-
     public ownsNegotiationPeer(transport: ATransport): boolean {
         const peerAddress = this.peerAddress(transport);
         return (
@@ -610,6 +606,9 @@ export default class LobbyMatchingService extends ARpcService<LobbyMatchingRpcMe
             this.commitInFlight = false;
             if (this.inFlightSelection !== selection) {
                 this.neutralProfileLosses.delete(peerAddress);
+                if (this.pendingCancellation) {
+                    await this.cleanup(true, undefined);
+                }
                 return;
             }
             this.inFlightSelection = undefined;

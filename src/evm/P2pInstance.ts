@@ -43,6 +43,7 @@ export default class P2pInstance<
 
     private webRTCBridgeHandle?: WebRTCMainThreadBridgeHandle;
     private readonly client: P2pRuntimeClient<T>;
+    private terminalLeavePromise?: Promise<void>;
 
     /**
      * Main-thread end of the WebRTC bridge `MessagePort`. Present only when the
@@ -92,6 +93,18 @@ export default class P2pInstance<
             this.webRTCBridgeHandle?.dispose();
             this.webRTCBridgeHandle = undefined;
         }
+    }
+
+    public leaveChannel(): Promise<void> {
+        if (!this.terminalLeavePromise) {
+            this.terminalLeavePromise = this.leaveAndDispose();
+        }
+        return this.terminalLeavePromise;
+    }
+
+    private async leaveAndDispose(): Promise<void> {
+        await this.p2pSigner.leaveChannel();
+        await this.dispose();
     }
 
     /**

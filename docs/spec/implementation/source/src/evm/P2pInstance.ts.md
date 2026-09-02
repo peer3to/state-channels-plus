@@ -78,4 +78,9 @@ Exact test evidence is mapped against these IDs in the verification test reports
 
 ## Related source reports
 
+## Terminal leave contribution
+
+`leaveChannel` stores one outer terminal promise, awaits the host leave response, then calls the existing
+`dispose` chain. It therefore contributes to [`REQ-TJOIN-7-NNGTAY`](../../../../specification/peer-communication/targeted-channel-join.md#req-tjoin-7-nngtay) and [`REQ-LIF-10-QR8NQ9`](../../../../specification/settlement/lifecycle.md#req-lif-10-qr8nq9) without moving listener or transport ownership into the host operation.
+
 - [runtime-and-concurrency view](../../../views/architecture/sdk/runtime-and-concurrency.md).

@@ -55,6 +55,7 @@ export type StubKey =
     | "joinSignatureCreateRpcMethods"
     | "disputeAckCreateRpcMethods"
     | "postStateSnapshot"
+    | "postStateSnapshotWait"
     | "unsafeSetLatestState"
     | "blockedInitHandshake"
     | "captureInitHandshake"

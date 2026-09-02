@@ -51,6 +51,16 @@ wrong-topic RPCs blacklist and disconnect the abusive peer after the bounded rej
 
 ## Related source reports
 
+## Stale commit cancellation
+
+When profile loss makes an in-flight commit stale, the catch path now runs the existing cleanup owner when
+cancellation is pending. Cancellation resolves `true`, matching resolves without a match, and neutral profile
+loss does not blacklist the peer or leave matcher resources active.
+
+| Unit test ID | Obligation | Public entry and setup | Oracle and forbidden effects | Required permutations |
+| --- | --- | --- | --- | --- |
+| <a id="unit-test-lobby-cancellation-1-fdxzhe"></a>`UNIT-TEST-LOBBY-CANCELLATION-1-FDXZHE` | Stale commit cancellation | Hold a selected commit, request cancellation, disconnect that peer, then reject commit. | Cancellation is true, matching has no result, resources clear, and neutral loss is not blacklisted. | <a id="unit-test-lobby-cancellation-1-fdxzhe.p1"></a>`UNIT-TEST-LOBBY-CANCELLATION-1-FDXZHE.P1` — selected-peer disconnect during pending commit cancellation. |
+
 - [OpenChannelNegotiationService.ts](../openChannelNegotiation/OpenChannelNegotiationService.ts.md)
 - [P2PManager.ts](../../../P2PManager.ts.md)
 - [PeerProfile.ts](../../../PeerProfile.ts.md)

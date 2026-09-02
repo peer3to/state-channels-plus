@@ -1,3 +1,4 @@
+// @spec-test-coverage-ignore: transition fixture support exercised by owning mapped tests
 import ARpcMethods from "@/rpc/ARpcMethods";
 import type ATransport from "@/transport/ATransport";
 import type { ForkId } from "@/types/types";
@@ -54,9 +55,9 @@ export class TransitionRpcMethods extends ARpcMethods {
         forkId: ForkId
     ): Promise<{ encodedSnapshot: string } | null> {
         const struct = (
-            await this.service.sm.snapshotUpdateService[
-                "postStateSnapshotWait"
-            ](forkId)
+            await this.service.sm.snapshotUpdateService.postStateSnapshotWait(
+                forkId
+            )
         )?.toStruct();
         return struct
             ? {

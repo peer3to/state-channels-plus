@@ -54,7 +54,7 @@ export default class SnapshotUpdateService {
         return submission.expectedSnapshot;
     }
 
-    private async postStateSnapshotWait(
+    public async postStateSnapshotWait(
         forkId: ForkId
     ): Promise<StateSnapshot | undefined> {
         const submission = await this.submitStateSnapshot(forkId);

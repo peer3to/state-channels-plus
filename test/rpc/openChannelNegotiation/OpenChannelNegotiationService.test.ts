@@ -169,6 +169,15 @@ describe("OpenChannelNegotiationService", function () {
         expect(result.signatureAttemptCleared).to.equal(true);
     });
 
+    it("target-open classification blocks submission until participant lookup completes", async function () {
+        const result = await probeTargetedNegotiationRaces();
+
+        expect(result.signatureLookupBlockedBeforeRelease).to.equal(true);
+        expect(result.signatureSubmitCalls).to.equal(0);
+        expect(result.signatureOutcome).to.equal("observed-target-open");
+        expect(result.signaturePeerBlacklisted).to.equal(false);
+    });
+
     it("targeted authoritative open returns the selected-channel handoff outcome", async function () {
         const result = await probeTargetedNegotiationRaces();
 

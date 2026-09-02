@@ -23,6 +23,8 @@ export type Config = {
     // Max entries in the per-thread signer-recovery cache (message+signature ->
     // address). Bounds memory; evicts oldest past this.
     SIGNER_RECOVERY_CACHE_MAX: number;
+    // Local liveness deadline before terminal leave starts self-removal.
+    LEAVE_CHANNEL_WATCHDOG_MS: number;
     // Crash log collection
     CRASH_LOG_UPLOAD_ENDPOINT: string;
     CRASH_LOG_API_TOKEN: string;
@@ -47,6 +49,7 @@ const DEFAULT_CONFIG: Config = {
     RUN_SDK_IN_THREAD: false,
     EVENT_LOOP_DELAY_ERROR_THRESHOLD_SECONDS: 0,
     SIGNER_RECOVERY_CACHE_MAX: 100_000,
+    LEAVE_CHANNEL_WATCHDOG_MS: 15_000,
     // Crash log collection is enabled when upload endpoint is configured.
     CRASH_LOG_UPLOAD_ENDPOINT: "",
     CRASH_LOG_API_TOKEN: "",

@@ -78,4 +78,11 @@ Exact test evidence is mapped against these IDs in the verification test reports
 
 ## Related source reports
 
+## Leave-turn hook
+
+`onLeaveTurn` is a zero-argument signal that exists only for one pending-leave peer's eligible turn. The
+runtime already owns the channel and timing context needed to author the exit. Each hook declaration also
+documents what it reports and when it fires. This contributes to
+[`REQ-TJOIN-7-NNGTAY`](../../../specification/peer-communication/targeted-channel-join.md#req-tjoin-7-nngtay).
+
 - [P2pEventHooksUtils](./utils/P2pEventHooksUtils.ts.md).

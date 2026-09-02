@@ -24,3 +24,6 @@ for the committed `SYNCED` transition.
 
 State-application tests cover atomic genesis application and participant/observer status derivation. Peer
 authentication and responder readiness are covered at the P2P and spectate boundaries.
+# Terminal leave contribution
+
+Applied settled state rechecks terminal leave after participant status and fork state are authoritative. This contributes to [`REQ-LIF-10-QR8NQ9`](../../../../../specification/settlement/lifecycle.md#req-lif-10-qr8nq9).

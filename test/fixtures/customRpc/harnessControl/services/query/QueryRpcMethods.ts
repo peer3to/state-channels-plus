@@ -10,6 +10,7 @@ import { Status } from "@/types/flags";
 import StateSnapshot from "@/models/StateSnapshot";
 import type { Address, ForkId, Hash, BlockHeight } from "@/types/types";
 import type { QueryService } from "./QueryService";
+import { config } from "@/utils/config";
 
 /** Serializable inputs needed to assemble a block on top of a fork's head. */
 export interface BlockBuildingContext {
@@ -83,6 +84,18 @@ export class QueryRpcMethods extends ARpcMethods {
         return this.service.sm.status;
     }
 
+    public getLeaveChannelState() {
+        return this.service.sm.leaveChannelService.state;
+    }
+
+    public getLeaveChannelWatchdogMs(): number {
+        return config.LEAVE_CHANNEL_WATCHDOG_MS;
+    }
+
+    public getForceExit(): boolean {
+        return this.service.storage.forceExit.getForceExit();
+    }
+
     public getChannelId(): string {
         return this.service.sm.channelId as string;
     }
@@ -93,6 +106,12 @@ export class QueryRpcMethods extends ARpcMethods {
 
     public getLobbyAvailability() {
         return this.p2pManager.localRpc.lobbyMatchingService.getAvailability();
+    }
+
+    public getJoinedHolepunchTopics(): string[] {
+        return this.p2pManager.holepunch.topics.map(
+            (topic) => `0x${topic.toString("hex")}`
+        );
     }
 
     public getNegotiationAttempt(): {

@@ -716,7 +716,7 @@ describe("P2PManager", function () {
             ).to.deep.equal([true, true]);
         });
 
-        it("fatal initial sync disposal leaves later connect calls false", async function () {
+        it("fatal initial sync disposal leaves later same-channel connect calls false", async function () {
             await fixture!.cleanup();
             fixture = new P2PManagerFixture();
             await fixture.setup({
@@ -747,11 +747,66 @@ describe("P2PManager", function () {
                 ).to.equal(false);
                 expect(
                     await observer.p2pInstance.p2pSigner.connectToChannel(
-                        Wallet.createRandom().privateKey
+                        h.channelId
                     )
                 ).to.equal(false);
             } finally {
                 await Promise.all(releases.map((release) => release()));
+            }
+        });
+
+        it("observer connect resolves false when no participant handshake completes within the initial window", async function () {
+            await fixture!.cleanup();
+            fixture = new P2PManagerFixture();
+            await fixture.setup({
+                timeConfig: {
+                    agreementTime: 2,
+                    p2pTime: 2,
+                    chainFallbackTime: 2,
+                    evidenceTime: 2
+                }
+            });
+            const h = fixture.getHarness();
+            await h.lifecycle.openChannelForParticipants([0, 1]);
+            await h.network.joinSelectedKey([0, 1], String(h.channelId));
+            const observerIndex = h.peers.length;
+            await h.createPeer(
+                observerIndex,
+                h.signerFor(slotAccountIndex(observerIndex))
+            );
+            const observer = h.getPeer(observerIndex);
+            // Block handshake initiation on every runtime so the observer never
+            // reaches a participant sync request; the pre-request bound must
+            // settle the connect the way a timed-out sync request would.
+            await Promise.all(
+                h.peers.map((peer) =>
+                    h
+                        .control(peer)
+                        .stub.stubBlockHandshakeAndRecordSpectateGuard()
+                        .request()
+                )
+            );
+            try {
+                const startedAt = Date.now();
+                expect(
+                    await observer.p2pInstance.p2pSigner.connectToChannel(
+                        h.channelId
+                    )
+                ).to.equal(false);
+                const elapsedMs = Date.now() - startedAt;
+                expect(elapsedMs).to.be.greaterThan(2 * 2 * 1000 - 500);
+                expect(elapsedMs).to.be.lessThan(2 * 2 * 1000 + 6000);
+                expect(
+                    await h.execOnHost(observer, async (sm) =>
+                        Boolean(sm.isDisposed)
+                    )
+                ).to.equal(true);
+            } finally {
+                await Promise.all(
+                    h.peers.map((peer) =>
+                        h.control(peer).stub.restoreBlockedHandshake().request()
+                    )
+                );
             }
         });
     });

@@ -1,6 +1,7 @@
 import { MathTestSession as TestSession } from "@test/harness";
 import { expect } from "chai";
 import { Status } from "@/types";
+import { waitFor } from "@test/utils/waitFor";
 
 describe("E2E: Force Join Dispute", function () {
     it("should force an omitted join into the reduced fork and schedule the joiner as an author", async function () {
@@ -96,5 +97,65 @@ describe("E2E: Force Join Dispute", function () {
             true,
             "the reduced joiner must receive and complete an authoring turn"
         );
+    });
+
+    it("late leave waits for the submitted force-join dispute before retrying on its successor", async function () {
+        const h = TestSession.getHarness();
+        await h.lifecycle.start(2, 0, {
+            configOverrides: { LEAVE_CHANNEL_WATCHDOG_MS: 5_000 }
+        });
+        const joiner = await h.join.addSpectatorDetached();
+        await h.transition.advanceState({ count: 2, waitForPeers: [0, 1] });
+        await h.event.waitUntilPeerStatus(joiner.index, Status.SYNCED);
+        await h.assert.sync.peersInSyncWait();
+        const restoreInbound0 =
+            await h.byzantine.stubPendingInboundInclusion(0);
+        const restoreInbound1 =
+            await h.byzantine.stubPendingInboundInclusion(1);
+        await h.join.joinChannelWait({ joiner });
+
+        const originalForkId = h.activeForkId!;
+        await h.transition.advanceState({ count: 3 });
+        await h.event.waitForPeers(
+            "onInitiatingDispute",
+            [joiner.index],
+            1,
+            { mode: "atLeast" }
+        );
+        await restoreInbound0();
+        await restoreInbound1();
+        const disputeCountBeforeLeave =
+            joiner.eventSpies.onInitiatingDispute!.callCount;
+
+        const leave = joiner.p2pInstance.p2pSigner.leaveChannel();
+        void leave.catch(() => undefined);
+        await waitFor(async () => {
+            const state = await h
+                .control(joiner)
+                .query.getLeaveChannelState()
+                .request();
+            return state?.phase === "awaiting-settlement";
+        });
+        expect(joiner.eventSpies.onInitiatingDispute!.callCount).to.equal(
+            disputeCountBeforeLeave
+        );
+
+        await h.dispute.resolveDisputeWait({ forkId: originalForkId });
+        await waitFor(async () => {
+            const state = await h
+                .control(joiner)
+                .query.getLeaveChannelState()
+                .request();
+            return (
+                state?.forkId !== originalForkId &&
+                state?.phase === "awaiting-exit"
+            );
+        }, h.event.protocolEventTimeoutMs({ withFirstBlockGrace: true }));
+
+        expect(
+            await h.control(joiner).query.getStatus().request()
+        ).to.equal(Status.PARTICIPATING);
+        await joiner.p2pInstance.dispose();
+        await expect(leave).to.be.rejectedWith("disposed");
     });
 });

@@ -296,7 +296,11 @@ globalThis.runP2pWebRTCMainThreadE2E = async () => {
     );
     // Select the channel on the genesis runtime before the external opening so
     // its provider listener applies genesis and can serve the observers.
-    await peerInstances[0].p2pSigner.setChannelId(channelId);
+    const selectedBeforeOpen =
+        await peerInstances[0].p2pSigner.connectToChannel(channelId);
+    if (selectedBeforeOpen !== false) {
+        throw new Error("pre-open target selection unexpectedly connected");
+    }
     await openConfirmedChannel();
     await waitForAsync(
         async () =>
