@@ -22,9 +22,21 @@ import {
     ReduceOutputStruct
 } from "@typechain-types/contracts/V1/types/DisputeTypes";
 import type { ReduceData } from "@/types/disputes";
-import { StateProofStruct } from "@typechain-types/contracts/V1/types/ProofTypes";
+import {
+    DisputeFraudProofStruct,
+    FraudProofStruct,
+    StateProofStruct
+} from "@typechain-types/contracts/V1/types/ProofTypes";
+import { BlockDoubleSignProofStruct } from "@typechain-types/contracts/V1/types/FraudProofTypes";
+import { DisputeNotLatestStateStruct } from "@typechain-types/contracts/V1/types/DisputeFraudProofTypes";
 import { randomInt } from "crypto";
 import { Codec, Type } from "@/utils";
+import {
+    DisputeFraudProofType,
+    FraudProofType,
+    toSolidityDisputeFraudProofType,
+    toSolidityFraudProofType
+} from "@/types/sol-enums";
 import {
     tryDecodeCustomError,
     type CustomEvmError
@@ -281,6 +293,47 @@ export function signedDispute(
     };
 
     return { ...defaultSignedDispute, ...overrides };
+}
+
+export function fraudProof(
+    overrides: Partial<FraudProofStruct> = {}
+): FraudProofStruct {
+    const block1 = signedBlock();
+    const block2 = signedBlock();
+    const proof: BlockDoubleSignProofStruct = {
+        block1,
+        block2
+    };
+    const defaultFraudProof: FraudProofStruct = {
+        proofType: toSolidityFraudProofType(FraudProofType.BlockDoubleSign),
+        participant: randomAddress(),
+        encodedProof: Codec.encode(proof, FraudProofType.BlockDoubleSign)
+    };
+
+    return { ...defaultFraudProof, ...overrides };
+}
+
+export function disputeFraudProof(
+    dispute: DisputeStruct,
+    overrides: Partial<DisputeFraudProofStruct> = {}
+): DisputeFraudProofStruct {
+    const proof: DisputeNotLatestStateStruct = {
+        encodedBlock: Codec.encode(block().blockStruct, Type.Block),
+        signature: signature()
+    };
+    const defaultDisputeFraudProof: DisputeFraudProofStruct = {
+        proofType: toSolidityDisputeFraudProofType(
+            DisputeFraudProofType.DisputeNotLatestState
+        ),
+        participant: dispute.input.disputer,
+        dispute,
+        encodedProof: Codec.encode(
+            proof,
+            DisputeFraudProofType.DisputeNotLatestState
+        )
+    };
+
+    return { ...defaultDisputeFraudProof, ...overrides };
 }
 
 export function blockConfirmation(

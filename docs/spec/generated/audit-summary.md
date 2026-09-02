@@ -19,15 +19,15 @@ Detailed statements, source evidence, design analysis, and test mappings remain 
 ## Readiness
 
 - Requirements/invariants: 244
-- Structurally complete requirement paths: **8/244** (3%)
+- Structurally complete requirement paths: **9/244** (4%)
 - Current engineer-approved paths: **0/244** (0%)
 - Current security-accepted paths: **0/244** (0%)
 - Final ready paths: **0/244** (0%)
 - Source files assigned to implementation subjects: **248/264** (94%)
-- Test declarations mapped or explicitly ignored: **893/1594** (56%)
+- Test declarations mapped or explicitly ignored: **897/1605** (56%)
 - Open questions: 38
 - Active findings: 17
-- Strict blocking items: 5225
+- Strict blocking items: 5223
 
 ## Requirement paths
 
@@ -139,7 +139,7 @@ Detailed statements, source evidence, design analysis, and test mappings remain 
 | [`REQ-DISPUTE-PIPE-6-6FZB9M`](../specification/disputes/dispute-processing.md#req-dispute-pipe-6-6fzb9m) | [REQ-DISPUTE-PIPE-6-6FZB9M · 1 plan](../specification/disputes/dispute-processing.md#req-dispute-pipe-6-6fzb9m) | [Covered](../implementation/source/src/disputeManager/DisputeManager.ts.md#conformance-traceability) | 0/4 permutations evidenced | 0 | None linked | Gap | Approval pending | Assessment pending | Not ready |
 | [`REQ-DSTORE-1-5AQYJX`](../specification/storage/dispute-evidence.md#req-dstore-1-5aqyjx) | [REQ-DSTORE-1-5AQYJX · 1 plan](../specification/storage/dispute-evidence.md#req-dstore-1-5aqyjx) | [Covered](../implementation/source/src/storage/DisputeStorage.ts.md#conformance-traceability) | 1/3 permutations evidenced | 1 | None linked | Gap | Approval pending | Assessment pending | Not ready |
 | [`REQ-DSTORE-2-H1DAGX`](../specification/storage/dispute-evidence.md#req-dstore-2-h1dagx) | [REQ-DSTORE-2-H1DAGX · 1 plan](../specification/storage/dispute-evidence.md#req-dstore-2-h1dagx) | [Covered](../implementation/source/src/storage/DisputeStorage.ts.md#conformance-traceability) | 0/5 permutations evidenced | 0 | None linked | Gap | Approval pending | Assessment pending | Not ready |
-| [`REQ-DSTORE-3-ZNXSTM`](../specification/storage/dispute-evidence.md#req-dstore-3-znxstm) | [REQ-DSTORE-3-ZNXSTM · 1 plan](../specification/storage/dispute-evidence.md#req-dstore-3-znxstm) | [Covered](../implementation/source/src/storage/DisputeFraudProofStorage.ts.md#conformance-traceability) | 0/6 permutations evidenced | 0 | [`FIND-STORAGE-4-MFD7RZ`](../audit/open-findings.md#find-storage-4-mfd7rz) | Gap | Approval pending | Blocked | Not ready |
+| [`REQ-DSTORE-3-ZNXSTM`](../specification/storage/dispute-evidence.md#req-dstore-3-znxstm) | [REQ-DSTORE-3-ZNXSTM · 1 plan](../specification/storage/dispute-evidence.md#req-dstore-3-znxstm) | [Covered](../implementation/source/src/storage/DisputeFraudProofStorage.ts.md#conformance-traceability) | 6/6 permutations evidenced | 4 | [`FIND-STORAGE-4-MFD7RZ`](../audit/open-findings.md#find-storage-4-mfd7rz) | Complete | Approval pending | Blocked | Not ready |
 | [`REQ-ENFADM-1-V926CA`](../specification/enforcement/admission-and-funds.md#req-enfadm-1-v926ca) | [REQ-ENFADM-1-V926CA · 1 plan](../specification/enforcement/admission-and-funds.md#req-enfadm-1-v926ca) | [Covered](../implementation/source/contracts/V1/StateChannelDiamondProxy/JoinChannelFacet.sol.md#conformance-traceability) | 7/7 permutations evidenced | 7 | None linked | Complete | Approval pending | Assessment pending | Not ready |
 | [`REQ-ENFADM-2-K6K9SP`](../specification/enforcement/admission-and-funds.md#req-enfadm-2-k6k9sp) | [REQ-ENFADM-2-K6K9SP · 1 plan](../specification/enforcement/admission-and-funds.md#req-enfadm-2-k6k9sp) | [Covered](../implementation/source/contracts/V1/StateChannelDiamondProxy/Errors.sol.md#conformance-traceability) | 3/6 permutations evidenced | 3 | None linked | Gap | Approval pending | Assessment pending | Not ready |
 | [`REQ-ENFADM-3-6A3BEB`](../specification/enforcement/admission-and-funds.md#req-enfadm-3-6a3beb) | [REQ-ENFADM-3-6A3BEB · 1 plan](../specification/enforcement/admission-and-funds.md#req-enfadm-3-6a3beb) | [Covered](../implementation/source/contracts/V1/StateChannelDiamondProxy/JoinChannelFacet.sol.md#conformance-traceability) | 4/4 permutations evidenced | 4 | None linked | Complete | Approval pending | Assessment pending | Not ready |
@@ -281,7 +281,7 @@ Detailed statements, source evidence, design analysis, and test mappings remain 
 ## Global gaps
 
 - 16 source/contract file(s) have no implementation-subject owner.
-- 701 test declaration(s) are unaccounted.
+- 708 test declaration(s) are unaccounted.
 - 38 open question(s) require decisions.
 - 17 active finding(s) remain.
 - 244 requirement path(s) lack current engineer approval.

@@ -18,6 +18,11 @@ export class FraudProofStorage {
     storeFraudProof(fraudProof: FraudProofStruct): Hash {
         const proofHash = hash(fraudProof.encodedProof);
 
+        const existing = this.fraudProofs.get(proofHash);
+        if (existing) {
+            return proofHash;
+        }
+
         // Store the fraud proof
         this.fraudProofs.set(proofHash, fraudProof);
 
