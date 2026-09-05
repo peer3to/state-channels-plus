@@ -590,15 +590,22 @@ describe("distributed parallel runner", function () {
                 baseEnv: {},
                 dht: pool.createOrchestratorDht()
             });
+            // The quarantine worker's connection lives only for its 50 ms
+            // failing preparation, so both workers are active together only
+            // in a short window; poll fast enough to observe it.
             await waitFor(
                 () =>
                     preparationWorker.manager.active !== null &&
                     protocolWorker.manager.active !== null,
-                TEST_DISTRIBUTED_CONNECTION_TIMEOUT_MS
+                TEST_DISTRIBUTED_CONNECTION_TIMEOUT_MS,
+                5
             );
             const malformed = Buffer.alloc(5);
             malformed.writeUInt32BE(1, 0);
             protocolWorker.manager.active?.peer.stream.write(malformed);
+            // The worker must go down before the orchestrator's next
+            // discovery refresh (25 ms) re-dials it and a clean lease replaces
+            // the protocol failure as its last disposition, so poll fast.
             await waitFor(
                 () =>
                     dialActivity.some((line) =>
@@ -608,7 +615,8 @@ describe("distributed parallel runner", function () {
                                 ": Malformed frame"
                         )
                     ),
-                TEST_DISTRIBUTED_CONNECTION_TIMEOUT_MS
+                TEST_DISTRIBUTED_CONNECTION_TIMEOUT_MS,
+                5
             );
             await pool.stopServer(protocolWorker);
 

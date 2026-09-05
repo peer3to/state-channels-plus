@@ -6,7 +6,8 @@
 ## Overview
 
 The tests prove that intentional harness isolation blacklists a peer in both directions so discovery cannot
-reconnect it, while explicit reconnection clears that harness policy before rejoining. Initial connection uses
+reconnect it, while explicit reconnection leaves the selected topic, clears that harness policy, and rejoins
+to restart discovery after isolation stopped its retry loop. Initial connection uses
 a separate path and does not silently clear policy it did not establish. They also prove that
 `connectToChannel` acknowledges dispatch immediately, forwards serializable options, and reports both a
 fulfilled `false` and a signer rejection through the detached-error owner. The RPC acknowledgement and

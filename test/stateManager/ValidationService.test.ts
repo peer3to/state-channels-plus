@@ -9,9 +9,10 @@ describe("ValidationService - block author participant gate", function () {
     it("binds the author to the previous snapshot and to a coordinate-matched resulting snapshot", async function () {
         const h = TestSession.getHarness();
         await h.lifecycle.start(4, 0);
-        const joiner = await h.join.addSpectatorDetached();
-        await h.transition.advanceState({
-            waitForPeers: [0, 1, 2, 3],
+        const { peer: joiner } = await h.join.addSpectatorAuthoring({
+            authoringPeerIndices: [0, 1, 2, 3],
+            minimumBlocks: 1,
+            maximumBlocks: 20,
             waitForFinalization: true
         });
         const peer = h.control(h.getPeer(0));

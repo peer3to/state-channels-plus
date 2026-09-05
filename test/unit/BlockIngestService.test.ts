@@ -1,4 +1,5 @@
 import { expect } from "chai";
+import { waitFor } from "@test/utils/waitFor";
 import { Codec, Type } from "@/utils";
 import {
     MathPeerTestHarness,
@@ -279,6 +280,16 @@ describe("Unit: BlockIngestService", function () {
                 blockHash: stored!.hash,
                 keepConnection: true
             });
+            // Peers keep gossiping copies of the same block; a copy without
+            // the timestamp can be the first "processed" for this hash, so
+            // wait for the merge that carries it.
+            await waitFor(
+                async () =>
+                    (await h
+                        .control(observer)
+                        .query.getBlockByHeight(forkId, 1)
+                        .request())!.onChainTimestamp === onChainTimestamp
+            );
 
             const after = await h
                 .control(observer)

@@ -70,6 +70,8 @@ describe("Unit: SpectateService", function () {
             const forkId = h.activeForkId!;
             const participantIndices = [0, 1, 2, 3];
 
+            // Spawn-only, classified (plan 30 item 5): the requester must precede
+            // every block, so nothing authors while it spawns.
             const requester = await h.join.addSpectatorWait();
             await h.network.blacklistAndDisconnectPeer(requester.index);
             for (const peerIndex of participantIndices) {
@@ -105,7 +107,7 @@ describe("Unit: SpectateService", function () {
                     forkId,
                     latestHeight!
                 )
-                .request();
+                .request({ timeoutMs: h.event.protocolEventTimeoutMs() });
             expect(payload).to.not.equal(null);
             const decodedPayload = Codec.decode(
                 payload!.encodedSyncPayload,
@@ -132,7 +134,7 @@ describe("Unit: SpectateService", function () {
                     forkId,
                     latestHeight!
                 )
-                .request();
+                .request({ timeoutMs: h.event.protocolEventTimeoutMs() });
             expect(payloadAfterSnapshot).to.not.equal(null);
             expect(
                 Codec.decode(
@@ -176,7 +178,7 @@ describe("Unit: SpectateService", function () {
                     forkId,
                     latestHeight!
                 )
-                .request();
+                .request({ timeoutMs: h.event.protocolEventTimeoutMs() });
             expect(payload).to.not.equal(null);
 
             const postedSnapshot = await h.transition.postSnapshotWait({
@@ -281,7 +283,7 @@ describe("Unit: SpectateService", function () {
                 await h
                     .control(h.getPeer(observerIndex))
                     .spectate.generateSyncPayload(h.channelId!, forkId, 0)
-                    .request();
+                    .request({ timeoutMs: h.event.protocolEventTimeoutMs() });
             } catch (e) {
                 threw = e instanceof Error ? e.message : String(e);
             }
@@ -377,7 +379,7 @@ describe("Unit: SpectateService", function () {
                 syncResult = await h
                     .control(h.getPeer(observerIndex))
                     .spectate.generateSyncPayload(h.channelId!, forkId, 0)
-                    .request();
+                    .request({ timeoutMs: h.event.protocolEventTimeoutMs() });
             } catch (e) {
                 threw = e instanceof Error ? e.message : String(e);
             }
@@ -413,6 +415,10 @@ describe("Unit: SpectateService", function () {
         // the same place it takes the window, or it skips the walk entirely
         // and proves a fork that is disputed and already reducible on-chain.
         it("all dispute events suppressed → still declines the disputed fork instead of proving it", async function () {
+            // Host-side payload generation walks chain state and recovers
+            // events; on a loaded farm that outlasts the default control RPC
+            // budget, so every generateSyncPayload call here carries the
+            // protocol timeout.
             const h = TestSession.getHarness();
             const observerIndex = 0;
 
@@ -456,7 +462,7 @@ describe("Unit: SpectateService", function () {
             const syncResult = await h
                 .control(h.getPeer(observerIndex))
                 .spectate.generateSyncPayload(h.channelId!, forkId, 0)
-                .request();
+                .request({ timeoutMs: h.event.protocolEventTimeoutMs() });
 
             // reading the flag from the chain makes the walk enter the window,
             // recover it, reduce past this fork, and find it is not the tip it

@@ -32,6 +32,8 @@ describe("E2E: Spectate stale-proof guard", function () {
         // With stale proofs, the guard aborts every sync attempt, so SYNCED is never reached.
         let threwTimeout = false;
         try {
+            // Spawn-only, classified (plan 30 item 5): the sync is meant to fail and no
+            // transition is scheduled while it runs, so the idle fork is by design.
             await h.join.addSpectatorWait({ statusTimeoutMs: 5000 });
         } catch (e: any) {
             threwTimeout = true;
@@ -70,6 +72,8 @@ describe("E2E: Spectate stale-proof guard", function () {
 
         let threwTimeout = false;
         try {
+            // Spawn-only, classified (plan 30 item 5): the sync is meant to fail and no
+            // transition is scheduled while it runs, so the idle fork is by design.
             await h.join.addSpectatorWait({ statusTimeoutMs: 5000 });
         } catch {
             threwTimeout = true;

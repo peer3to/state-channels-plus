@@ -1,3 +1,7 @@
+import {
+    assertDirectSlashRecovery,
+    assertRecoveredSlashTimestampAndDedup
+} from "@test/fixtures/DisputeSlashRecoveryStaging";
 import { expect } from "chai";
 import { hexlify, zeroPadValue } from "ethers";
 
@@ -9,6 +13,16 @@ import { waitFor } from "@test/utils/waitFor";
 const LOG_RECOVERY_ATTEMPTS = 3;
 
 describe("EventSyncService", function () {
+    it("authoritative slash recovery returns no change for an empty chain set", async function () {
+        await assertDirectSlashRecovery(TestSession.getHarness(), false);
+    });
+    it("authoritative slash recovery exposes a failed source read", async function () {
+        await assertDirectSlashRecovery(TestSession.getHarness(), true);
+    });
+    it("authoritative slash recovery preserves the kill timestamp and deduplicates a repeated query", async function () {
+        await assertRecoveredSlashTimestampAndDedup(TestSession.getHarness());
+    });
+
     it("joins concurrent calldata recovery onto one chain query", async function () {
         const h = TestSession.getHarness();
         await h.lifecycle.start(4, 0);

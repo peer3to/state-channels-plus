@@ -26,7 +26,12 @@ worker logging and timing plus transfer-safe custom-precompile manifests.
 ## Key design decisions
 
 1. **Configuration crosses explicitly** — the worker rebuilds its local logger and timing configuration instead of reading main-thread process state.
-2. **Configuration keeps one timing policy** — the receiving worker rebuilds the same configured fatal-delay threshold used by the rest of the runtime.
+2. **Configuration keeps one timing policy** — the receiving worker rebuilds the same configured delay threshold used by the rest of the runtime.
+3. **`init` carries the clock adjustment.** The optional `clockAdjustmentSeconds` field
+   ([#L22](../../../../../../../../src/evm/contractExecutor/worker/protocol.ts#L22)) is the only
+   time-related value that crosses the boundary: an adjustment, never a fixed timestamp, so the
+   worker's clock keeps advancing.
+4. **Detached errors have their own message** — `WorkerDetachedErrorMessage` (`type: "detachedError"`, a `SerializedError` from the shared codec) carries an error caught outside any request, so it can never be mistaken for a correlated response.
 
 ## Inputs, outputs, state, and side effects
 
@@ -54,7 +59,7 @@ claims complete conformance for a requirement that depends on other files.
 ## Specification adherence
 
 - The discriminated union keeps initialization, execution, disposal, and response correlation explicit.
-- The init payload gives the worker the same logging and fatal-delay threshold configuration as the other runtime contexts.
+- The init payload gives the worker the same logging and delay threshold configuration as the other runtime contexts; `detachedError` is the one uncorrelated worker-to-host message.
 
 ## Specification contradictions
 
@@ -70,10 +75,11 @@ Status enum: `Covered` | `Partial` | `Contradicts` | `Missing`. Evidence cells a
 **Here:** / **Other files:** so each row is auditable from its links alone; genuine gaps go in the
 Gap column. Audit state is file-level (Status header), never a row status.
 
-| Requirement / invariant                                                                             | Implementation status | Evidence                                                                                                               | Gap / divergence |
-| --------------------------------------------------------------------------------------------------- | --------------------- | ---------------------------------------------------------------------------------------------------------------------- | ---------------- |
-| [`REQ-RUNTIME-1-RSM6MZ`](../../../../../../specification/runtime/execution.md#req-runtime-1-rsm6mz) | Covered               | **Here:** a closed discriminated union defines transfer-safe requests and correlated responses.                        | None.            |
-| [`REQ-RUNTIME-3-VQXW59`](../../../../../../specification/runtime/execution.md#req-runtime-3-vqxw59) | Covered               | **Here:** initialization carries the configuration and precompile manifests needed before the worker can report ready. | None.            |
+| Requirement / invariant                                                                             | Implementation status | Evidence                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    | Gap / divergence |
+| --------------------------------------------------------------------------------------------------- | --------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------- |
+| [`REQ-RUNTIME-1-RSM6MZ`](../../../../../../specification/runtime/execution.md#req-runtime-1-rsm6mz) | Covered               | **Here:** a closed discriminated union defines transfer-safe requests and correlated responses.                                                                                                                                                                                                                                                                                                                                                                                                                                             | None.            |
+| [`REQ-RUNTIME-3-VQXW59`](../../../../../../specification/runtime/execution.md#req-runtime-3-vqxw59) | Covered               | **Here:** initialization carries the configuration and precompile manifests needed before the worker can report ready.                                                                                                                                                                                                                                                                                                                                                                                                                      | None.            |
+| [`REQ-RUNTIME-6-6F4SSM`](../../../../../../specification/runtime/execution.md#req-runtime-6-6f4ssm) | Covered               | **Here:** [source](../../../../../../../../src/evm/contractExecutor/worker/protocol.ts#L24) defines the clock adjustment on the internal initialization message. **Other files:** [Clock.ts](../../../Clock.ts.md) (current clock and adjustment), [createContractExecutor.ts](../createContractExecutor.ts.md) (clock/factory wiring), [WorkerContractExecutor.ts](../WorkerContractExecutor.ts.md) (initialization transport), [ContractExecutorWorkerHostCore.ts](ContractExecutorWorkerHostCore.ts.md) (worker-local clock derivation). | —                |
 
 ## Component test obligations
 

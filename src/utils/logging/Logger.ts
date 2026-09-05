@@ -35,6 +35,8 @@ export type LoggerDestroyOptions = {
     cascadeParent?: boolean;
 };
 
+import type { PerformanceMonitorInternalOptions } from "./performanceMonitorInternal";
+
 export type LoggerPerformanceMonitorOptions = {
     intervalMs?: number;
     sampleIntervalMs?: number;
@@ -165,7 +167,7 @@ export abstract class Logger {
     }
 
     public startPerformanceMonitoring(
-        options: LoggerPerformanceMonitorOptions = {}
+        options: PerformanceMonitorInternalOptions = {}
     ): void {
         this.stopPerformanceMonitoring();
         this.performanceMonitorStop = this.createPerformanceMonitor(options);
@@ -199,7 +201,7 @@ export abstract class Logger {
     protected abstract createChild(context: ExclusiveLoggerContext): Logger;
     protected abstract write(logEntry: LogEntry): void;
     protected abstract createPerformanceMonitor(
-        options: LoggerPerformanceMonitorOptions
+        options: PerformanceMonitorInternalOptions
     ): () => void;
     public abstract group(label?: string): void;
     public abstract groupEnd(): void;

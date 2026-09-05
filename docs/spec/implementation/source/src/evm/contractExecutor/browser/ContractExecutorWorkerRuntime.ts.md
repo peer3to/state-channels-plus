@@ -23,7 +23,8 @@ Browser worker runtime bootstrap.
 
 ## Key design decisions
 
-_None — the file is declarative/mechanical; behavior-shaping decisions live with its consumers._
+1. **Entry URL is a parameter.** `createContractExecutorWorkerFromUrl(workerUrl, onMessage, onError, name?)` spawns any module worker; the platform `createContractExecutorWorker` delegates with the production entry URL. The browser gate loads a scripted entry whose selection rides in the worker `name` (read back as `self.name`).
+2. **`worker.onerror` stays the fatal boundary.** The worker's own funnel marks its `error` and `unhandledrejection` events handled, so a reported detached error never reaches this handler; only a real unhandled worker failure does.
 
 ## Inputs, outputs, state, and side effects
 
@@ -72,8 +73,9 @@ Gap column. Audit state is file-level (Status header), never a row status.
 
 Exact test evidence is mapped against these IDs in the verification test reports.
 
-| Unit test ID | Obligation | Public entry and setup | Oracle and forbidden effects | Required permutations |
-| ------------ | ---------- | ---------------------- | ---------------------------- | --------------------- |
+| Unit test ID                                                                                                            | Obligation                       | Public entry and setup                                                                                            | Oracle and forbidden effects                                                                            | Required permutations                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
+| ----------------------------------------------------------------------------------------------------------------------- | -------------------------------- | ----------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| <a id="unit-test-contract-executor-browser-runtime-1-6hx1gx"></a>`UNIT-TEST-CONTRACT-EXECUTOR-BROWSER-RUNTIME-1-6HX1GX` | Browser detached-error reporting | Create the browser worker executor with a scripted entry through the gate page; arm each failure and keep calling | One detached report per arm with the worker still serving; no worker `error` event and no console error | <a id="unit-test-contract-executor-browser-runtime-1-6hx1gx.p1"></a>`UNIT-TEST-CONTRACT-EXECUTOR-BROWSER-RUNTIME-1-6HX1GX.P1` — a watchdog trip is one report with `runtime: "browser"` delay data; <a id="unit-test-contract-executor-browser-runtime-1-6hx1gx.p2"></a>`UNIT-TEST-CONTRACT-EXECUTOR-BROWSER-RUNTIME-1-6HX1GX.P2` — an autonomous throw is one report; <a id="unit-test-contract-executor-browser-runtime-1-6hx1gx.p3"></a>`UNIT-TEST-CONTRACT-EXECUTOR-BROWSER-RUNTIME-1-6HX1GX.P3` — an unhandled rejection is one report |
 
 ## Related source reports
 

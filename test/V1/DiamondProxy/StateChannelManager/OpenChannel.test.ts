@@ -430,6 +430,15 @@ describe("StateChannelManagerProxy", function () {
             const participants = await mathInstance.getParticipants();
             expect(participants).to.have.length(3);
             expect(participants).to.include(thirdSigner.address);
+            // Only the JOIN the snapshot has not consumed is pending: the
+            // third signer's deposit. The open joins were consumed by the
+            // genesis snapshot, so the original participants are not pending
+            // even though their JOIN messages remain in the inbound chain.
+            expect(
+                await mathChannelManager.getPendingParticipants(
+                    openChannel.channelId
+                )
+            ).to.deep.equal([thirdSigner.address]);
 
             const insertedBalance = await mathInstance.getBalance(
                 thirdSigner.address
@@ -530,16 +539,13 @@ describe("StateChannelManagerProxy", function () {
                 inboundEvent!.args.messageBlock.messages[0].balance.amount
             ).to.equal(125n);
 
+            // Only the JOIN the snapshot has not consumed is pending: the
+            // top-up's message. The open joins were consumed by the genesis
+            // snapshot, so the original participants are not pending.
             const pending = await mathChannelManager.getPendingParticipants(
                 openChannel.channelId
             );
-            expect(pending).to.deep.equal([
-                firstSigner.address,
-                secondSigner.address
-            ]);
-            expect(
-                new Set(pending.map((address) => address.toLowerCase())).size
-            ).to.equal(2);
+            expect(pending).to.deep.equal([firstSigner.address]);
             expect(
                 (
                     await mathChannelManager.getChannelBalance(

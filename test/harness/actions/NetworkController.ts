@@ -73,6 +73,18 @@ export class NetworkController<
         options?: ConnectToChannelOptions
     ): Promise<void> {
         const peers = this.harness.getFilteredPeers(peerIndices);
+        // Isolation can stop discovery's retry loop. Restart this observation
+        // explicitly; joining an already observed topic is idempotent.
+        await Promise.all(
+            peers.map((peer) =>
+                this.harness
+                    .control(peer)
+                    .network.leaveSelectedKey(
+                        this.harness.channelId!.toString()
+                    )
+                    .request()
+            )
+        );
         await Promise.all(
             peers.flatMap((peer) =>
                 this.harness.peers

@@ -10,6 +10,7 @@ import {
 import { FraudProofStruct } from "@typechain-types/contracts/V1/types/ProofTypes";
 import {
     DebugProxy,
+    DetachedPromises,
     hash,
     intersection,
     Codec,
@@ -37,6 +38,7 @@ import {
     MessageBlockStruct,
     SnapshotDataStruct
 } from "@typechain-types/contracts/V1/types/DataTypes";
+import type StateManager from "@/stateManager/StateManager";
 import type EventSyncService from "@/stateManager/eventSync/EventSyncService";
 
 export type ConstructDisputeResult = {
@@ -44,6 +46,7 @@ export type ConstructDisputeResult = {
     disputeConfirmation: DisputeConfirmationStruct;
     auditingData: DisputeAuditingDataStruct;
     fraudProofsToApply: FraudProofStruct[];
+    observedOnChainSlashes: Address[];
 };
 
 // our own auditing data could not be rebuilt whole - our missing history, not
@@ -77,7 +80,8 @@ class DisputeManager {
         storage: Storage,
         diamondStateMachine: ADiamondStateMachine,
         eventSyncService: EventSyncService,
-        logger: Logger
+        logger: Logger,
+        private readonly stateManager: StateManager
     ) {
         this.channelId = channelId;
         this.signer = signer;
@@ -97,6 +101,11 @@ class DisputeManager {
 
     public async dispute(forkId: ForkId): Promise<void> {
         let txResponse;
+        let rethrow: unknown;
+        let refreshSlashes = false;
+        let submittedTimeout: TimeoutStruct | undefined;
+        let timeoutRetryDelaySeconds: number | undefined;
+        let observedOnChainSlashes: Address[] = [];
         try {
             await this.mutex.lock({ taskName: "dispute" });
             if (this.storage.disputes.didIDispute(forkId)) {
@@ -106,12 +115,32 @@ class DisputeManager {
                 return;
             }
 
+            // Drain admitted block work before closing admission. Construction
+            // and submission run outside the state mutex; the marker keeps
+            // this peer from signing newer state until upload fails or settles.
+            const admitted = await this.stateManager.withMutex(
+                () => {
+                    if (
+                        this.stateManager.isDisposed ||
+                        this.stateManager.forkId !== forkId
+                    )
+                        return false;
+                    this.storage.disputes.storeDisputedFork(forkId, true);
+                    return true;
+                },
+                { taskName: "dispute signing barrier" }
+            );
+            if (!admitted) return;
+
+            const constructed = await this.constructDispute(forkId);
             const {
                 dispute,
                 disputeConfirmation,
                 auditingData,
                 fraudProofsToApply
-            } = await this.constructDispute(forkId);
+            } = constructed;
+            observedOnChainSlashes = constructed.observedOnChainSlashes;
+            submittedTimeout = dispute.input.timeout;
 
             const shouldPostAuditingData = dispute.postedAuditingData;
 
@@ -170,7 +199,6 @@ class DisputeManager {
                 }
             }
 
-            this.storage.disputes.storeDisputedFork(forkId, true);
             this.p2pEventHooks.onInitiatingDispute?.(
                 hash(Codec.encode(dispute, Type.Dispute)),
                 dispute
@@ -183,10 +211,20 @@ class DisputeManager {
                 forkId,
                 signer: this.signer,
                 handlers: {
+                    RaceConditionDisputeWindowNotOpen: () => {
+                        refreshSlashes = true;
+                    },
                     ErrorCantParticipateInDispute: () => {
                         this.logger.warn(
                             "dispute: signer cannot participate in dispute",
                             { forkId, channelId: this.channelId }
+                        );
+                    },
+                    RaceConditionDisputeTimeoutNotMinTimestamp: (error) => {
+                        const [minimum, current] = error.errorDescription.args;
+                        timeoutRetryDelaySeconds = Math.max(
+                            1,
+                            Number(minimum) - Number(current)
                         );
                     },
                     RaceConditionDisputeTimeoutWindowCreatedTooEarly: () => {
@@ -198,11 +236,14 @@ class DisputeManager {
                     RaceConditionDisputeEvidencePeriodExpired: (
                         customError
                     ) => {
+                        // The error stays visible to the caller, but no
+                        // dispute landed: the marker below rolls back so a
+                        // later window can take this peer's evidence.
                         this.logger.error(
                             "dispute: evidence period already expired",
                             { forkId, channelId: this.channelId }
                         );
-                        throw customError;
+                        rethrow = customError;
                     }
                 }
             });
@@ -217,10 +258,48 @@ class DisputeManager {
                 });
 
             this.storage.disputes.storeDisputedFork(forkId, false);
+            if (rethrow !== undefined) throw rethrow;
         } finally {
             this.mutex.unlock();
         }
+        // The failed upload has released both the signing marker and dispute
+        // mutex. Recheck the timeout through its owner instead of resending it.
+        if (
+            timeoutRetryDelaySeconds !== undefined &&
+            submittedTimeout &&
+            submittedTimeout.participant !== ethers.ZeroAddress
+        ) {
+            this.stateManager.participantTimeoutService.scheduleCheck(
+                forkId,
+                Number(submittedTimeout.blockHeight),
+                submittedTimeout.participant,
+                timeoutRetryDelaySeconds * 1000,
+                "timeoutParticipantAfterEarlySubmission"
+            );
+        }
+        if (
+            refreshSlashes &&
+            !this.stateManager.isDisposed &&
+            this.stateManager.forkId === forkId
+        ) {
+            const changed = await this.eventSyncService.recoverOnChainSlashes(
+                this.channelId,
+                observedOnChainSlashes
+            );
+            if (changed) await this.dispute(forkId);
+        }
     }
+    /** Block-pipeline callers must release the state mutex before construction. */
+    public requestDispute(forkId: ForkId): void {
+        const attempt = this.dispute(forkId);
+        DetachedPromises.collect(attempt);
+        void attempt.catch((error) => {
+            // The detached branch reaches the owning context's existing error
+            // funnel even when a diagnostic collector observes the original.
+            throw error;
+        });
+    }
+
     public async killDispute(dispute: DisputeStruct): Promise<void> {
         const disputeMeta = LoggerUtils.getDisputeMetadata(dispute);
         const formattedHash = LoggerUtils.formatHash(disputeMeta.disputeHash);
@@ -340,9 +419,8 @@ class DisputeManager {
         });
 
         // onChainSlashes
-        // The local subset is sufficient. DisputeKilled eagerly records the
-        // directly implicated disputer; querying the full on-chain set remains
-        // optional hardening for a future redundant-RPC sync pass.
+        // Construction uses the local observation. A refused conditional upload
+        // recovers missing chain slashes before normal reconstruction.
         let onChainSlashes = new Set<Address>(_onChainSlashes);
         const participants = new Set<Address>(_participants);
 
@@ -435,9 +513,15 @@ class DisputeManager {
             disputer: disputer,
             timeout: timeoutStruct,
             selfRemoval: selfRemoval,
+            requireExistingDisputeWindow: false,
             latestInboundMessageBlockHash: inboundHead.hash,
             lastInboundMessageBlockHeight: inboundHead.height
         };
+        disputeInput.requireExistingDisputeWindow =
+            !(await this.diamondStateMachine.localDiamondContract.hasDisputeReason(
+                disputeInput,
+                auditingData.latestStateSnapshot
+            ));
         let outputSnapshotData: SnapshotDataStruct;
         try {
             outputSnapshotData =
@@ -507,7 +591,8 @@ class DisputeManager {
             dispute,
             disputeConfirmation,
             auditingData,
-            fraudProofsToApply
+            fraudProofsToApply,
+            observedOnChainSlashes: Array.from(_onChainSlashes)
         };
     }
 

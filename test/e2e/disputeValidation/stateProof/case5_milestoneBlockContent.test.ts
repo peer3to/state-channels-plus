@@ -8,14 +8,18 @@ describe("E2E: dispute validation / stateProof / milestone block content integri
     describe("stateProof.milestones[-1].blockConfirmations[-1].header.transactionCnt", function () {
         it("transactionCnt += 5 → DisputeInvalidBlockStructure", async function () {
             const h = TestSession.getHarness();
-            await h.scenario.preDisputeSetup({
-                peerCount: 5,
-                // Auditing and submitting the structural fraud proof must fit
-                // inside the evidence window even when the shared chain mines
-                // transactions from several peers between those two steps.
-                timeConfig: { evidenceTime: 6 }
-            });
+            // Auditing and submitting the structural fraud proof must fit
+            // inside the staging's kill period even when the shared chain
+            // mines transactions from several peers between those two steps.
+            await h.scenario.preDisputeSetup({ peerCount: 5 });
             await h.byzantine.blacklistAndDisconnect(3);
+            // The disconnected peer learns of the window late and would
+            // upload its own dispute after the evidence period, which the
+            // chain refuses; its dispute is not part of the case.
+            await h
+                .control(h.getPeer(3))
+                .stub.stubSuppressDisputeInitiation()
+                .request();
             await h.transition.advanceState({ waitForPeers: [0, 1, 2, 4] });
             const disputedForkId = h.activeForkId;
             if (!disputedForkId) throw new Error("Expected an active fork");
@@ -88,9 +92,7 @@ describe("E2E: dispute validation / stateProof / milestone block content integri
     describe("posted auditing data", function () {
         it("still replays a structurally clean invalid-STF tail", async function () {
             const h = TestSession.getHarness();
-            await h.scenario.preDisputeSetupCalldataPath({
-                timeConfig: { evidenceTime: 6 }
-            });
+            await h.scenario.preDisputeSetupCalldataPath();
             const forkId = h.activeForkId!;
 
             await h.tamper.stubConstructDispute(3, async (dispute, sm) => {
@@ -141,8 +143,13 @@ describe("E2E: dispute validation / stateProof / milestone block content integri
 
         it("recovers missed block calldata during replay before killing the dispute", async function () {
             const h = TestSession.getHarness();
+            // The staging issues several control calls between the author's
+            // turn and its block; on a loaded host they can outlast the
+            // subjective window, and a block stamped back into its slot then
+            // parks on every peer until a writer timeout follows. The larger
+            // agreement window keeps the staged block inside it.
             await h.scenario.preDisputeSetupCalldataPath({
-                timeConfig: { evidenceTime: 8 }
+                timeConfig: { evidenceTime: 8, agreementTime: 8 }
             });
             const p2pTime = h.options.timeConfig?.p2pTime;
             if (p2pTime === undefined) {
@@ -275,11 +282,30 @@ describe("E2E: dispute validation / stateProof / milestone block content integri
                 );
             });
 
-            await h.byzantine.submitDoubleSignBlock(1);
-            await h.event.waitForPeers("onDisputeKilled", [auditor.index], 1, {
-                mode: "atLeast",
-                timeoutMs: h.event.protocolEventTimeoutMs()
-            });
+            // Only the auditor kills: every other peer saw the calldata event
+            // live and would kill first (the double-signer's runtime audits
+            // like any other), and a kill observed on-chain before the
+            // auditor's own replay finished would end the wait below with
+            // the recovery still in flight.
+            const otherKills = await Promise.all(
+                h.peers
+                    .filter((peer) => peer.index !== auditor.index)
+                    .map((peer) => h.rpcStub.suppressDisputeKill(peer.index))
+            );
+            try {
+                await h.byzantine.submitDoubleSignBlock(1);
+                await h.event.waitForPeers(
+                    "onDisputeKilled",
+                    [auditor.index],
+                    1,
+                    {
+                        mode: "atLeast",
+                        timeoutMs: h.event.protocolEventTimeoutMs()
+                    }
+                );
+            } finally {
+                await Promise.all(otherKills.map((kill) => kill.restore()));
+            }
 
             // Peer 0 could only acquire this timestamp by recovering the
             // historical calldata event from inside block replay.

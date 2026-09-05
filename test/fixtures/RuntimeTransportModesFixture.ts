@@ -3,6 +3,15 @@ import { expect } from "chai";
 import { ethers, NonceManager } from "ethers";
 
 import { EvmStateMachine } from "@/evm";
+import { createContractExecutor } from "@/evm/contractExecutor/createContractExecutor";
+import { createContractExecutorWorkerFromPath } from "@/evm/contractExecutor/node/ContractExecutorWorkerRuntime";
+import { createP2pRuntimeWorkerFromPath } from "@/evm/p2pRuntime/node/P2pRuntimeWorkerRuntime";
+import {
+    setupP2pRuntime,
+    type P2pSetupDependencies,
+    type P2pSetupOptions
+} from "@/evm/p2pRuntime/setupP2pRuntime";
+import type { WatchdogWorkerData } from "@test/evm/workers/node/watchdogContractExecutorWorkerEntry";
 import MathStateMachineArtifact from "../../artifacts/contracts/V1/examples/MathStateMachine/MathStateMachine.sol/MathStateMachine.json";
 import MathConsumerFacetArtifact from "../../artifacts/contracts/V1/examples/MathStateMachine/MathConsumerFacet.sol/MathConsumerFacet.json";
 import { deployFullStack } from "../../scripts/V1/deploy";
@@ -26,7 +35,12 @@ let hardhatNodeUrl = process.env.HARDHAT_NODE_URL;
 const DEFAULT_HARDHAT_MNEMONIC =
     "test test test test test test test test test test test junk";
 
-async function setupP2pInstance(options: {
+/**
+ * Deploy the manager stack for one runtime instance and return what
+ * `setupP2pRuntime` needs. The signer is the slot's first account unless the
+ * caller wants a generated one.
+ */
+async function prepareRuntimeSetup(options: {
     runSdkInThread: boolean;
     vmDedicatedThread: boolean;
     generateSigner?: boolean;
@@ -87,28 +101,116 @@ async function setupP2pInstance(options: {
         return receipt.contractAddress;
     };
 
-    return EvmStateMachine.p2pSetup(
-        connectStateChannelManager(scmDeployment.address, runtimeSigner),
+    const setupOptions: P2pSetupOptions = {
+        config: {
+            PROVIDER_URL: hardhatNodeUrl,
+            RUN_SDK_IN_THREAD: runSdkInThread,
+            VM_DEDICATED_THREAD: vmDedicatedThread
+        },
+        signerSecret: generateSigner ? undefined : runtimeWallet.privateKey,
+        customRpcManifest: readyOptions
+            ? {
+                  module: path.resolve(
+                      __dirname,
+                      "customRpc/ReadyLifecycleRpcManifest.ts"
+                  ),
+                  exportName: "ReadyLifecycleRpc",
+                  options: readyOptions
+              }
+            : undefined
+    };
+    return {
+        scm: connectStateChannelManager(scmDeployment.address, runtimeSigner),
         deployedStateMachine,
         deployStateMachine,
-        {
-            config: {
-                PROVIDER_URL: hardhatNodeUrl,
-                RUN_SDK_IN_THREAD: runSdkInThread,
-                VM_DEDICATED_THREAD: vmDedicatedThread
-            },
-            signerSecret: generateSigner ? undefined : runtimeWallet.privateKey,
-            customRpcManifest: readyOptions
-                ? {
-                      module: path.resolve(
-                          __dirname,
-                          "customRpc/ReadyLifecycleRpcManifest.ts"
-                      ),
-                      exportName: "ReadyLifecycleRpc",
-                      options: readyOptions
-                  }
-                : undefined
-        }
+        setupOptions
+    };
+}
+
+async function setupP2pInstance(options: {
+    runSdkInThread: boolean;
+    vmDedicatedThread: boolean;
+    generateSigner?: boolean;
+    readyOptions?: { delayMs?: number; reject?: boolean };
+}) {
+    const { scm, deployedStateMachine, deployStateMachine, setupOptions } =
+        await prepareRuntimeSetup(options);
+    return EvmStateMachine.p2pSetup(
+        scm,
+        deployedStateMachine,
+        deployStateMachine,
+        setupOptions
+    );
+}
+
+const WATCHDOG_VM_WORKER_ENTRY = path.resolve(
+    __dirname,
+    "../evm/workers/node/watchdogContractExecutorWorkerEntry.ts"
+);
+const WATCHDOG_SDK_WORKER_ENTRY = path.resolve(
+    __dirname,
+    "../evm/workers/node/watchdogP2pRuntimeWorkerEntry.ts"
+);
+
+/**
+ * A real runtime whose dedicated contract-executor worker is the scripted
+ * watchdog entry. Inline mode injects the executor factory through the host
+ * context; sdk-worker mode spawns the outer test entry, which does the same
+ * injection inside its own thread. `mode` and `armChannel` select what the
+ * VM worker does once armed.
+ */
+export async function setupWatchdogP2pInstance(options: {
+    runSdkInThread: boolean;
+    mode: WatchdogWorkerData["mode"];
+    armChannel: string;
+}) {
+    const { scm, deployedStateMachine, deployStateMachine, setupOptions } =
+        await prepareRuntimeSetup({
+            runSdkInThread: options.runSdkInThread,
+            vmDedicatedThread: true
+        });
+    // Synthetic runs are silent by config: the host-side executor and client
+    // log every report, and the watchdog message in the runner log would trip
+    // its starvation classifier; the real monitors of this instance are off so
+    // the only threshold in play is the scripted one.
+    setupOptions.config = {
+        ...setupOptions.config,
+        LOG_SKIP_WRITING: true,
+        EVENT_LOOP_DELAY_ERROR_THRESHOLD_SECONDS: 0
+    };
+    const workerData: WatchdogWorkerData = {
+        mode: options.mode,
+        armChannel: options.armChannel
+    };
+    const dependencies: P2pSetupDependencies = options.runSdkInThread
+        ? {
+              createP2pRuntimeWorker: () =>
+                  createP2pRuntimeWorkerFromPath(
+                      WATCHDOG_SDK_WORKER_ENTRY,
+                      workerData
+                  )
+          }
+        : {
+              hostContext: {
+                  createContractExecutor: (factoryOptions, deps) =>
+                      createContractExecutor(factoryOptions, {
+                          ...deps,
+                          createWorkerRuntime: (onMessage, onError) =>
+                              createContractExecutorWorkerFromPath(
+                                  WATCHDOG_VM_WORKER_ENTRY,
+                                  onMessage,
+                                  onError,
+                                  workerData
+                              )
+                      })
+              }
+          };
+    return setupP2pRuntime(
+        scm,
+        deployedStateMachine,
+        deployStateMachine,
+        setupOptions,
+        dependencies
     );
 }
 

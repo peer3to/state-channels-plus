@@ -27,6 +27,7 @@ The main-thread client: the application-facing typed surface sending requests to
 2. **Manager addresses use `connectStateChannelManager`.** The client merges the SDK ABI first and
    the serialized consumer ABI second. SDK definitions win collisions, while consumer-only calls,
    events, and errors remain available.
+3. **Errors are rebuilt by the shared codec.** `deserializeError` from `errorWire` restores revert data, ethers metadata, the peer stamp, and the watchdog's `eventLoopDelay`; the client keeps no codec of its own.
 
 ## Inputs, outputs, state, and side effects
 
@@ -80,5 +81,10 @@ Exact test evidence is mapped against these IDs in the verification test reports
 | ------------ | ---------- | ---------------------- | ---------------------------- | --------------------- |
 
 ## Related source reports
+
+## Terminal leave contribution
+
+The existing client request registry carries the timeout-free leave response and the existing disposal route
+still owns port and worker teardown. This contributes to [`REQ-TJOIN-7-NNGTAY`](../../../../../specification/peer-communication/targeted-channel-join.md#req-tjoin-7-nngtay).
 
 - [P2pRuntimeHost](./P2pRuntimeHost.ts.md).

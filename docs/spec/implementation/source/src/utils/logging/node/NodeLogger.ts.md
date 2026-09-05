@@ -23,7 +23,7 @@ Node logger implementation (console/stream sinks, colorized).
 
 ## Key design decisions
 
-_None — the file is declarative/mechanical; behavior-shaping decisions live with its consumers._
+1. **One reporting loop over a sample source.** The real source wraps the perf_hooks delay histogram and event-loop utilization; a test injects a scripted source. The loop is unchanged: warn or verbose per sample, the `##E2E_TIMING##` peak marker under the test-only config, and past the threshold one throw with the unchanged message text and a typed `eventLoopDelay` (`EventLoopDelayDetails`). The monitor stops itself before it throws, so a later tick reports nothing. `onStarted` fires once the interval is installed.
 
 ## Inputs, outputs, state, and side effects
 
@@ -72,8 +72,9 @@ Gap column. Audit state is file-level (Status header), never a row status.
 
 Exact test evidence is mapped against these IDs in the verification test reports.
 
-| Unit test ID | Obligation | Public entry and setup | Oracle and forbidden effects | Required permutations |
-| ------------ | ---------- | ---------------------- | ---------------------------- | --------------------- |
+| Unit test ID                                                                                | Obligation              | Public entry and setup                                                                                       | Oracle and forbidden effects                                                                                               | Required permutations                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
+| ------------------------------------------------------------------------------------------- | ----------------------- | ------------------------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| <a id="unit-test-node-logger-monitor-1-s8qme5"></a>`UNIT-TEST-NODE-LOGGER-MONITOR-1-S8QME5` | Watchdog throw contract | Start the monitor on a real logger with a scripted sample source and a synthetic threshold under fake timers | Exactly one throw with the unchanged message and structured delay data; sampling stops after it; quiet samples never throw | <a id="unit-test-node-logger-monitor-1-s8qme5.p1"></a>`UNIT-TEST-NODE-LOGGER-MONITOR-1-S8QME5.P1` — one over-threshold sample throws the unchanged message with `eventLoopDelay` data; <a id="unit-test-node-logger-monitor-1-s8qme5.p2"></a>`UNIT-TEST-NODE-LOGGER-MONITOR-1-S8QME5.P2` — sampling stops after the throw so a later tick reports nothing; <a id="unit-test-node-logger-monitor-1-s8qme5.p3"></a>`UNIT-TEST-NODE-LOGGER-MONITOR-1-S8QME5.P3` — samples below the threshold keep the monitor quiet |
 
 ## Related source reports
 

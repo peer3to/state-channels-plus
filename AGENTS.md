@@ -51,8 +51,12 @@ uncertain, and leave final fingerprint approval to the engineer.
 
 `yarn test:parallel:distributed` is the canonical full test gate and runs all
 Mocha tests across the configured distributed workers; pass `--e2e-only` to
-limit discovery to `test/e2e`. Use `yarn test:parallel` for focused local runs
-when needed. The legacy in-process `yarn test` command is only for rare focused
+limit discovery to `test/e2e`. Always use the distributed runner, also for
+focused subsets and repeated loops (`--grep <regexp>` works there too); it is
+the only runner that reproduces farm load. Use the local `yarn test:parallel`
+only for a small focused selection of about ten tests or fewer; anything larger
+on the local runner wastes the distributed infrastructure and takes far longer.
+The legacy in-process `yarn test` command is only for rare focused
 compatibility checks. The parallel runner writes each run to a fresh
 `./logs/run-N/` (N
 auto-increments) and never touches earlier `run-*` dirs — error logs persist

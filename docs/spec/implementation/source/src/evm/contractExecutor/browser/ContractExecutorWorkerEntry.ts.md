@@ -23,7 +23,7 @@ Browser worker entry point.
 
 ## Key design decisions
 
-_None — the file is declarative/mechanical; behavior-shaping decisions live with its consumers._
+1. **The entry registers the browser error funnel on the host handle.** `onUnhandledWorkerError(host.reportUnhandledError)` runs on the handle from `createContractExecutorWorkerHost` before `host.start` installs request handling and posts readiness, and gives the contract-executor worker the same policy as the sdk worker: an error outside a request is reported and the worker keeps serving.
 
 ## Inputs, outputs, state, and side effects
 

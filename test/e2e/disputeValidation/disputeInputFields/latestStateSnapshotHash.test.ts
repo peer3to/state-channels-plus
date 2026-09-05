@@ -15,6 +15,13 @@ describe("E2E: dispute validation / disputeInputFields / latestStateSnapshotHash
                     await h.assert.sync.peersInSyncWait();
                     const forkId = h.activeForkId!;
 
+                    // Construct the honest replacement after the kill is observed;
+                    // an earlier output can finalize before it includes that slash.
+                    await h
+                        .control(h.getPeer(0))
+                        .stub.stubSuppressDisputeInitiation()
+                        .request();
+
                     await h.tamper.stubConstructDispute(1, (dispute, sm) => {
                         dispute.input.stateProof.milestones = [];
                         dispute.input.stateProof.signedBlocks = [];
@@ -38,6 +45,10 @@ describe("E2E: dispute validation / disputeInputFields / latestStateSnapshotHash
                                 DisputeFraudProofType.DisputeInvalidStateProof
                         }
                     );
+                    await h.rpcStub.restoreDisputeInitiationAndDispute(
+                        0,
+                        forkId
+                    );
                     await h.dispute.resolveDisputeWait({ forkId });
                 });
             });
@@ -50,6 +61,13 @@ describe("E2E: dispute validation / disputeInputFields / latestStateSnapshotHash
                     await h.scenario.preDisputeSetup();
                     await h.assert.sync.peersInSyncWait();
                     const forkId = h.activeForkId!;
+
+                    // Build the honest replacement after the kill's slash is observed;
+                    // a pre-kill output can finalize against the smaller threshold.
+                    await h
+                        .control(h.getPeer(0))
+                        .stub.stubSuppressDisputeInitiation()
+                        .request();
 
                     await h.tamper.stubConstructDispute(1, (d, sm) => {
                         const svc = sm.p2pManager.localRpc.dispute;
@@ -72,6 +90,10 @@ describe("E2E: dispute validation / disputeInputFields / latestStateSnapshotHash
                             disputeFraudProofType:
                                 DisputeFraudProofType.DisputeInvalidStateProof
                         }
+                    );
+                    await h.rpcStub.restoreDisputeInitiationAndDispute(
+                        0,
+                        forkId
                     );
                     await h.dispute.resolveDisputeWait({ forkId });
                 });
@@ -273,9 +295,12 @@ describe("E2E: dispute validation / disputeInputFields / latestStateSnapshotHash
                     const h = TestSession.getHarness();
                     const disconnectedAuditorIndex = 1;
 
+                    // The disconnected auditor recovers the calldata, audits,
+                    // and kills inside the kill period; the file's other
+                    // calldata-path cases give that twelve seconds.
                     await h.lifecycle.timeoutSetup(4, 2, {
                         timeConfig: {
-                            evidenceTime: 6,
+                            evidenceTime: 12,
                             agreementTime: 6
                         }
                     });

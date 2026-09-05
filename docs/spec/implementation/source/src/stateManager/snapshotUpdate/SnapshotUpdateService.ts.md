@@ -88,3 +88,6 @@ Exact test evidence is mapped against these IDs in the verification test reports
 ## Related source reports
 
 - [ReductionExecutor](../reduction/ReductionExecutor.ts.md), [MessageBlockStorage](../../storage/MessageBlockStorage.ts.md), [AgreementManager](../../agreementManager/AgreementManager.ts.md).
+# Terminal leave contribution
+
+`postStateSnapshotWait` is an explicit internal awaitable boundary used by terminal leave so transaction failure can fall back to dispute. This contributes to [`REQ-LIF-10-QR8NQ9`](../../../../../specification/settlement/lifecycle.md#req-lif-10-qr8nq9).

@@ -1,3 +1,8 @@
+import { assertKilledOpenerSubmissionRace } from "@test/fixtures/DisputeSlashRecoveryStaging";
+import {
+    assertStateOnlyContribution,
+    assertMissingWindowRefused
+} from "@test/fixtures/DisputeWindowStaging";
 import { expect } from "chai";
 import { DisputeFraudProofType } from "@/types/sol-enums";
 import { Codec, Type, hash, sleep } from "@/utils";
@@ -14,6 +19,39 @@ import { MathTestSession as TestSession } from "@test/harness";
  * Tests dispute creation, validation, resolution, and fraud proof mechanisms.
  */
 describe("E2E: Dispute Manager", function () {
+    it("an accepted state contribution keeps its reason after the original opener is killed", async function () {
+        await assertKilledOpenerSubmissionRace(
+            TestSession.getHarness(),
+            false,
+            { killAfterAcceptance: true }
+        );
+    });
+    it("a closed-window refusal rebuilds from a slash already delivered after construction", async function () {
+        await assertKilledOpenerSubmissionRace(TestSession.getHarness(), true, {
+            observeSlashBeforeRefusal: true
+        });
+    });
+
+    it("a held state contribution survives an opener kill while the window stays open", async function () {
+        await assertKilledOpenerSubmissionRace(TestSession.getHarness(), false);
+    });
+    it("a held state contribution refreshes authoritative slashes after the opener is killed and the window closes", async function () {
+        await assertKilledOpenerSubmissionRace(TestSession.getHarness(), true);
+    });
+
+    it("a state-only contribution is accepted without auditing calldata in an existing window", async function () {
+        await assertStateOnlyContribution(TestSession.getHarness(), false);
+    });
+    it("a state-only contribution is accepted with auditing calldata in an existing window", async function () {
+        await assertStateOnlyContribution(TestSession.getHarness(), true);
+    });
+    it("a state-only contribution without an existing window is refused without a slash", async function () {
+        await assertMissingWindowRefused(TestSession.getHarness(), false);
+    });
+    it("a state-only contribution after the evidence deadline is refused without a slash", async function () {
+        await assertMissingWindowRefused(TestSession.getHarness(), true);
+    });
+
     describe("Dispute Resolution and Fork Management", function () {
         it("should reduce invalid state transition disputes and create new fork", async function () {
             const h = TestSession.getHarness();
@@ -141,6 +179,7 @@ describe("E2E: Dispute Manager", function () {
                     "0x0000000000000000000000000000000000000000";
                 dispute.input.onChainSlashes = [];
                 dispute.input.selfRemoval = false;
+                dispute.input.requireExistingDisputeWindow = false;
             });
 
             await h.event.waitForAllPeers("onDisputeKilled", 1, {

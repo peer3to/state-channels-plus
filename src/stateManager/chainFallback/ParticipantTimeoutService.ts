@@ -36,6 +36,8 @@ export default class ParticipantTimeoutService {
         delayMs: number,
         reason: string
     ): void {
+        if (this.stateManager.isDisposed || this.stateManager.forkId !== forkId)
+            return;
         this.stateManager.timeoutManager.scheduleTask(
             () =>
                 this.tryTimeoutParticipant(
@@ -55,12 +57,17 @@ export default class ParticipantTimeoutService {
         participantAddress: Address
     ): Promise<void> {
         const sm = this.stateManager;
+        if (sm.isDisposed || sm.forkId !== forkId) return;
         if (participantAddress === sm.signerAddress) {
             return;
         }
 
         const participants = await sm.diamondStateMachine.getParticipants();
-        if (!participants.includes(sm.signerAddress)) {
+        if (
+            sm.isDisposed ||
+            sm.forkId !== forkId ||
+            !participants.includes(sm.signerAddress)
+        ) {
             return;
         }
 
@@ -353,6 +360,13 @@ export default class ParticipantTimeoutService {
             previousBlockOrSnapshot,
             timeout
         );
+
+        if (
+            sm.isDisposed ||
+            sm.forkId !== forkId ||
+            sm.storage.blocks.getBlock(forkId, blockHeight)
+        )
+            return;
 
         // persist timeout locally
         sm.storage.timeout.storeTimeout(forkId, timeout);

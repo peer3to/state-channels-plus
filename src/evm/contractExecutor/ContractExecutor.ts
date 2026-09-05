@@ -23,8 +23,15 @@ export default class ContractExecutor extends AContractExecutor {
     // checkpoint/revert cannot overlap a canonical write.
     private readonly mutex: Mutex;
 
-    constructor(evm: EVM, logger?: Logger) {
+    /**
+     * Seconds of estimated chain time for the next call, or undefined for
+     * an executor with no clock (ambient block time stays zero).
+     */
+    private readonly clock?: () => number;
+
+    constructor(evm: EVM, logger?: Logger, options?: { clock?: () => number }) {
         super();
+        this.clock = options?.clock;
         this.evm = evm;
         this.logger = logger?.child({
             component: "ContractExecutor"
@@ -109,6 +116,7 @@ export default class ContractExecutor extends AContractExecutor {
     ): Promise<ContractExecutionResult> {
         const result = await evm.runCall({
             data: ethers.getBytes(data),
+            ...(this.clock ? { block: this.ambientBlock() } : {}),
             ...options
         });
 
@@ -135,6 +143,30 @@ export default class ContractExecutor extends AContractExecutor {
             returnValue: ethers.hexlify(result.execResult.returnValue),
             logs: this.toRpcLogs(result.execResult.logs),
             createdAddress: result.createdAddress?.toString().toLowerCase()
+        };
+    }
+
+    /**
+     * The EVM's default block with the runtime's current estimated chain time
+     * as `block.timestamp`: manager and protocol views defined against
+     * current time see it; state transitions read `_tx.header.timestamp`.
+     */
+    private ambientBlock(): NonNullable<
+        Parameters<EVM["runCall"]>[0]["block"]
+    > {
+        // The EVM's own default block, with the timestamp set.
+        return {
+            header: {
+                number: 0n,
+                cliqueSigner: () => EthjsAddress.zero(),
+                coinbase: EthjsAddress.zero(),
+                timestamp: BigInt(this.clock!()),
+                difficulty: 0n,
+                prevRandao: new Uint8Array(32),
+                gasLimit: 0n,
+                baseFeePerGas: undefined,
+                getBlobGasPrice: () => undefined
+            }
         };
     }
 

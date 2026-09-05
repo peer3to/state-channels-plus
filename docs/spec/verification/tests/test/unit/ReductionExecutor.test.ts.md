@@ -23,6 +23,10 @@ of throwing, that every commitment is stored afterwards, and — the substantive
 events arrived; the released peers then complete the reduction for real. The other planned
 executor permutations (concurrent convergence, empty-window escalation, supersession, provider
 failure) are not exercised here and remain with the dispute e2e flows or unassigned.
+The `no reduce data` reschedule case stages the lagging peer as peer 1: the staging's invalid block comes from the
+next writer (peer 2), which the reduction slashes, so the lagging peer must be a different participant. Before
+plan 30 the case passed with peer 2 as the lagging peer only because its aborted runtime kept reducing after
+disposal.
 
 ## Tests and covered test IDs
 
@@ -31,6 +35,6 @@ test ID may be assigned to at most one test across the whole tree; static analys
 duplicate assignments, and tests with no assigned ID are listed in the verification-coverage
 report but are kept here.
 
-| Test declaration                                                                                                                                                                                       | Covers                                                                                                                                                                      |
-| ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| [`Unit: ReductionExecutor > getSyncedForkDisputes > committed dispute missing locally → recovers via event replay, then reduces`](../../../../../../test/unit/ReductionExecutor.test.ts#L12) (line 12) | [`UNIT-TEST-REDUCTION-EXECUTOR-1-DGAD37.P2`](../../../../implementation/source/src/stateManager/reduction/ReductionExecutor.ts.md#unit-test-reduction-executor-1-dgad37.p2) |
+| Test declaration                                                                                                                                                                                         | Covers                                                                                                                                                                      |
+| -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| [`Unit: ReductionExecutor > getSyncedForkDisputes > committed dispute missing locally → recovers via event replay, then reduces`](../../../../../../test/unit/ReductionExecutor.test.ts#L382) (line 382) | [`UNIT-TEST-REDUCTION-EXECUTOR-1-DGAD37.P2`](../../../../implementation/source/src/stateManager/reduction/ReductionExecutor.ts.md#unit-test-reduction-executor-1-dgad37.p2) |

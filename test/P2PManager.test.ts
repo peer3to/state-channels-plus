@@ -3,10 +3,14 @@ import { ethers, Wallet } from "ethers";
 
 import { P2PManagerFixture } from "@test/fixtures/P2PManagerFixture";
 import { Status } from "@/types";
-import { channelIdToTargetedJoinTopic } from "@/utils";
+import { channelIdToTargetedJoinTopic, sleep } from "@/utils";
 import { waitFor } from "@test/utils/waitFor";
 import { slotAccountIndex } from "@test/harness/core/slotAccounts";
-import { TargetedChannelJoinFixture } from "@test/fixtures/TargetedChannelJoinFixture";
+
+import {
+    assertLateSyncResultAfterAbortChangesNothing,
+    withFreshInitialSyncObserver
+} from "@test/fixtures/AbortDuringInitialSyncStaging";
 
 describe("P2PManager", function () {
     let fixture: P2PManagerFixture | undefined;
@@ -716,7 +720,7 @@ describe("P2PManager", function () {
             ).to.deep.equal([true, true]);
         });
 
-        it("fatal initial sync disposal leaves later connect calls false", async function () {
+        it("fatal initial sync disposal leaves later same-channel connect calls false", async function () {
             await fixture!.cleanup();
             fixture = new P2PManagerFixture();
             await fixture.setup({
@@ -747,12 +751,338 @@ describe("P2PManager", function () {
                 ).to.equal(false);
                 expect(
                     await observer.p2pInstance.p2pSigner.connectToChannel(
-                        Wallet.createRandom().privateKey
+                        h.channelId
                     )
                 ).to.equal(false);
             } finally {
                 await Promise.all(releases.map((release) => release()));
             }
+        });
+
+        it("observer connect resolves false when no participant handshake completes within the initial window", async function () {
+            await fixture!.cleanup();
+            fixture = new P2PManagerFixture();
+            await fixture.setup({
+                timeConfig: {
+                    agreementTime: 2,
+                    p2pTime: 2,
+                    chainFallbackTime: 2,
+                    evidenceTime: 2
+                }
+            });
+            const h = fixture.getHarness();
+            await h.lifecycle.openChannelForParticipants([0, 1]);
+            await h.network.joinSelectedKey([0, 1], String(h.channelId));
+            const observerIndex = h.peers.length;
+            await h.createPeer(
+                observerIndex,
+                h.signerFor(slotAccountIndex(observerIndex))
+            );
+            const observer = h.getPeer(observerIndex);
+            // Block handshake initiation on every runtime so the observer never
+            // reaches a participant sync request; the pre-request bound must
+            // settle the connect the way a timed-out sync request would.
+            await Promise.all(
+                h.peers.map((peer) =>
+                    h
+                        .control(peer)
+                        .stub.stubBlockHandshakeAndRecordSpectateGuard()
+                        .request()
+                )
+            );
+            try {
+                const startedAt = Date.now();
+                expect(
+                    await observer.p2pInstance.p2pSigner.connectToChannel(
+                        h.channelId
+                    )
+                ).to.equal(false);
+                const elapsedMs = Date.now() - startedAt;
+                expect(elapsedMs).to.be.greaterThan(2 * 2 * 1000 - 500);
+                expect(elapsedMs).to.be.lessThan(2 * 2 * 1000 + 6000);
+                expect(
+                    await h.execOnHost(observer, async (sm) =>
+                        Boolean(sm.isDisposed)
+                    )
+                ).to.equal(true);
+            } finally {
+                await Promise.all(
+                    h.peers.map((peer) =>
+                        h.control(peer).stub.restoreBlockedHandshake().request()
+                    )
+                );
+            }
+        });
+
+        it("observer connect resolves true when chain genesis lands before any participant handshake", async function () {
+            await fixture!.cleanup();
+            fixture = new P2PManagerFixture();
+            await fixture.setup({
+                timeConfig: {
+                    agreementTime: 2,
+                    p2pTime: 2,
+                    chainFallbackTime: 2,
+                    evidenceTime: 2
+                }
+            });
+            const h = fixture.getHarness();
+            await withFreshInitialSyncObserver(h, async (observer) => {
+                const observerIndex = observer.index;
+                // No participant handshake can start, so the only way the wait can
+                // settle is the chain genesis applied through the real event path.
+                await Promise.all(
+                    h.peers.map((peer) =>
+                        h
+                            .control(peer)
+                            .stub.stubBlockHandshakeAndRecordSpectateGuard()
+                            .request()
+                    )
+                );
+                const restoreSyncRecorder = await h.rpcStub.recordSpectateSync(
+                    observerIndex,
+                    { forward: true }
+                );
+                try {
+                    const connect =
+                        observer.p2pInstance.p2pSigner.connectToChannel(
+                            h.channelId
+                        );
+                    await h.event.waitUntilPeerStatus(
+                        observerIndex,
+                        Status.OPENED
+                    );
+                    expect(
+                        await h.lifecycle.applyChannelOpenedEvent(observerIndex)
+                    ).to.equal(true);
+                    expect(await connect).to.equal(true);
+                    expect(
+                        await h.control(observer).query.getStatus().request()
+                    ).to.equal(Status.SYNCED);
+                    expect(
+                        await h.rpcStub.spectateSyncCallCount(observerIndex)
+                    ).to.equal(0);
+                    expect(
+                        await h.execOnHost(observer, async (sm) =>
+                            Boolean(sm.isDisposed)
+                        )
+                    ).to.equal(false);
+                } finally {
+                    await restoreSyncRecorder();
+                    await Promise.all(
+                        h.peers.map((peer) =>
+                            h
+                                .control(peer)
+                                .stub.restoreBlockedHandshake()
+                                .request()
+                        )
+                    );
+                }
+            });
+        });
+
+        it("observer stays synced when the initial deadline elapses after chain genesis settled the wait", async function () {
+            await fixture!.cleanup();
+            fixture = new P2PManagerFixture();
+            await fixture.setup({
+                timeConfig: {
+                    agreementTime: 2,
+                    p2pTime: 2,
+                    chainFallbackTime: 2,
+                    evidenceTime: 2
+                }
+            });
+            const h = fixture.getHarness();
+            await withFreshInitialSyncObserver(h, async (observer) => {
+                const observerIndex = observer.index;
+                await Promise.all(
+                    h.peers.map((peer) =>
+                        h
+                            .control(peer)
+                            .stub.stubBlockHandshakeAndRecordSpectateGuard()
+                            .request()
+                    )
+                );
+                try {
+                    const connect =
+                        observer.p2pInstance.p2pSigner.connectToChannel(
+                            h.channelId
+                        );
+                    await h.event.waitUntilPeerStatus(
+                        observerIndex,
+                        Status.OPENED
+                    );
+                    await h.lifecycle.applyChannelOpenedEvent(observerIndex);
+                    expect(await connect).to.equal(true);
+                    // Two agreement windows is the pre-request deadline; the wait
+                    // settled first, so its elapsing must neither abort nor warn.
+                    await sleep(2 * 2 * 1000 + 1000);
+                    expect(
+                        await h.control(observer).query.getStatus().request()
+                    ).to.equal(Status.SYNCED);
+                    expect(
+                        await h.execOnHost(observer, async (sm) =>
+                            Boolean(sm.isDisposed)
+                        )
+                    ).to.equal(false);
+                } finally {
+                    await Promise.all(
+                        h.peers.map((peer) =>
+                            h
+                                .control(peer)
+                                .stub.restoreBlockedHandshake()
+                                .request()
+                        )
+                    );
+                }
+            });
+        });
+
+        it("observer ignores a stale false sync result once chain genesis already synced it", async function () {
+            await fixture!.cleanup();
+            fixture = new P2PManagerFixture();
+            await fixture.setup({
+                timeConfig: {
+                    agreementTime: 2,
+                    p2pTime: 2,
+                    chainFallbackTime: 2,
+                    evidenceTime: 2
+                }
+            });
+            const h = fixture.getHarness();
+            await withFreshInitialSyncObserver(h, async (observer) => {
+                const observerIndex = observer.index;
+                // Participants accept the handshake but never answer the sync
+                // request, so the observer's request times out as false after two
+                // agreement windows. Genesis from the chain lands first.
+                const releases = await Promise.all(
+                    [0, 1].map((index) =>
+                        h.rpcStub.holdSpectateResponses(index)
+                    )
+                );
+                const restoreSyncRecorder = await h.rpcStub.recordSpectateSync(
+                    observerIndex,
+                    { forward: true }
+                );
+                try {
+                    const connect =
+                        observer.p2pInstance.p2pSigner.connectToChannel(
+                            h.channelId
+                        );
+                    await waitFor(
+                        async () =>
+                            (await h.rpcStub.spectateSyncCallCount(
+                                observerIndex
+                            )) === 1,
+                        h.event.protocolEventTimeoutMs()
+                    );
+                    await h.lifecycle.applyChannelOpenedEvent(observerIndex);
+                    expect(await connect).to.equal(true);
+                    // Let the held request run into its two-window timeout.
+                    await sleep(2 * 2 * 1000 + 1000);
+                    expect(
+                        await h.control(observer).query.getStatus().request()
+                    ).to.equal(Status.SYNCED);
+                    expect(
+                        await h.execOnHost(observer, async (sm) =>
+                            Boolean(sm.isDisposed)
+                        )
+                    ).to.equal(false);
+                } finally {
+                    await restoreSyncRecorder();
+                    await Promise.all(releases.map((release) => release()));
+                }
+            });
+        });
+
+        it("observer connect resolves false when the runtime aborts while the initial wait is armed", async function () {
+            await fixture!.cleanup();
+            fixture = new P2PManagerFixture();
+            await fixture.setup({
+                timeConfig: {
+                    agreementTime: 2,
+                    p2pTime: 2,
+                    chainFallbackTime: 2,
+                    evidenceTime: 2
+                }
+            });
+            const h = fixture.getHarness();
+            await h.lifecycle.openChannelForParticipants([0, 1]);
+            await h.network.joinSelectedKey([0, 1], String(h.channelId));
+            const observerIndex = h.peers.length;
+            await h.createPeer(
+                observerIndex,
+                h.signerFor(slotAccountIndex(observerIndex))
+            );
+            const observer = h.getPeer(observerIndex);
+            await Promise.all(
+                h.peers.map((peer) =>
+                    h
+                        .control(peer)
+                        .stub.stubBlockHandshakeAndRecordSpectateGuard()
+                        .request()
+                )
+            );
+            try {
+                const startedAt = Date.now();
+                const connect = observer.p2pInstance.p2pSigner.connectToChannel(
+                    h.channelId
+                );
+                await h.event.waitUntilPeerStatus(observerIndex, Status.OPENED);
+                await h.execOnHost(observer, async (sm) => {
+                    sm.abort();
+                    return true;
+                });
+                expect(await connect).to.equal(false);
+                // Settled by the abort, well inside the two-window deadline.
+                expect(Date.now() - startedAt).to.be.lessThan(2 * 2 * 1000);
+                await waitFor(
+                    async () =>
+                        await h.execOnHost(observer, async (sm) =>
+                            Boolean(sm.isDisposed)
+                        ),
+                    h.event.protocolEventTimeoutMs()
+                );
+            } finally {
+                await Promise.all(
+                    h.peers.map((peer) =>
+                        h.control(peer).stub.restoreBlockedHandshake().request()
+                    )
+                );
+            }
+        });
+
+        it("a late sync success after the abort changes nothing", async function () {
+            await fixture!.cleanup();
+            fixture = new P2PManagerFixture();
+            await fixture.setup({
+                timeConfig: {
+                    agreementTime: 2,
+                    p2pTime: 2,
+                    chainFallbackTime: 2,
+                    evidenceTime: 2
+                }
+            });
+            await assertLateSyncResultAfterAbortChangesNothing(
+                fixture.getHarness(),
+                "success"
+            );
+        });
+
+        it("a late sync failure after the abort changes nothing", async function () {
+            await fixture!.cleanup();
+            fixture = new P2PManagerFixture();
+            await fixture.setup({
+                timeConfig: {
+                    agreementTime: 2,
+                    p2pTime: 2,
+                    chainFallbackTime: 2,
+                    evidenceTime: 2
+                }
+            });
+            await assertLateSyncResultAfterAbortChangesNothing(
+                fixture.getHarness(),
+                "failure"
+            );
         });
     });
 });

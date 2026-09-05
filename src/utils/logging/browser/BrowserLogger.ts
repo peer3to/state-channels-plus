@@ -3,9 +3,13 @@ import {
     Logger,
     ExclusiveLoggerContext,
     LogLevel,
-    SharedLoggerContext,
-    LoggerPerformanceMonitorOptions
+    SharedLoggerContext
 } from "../Logger";
+import type {
+    EventLoopDelayDetails,
+    PerformanceMonitorInternalOptions,
+    PerformanceSampleSource
+} from "../performanceMonitorInternal";
 import { BrowserLogUploader } from "./BrowserLogUploader";
 import type { LogUploaderOptions } from "../LogUploader";
 import type { LogStore } from "../logStore";
@@ -111,7 +115,7 @@ export class BrowserLogger extends Logger {
     }
 
     protected createPerformanceMonitor(
-        options: LoggerPerformanceMonitorOptions
+        options: PerformanceMonitorInternalOptions
     ): () => void {
         const intervalMs = options.intervalMs ?? 1000;
         const sampleIntervalMs = options.sampleIntervalMs ?? 50;
@@ -127,59 +131,46 @@ export class BrowserLogger extends Logger {
         const utilizationWarnThreshold =
             options.utilizationWarnThreshold ?? 0.8;
 
-        let delaySamples: number[] = [];
-        let longTaskDurations: number[] = [];
-        let lastSampleAt = this.nowMs();
-
-        const sampleTimer = setInterval(() => {
-            const now = this.nowMs();
-            const delayMs = Math.max(0, now - lastSampleAt - sampleIntervalMs);
-            lastSampleAt = now;
-            delaySamples.push(delayMs);
-        }, sampleIntervalMs);
-
-        const observer = this.tryStartLongTaskObserver((duration) => {
-            longTaskDurations.push(duration);
-        });
+        const source =
+            options.sampleSource ??
+            this.createBrowserSampleSource(intervalMs, sampleIntervalMs);
+        source.start();
 
         const reportTimer = setInterval(() => {
-            const stats = this.computeStats(delaySamples);
-            const longTaskStats = this.computeStats(longTaskDurations);
-            const blockedMs = delaySamples.reduce(
-                (sum, value) => sum + value,
-                0
-            );
-            const estimatedUtilization = Math.min(1, blockedMs / intervalMs);
-            const longTaskCount = longTaskDurations.length;
+            const sample = source.sample();
+            const estimatedUtilization = sample.utilization;
+            const longTaskCount = sample.longTaskCount ?? 0;
+            const longTaskMean = sample.longTaskMean ?? 0;
+            const longTaskMax = sample.longTaskMax ?? 0;
             const shouldWarn =
                 estimatedUtilization > utilizationWarnThreshold ||
-                stats.dMean > delayWarnThresholdMs ||
-                stats.d50 > delayWarnThresholdMs ||
-                stats.d90 > delayWarnThresholdMs ||
-                stats.d99 > delayWarnThresholdMs ||
-                stats.dMax > delayWarnThresholdMs ||
-                longTaskStats.dMax > delayWarnThresholdMs;
+                sample.dMean > delayWarnThresholdMs ||
+                sample.d50 > delayWarnThresholdMs ||
+                sample.d90 > delayWarnThresholdMs ||
+                sample.d99 > delayWarnThresholdMs ||
+                sample.dMax > delayWarnThresholdMs ||
+                longTaskMax > delayWarnThresholdMs;
             const logFn = shouldWarn
                 ? this.warn.bind(this)
                 : this.verbose.bind(this);
             logFn(
-                `Event Loop mean delay: ${stats.dMean}ms, max: ${stats.dMax}ms, estimated utilization: ${estimatedUtilization}`,
+                `Event Loop mean delay: ${sample.dMean}ms, max: ${sample.dMax}ms, estimated utilization: ${estimatedUtilization}`,
                 {
                     runtime: "browser",
-                    dMean: stats.dMean,
-                    d50: stats.d50,
-                    d90: stats.d90,
-                    d99: stats.d99,
-                    dMax: stats.dMax,
+                    dMean: sample.dMean,
+                    d50: sample.d50,
+                    d90: sample.d90,
+                    d99: sample.d99,
+                    dMax: sample.dMax,
                     estimatedUtilization,
                     longTaskCount,
-                    longTaskMean: longTaskStats.dMean,
-                    longTaskMax: longTaskStats.dMax
+                    longTaskMean,
+                    longTaskMax
                 }
             );
 
             const delayErrorThresholdMs = getDelayErrorThresholdMs();
-            const maxDelayMs = Math.max(stats.dMax, longTaskStats.dMax);
+            const maxDelayMs = Math.max(sample.dMax, longTaskMax);
             if (
                 delayErrorThresholdMs > 0 &&
                 maxDelayMs > delayErrorThresholdMs
@@ -187,33 +178,96 @@ export class BrowserLogger extends Logger {
                 const error = new Error(
                     `Event loop delay ${maxDelayMs}ms exceeded configured threshold ${delayErrorThresholdMs}ms`
                 );
-                (error as any).eventLoopDelay = {
+                const details: EventLoopDelayDetails = {
                     runtime: "browser",
+                    dMean: sample.dMean,
+                    d50: sample.d50,
+                    d90: sample.d90,
+                    d99: sample.d99,
+                    dMax: sample.dMax,
+                    estimatedUtilization,
+                    longTaskCount,
+                    longTaskMean,
+                    longTaskMax,
+                    delayErrorThresholdMs
+                };
+                (
+                    error as Error & { eventLoopDelay?: EventLoopDelayDetails }
+                ).eventLoopDelay = details;
+                clearInterval(reportTimer);
+                source.stop();
+                throw error;
+            }
+
+            source.reset();
+        }, intervalMs);
+        options.onStarted?.();
+
+        return () => {
+            clearInterval(reportTimer);
+            source.stop();
+        };
+    }
+
+    /**
+     * The real browser sample source: timer-drift delay samples plus the
+     * long-task observer, collected between reporting intervals.
+     */
+    private createBrowserSampleSource(
+        intervalMs: number,
+        sampleIntervalMs: number
+    ): PerformanceSampleSource {
+        let delaySamples: number[] = [];
+        let longTaskDurations: number[] = [];
+        let lastSampleAt = this.nowMs();
+        let sampleTimer: ReturnType<typeof setInterval> | undefined;
+        let observer: PerformanceObserver | undefined;
+
+        return {
+            start: () => {
+                lastSampleAt = this.nowMs();
+                sampleTimer = setInterval(() => {
+                    const now = this.nowMs();
+                    const delayMs = Math.max(
+                        0,
+                        now - lastSampleAt - sampleIntervalMs
+                    );
+                    lastSampleAt = now;
+                    delaySamples.push(delayMs);
+                }, sampleIntervalMs);
+                observer = this.tryStartLongTaskObserver((duration) => {
+                    longTaskDurations.push(duration);
+                });
+            },
+            sample: () => {
+                const stats = this.computeStats(delaySamples);
+                const longTaskStats = this.computeStats(longTaskDurations);
+                const blockedMs = delaySamples.reduce(
+                    (sum, value) => sum + value,
+                    0
+                );
+                return {
                     dMean: stats.dMean,
                     d50: stats.d50,
                     d90: stats.d90,
                     d99: stats.d99,
                     dMax: stats.dMax,
-                    estimatedUtilization,
-                    longTaskCount,
+                    utilization: Math.min(1, blockedMs / intervalMs),
+                    longTaskCount: longTaskDurations.length,
                     longTaskMean: longTaskStats.dMean,
-                    longTaskMax: longTaskStats.dMax,
-                    delayErrorThresholdMs
+                    longTaskMax: longTaskStats.dMax
                 };
-                clearInterval(sampleTimer);
-                clearInterval(reportTimer);
+            },
+            reset: () => {
+                delaySamples = [];
+                longTaskDurations = [];
+            },
+            stop: () => {
+                if (sampleTimer !== undefined) clearInterval(sampleTimer);
+                sampleTimer = undefined;
                 observer?.disconnect();
-                throw error;
+                observer = undefined;
             }
-
-            delaySamples = [];
-            longTaskDurations = [];
-        }, intervalMs);
-
-        return () => {
-            clearInterval(sampleTimer);
-            clearInterval(reportTimer);
-            observer?.disconnect();
         };
     }
 

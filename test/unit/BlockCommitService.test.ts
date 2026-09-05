@@ -68,13 +68,13 @@ describe("Unit: BlockCommitService", function () {
             const h = TestSession.getHarness();
             await h.lifecycle.start(3, 1);
             const forkId = h.activeForkId!;
-            const spectatorPromise = h.join.addSpectatorDetached();
-            await h.transition.advanceState({
-                count: 2,
-                waitForPeers: [0, 1, 2]
+            const {
+                peer: { index: spectatorIndex }
+            } = await h.join.addSpectatorAuthoring({
+                authoringPeerIndices: [0, 1, 2],
+                minimumBlocks: 2,
+                maximumBlocks: 20
             });
-            const { index: spectatorIndex } = await spectatorPromise;
-            await h.event.waitUntilPeerStatus(spectatorIndex, Status.SYNCED);
 
             const r = await h.execOnHost(
                 h.getPeer(spectatorIndex),
@@ -105,10 +105,11 @@ describe("Unit: BlockCommitService", function () {
                 }
             });
             const forkId = h.activeForkId!;
-            const joinerPromise = h.join.addSpectatorDetached();
-            await h.transition.advanceState({ count: 2, waitForPeers: [0, 1] });
-            const joiner = await joinerPromise;
-            await h.event.waitUntilPeerStatus(joiner.index, Status.SYNCED);
+            const { peer: joiner } = await h.join.addSpectatorAuthoring({
+                authoringPeerIndices: [0, 1],
+                minimumBlocks: 2,
+                maximumBlocks: 20
+            });
             await h.assert.sync.peersInSyncWait();
             // the pre-join tip: the newest block whose union cannot contain
             // the joiner (a joiner does not sync genesis-era history)
@@ -208,10 +209,14 @@ describe("Unit: BlockCommitService", function () {
                     evidenceTime: 6
                 }
             });
-            const joinerPromise = h.join.addSpectatorDetached();
-            await h.transition.advanceState({ count: 2, waitForPeers: [0, 1] });
-            const joiner = await joinerPromise;
-            await h.event.waitUntilPeerStatus(joiner.index, Status.SYNCED);
+            // The spawn is the slow, load-sensitive step; the bounded helper
+            // keeps the participants authoring through it so only the join
+            // RPCs and one automined transaction sit inside the final window.
+            const { peer: joiner } = await h.join.addSpectatorAuthoring({
+                authoringPeerIndices: [0, 1],
+                minimumBlocks: 2,
+                maximumBlocks: 20
+            });
             await h.assert.sync.peersInSyncWait();
             await h.join.joinChannelWait({ joiner });
 
@@ -229,12 +234,17 @@ describe("Unit: BlockCommitService", function () {
             expect(pending.status).to.equal(Status.PENDING_PARTICIPANT);
             expect(pending.forceJoinHeight).to.not.equal(null);
 
-            // the block including the join commits -> promotion
-            await h.transition.advanceState({ count: 2 });
-            await h.event.waitUntilPeerStatus(
-                joiner.index,
-                Status.PARTICIPATING
-            );
+            // the block including the join commits -> promotion; author until
+            // it lands rather than assuming which block carries the join
+            await h.transition.keepAuthoringUntil({
+                until: async () =>
+                    (await h
+                        .control(h.getPeer(joiner.index))
+                        .query.getStatus()
+                        .request()) === Status.PARTICIPATING,
+                waitForPeers: [0, 1],
+                maximumBlocks: 20
+            });
 
             const promoted = await h.execOnHost(
                 h.getPeer(joiner.index),

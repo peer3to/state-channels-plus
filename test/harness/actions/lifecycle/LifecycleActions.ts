@@ -57,11 +57,13 @@ export class LifecycleActions<
                 chainFallbackTime?: number;
                 evidenceTime?: number;
             };
+            configOverrides?: HarnessOptions["configOverrides"];
         }
     ) {
         const timeConfig = resolveTestTimeConfig(options?.timeConfig);
         await this.start(peerCount, transitionCount, {
-            timeConfig
+            timeConfig,
+            configOverrides: options?.configOverrides
         });
     }
 
@@ -129,20 +131,8 @@ export class LifecycleActions<
         openChannel: OpenChannelStruct,
         signatures: BytesLike[]
     ): Promise<ForkId> {
-        this.harness.setChannelId(openChannel.channelId);
+        await this.harness.setChannelId(openChannel.channelId);
         this.logger.debug(`Channel created with ID: ${openChannel.channelId}`);
-
-        // Select the channel on every runtime. Tests that request automatic
-        // networking use the public connection path below; autoConnect: false
-        // intentionally stops before discovery.
-        for (const peer of this.harness.peers) {
-            await peer.p2pInstance.p2pSigner.setChannelId(
-                openChannel.channelId
-            );
-            peer.logger.verbose(`Selected channel ${openChannel.channelId}`, {
-                component: "ChannelActions"
-            });
-        }
 
         this.logger.debug(
             "Submitting channel open transaction to blockchain..."
@@ -203,5 +193,17 @@ export class LifecycleActions<
             `Channel opened successfully with fork ID: ${this.harness.activeForkId}`
         );
         return this.harness.activeForkId;
+    }
+
+    /**
+     * Re-deliver the selected channel's ChannelOpened log to one peer through
+     * its real event pipeline, staging "genesis arrives from the chain" for a
+     * runtime that selected the channel after it opened.
+     */
+    async applyChannelOpenedEvent(peerIndex: number): Promise<boolean> {
+        return await this.harness
+            .control(this.harness.getPeer(peerIndex))
+            .lifecycle.applyChannelOpenedEvent()
+            .request();
     }
 }

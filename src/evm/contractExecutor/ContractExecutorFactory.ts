@@ -1,9 +1,7 @@
 import type { Logger } from "@/utils";
-import createEvm, { type EvmCustomPrecompileManifest } from "../EvmFactory";
-import InlineContractExecutor from "./ContractExecutor";
+import type { EvmCustomPrecompileManifest } from "../EvmFactory";
 import type AContractExecutor from "./AContractExecutor";
-import WorkerContractExecutor from "./WorkerContractExecutor";
-import noOpLogger from "./NoOpLogger";
+import { createContractExecutor } from "./createContractExecutor";
 
 export type ContractExecutorFactoryOptions = {
     logger?: Logger;
@@ -11,21 +9,14 @@ export type ContractExecutorFactoryOptions = {
     customPrecompiles?: EvmCustomPrecompileManifest[];
 };
 
-export async function createContractExecutorFactory(
+/**
+ * Package entry. A dedicated worker's error outside a request is re-thrown on
+ * the owning thread, the way an inline executor's own autonomous error would
+ * surface; the runtime host routes such reports through its internal
+ * dependency instead (see `createContractExecutor`).
+ */
+export function createContractExecutorFactory(
     options: ContractExecutorFactoryOptions
 ): Promise<AContractExecutor> {
-    const logger = options.logger || noOpLogger;
-
-    if (!options.dedicatedThread) {
-        const evm = await createEvm(
-            {
-                allowUnlimitedContractSize: true,
-                customPrecompiles: options.customPrecompiles
-            },
-            logger
-        );
-
-        return new InlineContractExecutor(evm, logger);
-    }
-    return WorkerContractExecutor.create(options.customPrecompiles, logger);
+    return createContractExecutor(options);
 }

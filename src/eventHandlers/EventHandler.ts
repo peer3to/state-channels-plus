@@ -119,6 +119,19 @@ export class EventHandler {
         await this.processStateSnapshotUpdated(channelId, stateSnapshot);
     }
 
+    /** Whether the chain's pending set (unconsumed JOINs) lists this signer. */
+    private async isSignerPendingOnChain(
+        channelId: ChannelId
+    ): Promise<boolean> {
+        const pendingParticipants =
+            (await this.stateManager.stateChannelManagerContract.getPendingParticipants(
+                channelId
+            )) as Address[];
+        return pendingParticipants.some((participant) =>
+            addressesEqual(participant, this.stateManager.signerAddress)
+        );
+    }
+
     private async processStateSnapshotUpdated(
         channelId: ChannelId,
         stateSnapshot: StateSnapshotStruct
@@ -133,6 +146,10 @@ export class EventHandler {
         if (!knownSnapshot) {
             const status = this.stateManager.status;
             if (status === Status.SYNCED) {
+                if (this.stateManager.leaveChannelService.isLeaving) {
+                    await this.stateManager.leaveChannelService.onSettledStateObserved();
+                    return;
+                }
                 // TODO: call stateManager.abort() here; it drops to OPENED and disposes,
                 // but no resync path exists yet.
 
@@ -152,20 +169,40 @@ export class EventHandler {
                     addressesEqual(p, this.stateManager.signerAddress)
                 );
                 if (signerRemoved) {
-                    // We were removed from the channel (e.g. slashed by dispute
-                    // resolution): a new snapshot we never produced no longer
-                    // lists us. This is a legitimate exit, not a desync — abort
-                    // participation instead of treating it as fatal.
-                    this.logger.warn(
-                        "onStateSnapshotUpdated - unknown snapshot excludes signer (slashed/removed), aborting",
-                        {
-                            channelId,
-                            status,
-                            hash: updatedSnapshot.hash
+                    if (this.stateManager.leaveChannelService.isLeaving) {
+                        this.logger.info(
+                            "onStateSnapshotUpdated - pending leave observed signer removal",
+                            { channelId, status, hash: updatedSnapshot.hash }
+                        );
+                        const localParticipants =
+                            await this.stateManager.getParticipantsCurrent();
+                        const inLocal = localParticipants.some((participant) =>
+                            addressesEqual(
+                                participant,
+                                this.stateManager.signerAddress
+                            )
+                        );
+                        if (!inLocal) {
+                            this.stateManager.setStatus(Status.SYNCED);
+                            await this.stateManager.leaveChannelService.onSettledStateObserved();
+                            return;
                         }
-                    );
-                    this.stateManager.abort();
-                    return;
+                    } else {
+                        // We were removed from the channel (e.g. slashed by dispute
+                        // resolution): a new snapshot we never produced no longer
+                        // lists us. This is a legitimate exit, not a desync — abort
+                        // participation instead of treating it as fatal.
+                        this.logger.warn(
+                            "onStateSnapshotUpdated - unknown snapshot excludes signer (slashed/removed), aborting",
+                            {
+                                channelId,
+                                status,
+                                hash: updatedSnapshot.hash
+                            }
+                        );
+                        this.stateManager.abort();
+                        return;
+                    }
                 }
                 const currentForkId = this.stateManager.forkId;
                 if (updatedSnapshot.forkID !== currentForkId) {
@@ -213,14 +250,7 @@ export class EventHandler {
                 addressesEqual(p, signerAddress)
             );
             if (!snapshotHasSigner && !inLocal) {
-                const pendingParticipants =
-                    (await this.stateManager.stateChannelManagerContract.getPendingParticipants(
-                        channelId
-                    )) as Address[];
-                const inPending = pendingParticipants.some((p) =>
-                    addressesEqual(p, signerAddress)
-                );
-                if (!inPending) {
+                if (!(await this.isSignerPendingOnChain(channelId))) {
                     this.logger.info(
                         "onStateSnapshotUpdated - signer left channel, transitioning PARTICIPATING → SYNCED",
                         { channelId }
@@ -240,6 +270,7 @@ export class EventHandler {
             );
             await this.handleChannelClose(channelId);
         }
+        await this.stateManager.leaveChannelService.onSettledStateObserved();
     }
 
     private async handleChannelClose(channelId: ChannelId): Promise<void> {
@@ -608,7 +639,13 @@ export class EventHandler {
             this.logger.info(
                 `More evidence can be constructed for dispute ${formattedHash}, disputing...`
             );
-            return this.stateManager.disputeManager.dispute(forkId);
+            // Do not return after this call. `dispute` is a no-op when this
+            // node already committed in the current window, so there may be
+            // no later DisputeCommitted event to schedule reduction. Fall
+            // through and schedule from the commitment handled here. If this
+            // call uploads a fresh commitment, its event can reschedule the
+            // reduction with the later window end.
+            await this.stateManager.disputeManager.dispute(forkId);
         }
 
         this.stateManager.reductionManager.schedule(
@@ -774,6 +811,7 @@ export class EventHandler {
         ) {
             // If final, set fork and start building on it
             await this.stateManager.reductionManager.tryReduce(forkId);
+            await this.stateManager.leaveChannelService.onSettledStateObserved();
             return;
         }
 

@@ -23,7 +23,7 @@ Browser logger implementation (console adapters).
 
 ## Key design decisions
 
-_None — the file is declarative/mechanical; behavior-shaping decisions live with its consumers._
+1. **Same loop shape as the Node monitor.** The real browser source collects timer-drift delay samples and long-task durations between reports; a test can inject a scripted source. Past the threshold the monitor stops itself and throws the unchanged message with typed `eventLoopDelay` data (`runtime: "browser"`, estimated utilization, long-task fields).
 
 ## Inputs, outputs, state, and side effects
 

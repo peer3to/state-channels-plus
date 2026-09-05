@@ -182,7 +182,11 @@ export default class ValidationService {
         }
 
         // Time logic
-        const timeResult = await this.validateTimeLogic(block, strategy);
+        const timeResult = await this.validateTimeLogic(
+            block,
+            strategy,
+            entry.replayedFromProof === true
+        );
 
         if (timeResult !== BlockValidationResult.SUCCESS) {
             this.logger.warn("Time validation failed", {
@@ -467,7 +471,8 @@ export default class ValidationService {
      */
     private async validateTimeLogic(
         block: Block,
-        strategy: AValidationStrategy
+        strategy: AValidationStrategy,
+        replayedFromProof: boolean
     ): Promise<BlockValidationResult> {
         const nowSeconds = Clock.getTimeInSeconds();
 
@@ -621,7 +626,7 @@ export default class ValidationService {
             );
 
             // previousBlockOnChainTimestamp set - rerun validation - this time we have all the data to deduct the result
-            return this.validateTimeLogic(block, strategy);
+            return this.validateTimeLogic(block, strategy, replayedFromProof);
         }
 
         // OBJECTIVE: Check if block was posted too late on-chain
@@ -659,13 +664,17 @@ export default class ValidationService {
             return BlockValidationResult.SUCCESS;
         }
 
-        // SUBJECTIVE: hasOnChainTimestamp check
+        // SUBJECTIVE: hasOnChainTimestamp check. A block replayed from a
+        // verified synchronization proof is proven history, not a live
+        // arrival: the agreement-window judgment does not apply to it, or a
+        // suffix older than one window could never be applied.
         const receivedWithinAgreementTime =
             Math.abs(nowSeconds - block.timestamp) <=
             this.timeConfig.agreementTime;
 
         if (
             !receivedWithinAgreementTime &&
+            !replayedFromProof &&
             strategy instanceof BlockValidationStrategy
         ) {
             logTimeFailure({

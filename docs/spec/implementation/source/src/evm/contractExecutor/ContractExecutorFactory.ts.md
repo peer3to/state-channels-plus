@@ -19,11 +19,11 @@
 
 ## Responsibility and observable boundary
 
-Selects inline vs worker executor per configuration/platform (`VM_DEDICATED_THREAD`).
+Selects inline vs worker executor per configuration/platform (`VM_DEDICATED_THREAD`) through the one-argument package entry; the two-argument internal constructor lives in `createContractExecutor.ts`.
 
 ## Key design decisions
 
-_None — the file is declarative/mechanical; behavior-shaping decisions live with its consumers._
+1. **One public argument, pre-plan option shape.** `createContractExecutorFactory(options)` is the package entry and `ContractExecutorFactoryOptions` is exactly its pre-plan shape (`logger`, `dedicatedThread`, `customPrecompiles`); a compile-time equality in the worker executor suite pins it. The internal seams (a scripted worker runtime, the host's detached-error route) belong to `createContractExecutor(options, dependencies)` in the non-root module `createContractExecutor.ts`, which the factory delegates to with no dependencies; the runtime host adapter and the tests call that module directly. A dedicated worker created through the package entry therefore has no application route: its detached errors are re-thrown on the owning thread, never dropped.
 
 ## Inputs, outputs, state, and side effects
 

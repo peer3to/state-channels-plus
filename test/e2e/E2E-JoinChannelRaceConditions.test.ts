@@ -1,5 +1,5 @@
 import { MathTestSession as TestSession } from "@test/harness";
-import { hash, tryDecodeCustomError } from "@/utils";
+import { Codec, hash, tryDecodeCustomError, Type } from "@/utils";
 import StateSnapshot from "@/models/StateSnapshot";
 import { Status } from "@/types";
 import {
@@ -358,6 +358,110 @@ describe("E2E: Join channel race conditions", function () {
             );
             await h.assert.sync.peersInSyncWait({
                 peerIndices: remainingPeerIndices
+            });
+        });
+
+        it("one dispute replays a pending join before self-removing that joiner", async function () {
+            const h = TestSession.getHarness();
+            const {
+                joiner,
+                confirmation,
+                expectedSnapshotHash,
+                expectedForkId
+            } = await h.scenario.syncSpectatorAndPrepareJoin();
+            expect(
+                await joiner.p2pInstance.p2pSigner.joinChannel(
+                    confirmation,
+                    expectedSnapshotHash,
+                    expectedForkId
+                )
+            ).to.equal(true);
+            expect(
+                await h.control(joiner).query.getStatus().request()
+            ).to.equal(Status.PENDING_PARTICIPANT);
+
+            const originalForkId = h.activeForkId!;
+            await h.control(joiner).dispute.setForceExit(true).request();
+            h.context.leftChannelPeerIndices = [
+                ...h.context.leftChannelPeerIndices,
+                joiner.index
+            ];
+            const { dispute } = await h.tamper.postTamperedDispute(
+                joiner.index,
+                () => {},
+                { markMalicious: false }
+            );
+
+            expect(dispute.input.selfRemoval).to.equal(true);
+            expect(
+                Number(dispute.input.lastInboundMessageBlockHeight)
+            ).to.be.greaterThan(0);
+            await h.assert.dispute.committedWait({
+                peersIndices: [0, 1, 2],
+                expectedCount: 1
+            });
+            await h.dispute.resolveDisputeWait({
+                forkId: originalForkId,
+                honestPeerIndices: [0, 1, 2],
+                assertMaliciousRemoved: false
+            });
+            await waitFor(async () => {
+                const snapshot = await h.channelManager.getStateSnapshot(
+                    h.channelId
+                );
+                return snapshot.forkId !== originalForkId;
+            }, h.event.protocolEventTimeoutMs());
+
+            const participants = await h.channelManager.getParticipants(
+                h.channelId
+            );
+            expect(
+                participants.map((address: unknown) =>
+                    String(address).toLowerCase()
+                )
+            ).to.not.include(joiner.address.toLowerCase());
+        });
+
+        it("omitting the newest pending join from a self-removal dispute is killed", async function () {
+            const h = TestSession.getHarness();
+            const {
+                joiner,
+                confirmation,
+                expectedSnapshotHash,
+                expectedForkId
+            } = await h.scenario.syncSpectatorAndPrepareJoin();
+            expect(
+                await joiner.p2pInstance.p2pSigner.joinChannel(
+                    confirmation,
+                    expectedSnapshotHash,
+                    expectedForkId
+                )
+            ).to.equal(true);
+            await h.control(joiner).dispute.setForceExit(true).request();
+
+            await h.tamper.postTamperedDispute(
+                joiner.index,
+                (dispute, _confirmation, auditingData) => {
+                    const newestInbound =
+                        auditingData!.inboundMessageBlocks.at(-1)!;
+                    auditingData!.inboundMessageBlocks =
+                        auditingData!.inboundMessageBlocks.slice(0, -1);
+                    dispute.input.latestInboundMessageBlockHash =
+                        newestInbound.previousBlockHash;
+                    dispute.input.lastInboundMessageBlockHeight =
+                        BigInt(newestInbound.blockHeight) - 1n;
+                    dispute.input.disputeAuditingDataHash = hash(
+                        Codec.encode(auditingData!, Type.DisputeAuditingData)
+                    );
+                }
+            );
+
+            await h.assert.dispute.committedWait({
+                peersIndices: [0, 1, 2],
+                expectedCount: 1
+            });
+            await h.event.waitForPeers("onDisputeKilled", [0, 1, 2], 1, {
+                mode: "atLeast"
             });
         });
 

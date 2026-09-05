@@ -16,13 +16,18 @@ export type Config = {
     LOCAL_DISCOVERY_REGISTRY_URL: string;
     VM_DEDICATED_THREAD: boolean;
     RUN_SDK_IN_THREAD: boolean;
-    // >0 enables the logger event-loop monitor (throws past this many seconds)
-    // AND, as a side effect, the ##E2E_TIMING## diagnostics the parallel runner
-    // parses (per-thread delay peaks, worker boot times). Tests set 1.
+    // >0 enables the logger event-loop monitor, which throws in its own thread
+    // past this many seconds. In the sdk and contract-executor workers that
+    // throw is reported to the host as a detached error and the worker keeps
+    // serving; inline it surfaces like any uncaught error. As a side effect it
+    // enables the ##E2E_TIMING## diagnostics the parallel runner parses
+    // (per-thread delay peaks, worker boot times). Tests set 1.
     EVENT_LOOP_DELAY_ERROR_THRESHOLD_SECONDS: number;
     // Max entries in the per-thread signer-recovery cache (message+signature ->
     // address). Bounds memory; evicts oldest past this.
     SIGNER_RECOVERY_CACHE_MAX: number;
+    // Local liveness deadline before terminal leave starts self-removal.
+    LEAVE_CHANNEL_WATCHDOG_MS: number;
     // Crash log collection
     CRASH_LOG_UPLOAD_ENDPOINT: string;
     CRASH_LOG_API_TOKEN: string;
@@ -47,6 +52,7 @@ const DEFAULT_CONFIG: Config = {
     RUN_SDK_IN_THREAD: false,
     EVENT_LOOP_DELAY_ERROR_THRESHOLD_SECONDS: 0,
     SIGNER_RECOVERY_CACHE_MAX: 100_000,
+    LEAVE_CHANNEL_WATCHDOG_MS: 15_000,
     // Crash log collection is enabled when upload endpoint is configured.
     CRASH_LOG_UPLOAD_ENDPOINT: "",
     CRASH_LOG_API_TOKEN: "",

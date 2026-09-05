@@ -19,6 +19,13 @@ describe("E2E: dispute validation / stateProof / last-milestone finality and aud
                 dispute.postedAuditingData = false;
             });
 
+            // This case audits peer 2's missing-data claim. A second valid dispute
+            // would make every auditor replay that proof first inside the same window.
+            await h
+                .control(h.getPeer(0))
+                .stub.stubSuppressDisputeInitiation()
+                .request();
+
             // Peer 1 submits a faulty block
             await h.byzantine.submitInvalidStateTransitionBlock(1);
 
@@ -34,6 +41,9 @@ describe("E2E: dispute validation / stateProof / last-milestone finality and aud
                 disputeFraudProofType:
                     DisputeFraudProofType.DisputeLastMilestoneNotFinalAndNoAuditingData
             });
+            // Once the bad claim is killed, submit the honest evidence through the
+            // normal owner so a surviving dispute can drive the reduction.
+            await h.rpcStub.restoreDisputeInitiationAndDispute(0, forkId);
             await h.dispute.resolveDisputeWait({ forkId });
         });
     });

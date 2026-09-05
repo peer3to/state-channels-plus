@@ -65,7 +65,13 @@ describe("Unit: ReductionExecutor", function () {
 
         it("no reduce data → the attempt reschedules, the peer keeps participating, a later attempt completes", async function () {
             const h = TestSession.getHarness();
-            const laggingIndex = 2;
+            // The staging's offender is the next writer after two blocks,
+            // peer 2, and the reduction slashes it; the lagging peer under
+            // test must therefore be another participant. With peer 2 as the
+            // lagging peer this case only passed because an aborted runtime
+            // kept reducing after disposal, which the terminal reduction
+            // owner no longer allows.
+            const laggingIndex = 1;
             const { forkId, held } = await stageDisputeOverHeldInboundGap(
                 h,
                 laggingIndex

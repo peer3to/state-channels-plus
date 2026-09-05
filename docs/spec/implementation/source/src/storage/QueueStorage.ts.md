@@ -37,6 +37,9 @@ attribution, with a (fork, height) coordinate index for eligibility queries.
 4. **Competing bodies coexist.** The primary key is the block hash; two bodies at one
    coordinate are distinct entries and the queue never picks between them — conflict
    resolution stays with validation.
+5. **A replayed entry carries its origin.** `createEntry` records `replayedFromProof` when the
+   synchronization replay hands the block in, so validation can judge it as history rather than a live
+   arrival; the flag is an origin marker, never a validity decision.
 
 ## Inputs, outputs, state, and side effects
 

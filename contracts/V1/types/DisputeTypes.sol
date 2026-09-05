@@ -54,6 +54,8 @@ struct DisputeInput {
     Timeout timeout;
     /// @notice Self removal for the dispute
     bool selfRemoval;
+    /// @notice Admission requires an existing open window; acceptance supplies a dispute reason.
+    bool requireExistingDisputeWindow;
 }
 
 struct SignedDispute {

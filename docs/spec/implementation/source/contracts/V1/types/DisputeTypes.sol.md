@@ -44,6 +44,8 @@ claims complete conformance for a requirement that depends on other files.
 | ---------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------- |
 | [DisputeTypes.sol](../../../../../../../contracts/V1/types/DisputeTypes.sol) | [`REQ-DATA-1-1KNRQS`](../../../../../specification/protocol-model/data-types.md#req-data-1-1knrqs) |
 
+Contribution in this file: [`REQ-DISPUTE-PIPE-9-TDWQPV`](../../../../../specification/disputes/dispute-processing.md#req-dispute-pipe-9-tdwqpv). The conformance rows below name this owner and the other required owners.
+
 ## Assumptions, dependencies, trust boundaries, and limits
 
 - Declarative/support code; behavior owned by consumers.
@@ -66,8 +68,9 @@ Status enum: `Covered` | `Partial` | `Contradicts` | `Missing`. Evidence cells a
 **Here:** / **Other files:** so each row is auditable from its links alone; genuine gaps go in the
 Gap column. Audit state is file-level (Status header), never a row status.
 
-| Requirement / invariant | Implementation status | Evidence | Gap / divergence |
-| ----------------------- | --------------------- | -------- | ---------------- |
+| Requirement / invariant                                                                                              | Implementation status | Evidence                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            | Gap / divergence |
+| -------------------------------------------------------------------------------------------------------------------- | --------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------- |
+| [`REQ-DISPUTE-PIPE-9-TDWQPV`](../../../../../specification/disputes/dispute-processing.md#req-dispute-pipe-9-tdwqpv) | Covered               | **Here:** [source](../../../../../../../contracts/V1/types/DisputeTypes.sol#L58) defines the signed boolean in DisputeInput. **Other files:** [DisputeManager.ts](../../../src/disputeManager/DisputeManager.ts.md) (dispute admission, rollback and construction), [EventSyncService.ts](../../../src/stateManager/eventSync/EventSyncService.ts.md) (authoritative timestamped slash recovery), [DisputeManagerFacet.sol](../StateChannelDiamondProxy/DisputeManagerFacet.sol.md) (conditional admission before mutation), [DisputeUtils.sol](../StateChannelDiamondProxy/utils/DisputeUtils.sol.md) (canonical reason validation), [DisputeValidationService.ts](../../../src/stateManager/dispute/DisputeValidationService.ts.md) (all remaining audit checks). | —                |
 
 ## Component test obligations
 

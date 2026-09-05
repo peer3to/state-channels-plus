@@ -1,3 +1,4 @@
+// @spec-test-coverage-ignore: harness service composition exercised by owning mapped tests
 import MainRpcService from "@/rpc/MainRpcService";
 import type P2PManager from "@/P2PManager";
 
@@ -12,6 +13,7 @@ import { ScenarioService } from "./services/scenario/ScenarioService";
 import { DisputeService } from "./services/dispute/DisputeService";
 import { TransitionService } from "./services/transition/TransitionService";
 import { BalanceService } from "./services/balance/BalanceService";
+import { LifecycleService } from "./services/lifecycle/LifecycleService";
 
 /**
  * Host-side harness-control RPC.
@@ -47,6 +49,7 @@ export class HarnessControlRpc extends MainRpcService {
     dispute: DisputeService;
     transition: TransitionService;
     balance: BalanceService;
+    lifecycle: LifecycleService;
 
     constructor(p2pManager: P2PManager<HarnessControlRpc>) {
         super(p2pManager);
@@ -59,8 +62,19 @@ export class HarnessControlRpc extends MainRpcService {
         this.spectate = new SpectateControlService(p2pManager);
         this.scenario = new ScenarioService(p2pManager);
         this.dispute = new DisputeService(p2pManager, this.signer);
-        this.transition = new TransitionService(p2pManager);
+        this.transition = new TransitionService(p2pManager, this.stub);
         this.balance = new BalanceService(p2pManager);
+        this.lifecycle = new LifecycleService(p2pManager);
+    }
+
+    /**
+     * Release every paused host call staged by the stub service before the
+     * runtime tears down, so an abort during a staged hold never leaves a
+     * paused drain behind.
+     */
+    override async dispose(): Promise<void> {
+        this.stub.releaseReductionHolds();
+        await super.dispose();
     }
 }
 

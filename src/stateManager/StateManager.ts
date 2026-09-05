@@ -29,7 +29,7 @@ import {
     CalldataPostingService,
     ParticipantTimeoutService
 } from "./chainFallback";
-import { MembershipService } from "./membership";
+import { LeaveChannelService, MembershipService } from "./membership";
 import Storage from "@/storage";
 import { EventHandler } from "@/eventHandlers/EventHandler";
 
@@ -121,6 +121,7 @@ class StateManager<
     readonly participantTimeoutService: ParticipantTimeoutService;
     readonly calldataPostingService: CalldataPostingService;
     readonly membershipService: MembershipService;
+    readonly leaveChannelService: LeaveChannelService;
     private disposalPromise?: Promise<void>;
 
     constructor(
@@ -172,7 +173,8 @@ class StateManager<
             this.eventHandler,
             this.storage,
             this.timeConfig,
-            logger
+            logger,
+            this.diamondStateMachine.localDiamondContract
         );
         this.stateChannelEventListener = new StateChannelEventListener(
             this.stateChannelManagerContract,
@@ -194,7 +196,8 @@ class StateManager<
             this.storage,
             this.diamondStateMachine,
             this.eventSyncService,
-            logger
+            logger,
+            this.self
         );
         this.p2pManager = new P2PManager<TCustomRpc>(
             this.self,
@@ -246,6 +249,10 @@ class StateManager<
             this.logger
         );
         this.membershipService = new MembershipService(this.self, this.logger);
+        this.leaveChannelService = new LeaveChannelService(
+            this.self,
+            this.logger
+        );
         this.fraudProofService = new FraudProofService(
             this.storage,
             this.logger
@@ -302,6 +309,7 @@ class StateManager<
         }
 
         this.isDisposed = true;
+        this.leaveChannelService.dispose();
         this.reductionManager.dispose();
 
         // Event handlers may still need the local EVM while draining already

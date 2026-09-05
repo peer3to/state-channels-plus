@@ -24,6 +24,8 @@ classification.
 
 ## Key design decisions
 
+The conditional-window refusal has its own channel/fork error, `RaceConditionDisputeWindowNotOpen`, so the client does not classify it as evidence expiry or participation failure.
+
 1. **Errors are protocol signals:** client race handling keys on these names — renaming is a breaking protocol change, not a refactor.
 2. **Arguments carry the comparison, not just the verdict:** an error that rejects a submission
    populates the value the caller supplied alongside the value the contract required, so the

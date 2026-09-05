@@ -124,4 +124,111 @@ describe("LocalDiscoveryServer topic lifecycle", function () {
             await h.control(primary).query.getOpenConnectionCount().request()
         ).to.equal(0);
     });
+
+    it("does not dial a peer that already has a live authenticated transport on another topic", async function () {
+        const h = TestSession.getHarness();
+        await h.setup(2, { autoConnect: false });
+        const firstTopic = ethers.id("local-discovery-dedupe-first-topic");
+        const secondTopic = ethers.id("local-discovery-dedupe-second-topic");
+        const primaryIndex =
+            compareAddresses(h.peers[0].address, h.peers[1].address) < 0
+                ? 0
+                : 1;
+        const primary = h.peers[primaryIndex];
+        const other = h.peers[1 - primaryIndex];
+
+        await Promise.all(
+            h.peers.map((peer) =>
+                h.control(peer).network.joinSelectedKey(firstTopic).request()
+            )
+        );
+        await h.network.waitForP2PConnections();
+        const firstToken = await h
+            .control(primary)
+            .network.getTransportToken(other.address)
+            .request();
+        expect(firstToken).to.be.a("number");
+
+        // A second observed topic announces the same peer again. One live
+        // authenticated transport must be reused instead of dialed twice.
+        await Promise.all(
+            h.peers.map((peer) =>
+                h.control(peer).network.joinSelectedKey(secondTopic).request()
+            )
+        );
+        await sleep(600);
+        expect(
+            await h
+                .control(primary)
+                .network.getTransportToken(other.address)
+                .request()
+        ).to.equal(firstToken);
+        expect(
+            await h.control(primary).query.getOpenConnectionCount().request()
+        ).to.equal(1);
+        expect(
+            await h.control(other).query.getOpenConnectionCount().request()
+        ).to.equal(1);
+
+        await Promise.all(
+            h.peers.flatMap((peer) => [
+                h.control(peer).network.leaveSelectedKey(firstTopic).request(),
+                h.control(peer).network.leaveSelectedKey(secondTopic).request()
+            ])
+        );
+    });
+    it("repeated and concurrent joins share one listener and a pending join can be left", async function () {
+        const h = TestSession.getHarness();
+        await h.setup(2, { autoConnect: false });
+        const topic = ethers.id("local-discovery-shared-join");
+        const peer = h.getPeer(0);
+        await h.execOnHost(
+            peer,
+            async (sm, args) => {
+                await sm.setChannelId(args.topic);
+                await Promise.all([
+                    sm.p2pManager.joinDiscoveryKey(args.topic),
+                    sm.p2pManager.joinDiscoveryKey(args.topic)
+                ]);
+                await sm.p2pManager.joinDiscoveryKey(args.topic);
+                return true;
+            },
+            { topic }
+        );
+        expect(
+            await h
+                .control(peer)
+                .stub.getLocalDiscoveryListenerCount()
+                .request()
+        ).to.equal(1);
+        await h.control(peer).network.leaveSelectedKey(topic).request();
+        expect(
+            await h
+                .control(peer)
+                .stub.getLocalDiscoveryListenerCount()
+                .request()
+        ).to.equal(0);
+        await h
+            .control(peer)
+            .stub.joinAndLeavePendingLocalDiscovery(topic)
+            .request();
+        expect(
+            await h
+                .control(peer)
+                .stub.getLocalDiscoveryListenerCount()
+                .request()
+        ).to.equal(0);
+        await Promise.all(
+            h.peers.map((p) =>
+                h.control(p).network.joinSelectedKey(topic).request()
+            )
+        );
+        await h.network.waitForP2PConnections();
+        expect(
+            await h
+                .control(peer)
+                .stub.getLocalDiscoveryListenerCount()
+                .request()
+        ).to.equal(h.getConfig().RUN_SDK_IN_THREAD ? 1 : 2);
+    });
 });

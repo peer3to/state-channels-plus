@@ -26,7 +26,17 @@ describe("Unit: StateApplicationService", function () {
         const h = TestSession.getHarness();
         await h.lifecycle.start(3, 1);
         const forkId = h.activeForkId!;
-        const { index: spectatorIndex } = await h.join.addSpectatorWait();
+        // The snapshot application under test starts after sync; the channel
+        // keeps authoring meanwhile so the writer slot never idles into a
+        // timeout dispute on a loaded host.
+        const {
+            peer: { index: spectatorIndex }
+        } = await h.join.addSpectatorAuthoring({
+            authoringPeerIndices: [0, 1, 2],
+            minimumBlocks: 1,
+            maximumBlocks: 20,
+            waitForFinalization: true
+        });
 
         // stage a wrong status so the recompute is observable
         await h.rpcStub.setPeerStatus(spectatorIndex, Status.PARTICIPATING);

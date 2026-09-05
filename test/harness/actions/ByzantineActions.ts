@@ -349,6 +349,46 @@ export class ByzantineActions<
     }
 
     /**
+     * An authentic-looking block the author's lineage does not carry: real
+     * channel, the current fork, a real participant author signature, at a
+     * height the author either holds a different block at or never reached.
+     * It queues as a future block on a peer behind that height; a sync probe
+     * toward the author then proves a lineage without it.
+     */
+    async craftUnbackedFutureBlockConfirmation(
+        authorIndex: number,
+        forkId: ForkId,
+        height: number
+    ): Promise<{ hash: string; encodedBlockConfirmation: string }> {
+        const author = this.harness.getPeer(authorIndex);
+        const block = factory.block({
+            transaction: factory.transaction({
+                header: factory.transactionHeader({
+                    forkId,
+                    transactionCnt: height,
+                    channelId: this.harness.channelId,
+                    participant: author.address as Address
+                })
+            })
+        });
+        return {
+            hash: String(block.hash),
+            encodedBlockConfirmation: Codec.encode(
+                {
+                    signedBlock: {
+                        encodedBlock: block.encode(),
+                        signature: await author.signer.signMessage(
+                            ethers.getBytes(block.hash)
+                        )
+                    },
+                    signatures: []
+                },
+                Type.BlockConfirmation
+            ) as string
+        };
+    }
+
+    /**
      * Take a source peer's real latest block and re-sign it with a throwaway
      * outsider key: the block body is authentic, only the author signature is
      * forged, so authentication fails on the signature alone.

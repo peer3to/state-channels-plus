@@ -1,3 +1,8 @@
+import {
+    assertEarlyTimeoutRetry,
+    assertTimeoutRetryAfterForkSwitch,
+    assertObsoleteEarlyTimeoutRetry
+} from "@test/fixtures/EarlyTimeoutRetryStaging";
 import { expect } from "chai";
 import { Status } from "@/types";
 import { MathTestSession as TestSession } from "@test/harness";
@@ -8,6 +13,57 @@ import { MathTestSession as TestSession } from "@test/harness";
 // control: the same code path does submit when the deadline really passed.
 
 describe("Unit: ParticipantTimeoutService", function () {
+    describe("early chain timestamp refusal", function () {
+        it("send refused once → rechecks and commits the timeout", async function () {
+            await assertEarlyTimeoutRetry(TestSession.getHarness(), "send", 1);
+        });
+
+        it("receipt refused once → rolls back and commits the retry", async function () {
+            await assertEarlyTimeoutRetry(TestSession.getHarness(), "wait", 1);
+        });
+
+        it("two early refusals → re-arms each time and commits", async function () {
+            await assertEarlyTimeoutRetry(TestSession.getHarness(), "send", 2);
+        });
+    });
+
+    describe("early refusal delay", function () {
+        it("chain three seconds early → schedules the reported remaining interval", async function () {
+            await assertEarlyTimeoutRetry(
+                TestSession.getHarness(),
+                "send",
+                1,
+                3
+            );
+        });
+        it("zero reported difference → retains a one-second minimum delay", async function () {
+            await assertEarlyTimeoutRetry(
+                TestSession.getHarness(),
+                "send",
+                1,
+                0
+            );
+        });
+    });
+
+    describe("obsolete early timeout retry", function () {
+        it("verified sync replaces the fork → queued retry and later schedules do nothing", async function () {
+            await assertTimeoutRetryAfterForkSwitch(TestSession.getHarness());
+        });
+        it("the writer block arrives before retry → no second submission", async function () {
+            await assertObsoleteEarlyTimeoutRetry(
+                TestSession.getHarness(),
+                "block"
+            );
+        });
+        it("runtime disposed before retry → no second submission", async function () {
+            await assertObsoleteEarlyTimeoutRetry(
+                TestSession.getHarness(),
+                "disposed"
+            );
+        });
+    });
+
     describe("scheduleCheck", function () {
         it("composes the task label from the reason, fork, height and participant", async function () {
             const h = TestSession.getHarness();

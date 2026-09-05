@@ -32,6 +32,8 @@ import type {
     ProfileDisconnectLifecycleProbe,
     LobbyProtocolProbe,
     LobbyRecoveryProbe,
+    LobbyRecoveryBoundProbe,
+    LobbyCommitCancellationProbe,
     LobbySessionCleanupProbe,
     MatchedNegotiationAdmissionProbe,
     InvalidNegotiationAmountProbe,
@@ -276,6 +278,14 @@ export class P2PManagerProbeRpcMethods extends ARpcMethods<
 
     public probeLobbyRecovery(): Promise<LobbyRecoveryProbe> {
         return this.service.probeLobbyRecovery();
+    }
+
+    public probeLobbyRecoveryBound(): LobbyRecoveryBoundProbe {
+        return this.service.probeLobbyRecoveryBound();
+    }
+
+    public probeLobbyCommitCancellation(): Promise<LobbyCommitCancellationProbe> {
+        return this.service.probeLobbyCommitCancellation();
     }
 
     public probeLobbyBootstrapAndValidation(): Promise<LobbyBootstrapValidationProbe> {

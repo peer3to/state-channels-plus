@@ -53,6 +53,7 @@ type MatchedAttempt = LobbyMatch & {
     proposalRequestInFlight: boolean;
     openingSubmissionStarted: boolean;
     observedOpenHandoff: boolean;
+    classifyObservedOpening?: Promise<void>;
     timeoutHandle?: ReturnType<typeof setTimeout>;
     unsubscribeDisconnected?: () => void;
     unsubscribeChannelOpened?: () => void;
@@ -249,7 +250,8 @@ export default class OpenChannelNegotiationService extends ARpcService<
         const attempt = this.state.attempt;
         if (!attempt || attempt.channelId !== channelId) return;
         this.state.channelOpened = true;
-        void this.classifyObservedOpening(attempt);
+        attempt.classifyObservedOpening =
+            this.classifyObservedOpening(attempt);
     }
 
     public isRpcAdmitted(rpc: Rpc, transport: ATransport): boolean {
@@ -387,6 +389,9 @@ export default class OpenChannelNegotiationService extends ARpcService<
             decoded,
             this.p2pManager.stateManager.signer
         );
+        if (this.state.channelOpened) {
+            await attempt.classifyObservedOpening;
+        }
         if (this.state.attempt !== attempt || attempt.observedOpenHandoff) {
             return { status: "submitted" };
         }

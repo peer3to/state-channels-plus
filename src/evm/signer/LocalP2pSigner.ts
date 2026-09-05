@@ -145,10 +145,6 @@ class LocalP2pSigner<TCustomRpc extends MainRpcService = MainRpcService>
         return this.signer.signTypedData(domain, types, value);
     }
 
-    async setChannelId(channelId: Bytes): Promise<void> {
-        await this.p2pManager.stateManager.setChannelId(channelId);
-    }
-
     public setIsLeader(value: boolean) {
         this.isLeader = value;
     }
@@ -166,11 +162,17 @@ class LocalP2pSigner<TCustomRpc extends MainRpcService = MainRpcService>
         if (!ethers.isHexString(normalizedChannelId, 32))
             throw new Error("Channel ID must be exactly 32 bytes");
         const stateManager = this.p2pManager.stateManager;
+        stateManager.leaveChannelService.assertOperationAllowed(
+            "connectToChannel"
+        );
         let openedGenesis = false;
 
         if (String(stateManager.channelId) !== normalizedChannelId) {
-            if (String(stateManager.channelId) !== ethers.ZeroHash)
-                await stateManager.clearChannelId();
+            if (String(stateManager.channelId) !== ethers.ZeroHash) {
+                throw new Error(
+                    `This P2P runtime already owns channel ${stateManager.channelId}; leave it and create a new runtime before selecting ${normalizedChannelId}`
+                );
+            }
             await stateManager.setChannelId(normalizedChannelId);
         }
 
@@ -260,10 +262,21 @@ class LocalP2pSigner<TCustomRpc extends MainRpcService = MainRpcService>
         );
     }
 
+    /**
+     * Internal route for `P2pInstance.leaveChannel`.
+     * Direct callers wait for settled removal but do not dispose the runtime.
+     */
+    public leaveChannel(): Promise<void> {
+        return this.p2pManager.stateManager.leaveChannelService.leaveChannel();
+    }
+
     public async joinLobby(
         lobbyTopic: string,
         options: LobbyJoinOptions = {}
     ): Promise<LobbyJoinResult | undefined> {
+        this.p2pManager.stateManager.leaveChannelService.assertOperationAllowed(
+            "joinLobby"
+        );
         if (!ethers.isHexString(lobbyTopic, 32)) {
             throw new Error("Rendezvous topic must be exactly 32 bytes");
         }
@@ -338,6 +351,9 @@ class LocalP2pSigner<TCustomRpc extends MainRpcService = MainRpcService>
         expectedSnapshotHash: Hash,
         expectedForkId: ForkId
     ): Promise<boolean> {
+        this.p2pManager.stateManager.leaveChannelService.assertOperationAllowed(
+            "joinChannel"
+        );
         return this.p2pManager.stateManager.membershipService.joinChannel(
             confirmation,
             expectedSnapshotHash,
@@ -350,6 +366,9 @@ class LocalP2pSigner<TCustomRpc extends MainRpcService = MainRpcService>
         expectedSnapshotHash: Hash,
         expectedForkId: ForkId
     ): Promise<boolean> {
+        this.p2pManager.stateManager.leaveChannelService.assertOperationAllowed(
+            "topUpBalance"
+        );
         return this.p2pManager.stateManager.membershipService.topUpBalance(
             confirmation,
             expectedSnapshotHash,
@@ -360,6 +379,9 @@ class LocalP2pSigner<TCustomRpc extends MainRpcService = MainRpcService>
     public collectJoinChannelConfirmation(
         joinChannel: JoinChannelStruct
     ): Promise<PreparedJoinChannelConfirmation> {
+        this.p2pManager.stateManager.leaveChannelService.assertOperationAllowed(
+            "collectJoinChannelConfirmation"
+        );
         return this.p2pManager.localRpc.joinChannelService.collectJoinChannelConfirmation(
             joinChannel
         );

@@ -28,6 +28,18 @@ export function createP2pRuntimeWorker(): P2pRuntimeWorker {
     const workerPath = fs.existsSync(jsWorkerPath)
         ? jsWorkerPath
         : tsWorkerPath;
+    return createP2pRuntimeWorkerFromPath(workerPath);
+}
+
+/**
+ * Spawn the sdk worker from an explicit entry path. Production uses the
+ * platform entry above; tests load an outer entry that builds a scripted
+ * contract-executor worker and pass its selection through `workerData`.
+ */
+export function createP2pRuntimeWorkerFromPath(
+    workerPath: string,
+    workerData?: unknown
+): P2pRuntimeWorker {
     // Transpile-only: each worker re-loads the SDK import graph, and full
     // ts-node type-checks it (seconds per worker). Types are already checked by
     // `yarn tsc`, so skip the per-worker check.
@@ -42,6 +54,7 @@ export function createP2pRuntimeWorker(): P2pRuntimeWorker {
 
     const worker = new Worker(workerPath, {
         execArgv,
+        workerData,
         resourceLimits: resolveWorkerResourceLimits("sdk")
     });
     const shutdownWorker = createWorkerShutdown(worker);

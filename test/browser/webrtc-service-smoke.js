@@ -1,3 +1,4 @@
+// @spec-test-coverage-ignore: browser page script for the WebRTC smokes; evidence is mapped from run-worker-contract-executor.mjs
 import WebRTCSetupService from "../../src/rpc/services/WebRTCSetup/WebRTCSetupService.ts";
 import { installWebRTCMainThreadBridge } from "../../src/rpc/services/WebRTCSetup/connection/WebRTCMainThreadBridge.ts";
 import { TransportType } from "../../src/transport/TransportType.ts";
@@ -68,6 +69,10 @@ function createP2PManager(localAddress, remoteAddress, errors, progress = []) {
             getChannelId: () => "browser-webrtc-smoke"
         },
         profileManager: {
+            // Every transport registers itself with the profile manager on
+            // construction (ATransport); the smoke tracks open transports
+            // through the handshake hook instead.
+            registerTransport: () => undefined,
             getProfileByTransport: (transport) => {
                 if (transport.__baseTransport) {
                     return { evmAddress: remoteAddress };
@@ -251,25 +256,45 @@ async function assertBidirectionalTransport(
 
 globalThis.runWebRTCMainThreadBrowserSmoke = async () => {
     const errors = [];
+    const progress = [];
     const initiator = createServiceHarness(
         MAIN_A_ADDRESS,
         MAIN_B_ADDRESS,
-        errors
+        errors,
+        progress
     );
     const responder = createServiceHarness(
         MAIN_B_ADDRESS,
         MAIN_A_ADDRESS,
-        errors
+        errors,
+        progress
     );
     createMainThreadSignalRouter(initiator, responder, errors);
 
     await initiator.service.initiateWebRTC(createBaseTransport(MAIN_B_ADDRESS));
-    await assertBidirectionalTransport(
-        initiator.p2pManager,
-        responder.p2pManager,
-        "main-thread-offer-to-answer",
-        "main-thread-answer-to-offer"
-    );
+    try {
+        await assertBidirectionalTransport(
+            initiator.p2pManager,
+            responder.p2pManager,
+            "main-thread-offer-to-answer",
+            "main-thread-answer-to-offer"
+        );
+    } catch (error) {
+        // A bare timeout hides why the channels never opened: surface what
+        // the services logged and the connection states they reached.
+        const states = [initiator, responder].map((side) =>
+            JSON.stringify(
+                side.service.getWebRTCConnectionState(
+                    side.p2pManager.remoteAddress
+                )
+            )
+        );
+        throw new Error(
+            `${error.message}; states=${states.join(" / ")}; errors=${errors
+                .map((e) => e.message)
+                .join(" | ")}; progress=${progress.slice(-30).join(" | ")}`
+        );
+    }
 
     if (errors.length > 0) throw errors[0];
     return {

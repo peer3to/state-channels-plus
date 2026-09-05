@@ -2,7 +2,7 @@ import WebSocket, { WebSocketServer, AddressInfo } from "ws";
 import type P2PManager from "@/P2PManager";
 import { LocalTransport } from "@/transport";
 import type { Logger } from "@/utils";
-import { addressesEqual } from "@/utils/address";
+import { addressesEqual, getChecksumAddress } from "@/utils/address";
 import { config } from "@/utils/config";
 import type { Address } from "@/types/types";
 
@@ -84,6 +84,10 @@ export class LocalDiscoveryServer {
 
     /** Retry count per outbound local-port to peer-port connection. */
     private static _peerRetryCount: Map<PeerConnectionKey, number> = new Map();
+    // Per runtime: checksum EVM addresses with an outbound dial in flight on
+    // any observed topic, so a second topic never dials the same peer twice.
+    private static dialingPeers: WeakMap<P2PManager, Set<string>> =
+        new WeakMap();
 
     /** Discovery and primary peer-dial retries owned by this server. */
     private static pendingTimers: Set<ReturnType<typeof setTimeout>> =
@@ -92,6 +96,12 @@ export class LocalDiscoveryServer {
     private static discoverySessions: WeakMap<
         P2PManager,
         Map<RendezvousKey, DiscoverySession>
+    > = new WeakMap();
+
+    /** In-progress listener startup per runtime and exact observed topic. */
+    private static discoveryJoins: WeakMap<
+        P2PManager,
+        Map<RendezvousKey, Promise<void>>
     > = new WeakMap();
 
     /** Prevent reconnect loops during/after cleanup */
@@ -608,6 +618,41 @@ export class LocalDiscoveryServer {
         rendezvousKey: RendezvousKey,
         myPeerAddress: string
     ): Promise<void> {
+        const joins =
+            this.discoveryJoins.get(p2pManager) ??
+            new Map<RendezvousKey, Promise<void>>();
+        const pending = joins.get(rendezvousKey);
+        if (pending) return pending;
+        if (this.getDiscoverySession(p2pManager, rendezvousKey)) return;
+        this.discoveryJoins.set(p2pManager, joins);
+        const started = this.startDiscoverySession(
+            p2pManager,
+            rendezvousKey,
+            myPeerAddress
+        );
+        joins.set(rendezvousKey, started);
+        try {
+            await started;
+        } finally {
+            joins.delete(rendezvousKey);
+        }
+    }
+
+    private static async startDiscoverySession(
+        p2pManager: P2PManager,
+        rendezvousKey: RendezvousKey,
+        myPeerAddress: string
+    ): Promise<void> {
+        const externalRegistryUrl = this.getExternalRegistryUrl();
+        if (!externalRegistryUrl && !this.discoveryPort) {
+            throw new Error(
+                "Discovery server not started. Call tryStart() before connectToPeers()."
+            );
+        }
+        const registryPort = this.discoveryPort;
+        const registryUrl =
+            externalRegistryUrl ?? `ws://${LOCAL_WS_HOST}:${registryPort}`;
+
         const peerLog = {
             mode: "peer" as const,
             rendezvousKey,
@@ -682,15 +727,6 @@ export class LocalDiscoveryServer {
         });
 
         // 2. Connect to Registry
-        const externalRegistryUrl = this.getExternalRegistryUrl();
-        if (!externalRegistryUrl && !this.discoveryPort) {
-            throw new Error(
-                "Discovery server not started. Call tryStart() before connectToPeers()."
-            );
-        }
-        const registryPort = this.discoveryPort;
-        const registryUrl =
-            externalRegistryUrl ?? `ws://${LOCAL_WS_HOST}:${registryPort}`;
 
         const connectRegistry = (attempt: number) => {
             if (
@@ -830,6 +866,7 @@ export class LocalDiscoveryServer {
         p2pManager?: P2PManager
     ): Promise<void> {
         if (!p2pManager) return;
+        await this.discoveryJoins.get(p2pManager)?.get(rendezvousKey);
         const sessions = this.discoverySessions.get(p2pManager);
         const session = sessions?.get(rendezvousKey);
         if (!session) return;
@@ -951,15 +988,52 @@ export class LocalDiscoveryServer {
         }
     }
 
+    /**
+     * One live connection per unique peer, across every observed topic. This
+     * mirrors the Hyperswarm behavior production relies on during the
+     * derived-to-raw topic handoff: a peer already authenticated on one topic,
+     * or already being dialed on another, is not dialed again.
+     */
     private static isPeerConnected(
         p2pManager: P2PManager,
         peerAddress: string
     ): boolean {
-        return p2pManager.openConnections.some(
-            (transport) =>
-                transport.peerAddress !== undefined &&
-                addressesEqual(transport.peerAddress, peerAddress)
+        if (
+            p2pManager.openConnections.some(
+                (transport) =>
+                    transport.peerAddress !== undefined &&
+                    addressesEqual(transport.peerAddress, peerAddress)
+            )
+        ) {
+            return true;
+        }
+        const profile = p2pManager.profileManager.getProfileByEvmAddress(
+            peerAddress as Address
         );
+        if (profile && profile.getLiveTransports().length > 0) return true;
+        return (
+            this.dialingPeers
+                .get(p2pManager)
+                ?.has(getChecksumAddress(peerAddress)) === true
+        );
+    }
+
+    private static markPeerDialing(
+        p2pManager: P2PManager,
+        peerAddress: string
+    ): void {
+        const dialing = this.dialingPeers.get(p2pManager) ?? new Set();
+        dialing.add(getChecksumAddress(peerAddress));
+        this.dialingPeers.set(p2pManager, dialing);
+    }
+
+    private static unmarkPeerDialing(
+        p2pManager: P2PManager,
+        peerAddress: string
+    ): void {
+        this.dialingPeers
+            .get(p2pManager)
+            ?.delete(getChecksumAddress(peerAddress));
     }
 
     /**
@@ -976,21 +1050,40 @@ export class LocalDiscoveryServer {
     ): void {
         const session = this.getDiscoverySession(p2pManager, rendezvousKey);
         const connectionKey: PeerConnectionKey = `${myPeerPort}->${peerPort}`;
-        if (
-            this._cleanupRequested ||
-            p2pManager.isDisposed ||
-            !session ||
-            session.activeDials.has(connectionKey) ||
-            this.isPeerConnected(p2pManager, peerAddress) ||
-            p2pManager.isBlacklisted(peerAddress as Address)
-        ) {
+        const retryCount = this._peerRetryCount.get(connectionKey) || 0;
+        if (!session) return;
+        const skipReason = this._cleanupRequested
+            ? "cleanup-requested"
+            : p2pManager.isDisposed
+              ? "disposed"
+              : session.activeDials.has(connectionKey)
+                ? "dial-active"
+                : this.isPeerConnected(p2pManager, peerAddress)
+                  ? "peer-connected"
+                  : p2pManager.isBlacklisted(peerAddress as Address)
+                    ? "blacklisted"
+                    : undefined;
+        if (skipReason) {
+            // A skipped retry is the end of the road for this key: no
+            // announcement follows it, so the reason must be visible.
+            if (retryCount > 0) {
+                this.logger.debug("Peer retry skipped", {
+                    mode: "peer",
+                    myPeerAddress,
+                    myPeerPort,
+                    peerAddress,
+                    peerPort,
+                    rendezvousKey,
+                    attempt: retryCount + 1,
+                    skipReason
+                });
+            }
             return;
         }
 
-        const retryCount = this._peerRetryCount.get(connectionKey) || 0;
-
         session.activeDials.add(connectionKey);
         session.connectionKeys.add(connectionKey);
+        this.markPeerDialing(p2pManager, peerAddress);
 
         const attempt = retryCount + 1;
         const peerUrl = `ws://${LOCAL_WS_HOST}:${peerPort}`;
@@ -1117,6 +1210,7 @@ export class LocalDiscoveryServer {
                 clearTimeout(transportReadyTimeout);
                 session.pendingDials.delete(_ws);
                 session.activeDials.delete(connectionKey);
+                this.unmarkPeerDialing(p2pManager, peerAddress);
                 this.logger.debug("Peer connection closed", {
                     mode: "peer",
                     myPeerAddress,
@@ -1149,6 +1243,7 @@ export class LocalDiscoveryServer {
             },
             onConnectFailure: (reason, details) => {
                 session.pendingDials.delete(dialWs);
+                this.unmarkPeerDialing(p2pManager, peerAddress);
                 scheduleRetry(reason, details);
             }
         });
@@ -1223,6 +1318,7 @@ export class LocalDiscoveryServer {
         // 4. Clear internal state
         this._peerRetryCount.clear();
         this.discoverySessions = new WeakMap();
+        this.dialingPeers = new WeakMap();
         this.registeredPeers = [];
 
         this.logger.debug("LocalDiscovery cleanup complete", {

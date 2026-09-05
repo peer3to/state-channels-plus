@@ -283,8 +283,11 @@ with the suite still green.
 - Legacy in-process unit/integration: `yarn test`. E2E inline: `yarn test:e2e`.
 - E2E in worker mode: `yarn test:e2e:worker` (per-file process isolation +
   internal X/N progress; needs the hardhat node — `yarn infra:hardhat-node`).
-- Local parallel runner: `yarn test:parallel` — use it for focused local runs;
-  each run logs to a fresh
+- Always prefer the distributed runner, also for focused subsets, loops, and
+  reruns: `yarn test:parallel:distributed --grep <regexp>`. The local runner is
+  acceptable only for a small focused selection (about ten tests or fewer).
+- Local parallel runner: `yarn test:parallel` — only for that small focused
+  selection; each run logs to a fresh
   `./logs/run-N/`; earlier run dirs (and their `error_*` logs) are retained
   for cross-run comparison. Only the current run's dir is cleared. See root
   `AGENTS.md` ("Canonical test command and parallel run logs").

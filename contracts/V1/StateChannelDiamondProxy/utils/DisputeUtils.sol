@@ -86,7 +86,6 @@ function _getUnfinalizedBlockConfirmationsFromStateProof(StateProof memory state
     return blockConfirmations;
 }
 
-//not used anywhere right now
 function _isEvidencePeriodExpired(DisputeWindow storage disputeWindow, uint256 evidenceTime) view returns (bool) {
     return block.timestamp >= disputeWindow.evidence.creationTimestamp + evidenceTime
         && _isDisputeWidnowCreated(disputeWindow);
@@ -142,8 +141,8 @@ function _hasDisputeReason(DisputeInput memory input, StateSnapshot memory lates
     for (uint256 i = 0; hasValidOnChainSlash && i < input.onChainSlashes.length; i++) {
         hasValidOnChainSlash = _isAddressInArray(latestStateSnapshot.snapshotData.participants, input.onChainSlashes[i]);
     }
-    return
-        input.timeout.participant != address(0) || hasValidOnChainSlash || input.selfRemoval || isForcedInboundMessage;
+    return input.timeout.participant != address(0) || hasValidOnChainSlash || input.selfRemoval
+        || isForcedInboundMessage || input.requireExistingDisputeWindow;
 }
 
 function _isSnapshotLinkedToLatestBlock(Dispute memory dispute, StateSnapshot memory latestStateSnapshot)

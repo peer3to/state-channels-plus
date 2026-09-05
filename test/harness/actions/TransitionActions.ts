@@ -1,3 +1,4 @@
+// @spec-test-coverage-ignore: shared transition actions exercised by owning mapped test declarations
 import { PeerTestHarness } from "@test/fixtures/PeerTestHarness";
 import type { TestPeer } from "@test/harness/core/types";
 import { Codec, Logger, sleep, Type } from "@/utils";
@@ -7,7 +8,8 @@ import { Block, StateSnapshot } from "@/models";
 import type { IngestBlockConfirmationOptions } from "@/stateManager/ingest/BlockQueueManager";
 import type { BlockConfirmationStruct } from "@typechain-types/contracts/V1/types/DataTypes";
 import type { ForkId } from "@/types/types";
-import type { Status } from "@/types";
+import { resolveTestTimeConfig } from "@test/harness/core/testTimeConfig";
+import { Status } from "@/types";
 
 export type TransitionOptions = {
     waitForSync?: boolean;
@@ -40,6 +42,13 @@ export type AdvanceStateOptions<
     TContract extends AStateMachineContract = AStateMachineContract
 > = AdvanceStateBaseOptions & {
     txFn: (contract: TContract) => Promise<any>;
+};
+
+export type KeepAuthoringOptions = {
+    until: () => Promise<boolean> | boolean;
+    waitForPeers: number[];
+    excludePeerIndices?: number[];
+    maximumBlocks: number;
 };
 
 export function effectiveWaitForFinalization(
@@ -106,6 +115,94 @@ export class TransitionActions<
         }
     }
 
+    /**
+     * Keep the writer slot alive until `until` holds: one block per p2p
+     * window from the next writer, skipping `excludePeerIndices` (a leaver
+     * past its exit turn, a peer that must not author). The harness authors
+     * in milliseconds while a leave or promotion settles in seconds on a
+     * loaded farm; an idle slot would let an honest peer post a timeout
+     * dispute. The bound turns a broken settlement into a diagnosed failure.
+     */
+    async keepAuthoringUntil(
+        options: KeepAuthoringOptions & {
+            txFn: (contract: TContract) => Promise<any>;
+        }
+    ): Promise<number> {
+        const { until, waitForPeers, excludePeerIndices = [] } = options;
+        const keepAliveMs =
+            resolveTestTimeConfig(this.harness.options.timeConfig).p2pTime *
+            1000;
+        let blocksAuthored = 0;
+        // Writer windows spent waiting, on an excluded writer or on a
+        // next-writer answer its own host does not confirm, count against the
+        // bound too, so a slot that never moves on still ends in the
+        // diagnostic below instead of the runner's global timeout.
+        let waitingWindows = 0;
+        // The slot may already have been idle before this call (a join or a
+        // leave request takes seconds), so the first block goes out at once.
+        let lastWriteAt = 0;
+        while (!(await until())) {
+            if (Date.now() - lastWriteAt < keepAliveMs) {
+                await sleep(100);
+                continue;
+            }
+            if (blocksAuthored + waitingWindows >= options.maximumBlocks) {
+                const forkId = this.harness.activeForkId;
+                const states = await Promise.all(
+                    this.harness.peers.map(async (peer) => {
+                        const control = this.harness.control(peer);
+                        const status = await control.query
+                            .getStatus()
+                            .request();
+                        const height = forkId
+                            ? await control.query
+                                  .getLatestBlockHeight(forkId)
+                                  .request()
+                            : null;
+                        return `peer ${peer.index}: ${Status[status]} at height ${String(height)}`;
+                    })
+                );
+                throw new Error(
+                    `Condition not met within ${options.maximumBlocks} keep-alive windows (${blocksAuthored} authored, ${waitingWindows} waiting): ${states.join("; ")}`
+                );
+            }
+            const next = await this.harness.query.getNextPeerToWrite();
+            if (excludePeerIndices.includes(next.index)) {
+                // The excluded writer's turn: only its own exit or removal
+                // moves the slot on, so wait one window for the next poll.
+                waitingWindows += 1;
+                lastWriteAt = Date.now();
+                continue;
+            }
+            // The next-writer answer comes from the peer with the highest
+            // block; the writer's own host decides the turn, and a block that
+            // just landed (an exit turn) can move the slot between the two.
+            const myTurn = await this.harness
+                .control(next)
+                .query.isMyTurn()
+                .request();
+            if (!myTurn) {
+                // A stale next-writer answer: one window of waiting, then
+                // re-query. Counted, so a slot that never confirms ends in
+                // the diagnostic above.
+                waitingWindows += 1;
+                lastWriteAt = Date.now();
+                continue;
+            }
+            const writer = this.harness.peers[next.index];
+            if (!writer) throw new Error(`Peer ${next.index} not found`);
+            // The window starts when the block is stamped, not when its sync
+            // settles. A stamp is capped at the previous relevant timestamp
+            // plus p2pTime, so counting the sync into the gap makes every
+            // keep-alive block late and the stamps fall behind the wall clock
+            // until the subjective window rejects them.
+            lastWriteAt = Date.now();
+            await this.submit(writer, options.txFn, { waitForPeers });
+            blocksAuthored += 1;
+        }
+        return blocksAuthored;
+    }
+
     async fromHonestPeersOnly(
         txFn: (contract: TContract) => Promise<any>,
         options?: { waitForSync?: boolean }
@@ -158,7 +255,11 @@ export class TransitionActions<
         forkId?: string;
         timeoutMs?: number;
     }): Promise<StateSnapshot | undefined> {
-        const expectedSnapshot = await this.requestPostSnapshot(options, true);
+        // Submit without holding the control RPC open for the transaction:
+        // a mined transaction on a loaded farm outlasts the RPC budget. The
+        // barrier below is the completion signal; a failed post surfaces as
+        // a detached host error at quiesce.
+        const expectedSnapshot = await this.requestPostSnapshot(options, false);
         if (!expectedSnapshot) return undefined;
 
         const timeoutMs =

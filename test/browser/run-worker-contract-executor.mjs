@@ -48,6 +48,10 @@ const server = await createServer({
                 projectRoot,
                 "src/evm/browser/precompileModuleLoader.ts"
             ),
+            "@platform/evmJumpdestCache": path.join(
+                projectRoot,
+                "src/evm/browser/evmJumpdestCache.ts"
+            ),
             "@platform/moduleLoader": path.join(
                 projectRoot,
                 "src/utils/moduleLoader/browser/importModuleFromManifest.ts"
@@ -108,6 +112,9 @@ try {
         await page.waitForFunction(
             () =>
                 Boolean(globalThis.runContractExecutorWorkerBrowserSmoke) &&
+                Boolean(
+                    globalThis.runContractExecutorWorkerWatchdogBrowserSmoke
+                ) &&
                 Boolean(globalThis.runWebRTCMainThreadBrowserSmoke) &&
                 Boolean(globalThis.runWebRTCDedicatedWorkerBrowserSmoke) &&
                 Boolean(globalThis.runWebRTCProxyWorkerBrowserSmoke)
@@ -122,6 +129,11 @@ try {
     const result = await page.evaluate(async () => {
         if (!globalThis.runContractExecutorWorkerBrowserSmoke) {
             throw new Error("Browser worker smoke function was not registered");
+        }
+        if (!globalThis.runContractExecutorWorkerWatchdogBrowserSmoke) {
+            throw new Error(
+                "Browser worker watchdog smoke function was not registered"
+            );
         }
         if (!globalThis.runWebRTCMainThreadBrowserSmoke) {
             throw new Error(
@@ -153,6 +165,14 @@ try {
             "Contract executor browser worker smoke",
             globalThis.runContractExecutorWorkerBrowserSmoke()
         );
+        const contractExecutorWatchdog = await withTimeout(
+            "Contract executor browser worker watchdog smoke",
+            globalThis.runContractExecutorWorkerWatchdogBrowserSmoke()
+        );
+        const contractExecutorClock = await withTimeout(
+            "Contract executor browser worker clock smoke",
+            globalThis.runContractExecutorWorkerClockBrowserSmoke()
+        );
         const webRTCMainThread = await withTimeout(
             "WebRTC main-thread browser smoke",
             globalThis.runWebRTCMainThreadBrowserSmoke()
@@ -167,6 +187,8 @@ try {
         );
         return {
             contractExecutor,
+            contractExecutorWatchdog,
+            contractExecutorClock,
             webRTCMainThread,
             webRTCDedicatedWorker,
             webRTCProxyWorker
@@ -175,6 +197,34 @@ try {
 
     assert.equal(result.contractExecutor.value, "42");
     assert.equal(result.contractExecutor.isWorker, true);
+    // The browser worker's ambient block time is wall time plus the host's
+    // clock adjustment, within the one-second sampling boundary, and advances.
+    assert.ok(
+        Math.abs(result.contractExecutorClock.firstOffset - 600) <= 1,
+        `browser worker block.timestamp offset ${result.contractExecutorClock.firstOffset}`
+    );
+    assert.equal(result.contractExecutorClock.advanced, true);
+    // Detached worker errors: one report each, the worker keeps serving, and
+    // the browser saw no worker `error` event or console error (asserted by
+    // the browserErrors check below).
+    const watchdog = result.contractExecutorWatchdog;
+    assert.equal(watchdog.watchdog.message, watchdog.expected.watchdogMessage);
+    assert.equal(watchdog.watchdog.eventLoopDelay?.runtime, "browser");
+    assert.equal(
+        watchdog.watchdog.eventLoopDelay?.dMax,
+        watchdog.expected.trippedDelayMs
+    );
+    assert.equal(watchdog.watchdog.reportsBeforeArm, 0);
+    assert.equal(watchdog.watchdog.reportCount, 1);
+    assert.equal(watchdog.watchdog.servedAfterReport, true);
+    assert.equal(watchdog.throw.message, watchdog.expected.originalError);
+    assert.equal(watchdog.throw.reportsBeforeArm, 0);
+    assert.equal(watchdog.throw.reportCount, 1);
+    assert.equal(watchdog.throw.servedAfterReport, true);
+    assert.equal(watchdog.rejection.message, watchdog.expected.originalError);
+    assert.equal(watchdog.rejection.reportsBeforeArm, 0);
+    assert.equal(watchdog.rejection.reportCount, 1);
+    assert.equal(watchdog.rejection.servedAfterReport, true);
     assert.equal(result.webRTCMainThread.receivedByInitiator, 1);
     assert.equal(result.webRTCMainThread.receivedByResponder, 1);
     assert.equal(result.webRTCDedicatedWorker.receivedByMain, 1);

@@ -11,7 +11,7 @@
 ## Overview
 
 The suite drives `StateManager` timeout scheduling through the full harness runtime: it stages a
-pre-dispute setup with a short `evidenceTime`, marks a peer AFK, posts a tampered dispute from
+pre-dispute setup with a short `evidenceTime`, marks a peer AFK, posts a valid self-removal dispute from
 another peer, and waits until the dispute is committed on chain. The oracle is the window-age
 guard on timeout submission: because the committed dispute window predates the timeout's
 deadline, the observing peer must not submit a timeout — after sleeping almost the whole evidence

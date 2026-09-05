@@ -1,3 +1,4 @@
+// @spec-test-coverage-ignore: shared tampering staging exercised by mapped dispute-validation cases
 import { PeerTestHarness } from "@test/fixtures/PeerTestHarness";
 import type { HarnessControlRpc } from "@test/fixtures/customRpc/harnessControl/HarnessControlRpc";
 import type StateManager from "@/stateManager/StateManager";
@@ -216,6 +217,9 @@ export class DisputeTamperingActions<
                 targetForkId
             );
 
+        // A malicious direct upload may open its own window. A test that
+        // targets conditional admission can explicitly set true in its hook.
+        if (markMalicious) dispute.input.requireExistingDisputeWindow = false;
         await tamper(dispute, disputeConfirmation, auditingData);
         await this.resignDispute(peer.signer, dispute, disputeConfirmation);
 

@@ -4,6 +4,14 @@ import { EVM } from "@ethereumjs/evm";
 import { Address } from "@ethereumjs/util";
 import { ContractExecutor, type AContractExecutor } from "@/evm";
 import Clock from "@/Clock";
+import { createContractExecutor } from "@/evm/contractExecutor/createContractExecutor";
+import WorkerContractExecutor from "@/evm/contractExecutor/WorkerContractExecutor";
+import {
+    assertRuntimeClock,
+    deployTimestampStorage,
+    timestampReader,
+    wallSeconds
+} from "../fixtures/ExecutorTimestamp.fixture";
 import { tryDecodeCustomError } from "@/utils/evmErrorHandler";
 import {
     getSimpleNumberStorageDeploymentTransaction,
@@ -547,6 +555,115 @@ describe("ContractExecutor", function () {
             expect(customError!.originalError.message).to.equal(
                 "EVM execution failed: Error"
             );
+        }
+    });
+
+    describe("ambient block time", function () {
+        it("a bare executor stamps exactly its clock source's value", async function () {
+            const bare = new ContractExecutor(await EVM.create(), undefined, {
+                clock: () => 1_234_567
+            });
+            try {
+                expect(await (await timestampReader(bare))()).to.equal(
+                    1_234_567
+                );
+            } finally {
+                await bare.dispose();
+            }
+        });
+
+        it("the runtime inline executor observes the adjusted Clock and advances", async function () {
+            await assertRuntimeClock(false);
+        });
+
+        it("the runtime dedicated executor observes the adjusted Clock and advances", async function () {
+            await assertRuntimeClock(true);
+        });
+
+        it("deployment records the supplied timestamp in constructor storage", async function () {
+            const executor = new ContractExecutor(
+                await EVM.create(),
+                undefined,
+                { clock: () => 1_234_567 }
+            );
+            try {
+                const address = await deployTimestampStorage(executor, true);
+                expect(
+                    BigInt(
+                        (await executor.executeCall("0x", address)).returnValue
+                    )
+                ).to.equal(1_234_567n);
+            } finally {
+                await executor.dispose();
+            }
+        });
+
+        it("simulation observes the supplied timestamp without persisting its storage write", async function () {
+            const vm = await EVM.create();
+            const executor = new ContractExecutor(vm, undefined, {
+                clock: () => 1_234_567
+            });
+            try {
+                const address = await deployTimestampStorage(executor, false);
+                const before = await vm.stateManager.getStateRoot();
+                expect(
+                    BigInt(
+                        (await executor.simulateCall("0x", address)).returnValue
+                    )
+                ).to.equal(1_234_567n);
+                expect(await vm.stateManager.getStateRoot()).to.deep.equal(
+                    before
+                );
+                await executor.executeCall("0x", address);
+                expect(await vm.stateManager.getStateRoot()).to.not.deep.equal(
+                    before
+                );
+            } finally {
+                await executor.dispose();
+            }
+        });
+
+        it("a dedicated executor derives the host's non-zero clock adjustment from its own wall clock", async function () {
+            const dedicated = await WorkerContractExecutor.create(
+                [],
+                undefined,
+                {},
+                600
+            );
+            try {
+                const read = await timestampReader(dedicated);
+                expect(
+                    Math.abs((await read()) - (wallSeconds() + 600))
+                ).to.be.at.most(1);
+            } finally {
+                await dedicated.dispose();
+            }
+        });
+    });
+});
+
+// This component has no runtime Clock initialization.
+describe("ContractExecutor without a runtime Clock", function () {
+    it("the inline factory uses time zero before Clock initialization", async function () {
+        expect(Clock.isInitialized()).to.equal(false);
+        const executor = await createContractExecutor({
+            dedicatedThread: false
+        });
+        try {
+            expect(await (await timestampReader(executor))()).to.equal(0);
+        } finally {
+            await executor.dispose();
+        }
+    });
+    it("the dedicated factory uses time zero before Clock initialization", async function () {
+        expect(Clock.isInitialized()).to.equal(false);
+        const executor = await createContractExecutor({
+            dedicatedThread: true
+        });
+        try {
+            expect(await (await timestampReader(executor))()).to.equal(0);
+        } finally {
+            await executor.dispose();
         }
     });
 });

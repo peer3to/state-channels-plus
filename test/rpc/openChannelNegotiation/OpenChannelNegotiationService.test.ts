@@ -169,6 +169,15 @@ describe("OpenChannelNegotiationService", function () {
         expect(result.signatureAttemptCleared).to.equal(true);
     });
 
+    it("target-open classification blocks submission until participant lookup completes", async function () {
+        const result = await probeTargetedNegotiationRaces();
+
+        expect(result.signatureLookupBlockedBeforeRelease).to.equal(true);
+        expect(result.signatureSubmitCalls).to.equal(0);
+        expect(result.signatureOutcome).to.equal("observed-target-open");
+        expect(result.signaturePeerBlacklisted).to.equal(false);
+    });
+
     it("targeted authoritative open returns the selected-channel handoff outcome", async function () {
         const result = await probeTargetedNegotiationRaces();
 
@@ -230,10 +239,16 @@ describe("OpenChannelNegotiationService", function () {
     });
 
     it("matched negotiation ignores expired matchmaking timeout", async function () {
+        // The probe waits for the opening to be observed on-chain, which
+        // outlasts the default control RPC budget on a loaded farm.
         const result = await fixture
             .control()
             .p2pManagerProbe.probeSignedAttemptObservation()
-            .request();
+            .request({
+                timeoutMs: fixture
+                    .getHarness()
+                    .event.protocolEventTimeoutMs({ withFirstBlockGrace: true })
+            });
 
         expect(result.submissionStayedPendingUntilObservation).to.equal(true);
         expect(result.matchingOpenEventClearedAttempt).to.equal(true);
@@ -243,7 +258,11 @@ describe("OpenChannelNegotiationService", function () {
         const result = await fixture
             .control()
             .p2pManagerProbe.probeSignedAttemptObservation()
-            .request();
+            .request({
+                timeoutMs: fixture
+                    .getHarness()
+                    .event.protocolEventTimeoutMs({ withFirstBlockGrace: true })
+            });
 
         expect(result.higherSubmittedBothSignatures).to.equal(true);
         expect(result.submissionStayedPendingUntilObservation).to.equal(true);

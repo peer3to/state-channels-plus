@@ -19,6 +19,13 @@ describe("E2E: dispute validation / inboundHash", function () {
         await h.scenario.preDisputeSetup();
         const forkId = h.activeForkId!;
 
+        // Construct the honest replacement after the kill's slash is observed.
+        // A pre-kill output can finalize against the smaller post-kill threshold.
+        await h
+            .control(h.getPeer(2))
+            .stub.stubSuppressDisputeInitiation()
+            .request();
+
         await h.tamper.stubConstructDispute(0, (dispute, sm) => {
             dispute.input.latestInboundMessageBlockHash =
                 sm.p2pManager.localRpc.dispute.randomHash() as Hash;
@@ -30,13 +37,14 @@ describe("E2E: dispute validation / inboundHash", function () {
             peersIndices: [0],
             initiatedWithAuditingData: false
         });
-        await h.event.waitForPeers("onDisputeKilled", [0], 1, {
+        await h.event.waitForPeers("onDisputeKilled", [0, 2], 1, {
             mode: "atLeast"
         });
         await h.assert.storage.honestPeersStoredDisputeFraudProofDetached({
             disputeFraudProofType:
                 DisputeFraudProofType.DisputeInboundHashNotInChain
         });
+        await h.rpcStub.restoreDisputeInitiationAndDispute(2, forkId);
         await h.dispute.resolveDisputeWait({ forkId });
     });
 
@@ -44,6 +52,12 @@ describe("E2E: dispute validation / inboundHash", function () {
         const h = TestSession.getHarness();
         await h.scenario.preDisputeSetup();
         const forkId = h.activeForkId!;
+
+        // Keep the same kill-before-replacement ordering as the random-hash case.
+        await h
+            .control(h.getPeer(2))
+            .stub.stubSuppressDisputeInitiation()
+            .request();
 
         await h.tamper.stubConstructDispute(0, (dispute, sm) => {
             dispute.input.latestInboundMessageBlockHash = sm.p2pManager.localRpc
@@ -57,13 +71,14 @@ describe("E2E: dispute validation / inboundHash", function () {
             peersIndices: [0],
             initiatedWithAuditingData: false
         });
-        await h.event.waitForPeers("onDisputeKilled", [0], 1, {
+        await h.event.waitForPeers("onDisputeKilled", [0, 2], 1, {
             mode: "atLeast"
         });
         await h.assert.storage.honestPeersStoredDisputeFraudProofDetached({
             disputeFraudProofType:
                 DisputeFraudProofType.DisputeInboundHashNotInChain
         });
+        await h.rpcStub.restoreDisputeInitiationAndDispute(2, forkId);
         await h.dispute.resolveDisputeWait({ forkId });
     });
 
@@ -76,7 +91,7 @@ describe("E2E: dispute validation / inboundHash", function () {
         const attackerIndex = 1;
         // larger agreementTime avoids writer-timeout disputes racing the upload
         await h.scenario.preDisputeSetupConsumedInboundTopUp({
-            timeConfig: { agreementTime: 8, evidenceTime: 4 }
+            timeConfig: { agreementTime: 8, evidenceTime: 8 }
         });
         const forkId = h.activeForkId!;
 

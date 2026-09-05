@@ -123,13 +123,6 @@ class ClientP2pSigner implements Signer {
         });
     }
 
-    async setChannelId(channelId: Bytes): Promise<void> {
-        await this.client.request<void>({
-            type: "setChannelId",
-            channelId: channelId.toString()
-        });
-    }
-
     setIsLeader(value: boolean): void {
         this.isLeader = value;
         void this.client.request<void>({ type: "setIsLeader", value });
@@ -195,6 +188,17 @@ class ClientP2pSigner implements Signer {
                 type: "cancelConnectToChannel",
                 channelId: normalizedChannelId
             },
+            { timeoutMs: null }
+        );
+    }
+
+    /**
+     * Internal route for `P2pInstance.leaveChannel`.
+     * Direct callers wait for settled removal but do not dispose the runtime.
+     */
+    leaveChannel(): Promise<void> {
+        return this.client.request<void>(
+            { type: "leaveChannel" },
             { timeoutMs: null }
         );
     }

@@ -53,7 +53,12 @@ export function adaptTransferredPort(port: unknown): RuntimePort {
     return adaptPort(port as MessagePort);
 }
 
-/** Forward this worker's unhandled errors/rejections to `handler`. */
+/**
+ * Forward this worker's unhandled errors/rejections to `handler`. Both events
+ * are marked handled so the browser neither reports them on the console nor
+ * raises the parent's `worker.onerror`, which would count the report as a
+ * fatal worker failure instead of the detached report it is.
+ */
 export function onUnhandledWorkerError(
     handler: (error: unknown) => void
 ): void {
@@ -63,10 +68,12 @@ export function onUnhandledWorkerError(
             listener: (event: any) => void
         ) => void;
     };
-    scope.addEventListener("unhandledrejection", (event) =>
-        handler(event?.reason)
-    );
-    scope.addEventListener("error", (event) =>
-        handler(event?.error ?? event?.message)
-    );
+    scope.addEventListener("unhandledrejection", (event) => {
+        event?.preventDefault?.();
+        handler(event?.reason);
+    });
+    scope.addEventListener("error", (event) => {
+        event?.preventDefault?.();
+        handler(event?.error ?? event?.message);
+    });
 }

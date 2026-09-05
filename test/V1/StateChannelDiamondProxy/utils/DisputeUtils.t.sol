@@ -4,6 +4,55 @@ import {Test} from "forge-std/Test.sol";
 import "../../../../contracts/V1/StateChannelDiamondProxy/utils/DisputeUtils.sol";
 
 contract DisputeUtilsTest is Test {
+    function test_reason_falseWithoutEvidenceIsNotAReason() public pure {
+        DisputeInput memory input;
+        StateSnapshot memory snapshot;
+        assertFalse(_hasDisputeReason(input, snapshot));
+    }
+
+    function test_reason_trueIsSufficientWithoutSelfRemoval() public pure {
+        DisputeInput memory input;
+        StateSnapshot memory snapshot;
+        input.requireExistingDisputeWindow = true;
+        assertTrue(_hasDisputeReason(input, snapshot));
+        assertFalse(input.selfRemoval);
+    }
+
+    function test_reason_falsePreservesTimeout() public pure {
+        DisputeInput memory input;
+        StateSnapshot memory snapshot;
+        input.timeout.participant = address(1);
+        assertTrue(_hasDisputeReason(input, snapshot));
+    }
+
+    function test_reason_falsePreservesSelfRemoval() public pure {
+        DisputeInput memory input;
+        StateSnapshot memory snapshot;
+        input.selfRemoval = true;
+        assertTrue(_hasDisputeReason(input, snapshot));
+    }
+
+    function test_reason_falsePreservesForcedInbound() public pure {
+        DisputeInput memory input;
+        StateSnapshot memory snapshot;
+        input.lastInboundMessageBlockHeight = 1;
+        assertTrue(_hasDisputeReason(input, snapshot));
+    }
+
+    function test_reason_falseRequiresEverySlashToBeEligible() public pure {
+        DisputeInput memory input;
+        StateSnapshot memory snapshot;
+        snapshot.snapshotData.participants = new address[](1);
+        snapshot.snapshotData.participants[0] = address(1);
+        input.onChainSlashes = new address[](1);
+        input.onChainSlashes[0] = address(1);
+        assertTrue(_hasDisputeReason(input, snapshot));
+        input.onChainSlashes[0] = address(2);
+        assertFalse(_hasDisputeReason(input, snapshot));
+        input.requireExistingDisputeWindow = true;
+        assertTrue(_hasDisputeReason(input, snapshot));
+    }
+
     function _stateProofWithLastMilestone(uint256 confirmations) internal pure returns (StateProof memory sp) {
         sp.milestones = new MilestoneProof[](1);
         sp.milestones[0].blockConfirmations = new BlockConfirmation[](confirmations);

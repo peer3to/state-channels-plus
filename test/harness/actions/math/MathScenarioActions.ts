@@ -14,6 +14,9 @@ import type { HarnessControlRpc } from "@test/fixtures/customRpc/harnessControl/
 
 type MathTestPeer = TestPeer<HarnessControlRpc, MathStateMachine>;
 
+/** Kill period for the shared invalid-dispute staging, in seconds. */
+const DEFAULT_INVALID_DISPUTE_EVIDENCE_TIME = 8;
+
 export class MathScenarioActions extends ScenarioActions {
     declare public harness: MathPeerTestHarness;
 
@@ -141,15 +144,64 @@ export class MathScenarioActions extends ScenarioActions {
             chainFallbackTime?: number;
             evidenceTime?: number;
         };
+        configOverrides?: HarnessOptions["configOverrides"];
     }) {
         await this.harness.lifecycle.timeoutSetup(
             options?.peerCount ?? 3,
             options?.transitionCount ?? 2,
-            options
+            {
+                ...options,
+                // Auditing an invalid dispute and killing it are two
+                // sequential on-chain transactions after the event delivery
+                // and the audit's chain reads; on a loaded farm those alone
+                // have taken five seconds, so the staging's kill period keeps
+                // a few seconds of headroom over the harness default.
+                timeConfig: {
+                    evidenceTime: DEFAULT_INVALID_DISPUTE_EVIDENCE_TIME,
+                    ...options?.timeConfig
+                }
+            }
         );
         await this.harness.assert.sync.peersInSyncWait();
         this.harness.event.resetEventSpies();
         this.harness.contextApi.captureOriginalFork();
+    }
+
+    /**
+     * A disputed fork whose kill period has expired, with every peer's
+     * `reduction-*` timer held so nothing reduces until a test says so:
+     * preDisputeSetup, hold the timers, one invalid state transition by the
+     * malicious peer, the committed dispute, then the evidence period.
+     */
+    async stageReducibleDisputedFork(options?: {
+        beforeDispute?: () => Promise<void>;
+        disputingPeerIndices?: number[];
+        peerCount?: number;
+        maliciousPeerIndex?: number;
+        timeConfig?: { evidenceTime?: number };
+    }): Promise<{ sourceForkId: ForkId }> {
+        const peerCount = options?.peerCount ?? 4;
+        await this.preDisputeSetup({
+            peerCount,
+            timeConfig: { evidenceTime: options?.timeConfig?.evidenceTime ?? 3 }
+        });
+        const sourceForkId = this.harness.activeForkId!;
+        for (let peerIndex = 0; peerIndex < peerCount; peerIndex += 1) {
+            await this.harness
+                .control(this.harness.getPeer(peerIndex))
+                .stub.stubHoldReductionTasks()
+                .request();
+        }
+        await options?.beforeDispute?.();
+        await this.harness.byzantine.submitInvalidStateTransitionBlock(
+            options?.maliciousPeerIndex ?? 1
+        );
+        await this.harness.assert.dispute.initiatedAndCommitedWait({
+            peersIndices: options?.disputingPeerIndices,
+            expectedCount: 1
+        });
+        await sleep(this.harness.event.evidencePeriodWaitMs(2));
+        return { sourceForkId };
     }
 
     /**
@@ -190,6 +242,7 @@ export class MathScenarioActions extends ScenarioActions {
     async stageUnkilledSpamDispute(options?: {
         killerIndex?: number;
         spammerIndex?: number;
+        beforeDispute?: () => Promise<void>;
         addSpectatorBeforeDispute?: boolean;
         timeConfig?: {
             p2pTime?: number;
@@ -212,23 +265,22 @@ export class MathScenarioActions extends ScenarioActions {
             timeConfig: { evidenceTime: 12, ...options?.timeConfig }
         });
         const spectator = addSpectatorBeforeDispute
-            ? await this.harness.join.addSpectatorDetached()
+            ? (
+                  await this.harness.join.addSpectatorAuthoring({
+                      authoringPeerIndices: [0, 1, 2],
+                      minimumBlocks: 2,
+                      maximumBlocks: 20,
+                      waitForFinalization: true
+                  })
+              ).peer
             : undefined;
         if (spectator) {
-            await this.harness.transition.advanceState({
-                count: 2,
-                waitForPeers: [0, 1, 2],
-                waitForFinalization: true
-            });
-            await this.harness.event.waitUntilPeerStatus(
-                spectator.index,
-                Status.SYNCED
-            );
             await this.harness.assert.sync.peersInSyncWait();
             this.harness.event.resetEventSpies();
             this.harness.contextApi.captureOriginalFork();
         }
         const forkId = this.harness.activeForkId!;
+        await options?.beforeDispute?.();
 
         const kills = await Promise.all(
             this.harness.peers.map((peer) =>
@@ -242,6 +294,7 @@ export class MathScenarioActions extends ScenarioActions {
                     "0x0000000000000000000000000000000000000000";
                 dispute.input.onChainSlashes = [];
                 dispute.input.selfRemoval = false;
+                dispute.input.requireExistingDisputeWindow = false;
             }
         );
         // the skipped kill is the moment the killer stored its fraud proof
@@ -316,8 +369,12 @@ export class MathScenarioActions extends ScenarioActions {
             evidenceTime?: number;
         };
     }) {
+        // p2pTime covers a farm turn: the keep-alive below authors through
+        // both leavers' exit windows, and a stamp is capped at the previous
+        // one plus p2pTime, so a shorter window would leave the stamps behind
+        // the wall clock by the end of it.
         const timeConfig = {
-            p2pTime: 1,
+            p2pTime: 3,
             agreementTime: 6,
             chainFallbackTime: 2,
             evidenceTime: 12,
@@ -351,12 +408,21 @@ export class MathScenarioActions extends ScenarioActions {
             count: 1
         });
 
-        // Snapshot posting stays automatic. Wait for both detached exits only
-        // after every state transition in this setup has completed.
-        await Promise.all([
-            this.harness.event.waitUntilPeerStatus(firstLeaver, Status.SYNCED),
-            this.harness.event.waitUntilPeerStatus(secondLeaver, Status.SYNCED)
-        ]);
+        // Snapshot posting stays automatic. A leaver's SYNCED needs one
+        // agreement window plus a snapshot transaction, longer than the idle
+        // writer slot survives, so the remaining participants keep authoring
+        // until both exits settled.
+        const leavers = [firstLeaver, secondLeaver];
+        await this.harness.transition.keepAuthoringUntilPeersStatus({
+            peerIndices: leavers,
+            status: Status.SYNCED,
+            waitForPeers: [0, 1, 3],
+            excludePeerIndices: leavers,
+            maximumBlocks: 20
+        });
+        // The writer slot never idled past its deadline, so no honest peer
+        // posted a timeout dispute that would throttle the caller's upload.
+        this.harness.assert.dispute.noDisputes();
 
         if (options?.forceExitPeerIndex !== undefined) {
             await this.harness
@@ -419,14 +485,11 @@ export class MathScenarioActions extends ScenarioActions {
             }
         });
 
-        const joiner = await h.join.addSpectatorDetached();
-        if (initialTransitions > 0) {
-            await h.transition.advanceState({
-                count: initialTransitions,
-                waitForPeers: [0, 1, 2]
-            });
-        }
-        await h.event.waitUntilPeerStatus(joiner.index, Status.SYNCED);
+        const { peer: joiner } = await h.join.addSpectatorAuthoring({
+            authoringPeerIndices: [0, 1, 2],
+            minimumBlocks: initialTransitions,
+            maximumBlocks: initialTransitions + 16
+        });
         await h.assert.sync.peersInSyncWait();
 
         const stateSnapshot = await h.channelManager.getStateSnapshot(
@@ -460,26 +523,21 @@ export class MathScenarioActions extends ScenarioActions {
         });
 
         // Spectating is asynchronous to the channel: participants author on
-        // their own cadence and never wait for a joiner's spawn/sync. Spawn
-        // detached, produce the initial blocks immediately, and await SYNCED
-        // only right before the join needs it. A blocking spawn between
+        // their own cadence and never wait for a joiner's spawn/sync. The
+        // bounded spawn keeps them authoring through the spawn and sync, so
+        // only the join RPCs and one automined transaction sit inside the
+        // final window before the promotion block. A blocking spawn between
         // blocks would idle past p2pTime + agreementTime and get the
         // promotion block rejected (its timestamp is capped at
         // prev + p2pTime), disputing the fork.
-        const joiner = await this.harness.join.addSpectatorDetached();
-        if (initialTransitions > 0) {
-            await this.harness.transition.advanceState({
-                count: initialTransitions,
-                waitForPeers: Array.from(
-                    { length: initialPeers },
-                    (_, index) => index
-                )
-            });
-        }
-        await this.harness.event.waitUntilPeerStatus(
-            joiner.index,
-            Status.SYNCED
-        );
+        const { peer: joiner } = await this.harness.join.addSpectatorAuthoring({
+            authoringPeerIndices: Array.from(
+                { length: initialPeers },
+                (_, index) => index
+            ),
+            minimumBlocks: initialTransitions,
+            maximumBlocks: initialTransitions + 16
+        });
         await this.harness.assert.sync.peersInSyncWait();
 
         await this.harness.join.joinChannelWait({
@@ -495,11 +553,15 @@ export class MathScenarioActions extends ScenarioActions {
             );
         }
 
-        await this.harness.transition.advanceState({ count: 2 });
-        await this.harness.event.waitUntilPeerStatus(
-            joiner.index,
-            Status.PARTICIPATING
-        );
+        // The block that carries the join is the first one whose author has
+        // already received the join's inbound event; author until the joiner
+        // is promoted instead of assuming a fixed block count.
+        await this.harness.transition.keepAuthoringUntilPeersStatus({
+            peerIndices: [joiner.index],
+            status: Status.PARTICIPATING,
+            waitForPeers: Array.from({ length: initialPeers }, (_, i) => i),
+            maximumBlocks: 20
+        });
 
         if (postPromotionTransitions > 0) {
             await this.harness.transition.advanceState({
@@ -523,16 +585,12 @@ export class MathScenarioActions extends ScenarioActions {
         await this.harness.assert.sync.participantCount({
             expectedCount: 3
         });
-        const spectator = await this.harness.join.addSpectatorDetached();
-        await this.harness.transition.advanceState({
-            count: initialTransitions,
-            waitForPeers: [0, 1, 2],
+        await this.harness.join.addSpectatorAuthoring({
+            authoringPeerIndices: [0, 1, 2],
+            minimumBlocks: initialTransitions,
+            maximumBlocks: initialTransitions + 16,
             waitForFinalization: true
         });
-        await this.harness.event.waitUntilPeerStatus(
-            spectator.index,
-            Status.SYNCED
-        );
         await this.harness.event.resetEventSpies();
         await this.harness.assert.sync.peersInSyncWait({
             peerIndices: [0, 1, 2, 3]
@@ -555,20 +613,15 @@ export class MathScenarioActions extends ScenarioActions {
         await this.harness.lifecycle.start(initialPeers, 0, {
             timeConfig
         });
-        const spectator = await this.harness.join.addSpectatorDetached();
-        if (initialTransitions > 0) {
-            await this.harness.transition.advanceState({
-                count: initialTransitions,
-                waitForPeers: Array.from(
+        const { peer: spectator } =
+            await this.harness.join.addSpectatorAuthoring({
+                authoringPeerIndices: Array.from(
                     { length: initialPeers },
                     (_, index) => index
-                )
+                ),
+                minimumBlocks: initialTransitions,
+                maximumBlocks: initialTransitions + 16
             });
-        }
-        await this.harness.event.waitUntilPeerStatus(
-            spectator.index,
-            Status.SYNCED
-        );
         await this.harness.assert.sync.peersInSyncWait();
         return { spectator, initialPeers };
     }
@@ -578,15 +631,19 @@ export class MathScenarioActions extends ScenarioActions {
         initialTransitions?: number;
         timeConfig?: HarnessOptions["timeConfig"];
     }): Promise<TestPeer> {
-        const { spectator } = await this.setupChannelWithSpectator(options);
+        const { spectator, initialPeers } =
+            await this.setupChannelWithSpectator(options);
         await this.harness.join.forceInboundJoinWait({
             participant: spectator.address
         });
-        await this.harness.transition.advanceState({ count: 1 });
-        await this.harness.event.waitUntilPeerStatus(
-            spectator.index,
-            Status.PARTICIPATING
-        );
+        // Author until the promotion block lands (see
+        // spectatorPromotedViaJoinChannelWait).
+        await this.harness.transition.keepAuthoringUntilPeersStatus({
+            peerIndices: [spectator.index],
+            status: Status.PARTICIPATING,
+            waitForPeers: Array.from({ length: initialPeers }, (_, i) => i),
+            maximumBlocks: 20
+        });
         this.harness.event.resetEventSpies();
         this.harness.contextApi.captureOriginalFork();
         return spectator;
@@ -699,9 +756,13 @@ export class MathScenarioActions extends ScenarioActions {
             throw new Error("Parent already carries an on-chain timestamp");
         }
 
-        // the observer loses the subscribed delivery, so it only learns the
-        // parent's post time by recovering it during validation
-        await h.control(observer).stub.stubHoldCalldataPostedEvents().request();
+        // every peer but the posting parent author loses the subscribed
+        // delivery: the observer only learns the parent's post time by
+        // recovering it during validation, and no other peer can ingest,
+        // sign, and gossip the parent's copy to it first
+        await h.rpcStub.holdCalldataPostedEventsExceptLeader(
+            parentAuthor.index
+        );
 
         // leave the parent's p2p window before posting, so its real post time
         // is strictly later than its own timestamp

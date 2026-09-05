@@ -1,3 +1,4 @@
+import type { EventLoopDelayDetails } from "@/utils/logging/performanceMonitorInternal";
 import type { Config } from "@/utils/config";
 import type { EvmCustomPrecompileManifest } from "@/evm/EvmFactory";
 import type { CustomRpcManifest } from "@/rpc/registry";
@@ -104,6 +105,8 @@ export interface SerializedError {
      * doesn't survive the structured-clone hop across the port.
      */
     peerAddress?: string;
+    /** Watchdog sample data attached by the event-loop monitor, when any. */
+    eventLoopDelay?: EventLoopDelayDetails;
 }
 
 /** Minimal surface needed to issue requests to the host. */
@@ -137,6 +140,7 @@ export type {
     JoinLobbyRequest,
     JoinLobbyWireOptions,
     LeaveLobbyRequest,
+    LeaveChannelRequest,
     TopUpBalanceRequest,
     P2pRuntimeBootstrapMessage,
     P2pRuntimeHostMessage,
@@ -150,7 +154,6 @@ export type {
     RuntimeResponse,
     RuntimeWebRTCBridgePortMessage,
     SendTransactionRequest,
-    SetChannelIdRequest,
     SetIsLeaderRequest,
     SignMessageRequest,
     SignTypedDataRequest,

@@ -74,9 +74,7 @@ export interface CollectJoinChannelConfirmationRequest
     encodedJoinChannel: string;
 }
 
-export interface SetChannelIdRequest extends RuntimeRequest<"setChannelId"> {
-    channelId: string;
-}
+export type LeaveChannelRequest = RuntimeRequest<"leaveChannel">;
 
 export type GetChannelStatusRequest = RuntimeRequest<"getChannelStatus">;
 
@@ -192,7 +190,7 @@ export type RuntimeClientRequest =
     | JoinChannelRequest
     | TopUpBalanceRequest
     | CollectJoinChannelConfirmationRequest
-    | SetChannelIdRequest
+    | LeaveChannelRequest
     | GetChannelStatusRequest
     | SetIsLeaderRequest
     | DisconnectFromPeersRequest

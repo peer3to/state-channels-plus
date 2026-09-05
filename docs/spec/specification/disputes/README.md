@@ -5,7 +5,7 @@
 > **Engineer verification:** Pending.
 
 This system converts a stalled or contested off-chain fork into an objectively auditable base-layer
-decision: validation and fraud-proof algorithms, the slash-set lifecycle, the four valid dispute
+decision: validation and fraud-proof algorithms, the slash-set lifecycle, the five valid dispute
 inputs, state-proof construction and audit, the dispute-window lifecycle, timeout precedence,
 deterministic reduction, successor-fork construction, challenge handling, and resumption of normal
 execution.

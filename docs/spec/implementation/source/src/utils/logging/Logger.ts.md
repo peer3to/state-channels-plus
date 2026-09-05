@@ -23,7 +23,7 @@ The structured logger (levels, child contexts).
 
 ## Key design decisions
 
-_None — the file is declarative/mechanical; behavior-shaping decisions live with its consumers._
+1. **The monitor seam is internal.** `startPerformanceMonitoring` and the abstract `createPerformanceMonitor` take `PerformanceMonitorInternalOptions` (the exported `LoggerPerformanceMonitorOptions` plus a sample source and a started callback); the exported option type is unchanged and the seam is not re-exported from the package root.
 
 ## Inputs, outputs, state, and side effects
 

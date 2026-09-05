@@ -24,6 +24,7 @@ names, the on-chain snapshot commitment, and the spectator's abort/status/connec
 dispute-side balance-invariant check is owned by `test/e2e/disputeValidation/balanceInvariant`.
 The two revert tests exercise only the beyond-cap side of their bounds, so boundary-sweep
 permutations (exact cap, zero, maximum) stay unassigned.
+The balance-invariant case spawns its spectator spawn-only (`createSpectatorPeer`, abort-recording stub, `connectSpectator`): after the colluded snapshot the participants no longer agree with the chain, so no block may be authored during the spawn, and the stub is installed before the first sync request can run.
 
 ## Tests and covered test IDs
 
