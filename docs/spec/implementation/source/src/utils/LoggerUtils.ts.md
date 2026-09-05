@@ -23,6 +23,8 @@ Structured-log formatting helpers (dispute/auditing metadata projections, hash f
 
 ## Key design decisions
 
+Dispute metadata includes the signed `requireExistingDisputeWindow` value. Logs distinguish a conditional state contribution from an independently justified dispute without changing either classification.
+
 _None — the file is declarative/mechanical; behavior-shaping decisions live with its consumers._
 
 ## Inputs, outputs, state, and side effects

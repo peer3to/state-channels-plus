@@ -4,6 +4,8 @@ import Clock from "@/Clock";
 
 export type QueueBlockOptions = {
     senderAddress?: Address;
+    /** The block was replayed from a verified synchronization proof. */
+    replayedFromProof?: boolean;
 };
 
 export type QueuedBlockEntry = {
@@ -15,6 +17,9 @@ export type QueuedBlockEntry = {
     // for this hash. Attribution/rate-limiting hint only - never a validity
     // decision (a later valid copy still processes).
     overflowedSources?: boolean;
+    // Replayed from a verified synchronization proof: proven history, not a
+    // live arrival, so the agreement-window judgment does not apply to it.
+    replayedFromProof?: boolean;
 };
 
 export function sourcePeersAndAuthor(entry: QueuedBlockEntry): Set<Address> {
@@ -43,7 +48,8 @@ export class QueueStorage {
             block,
             firstSeenAt: Clock.getTimeInSeconds(),
             sourcePeers: new Set(),
-            signatureSources: new Map()
+            signatureSources: new Map(),
+            ...(options?.replayedFromProof ? { replayedFromProof: true } : {})
         };
         this.trackSource(entry, block.allSignatures, options?.senderAddress);
         return entry;

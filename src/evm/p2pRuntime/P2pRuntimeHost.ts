@@ -11,7 +11,6 @@ import {
     Codec,
     DebugProxy,
     DetachedPromises,
-    getErrorPeerAddress,
     Type
 } from "@/utils";
 import { config, isNodeRuntime } from "@/utils/config";
@@ -20,10 +19,13 @@ import MainRpcService from "@/rpc/MainRpcService";
 import { resolveCustomRpcConstructor } from "@/rpc/resolveCustomRpcManifest";
 import LocalContractExecutorSigner from "@/evm/signer/LocalContractExecutorSigner";
 import HostNonceManager from "@/evm/signer/HostNonceManager";
+import { createContractExecutor } from "@/evm/contractExecutor/createContractExecutor";
 import {
     AContractExecutor,
-    createContractExecutorFactory
+    type ContractExecutorFactoryOptions
 } from "@/evm/contractExecutor";
+import type { WorkerContractExecutorDependencies } from "@/evm/contractExecutor/WorkerContractExecutor";
+import { serializeError } from "./errorWire";
 import WorkerBridgeWebRTCConnectionFactory from "@/rpc/services/WebRTCSetup/connection/WorkerBridgeWebRTCConnectionFactory";
 import { doesWorkerNeedMainThreadBridge } from "@/rpc/services/WebRTCSetup/connection/WebRTCProvider";
 import { forwardEventHandlerInvocations } from "./host/EventForwarding";
@@ -44,7 +46,6 @@ import type {
     HostRpcRequest,
     RuntimeClientRequest,
     RuntimePort,
-    SerializedError,
     SetupPayload
 } from "./types";
 
@@ -68,103 +69,22 @@ export interface HostContext {
     handlerExecutionContext?: HostHandlerExecutionContext;
     /** Release worker-only bootstrap resources after replying to dispose. */
     onDisposed?: () => void | Promise<void>;
+    /**
+     * Builds the contract executor. Internal seam: tests supply a factory that
+     * loads a scripted contract-executor worker; production leaves it unset
+     * and gets the platform factory. The host always passes the dependencies
+     * it needs (the detached-error report) as the second argument.
+     */
+    createContractExecutor?: (
+        options: ContractExecutorFactoryOptions,
+        dependencies: WorkerContractExecutorDependencies
+    ) => Promise<AContractExecutor>;
 }
 
 /** Live runtime graph while the host is running. */
 interface RuntimeHostState {
     stateManager: StateManager;
     evmDiamondStateMachine: EvmDiamondStateMachine;
-}
-
-/**
- * Pull a contract revert's ABI-encoded data off an error, checking the same
- * nested shapes `tryDecodeCustomError` reads. Preserving this across the port is
- * what lets the client decode custom errors (the raw `.data` is otherwise lost).
- */
-function extractRevertData(error: unknown): string | undefined {
-    if (typeof error !== "object" || error === null) return undefined;
-    const e = error as {
-        data?: unknown;
-        error?: { data?: unknown };
-        info?: { error?: { data?: unknown } };
-        cause?: { data?: unknown };
-        originalError?: unknown;
-        execResult?: { returnValue?: unknown };
-    };
-    const candidate =
-        e.data ?? e.error?.data ?? e.info?.error?.data ?? e.cause?.data;
-    if (typeof candidate === "string") return candidate;
-    if (e.originalError !== undefined) {
-        const originalErrorData = extractRevertData(e.originalError);
-        if (originalErrorData !== undefined) return originalErrorData;
-    }
-    if (e.execResult?.returnValue !== undefined) {
-        try {
-            return ethers.hexlify(e.execResult.returnValue as ethers.BytesLike);
-        } catch {
-            return undefined;
-        }
-    }
-    return undefined;
-}
-
-function serializeEthersErrorMetadata(error: Error) {
-    // Project ethers' extra error fields into structured-clone-safe values for
-    // the client to restore on its local Error instance.
-    const ethersError = error as Error & {
-        code?: string;
-        shortMessage?: string;
-        info?: unknown;
-        action?: string;
-        reason?: string;
-        transaction?: unknown;
-        receipt?: unknown;
-    };
-    return {
-        code: ethersError.code,
-        shortMessage: ethersError.shortMessage,
-        info: cloneSerializableErrorField(ethersError.info),
-        action: ethersError.action,
-        reason: ethersError.reason,
-        transaction: cloneSerializableErrorField(ethersError.transaction),
-        receipt: cloneSerializableErrorField(ethersError.receipt)
-    };
-}
-
-export function serializeError(error: unknown): SerializedError {
-    if (error instanceof Error) {
-        return {
-            message: error.message,
-            name: error.name,
-            stack: error.stack,
-            data: extractRevertData(error),
-            ...serializeEthersErrorMetadata(error),
-            peerAddress: getErrorPeerAddress(error)
-        };
-    }
-    return {
-        message: String(error),
-        data: extractRevertData(error),
-        peerAddress: getErrorPeerAddress(error)
-    };
-}
-
-function cloneSerializableErrorField(value: unknown): unknown {
-    if (value === undefined) return undefined;
-    let candidate = value;
-    if (
-        typeof value === "object" &&
-        value !== null &&
-        "toJSON" in value &&
-        typeof value.toJSON === "function"
-    ) {
-        candidate = value.toJSON();
-    }
-    try {
-        return globalThis.structuredClone(candidate);
-    } catch {
-        return undefined;
-    }
 }
 
 /**
@@ -305,11 +225,26 @@ export async function startP2pRuntimeHost<
         );
         await LoggerUtils.logTimestamp(logger, "info", timeConfig);
 
-        contractExecutor = await createContractExecutorFactory({
-            dedicatedThread: payload.config.VM_DEDICATED_THREAD,
-            customPrecompiles: payload.customPrecompiles,
-            logger
-        });
+        // A detached error inside the contract-executor worker is reported the
+        // way the sdk worker's own detached errors are: one hostError, and the
+        // executor keeps serving.
+        contractExecutor = await (
+            ctx.createContractExecutor ?? createContractExecutor
+        )(
+            {
+                dedicatedThread: payload.config.VM_DEDICATED_THREAD,
+                customPrecompiles: payload.customPrecompiles,
+                logger
+            },
+            {
+                onDetachedError: (error) => {
+                    port.post({
+                        type: "hostError",
+                        error: serializeError(error)
+                    });
+                }
+            }
+        );
         const deploySigner = new LocalContractExecutorSigner(
             signer,
             contractExecutor

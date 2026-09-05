@@ -249,9 +249,12 @@ export class QueryRpcMethods extends ARpcMethods {
         finalized: boolean;
         signatures: number;
         union: number;
+        /** Null until the tip's snapshot and state-machine state are stored. */
+        stateHash: string | null;
     } | null {
         const block = this.service.storage.blocks.getLatestBlock(forkId);
         if (!block) return null;
+        const stateHash = this.getLatestStateMachineStateHash(forkId);
         const finalized =
             this.service.sm.agreementManager.didEveryoneSignBlock(block);
         const union = this.service.storage.getParticipantsUnion(
@@ -263,7 +266,8 @@ export class QueryRpcMethods extends ARpcMethods {
             height: Number(block.height),
             finalized,
             signatures: block.allSignatures.size,
-            union
+            union,
+            stateHash: stateHash === null ? null : String(stateHash)
         };
     }
 
@@ -444,6 +448,16 @@ export class QueryRpcMethods extends ARpcMethods {
                       Type.MessageBlock
                   ) as string
               }
+            : null;
+    }
+
+    /** Outbound message head (hash + height), or null before any block. */
+    public getOutboundHead(): { hash: Hash; height: number } | null {
+        const outbound = this.service.storage.outboundMessages;
+        const hash = outbound.getLatestBlockHash();
+        const height = outbound.getLatestBlockHeight();
+        return hash !== undefined && height !== undefined
+            ? { hash, height: Number(height) }
             : null;
     }
 
@@ -704,6 +718,12 @@ export class QueryRpcMethods extends ARpcMethods {
         return t
             ? { isForced: t.isForced, participant: String(t.participant) }
             : null;
+    }
+
+    /** The stored dispute for `disputeHash`, encoded, or null. */
+    public getDispute(disputeHash: Hash): string | null {
+        const dispute = this.service.storage.disputes.getDispute(disputeHash);
+        return dispute ? (Codec.encode(dispute, Type.Dispute) as string) : null;
     }
 
     public hasDisputeConfirmation(disputeHash: Hash): boolean {

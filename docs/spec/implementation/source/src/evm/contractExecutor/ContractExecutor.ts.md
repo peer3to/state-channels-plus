@@ -23,7 +23,13 @@ The inline executor: local EVM execution in the current context.
 
 ## Key design decisions
 
-_None — the file is declarative/mechanical; behavior-shaping decisions live with its consumers._
+1. **Ambient block time comes from a clock source, stamped per call.** An executor built with a
+   `clock` stamps every `runCall` (deploy, execute, simulate) with the EVM's default block header and
+   `timestamp = clock()` ([#L110](../../../../../../../src/evm/contractExecutor/ContractExecutor.ts#L110)),
+   so manager and protocol views defined against current time (kill periods, evidence windows) see the
+   runtime's estimated chain time in the local mirror instead of zero
+   ([`REQ-TIME-5-S9NQXK`](../../../../../specification/protocol-model/time.md#req-time-5-s9nqxk)). Without a clock the
+   header stays the EVM default. State transitions are unaffected: they read `_tx.header.timestamp`.
 
 ## Inputs, outputs, state, and side effects
 
@@ -65,15 +71,17 @@ Status enum: `Covered` | `Partial` | `Contradicts` | `Missing`. Evidence cells a
 **Here:** / **Other files:** so each row is auditable from its links alone; genuine gaps go in the
 Gap column. Audit state is file-level (Status header), never a row status.
 
-| Requirement / invariant | Implementation status | Evidence | Gap / divergence |
-| ----------------------- | --------------------- | -------- | ---------------- |
+| Requirement / invariant                                                                      | Implementation status | Evidence                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    | Gap / divergence |
+| -------------------------------------------------------------------------------------------- | --------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------- |
+| [`REQ-TIME-5-S9NQXK`](../../../../../specification/protocol-model/time.md#req-time-5-s9nqxk) | Covered               | **Here:** [source](../../../../../../../src/evm/contractExecutor/ContractExecutor.ts#L119) stamps deploy, execute, and simulation calls from the injected clock; simulation rolls back its state writes. **Other files:** [Clock.ts](../../Clock.ts.md) (current clock and adjustment), [createContractExecutor.ts](createContractExecutor.ts.md) (clock/factory wiring), [ContractExecutorWorkerHostCore.ts](worker/ContractExecutorWorkerHostCore.ts.md) (worker-local clock derivation). | —                |
 
 ## Component test obligations
 
 Exact test evidence is mapped against these IDs in the verification test reports.
 
-| Unit test ID | Obligation | Public entry and setup | Oracle and forbidden effects | Required permutations |
-| ------------ | ---------- | ---------------------- | ---------------------------- | --------------------- |
+| Unit test ID                                                                            | Obligation             | Public entry and setup                                                       | Oracle and forbidden effects                                                        | Required permutations                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
+| --------------------------------------------------------------------------------------- | ---------------------- | ---------------------------------------------------------------------------- | ----------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| <a id="unit-test-contract-executor-1-jhg6kj"></a>`UNIT-TEST-CONTRACT-EXECUTOR-1-JHG6KJ` | Ambient execution time | Deploy timestamp bytecode and call through the public executor/factory APIs. | Read exact timestamps and state roots; compare worker adjustment against wall time. | <a id="unit-test-contract-executor-1-jhg6kj.p1"></a>`UNIT-TEST-CONTRACT-EXECUTOR-1-JHG6KJ.P1` — constant clock source is used exactly; <a id="unit-test-contract-executor-1-jhg6kj.p2"></a>`UNIT-TEST-CONTRACT-EXECUTOR-1-JHG6KJ.P2` — constructor sees the supplied timestamp and persists it; <a id="unit-test-contract-executor-1-jhg6kj.p3"></a>`UNIT-TEST-CONTRACT-EXECUTOR-1-JHG6KJ.P3` — simulation sees time but does not persist its write; <a id="unit-test-contract-executor-1-jhg6kj.p4"></a>`UNIT-TEST-CONTRACT-EXECUTOR-1-JHG6KJ.P4` — bare inline factory before Clock initialization uses zero; <a id="unit-test-contract-executor-1-jhg6kj.p5"></a>`UNIT-TEST-CONTRACT-EXECUTOR-1-JHG6KJ.P5` — bare dedicated factory before Clock initialization uses zero; <a id="unit-test-contract-executor-1-jhg6kj.p6"></a>`UNIT-TEST-CONTRACT-EXECUTOR-1-JHG6KJ.P6` — dedicated executor derives a nonzero adjustment from its own wall clock |
 
 ## Related source reports
 

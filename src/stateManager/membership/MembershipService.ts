@@ -306,7 +306,7 @@ export default class MembershipService {
             "Force join dispute triggered: N turns passed without inclusion",
             { N, forkId: sm.forkId, blockHeight: block.height }
         );
-        await sm.disputeManager.dispute(sm.forkId);
+        sm.disputeManager.requestDispute(sm.forkId);
     }
 
     public async startMaybeExitOnChain(

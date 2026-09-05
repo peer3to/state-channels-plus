@@ -24,7 +24,7 @@ import {
 import {BlockInvalidStateTransitionProof} from "../../../contracts/V1/types/FraudProofTypes.sol";
 import {MathState, MathStateMachine} from "../../../contracts/V1/examples/MathStateMachine/MathStateMachine.sol";
 import {AStateMachine} from "../../../contracts/V1/AStateMachine.sol";
-import {MESSAGE_TYPE_EXIT} from "../../../contracts/V1/types/MessageTypeHashes.sol";
+import {MESSAGE_TYPE_EXIT, MESSAGE_TYPE_JOIN} from "../../../contracts/V1/types/MessageTypeHashes.sol";
 import "../../../contracts/V1/types/DataTypes.sol";
 
 contract DisputeExpiryGuardHarness is DisputeFraudProofFacet, DisputeVerificationFacet {
@@ -71,6 +71,49 @@ contract DisputeExpiryGuardHarness is DisputeFraudProofFacet, DisputeVerificatio
         returns (address[] memory)
     {
         return _getOnChainSlashedParticipantsUpToTimestamp(channelId, timestamp);
+    }
+
+    /// Seeds a channel whose posted snapshot already dropped a joiner: one
+    /// consumed inbound block holds every signer's JOIN, the snapshot lists
+    /// only `survivor`, and `slashed` carries an on-chain slash inside the
+    /// fork's dispute window.
+    function seedReducedChannel(
+        bytes32 channelId,
+        bytes32 forkId,
+        bytes32 inboundHead,
+        address survivor,
+        address slashed,
+        uint256 slashTimestamp
+    ) external {
+        MessageBlock storage inbound = inboundMessageBlockMap[channelId][inboundHead];
+        inbound.blockHeight = 1;
+        inbound.timestamp = slashTimestamp;
+        inbound.messages.push(_joinMessage(channelId, survivor));
+        inbound.messages.push(_joinMessage(channelId, slashed));
+        channelBalances[channelId].latestInboundMessageBlockHash = inboundHead;
+        SnapshotData storage snapshot = stateSnapshots[channelId].snapshotData;
+        snapshot.participants.push(survivor);
+        snapshot.latestInboundMessageBlockHash = inboundHead;
+        disputeData[channelId].onChainSlashes.push(OnChainSlash({participant: slashed, timestamp: slashTimestamp}));
+        DisputeWindow storage window = disputeData[channelId].disputeWindowMap[forkId];
+        window.evidence.creationTimestamp = slashTimestamp;
+        window.evidence.lastEvidenceSubmissionTimestamp = slashTimestamp;
+    }
+
+    function pendingParticipants(bytes32 channelId) external view returns (address[] memory) {
+        return _getPendingParticipants(channelId);
+    }
+
+    function _joinMessage(bytes32 channelId, address participant) private pure returns (Message memory) {
+        Balance memory balance = Balance({amount: 0, data: ""});
+        return Message({
+            messageType: MESSAGE_TYPE_JOIN,
+            participant: participant,
+            balance: balance,
+            data: abi.encode(
+                JoinChannel({channelId: channelId, participant: participant, deadlineTimestamp: 0, balance: balance})
+            )
+        });
     }
 }
 
@@ -127,6 +170,26 @@ contract DisputeVerificationFacetTest is DiamondHarness {
         // maxSlashCount = 0 (no channel open → no participants) → extra slashes are skipped
         ReduceOutput memory out = diamond.reduce(disputes);
         assertEq(out.slashedParticipants.length, 0);
+    }
+
+    // A reduction already mined for the fork moves the channel snapshot past the
+    // slashed signer and empties the bounded pending set; a late reducer must
+    // still fold that signer's on-chain slash, or its output diverges from the
+    // reduction on chain.
+    function test_reduce_snapshotAlreadyPastSlashedSigner_stillFoldsOnChainSlash() public {
+        DisputeExpiryGuardHarness harness = new DisputeExpiryGuardHarness();
+        address survivor = address(0xA11CE);
+        address slashed = address(0xB0B);
+        harness.seedReducedChannel(CHANNEL_ID, FORK_ID, SNAPSHOT_HEAD, survivor, slashed, 100);
+        assertEq(harness.pendingParticipants(CHANNEL_ID).length, 0);
+
+        Dispute[] memory disputes = new Dispute[](1);
+        disputes[0].input.channelId = CHANNEL_ID;
+        disputes[0].input.forkId = FORK_ID;
+
+        ReduceOutput memory out = harness.reduce(disputes);
+        assertEq(out.slashedParticipants.length, 1);
+        assertEq(out.slashedParticipants[0], slashed);
     }
 
     // slashedParticipants in the output must never exceed participants + pending,
@@ -483,9 +546,8 @@ contract DisputeVerificationFacetTest is DiamondHarness {
     // this edge is beyond the no-grace window and only validates because of the
     // +evidenceTime first-block grace. (Separate tests: each opens the channel once.)
     function _firstBlockGraceWindow() internal view returns (uint256) {
-        return
-            diamond.getEvidenceTime() + diamond.getP2pTime() + diamond.getAgreementTime()
-                + diamond.getChainFallbackTime();
+        return diamond.getEvidenceTime() + diamond.getP2pTime() + diamond.getAgreementTime()
+            + diamond.getChainFallbackTime();
     }
 
     function test_validateTimeoutCalldataPostedProof_firstBlockGraceEdge_valid() public {

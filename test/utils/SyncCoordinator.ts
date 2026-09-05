@@ -1,3 +1,4 @@
+// @spec-test-coverage-ignore: shared sync-wait utility exercised by owning mapped test declarations
 import { ForkId } from "@/types/types";
 import { Logger, EventBarrier } from "@/utils";
 import type { EventBarrierCapturedError } from "@/utils/EventBarrier";
@@ -50,9 +51,11 @@ export class SyncCoordinator<
     }
 
     /**
-     * Wait until all peers share the same tip (hash + height), optionally requiring
-     * the tip to be at least `minHeight`, and optionally requiring union agreement
-     * (`finalized`) on that tip.
+     * Wait until all peers share the same tip (hash + height) with its
+     * snapshot and state-machine state stored, optionally requiring the tip
+     * to be at least `minHeight`, and optionally requiring union agreement
+     * (`finalized`) on that tip. A block is visible the moment it is stored;
+     * its state lands a beat later, so the tip alone is not "in sync".
      */
     public async waitForPeersToSync(
         peers: TestPeer<TCustomRpc>[],
@@ -81,9 +84,15 @@ export class SyncCoordinator<
             if (present.length === 0) return true; // no peer has a tip yet
             if (present.length < tips.length) return false; // only some do
 
-            const { hash, height } = present[0];
+            const { hash, height, stateHash } = present[0];
 
             if (!present.every((t) => t.hash === hash && t.height === height)) {
+                return false;
+            }
+            if (
+                stateHash === null ||
+                !present.every((t) => t.stateHash === stateHash)
+            ) {
                 return false;
             }
 
@@ -116,7 +125,7 @@ export class SyncCoordinator<
         const peerStates = peers.map((peer, i) => {
             const tip = tipMaybe[i];
             const base = tip
-                ? `hash=${tip.hash} height=${tip.height}`
+                ? `hash=${tip.hash} height=${tip.height} state=${tip.stateHash ?? "missing"}`
                 : "no_block";
             let fin = "";
             if (waitForFinalization && tip) {
@@ -128,7 +137,13 @@ export class SyncCoordinator<
         let reason = "";
         const latest = tipMaybe[0];
         if (minHeight !== undefined) {
-            reason = ` (expected height ${minHeight}, have ${latest?.height ?? "?"})`;
+            // Report the lowest tip: a dead fork shows as one peer stuck below
+            // the others, which a single peer's height would hide.
+            const heights = tipMaybe.map((tip) => tip?.height);
+            const lowest = heights.some((height) => height === undefined)
+                ? "?"
+                : Math.min(...heights.map((height) => Number(height)));
+            reason = ` (expected height ${minHeight}, lowest peer height ${lowest})`;
         }
         if (waitForFinalization && latest) {
             const allOk = tipMaybe.every((tip) => tip && tip.finalized);

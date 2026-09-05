@@ -37,11 +37,14 @@ export default class BlockIngestService {
         blockConfirmation: BlockConfirmationStruct,
         options?: {
             validationStrategy?: AValidationStrategy;
+            /** The block was replayed from a verified synchronization proof. */
+            replayedFromProof?: boolean;
         }
     ): Promise<boolean> {
         return this.onBlockConfirmation(
             this.stateManager.storage.queues.createEntry(
-                Block.fromBlockConfirmation(blockConfirmation)
+                Block.fromBlockConfirmation(blockConfirmation),
+                { replayedFromProof: options?.replayedFromProof }
             ),
             options
         );

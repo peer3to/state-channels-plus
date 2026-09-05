@@ -18,24 +18,11 @@ describe("E2E: ReductionManager", function () {
 
         beforeEach(async function () {
             h = TestSession.getHarness();
-            await h.scenario.preDisputeSetup({
+            ({ sourceForkId } = await h.scenario.stageReducibleDisputedFork({
                 peerCount: 4,
+                maliciousPeerIndex: 1,
                 timeConfig: { evidenceTime: 3 }
-            });
-            sourceForkId = h.activeForkId!;
-
-            for (const peerIndex of [0, 1, 2, 3]) {
-                await h
-                    .control(h.getPeer(peerIndex))
-                    .stub.stubHoldReductionTasks()
-                    .request();
-            }
-
-            await h.byzantine.submitInvalidStateTransitionBlock(1);
-            await h.assert.dispute.initiatedAndCommitedWait({
-                expectedCount: 1
-            });
-            await sleep(h.event.evidencePeriodWaitMs(2));
+            }));
         });
 
         it("RaceConditionDisputeAlreadyReduced completes the installed reduction as success", async function () {
@@ -197,9 +184,12 @@ describe("E2E: ReductionManager", function () {
 
     it("an empty dispute set posts replacement evidence and resumes the same reduction", async function () {
         const h = TestSession.getHarness();
+        // Four peers race one automatic kill against a window of one-second
+        // blocks; the harness evidence floor gives that race room. Approved
+        // timeConfig change (plan 30, decision 5).
         await h.scenario.preDisputeSetup({
             peerCount: 4,
-            timeConfig: { evidenceTime: 3 }
+            timeConfig: { evidenceTime: 6 }
         });
         const targetPeer = h.getPeer(0);
         const sourceForkId = h.activeForkId!;

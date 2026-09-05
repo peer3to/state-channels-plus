@@ -3,7 +3,7 @@ import type StateManager from "@/stateManager/StateManager";
 import { Block } from "@/models";
 import { Status } from "@/types";
 import type { Address, ForkId } from "@/types/types";
-import { addressesEqual, Logger } from "@/utils";
+import { addressesEqual, DetachedPromises, Logger } from "@/utils";
 import { config } from "@/utils/config";
 
 type LeavePhase =
@@ -140,7 +140,14 @@ export default class LeaveChannelService {
 
         operation.ingestedBlockCount += 1;
         if (operation.ingestedBlockCount >= operation.participantCount + 1) {
-            await this.startDisputeFallback(operation, "block bound");
+            const fallback = this.startDisputeFallback(
+                operation,
+                "block bound"
+            );
+            DetachedPromises.collect(fallback);
+            void fallback.catch((error: unknown) =>
+                this.fail(operation, error)
+            );
         }
     }
 
@@ -192,7 +199,9 @@ export default class LeaveChannelService {
         if (!operation) return;
         this.cancelWatchdog(operation);
         operation.reject(
-            new Error("P2P runtime was disposed while channel leave was pending")
+            new Error(
+                "P2P runtime was disposed while channel leave was pending"
+            )
         );
     }
 
@@ -207,9 +216,7 @@ export default class LeaveChannelService {
         operation.forkId = this.stateManager.forkId;
         this.stateManager.storage.forceExit.setForceExit(true);
 
-        if (
-            this.stateManager.storage.disputes.didIDispute(operation.forkId)
-        ) {
+        if (this.stateManager.storage.disputes.didIDispute(operation.forkId)) {
             operation.phase = "awaiting-settlement";
             return;
         }
@@ -246,18 +253,19 @@ export default class LeaveChannelService {
         }
         this.cancelWatchdog(operation);
 
-        if (
-            this.stateManager.storage.disputes.didIDispute(operation.forkId)
-        ) {
+        if (this.stateManager.storage.disputes.didIDispute(operation.forkId)) {
             operation.phase = "awaiting-settlement";
             return;
         }
 
         operation.phase = "disputing";
-        this.logger.info("Terminal channel leave starting self-removal dispute", {
-            forkId: operation.forkId,
-            reason
-        });
+        this.logger.info(
+            "Terminal channel leave starting self-removal dispute",
+            {
+                forkId: operation.forkId,
+                reason
+            }
+        );
         await this.stateManager.disputeManager.dispute(operation.forkId);
         if (!this.stateManager.storage.disputes.didIDispute(operation.forkId)) {
             throw new Error("Terminal channel leave failed to start a dispute");

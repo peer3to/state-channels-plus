@@ -14,9 +14,7 @@ import {
 describe("E2E: dispute validation / disputeInputFields / disputeAuditingDataHash", function () {
     it("no calldata: dispute.input.disputeAuditingDataHash tampered → dispute commits, no DisputeInvalidStateProof or other audit-data fraud proof", async function () {
         const h = TestSession.getHarness();
-        await h.scenario.preDisputeSetup({
-            timeConfig: { evidenceTime: 6 }
-        });
+        await h.scenario.preDisputeSetup();
         const forkId = h.activeForkId!;
 
         await h.tamper.stubConstructDispute(

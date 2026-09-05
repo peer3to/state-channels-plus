@@ -23,8 +23,17 @@ describe("E2E: spectating strategy junk-block handling", function () {
         await h.lifecycle.start(3, 1, { timeConfig: LIVE_FORK_TIME });
         const forkId = h.activeForkId!;
 
-        const victim = await h.join.addSpectatorWait();
-        const attacker = await h.join.addSpectator();
+        const { peer: victim } = await h.join.addSpectatorAuthoring({
+            authoringPeerIndices: [0, 1, 2],
+            minimumBlocks: 0,
+            maximumBlocks: 20
+        });
+        const { peer: attacker } = await h.join.addSpectatorAuthoring({
+            authoringPeerIndices: [0, 1, 2],
+            minimumBlocks: 0,
+            maximumBlocks: 20,
+            waitForSynced: false
+        });
         await h.connectionBarrier.waitFor(
             async () =>
                 await h
@@ -59,12 +68,19 @@ describe("E2E: spectating strategy junk-block handling", function () {
         await h.lifecycle.start(3, 1, { timeConfig: LIVE_FORK_TIME });
         const forkId = h.activeForkId!;
 
-        const victim = await h.join.addSpectatorWait();
+        const { peer: victim } = await h.join.addSpectatorAuthoring({
+            authoringPeerIndices: [0, 1, 2],
+            minimumBlocks: 0,
+            maximumBlocks: 20
+        });
         await h.join.joinChannelWait({ joiner: victim });
         expect(await h.control(victim).query.getStatus().request()).to.equal(
             Status.PENDING_PARTICIPANT
         );
 
+        // Spawn-only, classified: the fork is idle by design (LIVE_FORK_TIME)
+        // and any keep-alive block would promote the pending victim, which
+        // the assertion below requires to stay PENDING_PARTICIPANT.
         const attacker = await h.join.addSpectator();
         await h.connectionBarrier.waitFor(
             async () =>
@@ -103,8 +119,17 @@ describe("E2E: spectating strategy junk-block handling", function () {
         await h.lifecycle.start(3, 1, { timeConfig: LIVE_FORK_TIME });
         const forkId = h.activeForkId!;
 
-        const victim = await h.join.addSpectatorWait();
-        const attacker = await h.join.addSpectator();
+        const { peer: victim } = await h.join.addSpectatorAuthoring({
+            authoringPeerIndices: [0, 1, 2],
+            minimumBlocks: 0,
+            maximumBlocks: 20
+        });
+        const { peer: attacker } = await h.join.addSpectatorAuthoring({
+            authoringPeerIndices: [0, 1, 2],
+            minimumBlocks: 0,
+            maximumBlocks: 20,
+            waitForSynced: false
+        });
         await h.connectionBarrier.waitFor(
             async () =>
                 await h
@@ -152,32 +177,27 @@ describe("E2E: spectating strategy junk-block handling", function () {
         await h.lifecycle.start(3, 1, { timeConfig: LIVE_FORK_TIME });
         const forkId = h.activeForkId!;
 
-        // Peer processes start while the participants keep authoring. Awaiting
-        // each process first would consume the next block's authoring window.
-        const victimPromise = h.join.addSpectatorDetached();
-        await h.transition.advanceState({
-            count: 2,
-            waitForPeers: [0, 1, 2],
-            waitForFinalization: true
+        // The participants keep authoring while each peer process spawns and
+        // the victim syncs; a fixed block count followed by an idle wait would
+        // leave the writer slot empty on a loaded farm and get the next block
+        // rejected as stale. The author and relayer only need to be connected.
+        const { peer: victim } = await h.join.addSpectatorAuthoring({
+            authoringPeerIndices: [0, 1, 2],
+            minimumBlocks: 0,
+            maximumBlocks: 20
         });
-        const victim = await victimPromise;
-        await h.event.waitUntilPeerStatus(victim.index, Status.SYNCED);
-
-        const authorPromise = h.join.addSpectator();
-        await h.transition.advanceState({
-            count: 2,
-            waitForPeers: [0, 1, 2],
-            waitForFinalization: true
+        const { peer: author } = await h.join.addSpectatorAuthoring({
+            authoringPeerIndices: [0, 1, 2],
+            minimumBlocks: 0,
+            maximumBlocks: 20,
+            waitForSynced: false
         });
-        const author = await authorPromise;
-
-        const relayerPromise = h.join.addSpectator();
-        await h.transition.advanceState({
-            count: 2,
-            waitForPeers: [0, 1, 2],
-            waitForFinalization: true
+        const { peer: relayer } = await h.join.addSpectatorAuthoring({
+            authoringPeerIndices: [0, 1, 2],
+            minimumBlocks: 0,
+            maximumBlocks: 20,
+            waitForSynced: false
         });
-        const relayer = await relayerPromise;
         await h.assert.sync.peersInSyncWait({
             peerIndices: [0, 1, 2, victim.index]
         });
@@ -240,13 +260,12 @@ describe("E2E: spectating strategy junk-block handling", function () {
 
         // victim spectates and stores the pre-leave snapshots (still listing the
         // leaver as a participant)
-        const victim = await h.join.addSpectatorDetached();
-        await h.transition.advanceState({
-            count: 2,
-            waitForPeers: [0, 1, 2, 3],
+        const { peer: victim } = await h.join.addSpectatorAuthoring({
+            authoringPeerIndices: [0, 1, 2, 3],
+            minimumBlocks: 2,
+            maximumBlocks: 20,
             waitForFinalization: true
         });
-        await h.event.waitUntilPeerStatus(victim.index, Status.SYNCED);
 
         const staleHeight = await h
             .control(h.getPeer(0))

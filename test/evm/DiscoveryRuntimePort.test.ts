@@ -5,7 +5,12 @@ import { Status } from "@/types";
 import { MathTestSession as TestSession } from "@test/harness";
 import { waitFor } from "@test/utils/waitFor";
 import { compareAddresses } from "@/rpc/services/openChannelNegotiation/OpenChannelNegotiationHelpers";
-import { channelIdToTargetedJoinTopic, Codec, Type } from "@/utils";
+import {
+    addressesEqual,
+    channelIdToTargetedJoinTopic,
+    Codec,
+    Type
+} from "@/utils";
 import { TargetedChannelJoinFixture } from "@test/fixtures/TargetedChannelJoinFixture";
 import { sleep } from "@/utils";
 
@@ -978,14 +983,89 @@ describe("discovery runtime port", function () {
         ).to.be.rejectedWith("disposed");
     });
 
+    it("a reduction that drops the leaver keeps its status until the chain records the removal", async function () {
+        const h = TestSession.getHarness();
+        // Same staging as the settled self-removal case above: the failed
+        // post's fallback dispute is the one that reduces.
+        await h.lifecycle.start(3, 0, {
+            timeConfig: { evidenceTime: 20 }
+        });
+        const leaver = h.peers[1];
+        await h.control(leaver).stub.failPostStateSnapshotWait().request();
+        let exitPromise: Promise<unknown> | undefined;
+        leaver.p2pInstance.events.on("p2pEventHooks", "onLeaveTurn", () => {
+            exitPromise = leaver.p2pInstance.p2pContractInstance.leaveChannel();
+        });
+        const leave = leaver.p2pInstance.leaveChannel();
+        await h.transition.advanceState();
+        await waitFor(() => exitPromise !== undefined);
+        await exitPromise;
+        await h.assert.dispute.committedWait({
+            peersIndices: [0, 2],
+            expectedCount: 1
+        });
+        await h.control(leaver).stub.restorePostStateSnapshotWait().request();
+        // Every reducer parks before its chain write: the reduced fork that
+        // drops the leaver is installed locally on every peer while the chain
+        // still lists the leaver.
+        const holds = await Promise.all(
+            h.peers.map((peer) =>
+                h.rpcStub.holdReductionAttempt(peer.index, "submit")
+            )
+        );
+        try {
+            // The leaver installs its own reduced genesis at the kill period's
+            // end and parks before the chain write.
+            await waitFor(
+                async () => (await holds[leaver.index].entered()) === 1,
+                h.event.evidencePeriodWaitMs(2)
+            );
+            expect(
+                await h.control(leaver).query.getStatus().request()
+            ).to.equal(Status.PARTICIPATING);
+            expect(
+                (await h.channelManager.getParticipants(h.channelId)).includes(
+                    leaver.address
+                )
+            ).to.equal(true);
+            const leaveOutcome = await Promise.race([
+                leave.then(() => ({ kind: "resolved" as const })),
+                sleep(2_000).then(() => ({ kind: "pending" as const }))
+            ]);
+            expect(leaveOutcome).to.deep.equal({ kind: "pending" });
+        } finally {
+            for (const hold of holds) await hold.release();
+        }
+        // The reducers' transactions land, the chain's snapshot drops the
+        // leaver, and only then the status and the leave follow. The settled
+        // leave disposes the runtime, so the transition is read from the
+        // status hook.
+        await leave;
+        expect(
+            leaver.eventSpies.onStatusChanged?.calledWith(
+                Status.PARTICIPATING,
+                Status.SYNCED
+            )
+        ).to.equal(true);
+        expect(
+            (await h.channelManager.getParticipants(h.channelId)).includes(
+                leaver.address
+            )
+        ).to.equal(false);
+    });
+
     it("failed fast snapshot post falls back to a settled self-removal dispute", async function () {
         const h = TestSession.getHarness();
+        // The failed post's fallback is the leaver's own self-removal dispute,
+        // raised one agreement window after the exit block. Nothing authors
+        // while it settles: the window it opens predates the next writer's
+        // participant timeout, so no honest peer is timed out meanwhile.
+        // Settlement runs through the full kill period.
         await h.lifecycle.start(3, 0, {
             timeConfig: { evidenceTime: 20 }
         });
         const leaver = h.peers[1];
         const originalForkId = h.activeForkId!;
-        const recorder = await h.rpcStub.recordDisputeSubmissions(leaver.index);
         await h.control(leaver).stub.failPostStateSnapshotWait().request();
         let exitPromise: Promise<unknown> | undefined;
         leaver.p2pInstance.events.on("p2pEventHooks", "onLeaveTurn", () => {
@@ -997,22 +1077,19 @@ describe("discovery runtime port", function () {
         await h.transition.advanceState();
         await waitFor(() => exitPromise !== undefined);
         await exitPromise;
-        await waitFor(
-            async () => (await recorder.submissions()).length === 1,
-            h.event.protocolEventTimeoutMs()
-        );
-
-        const submissions = await recorder.submissions();
-        expect(
-            Codec.decode(submissions[0].encodedDispute, Type.Dispute).input
-                .selfRemoval
-        ).to.equal(true);
-        await recorder.restore();
-        await h.control(leaver).stub.restorePostStateSnapshotWait().request();
         await h.assert.dispute.committedWait({
             peersIndices: [0, 2],
             expectedCount: 1
         });
+        await h.control(leaver).stub.restorePostStateSnapshotWait().request();
+        const [disputeHash] = await h.query.getDisputeHashes({
+            peerIndices: [0]
+        });
+        const dispute = await h.query.getDispute(0, disputeHash!);
+        expect(dispute?.input.selfRemoval).to.equal(true);
+        expect(
+            addressesEqual(String(dispute?.input.disputer), leaver.address)
+        ).to.equal(true);
         await h.dispute.resolveDisputeWait({
             forkId: originalForkId,
             honestPeerIndices: [0, 2],
@@ -1023,7 +1100,8 @@ describe("discovery runtime port", function () {
             sleep(45_000).then(() => ({ kind: "pending" as const }))
         ]);
         expect(leaveOutcome).to.deep.equal({ kind: "resolved" });
-        expect(Date.now() - leaveStartedAt).to.be.greaterThan(30_000);
+        // settled through the dispute's kill period, never before it
+        expect(Date.now() - leaveStartedAt).to.be.greaterThan(20_000);
 
         expect(
             (await h.channelManager.getParticipants(h.channelId)).includes(
@@ -1120,17 +1198,41 @@ describe("discovery runtime port", function () {
                 ?.participantCount
         ).to.equal(3);
 
-        await h.transition.advanceState({ waitForPeers: [0, 1, 2] });
+        // The join lands as an inbound block that the next writer includes
+        // once its event delivery caught up; keep authoring until the joiner
+        // is promoted instead of assuming the first block carries it.
+        await h.transition.keepAuthoringUntil({
+            until: async () =>
+                (await h.control(joiner).query.getStatus().request()) ===
+                Status.PARTICIPATING,
+            waitForPeers: [0, 1, 2],
+            maximumBlocks: 20
+        });
         expect(await h.control(joiner).query.getStatus().request()).to.equal(
             Status.PARTICIPATING
         );
-        await h.transition.advanceState({
-            count: 2,
-            waitForPeers: [0, 1, 2, joiner.index]
+        // The promoted joiner takes its exit turn itself through the leave
+        // hook; the others keep authoring until that turn comes around and
+        // then while the exit snapshot lands, never writing in its slot.
+        await h.transition.keepAuthoringUntil({
+            until: () => exitPromise !== undefined,
+            waitForPeers: [0, 1, 2],
+            excludePeerIndices: [joiner.index],
+            maximumBlocks: 20
         });
-        await waitFor(() => exitPromise !== undefined);
         await exitPromise;
-        await leave;
+        h.contextApi.markAfkPeer({ afkPeerIndex: joiner.index });
+        let leaveSettled = false;
+        const settledLeave = leave.then(() => {
+            leaveSettled = true;
+        });
+        await h.transition.keepAuthoringUntil({
+            until: () => leaveSettled,
+            waitForPeers: [0, 1, 2],
+            excludePeerIndices: [joiner.index],
+            maximumBlocks: 20
+        });
+        await settledLeave;
 
         expect(
             (await h.channelManager.getParticipants(h.channelId)).includes(

@@ -71,6 +71,8 @@ describe("Unit: ValidationService", function () {
                 )
             );
 
+            // Spawn-only, classified (plan 30 item 5): the participants never serve
+            // sync here and nothing authors while the spectator connects.
             const { index: spectatorIndex } = await h.join.addSpectator();
             await h.event.waitUntilPeerStatus(spectatorIndex, Status.OPENED);
             const spectator = h.getPeer(spectatorIndex);
@@ -330,7 +332,16 @@ describe("Unit: ValidationService", function () {
         it("spectating: missing genesis → supplier and author both cut, spectator keeps spectating", async function () {
             const h = TestSession.getHarness();
             await h.lifecycle.start(3, 1);
-            const spectator = await h.join.addSpectatorWait();
+            // The hook under test is invoked directly with a crafted block, so
+            // the height it syncs to does not matter; authoring through the
+            // spawn keeps the writer slot alive (a starved farm otherwise let
+            // a timeout dispute move the fork under the sync).
+            const { peer: spectator } = await h.join.addSpectatorAuthoring({
+                authoringPeerIndices: [0, 1, 2],
+                minimumBlocks: 1,
+                maximumBlocks: 20,
+                waitForFinalization: false
+            });
             const author = h.getPeer(1);
             const supplier = h.getPeer(2);
 
@@ -802,6 +813,42 @@ describe("Unit: ValidationService", function () {
             expect(r.calldataRecoveryQueries).to.equal(1);
         });
 
+        it("block replayed from a synchronization proof outside agreementTime → the subjective window does not apply → SUCCESS", async function () {
+            const h = TestSession.getHarness();
+            await h.lifecycle.start(3, 0, {
+                timeConfig: TIMESTAMP_TIME_CONFIG
+            });
+            const { observer, authored } =
+                await h.transition.authorNextBlockOffWireWait();
+
+            // Leave the subjective window: a live arrival would now park as
+            // NOT_ENOUGH_TIME; the same block replayed from a verified proof
+            // is history and applies.
+            const clockGap = await h.event.waitPastAgreementTime(
+                observer.index,
+                authored.timestamp
+            );
+            expect(clockGap).to.be.greaterThan(
+                TIMESTAMP_TIME_CONFIG.agreementTime
+            );
+
+            const live = await h
+                .control(observer)
+                .stub.runBlockValidation(authored.encodedBlockConfirmation)
+                .request();
+            expect(live.resultName).to.equal("NOT_ENOUGH_TIME");
+
+            const replayed = await h
+                .control(observer)
+                .stub.runBlockValidation(authored.encodedBlockConfirmation, {
+                    replayedFromProof: true
+                })
+                .request();
+            expect(replayed.resultName).to.equal("SUCCESS");
+            expect(replayed.firedHooks).to.deep.equal([]);
+            expect(replayed.fraudProofType).to.be.null;
+        });
+
         it("on-chain timestamp exactly at the post deadline → ON_TIME → SUCCESS even outside agreementTime", async function () {
             const h = TestSession.getHarness();
             await h.lifecycle.start(3, 0, {
@@ -885,12 +932,11 @@ describe("Unit: ValidationService", function () {
             const { leader, observer, authored, forkId } =
                 await h.transition.authorNextBlockOffWireWait();
 
-            // the observer loses the subscribed calldata delivery, so it holds
-            // no timestamp until validation queries the chain itself
-            await h
-                .control(observer)
-                .stub.stubHoldCalldataPostedEvents()
-                .request();
+            // every non-leader loses the subscribed calldata delivery: the
+            // observer holds no timestamp until validation queries the chain
+            // itself, and the third participant cannot ingest, sign, and
+            // gossip the block to the observer first
+            await h.rpcStub.holdCalldataPostedEventsExceptLeader(leader.index);
 
             await h
                 .control(leader)

@@ -4,8 +4,8 @@
 
 ## Score
 
-- Specification IDs fully implemented (only `Covered` claims): **222/274** (81%)
-- Source files with a file report: **260/273** (95%)
+- Specification IDs fully implemented (only `Covered` claims): **228/279** (82%)
+- Source files with a file report: **268/277** (97%)
 
 ## Contents
 
@@ -40,7 +40,6 @@ the claiming conformance rows; an ID absent from every conformance table has no 
 | [`REQ-DIS-10-SAHJBN`](../specification/disputes/disputes.md#req-dis-10-sahjbn) | Partial | [implementation/source/src/stateManager/StateManager.ts.md](../implementation/source/src/stateManager/StateManager.ts.md#conformance-traceability) |
 | [`REQ-DISPUTE-PIPE-5-RZZB48`](../specification/disputes/dispute-processing.md#req-dispute-pipe-5-rzzb48) | Partial | [implementation/source/src/disputeManager/DisputeManager.ts.md](../implementation/source/src/disputeManager/DisputeManager.ts.md#conformance-traceability) |
 | [`REQ-GOSSIP-2-9PMMNH`](../specification/peer-communication/block-gossip.md#req-gossip-2-9pmmnh) | Partial | [implementation/source/src/rpc/services/stateTransition/StateTransitionRpcMethods.ts.md](../implementation/source/src/rpc/services/stateTransition/StateTransitionRpcMethods.ts.md#conformance-traceability) |
-| [`REQ-LOBBY-7-BXQ1QA`](../specification/peer-communication/lobby-matching.md#req-lobby-7-bxq1qa) | Not implemented (no conformance claim) | [specification/peer-communication/lobby-matching.md](../specification/peer-communication/lobby-matching.md#req-lobby-7-bxq1qa) (definition) |
 | [`REQ-MIRROR-1-XCY9CB`](../specification/enforcement/local-mirror.md#req-mirror-1-xcy9cb) | Partial | [implementation/source/contracts/V1/StateChannelDiamondProxy/LocalDiamond.sol.md](../implementation/source/contracts/V1/StateChannelDiamondProxy/LocalDiamond.sol.md#conformance-traceability) |
 | [`REQ-MIRROR-2-E9F3TM`](../specification/enforcement/local-mirror.md#req-mirror-2-e9f3tm) | Partial | [implementation/source/contracts/V1/StateChannelDiamondProxy/LocalDiamond.sol.md](../implementation/source/contracts/V1/StateChannelDiamondProxy/LocalDiamond.sol.md#conformance-traceability)<br>[implementation/source/src/evm/EvmDiamondStateMachine.ts.md](../implementation/source/src/evm/EvmDiamondStateMachine.ts.md#conformance-traceability) |
 | [`REQ-MSGSTORE-1-6ME9D7`](../specification/storage/message-blocks.md#req-msgstore-1-6me9d7) | Contradicts | [implementation/source/src/storage/MessageBlockStorage.ts.md](../implementation/source/src/storage/MessageBlockStorage.ts.md#conformance-traceability) |
@@ -83,13 +82,9 @@ Every file under `src/` and `contracts/` needs one maintained report at
 | [src/cache/index.ts](../../../src/cache/index.ts) |
 | [src/cache/SignerRecoveryCache.ts](../../../src/cache/SignerRecoveryCache.ts) |
 | [src/stateManager/block/index.ts](../../../src/stateManager/block/index.ts) |
-| [src/stateManager/block/SnapshotAssemblyService.ts](../../../src/stateManager/block/SnapshotAssemblyService.ts) |
-| [src/stateManager/chainFallback/CalldataPostingService.ts](../../../src/stateManager/chainFallback/CalldataPostingService.ts) |
 | [src/stateManager/chainFallback/index.ts](../../../src/stateManager/chainFallback/index.ts) |
-| [src/stateManager/chainFallback/ParticipantTimeoutService.ts](../../../src/stateManager/chainFallback/ParticipantTimeoutService.ts) |
 | [src/stateManager/dispute/DisputeFraudProofService.ts](../../../src/stateManager/dispute/DisputeFraudProofService.ts) |
 | [src/stateManager/dispute/index.ts](../../../src/stateManager/dispute/index.ts) |
 | [src/stateManager/eventSync/index.ts](../../../src/stateManager/eventSync/index.ts) |
-| [src/stateManager/ingest/BlockIngestService.ts](../../../src/stateManager/ingest/BlockIngestService.ts) |
 | [src/stateManager/ingest/index.ts](../../../src/stateManager/ingest/index.ts) |
 | [src/stateManager/ingest/StoredBlockMergeService.ts](../../../src/stateManager/ingest/StoredBlockMergeService.ts) |

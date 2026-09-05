@@ -653,20 +653,27 @@ export default class LobbyMatchingService extends ARpcService<LobbyMatchingRpcMe
     private onProfileDisconnected(peerAddress: Address): void {
         this.removeCandidate(peerAddress);
         if (this.inFlightSelection?.peerAddress === peerAddress) {
-            this.neutralProfileLosses.add(peerAddress);
-            this.inFlightSelection.unsubscribeDisconnected?.();
-            this.inFlightSelection = undefined;
-            this.applyDeferredRoleSwitch();
-            void this.selectNextCandidate();
+            if (this.commitInFlight) {
+                // Agreement-window liability: the commit is already sent, so
+                // final transport loss is not neutral. Keep the selection in
+                // place so the rejected commit reaches the catch path, which
+                // blacklists the absent peer at once.
+                this.inFlightSelection.unsubscribeDisconnected?.();
+                this.inFlightSelection.unsubscribeDisconnected = undefined;
+            } else {
+                this.neutralProfileLosses.add(peerAddress);
+                this.inFlightSelection.unsubscribeDisconnected?.();
+                this.inFlightSelection = undefined;
+                this.applyDeferredRoleSwitch();
+                void this.selectNextCandidate();
+            }
         }
         if (this.reservation?.peerAddress === peerAddress) {
+            // Agreement-window liability: an accepted pick keeps its bound
+            // running. expireReservation blacklists the absent selector when
+            // it fires; a replacement transport may still commit before then.
             this.reservation.unsubscribeDisconnected?.();
-            this.p2pManager.stateManager.timeoutManager.cancelTask(
-                this.reservation.expiry
-            );
-            this.reservation = undefined;
-            this.applyDeferredRoleSwitch();
-            if (this.role === "advertiser") this.broadcastAvailability();
+            this.reservation.unsubscribeDisconnected = undefined;
         }
     }
 

@@ -112,9 +112,16 @@ contract StateChannelCommon is StateChannelManagerStorage, StateChannelManagerEv
         return stateSnapshots[channelId].snapshotData.participants;
     }
 
+    /// Joiners whose JOIN the current snapshot has not consumed yet: the walk
+    /// from the channel's inbound head stops at the snapshot's own inbound
+    /// hash. An unbounded walk counted every JOIN ever recorded, including
+    /// the original participants' open joins, so a leaver stayed "pending"
+    /// forever and a slashed joiner stayed eligible.
     function _getPendingParticipants(bytes32 channelId) internal view virtual returns (address[] memory) {
         address[] memory pendingParticipants = _derivePendingParticipantsFromInboundHash(
-            channelId, channelBalances[channelId].latestInboundMessageBlockHash, bytes32(0)
+            channelId,
+            channelBalances[channelId].latestInboundMessageBlockHash,
+            stateSnapshots[channelId].snapshotData.latestInboundMessageBlockHash
         );
         return pendingParticipants;
     }

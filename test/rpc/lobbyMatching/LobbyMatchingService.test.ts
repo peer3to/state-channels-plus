@@ -48,16 +48,35 @@ describe("LobbyMatchingService", function () {
         expect(result.discardedPeerMissedOrdinaryBroadcast).to.equal(true);
     });
 
-    it("releases a reservation on final profile loss and bounds rejected lobby traffic", async function () {
+    it("keeps a reservation through final profile loss, blacklists at its bound, and bounds rejected lobby traffic", async function () {
         const result = await fixture
             .control()
             .p2pManagerProbe.probeLobbyRecovery()
             .request();
 
         expect(result.reservationAccepted).to.equal(true);
-        expect(result.reservedAfterFinalLoss).to.equal(false);
+        expect(result.reservedAfterFinalLoss).to.equal(true);
         expect(result.matchingAfterFinalLoss).to.equal(true);
         expect(result.disconnectedPeerBlacklisted).to.equal(false);
+        // The reservation bound is one agreement window; the absent selector
+        // is blacklisted when it fires and the reservation is released.
+        await waitFor(
+            async () =>
+                (
+                    await fixture
+                        .control()
+                        .p2pManagerProbe.probeLobbyRecoveryBound()
+                        .request()
+                ).disconnectedPeerBlacklisted,
+            fixture.getHarness().event.protocolEventTimeoutMs(),
+            100
+        );
+        const afterBound = await fixture
+            .control()
+            .p2pManagerProbe.probeLobbyRecoveryBound()
+            .request();
+        expect(afterBound.reserved).to.equal(false);
+        expect(afterBound.matching).to.equal(true);
         expect(result.abusiveTransportClosed).to.equal(true);
         expect(result.abusivePeerBlacklisted).to.equal(true);
     });
@@ -76,7 +95,7 @@ describe("LobbyMatchingService", function () {
             selectionCleared: true,
             candidateCount: 0,
             transportClosed: true,
-            peerBlacklisted: false
+            peerBlacklisted: true
         });
     });
 

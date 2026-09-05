@@ -23,7 +23,7 @@ Main-thread worker launcher with readiness handshake.
 
 ## Key design decisions
 
-_None — the file is declarative/mechanical; behavior-shaping decisions live with its consumers._
+1. **Detached errors use the shared codec.** The funnel posts `hostError` through `serializeError` from `errorWire`, the same projection the host and the contract-executor worker use, so watchdog delay data survives the hop.
 
 ## Inputs, outputs, state, and side effects
 

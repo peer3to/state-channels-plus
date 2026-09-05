@@ -98,6 +98,12 @@ export class LocalDiscoveryServer {
         Map<RendezvousKey, DiscoverySession>
     > = new WeakMap();
 
+    /** In-progress listener startup per runtime and exact observed topic. */
+    private static discoveryJoins: WeakMap<
+        P2PManager,
+        Map<RendezvousKey, Promise<void>>
+    > = new WeakMap();
+
     /** Prevent reconnect loops during/after cleanup */
     private static _cleanupRequested: boolean = false;
 
@@ -612,6 +618,41 @@ export class LocalDiscoveryServer {
         rendezvousKey: RendezvousKey,
         myPeerAddress: string
     ): Promise<void> {
+        const joins =
+            this.discoveryJoins.get(p2pManager) ??
+            new Map<RendezvousKey, Promise<void>>();
+        const pending = joins.get(rendezvousKey);
+        if (pending) return pending;
+        if (this.getDiscoverySession(p2pManager, rendezvousKey)) return;
+        this.discoveryJoins.set(p2pManager, joins);
+        const started = this.startDiscoverySession(
+            p2pManager,
+            rendezvousKey,
+            myPeerAddress
+        );
+        joins.set(rendezvousKey, started);
+        try {
+            await started;
+        } finally {
+            joins.delete(rendezvousKey);
+        }
+    }
+
+    private static async startDiscoverySession(
+        p2pManager: P2PManager,
+        rendezvousKey: RendezvousKey,
+        myPeerAddress: string
+    ): Promise<void> {
+        const externalRegistryUrl = this.getExternalRegistryUrl();
+        if (!externalRegistryUrl && !this.discoveryPort) {
+            throw new Error(
+                "Discovery server not started. Call tryStart() before connectToPeers()."
+            );
+        }
+        const registryPort = this.discoveryPort;
+        const registryUrl =
+            externalRegistryUrl ?? `ws://${LOCAL_WS_HOST}:${registryPort}`;
+
         const peerLog = {
             mode: "peer" as const,
             rendezvousKey,
@@ -686,15 +727,6 @@ export class LocalDiscoveryServer {
         });
 
         // 2. Connect to Registry
-        const externalRegistryUrl = this.getExternalRegistryUrl();
-        if (!externalRegistryUrl && !this.discoveryPort) {
-            throw new Error(
-                "Discovery server not started. Call tryStart() before connectToPeers()."
-            );
-        }
-        const registryPort = this.discoveryPort;
-        const registryUrl =
-            externalRegistryUrl ?? `ws://${LOCAL_WS_HOST}:${registryPort}`;
 
         const connectRegistry = (attempt: number) => {
             if (
@@ -834,6 +866,7 @@ export class LocalDiscoveryServer {
         p2pManager?: P2PManager
     ): Promise<void> {
         if (!p2pManager) return;
+        await this.discoveryJoins.get(p2pManager)?.get(rendezvousKey);
         const sessions = this.discoverySessions.get(p2pManager);
         const session = sessions?.get(rendezvousKey);
         if (!session) return;
@@ -1017,18 +1050,36 @@ export class LocalDiscoveryServer {
     ): void {
         const session = this.getDiscoverySession(p2pManager, rendezvousKey);
         const connectionKey: PeerConnectionKey = `${myPeerPort}->${peerPort}`;
-        if (
-            this._cleanupRequested ||
-            p2pManager.isDisposed ||
-            !session ||
-            session.activeDials.has(connectionKey) ||
-            this.isPeerConnected(p2pManager, peerAddress) ||
-            p2pManager.isBlacklisted(peerAddress as Address)
-        ) {
+        const retryCount = this._peerRetryCount.get(connectionKey) || 0;
+        if (!session) return;
+        const skipReason = this._cleanupRequested
+            ? "cleanup-requested"
+            : p2pManager.isDisposed
+              ? "disposed"
+              : session.activeDials.has(connectionKey)
+                ? "dial-active"
+                : this.isPeerConnected(p2pManager, peerAddress)
+                  ? "peer-connected"
+                  : p2pManager.isBlacklisted(peerAddress as Address)
+                    ? "blacklisted"
+                    : undefined;
+        if (skipReason) {
+            // A skipped retry is the end of the road for this key: no
+            // announcement follows it, so the reason must be visible.
+            if (retryCount > 0) {
+                this.logger.debug("Peer retry skipped", {
+                    mode: "peer",
+                    myPeerAddress,
+                    myPeerPort,
+                    peerAddress,
+                    peerPort,
+                    rendezvousKey,
+                    attempt: retryCount + 1,
+                    skipReason
+                });
+            }
             return;
         }
-
-        const retryCount = this._peerRetryCount.get(connectionKey) || 0;
 
         session.activeDials.add(connectionKey);
         session.connectionKeys.add(connectionKey);

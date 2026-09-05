@@ -23,7 +23,7 @@ Executor operation types.
 
 ## Key design decisions
 
-_None — the file is declarative/mechanical; behavior-shaping decisions live with its consumers._
+1. **Handler types are shared with the runtimes.** `ContractExecutorWorkerMessageHandler` and `ContractExecutorWorkerErrorHandler` are the parameter types of both platform worker factories and of the internal `createWorkerRuntime` dependency.
 
 ## Inputs, outputs, state, and side effects
 

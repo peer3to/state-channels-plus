@@ -170,14 +170,14 @@ describe("E2E: Spectate Service", function () {
                 }
             });
 
-            const spectator = await h.join.addSpectatorDetached();
-            const spectatorIndex = spectator.index;
             const participantIndices = [0, 1, 2];
-            await h.transition.advanceState({
-                count: 4,
-                waitForPeers: participantIndices,
+            const { peer: spectator } = await h.join.addSpectatorAuthoring({
+                authoringPeerIndices: participantIndices,
+                minimumBlocks: 4,
+                maximumBlocks: 20,
                 waitForFinalization: true
             });
+            const spectatorIndex = spectator.index;
             await h.event.waitUntilPeerStatus(spectatorIndex, Status.SYNCED);
             await h.assert.sync.peersInSyncWait({
                 peerIndices: participantIndices.concat(spectatorIndex)
@@ -337,13 +337,12 @@ describe("E2E: Spectate Service", function () {
                 }
             });
 
-            const spectator = await h.join.addSpectatorDetached();
-            await h.transition.advanceState({
-                count: 4,
-                waitForPeers: [0, 1, 2],
+            const { peer: spectator } = await h.join.addSpectatorAuthoring({
+                authoringPeerIndices: [0, 1, 2],
+                minimumBlocks: 4,
+                maximumBlocks: 20,
                 waitForFinalization: true
             });
-            await h.event.waitUntilPeerStatus(spectator.index, Status.SYNCED);
             const forkId = h.activeForkId;
             expect(forkId).to.not.be.undefined;
 
@@ -417,13 +416,12 @@ describe("E2E: Spectate Service", function () {
                 }
             });
 
-            const spectator = await h.join.addSpectatorDetached();
-            await h.transition.advanceState({
-                count: 2,
-                waitForPeers: [0, 1, 2, 3],
+            const { peer: spectator } = await h.join.addSpectatorAuthoring({
+                authoringPeerIndices: [0, 1, 2, 3],
+                minimumBlocks: 2,
+                maximumBlocks: 20,
                 waitForFinalization: true
             });
-            await h.event.waitUntilPeerStatus(spectator.index, Status.SYNCED);
             const spectatorIndex = spectator.index;
             const participantIndices = [0, 1, 2, 3];
             const forkId = h.activeForkId;
@@ -635,9 +633,13 @@ describe("E2E: Spectate Service", function () {
                 peerIndices: honestPeerIndices
             });
 
-            const spectator = await h.join.addSpectatorDetached();
-            await h.transition.fromHonestPeersOnly((c) => c.add(2));
-            await h.event.waitUntilPeerStatus(spectator.index, Status.SYNCED);
+            const { peer: spectator } = await h.join.addSpectatorAuthoring({
+                authoringPeerIndices: honestPeerIndices,
+                minimumBlocks: 1,
+                maximumBlocks: 20,
+                authorBlock: () =>
+                    h.transition.fromHonestPeersOnly((c) => c.add(2))
+            });
             await h.assert.sync.peersInSyncWait({
                 peerIndices: honestPeerIndices.concat(5)
             });
@@ -675,12 +677,11 @@ describe("E2E: Spectate Service", function () {
             });
 
             //  peer index 4 is spectator
-            const spectator = await h.join.addSpectatorDetached();
-            await h.transition.advanceState({
-                count: 4,
-                waitForPeers: [0, 1, 2, 3]
+            const { peer: spectator } = await h.join.addSpectatorAuthoring({
+                authoringPeerIndices: [0, 1, 2, 3],
+                minimumBlocks: 4,
+                maximumBlocks: 20
             });
-            await h.event.waitUntilPeerStatus(spectator.index, Status.SYNCED);
             await h.assert.sync.peersInSyncWait({
                 peerIndices: [0, 1, 2, 3, 4]
             });
@@ -714,8 +715,17 @@ describe("E2E: Spectate Service", function () {
                 spectatorPeerIndex: 4,
                 peerIndices: honestPeerIndices
             });
-            //  add a new peer index 5 as spectator
-            await h.join.addSpectatorWait();
+            //  add a new peer index 5 as spectator. Authoring through the
+            // spawn keeps the writer slot alive: an idle slot let a participant
+            // time out the next writer on the reduced fork, a second reduction
+            // ran, and the joiner's initial sync landed between the chain's new
+            // result and the responder's convergence.
+            await h.join.addSpectatorAuthoring({
+                authoringPeerIndices: honestPeerIndices,
+                minimumBlocks: 1,
+                maximumBlocks: 20,
+                waitForFinalization: true
+            });
             const spectatorIndex = [5];
 
             await h.assert.sync.peersInSyncWait({
@@ -835,19 +845,21 @@ describe("E2E: Spectate Service", function () {
 
             // Spectating is asynchronous to the channel: participants author
             // on their own cadence and never wait for joiners to spawn/sync.
-            // Spawn both detached, produce the initial blocks immediately,
-            // and await SYNCED only right before the joins need it. Blocking
-            // spawns between blocks would idle past p2pTime + agreementTime
-            // and the post-promotion block would be rejected by the original
-            // participants while the joiners accept it, splitting the fork.
-            const joinerA = await h.join.addSpectatorDetached();
-            const joinerB = await h.join.addSpectatorDetached();
-            await h.transition.advanceState({
-                count: 2,
-                waitForPeers: [0, 1, 2]
+            // The bounded spawn keeps them authoring through each spawn and
+            // sync. Blocking spawns between blocks would idle past
+            // p2pTime + agreementTime and the post-promotion block would be
+            // rejected by the original participants while the joiners accept
+            // it, splitting the fork.
+            const { peer: joinerA } = await h.join.addSpectatorAuthoring({
+                authoringPeerIndices: [0, 1, 2],
+                minimumBlocks: 2,
+                maximumBlocks: 20
             });
-            await h.event.waitUntilPeerStatus(joinerA.index, Status.SYNCED);
-            await h.event.waitUntilPeerStatus(joinerB.index, Status.SYNCED);
+            const { peer: joinerB } = await h.join.addSpectatorAuthoring({
+                authoringPeerIndices: [0, 1, 2],
+                minimumBlocks: 0,
+                maximumBlocks: 20
+            });
             await h.assert.sync.peersInSyncWait();
 
             await h.join.joinChannelWait({ joiner: joinerA });
@@ -890,6 +902,9 @@ describe("E2E: Spectate Service", function () {
                 timeConfig: concurrentTimeConfig
             });
 
+            // Spawn-only, classified (plan 30 item 5): no transition is scheduled until
+            // the advanceState below, so no author's window is blocked; a block produced
+            // up front would cap the next timestamp and be rejected as stale.
             const joinerA = await h.join.addSpectatorDetached();
             const joinerB = await h.join.addSpectatorDetached();
             await h.transition.advanceState({
@@ -953,12 +968,11 @@ describe("E2E: Spectate Service", function () {
                 }
             });
 
-            const spectator = await h.join.addSpectatorDetached();
-            await h.transition.advanceState({
-                count: 2,
-                waitForPeers: [0, 1, 2]
+            const { peer: spectator } = await h.join.addSpectatorAuthoring({
+                authoringPeerIndices: [0, 1, 2],
+                minimumBlocks: 2,
+                maximumBlocks: 20
             });
-            await h.event.waitUntilPeerStatus(spectator.index, Status.SYNCED);
             await h.assert.sync.participantCount({
                 expectedCount: 3,
                 peerIndex: spectator.index
@@ -1042,6 +1056,8 @@ describe("E2E: Spectate Service", function () {
         it("should spectate successfully when joining at genesis state", async function () {
             const h = TestSession.getHarness();
             await h.lifecycle.start(2, 0);
+            // Spawn-only, classified (plan 30 item 5): genesis spectating is the
+            // subject and no transition is scheduled while the spawn runs.
             await h.join.addSpectatorWait();
             await h.assert.sync.participantCount({
                 expectedCount: 2,
@@ -1060,6 +1076,8 @@ describe("E2E: Spectate Service", function () {
             await h.lifecycle.start(2, 0);
             await h.transition.advanceState({ count: 1 });
             await h.assert.sync.peersInSyncWait({ peerIndices: [0, 1] });
+            // Spawn-only, classified (plan 30 item 5): block-0 spectating is the
+            // subject and no transition is scheduled while the spawn runs.
             await h.join.addSpectatorWait();
             await h.assert.sync.participantCount({
                 expectedCount: 2,
@@ -1243,13 +1261,12 @@ describe("E2E: Spectate Service", function () {
 
             // the requester must be genuinely behind the leave, so cut it
             // before the leave block is produced
-            const requester = await h.join.addSpectatorDetached();
-            await h.transition.advanceState({
-                count: 1,
-                waitForPeers: participantIndices,
+            const { peer: requester } = await h.join.addSpectatorAuthoring({
+                authoringPeerIndices: participantIndices,
+                minimumBlocks: 1,
+                maximumBlocks: 20,
                 waitForFinalization: true
             });
-            await h.event.waitUntilPeerStatus(requester.index, Status.SYNCED);
             await h.network.blacklistAndDisconnectPeer(requester.index);
             const requesterHeightBefore =
                 (await h
@@ -1382,6 +1399,8 @@ describe("E2E: Spectate Service", function () {
 
             // the requester has to be behind the requested height, so take it
             // out before any block is produced
+            // Spawn-only, classified (plan 30 item 5): the requester must precede
+            // every block, so nothing authors while it spawns.
             const requester = await h.join.addSpectatorWait();
             await h.network.blacklistAndDisconnectPeer(requester.index);
             const requesterHeightBefore =

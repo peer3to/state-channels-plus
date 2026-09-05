@@ -52,8 +52,13 @@ and recovery behavior.
 
 **<a id="req-sec-3-nppjn5"></a>`REQ-SEC-3-NPPJN5`.** The review MUST separate **objective slashable violations** (provable misbehavior)
 from **non-Byzantine failures** (disconnection, data loss, crash). The former are candidates for
-fraud proofs; the latter need recovery paths, never punishment. Conflating them either lets
-attackers hide as "unavailable" or punishes honest failures.
+fraud proofs; the latter need recovery paths, never on-chain punishment. Conflating them either lets
+attackers hide as "unavailable" or punishes honest failures. One local reputation rule is approved as an
+exception (owner decision, 2026-09-02): once a lobby lease is accepted, a peer that loses its final
+transport before the commitment completes is excluded from the excluding peer's local lobby reputation at
+that side's agreement-window timing. This is a local blacklist, never a slashable violation, and a network
+partition during the handoff excludes two honest peers from each other for the blacklist lifetime; see
+[`OQ-AUDIT-LOBBY-1-9S3GVD`](open-questions.md#oq-audit-lobby-1-9s3gvd).
 
 ## 3. Required output per gap
 
@@ -107,6 +112,15 @@ cannot bypass the SDK ban handle. Authenticated-RPC queues also die with their o
 or manager and cannot execute or punish after disposal. A late frame dispatched after local transport
 close is dropped without blacklisting the identity or tearing down its healthy replacement. These changes narrow existing trust boundaries;
 they do not resolve the separate open rate-limit, ICE-target, or protocol-version findings.
+
+Runtime isolation now has one worker-error policy (plan 30, 2026-09-02). An error caught outside a
+request in the sdk worker or the contract-executor worker, including the event-loop watchdog's throw,
+is reported to the application as one detached runtime error and the worker keeps serving; a failure
+before the worker's error funnel exists, or an exit the runtime did not request, is fatal for that
+worker. A remote peer cannot make a worker die by provoking a stall: the throw is contained and
+reported, so the peer's canonical EVM state survives. Whether an application disposes its runtime
+on such a report stays the application's decision. The threshold policy for the test farm is
+tracked in [`OQ-AUDIT-RUNTIME-1-HH601X`](open-questions.md#oq-audit-runtime-1-hh601x).
 
 The RPC verification ledger now separates implemented boundary coverage from missing controls.
 Endpoint hard stops, guard ordering and isolation, peer-bound response settlement, and cleanup after
@@ -239,3 +253,24 @@ Authenticated protocol faults now exclude the peer address instead of allowing d
 reconnect it immediately. Address-based attribution also covers a retired transport after upgrade.
 No identity penalty is applied for network loss, silence before identity proof, response-send
 failure, cleanup, or an unclassified local handler exception.
+
+## Dispute admission, conditional contributions, and mirror time
+
+The signing-order defect is closed by the shared state boundary described in
+[DisputeManager](../implementation/source/src/disputeManager/DisputeManager.ts.md) and
+[BlockCommitService](../implementation/source/src/stateManager/block/BlockCommitService.ts.md).
+Held authoring, admitted commit, and pending signer calls finish before dispute capture; removing the
+boundary makes all three safety tests fail. The honest-leaver workflow includes an admitted incoming
+signature. Failure rollback permits both real authoring and counter-signing again.
+
+The signed existing-window flag is checked before submission mutates admission state. Accepted state
+contributions keep their reason after opener kills, while signature, state, auditing-data and slash
+eligibility checks remain active. [EventSyncService](../implementation/source/src/stateManager/eventSync/EventSyncService.ts.md)
+recovers authoritative slashes with their original timestamps and deduplicates them. Empty or unchanged
+observations stop; unexpected read errors reach the existing top-level error handling (direct callers reject; background attempts use the detached-error route); a changed fork or disposal prevents obsolete re-entry.
+The clock repair is covered by real synchronization across an unposted reduction, not only timestamp
+reader bytecode. These maintained assessments remain pending engineer review; no approval is recorded here.
+
+### Early timeout submission recovery
+
+[`REQ-DISPUTE-PIPE-10-BT8YAR`](../specification/disputes/dispute-processing.md#req-dispute-pipe-10-bt8yar) preserves chain admission while retrying a specific early-timestamp refusal through the existing timeout owner. Retries must revalidate current evidence, stop after fork replacement or disposal, and keep an older-window refusal ineligible. Repeated attempts may incur transaction cost while chain time lags; this does not relax the deadline or unrelated error policy.

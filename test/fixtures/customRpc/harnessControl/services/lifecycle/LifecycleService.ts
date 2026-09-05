@@ -23,7 +23,8 @@ export class LifecycleService extends ARpcService<LifecycleRpcMethods> {
     public async getEncodedOpening(
         channelId: ChannelId
     ): Promise<string | null> {
-        const contract = this.p2pManager.stateManager.stateChannelManagerContract;
+        const contract =
+            this.p2pManager.stateManager.stateChannelManagerContract;
         const events = await contract.queryFilter(
             contract.filters.ChannelOpened(channelId)
         );
@@ -36,6 +37,25 @@ export class LifecycleService extends ARpcService<LifecycleRpcMethods> {
         });
         if (!parsed || parsed.name !== "open") return null;
         return String(parsed.args[0].encodedOpenChannel);
+    }
+
+    /**
+     * Re-deliver the selected channel's ChannelOpened log through the real
+     * event pipeline, exactly as the chain listener would. Used to stage
+     * "genesis arrives from the chain" on a runtime that selected the channel
+     * after it opened. Returns false when no such log exists.
+     */
+    public async applyChannelOpenedEvent(): Promise<boolean> {
+        const stateManager = this.p2pManager.stateManager;
+        const channelId = stateManager.channelId;
+        const contract = stateManager.stateChannelManagerContract;
+        const events = await contract.queryFilter(
+            contract.filters.ChannelOpened(channelId)
+        );
+        const log = events.at(-1);
+        if (!log) return false;
+        await stateManager.eventSyncService.scheduleLog(log, channelId);
+        return true;
     }
 }
 

@@ -66,12 +66,14 @@ export class SpectateControlRpcMethods extends ARpcMethods<
                 "startSync - host peer has no channel; cannot start sync"
             );
         }
+        // Omitted optionals cross the port as null; the service treats only
+        // undefined as "not requested".
         void this.service.spectate.sync(
             peerAddress,
             channelId,
-            forkId,
-            blockHeight,
-            timeoutMs
+            forkId ?? undefined,
+            blockHeight ?? undefined,
+            timeoutMs ?? undefined
         );
         return true;
     }

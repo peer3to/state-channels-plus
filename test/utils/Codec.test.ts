@@ -10,6 +10,49 @@ import {
 } from "../fixtures/CodecFixtures";
 
 describe("Codec", function () {
+    it("the existing-window flag survives nested confirmation encoding and binds the signature", async function () {
+        const signer = ethers.Wallet.createRandom();
+        const dispute = codecValues.dispute();
+        dispute.input.requireExistingDisputeWindow = true;
+        const encoded = Codec.encode(dispute, Type.Dispute);
+        const signature = await signer.signMessage(
+            ethers.getBytes(ethers.keccak256(encoded))
+        );
+        const confirmation = {
+            signedDispute: { encodedDispute: encoded, signature },
+            signatures: []
+        };
+        const nested = Codec.decode(
+            Codec.encode(confirmation, Type.DisputeConfirmation),
+            Type.DisputeConfirmation
+        );
+        const restored = Codec.decode(
+            nested.signedDispute.encodedDispute,
+            Type.Dispute
+        );
+        expect(restored.input.requireExistingDisputeWindow).to.equal(true);
+        expect(
+            ethers.verifyMessage(
+                ethers.getBytes(
+                    ethers.keccak256(nested.signedDispute.encodedDispute)
+                ),
+                ethers.hexlify(nested.signedDispute.signature)
+            )
+        ).to.equal(signer.address);
+        restored.input.requireExistingDisputeWindow = false;
+        const changed = Codec.encode(restored, Type.Dispute);
+        expect(
+            ethers.verifyMessage(
+                ethers.getBytes(ethers.keccak256(changed)),
+                ethers.hexlify(nested.signedDispute.signature)
+            )
+        ).to.not.equal(signer.address);
+        expect(
+            Codec.decode(changed, Type.Dispute).input
+                .requireExistingDisputeWindow
+        ).to.equal(false);
+    });
+
     it("round-trips Block", function () {
         const value = codecValues.block();
         const encoded = Codec.encode(value, Type.Block);

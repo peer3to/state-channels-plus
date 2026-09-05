@@ -1010,7 +1010,10 @@ export class PeerTestHarness<
      * its serializable result. The escape hatch for white-box scenarios that must
      * drive in-process internals (mutex, validationService, local RPC services).
      * `fn` is shipped as source: closure-free, reach everything via `sm`, pass
-     * captured values via `args`.
+     * captured values via `args`. Host code routinely waits for a protocol
+     * event (an on-chain receipt, a block round), so the request budget is the
+     * protocol event timeout rather than the control RPC default; pass
+     * `options.timeoutMs` only for a longer wait.
      */
     async execOnHost<
         T,
@@ -1027,7 +1030,10 @@ export class PeerTestHarness<
     ): Promise<T> {
         return (await this.control(peer)
             .scenario.exec(fn.toString(), args)
-            .request(options)) as T;
+            .request({
+                timeoutMs: this.event.protocolEventTimeoutMs(),
+                ...options
+            })) as T;
     }
 
     async quiesceHosts(): Promise<Error[]> {

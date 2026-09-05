@@ -96,9 +96,12 @@ export class TransitionRpcMethods extends ARpcMethods {
         encodedBlockConfirmation: string,
         options?: IngestBlockConfirmationOptions
     ): Promise<boolean> {
-        return await this.service.sm.blockQueueManager.ingestBlockConfirmation(
-            Codec.decode(encodedBlockConfirmation, Type.BlockConfirmation),
-            options
+        const queue = this.service.sm.blockQueueManager;
+        return await this.service.stub.controlIngestContext.run(true, () =>
+            queue.ingestBlockConfirmation(
+                Codec.decode(encodedBlockConfirmation, Type.BlockConfirmation),
+                options
+            )
         );
     }
 

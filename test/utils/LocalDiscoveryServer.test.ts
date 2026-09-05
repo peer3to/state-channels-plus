@@ -177,4 +177,58 @@ describe("LocalDiscoveryServer topic lifecycle", function () {
             ])
         );
     });
+    it("repeated and concurrent joins share one listener and a pending join can be left", async function () {
+        const h = TestSession.getHarness();
+        await h.setup(2, { autoConnect: false });
+        const topic = ethers.id("local-discovery-shared-join");
+        const peer = h.getPeer(0);
+        await h.execOnHost(
+            peer,
+            async (sm, args) => {
+                await sm.setChannelId(args.topic);
+                await Promise.all([
+                    sm.p2pManager.joinDiscoveryKey(args.topic),
+                    sm.p2pManager.joinDiscoveryKey(args.topic)
+                ]);
+                await sm.p2pManager.joinDiscoveryKey(args.topic);
+                return true;
+            },
+            { topic }
+        );
+        expect(
+            await h
+                .control(peer)
+                .stub.getLocalDiscoveryListenerCount()
+                .request()
+        ).to.equal(1);
+        await h.control(peer).network.leaveSelectedKey(topic).request();
+        expect(
+            await h
+                .control(peer)
+                .stub.getLocalDiscoveryListenerCount()
+                .request()
+        ).to.equal(0);
+        await h
+            .control(peer)
+            .stub.joinAndLeavePendingLocalDiscovery(topic)
+            .request();
+        expect(
+            await h
+                .control(peer)
+                .stub.getLocalDiscoveryListenerCount()
+                .request()
+        ).to.equal(0);
+        await Promise.all(
+            h.peers.map((p) =>
+                h.control(p).network.joinSelectedKey(topic).request()
+            )
+        );
+        await h.network.waitForP2PConnections();
+        expect(
+            await h
+                .control(peer)
+                .stub.getLocalDiscoveryListenerCount()
+                .request()
+        ).to.equal(h.getConfig().RUN_SDK_IN_THREAD ? 1 : 2);
+    });
 });

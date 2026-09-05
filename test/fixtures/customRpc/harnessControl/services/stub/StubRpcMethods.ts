@@ -2,7 +2,7 @@
 import ARpcMethods from "@/rpc/ARpcMethods";
 import type P2PManager from "@/P2PManager";
 import type ATransport from "@/transport/ATransport";
-import { Codec, sleep, Type } from "@/utils";
+import { Codec, DetachedPromises, sleep, Type } from "@/utils";
 import { HandshakeCompletedGuard } from "@/rpc/guards";
 import type { Status } from "@/types";
 import type { Address } from "@/types/types";
@@ -11,11 +11,10 @@ import type { SyncRequest } from "@/rpc/services/spectate/SpectateService";
 import type IsForkDisputedRpcMethods from "@/rpc/services/isForkDisputedService/IsForkDisputedRpcMethods";
 import InitHandshakeRpcMethods from "@/rpc/services/initHandshake/InitHandshakeRpcMethods";
 import type JoinChannelRpcMethods from "@/rpc/services/joinChannel/JoinChannelRpcMethods";
-import type { StateSnapshot } from "@/models";
-import type { MessageBlockStruct } from "@typechain-types/contracts/V1/types/DataTypes";
 import { encodedCustomErrorRevert } from "@test/factory";
 import type { ForkId, Hash, Timestamp } from "@/types/types";
 import type { HarnessControlRpc } from "../../HarnessControlRpc";
+import { REDUCTION_ATTEMPT_STUB_FAILURE } from "./StubService";
 import type {
     DisputeSubmissionFailureSpec,
     PausedConstructDisputeState,
@@ -38,9 +37,13 @@ import type {
     IsDisputedForkProbe,
     HeldLobbyReplyKind,
     HeldNegotiationReplyKind,
-    HeldMembershipReceiptKind
+    HeldMembershipReceiptKind,
+    ReductionApplicationControl,
+    ReductionAttemptHoldPoint,
+    ReductionAttemptResume,
+    DetachedCallOutcome
 } from "./StubService";
-import type { StubService } from "./StubService";
+import type { BlockWorkHoldPoint, StubService } from "./StubService";
 import { protocolEventTimeoutMs } from "@test/harness/core/testTimeConfig";
 
 /**
@@ -58,6 +61,29 @@ export class StubRpcMethods extends ARpcMethods<P2PManager<HarnessControlRpc>> {
         private readonly service: StubService
     ) {
         super(transport, service.p2pManager);
+    }
+
+    public holdBlockWork(point: BlockWorkHoldPoint): boolean {
+        if (!["authoring", "commit", "signature"].includes(point))
+            throw new Error("Invalid block-work hold point");
+        this.service.installBlockWorkHold(point);
+        return true;
+    }
+
+    public getBlockWorkHoldEntered(): number {
+        return this.service.blockWorkEntered;
+    }
+
+    public releaseBlockWorkHold(): boolean {
+        this.service.releaseBlockWorkHold();
+        return true;
+    }
+
+    public getStateMutexWaiterCount(): number {
+        const queue = Reflect.get(this.service.sm.mutex, "queue");
+        if (!Array.isArray(queue))
+            throw new Error("Expected a mutex waiter queue");
+        return queue.length;
     }
 
     /** Suppress all outbound block-confirmation broadcasts from this peer. */
@@ -250,6 +276,80 @@ export class StubRpcMethods extends ARpcMethods<P2PManager<HarnessControlRpc>> {
         queue.ingestBlockConfirmation =
             original as typeof queue.ingestBlockConfirmation;
         this.service.stubOriginals.delete("ingestConfirmations");
+        return true;
+    }
+
+    /**
+     * Drop every block confirmation the network delivers to this peer while
+     * the harness control port still ingests. The peer stays blind to gossip
+     * with every transport live, so a sync probe toward a source can run.
+     */
+    public stubDropNetworkConfirmations(): boolean {
+        const queue = this.service.sm.blockQueueManager;
+        if (this.service.stubOriginals.has("networkConfirmations")) return true;
+        const original = queue.ingestBlockConfirmation;
+        this.service.stubOriginals.set("networkConfirmations", original);
+        const context = this.service.controlIngestContext;
+        queue.ingestBlockConfirmation = async (blockConfirmation, options) =>
+            context.getStore()
+                ? await Reflect.apply(original, queue, [
+                      blockConfirmation,
+                      options
+                  ])
+                : true;
+        return true;
+    }
+
+    /**
+     * Hold this peer's own sync at its application step, so the sync stays
+     * in flight toward its responder after the response arrived.
+     */
+    public stubHoldSpectateSyncApplication(): boolean {
+        this.restoreHoldSpectateSyncApplication();
+        const spectate = this.p2pManager.localRpc.spectateService;
+        const original = spectate.applySyncResponse;
+        this.service.stubOriginals.set("spectateSyncApplication", original);
+        const gate = this.service.createGate();
+        this.service.spectateSyncApplicationGate = gate;
+        Reflect.set(
+            spectate,
+            "applySyncResponse",
+            async (...parameters: unknown[]) => {
+                gate.entered += 1;
+                await gate.gate;
+                return Reflect.apply(original, spectate, parameters);
+            }
+        );
+        return true;
+    }
+
+    public getHeldSpectateSyncApplicationCount(): number {
+        return this.service.spectateSyncApplicationGate?.entered ?? 0;
+    }
+
+    public restoreHoldSpectateSyncApplication(): boolean {
+        const original = this.service.stubOriginals.get(
+            "spectateSyncApplication"
+        );
+        this.service.spectateSyncApplicationGate?.release();
+        this.service.spectateSyncApplicationGate = undefined;
+        if (original === undefined) return false;
+        Reflect.set(
+            this.p2pManager.localRpc.spectateService,
+            "applySyncResponse",
+            original
+        );
+        this.service.stubOriginals.delete("spectateSyncApplication");
+        return true;
+    }
+
+    public restoreDropNetworkConfirmations(): boolean {
+        const original = this.service.stubOriginals.get("networkConfirmations");
+        if (original === undefined) return false;
+        const queue = this.service.sm.blockQueueManager;
+        queue.ingestBlockConfirmation =
+            original as typeof queue.ingestBlockConfirmation;
+        this.service.stubOriginals.delete("networkConfirmations");
         return true;
     }
 
@@ -872,38 +972,448 @@ export class StubRpcMethods extends ARpcMethods<P2PManager<HarnessControlRpc>> {
     // handler — the latter reduces on the spot once the challenge period has
     // expired), then release/replay once the race is staged.
 
-    /** Capture `reduction-*` timer tasks instead of scheduling them. */
-    public stubHoldReductionTasks(): boolean {
+    /**
+     * Capture timer tasks whose name starts with `prefix` instead of
+     * scheduling them. Holds for different prefixes chain; each is released
+     * by its own restore call.
+     */
+    public stubHoldScheduledTasks(prefix: string): boolean {
         const timeoutManager = this.service.sm.timeoutManager;
-        if (!this.service.stubOriginals.has("reductionTasks")) {
-            this.service.stubOriginals.set(
-                "reductionTasks",
-                timeoutManager.scheduleTask.bind(timeoutManager)
-            );
-        }
-        const original = this.service.stubOriginals.get(
-            "reductionTasks"
-        ) as typeof timeoutManager.scheduleTask;
+        if (this.service.heldScheduledTasks.has(prefix)) return false;
+        this.service.heldScheduledTasks.set(prefix, []);
+        if (this.service.heldScheduledTaskBase) return true;
+        // One dispatcher for every active prefix: a task is held by the first
+        // prefix it matches, everything else reaches the real scheduler.
+        const base = timeoutManager.scheduleTask.bind(timeoutManager);
+        this.service.heldScheduledTaskBase = base;
         timeoutManager.scheduleTask = (task, delayMs, taskName = "unnamed") => {
-            if (taskName.startsWith("reduction-")) {
-                this.service.heldReductionTasks.push({ taskName, task });
-                return {} as ReturnType<typeof setTimeout>;
+            for (const [held, tasks] of this.service.heldScheduledTasks) {
+                if (taskName.startsWith(held)) {
+                    tasks.push({ taskName, task });
+                    return {} as ReturnType<typeof setTimeout>;
+                }
             }
-            return original(task, delayMs, taskName);
+            return base(task, delayMs, taskName);
         };
         return true;
     }
 
+    /** Held task count for `prefix` so far. */
+    public getHeldScheduledTaskCount(prefix: string): number {
+        return this.service.heldScheduledTasks.get(prefix)?.length ?? 0;
+    }
+
+    /**
+     * Restore scheduling for `prefix`; optionally run the held tasks
+     * (fire-and-forget).
+     */
+    public restoreHeldScheduledTasks(
+        prefix: string,
+        runHeld: boolean
+    ): boolean {
+        const timeoutManager = this.service.sm.timeoutManager;
+        const held = this.service.heldScheduledTasks.get(prefix);
+        if (held === undefined) return false;
+        this.service.heldScheduledTasks.delete(prefix);
+        if (
+            this.service.heldScheduledTasks.size === 0 &&
+            this.service.heldScheduledTaskBase
+        ) {
+            timeoutManager.scheduleTask = this.service.heldScheduledTaskBase;
+            this.service.heldScheduledTaskBase = undefined;
+        }
+        if (runHeld) for (const { task } of held) void task();
+        return true;
+    }
+
+    /** Capture `reduction-*` timer tasks instead of scheduling them. */
+    public stubHoldReductionTasks(): boolean {
+        return this.stubHoldScheduledTasks("reduction-");
+    }
+
     /** Restore scheduling; optionally run the held tasks (fire-and-forget). */
     public restoreReductionTasks(runHeld: boolean): boolean {
-        const timeoutManager = this.service.sm.timeoutManager;
-        const original = this.service.stubOriginals.get("reductionTasks");
-        if (original === undefined) return false;
-        timeoutManager.scheduleTask =
-            original as typeof timeoutManager.scheduleTask;
-        this.service.stubOriginals.delete("reductionTasks");
-        const held = this.service.heldReductionTasks.splice(0);
-        if (runHeld) for (const { task } of held) void task();
+        return this.restoreHeldScheduledTasks("reduction-", runHeld);
+    }
+
+    // Reduction genesis application control: pause or fail one VM call made by
+    // the real reduction-specific application. The wrapped application raises
+    // an "active" flag for its duration so the general application path stays
+    // untouched; every other collaborator is real.
+
+    public holdReductionGenesisApplication(
+        control: ReductionApplicationControl
+    ): boolean {
+        // The control arrives as JSON over the RPC port; the discriminants
+        // are checked here, before any wrapper is restored or installed.
+        const keys =
+            typeof control === "object" && control !== null
+                ? Object.keys(control).sort()
+                : [];
+        const validAt =
+            control?.outcome === "hold"
+                ? ["setState", "getParticipants", "getNextToWrite"]
+                : control?.outcome === "reject"
+                  ? ["getParticipants", "getNextToWrite"]
+                  : [];
+        if (keys.join(",") !== "at,outcome" || !validAt.includes(control.at)) {
+            throw new Error(
+                `Invalid reduction application control: ${JSON.stringify(control)}`
+            );
+        }
+        this.service.restoreReductionApplication();
+        const sm = this.service.sm;
+        const application = sm.stateApplicationService;
+        const diamond = sm.diamondStateMachine;
+        const gate = this.service.createGate();
+        this.service.reductionApplicationGate = gate;
+        this.service.reductionApplicationControl = control;
+        this.service.reductionApplicationEntered = 0;
+
+        const originalApplication =
+            application.unsafeApplyReductionGenesis.bind(application);
+        this.service.stubOriginals.set(
+            "reductionApplication",
+            originalApplication
+        );
+        const context = this.service.reductionApplicationContext;
+        application.unsafeApplyReductionGenesis = (...parameters) =>
+            context.run(true, () => originalApplication(...parameters));
+
+        const intercept = async (at: ReductionApplicationControl["at"]) => {
+            const active = this.service.reductionApplicationControl;
+            if (!context.getStore() || !active || active.at !== at) {
+                return;
+            }
+            gate.entered += 1;
+            this.service.reductionApplicationEntered += 1;
+            if (active.outcome === "reject") {
+                // One-shot: the next call of the same read runs for real.
+                this.service.reductionApplicationControl = undefined;
+                throw new Error("Stubbed reduction genesis read failure");
+            }
+            await gate.gate;
+        };
+
+        const originalSetState = diamond.setState.bind(diamond);
+        this.service.stubOriginals.set(
+            "reductionApplicationSetState",
+            originalSetState
+        );
+        diamond.setState = async (...parameters) => {
+            const result = await originalSetState(...parameters);
+            await intercept("setState");
+            return result;
+        };
+        const originalGetParticipants = diamond.getParticipants.bind(diamond);
+        this.service.stubOriginals.set(
+            "reductionApplicationGetParticipants",
+            originalGetParticipants
+        );
+        diamond.getParticipants = async () => {
+            await intercept("getParticipants");
+            return originalGetParticipants();
+        };
+        const originalGetNextToWrite = diamond.getNextToWrite.bind(diamond);
+        this.service.stubOriginals.set(
+            "reductionApplicationGetNextToWrite",
+            originalGetNextToWrite
+        );
+        diamond.getNextToWrite = async () => {
+            await intercept("getNextToWrite");
+            return originalGetNextToWrite();
+        };
+        return true;
+    }
+
+    public getHeldReductionGenesisApplicationCount(): number {
+        return this.service.reductionApplicationEntered;
+    }
+
+    /** Whether the reduction application wrappers are currently installed. */
+    public isReductionGenesisApplicationHeld(): boolean {
+        return this.service.stubOriginals.has("reductionApplication");
+    }
+
+    public restoreReductionGenesisApplication(): boolean {
+        this.service.restoreReductionApplication();
+        return true;
+    }
+
+    /**
+     * Pause one reduction attempt after its completion exists: at the
+     * executor attempt (before any executor work) or at candidate computation
+     * (before the terminal outbound block is persisted).
+     */
+    public holdReductionAttempt(
+        at: ReductionAttemptHoldPoint,
+        resumeWith: ReductionAttemptResume = "original"
+    ): boolean {
+        this.service.restoreReductionAttempt();
+        const manager = this.service.sm.reductionManager;
+        const executor = manager["reductionExecutor"];
+        const observed = executor.tryReduce;
+        this.service.stubOriginals.set("reductionObservedAttempt", observed);
+        executor.tryReduce = async (...args) => {
+            this.service.reductionAttemptsInFlight += 1;
+            try {
+                return await observed.apply(executor, args);
+            } finally {
+                this.service.reductionAttemptsInFlight -= 1;
+            }
+        };
+        const gate = this.service.createGate();
+        this.service.reductionAttemptGate = gate;
+        const resume = async <T>(original: () => Promise<T>) => {
+            gate.entered += 1;
+            await gate.gate;
+            if (resumeWith === "throw") {
+                throw new Error(REDUCTION_ATTEMPT_STUB_FAILURE);
+            }
+            if (resumeWith === "undefined") return undefined as T;
+            return original();
+        };
+        if (at === "admission") {
+            const contract = this.service.sm.stateChannelManagerContract;
+            const original = contract.isForkDisputed;
+            this.service.stubOriginals.set("reductionAdmission", original);
+            Reflect.set(
+                contract,
+                "isForkDisputed",
+                async (...args: unknown[]) => {
+                    const result = await Reflect.apply(
+                        original,
+                        contract,
+                        args
+                    );
+                    // One pending caller is enough; sync verification retains real reads.
+                    Reflect.set(contract, "isForkDisputed", original);
+                    gate.entered += 1;
+                    await gate.gate;
+                    return result;
+                }
+            );
+            return true;
+        }
+        if (at === "attempt") {
+            const original = executor.tryReduce.bind(executor);
+            this.service.stubOriginals.set("reductionAttempt", original);
+            executor.tryReduce = (forkId) => resume(() => original(forkId));
+            return true;
+        }
+        if (at === "disputes") {
+            const original = executor.getSyncedForkDisputes.bind(executor);
+            this.service.stubOriginals.set("reductionDisputes", original);
+            executor.getSyncedForkDisputes = (forkId) =>
+                resume(() => original(forkId));
+            return true;
+        }
+        if (at === "submit") {
+            const contract = this.service.sm.stateChannelManagerContract;
+            const gasLimit = contract.getGasLimit;
+            const multicall = contract.multicall;
+            this.service.stubOriginals.set("reductionSubmitGasLimit", gasLimit);
+            this.service.stubOriginals.set(
+                "reductionSubmitMulticall",
+                multicall
+            );
+            this.service.reductionSubmitCalls = 0;
+            Reflect.set(contract, "getGasLimit", (...parameters: unknown[]) =>
+                resume(() => Reflect.apply(gasLimit, contract, parameters))
+            );
+            // Count the chain write while keeping the method's static-call
+            // and estimation faces for the simulation that precedes it.
+            const counted = (...parameters: unknown[]) => {
+                this.service.reductionSubmitCalls += 1;
+                return Reflect.apply(multicall, contract, parameters);
+            };
+            for (const key of Object.getOwnPropertyNames(multicall)) {
+                if (key in counted) continue;
+                Object.defineProperty(
+                    counted,
+                    key,
+                    Object.getOwnPropertyDescriptor(multicall, key)!
+                );
+            }
+            Reflect.set(contract, "multicall", counted);
+            return true;
+        }
+        const computation = manager["reductionComputationService"];
+        const original = computation.compute.bind(computation);
+        this.service.stubOriginals.set("reductionCompute", original);
+        computation.compute = (...parameters) =>
+            resume(() => original(...parameters));
+        return true;
+    }
+
+    /** Make this host deny its writer turn until restored (harness helper staging). */
+    public stubDenyTurn(): boolean {
+        this.restoreDenyTurn();
+        const production = this.service.sm.blockProductionService;
+        const original = production["isMyTurn"].bind(production);
+        this.service.stubOriginals.set("denyTurn", original);
+        production["isMyTurn"] = async () => false;
+        return true;
+    }
+
+    public restoreDenyTurn(): boolean {
+        const production = this.service.sm.blockProductionService;
+        const original = this.service.stubOriginals.get("denyTurn");
+        if (original) {
+            production["isMyTurn"] =
+                original as (typeof production)["isMyTurn"];
+            this.service.stubOriginals.delete("denyTurn");
+        }
+        return true;
+    }
+
+    public stubRecordForkLeave(forkId: ForkId): boolean {
+        this.service.recordForkLeave(forkId);
+        return true;
+    }
+
+    public getForkLeaveObservation(): {
+        scheduled: number;
+        cancelled: number;
+        settledStateObserved: number;
+    } {
+        return { ...this.service.forkLeaveObservation };
+    }
+
+    public restoreForkLeave(): boolean {
+        this.service.restoreForkLeave();
+        return true;
+    }
+
+    public getCollectedDetachedPromiseCount(): number {
+        return DetachedPromises.size();
+    }
+
+    public getReductionAttemptsInFlight(): number {
+        return this.service.reductionAttemptsInFlight;
+    }
+
+    public getHeldReductionAttemptCount(): number {
+        return this.service.reductionAttemptGate?.entered ?? 0;
+    }
+
+    /** Chain writes attempted by a reduction submission since the submit hold was installed. */
+    public getReductionSubmitCallCount(): number {
+        return this.service.reductionSubmitCalls;
+    }
+
+    public restoreReductionAttempt(): boolean {
+        this.service.restoreReductionAttempt();
+        return true;
+    }
+
+    /** Start a real reduction attempt host-side and keep its outcome. */
+    public startTryReduce(forkId: ForkId): boolean {
+        const outcome: DetachedCallOutcome = {
+            settled: false,
+            result: null,
+            rejected: null
+        };
+        this.service.tryReduceOutcome = outcome;
+        void this.service.sm.reductionManager.tryReduce(forkId).then(
+            (reduction) => {
+                outcome.settled = true;
+                outcome.result = reduction
+                    ? String(reduction.reducedForkId)
+                    : null;
+            },
+            (error) => {
+                outcome.settled = true;
+                outcome.rejected =
+                    error instanceof Error ? error.message : String(error);
+            }
+        );
+        return true;
+    }
+
+    public getTryReduceOutcome(): DetachedCallOutcome | null {
+        const outcome = this.service.tryReduceOutcome;
+        return outcome ? { ...outcome } : null;
+    }
+
+    /** Hold the state-manager mutex until released. */
+    public holdStateMutex(): boolean {
+        this.service.releaseStateMutex();
+        const gate = this.service.createGate();
+        this.service.stateMutexGate = gate;
+        void this.service.sm.withMutex(
+            async () => {
+                gate.entered += 1;
+                await gate.gate;
+            },
+            { taskName: "stub.holdStateMutex" }
+        );
+        return true;
+    }
+
+    public getStateMutexHeldCount(): number {
+        return this.service.stateMutexGate?.entered ?? 0;
+    }
+
+    public releaseStateMutex(): boolean {
+        this.service.releaseStateMutex();
+        return true;
+    }
+
+    /**
+     * Start a direct `completeWithGenesis` for the current fork host-side,
+     * using the fork's own genesis snapshot and state as the reduced genesis,
+     * and keep its outcome.
+     */
+    public startCompleteWithGenesis(reducedForkId: ForkId): boolean {
+        const sm = this.service.sm;
+        const genesisSnapshot =
+            sm.storage.stateSnapshots.getGenesisSnapshotByForkId(sm.forkId);
+        if (!genesisSnapshot) {
+            throw new Error("No genesis snapshot for the current fork");
+        }
+        const snapshot = genesisSnapshot.toStruct();
+        const encodedState = sm.storage.stateMachineStates.getStateMachineState(
+            snapshot.snapshotData.stateMachineStateHash as Hash
+        );
+        if (!encodedState) {
+            throw new Error("No state machine state for the current fork");
+        }
+        const outcome: DetachedCallOutcome = {
+            settled: false,
+            result: null,
+            rejected: null
+        };
+        this.service.completeWithGenesisOutcome = outcome;
+        void sm.reductionManager
+            .completeWithGenesis(sm.forkId, reducedForkId, {
+                snapshotData: snapshot.snapshotData,
+                encodedState,
+                genesisTimestamp: Number(snapshot.timestamp)
+            })
+            .then(
+                (installed) => {
+                    outcome.settled = true;
+                    outcome.result = String(installed);
+                },
+                (error) => {
+                    outcome.settled = true;
+                    outcome.rejected =
+                        error instanceof Error ? error.message : String(error);
+                }
+            );
+        return true;
+    }
+
+    public getCompleteWithGenesisOutcome(): DetachedCallOutcome | null {
+        const outcome = this.service.completeWithGenesisOutcome;
+        return outcome ? { ...outcome } : null;
+    }
+
+    /** Abort the runtime on the next tick so this request still answers. */
+    public abortDetached(): boolean {
+        const sm = this.service.sm;
+        setTimeout(() => sm.abort(), 0);
         return true;
     }
 
@@ -939,6 +1449,59 @@ export class StubRpcMethods extends ARpcMethods<P2PManager<HarnessControlRpc>> {
     }
 
     /** Park the dispute audit at its on-chain-slashes query until released. */
+    /** Park every auditing-data rebuild until restored. */
+    public stubHoldAuditingDataRebuild(): boolean {
+        this.service.installAuditingDataRebuildHold();
+        return true;
+    }
+
+    /** Release parked rebuilds and restore the real method. */
+    public restoreAuditingDataRebuild(): boolean {
+        return this.service.releaseAuditingDataRebuildHold();
+    }
+
+    /** Resolves once a rebuild is parked at the hold; parked count. */
+    public waitForHeldAuditingDataRebuild(): Promise<number> {
+        return this.service.waitForHeldAuditingDataRebuild();
+    }
+
+    public async joinAndLeavePendingLocalDiscovery(
+        topic: string
+    ): Promise<boolean> {
+        await this.service.joinAndLeavePendingLocalDiscovery(topic);
+        return true;
+    }
+
+    public getLocalDiscoveryListenerCount(): number {
+        return this.service.getLocalDiscoveryListenerCount();
+    }
+
+    /** Broadcast a real calldata post with an expired deadline; its receipt reverts. */
+    public stubExpireCalldataPost(): boolean {
+        this.service.expireCalldataPost();
+        return true;
+    }
+
+    public restoreCalldataPost(): boolean {
+        return this.service.restoreCalldataPost();
+    }
+
+    /** Park this peer's snapshot post at its contract send until restored. */
+    public stubHoldSnapshotPostSend(): boolean {
+        this.service.installSnapshotPostSendHold();
+        return true;
+    }
+
+    /** Release the parked send and restore the real contract method. */
+    public restoreSnapshotPostSend(): boolean {
+        return this.service.releaseSnapshotPostSendHold();
+    }
+
+    /** Resolves once a post is parked at its send; parked count. */
+    public waitForHeldSnapshotPostSend(): Promise<number> {
+        return this.service.waitForHeldSnapshotPostSend();
+    }
+
     public stubHoldOnChainSlashesQuery(): boolean {
         this.service.installOnChainSlashesQueryHold();
         return true;
@@ -955,11 +1518,11 @@ export class StubRpcMethods extends ARpcMethods<P2PManager<HarnessControlRpc>> {
     }
 
     public getHeldReductionTaskCount(): number {
-        return this.service.heldReductionTasks.length;
+        return this.getHeldScheduledTaskCount("reduction-");
     }
 
     public dropHeldReductionTasks(): boolean {
-        this.service.heldReductionTasks.splice(0);
+        this.service.heldScheduledTasks.get("reduction-")?.splice(0);
         return true;
     }
 
@@ -1180,9 +1743,14 @@ export class StubRpcMethods extends ARpcMethods<P2PManager<HarnessControlRpc>> {
      */
     public stubRecordDisputeSubmissions(
         holdSubmissions: boolean,
-        failure?: DisputeSubmissionFailureSpec
+        failure?: DisputeSubmissionFailureSpec,
+        forward = false
     ): boolean {
-        this.service.installDisputeSubmissionRecorder(holdSubmissions, failure);
+        this.service.installDisputeSubmissionRecorder(
+            holdSubmissions,
+            failure,
+            forward
+        );
         return true;
     }
 
@@ -1477,24 +2045,43 @@ export class StubRpcMethods extends ARpcMethods<P2PManager<HarnessControlRpc>> {
     }
 
     /**
-     * Drop subscribed inbound logs before the scheduler records their key.
+     * Drop selected subscribed logs before the scheduler records their key.
      * Unlike `stubHoldInboundMessageEvents`, which replaces the handler, this
      * only loses the delivery - an explicit query of the same log still reaches
      * the real scheduler, so recovery can heal it. `dropCount` caps how many
      * distinct keys are lost (default: all).
      */
-    public stubDropInboundMessageLogs(dropCount?: number): boolean {
+    public stubDropEventLogs(
+        eventNames: (
+            | "InboundMessagesProcessed"
+            | "ChainSlashed"
+            | "DisputeKilled"
+        )[],
+        dropCount?: number
+    ): boolean {
+        if (
+            !Array.isArray(eventNames) ||
+            eventNames.some(
+                (name) =>
+                    ![
+                        "InboundMessagesProcessed",
+                        "ChainSlashed",
+                        "DisputeKilled"
+                    ].includes(name)
+            )
+        )
+            throw new Error("Invalid event log drop selection");
         const eventSyncService = this.service.sm.eventSyncService;
         // an omitted arg crosses the port as null -> normalize to "no limit"
-        this.service.inboundMessageLogDropLimit = dropCount ?? undefined;
-        if (!this.service.stubOriginals.has("inboundMessageLogs")) {
+        this.service.eventLogDropLimit = dropCount ?? undefined;
+        if (!this.service.stubOriginals.has("eventLogs")) {
             this.service.stubOriginals.set(
-                "inboundMessageLogs",
+                "eventLogs",
                 eventSyncService.scheduleLog.bind(eventSyncService)
             );
         }
         const original = this.service.stubOriginals.get(
-            "inboundMessageLogs"
+            "eventLogs"
         ) as typeof eventSyncService.scheduleLog;
         eventSyncService.scheduleLog = async (...args) => {
             const parsed =
@@ -1502,10 +2089,10 @@ export class StubRpcMethods extends ARpcMethods<P2PManager<HarnessControlRpc>> {
                     topics: args[0].topics,
                     data: args[0].data
                 });
-            if (parsed?.name === "InboundMessagesProcessed") {
+            if (parsed && eventNames.some((name) => name === parsed.name)) {
                 const eventKey = `${args[0].transactionHash}:${args[0].index}`;
-                const limit = this.service.inboundMessageLogDropLimit;
-                const dropped = this.service.droppedInboundMessageLogKeys;
+                const limit = this.service.eventLogDropLimit;
+                const dropped = this.service.droppedEventLogKeys;
                 if (
                     !dropped.has(eventKey) &&
                     (limit === undefined || dropped.size < limit)
@@ -1520,20 +2107,29 @@ export class StubRpcMethods extends ARpcMethods<P2PManager<HarnessControlRpc>> {
     }
 
     /** Restore scheduling. Dropped subscription payloads are recovered by query. */
-    public restoreInboundMessageLogs(): boolean {
+    public restoreEventLogs(): boolean {
         const eventSyncService = this.service.sm.eventSyncService;
-        const original = this.service.stubOriginals.get("inboundMessageLogs");
+        const original = this.service.stubOriginals.get("eventLogs");
         if (original === undefined) return false;
         eventSyncService.scheduleLog =
             original as typeof eventSyncService.scheduleLog;
-        this.service.stubOriginals.delete("inboundMessageLogs");
-        this.service.droppedInboundMessageLogKeys.clear();
-        this.service.inboundMessageLogDropLimit = undefined;
+        this.service.stubOriginals.delete("eventLogs");
+        this.service.droppedEventLogKeys.clear();
+        this.service.eventLogDropLimit = undefined;
         return true;
     }
 
-    public getDroppedInboundMessageLogCount(): number {
-        return this.service.droppedInboundMessageLogKeys.size;
+    public getDroppedEventLogCount(): number {
+        return this.service.droppedEventLogKeys.size;
+    }
+
+    public stubFailOnChainSlashesRead(): boolean {
+        this.service.failOnChainSlashesRead();
+        return true;
+    }
+
+    public restoreOnChainSlashesRead(): boolean {
+        return this.service.restoreOnChainSlashesRead();
     }
 
     /** Make every provider getLogs throw, so no recovery query can succeed. */
@@ -2018,8 +2614,8 @@ export class StubRpcMethods extends ARpcMethods<P2PManager<HarnessControlRpc>> {
         return true;
     }
 
-    public holdSpectateResponses(): boolean {
-        this.service.holdSpectateResponses();
+    public holdSpectateResponses(fail = false): boolean {
+        this.service.holdSpectateResponses(fail);
         return true;
     }
 

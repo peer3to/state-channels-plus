@@ -119,6 +119,19 @@ export class EventHandler {
         await this.processStateSnapshotUpdated(channelId, stateSnapshot);
     }
 
+    /** Whether the chain's pending set (unconsumed JOINs) lists this signer. */
+    private async isSignerPendingOnChain(
+        channelId: ChannelId
+    ): Promise<boolean> {
+        const pendingParticipants =
+            (await this.stateManager.stateChannelManagerContract.getPendingParticipants(
+                channelId
+            )) as Address[];
+        return pendingParticipants.some((participant) =>
+            addressesEqual(participant, this.stateManager.signerAddress)
+        );
+    }
+
     private async processStateSnapshotUpdated(
         channelId: ChannelId,
         stateSnapshot: StateSnapshotStruct
@@ -237,14 +250,7 @@ export class EventHandler {
                 addressesEqual(p, signerAddress)
             );
             if (!snapshotHasSigner && !inLocal) {
-                const pendingParticipants =
-                    (await this.stateManager.stateChannelManagerContract.getPendingParticipants(
-                        channelId
-                    )) as Address[];
-                const inPending = pendingParticipants.some((p) =>
-                    addressesEqual(p, signerAddress)
-                );
-                if (!inPending) {
+                if (!(await this.isSignerPendingOnChain(channelId))) {
                     this.logger.info(
                         "onStateSnapshotUpdated - signer left channel, transitioning PARTICIPATING → SYNCED",
                         { channelId }
@@ -633,7 +639,13 @@ export class EventHandler {
             this.logger.info(
                 `More evidence can be constructed for dispute ${formattedHash}, disputing...`
             );
-            return this.stateManager.disputeManager.dispute(forkId);
+            // Do not return after this call. `dispute` is a no-op when this
+            // node already committed in the current window, so there may be
+            // no later DisputeCommitted event to schedule reduction. Fall
+            // through and schedule from the commitment handled here. If this
+            // call uploads a fresh commitment, its event can reschedule the
+            // reduction with the later window end.
+            await this.stateManager.disputeManager.dispute(forkId);
         }
 
         this.stateManager.reductionManager.schedule(

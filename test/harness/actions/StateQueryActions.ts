@@ -1,9 +1,11 @@
+// @spec-test-coverage-ignore: shared harness peer-state query actions exercised by the mapped test declarations that call them
 import { PeerTestHarness } from "@test/fixtures/PeerTestHarness";
 import type { HarnessControlRpc } from "@test/fixtures/customRpc/harnessControl/HarnessControlRpc";
 import type { TestPeer } from "@test/harness/core/types";
 import { Codec, Logger, Type } from "@/utils";
 import { ForkId, Hash } from "@/types/types";
 import { StateSnapshot } from "@/models";
+import type { DisputeStruct } from "@typechain-types/contracts/V1/types/DisputeTypes";
 
 /**
  * StateQueryActions handles all read-only state queries.
@@ -140,6 +142,18 @@ export class StateQueryActions<
             .control(peer)
             .query.getOpenConnectionCount()
             .request();
+    }
+
+    /** The dispute a peer stored under `disputeHash`, decoded, or null. */
+    async getDispute(
+        peerIndex: number,
+        disputeHash: Hash
+    ): Promise<DisputeStruct | null> {
+        const encoded = await this.harness
+            .control(this.harness.getPeer(peerIndex))
+            .query.getDispute(disputeHash)
+            .request();
+        return encoded ? Codec.decode(encoded, Type.Dispute) : null;
     }
 
     async getDisputeHashes(options?: {

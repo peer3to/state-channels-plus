@@ -27,6 +27,7 @@ The main-thread client: the application-facing typed surface sending requests to
 2. **Manager addresses use `connectStateChannelManager`.** The client merges the SDK ABI first and
    the serialized consumer ABI second. SDK definitions win collisions, while consumer-only calls,
    events, and errors remain available.
+3. **Errors are rebuilt by the shared codec.** `deserializeError` from `errorWire` restores revert data, ethers metadata, the peer stamp, and the watchdog's `eventLoopDelay`; the client keeps no codec of its own.
 
 ## Inputs, outputs, state, and side effects
 

@@ -1,6 +1,12 @@
+// @spec-test-coverage-ignore: shared math join setup exercised by owning mapped test declarations
 import { ethers, type Signer } from "ethers";
 
-import { JoinActions } from "@test/harness/actions/JoinActions";
+import {
+    JoinActions,
+    type AddSpectatorAuthoringOptions,
+    type AddSpectatorAuthoringResult
+} from "@test/harness/actions/JoinActions";
+import type { MathPeerTestHarness } from "@test/fixtures/MathPeerTestHarness";
 import type { Hash } from "@/types/types";
 import { addressesEqual, DetachedPromises } from "@/utils";
 import { TestPeer } from "@test/harness/core/types";
@@ -25,8 +31,31 @@ export type PreparedForceInboundJoin = {
 };
 
 export class MathJoinActions extends JoinActions {
+    declare protected harness: MathPeerTestHarness;
     // Test-only wallets retained so later N/N confirmations can include dead pending entries.
     private retainedJoinWallets = new Map<string, Signer>();
+
+    /**
+     * Math default for the bounded spawn: one `add(1)` block per iteration
+     * from the authoring participants.
+     */
+    override async addSpectatorAuthoring(
+        options: AddSpectatorAuthoringOptions & {
+            authorBlock?: () => Promise<void>;
+        }
+    ): Promise<AddSpectatorAuthoringResult> {
+        return super.addSpectatorAuthoring({
+            ...options,
+            authorBlock:
+                options.authorBlock ??
+                (() =>
+                    this.harness.transition.advanceState({
+                        count: 1,
+                        waitForPeers: options.authoringPeerIndices,
+                        waitForFinalization: options.waitForFinalization
+                    }))
+        });
+    }
 
     protected override thresholdSignerForAddress(
         address: string
@@ -178,7 +207,11 @@ export class MathJoinActions extends JoinActions {
                     })
                 ).wait();
             }
-            participantSigner = peer?.signer ?? randomWallet!;
+            // A harness peer's transaction goes through its runtime's chain
+            // signer: the host owns that account's nonce, and a raw-wallet
+            // send from the same account would leave the host's next nonce
+            // stale for the peer's own later sends (an exit post, a dispute).
+            participantSigner = peer?.p2pInstance.chainSigner ?? randomWallet!;
             prepared = await this.buildJoinChannelConfirmation({
                 joiner: { address: participant, signer: participantSigner },
                 channelId: this.harness.channelId,

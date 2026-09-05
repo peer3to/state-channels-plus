@@ -72,6 +72,8 @@ describe("JoinChannel signature requests", function () {
     it("rejects collector identity and deadline failures before requesting signatures", async function () {
         const h = TestSession.getHarness();
         await h.lifecycle.start(2, 1);
+        // Spawn-only, classified (plan 30 item 5): the join-signature flow needs a
+        // synced joiner before any transition; nothing authors while it syncs.
         const joiner = await h.join.addSpectatorWait();
         await h.assert.sync.peersInSyncWait();
 
@@ -122,8 +124,12 @@ describe("JoinChannel signature requests", function () {
         // so nothing blocks an author's window; producing a block up front
         // instead would cap the next block's timestamp at prev + p2pTime and
         // this setup phase would make peer 0 reject it as stale
-        // (|now - blockTs| > agreementTime) and dispute.
-        await h.lifecycle.start(2, 0);
+        // (|now - blockTs| > agreementTime) and dispute. The whole body
+        // therefore runs before the first block, whose window is only
+        // evidenceTime + p2pTime after genesis; on a loaded farm two spawns
+        // and the grace waits outlast the default, so this channel models a
+        // long p2p window and keeps the agreement window the grace uses.
+        await h.lifecycle.start(2, 0, { timeConfig: { p2pTime: 30 } });
         const joiner = await h.join.addSpectatorDetached();
         const nonUnionSigner = await h.join.addSpectatorDetached();
         await h.event.waitUntilPeerStatus(joiner.index, Status.SYNCED);
@@ -517,6 +523,8 @@ describe("JoinChannel signature requests", function () {
     it("rejects erroring, wrong-signer, and deadline-silent threshold members", async function () {
         const h = TestSession.getHarness();
         await h.lifecycle.start(2, 1);
+        // Spawn-only, classified (plan 30 item 5): the join-signature flow needs a
+        // synced joiner before any transition; nothing authors while it syncs.
         const joiner = await h.join.addSpectatorWait();
         await h.assert.sync.peersInSyncWait();
         const responder = h.getPeer(0);

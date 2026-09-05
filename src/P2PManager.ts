@@ -53,7 +53,16 @@ class P2PManager<TCustomRpc extends MainRpcService = MainRpcService>
     >();
     private disposalPromise?: Promise<void>;
     private readonly unsubscribeHandshakeCompleted: () => void;
+    // Settle the initial-sync wait when the runtime leaves OPENED for any
+    // reason other than the sync request itself: chain genesis moves the
+    // status, and an abort keeps OPENED but announces itself through its hook.
+    private readonly unsubscribeStatusChanged: () => void;
+    private readonly unsubscribeAbort: () => void;
     private initialSyncStarted = false;
+    private initialSyncSettled = false;
+    // Remembered so a wait created after settlement (abort before the
+    // discovery join) resolves at once instead of never.
+    private initialSyncOutcome = false;
     private initialSyncPromise?: Promise<boolean>;
     private resolveInitialSync?: (success: boolean) => void;
     // Bounds the wait for the first cooperating participant handshake. An
@@ -96,6 +105,28 @@ class P2PManager<TCustomRpc extends MainRpcService = MainRpcService>
         this.loopbackTransport = new LoopbackTransport(this.self);
         this.holepunch = new Holepunch(this.self);
 
+        this.unsubscribeStatusChanged = this.stateManager.events.on(
+            "p2pEventHooks",
+            "onStatusChanged",
+            (oldStatus, newStatus) => {
+                if (
+                    oldStatus !== Status.OPENED ||
+                    newStatus === Status.OPENED
+                ) {
+                    return;
+                }
+                this.settleInitialSync(
+                    newStatus === Status.SYNCED ||
+                        newStatus === Status.PENDING_PARTICIPANT ||
+                        newStatus === Status.PARTICIPATING
+                );
+            }
+        );
+        this.unsubscribeAbort = this.stateManager.events.on(
+            "p2pEventHooks",
+            "onAbort",
+            () => this.settleInitialSync(false)
+        );
         this.unsubscribeHandshakeCompleted = this.stateManager.events.on(
             "p2pEventHooks",
             "handshakeCompleted",
@@ -112,8 +143,9 @@ class P2PManager<TCustomRpc extends MainRpcService = MainRpcService>
         }
 
         this.unsubscribeHandshakeCompleted();
-        this.cancelInitialSyncDeadline();
-        this.resolveInitialSync?.(false);
+        this.unsubscribeStatusChanged();
+        this.unsubscribeAbort();
+        this.settleInitialSync(false);
         this.disconnectAll();
         this.disposalPromise = this.holepunch.dispose();
         return this.disposalPromise;
@@ -205,14 +237,24 @@ class P2PManager<TCustomRpc extends MainRpcService = MainRpcService>
             undefined,
             stateManager.timeConfig.agreementTime * 2 * 1000
         );
-        if (
-            !success &&
-            !stateManager.isDisposed &&
-            stateManager.status !== Status.PENDING_PARTICIPANT &&
-            stateManager.status !== Status.PARTICIPATING
-        ) {
+        // A result that lands after the chain already supplied the state is
+        // stale: the wait settled through the status hook and a late false
+        // must not abort an already synced runtime.
+        if (this.initialSyncSettled || stateManager.status !== Status.OPENED) {
+            this.settleInitialSync(success);
+            return;
+        }
+        if (!success && !stateManager.isDisposed) {
             stateManager.abort();
         }
+        this.settleInitialSync(success);
+    }
+
+    private settleInitialSync(success: boolean): void {
+        this.cancelInitialSyncDeadline();
+        if (this.initialSyncSettled) return;
+        this.initialSyncSettled = true;
+        this.initialSyncOutcome = success;
         this.resolveInitialSync?.(success);
     }
 
@@ -404,6 +446,16 @@ class P2PManager<TCustomRpc extends MainRpcService = MainRpcService>
         }
 
         if (!initialSync) return;
+        // The status may have left OPENED during the discovery join (chain
+        // genesis, abort). Nothing later would settle the wait, so settle now.
+        if (this.stateManager.isDisposed) {
+            this.settleInitialSync(false);
+            return;
+        }
+        if (this.stateManager.status !== Status.OPENED) {
+            this.settleInitialSync(this.isEngagedStatus());
+            return;
+        }
         for (const transport of [...this.openConnections]) {
             if (transport.peerAddress && !transport.isClosed) {
                 void this.onHandshakeCompleted(transport.peerAddress);
@@ -411,6 +463,15 @@ class P2PManager<TCustomRpc extends MainRpcService = MainRpcService>
         }
         this.armInitialSyncDeadline();
         await initialSync;
+    }
+
+    private isEngagedStatus(): boolean {
+        const status = this.stateManager.status;
+        return (
+            status === Status.SYNCED ||
+            status === Status.PENDING_PARTICIPANT ||
+            status === Status.PARTICIPATING
+        );
     }
 
     /**
@@ -426,18 +487,16 @@ class P2PManager<TCustomRpc extends MainRpcService = MainRpcService>
         this.initialSyncDeadline = stateManager.timeoutManager.scheduleTask(
             () => {
                 this.initialSyncDeadline = undefined;
-                if (
-                    this.initialSyncStarted ||
-                    stateManager.isDisposed ||
-                    stateManager.status !== Status.OPENED
-                ) {
+                if (this.initialSyncStarted || stateManager.isDisposed) return;
+                if (stateManager.status !== Status.OPENED) {
+                    this.settleInitialSync(this.isEngagedStatus());
                     return;
                 }
                 this.logger.warn(
                     "No participant completed a handshake within the initial sync window; aborting"
                 );
                 stateManager.abort();
-                this.resolveInitialSync?.(false);
+                this.settleInitialSync(false);
             },
             stateManager.timeConfig.agreementTime * 2 * 1000,
             "P2PManager - initial sync participant deadline"
@@ -451,6 +510,9 @@ class P2PManager<TCustomRpc extends MainRpcService = MainRpcService>
     }
 
     private getInitialSyncPromise(): Promise<boolean> {
+        if (this.initialSyncSettled) {
+            return Promise.resolve(this.initialSyncOutcome);
+        }
         if (!this.initialSyncPromise) {
             this.initialSyncPromise = new Promise<boolean>((resolve) => {
                 this.resolveInitialSync = resolve;

@@ -25,6 +25,8 @@ decisions.
 
 ## Key design decisions
 
+The race-error union includes `RaceConditionDisputeWindowNotOpen`. Generic ABI decoding dispatches that exact name; DisputeManager owns rollback, slash recovery, and normal re-entry. Other custom errors keep their existing handlers.
+
 `GeneratedArtifacts.errorAbis` is the single reachable-manager error union. It includes the
 `StateProofFacet` and `UtilityFacet` ECDSA errors used by both the decoder and canonical binding.
 

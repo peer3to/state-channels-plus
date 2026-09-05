@@ -5,10 +5,7 @@ import { resolveWorkerResourceLimits } from "../../node/workerResourceLimits";
 import { instrumentWorkerStartup } from "../../node/workerStartupTiming";
 import { createWorkerShutdown } from "../../node/workerShutdown";
 import type { WorkerLike } from "../types";
-import type {
-    WorkerRequestMessage,
-    WorkerResponseMessage
-} from "../worker/protocol";
+import type { WorkerResponseMessage } from "../worker/protocol";
 
 export type ContractExecutorWorkerMessageHandler = (
     message: WorkerResponseMessage
@@ -25,6 +22,20 @@ export function createContractExecutorWorker(
     const workerPath = fs.existsSync(jsWorkerPath)
         ? jsWorkerPath
         : tsWorkerPath;
+    return createContractExecutorWorkerFromPath(workerPath, onMessage, onError);
+}
+
+/**
+ * Spawn a contract-executor worker from an explicit entry path. Production
+ * uses the platform entry above; tests load a scripted entry and pass its
+ * selection through `workerData`.
+ */
+export function createContractExecutorWorkerFromPath(
+    workerPath: string,
+    onMessage: ContractExecutorWorkerMessageHandler,
+    onError: ContractExecutorWorkerErrorHandler,
+    workerData?: unknown
+): WorkerLike {
     // Transpile-only (swc via tsconfig's ts-node.swc): each worker re-loads the
     // import graph, and full ts-node type-checks it (seconds + a retained TS
     // program per worker). Types are already checked by `yarn tsc`.
@@ -39,6 +50,7 @@ export function createContractExecutorWorker(
 
     const worker = new Worker(workerPath, {
         execArgv,
+        workerData,
         resourceLimits: resolveWorkerResourceLimits("vm")
     });
     const shutdownWorker = createWorkerShutdown(worker);
@@ -53,7 +65,9 @@ export function createContractExecutorWorker(
     worker.on("message", onMessage);
     worker.on("error", onError);
     worker.on("exit", (code: number) => {
-        if (!shuttingDown && code !== 0) {
+        // Any exit the executor did not ask for is fatal, code 0 included: a
+        // worker that ends on its own cannot serve the pending requests.
+        if (!shuttingDown) {
             onError(new Error(`Contract executor worker exited with ${code}`));
         }
     });

@@ -6,7 +6,8 @@ import {
     onUnhandledWorkerError,
     closeWorkerBootstrapPort
 } from "@platform/p2pRuntimeWorkerRuntime";
-import { startP2pRuntimeHost, serializeError } from "../P2pRuntimeHost";
+import { startP2pRuntimeHost } from "../P2pRuntimeHost";
+import { serializeError } from "../errorWire";
 
 /**
  * Worker-side runtime bootstrap: rebuild signer/provider context and run the

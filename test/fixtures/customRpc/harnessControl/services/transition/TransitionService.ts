@@ -1,7 +1,9 @@
+// @spec-test-coverage-ignore: transition fixture support exercised by owning mapped tests
 import ARpcService from "@/rpc/ARpcService";
 import type P2PManager from "@/P2PManager";
 import type ATransport from "@/transport/ATransport";
 import TransitionRpcMethods from "./TransitionRpcMethods";
+import type { StubService } from "../stub/StubService";
 
 /**
  * State-transition operations the harness drives on a peer (snapshot posting,
@@ -10,13 +12,17 @@ import TransitionRpcMethods from "./TransitionRpcMethods";
  * runtime.
  */
 export class TransitionService extends ARpcService<TransitionRpcMethods> {
-    constructor(p2pManager: P2PManager) {
+    /** Control-port ingests run inside its context so network-drop stubs let them through. */
+    readonly stub: StubService;
+
+    constructor(p2pManager: P2PManager, stub: StubService) {
         super(
             p2pManager,
             p2pManager.stateManager.logger.child({
                 component: "HarnessTransitionService"
             })
         );
+        this.stub = stub;
     }
 
     get sm() {

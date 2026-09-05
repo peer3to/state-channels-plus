@@ -1,3 +1,4 @@
+import { Status } from "@/types";
 import { DisputeFraudProofType } from "@/types/sol-enums";
 import { Codec, Type, hash, addressesEqual } from "@/utils";
 import { MathTestSession as TestSession } from "@test/harness";
@@ -138,8 +139,12 @@ describe("E2E: dispute validation / stateProof / Case 1 (M1/M2 inbound divergenc
     describe("Case 1.5: auditingData.milestoneSnapshots[1].snapshotData.participants omits pending joiner (M1 colluding on M2)", function () {
         it("Case 1.5 → DisputeInvalidStateProof", async function () {
             const h = TestSession.getHarness();
+            // p2pTime covers a farm turn: the keep-alive below authors for
+            // the leaver's whole exit window, and a stamp is capped at the
+            // previous one plus p2pTime, so a shorter window would leave the
+            // stamps behind the wall clock by the end of it.
             const timeConfig = {
-                p2pTime: 1,
+                p2pTime: 3,
                 agreementTime: 6,
                 chainFallbackTime: 2,
                 evidenceTime: 12
@@ -148,16 +153,28 @@ describe("E2E: dispute validation / stateProof / Case 1 (M1/M2 inbound divergenc
 
             const allPeerIndices = h.peers.map((peer) => peer.index);
             const firstLeaver = await h.query.getNextPeerToWrite();
-            await h.transition.participantLeaveStateTransition({
-                waitForPeers: allPeerIndices.filter(
-                    (peerIndex) => peerIndex !== firstLeaver.index
-                )
-            });
-
-            // Finalize M1 before introducing the inbound join that M2 must carry.
             const afterFirstLeave = allPeerIndices.filter(
                 (peerIndex) => peerIndex !== firstLeaver.index
             );
+            await h.transition.participantLeaveStateTransition({
+                leaverIndex: firstLeaver.index,
+                waitForPeers: afterFirstLeave
+            });
+
+            // The leaver posts its N/N exit one agreement window after its
+            // leave block. The forced re-join below must land after that
+            // post: a pending inbound its exit snapshot does not consume
+            // makes the chain refuse the exit, and the leaver falls back to
+            // a self-removal dispute over stale state that gets killed.
+            // SYNCED means the chain no longer lists the leaver at all.
+            await h.transition.keepAuthoringUntilPeersStatus({
+                peerIndices: [firstLeaver.index],
+                status: Status.SYNCED,
+                waitForPeers: afterFirstLeave,
+                excludePeerIndices: [firstLeaver.index]
+            });
+
+            // Finalize M1 before introducing the inbound join that M2 must carry.
             await h.transition.advanceState({
                 waitForPeers: afterFirstLeave,
                 count: 1,
@@ -166,7 +183,8 @@ describe("E2E: dispute validation / stateProof / Case 1 (M1/M2 inbound divergenc
 
             const { participant: pendingJoin } =
                 await h.join.forceInboundJoinWait({
-                    participant: firstLeaver.address
+                    participant: firstLeaver.address,
+                    observePeerIndices: afterFirstLeave
                 });
 
             // Consume the inbound join into M2. It remains pending on-chain
@@ -225,14 +243,16 @@ describe("E2E: dispute validation / stateProof / Case 1 (M1/M2 inbound divergenc
                 }
             );
 
-            await h.event.waitForPeers("onDisputeKilled", [0, 1, 3], 1, {
-                mode: "atLeast"
-            });
-            await h.assert.storage.honestPeersStoredDisputeFraudProof({
+            // The audit of the tampered dispute is the outcome under test;
+            // its stored fraud proof names it, a kill count alone does not.
+            await h.assert.storage.honestPeersStoredDisputeFraudProofWait({
                 disputeFraudProofType:
                     DisputeFraudProofType.DisputeInvalidStateProof,
                 peerIndices: [1, 3],
                 atLeastOneHonestPeer: true
+            });
+            await h.event.waitForPeers("onDisputeKilled", [0, 1, 3], 1, {
+                mode: "atLeast"
             });
         });
     });

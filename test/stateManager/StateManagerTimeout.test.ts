@@ -12,6 +12,8 @@ describe("StateManager timeout", function () {
         });
         h.contextApi.markAfkPeer({ afkPeerIndex: 2 });
 
+        // The opener needs its own reason before a dispute window exists.
+        await h.control(h.getPeer(0)).dispute.setForceExit(true).request();
         await h.tamper.postTamperedDispute(0, () => {}, {
             markMalicious: false
         });

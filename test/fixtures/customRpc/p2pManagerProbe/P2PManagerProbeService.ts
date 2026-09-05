@@ -198,6 +198,13 @@ export type LobbyRecoveryProbe = {
     abusivePeerBlacklisted: boolean;
 };
 
+/** Later readings of the reservation staged by `probeLobbyRecovery`. */
+export type LobbyRecoveryBoundProbe = {
+    reserved: boolean;
+    matching: boolean;
+    disconnectedPeerBlacklisted: boolean;
+};
+
 export type LobbyCommitCancellationProbe = {
     cancellationResult: boolean;
     matchResultMissing: boolean;
@@ -459,6 +466,8 @@ export class P2PManagerProbeService extends ARpcService<
     P2PManager<PingPongRpc>
 > {
     public dispatchCalls = 0;
+    /** Profile of the selector staged by probeLobbyRecovery. */
+    private lobbyRecoveryProfile?: PeerProfile;
 
     constructor(p2pManager: P2PManager<PingPongRpc>) {
         super(
@@ -2242,6 +2251,12 @@ export class P2PManagerProbeService extends ARpcService<
         );
         this.p2pManager.profileManager.removeTransport(transport);
         await Promise.resolve();
+        const afterLoss = service.getAvailability();
+        const blacklistedAtLoss = profile.isBlackListed;
+        // An accepted pick keeps its bound running through the loss; the
+        // absent selector is blacklisted when the bound fires. The test reads
+        // that later state through probeLobbyRecoveryBound.
+        this.lobbyRecoveryProfile = profile;
 
         const abusiveAddress = getChecksumAddress(
             "0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
@@ -2258,14 +2273,25 @@ export class P2PManagerProbeService extends ARpcService<
             service.runRPC(wrongTopicRpc, abusive);
         }
 
-        const availability = service.getAvailability();
         return {
             reservationAccepted: pick.status === "accepted",
-            reservedAfterFinalLoss: availability.reserved,
-            matchingAfterFinalLoss: availability.matching,
-            disconnectedPeerBlacklisted: profile.isBlackListed,
+            reservedAfterFinalLoss: afterLoss.reserved,
+            matchingAfterFinalLoss: afterLoss.matching,
+            disconnectedPeerBlacklisted: blacklistedAtLoss,
             abusiveTransportClosed: abusive.isClosed,
             abusivePeerBlacklisted: abusiveProfile.isBlackListed
+        };
+    }
+
+    /** Current readings for the reservation staged by probeLobbyRecovery. */
+    public probeLobbyRecoveryBound(): LobbyRecoveryBoundProbe {
+        const availability =
+            this.p2pManager.localRpc.lobbyMatchingService.getAvailability();
+        return {
+            reserved: availability.reserved,
+            matching: availability.matching,
+            disconnectedPeerBlacklisted:
+                this.lobbyRecoveryProfile?.isBlackListed ?? false
         };
     }
 
@@ -2290,7 +2316,11 @@ export class P2PManagerProbeService extends ARpcService<
             available: true
         });
 
-        for (let retry = 0; retry < 50 && transport.frames.length === 0; retry += 1) {
+        for (
+            let retry = 0;
+            retry < 50 && transport.frames.length === 0;
+            retry += 1
+        ) {
             await new Promise((resolve) => setTimeout(resolve, 0));
         }
         const pickRequestId = this.requestId(transport);
@@ -2307,7 +2337,11 @@ export class P2PManagerProbeService extends ARpcService<
             transport
         );
 
-        for (let retry = 0; retry < 50 && transport.frames.length < 2; retry += 1) {
+        for (
+            let retry = 0;
+            retry < 50 && transport.frames.length < 2;
+            retry += 1
+        ) {
             await new Promise((resolve) => setTimeout(resolve, 0));
         }
         const commitRequestId = this.requestId(transport);

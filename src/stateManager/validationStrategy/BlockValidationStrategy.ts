@@ -142,7 +142,7 @@ export default class BlockValidationStrategy extends AValidationStrategy {
             blockHeight: block.height
         });
         this.fraudProofService.createDoubleSignProof(conflictingBlock, block);
-        await this.disputeManager.dispute(block.forkId);
+        this.disputeManager.requestDispute(block.forkId);
         return BlockValidationResult.DISPUTE;
     }
     public async invalidStateTransitionDetected(
@@ -153,7 +153,7 @@ export default class BlockValidationStrategy extends AValidationStrategy {
             blockHeight: block.height
         });
         this.fraudProofService.createInvalidStateTransitionProof(block);
-        await this.disputeManager.dispute(block.forkId);
+        this.disputeManager.requestDispute(block.forkId);
         return BlockValidationResult.DISPUTE;
     }
     public async wrongGenesisDetected(
@@ -192,7 +192,7 @@ export default class BlockValidationStrategy extends AValidationStrategy {
             blockHeight: block.height
         });
         this.fraudProofService.createWrongGenesisProof(block);
-        await this.disputeManager.dispute(block.forkId);
+        this.disputeManager.requestDispute(block.forkId);
         return BlockValidationResult.DISPUTE;
     }
     public async forgedInboundMessageBlockDetected(
@@ -207,7 +207,7 @@ export default class BlockValidationStrategy extends AValidationStrategy {
             block,
             messageBlock
         );
-        await this.disputeManager.dispute(block.forkId);
+        this.disputeManager.requestDispute(block.forkId);
         return BlockValidationResult.DISPUTE;
     }
     public async conflictingButNotLinkedBlockDetected(
@@ -278,7 +278,7 @@ export default class BlockValidationStrategy extends AValidationStrategy {
             blockHeight: block.height
         });
         this.fraudProofService.createInvalidTimestampProof(block);
-        await this.disputeManager.dispute(block.forkId);
+        this.disputeManager.requestDispute(block.forkId);
         return BlockValidationResult.DISPUTE;
     }
     public async subjectiveInvalidTimestampDetected(

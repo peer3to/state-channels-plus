@@ -16,6 +16,14 @@ const testTime = {
     evidenceTime: 2
 };
 
+// Four simultaneous targeted callers churn through the derived-to-raw topic
+// handoff before block 1 can be authored; give that first turn two windows.
+const fourCallerTime = {
+    ...testTime,
+    agreementTime: 8,
+    p2pTime: 4
+};
+
 describe("E2E: Targeted channel join", function () {
     const unopened = async (
         label: string,
@@ -45,10 +53,27 @@ describe("E2E: Targeted channel join", function () {
     ) => {
         const setup = await unopened(label, 2, timeConfig);
         await setup.h.lifecycle.openChannelForParticipants([0, 1]);
-        for (let i = 0; i < observerCount; i++) {
-            await setup.targeted.addFreshPeer();
-        }
         await setup.h.network.joinSelectedKey([0, 1], setup.channelId);
+        // An observer spawn takes seconds on a loaded farm, and the fresh
+        // channel's writer slot would idle past its deadline meanwhile (an
+        // honest participant would post a timeout dispute and reduce away
+        // from the fork the observer then asks to sync), so the participants
+        // author through the spawns. The observers spawn after the open and
+        // stay unconnected, so none sees genesis before its connect.
+        let spawned = false;
+        const spawns = (async () => {
+            for (let i = 0; i < observerCount; i++) {
+                await setup.targeted.addFreshPeer();
+            }
+        })().finally(() => {
+            spawned = true;
+        });
+        await setup.h.transition.keepAuthoringUntil({
+            until: () => spawned,
+            waitForPeers: [0, 1],
+            maximumBlocks: 20
+        });
+        await spawns;
         return setup;
     };
 
@@ -107,21 +132,14 @@ describe("E2E: Targeted channel join", function () {
     });
 
     it("terminal leave settles before a fresh runtime connects another channel", async function () {
-        const { h, channelId } = await unopened(
-            "target-terminal-leave",
-            3
-        );
+        const { h, channelId } = await unopened("target-terminal-leave", 3);
         await h.lifecycle.openChannelForParticipants([0, 1, 2]);
         await h.network.joinSelectedKey([0, 1, 2], channelId);
         const leaver = h.getPeer(1);
         let exit: Promise<unknown> | undefined;
-        leaver.p2pInstance.events.on(
-            "p2pEventHooks",
-            "onLeaveTurn",
-            () => {
-                exit = leaver.p2pInstance.p2pContractInstance.leaveChannel();
-            }
-        );
+        leaver.p2pInstance.events.on("p2pEventHooks", "onLeaveTurn", () => {
+            exit = leaver.p2pInstance.p2pContractInstance.leaveChannel();
+        });
         const leave = leaver.p2pInstance.leaveChannel();
         await h.transition.advanceState();
         await waitFor(() => exit !== undefined);
@@ -142,10 +160,9 @@ describe("E2E: Targeted channel join", function () {
         expect(
             await Promise.all(
                 freshPeers.map((peer) =>
-                    peer.p2pInstance.p2pSigner.connectToChannel(
-                        nextChannelId,
-                        { autoOpen: true }
-                    )
+                    peer.p2pInstance.p2pSigner.connectToChannel(nextChannelId, {
+                        autoOpen: true
+                    })
                 )
             )
         ).to.deep.equal([true, true, true]);
@@ -324,12 +341,22 @@ describe("E2E: Targeted channel join", function () {
     it("four targeted callers converge on one opened channel", async function () {
         const { h, channelId, targeted } = await unopened(
             "target-four-callers",
-            4
+            4,
+            fourCallerTime
         );
+        // Matching is pairwise: one pair opens and the others observe the
+        // open. A caller whose committed partner leaves the lobby the moment
+        // it observes the open loses that transport, and an unsigned targeted
+        // failure settles as `false` while keeping the selected target; the
+        // explicit same-ID retry the spec permits then observes the open.
         expect(
             await Promise.all(
-                h.peers.map((peer) =>
-                    targeted.connect(peer, channelId, { autoOpen: true })
+                h.peers.map(
+                    async (peer) =>
+                        (await targeted.connect(peer, channelId, {
+                            autoOpen: true
+                        })) ||
+                        targeted.connect(peer, channelId, { autoOpen: true })
                 )
             )
         ).to.deep.equal([true, true, true, true]);

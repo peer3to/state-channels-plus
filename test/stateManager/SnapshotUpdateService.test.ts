@@ -1,4 +1,5 @@
 import { expect } from "chai";
+import { resolveTestTimeConfig } from "@test/harness/core/testTimeConfig";
 
 import { MathTestSession as TestSession } from "@test/harness";
 
@@ -153,6 +154,21 @@ describe("SnapshotUpdateService", function () {
             finalAuthorPeerIndex: 0
         });
         await h.dispute.resolveFinalDispute(second);
+
+        // Both windows were finalized at dispute upload, so the chain already
+        // records each reduced fork. Every peer's scheduled ordinary attempt
+        // still fires at the kill period's end; it converges on the recorded
+        // result and writes nothing, so the chain snapshot stays at the
+        // original fork and the walk below has two windows to traverse.
+        const killPeriod = await h.query.killPeriod(second.forkId, 0);
+        await h.event.waitUntilTimestamp(
+            killPeriod.killPeriodEnd +
+                resolveTestTimeConfig(h.options.timeConfig).chainFallbackTime +
+                1
+        );
+        expect(
+            (await h.channelManager.getStateSnapshot(h.channelId)).forkId
+        ).to.equal(first.forkId);
 
         const result = await h.execOnHost(
             h.getPeer(0),

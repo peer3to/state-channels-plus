@@ -25,6 +25,10 @@ export class LifecycleRpcMethods extends ARpcMethods {
             await this.service.getEncodedOpening(channelId);
         return encodedOpenChannel ? { encodedOpenChannel } : null;
     }
+
+    public applyChannelOpenedEvent(): Promise<boolean> {
+        return this.service.applyChannelOpenedEvent();
+    }
 }
 
 export default LifecycleRpcMethods;

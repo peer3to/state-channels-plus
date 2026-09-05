@@ -72,9 +72,8 @@ export default class CalldataPostingService {
                 .postBlockCalldata(block.signedBlock, maxTimestamp)
                 .then((tx) => {
                     txResponse = tx;
-                    const txReceiptPromise = txResponse.wait();
-                    DetachedPromises.collect(txReceiptPromise);
-                    return txReceiptPromise;
+                    // The outer operation owns receipt recovery before collection.
+                    return txResponse.wait();
                 })
                 .catch(async (error) => {
                     const success = await tryHandleEvmError(error, {

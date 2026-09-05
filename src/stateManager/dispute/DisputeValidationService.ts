@@ -713,7 +713,7 @@ export default class DisputeValidationService {
 
         if (!hasReason) {
             this.logger.warn(
-                "Dispute input has no stated reason (timeout, slashes, or self-removal)",
+                "Dispute input has no stated reason (timeout, slashes, self-removal, forced inbound, or existing window)",
                 {
                     dispute: LoggerUtils.getDisputeMetadata(dispute)
                 }

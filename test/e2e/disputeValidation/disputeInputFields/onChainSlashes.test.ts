@@ -75,6 +75,7 @@ describe("E2E: dispute validation / disputeInputFields / onChainSlashes", functi
                 dispute.input.timeout.participant =
                     sm.p2pManager.localRpc.dispute.zeroAddress;
                 dispute.input.selfRemoval = false;
+                dispute.input.requireExistingDisputeWindow = false;
                 dispute.input.onChainSlashes = [args.slashedAddress as string];
             },
             { args: { slashedAddress } }

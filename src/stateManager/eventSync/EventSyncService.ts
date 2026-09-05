@@ -2,6 +2,7 @@ import { StateChannelManagerInterface } from "@typechain-types";
 import { MessageBlockStruct } from "@typechain-types/contracts/V1/types/DataTypes";
 import { BytesLike, Filter, Log, Result, hexlify, zeroPadValue } from "ethers";
 
+import type { LocalDiamondContract } from "@/utils/localDiamond";
 import Clock from "@/Clock";
 import { EventHandler } from "@/eventHandlers/EventHandler";
 import Storage from "@/storage";
@@ -88,7 +89,8 @@ export default class EventSyncService {
         private readonly eventHandler: EventHandler,
         private readonly storage: Storage,
         private readonly timeConfig: TimeConfig,
-        logger: Logger
+        logger: Logger,
+        private readonly localDiamondContract: LocalDiamondContract
     ) {
         this.channelId = channelId;
         this.logger = logger.child({ component: "EventSyncService" });
@@ -291,6 +293,46 @@ export default class EventSyncService {
         return undefined;
     }
 
+    /** Recover authoritative slashes through the ordinary timestamped event handlers. */
+    public async recoverOnChainSlashes(
+        channelId: ChannelId,
+        previouslyObserved?: readonly Address[]
+    ): Promise<boolean> {
+        const latest = await this.getProvider().getBlock("latest");
+        if (!latest)
+            throw new Error("Slash recovery could not read the chain head");
+        const expected =
+            await this.stateChannelManagerContract.getOnChainSlashedParticipants(
+                channelId,
+                { blockTag: latest.number }
+            );
+        const probe = () =>
+            this.localDiamondContract.getOnChainSlashedParticipants(channelId);
+        const initial = await probe();
+        const complete = (held: Address[]) =>
+            expected.every((address) => held.includes(address));
+        const previous = previouslyObserved ?? initial;
+        const changed = expected.some((address) => !previous.includes(address));
+        if (complete(initial)) return changed;
+        const recovered = await this.recoverLogsUntil({
+            channelId,
+            eventNames: ["ChainSlashed", "DisputeKilled"],
+            toBlock: latest.number,
+            span: this.getBlockSpan(this.timeConfig.evidenceTime * 2),
+            attempts: LOG_RECOVERY_ATTEMPTS,
+            dispatch: "awaited",
+            probe,
+            isRecovered: complete,
+            isMissingLog: (args, held) =>
+                !held.includes(args.participant ?? args.disputer)
+        });
+        if (!recovered.isRecovered)
+            throw new Error(
+                "Slash recovery did not recover the authoritative set"
+            );
+        return changed;
+    }
+
     /**
      * One widening getLogs recovery: query the channel's `eventNames` logs,
      * dispatch the ones the caller is still missing, re-probe, widen, repeat.
@@ -312,7 +354,7 @@ export default class EventSyncService {
         /** "detached" for a caller that must not await the dispatched pipeline */
         dispatch: "awaited" | "detached";
         /** what local storage holds right now */
-        probe: () => THeld;
+        probe: () => THeld | Promise<THeld>;
         isRecovered: (held: THeld) => boolean;
         /**
          * which queried logs are still worth dispatching; all of them when
@@ -326,7 +368,7 @@ export default class EventSyncService {
         scheduledLogCount: number;
     }> {
         const isMissingLog = recovery.isMissingLog;
-        let held = recovery.probe();
+        let held = await recovery.probe();
         let span = recovery.span;
         let scheduledLogCount = 0;
         for (
@@ -374,7 +416,7 @@ export default class EventSyncService {
                     error
                 });
             }
-            held = recovery.probe();
+            held = await recovery.probe();
             span *= 2;
         }
         return {

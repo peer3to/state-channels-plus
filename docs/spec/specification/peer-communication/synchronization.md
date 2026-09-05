@@ -121,9 +121,15 @@ Ordered verification; any failure aborts the sync with no partial effect:
     advance would succeed on-chain; a simulated revert aborts.
 12. **Persist** the verified payload atomically through the storage system
     ([`REQ-IX-9-AV56NR`](../interactions.md#req-ix-9-av56nr)): skip if local knowledge is already ahead; abort on
-    any conflict with locally finalized blocks.
+    any conflict with locally finalized blocks. After a different fork is successfully installed,
+    terminate pending normal reduction work for the fork left behind without an outcome, as required by
+    [`REQ-DISPUTE-PIPE-4-3YVDSA`](../disputes/dispute-processing.md#req-dispute-pipe-4-3yvdsa).
+    This lineage verification remains separate from normal reduction; it does not supply that operation's
+    result, and an already-completed reduction retains its actual result.
 13. **Replay the unfinalized suffix** through the standard block-progression pipeline under the
-    spectating validation context; any replay failure aborts.
+    spectating validation context; any replay failure aborts. The replayed suffix is proven
+    history, not a live arrival: the agreement-window judgment does not apply to it, so a suffix
+    older than one window still applies (a recovering participant's replay is judged the same way).
 14. **Pinned-height completion.** In pinned mode the proof must reach the requested height exactly.
 
 **Failure semantics.** Validation and transport failures return `false` after the offending peer is

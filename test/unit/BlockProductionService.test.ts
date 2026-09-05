@@ -4,6 +4,7 @@ import { Block } from "@/models";
 import { Status } from "@/types";
 import { MathTestSession as TestSession } from "@test/harness";
 import { sleep } from "@/utils";
+import { waitFor } from "@test/utils/waitFor";
 
 // authoring is driven through the real client entry point
 // (p2pContractInstance.add), which builds the transaction exactly as
@@ -65,9 +66,11 @@ describe("Unit: BlockProductionService", function () {
             });
             const forkId = h.activeForkId!;
 
-            const joiner = await h.join.addSpectatorDetached();
-            await h.transition.advanceState({ count: 2, waitForPeers: [0, 1] });
-            await h.event.waitUntilPeerStatus(joiner.index, Status.SYNCED);
+            const { peer: joiner } = await h.join.addSpectatorAuthoring({
+                authoringPeerIndices: [0, 1],
+                minimumBlocks: 2,
+                maximumBlocks: 20
+            });
             await h.assert.sync.peersInSyncWait();
             await h.join.joinChannelWait({ joiner });
 
@@ -77,8 +80,18 @@ describe("Unit: BlockProductionService", function () {
                 .request();
             expect(pendingCount).to.be.greaterThan(0);
 
-            // an authored block consumes it -> the head now equals the snapshot's
-            await h.transition.advanceState({ count: 2 });
+            // an authored block consumes it -> the head now equals the
+            // snapshot's; author until the writer that saw the join has
+            // consumed it rather than assuming a fixed block count
+            await h.transition.keepAuthoringUntil({
+                until: async () =>
+                    (await h
+                        .control(h.getPeer(0))
+                        .query.getPendingInboundMessageBlockCount(forkId)
+                        .request()) === 0,
+                waitForPeers: [0, 1],
+                maximumBlocks: 20
+            });
 
             const consumedCount = await h
                 .control(h.getPeer(0))
@@ -185,7 +198,10 @@ describe("Unit: BlockProductionService", function () {
                 const first = writer.p2pInstance.p2pContractInstance.add(1);
                 const second = writer.p2pInstance.p2pContractInstance.add(2);
 
-                await writer.turnBarrier.waitFor(
+                // Polled, not event-driven: nothing signals the turn barrier
+                // while the mutex is held, and the two submissions reach the
+                // host only after ethers finished building each transaction.
+                await waitFor(
                     async () =>
                         (await h.execOnHost(writer, (sm) => {
                             const mutex = sm.mutex as unknown as {
@@ -193,11 +209,8 @@ describe("Unit: BlockProductionService", function () {
                             };
                             return mutex.queue.length;
                         })) >= 2,
-                    {
-                        timeoutMs: h.event.protocolEventTimeoutMs(),
-                        timeoutMessage:
-                            "same-peer transactions did not queue behind the state mutex"
-                    }
+                    h.event.protocolEventTimeoutMs(),
+                    100
                 );
                 await h.execOnHost(writer, (sm) => sm.mutex.unlock());
                 mutexReleased = true;
@@ -215,6 +228,180 @@ describe("Unit: BlockProductionService", function () {
                     .query.getNextBlockHeight(forkId)
                     .request()
             ).to.equal(heightBefore + 1);
+        });
+
+        it("a follower behind by the writer's parked block stamps a slot that was never its own → the candidate is dropped, nothing authored", async function () {
+            const h = TestSession.getHarness();
+            await h.lifecycle.start(3, 1);
+            const forkId = h.activeForkId!;
+            const writer = await h.query.getNextPeerToWrite();
+            const participants = await h
+                .control(writer)
+                .query.getParticipants()
+                .request();
+            // Round-robin: the participant after the writer is next once the
+            // writer's block applies.
+            const followerAddress =
+                participants[
+                    (participants.indexOf(writer.address) + 1) %
+                        participants.length
+                ];
+            const follower = h.peers.find(
+                (peer) => peer.address === followerAddress
+            )!;
+            const others = h.peers
+                .filter(
+                    (peer) =>
+                        participants.includes(peer.address) &&
+                        peer.index !== follower.index
+                )
+                .map((peer) => peer.index);
+            const heightBefore = await h
+                .control(follower)
+                .query.getNextBlockHeight(forkId)
+                .request();
+
+            // One writer per {forkId, height}: the slot is the writer's, and
+            // every peer derives that from the same state. Holding the
+            // follower's mutex parks the writer's block at its execution
+            // boundary, so the follower is behind by one block and stamps its
+            // own submission with the height that block is about to take: a
+            // slot that was never the follower's. The candidate must be
+            // dropped, not moved.
+            const scheduled = await h.rpcStub.recordScheduledTasks(
+                follower.index
+            );
+            await h.execOnHost(follower, async (sm) => {
+                await sm.mutex.lock({ taskName: "holdFollowerApply" });
+            });
+            const mutexWaiters = () =>
+                h.execOnHost(follower, (sm) => {
+                    const mutex = sm.mutex as unknown as { queue: unknown[] };
+                    return mutex.queue.length;
+                });
+            let mutexReleased = false;
+            let submission: Promise<unknown> | undefined;
+            try {
+                await h.transition.peerWrite({
+                    peer: writer.index,
+                    waitForPeers: others
+                });
+                // The block's execution task is scheduled once it leaves the
+                // queue; it then waits on the held mutex.
+                await waitFor(async () =>
+                    (await scheduled.tasks()).some((task) =>
+                        task.taskName.startsWith(
+                            "BlockQueueManager.executeQueuedEntry"
+                        )
+                    )
+                );
+                await waitFor(async () => (await mutexWaiters()) >= 1);
+                const waitersBeforeSubmission = await mutexWaiters();
+                submission = follower.p2pInstance.p2pContractInstance.add(1);
+                await waitFor(
+                    async () => (await mutexWaiters()) > waitersBeforeSubmission
+                );
+                await h.execOnHost(follower, (sm) => sm.mutex.unlock());
+                mutexReleased = true;
+                await submission;
+            } finally {
+                if (!mutexReleased) {
+                    await h.execOnHost(follower, (sm) => sm.mutex.unlock());
+                    await submission?.catch(() => undefined);
+                }
+                await scheduled.restore();
+            }
+
+            await h.assert.sync.peersInSyncWait({
+                peerIndices: [...others, follower.index]
+            });
+            const first = await h
+                .control(follower)
+                .query.getBlockByHeight(forkId, heightBefore)
+                .request();
+            expect(first!.author).to.equal(writer.address);
+            // Dropped: no block at the taken height by the follower and none
+            // authored above it; the caller may resubmit against the new state.
+            expect(
+                await h
+                    .control(follower)
+                    .query.getBlockByHeight(forkId, heightBefore + 1)
+                    .request()
+            ).to.be.null;
+            expect(
+                await h
+                    .control(follower)
+                    .query.getNextBlockHeight(forkId)
+                    .request()
+            ).to.equal(heightBefore + 1);
+            expect(
+                await h
+                    .control(writer)
+                    .query.isBlacklisted(follower.address)
+                    .request()
+            ).to.equal(false);
+        });
+
+        it("a reduction replaces the fork before the candidate takes the mutex → the candidate is dropped, nothing authored", async function () {
+            const h = TestSession.getHarness();
+            const { sourceForkId } =
+                await h.scenario.stageReducibleDisputedFork({
+                    peerCount: 4,
+                    maliciousPeerIndex: 1
+                });
+            const target = h.getPeer(0);
+            const staleHeight = await h
+                .control(target)
+                .query.getNextBlockHeight(sourceForkId)
+                .request();
+            // The reduced genesis install holds the state mutex; a candidate
+            // stamped on the old fork waits behind it.
+            const hold = await h.rpcStub.holdReductionGenesisApplication(0, {
+                outcome: "hold",
+                at: "setState"
+            });
+            let submission: Promise<unknown> | undefined;
+            try {
+                await h
+                    .control(target)
+                    .stub.startTryReduce(sourceForkId)
+                    .request();
+                await waitFor(async () => (await hold.entered()) === 1);
+                submission = target.p2pInstance.p2pContractInstance.add(1);
+                await waitFor(
+                    async () =>
+                        (await h.execOnHost(target, (sm) => {
+                            const mutex = sm.mutex as unknown as {
+                                queue: unknown[];
+                            };
+                            return mutex.queue.length;
+                        })) >= 1
+                );
+            } finally {
+                await hold.release();
+            }
+            // A stale candidate is dropped silently, never thrown.
+            await submission;
+
+            const reducedForkId = await h
+                .control(target)
+                .query.getForkId()
+                .request();
+            expect(reducedForkId).to.not.equal(sourceForkId);
+            // Never signed at the stale coordinate, and nothing authored on
+            // the reduced fork either: the caller reassesses.
+            expect(
+                await h
+                    .control(target)
+                    .query.getBlockByHeight(sourceForkId, staleHeight)
+                    .request()
+            ).to.be.null;
+            expect(
+                await h
+                    .control(target)
+                    .query.getBlockByHeight(reducedForkId, 0)
+                    .request()
+            ).to.be.null;
         });
 
         it("not my turn → throws instead of authoring", async function () {
@@ -257,7 +444,16 @@ describe("Unit: BlockProductionService", function () {
                 )
             );
 
-            const { index: spectatorIndex } = await h.join.addSpectator();
+            // spawn-only: the participants never serve sync, so the spectator
+            // connects but stays OPENED while the fork keeps moving
+            const {
+                peer: { index: spectatorIndex }
+            } = await h.join.addSpectatorAuthoring({
+                authoringPeerIndices: [0, 1, 2],
+                minimumBlocks: 0,
+                maximumBlocks: 20,
+                waitForSynced: false
+            });
             await h.event.waitUntilPeerStatus(spectatorIndex, Status.OPENED);
             const spectator = h.getPeer(spectatorIndex);
 
@@ -308,9 +504,11 @@ describe("Unit: BlockProductionService", function () {
                 .request();
 
             // the stale-timestamp clamp moves it to exactly authoring-time
-            // clock + 1, so it is bounded on both sides
+            // clock + 1, so it is bounded on both sides. The writer's clock
+            // follows chain time and a resync can move it back one second
+            // between authoring and the read, hence the extra second.
             expect(block!.timestamp).to.be.greaterThan(clockBefore);
-            expect(block!.timestamp).to.be.at.most(clockAfter + 1);
+            expect(block!.timestamp).to.be.at.most(clockAfter + 2);
         });
 
         // the was-in-the-past clamp (timestamp raised to previousTimestamp)

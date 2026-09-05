@@ -62,9 +62,19 @@ export class HarnessControlRpc extends MainRpcService {
         this.spectate = new SpectateControlService(p2pManager);
         this.scenario = new ScenarioService(p2pManager);
         this.dispute = new DisputeService(p2pManager, this.signer);
-        this.transition = new TransitionService(p2pManager);
+        this.transition = new TransitionService(p2pManager, this.stub);
         this.balance = new BalanceService(p2pManager);
         this.lifecycle = new LifecycleService(p2pManager);
+    }
+
+    /**
+     * Release every paused host call staged by the stub service before the
+     * runtime tears down, so an abort during a staged hold never leaves a
+     * paused drain behind.
+     */
+    override async dispose(): Promise<void> {
+        this.stub.releaseReductionHolds();
+        await super.dispose();
     }
 }
 

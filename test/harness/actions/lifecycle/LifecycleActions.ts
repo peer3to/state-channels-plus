@@ -57,11 +57,13 @@ export class LifecycleActions<
                 chainFallbackTime?: number;
                 evidenceTime?: number;
             };
+            configOverrides?: HarnessOptions["configOverrides"];
         }
     ) {
         const timeConfig = resolveTestTimeConfig(options?.timeConfig);
         await this.start(peerCount, transitionCount, {
-            timeConfig
+            timeConfig,
+            configOverrides: options?.configOverrides
         });
     }
 
@@ -191,5 +193,17 @@ export class LifecycleActions<
             `Channel opened successfully with fork ID: ${this.harness.activeForkId}`
         );
         return this.harness.activeForkId;
+    }
+
+    /**
+     * Re-deliver the selected channel's ChannelOpened log to one peer through
+     * its real event pipeline, staging "genesis arrives from the chain" for a
+     * runtime that selected the channel after it opened.
+     */
+    async applyChannelOpenedEvent(peerIndex: number): Promise<boolean> {
+        return await this.harness
+            .control(this.harness.getPeer(peerIndex))
+            .lifecycle.applyChannelOpenedEvent()
+            .request();
     }
 }

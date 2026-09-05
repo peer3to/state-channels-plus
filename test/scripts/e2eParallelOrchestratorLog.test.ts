@@ -153,6 +153,17 @@ describe("distributed orchestrator logs", function () {
         }
     });
 
+    it("counts a watchdog trip reported through a host error as one starvation", function () {
+        // After plan 30 a worker's watchdog trip reaches the log as a reported
+        // host error, not as a crash; the unchanged message text is what the
+        // classifier keys on, wherever in the line it appears.
+        const line =
+            "[12:00:00][ERROR][Peer 0][0xabc][P2pRuntimeClient] Host error [ Error: " +
+            "Event loop delay 1200ms exceeded configured threshold 1000ms ]\n";
+        const reduced = reduceAttemptOutput("", line + line);
+        expect(reduced.starveCount).to.equal(1);
+    });
+
     it("reads attempt spool chunks in chronological stream order", function () {
         const root = fs.mkdtempSync(path.join(os.tmpdir(), "spool-order-"));
         try {

@@ -1,3 +1,4 @@
+// @spec-test-coverage-ignore: browser worker script for the WebRTC worker smokes; evidence is mapped from run-worker-contract-executor.mjs
 import WebRTCSetupService from "../../src/rpc/services/WebRTCSetup/WebRTCSetupService.ts";
 import WorkerBridgeWebRTCConnectionFactory from "../../src/rpc/services/WebRTCSetup/connection/WorkerBridgeWebRTCConnectionFactory.ts";
 import { TransportType } from "../../src/transport/TransportType.ts";
@@ -82,6 +83,10 @@ function createP2PManager() {
             getChannelId: () => "browser-webrtc-worker-smoke"
         },
         profileManager: {
+            // Every transport registers itself with the profile manager on
+            // construction (ATransport); the smoke tracks open transports
+            // through the handshake hook instead.
+            registerTransport: () => undefined,
             getProfileByTransport: (transport) => {
                 if (transport.__baseTransport) {
                     return { evmAddress: MAIN_ADDRESS };

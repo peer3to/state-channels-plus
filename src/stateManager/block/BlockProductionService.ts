@@ -42,23 +42,11 @@ export default class BlockProductionService {
             if (!sm.validationService.isChannelOpen(sm.forkId)) {
                 throw new Error("Channel not open");
             }
-            const staleLocalBlock = this.getStaleLocalBlock(tx);
-            if (staleLocalBlock) {
-                this.logger.verbose(
-                    "Local submission lost a same-peer authoring race",
-                    {
-                        candidateHeight: Number(tx.header.transactionCnt),
-                        committedBlock: LoggerUtils.getBlockMetadata(
-                            staleLocalBlock,
-                            sm.storage
-                        )
-                    }
-                );
-                return undefined;
-            }
+            if (this.isStaleCoordinate(tx)) return undefined;
             if (!(await this.isMyTurn())) {
                 throw new Error("NOT MY TURN: " + message);
             }
+            if (this.isDisputingCurrentFork()) return undefined;
             this.adjustTimestampIfNeeded(tx);
 
             const coordinates = {
@@ -148,25 +136,57 @@ export default class BlockProductionService {
         }
     }
 
-    private getStaleLocalBlock(tx: TransactionStruct): Block | undefined {
+    /**
+     * The signer stamps the fork and height before the mutex is taken. A
+     * slot has one author, so a candidate whose coordinate is no longer the
+     * current fork's next height was overtaken: by this peer's own earlier
+     * submission for the same slot, by a reduction that replaced the fork, or
+     * by a block that was never this peer's to author. Signing it anyway would
+     * produce a conflicting block that honest peers prove fraudulent. The
+     * candidate is dropped; the caller reassesses against the current state.
+     */
+    private isStaleCoordinate(tx: TransactionStruct): boolean {
         const sm = this.stateManager;
-        if (tx.header.forkId !== sm.forkId) return undefined;
-
+        const forkId = sm.forkId;
         const height = Number(tx.header.transactionCnt);
-        if (height >= sm.storage.blocks.getNextBlockHeight(sm.forkId)) {
-            return undefined;
-        }
+        const nextHeight = sm.storage.blocks.getNextBlockHeight(forkId);
+        if (tx.header.forkId === forkId && height === nextHeight) return false;
 
-        const committedBlock = sm.storage.blocks.getBlock(sm.forkId, height);
-        return committedBlock?.author === sm.signerAddress
-            ? committedBlock
-            : undefined;
+        const committedBlock =
+            tx.header.forkId === forkId && height < nextHeight
+                ? sm.storage.blocks.getBlock(forkId, height)
+                : undefined;
+        this.logger.verbose(
+            committedBlock?.author === sm.signerAddress
+                ? "Local submission lost a same-peer authoring race"
+                : "Local submission is stale: its coordinate moved before it was serialized",
+            {
+                candidateForkId: String(tx.header.forkId),
+                candidateHeight: height,
+                forkId: String(forkId),
+                nextHeight,
+                committedBlock: committedBlock
+                    ? LoggerUtils.getBlockMetadata(committedBlock, sm.storage)
+                    : undefined
+            }
+        );
+        return true;
     }
 
     private async isMyTurn(): Promise<boolean> {
         const nextToWrite =
             await this.stateManager.diamondStateMachine.getNextToWrite();
         return this.stateManager.signerAddress === nextToWrite;
+    }
+
+    private isDisputingCurrentFork(): boolean {
+        const sm = this.stateManager;
+        if (!sm.storage.disputes.didIDispute(sm.forkId)) return false;
+        this.logger.info(
+            "playTransaction - no block on a fork we are disputing",
+            { forkId: sm.forkId }
+        );
+        return true;
     }
 
     private getPendingInboundMessageBlocks(

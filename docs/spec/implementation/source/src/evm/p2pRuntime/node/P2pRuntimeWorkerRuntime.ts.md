@@ -23,7 +23,8 @@ Node worker-side runtime bootstrap.
 
 ## Key design decisions
 
-_None — the file is declarative/mechanical; behavior-shaping decisions live with its consumers._
+1. **Entry path is a parameter.** `createP2pRuntimeWorkerFromPath(workerPath, workerData?)` spawns any sdk-worker entry; the platform `createP2pRuntimeWorker` resolves the production entry and delegates. Tests load an outer entry that builds a scripted contract-executor worker inside the sdk thread.
+2. **The error funnel is shared by both worker kinds.** `onUnhandledWorkerError` registers the thread's `uncaughtException` and `unhandledRejection` handlers; the sdk worker and the contract-executor worker entry both use it.
 
 ## Inputs, outputs, state, and side effects
 

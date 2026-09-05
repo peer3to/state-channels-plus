@@ -24,22 +24,19 @@ describe("E2E: Join/Leave Sequence", function () {
 
         await h.assert.sync.participantCount({ expectedCount: 3 });
 
-        // Start peer 4 while the remaining participants produce blocks 3-6.
-        // Finish its initial sync before the next leave advances the snapshot
-        // that its spectate proof is pinned to.
-        const spectator4Promise = h.join.addSpectatorDetached();
-        await h.transition.advanceState({
-            count: 4,
-            waitForPeers: [0, 1, 3],
+        // Start peer 4 while the remaining participants produce blocks 3-6 and
+        // keep authoring until it is synced: its initial sync must finish
+        // before the next leave advances the snapshot its spectate proof is
+        // pinned to, and the writer slot must not idle while it syncs.
+        const spawned4 = await h.join.addSpectatorAuthoring({
+            authoringPeerIndices: [0, 1, 3],
+            minimumBlocks: 4,
+            maximumBlocks: 20,
             waitForFinalization: true
         });
-        await h.assert.sync.blockHeight({
-            expectedHeight: 6,
-            peerIndices: [0, 1, 3]
-        });
+        expect(spawned4.height).to.be.greaterThanOrEqual(6);
 
-        const spectator4 = await spectator4Promise;
-        await h.event.waitUntilPeerStatus(spectator4.index, Status.SYNCED);
+        const spectator4 = spawned4.peer;
         await h.assert.sync.peersInSyncWait({
             peerIndices: [0, 1, 3, spectator4.index]
         });
@@ -47,21 +44,29 @@ describe("E2E: Join/Leave Sequence", function () {
         // stays 3, does not count spectators
         await h.assert.sync.participantCount({ expectedCount: 3 });
 
-        // peer 0 is leaving the channel, block 7
-        const leaverIndex2 = await h.transition.participantLeaveDetached();
+        // Peer 0 is leaving the channel. The keep-alive authoring above wrote
+        // as many blocks as the spawn needed, so bring the turn back around to
+        // peer 0 before it leaves instead of assuming the block count.
+        await h.transition.keepAuthoringUntil({
+            until: async () => (await h.query.getNextPeerToWrite()).index === 0,
+            waitForPeers: [0, 1, 3],
+            maximumBlocks: 20
+        });
+        const leaverIndex2 = await h.transition.participantLeaveDetached({
+            leaverIndex: 0
+        });
         expect(leaverIndex2).to.equal(0);
 
         await h.assert.sync.participantCount({ expectedCount: 2 });
 
-        // Start peer 5 while peers 1 and 3 produce blocks 8-11.
-        const spectator5Promise = h.join.addSpectatorDetached();
-        await h.transition.advanceState({
-            count: 4,
-            waitForPeers: [1, 3],
+        // Start peer 5 while peers 1 and 3 produce at least blocks 8-11 and
+        // keep authoring until it is synced.
+        const { peer: spectator5 } = await h.join.addSpectatorAuthoring({
+            authoringPeerIndices: [1, 3],
+            minimumBlocks: 4,
+            maximumBlocks: 20,
             waitForFinalization: true
         });
-        const spectator5 = await spectator5Promise;
-        await h.event.waitUntilPeerStatus(spectator5.index, Status.SYNCED);
 
         // No valid block production follows these waits, so they cannot consume
         // an authoring window.

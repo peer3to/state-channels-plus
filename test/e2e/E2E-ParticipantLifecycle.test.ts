@@ -173,27 +173,37 @@ describe("E2E: Participant Lifecycle", function () {
             const leaver = h.getPeer(1);
             const remaining = [0, 2];
             let exitPromise: Promise<unknown> | undefined;
-            leaver.p2pInstance.events.on(
-                "p2pEventHooks",
-                "onLeaveTurn",
-                () => {
-                    exitPromise =
-                        leaver.p2pInstance.p2pContractInstance.leaveChannel();
-                }
-            );
+            leaver.p2pInstance.events.on("p2pEventHooks", "onLeaveTurn", () => {
+                exitPromise =
+                    leaver.p2pInstance.p2pContractInstance.leaveChannel();
+            });
 
             const leave = leaver.p2pInstance.leaveChannel();
             await h.transition.advanceState();
             await waitFor(() => exitPromise !== undefined);
             await exitPromise;
-            await leave;
+            // The exit block is authored: the leaver never writes again and
+            // its runtime disposes once the leave settles, so harness queries
+            // stop routing through it; the others keep the slot alive while
+            // the exit snapshot lands.
+            h.contextApi.markAfkPeer({ afkPeerIndex: leaver.index });
+            let leaveSettled = false;
+            const settledLeave = leave.then(() => {
+                leaveSettled = true;
+            });
+            await h.transition.keepAuthoringUntil({
+                until: () => leaveSettled,
+                waitForPeers: remaining,
+                excludePeerIndices: [leaver.index],
+                maximumBlocks: 20
+            });
+            await settledLeave;
             expect(
                 (await h.channelManager.getParticipants(h.channelId)).includes(
                     leaver.address
                 )
             ).to.equal(false);
 
-            h.contextApi.markAfkPeer({ afkPeerIndex: leaver.index });
             await h.transition.advanceState({
                 count: 1,
                 waitForPeers: remaining,
@@ -211,9 +221,9 @@ describe("E2E: Participant Lifecycle", function () {
                 ),
                 signatures: bundle!.confirmationSignatures
             });
-            expect(block.allSignerAddresses.has(leaver.address as Address)).to.equal(
-                false
-            );
+            expect(
+                block.allSignerAddresses.has(leaver.address as Address)
+            ).to.equal(false);
             for (const peerIndex of remaining) {
                 const otherIndex = remaining.find(
                     (candidate) => candidate !== peerIndex
@@ -234,15 +244,13 @@ describe("E2E: Participant Lifecycle", function () {
 
             await h.lifecycle.start(2);
 
-            const spectator = await h.join.addSpectatorDetached({
+            const { peer: spectator } = await h.join.addSpectatorAuthoring({
+                authoringPeerIndices: [0, 1],
+                minimumBlocks: 1,
+                maximumBlocks: 20,
+                waitForFinalization: true,
                 statusTimeoutMessage: "Spectator did not reach SYNCED status"
             });
-            await h.transition.advanceState({
-                count: 1,
-                waitForPeers: [0, 1],
-                waitForFinalization: true
-            });
-            await h.event.waitUntilPeerStatus(spectator.index, Status.SYNCED);
             await h.assert.sync.peersInSyncWait({ peerIndices: [0, 1, 2] });
 
             const prepared = await h.join.buildJoinChannelConfirmation({
@@ -305,6 +313,8 @@ describe("E2E: Participant Lifecycle", function () {
         it("pending join fault survives until a failed receipt restores SYNCED", async function () {
             const h = TestSession.getHarness();
             await h.lifecycle.start(2);
+            // Sync itself is the subject here and no transition is scheduled
+            // while the spawn blocks, so the non-authoring exception applies.
             const spectator = await h.join.addSpectatorDetached();
             await h.event.waitUntilPeerStatus(spectator.index, Status.SYNCED);
             const prepared = await h.join.buildJoinChannelConfirmation({
@@ -369,6 +379,8 @@ describe("E2E: Participant Lifecycle", function () {
         it("pending join fault preserves the successful on-chain join and inbound message", async function () {
             const h = TestSession.getHarness();
             await h.lifecycle.start(2);
+            // Sync itself is the subject here and no transition is scheduled
+            // while the spawn blocks, so the non-authoring exception applies.
             const spectator = await h.join.addSpectatorDetached();
             await h.event.waitUntilPeerStatus(spectator.index, Status.SYNCED);
             const prepared = await h.join.buildJoinChannelConfirmation({
@@ -430,14 +442,24 @@ describe("E2E: Participant Lifecycle", function () {
         it("preserves a landed pending join when the same confirmation is retried", async function () {
             const h = TestSession.getHarness();
             await h.lifecycle.start(2);
-            const spectator = await h.join.addSpectatorDetached();
-            await h.transition.advanceState({
-                count: 1,
-                waitForPeers: [0, 1],
+            const { peer: spectator } = await h.join.addSpectatorAuthoring({
+                authoringPeerIndices: [0, 1],
+                minimumBlocks: 1,
+                maximumBlocks: 20,
                 waitForFinalization: true
             });
-            await h.event.waitUntilPeerStatus(spectator.index, Status.SYNCED);
             await h.assert.sync.peersInSyncWait();
+            // The confirmation build and the two join transactions take
+            // seconds on a loaded host while the writer slot sits idle; an
+            // idle slot lets a participant time out and reduce the channel
+            // under the join. Keep authoring until the join's inbound block
+            // is observed.
+            let joinObserved = false;
+            const keepAlive = h.transition.keepAuthoringUntil({
+                until: () => joinObserved,
+                waitForPeers: [0, 1],
+                maximumBlocks: 40
+            });
             const prepared = await h.join.buildJoinChannelConfirmation({
                 joiner: spectator,
                 channelId: h.channelId
@@ -474,6 +496,8 @@ describe("E2E: Participant Lifecycle", function () {
             expect(retryState.joinSubmissionHeight).to.not.equal(undefined);
 
             await h.assert.storage.honestPeersObserveInboundMessageWait();
+            joinObserved = true;
+            await keepAlive;
             await h.transition.advanceState({ count: 1 });
             expect(
                 await h

@@ -439,3 +439,16 @@ _Non-normative._
 | [`REQ-DVP-1-MQJTYR`](dispute-pipeline.md#req-dvp-1-mqjtyr) | Timeout submission respects precedence/race guards (existing window age, calldata grants, forced timeouts). | Covered               | [src/stateManager/StateManager.ts](../../../../../../src/stateManager/StateManager.ts#L1) (`tryTimeoutParticipant`)                                                                                                                                      | None.            |
 | [`REQ-DVP-2-RG8QR3`](dispute-pipeline.md#req-dvp-2-rg8qr3) | The reducer reads the dispute window through event-synchronized storage (never a window it cannot back).    | Covered               | [src/stateManager/EventSyncService.ts](../../../../../../src/stateManager/EventSyncService.ts#L1) (`loadSynchronizedWindowCommitments`, `ensureDisputesProcessed`)                                                                                       | None.            |
 | [`REQ-DVP-3-CFFAW1`](dispute-pipeline.md#req-dvp-3-cffaw1) | An incorrect committed reduction is challenged within the challenge period.                                 | Covered               | [src/eventHandlers/EventHandler.ts](../../../../../../src/eventHandlers/EventHandler.ts#L1) (`validateDisputeReductionAndChallenge`)                                                                                                                     | None.            |
+
+## Dispute admission and state contributions
+
+The [DisputeManager source report](../../../source/src/disputeManager/DisputeManager.ts.md) owns the
+single marker and its rollback. It enters the [StateManager boundary](../../../source/src/stateManager/StateManager.ts.md)
+after admitted signing/storage finishes, then releases it before construction and submission. Block-bound
+callers request observed detached dispute work so they do not reacquire a mutex they already hold.
+
+Conditional state contributions follow [the submission facet](../../../source/contracts/V1/StateChannelDiamondProxy/DisputeManagerFacet.sol.md)
+and [canonical reason validator](../../../source/contracts/V1/StateChannelDiamondProxy/utils/DisputeUtils.sol.md).
+A specific closed-window refusal refreshes slashes through [EventSyncService](../../../source/src/stateManager/eventSync/EventSyncService.ts.md)
+and re-enters normal construction only for observation changed since construction. The flag supplies a
+reason after acceptance even if the opener is later killed; it never bypasses the remaining audit checks.

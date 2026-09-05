@@ -144,6 +144,7 @@ function buildGenesisDispute(): {
                     previousBlockProducerPostedCalldata: false,
                     participantSignatureOnPreviousBlock: "0x"
                 },
+                requireExistingDisputeWindow: false,
                 selfRemoval: false
             },
             postedAuditingData: true,

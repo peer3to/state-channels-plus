@@ -173,7 +173,8 @@ class StateManager<
             this.eventHandler,
             this.storage,
             this.timeConfig,
-            logger
+            logger,
+            this.diamondStateMachine.localDiamondContract
         );
         this.stateChannelEventListener = new StateChannelEventListener(
             this.stateChannelManagerContract,
@@ -195,7 +196,8 @@ class StateManager<
             this.storage,
             this.diamondStateMachine,
             this.eventSyncService,
-            logger
+            logger,
+            this.self
         );
         this.p2pManager = new P2PManager<TCustomRpc>(
             this.self,

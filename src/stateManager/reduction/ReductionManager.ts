@@ -31,9 +31,11 @@ export type CompletedReduction = {
     reducedForkId: ForkId;
 };
 
+// `undefined` is the settled outcome of a reduction that was cancelled by
+// disposal or synchronization leaving the fork: this operation installed nothing.
 type ReductionCompletion = {
-    promise: Promise<CompletedReduction>;
-    resolve: (result: CompletedReduction) => void;
+    promise: Promise<CompletedReduction | undefined>;
+    resolve: (result: CompletedReduction | undefined) => void;
     reject: (error: unknown) => void;
     result?: CompletedReduction;
     settled: boolean;
@@ -47,6 +49,9 @@ export default class ReductionManager {
     private readonly reductionComputationService: ReductionComputationService;
     private readonly reductionExecutor: ReductionExecutor;
     private readonly logger: Logger;
+    // Terminal owner flag: after disposal no entry point creates a completion,
+    // schedules a timer, installs a genesis, or submits a transaction.
+    private disposed = false;
 
     constructor(
         private readonly stateManager: StateManager,
@@ -71,9 +76,32 @@ export default class ReductionManager {
     }
 
     public dispose(): void {
+        this.disposed = true;
         this.cancelScheduledReductions();
+        // Settle every pending completion exactly once. Never reject: a
+        // rejection would surface as a detached error through the drain that
+        // is waiting on these very promises.
+        for (const completion of this.completions.values()) {
+            if (completion.settled) continue;
+            completion.settled = true;
+            completion.resolve(undefined);
+        }
         this.completions.clear();
         this.reductionExecutor.dispose();
+    }
+
+    public settleForkLeft(forkId: ForkId): void {
+        const timeout = this.timeouts.get(forkId);
+        if (timeout) {
+            this.stateManager.timeoutManager.cancelTask(timeout.handle);
+            this.timeouts.delete(forkId);
+        }
+        const completion = this.completions.get(forkId);
+        // Completed reductions keep their actual result, including mismatch checks.
+        if (!completion || completion.settled) return;
+        completion.settled = true;
+        completion.resolve(undefined);
+        this.completions.delete(forkId);
     }
 
     public schedule(
@@ -81,6 +109,7 @@ export default class ReductionManager {
         localTriggerTimestamp: Timestamp,
         isRescheduled = false
     ): void {
+        if (this.disposed || forkId !== this.stateManager.forkId) return;
         const now = Clock.getTimeInSeconds();
         this.logger.debug(
             `setReductionTimeout called for fork ${forkId} at ${localTriggerTimestamp} (in ${localTriggerTimestamp - now}s)`
@@ -123,6 +152,7 @@ export default class ReductionManager {
     public async tryReduce(
         forkId: ForkId
     ): Promise<CompletedReduction | undefined> {
+        if (this.disposed) return undefined;
         if (forkId !== this.stateManager.forkId) {
             this.logger.debug("Ignoring reduction attempt for an old fork", {
                 forkId,
@@ -139,17 +169,29 @@ export default class ReductionManager {
                 this.stateManager.channelId,
                 forkId
             );
+        if (this.disposed) return undefined;
+        if (forkId !== this.stateManager.forkId)
+            return this.completions.get(forkId)?.promise;
         if (!isDisputed) return undefined;
 
         const completion = this.getOrCreateCompletion(forkId);
-        try {
-            if (!completion.settled) {
-                await this.reductionExecutor.tryReduce(forkId);
-            }
-        } catch (error) {
-            this.failCompletion(completion, error);
-        }
+        // The shared completion is the caller boundary. Disposal settles it
+        // without waiting for the attempt's provider or VM calls to return,
+        // and a fatal attempt error rejects it exactly once; the attempt
+        // itself runs as observed detached work behind it.
+        if (!completion.settled) this.driveAttempt(forkId, completion);
         return completion.promise;
+    }
+
+    private driveAttempt(
+        forkId: ForkId,
+        completion: ReductionCompletion
+    ): void {
+        DetachedPromises.collect(
+            this.reductionExecutor.tryReduce(forkId).catch((error) => {
+                this.failCompletion(completion, error);
+            })
+        );
     }
 
     public computeReduction(
@@ -190,12 +232,18 @@ export default class ReductionManager {
         reducedForkId: ForkId,
         genesis: ReductionGenesis
     ): Promise<boolean> {
+        if (this.disposed) return false;
+        if (
+            forkId !== this.stateManager.forkId &&
+            !this.completions.has(forkId)
+        )
+            return false;
         const completion = this.getOrCreateCompletion(forkId);
         let installed = false;
         try {
             installed = await this.stateManager.withMutex(
                 async () => {
-                    if (completion.settled) return false;
+                    if (completion.settled || this.disposed) return false;
                     if (this.stateManager.forkId !== forkId) {
                         this.logger.debug(
                             "Reduction completion skipped because the fork already changed",
@@ -205,16 +253,23 @@ export default class ReductionManager {
                                 reducedForkId
                             }
                         );
+                        this.settleForkLeft(forkId);
                         return false;
                     }
 
-                    await this.stateManager.stateApplicationService.unsafeSetGenesisState(
-                        genesis.snapshotData,
-                        genesis.encodedState,
-                        reducedForkId,
-                        genesis.genesisTimestamp,
-                        genesis.outboundMessageBlock
-                    );
+                    // Disposal may land while the application awaits the VM;
+                    // the final check inside the staged commit is what decides.
+                    const committed =
+                        await this.stateManager.stateApplicationService.unsafeApplyReductionGenesis(
+                            genesis.snapshotData,
+                            genesis.encodedState,
+                            reducedForkId,
+                            genesis.genesisTimestamp,
+                            genesis.outboundMessageBlock,
+                            () =>
+                                !this.disposed && !this.stateManager.isDisposed
+                        );
+                    if (!committed) return false;
                     const result = { reducedForkId };
                     completion.result = result;
                     completion.settled = true;
@@ -229,6 +284,9 @@ export default class ReductionManager {
         }
 
         const result = await completion.promise;
+        // A reduction cancelled by disposal or sync settles as undefined: nothing was
+        // installed and there is no result to compare.
+        if (!result) return installed;
         if (result.reducedForkId !== reducedForkId) {
             const error = new Error(
                 `Final reduction expected fork ${reducedForkId}, but completed with ${result.reducedForkId}`
@@ -267,15 +325,29 @@ export default class ReductionManager {
     private getOrCreateCompletion(forkId: ForkId): ReductionCompletion {
         const existing = this.completions.get(forkId);
         if (existing) return existing;
+        if (this.disposed) {
+            // Terminal: hand back an already-settled completion without
+            // recording new work.
+            return {
+                promise: Promise.resolve(undefined),
+                resolve: () => undefined,
+                reject: () => undefined,
+                settled: true
+            };
+        }
 
-        let resolve!: (result: CompletedReduction) => void;
+        let resolve!: (result: CompletedReduction | undefined) => void;
         let reject!: (error: unknown) => void;
-        const promise = new Promise<CompletedReduction>(
+        const promise = new Promise<CompletedReduction | undefined>(
             (resolvePromise, rejectPromise) => {
                 resolve = resolvePromise;
                 reject = rejectPromise;
             }
         );
+        // A fatal attempt rejects this promise for whoever awaits it; the
+        // handled branch keeps a rejection nobody awaits from surfacing as an
+        // orphan on top of the abort it already caused.
+        promise.catch(() => undefined);
         const completion = {
             promise,
             resolve,
@@ -295,7 +367,9 @@ export default class ReductionManager {
         this.logger.error("Fatal reduction error", {
             error: error instanceof Error ? error.message : String(error)
         });
-        this.stateManager.abort();
+        // Reject before the abort: disposal settles only pending completions,
+        // so the caller sees the original error rather than a cancellation.
         completion.reject(error);
+        this.stateManager.abort();
     }
 }

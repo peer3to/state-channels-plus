@@ -15,10 +15,11 @@ describe("E2E: Force Join Dispute", function () {
         // p2pTime + agreementTime and get the next block rejected (its
         // timestamp is capped at prev + p2pTime).
         await h.lifecycle.start(2, 0);
-        const joiner = await h.join.addSpectatorDetached();
-        await h.transition.advanceState({ count: 2, waitForPeers: [0, 1] });
-        await h.event.waitUntilPeerStatus(joiner.index, Status.SYNCED, {
-            timeoutMessage: "Joiner did not reach SYNCED"
+        const { peer: joiner } = await h.join.addSpectatorAuthoring({
+            authoringPeerIndices: [0, 1],
+            minimumBlocks: 2,
+            maximumBlocks: 20,
+            statusTimeoutMessage: "Joiner did not reach SYNCED"
         });
         await h.assert.sync.peersInSyncWait();
 
@@ -104,9 +105,11 @@ describe("E2E: Force Join Dispute", function () {
         await h.lifecycle.start(2, 0, {
             configOverrides: { LEAVE_CHANNEL_WATCHDOG_MS: 5_000 }
         });
-        const joiner = await h.join.addSpectatorDetached();
-        await h.transition.advanceState({ count: 2, waitForPeers: [0, 1] });
-        await h.event.waitUntilPeerStatus(joiner.index, Status.SYNCED);
+        const { peer: joiner } = await h.join.addSpectatorAuthoring({
+            authoringPeerIndices: [0, 1],
+            minimumBlocks: 2,
+            maximumBlocks: 20
+        });
         await h.assert.sync.peersInSyncWait();
         const restoreInbound0 =
             await h.byzantine.stubPendingInboundInclusion(0);
@@ -116,12 +119,9 @@ describe("E2E: Force Join Dispute", function () {
 
         const originalForkId = h.activeForkId!;
         await h.transition.advanceState({ count: 3 });
-        await h.event.waitForPeers(
-            "onInitiatingDispute",
-            [joiner.index],
-            1,
-            { mode: "atLeast" }
-        );
+        await h.event.waitForPeers("onInitiatingDispute", [joiner.index], 1, {
+            mode: "atLeast"
+        });
         await restoreInbound0();
         await restoreInbound1();
         const disputeCountBeforeLeave =
@@ -141,20 +141,23 @@ describe("E2E: Force Join Dispute", function () {
         );
 
         await h.dispute.resolveDisputeWait({ forkId: originalForkId });
-        await waitFor(async () => {
-            const state = await h
-                .control(joiner)
-                .query.getLeaveChannelState()
-                .request();
-            return (
-                state?.forkId !== originalForkId &&
-                state?.phase === "awaiting-exit"
-            );
-        }, h.event.protocolEventTimeoutMs({ withFirstBlockGrace: true }));
+        await waitFor(
+            async () => {
+                const state = await h
+                    .control(joiner)
+                    .query.getLeaveChannelState()
+                    .request();
+                return (
+                    state?.forkId !== originalForkId &&
+                    state?.phase === "awaiting-exit"
+                );
+            },
+            h.event.protocolEventTimeoutMs({ withFirstBlockGrace: true })
+        );
 
-        expect(
-            await h.control(joiner).query.getStatus().request()
-        ).to.equal(Status.PARTICIPATING);
+        expect(await h.control(joiner).query.getStatus().request()).to.equal(
+            Status.PARTICIPATING
+        );
         await joiner.p2pInstance.dispose();
         await expect(leave).to.be.rejectedWith("disposed");
     });

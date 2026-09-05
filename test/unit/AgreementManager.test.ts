@@ -5,7 +5,6 @@ import { MathTestSession as TestSession } from "@test/harness";
 import { hash as randomHash, randomAddress } from "../factory";
 import { waitFor } from "@test/utils/waitFor";
 import { ZeroHash } from "ethers";
-import { Status } from "@/types";
 
 describe("Unit: AgreementManager", function () {
     describe("getLatestSignedBlockByParticipant", function () {
@@ -263,9 +262,11 @@ describe("Unit: AgreementManager", function () {
             await h.lifecycle.start(2, 0);
 
             // a spectator joins -> the set grows to 3 at block 2
-            const spectator = await h.join.addSpectatorDetached();
-            await h.transition.advanceState({ count: 2, waitForPeers: [0, 1] });
-            await h.event.waitUntilPeerStatus(spectator.index, Status.SYNCED);
+            const { peer: spectator } = await h.join.addSpectatorAuthoring({
+                authoringPeerIndices: [0, 1],
+                minimumBlocks: 2,
+                maximumBlocks: 20
+            });
             await h.assert.sync.peersInSyncWait({ peerIndices: [0, 1, 2] });
 
             await h.join.joinChannelWait({ joiner: spectator });
@@ -341,9 +342,11 @@ describe("Unit: AgreementManager", function () {
             const h = TestSession.getHarness();
             await h.lifecycle.start(2, 0);
 
-            const spectator = await h.join.addSpectatorDetached();
-            await h.transition.advanceState({ count: 2, waitForPeers: [0, 1] });
-            await h.event.waitUntilPeerStatus(spectator.index, Status.SYNCED);
+            const { peer: spectator } = await h.join.addSpectatorAuthoring({
+                authoringPeerIndices: [0, 1],
+                minimumBlocks: 2,
+                maximumBlocks: 20
+            });
             await h.assert.sync.peersInSyncWait({ peerIndices: [0, 1, 2] });
 
             await h.byzantine.stubBroadcast(spectator.index);

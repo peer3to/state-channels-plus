@@ -42,6 +42,7 @@
         "src/evm/contractExecutor/node",
         "src/evm/p2pRuntime/node",
         "src/utils/node",
-        "src/utils/logging/node"
+        "src/utils/logging/node",
+        "test/evm/workers/node"
     ]
 }

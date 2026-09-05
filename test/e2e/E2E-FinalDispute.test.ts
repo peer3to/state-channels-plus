@@ -2,6 +2,7 @@ import { MathTestSession as TestSession } from "@test/harness";
 import { expect } from "chai";
 
 import { Status } from "@/types";
+import { waitFor } from "@test/utils/waitFor";
 
 describe("E2E: final dispute resolution", function () {
     it("threshold-final dispute installs its exact output and can post the next snapshot", async function () {
@@ -71,6 +72,131 @@ describe("E2E: final dispute resolution", function () {
         expect(expectedSnapshot).to.not.equal(undefined);
         await h.assert.snapshot.localSnapshotsChangedWait({
             expectedSnapshot
+        });
+    });
+
+    it("direct final-dispute reduction re-homes a pending leave onto the reduced fork and settles it once", async function () {
+        const h = TestSession.getHarness();
+        await h.scenario.preDisputeSetup({
+            peerCount: 4,
+            timeConfig: { evidenceTime: 3 },
+            // Keep the leave watchdog out of the way: the leave must settle
+            // through its exit turn on the reduced fork, not a fallback dispute.
+            configOverrides: { LEAVE_CHANNEL_WATCHDOG_MS: 60_000 }
+        });
+        const maliciousPeerIndex = 1;
+        const leaver = h.getPeer(2);
+        let exitPromise: Promise<unknown> | undefined;
+        leaver.p2pInstance.events.on("p2pEventHooks", "onLeaveTurn", () => {
+            exitPromise = leaver.p2pInstance.p2pContractInstance.leaveChannel();
+        });
+        const leave = leaver.p2pInstance.leaveChannel();
+
+        const staged = await h.dispute.submitFinalDispute({
+            maliciousPeerIndex
+        });
+        await h.dispute.resolveFinalDispute(staged);
+
+        // Author only once every honest peer installed the reduced fork and
+        // the honest mesh is back in sync; on a loaded farm the reconnect
+        // after reduction takes longer than the first write's sync wait.
+        const honest = h.getActiveHonestPeers().map((peer) => peer.index);
+        const remaining = honest.filter((index) => index !== leaver.index);
+        await h.assert.dispute.reductionCompletedWait({
+            sourceForkId: staged.forkId,
+            reducedForkId: staged.finalResolution.forkId,
+            peerIndices: honest
+        });
+        // The leaver may take its exit turn the moment the reduced fork is
+        // installed, so the sync check covers the peers that keep authoring.
+        await h.assert.sync.peersInSyncWait({ peerIndices: remaining });
+
+        // The direct reduction path's follow-up moves the pending leave onto
+        // the reduced fork; the leaver then takes its exit turn there. Other
+        // honest peers author until that turn comes around.
+        await waitFor(
+            async () => {
+                if (exitPromise !== undefined) return true;
+                // The next writer is a function of the state at one
+                // coordinate, so every honest host at the same height of the
+                // reduced fork names the same writer. Right after the direct
+                // reduction the remaining hosts can sit at different heights
+                // for a moment (one has applied the leaver's exit block, one
+                // has not), and a block written on a lagging
+                // host's word collides with the exit block. Write only once
+                // the hosts hold the same height and name a non-leaver; two
+                // writers at one height is a bug, not a race.
+                const reducedForkId = staged.finalResolution.forkId;
+                const views = await Promise.all(
+                    remaining.map(async (index) => {
+                        const control = h.control(h.getPeer(index));
+                        const heightBefore = await control.query
+                            .getLatestBlockHeight(reducedForkId)
+                            .request();
+                        const next = await control.query
+                            .getNextToWrite()
+                            .request();
+                        const heightAfter = await control.query
+                            .getLatestBlockHeight(reducedForkId)
+                            .request();
+                        return { height: heightBefore, next, heightAfter };
+                    })
+                );
+                const settled = views.every(
+                    (view) =>
+                        view.height === view.heightAfter &&
+                        view.height === views[0].height
+                );
+                if (!settled) return exitPromise !== undefined;
+                const writers = new Set(views.map((view) => view.next));
+                if (writers.size !== 1) {
+                    throw new Error(
+                        `Honest hosts at height ${String(views[0].height)} of fork ${reducedForkId} name different next writers: ${[...writers].join(", ")}`
+                    );
+                }
+                const next = h.peers.find(
+                    (peer) => peer.address === views[0].next
+                );
+                if (!next || next.index === leaver.index) {
+                    return exitPromise !== undefined;
+                }
+                await h.transition.peerWrite({
+                    peer: next.index,
+                    waitForPeers: honest
+                });
+                return exitPromise !== undefined;
+            },
+            h.event.protocolEventTimeoutMs({ withFirstBlockGrace: true })
+        );
+        await exitPromise;
+        // The exit block is authored: the leaver never writes again and its
+        // outer runtime disposes once the leave settles, so harness queries
+        // must stop routing through it now.
+        h.contextApi.markAfkPeer({ afkPeerIndex: leaver.index });
+
+        // The leave settles only after the exit snapshot lands on-chain; the
+        // remaining honest peers keep the writer slot alive meanwhile.
+        let leaveSettled = false;
+        const settledLeave = leave.then(() => {
+            leaveSettled = true;
+        });
+        await h.transition.keepAuthoringUntil({
+            until: () => leaveSettled,
+            waitForPeers: remaining,
+            excludePeerIndices: [leaver.index],
+            maximumBlocks: 20
+        });
+        await settledLeave;
+
+        expect(
+            (await h.channelManager.getParticipants(h.channelId)).includes(
+                leaver.address
+            )
+        ).to.equal(false);
+        await h.transition.advanceState({
+            count: 1,
+            waitForPeers: remaining,
+            waitForFinalization: true
         });
     });
 

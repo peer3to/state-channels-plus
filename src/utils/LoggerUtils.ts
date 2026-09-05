@@ -686,6 +686,8 @@ export class LoggerUtils {
             ),
             disputer: String(disputeInput.disputer),
             selfRemoval: disputeInput.selfRemoval,
+            requireExistingDisputeWindow:
+                disputeInput.requireExistingDisputeWindow,
             timeout: this.getTimeoutStructMetadata(disputeInput.timeout),
             stateProof: (() => {
                 const sp = StateProof.tryFrom(disputeInput.stateProof);

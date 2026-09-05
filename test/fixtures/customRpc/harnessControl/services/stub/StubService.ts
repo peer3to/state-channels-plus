@@ -1,3 +1,5 @@
+import { WebSocketServer } from "ws";
+import { AsyncLocalStorage } from "node:async_hooks";
 // @spec-test-coverage-ignore: RPC fixture support exercised by owning E2E declarations.
 import ARpcService from "@/rpc/ARpcService";
 import type P2PManager from "@/P2PManager";
@@ -5,7 +7,7 @@ import type ATransport from "@/transport/ATransport";
 import type { Address, ForkId, Hash, Timestamp } from "@/types/types";
 import type { HarnessControlRpc } from "../../HarnessControlRpc";
 import StubRpcMethods from "./StubRpcMethods";
-import { ethers, id, Log } from "ethers";
+import { ethers, id } from "ethers";
 import type { StateChannelManagerInterface } from "@typechain-types";
 import type {
     DisputeAuditingDataStruct,
@@ -15,7 +17,7 @@ import type {
 import type { DisputeFraudProofStruct } from "@typechain-types/contracts/V1/types/ProofTypes";
 import {
     Codec,
-    DetachedPromises,
+    LocalDiscoveryServer,
     Mutex,
     tryDecodeCustomError,
     Type
@@ -37,8 +39,11 @@ import type {
 } from "@/rpc/services/openChannelNegotiation/OpenChannelNegotiationService";
 import type LobbyMatchingRpcMethods from "@/rpc/services/lobbyMatching/LobbyMatchingRpcMethods";
 import type OpenChannelNegotiationRpcMethods from "@/rpc/services/openChannelNegotiation/OpenChannelNegotiationRpcMethods";
+import type { TimeoutManager } from "@/utils/TimeoutManager";
 
 // `ATransport` is used both for `createRPCMethods` and the captured transport.
+
+export type BlockWorkHoldPoint = "authoring" | "commit" | "signature";
 
 type DisputeCommittedEventKey = string;
 type CalldataPostedEventKey = string;
@@ -46,6 +51,9 @@ type InboundMessageLogKey = string;
 
 /** Fixed identifiers for the stub-original registry (never caller-supplied). */
 export type StubKey =
+    | "auditingDataRebuild"
+    | "snapshotPostSend"
+    | "expiredCalldataPost"
     | "broadcast"
     | "calldataPosting"
     | "pendingInboundInclusion"
@@ -62,7 +70,6 @@ export type StubKey =
     | "initHandshakeCreateRpcMethods"
     | "maybePostBlockOnChain"
     | "stateManagerAbort"
-    | "reductionTasks"
     | "snapshotUpdatedEvents"
     | "inboundMessageEvents"
     | "disputeCommittedEvents"
@@ -83,11 +90,26 @@ export type StubKey =
     | "disputeKill"
     | "timeoutCheck"
     | "scheduledTasks"
+    | "reductionApplication"
+    | "reductionApplicationSetState"
+    | "reductionApplicationGetParticipants"
+    | "reductionApplicationGetNextToWrite"
+    | "reductionAttempt"
+    | "reductionCompute"
+    | "reductionDisputes"
+    | "reductionAdmission"
+    | "reductionObservedAttempt"
+    | "reductionSubmitGasLimit"
+    | "reductionSubmitMulticall"
+    | "denyTurn"
     | "ingestConfirmations"
+    | "networkConfirmations"
+    | "spectateSyncApplication"
     | "onChainSlashesQuery"
     | "localDiamondInboundMessages"
-    | "inboundMessageLogs"
+    | "eventLogs"
     | "chainLogQueries"
+    | "onChainSlashesRead"
     | "disputeWindowTimestamp"
     | "disputeCommittedHandler"
     | "lobbyCreateRpcMethods"
@@ -104,6 +126,53 @@ export type StubKey =
 export type HeldLobbyReplyKind = "pick" | "commit";
 export type HeldNegotiationReplyKind = "exchangeTerms" | "openProposal";
 export type HeldMembershipReceiptKind = "joinChannel" | "topUpBalance";
+
+/**
+ * Where the reduction genesis application is paused (`hold`) or made to fail
+ * (`reject`). Only the two reads after the canonical `setState` can reject.
+ */
+export type ReductionApplicationControl =
+    | {
+          outcome: "hold";
+          at: "setState" | "getParticipants" | "getNextToWrite";
+      }
+    | { outcome: "reject"; at: "getParticipants" | "getNextToWrite" };
+
+/** Which stage of a reduction attempt the attempt hold pauses. */
+/**
+ * Where a reduction attempt pauses: before any executor work, at the synced
+ * dispute read, at candidate computation, or at the submission's gas-limit
+ * read (after the local install, before the chain write).
+ */
+export type ReductionAttemptHoldPoint =
+    | "attempt"
+    | "admission"
+    | "disputes"
+    | "compute"
+    | "submit";
+/**
+ * What the paused call does once released: continue with the real call,
+ * return `undefined` (the executor's "data unavailable" branch), or throw
+ * (a fatal attempt error).
+ */
+export type ReductionAttemptResume = "original" | "undefined" | "throw";
+export const REDUCTION_ATTEMPT_STUB_FAILURE =
+    "Stubbed reduction attempt failure";
+
+/** One pausable host call: counts entries and releases them together. */
+export type StubGate = {
+    entered: number;
+    gate: Promise<void>;
+    release: () => void;
+};
+
+/** Settled projection of a detached host call started by a stub. */
+export type DetachedCallOutcome = {
+    settled: boolean;
+    /** `reducedForkId` for tryReduce, `installed` as a string for completeWithGenesis. */
+    result: string | null;
+    rejected: string | null;
+};
 
 type HeldRpcReply = {
     kind: HeldLobbyReplyKind | HeldNegotiationReplyKind | "spectate";
@@ -151,6 +220,9 @@ export type RecordedDisputeSubmission = {
 export type DisputeSubmissionFailureSpec = {
     /** Solidity custom error to revert with (its selector is the revert data). */
     customError?: RaceConditionErrorName;
+    customErrorArgs?: string[];
+    /** Fail only this many submissions; later submissions follow `forward`. */
+    times?: number;
     /** Failure message when the failure is not a decodable custom error. */
     message?: string;
     /** Whether the failure surfaces from the send or from `tx.wait()`. */
@@ -278,6 +350,8 @@ export type BlockProbeOptions = {
     encodedDispute?: string;
     /** Supplier of this copy - drives `sourcePeers`/`signatureSources`. */
     senderAddress?: Address;
+    /** Mark the entry as replayed from a verified synchronization proof. */
+    replayedFromProof?: boolean;
 };
 
 export type BlockValidationProbeOptions = BlockProbeOptions & {
@@ -358,6 +432,9 @@ export class StubService extends ARpcService<
     StubRpcMethods,
     P2PManager<HarnessControlRpc>
 > {
+    private blockWorkRelease?: () => void;
+    private blockWorkRestore?: () => void;
+    public blockWorkEntered = 0;
     readonly stubOriginals = new Map<StubKey, unknown>();
     /** Set by the record-dispute-ack stub when its method fires. */
     disputeAckRequestCalled = false;
@@ -375,11 +452,22 @@ export class StubService extends ARpcService<
     spectateRequestCount = 0;
     /** Incremented per join-signature request by the recording wrapper. */
     joinSignatureRequestCount = 0;
-    /** `reduction-*` timer tasks captured by the hold-reduction-tasks stub. */
-    readonly heldReductionTasks: {
-        taskName: string;
-        task: () => void | Promise<void>;
-    }[] = [];
+    /**
+     * Timer tasks captured by the hold-scheduled-tasks stub, keyed by the task
+     * name prefix that holds them (for example `reduction-`).
+     */
+    readonly heldScheduledTasks = new Map<
+        string,
+        { taskName: string; task: () => void | Promise<void> }[]
+    >();
+    /**
+     * The real `scheduleTask`, kept while any prefix is held. One dispatcher
+     * serves every active prefix, so prefixes are released in any order and
+     * the real scheduler comes back only when the last one goes.
+     */
+    heldScheduledTaskBase?: TimeoutManager["scheduleTask"];
+    /** Chain writes attempted by a reduction submission while the submit hold is installed. */
+    reductionSubmitCalls = 0;
     /** Label + delay of every scheduled task, captured by the record stub. */
     readonly recordedScheduledTasks: {
         taskName: string;
@@ -392,9 +480,42 @@ export class StubService extends ARpcService<
     readonly passedDisputeCommittedEventKeys =
         new Set<DisputeCommittedEventKey>();
     /** Subscribed inbound logs the drop stub has already lost once. */
-    readonly droppedInboundMessageLogKeys = new Set<InboundMessageLogKey>();
+    readonly droppedEventLogKeys = new Set<InboundMessageLogKey>();
+    /** Reduction genesis application control staged by its hold/reject stub. */
+    reductionApplicationControl?: ReductionApplicationControl;
+    /**
+     * Async context of the wrapped reduction application: set only on the
+     * application's own call chain, so a concurrent reader of the same
+     * state-machine calls (a timeout probe, block validation) never consumes
+     * the staged hold or rejection.
+     */
+    readonly reductionApplicationContext = new AsyncLocalStorage<true>();
+    /**
+     * Marks a block confirmation ingested through the harness control port,
+     * so a stub that drops network-delivered confirmations lets it through.
+     */
+    readonly controlIngestContext = new AsyncLocalStorage<true>();
+    /** Gate holding this peer's own sync at its application step. */
+    spectateSyncApplicationGate?: StubGate;
+    reductionApplicationGate?: StubGate;
+    /** Calls that reached the control; survives the restore that an abort triggers. */
+    reductionApplicationEntered = 0;
+    /** Pause of one reduction attempt stage (executor attempt or computation). */
+    reductionAttemptGate?: StubGate;
+    public reductionAttemptsInFlight = 0;
+    public forkLeaveObservation = {
+        scheduled: 0,
+        cancelled: 0,
+        settledStateObserved: 0
+    };
+    private restoreForkLeaveObservation?: () => void;
+    /** Detached host calls started by stubs, read back as projections. */
+    tryReduceOutcome?: DetachedCallOutcome;
+    completeWithGenesisOutcome?: DetachedCallOutcome;
+    /** State-manager mutex held by the stub until released. */
+    stateMutexGate?: StubGate;
     /** How many distinct inbound logs may be dropped (undefined = all). */
-    inboundMessageLogDropLimit?: number;
+    eventLogDropLimit?: number;
     /** Subscribed calldata logs the hold stub has already lost once. */
     readonly heldCalldataPostedEventKeys = new Set<CalldataPostedEventKey>();
     /** getLogs spans recorded by the current chain-log-query patch. */
@@ -437,8 +558,13 @@ export class StubService extends ARpcService<
     suppressedDisputeKillCount = 0;
     /** State for the dispute-audit hold at the on-chain-slashes query. */
     heldOnChainSlashesQuery?: HeldOnChainSlashesQueryState;
+    heldAuditingDataRebuild?: HeldOnChainSlashesQueryState;
+    /** State for the hold on this peer's snapshot post at its send. */
+    heldSnapshotPostSend?: HeldOnChainSlashesQueryState;
     /** Resolvers waiting for the first parked slashes query. */
     private readonly heldOnChainSlashesQueryWaiters: (() => void)[] = [];
+    private readonly heldAuditingDataRebuildWaiters: (() => void)[] = [];
+    private readonly heldSnapshotPostSendWaiters: (() => void)[] = [];
     /**
      * Serializes runBlockValidation/runBlockIngest's record-only
      * patch/restore region. The
@@ -632,7 +758,7 @@ export class StubService extends ARpcService<
         this.stubOriginals.delete("failMatchedNegotiation");
     }
 
-    public holdSpectateResponses(): void {
+    public holdSpectateResponses(fail = false): void {
         this.releaseSpectateResponses();
         const service = this.p2pManager.localRpc.spectateService;
         const original = service.createRPCMethods.bind(service);
@@ -646,6 +772,9 @@ export class StubService extends ARpcService<
                 const response = await endpoint(request);
                 hold.entered += 1;
                 await hold.gate;
+                if (fail) {
+                    throw new Error("injected spectate response failure");
+                }
                 return response;
             };
             return methods;
@@ -910,6 +1039,207 @@ export class StubService extends ARpcService<
         return true;
     }
 
+    /** One releasable pause shared by the reduction-control stubs. */
+    public createGate(): StubGate {
+        let release: () => void = () => undefined;
+        const gate = new Promise<void>((resolve) => {
+            release = resolve;
+        });
+        return { entered: 0, gate, release };
+    }
+
+    /**
+     * Release every paused reduction-control call and restore the wrapped
+     * host methods. Runs on control-root disposal so an abort during a staged
+     * hold never leaves a paused drain behind.
+     */
+    public installBlockWorkHold(point: BlockWorkHoldPoint): void {
+        this.releaseBlockWorkHold();
+        this.blockWorkEntered = 0;
+        const gate = new Promise<void>((resolve) => {
+            this.blockWorkRelease = resolve;
+        });
+        const enter = async () => {
+            this.blockWorkRestore?.();
+            this.blockWorkRestore = undefined;
+            this.blockWorkEntered += 1;
+            await gate;
+        };
+        if (point === "authoring") {
+            const owner = this.sm.snapshotAssemblyService;
+            const original = owner.assembleFromTransaction;
+            this.blockWorkRestore = () => {
+                owner.assembleFromTransaction = original;
+            };
+            owner.assembleFromTransaction = async (...args) => {
+                await enter();
+                return original.apply(owner, args);
+            };
+        } else if (point === "commit") {
+            const owner = this.sm.blockCommitService;
+            const original = owner.success;
+            this.blockWorkRestore = () => {
+                owner.success = original;
+            };
+            owner.success = async (...args) => {
+                await enter();
+                return original.apply(owner, args);
+            };
+        } else {
+            const owner = this.sm.signer;
+            const original = owner.signMessage;
+            this.blockWorkRestore = () => {
+                owner.signMessage = original;
+            };
+            owner.signMessage = async (...args) => {
+                await enter();
+                return original.apply(owner, args);
+            };
+        }
+    }
+
+    public releaseBlockWorkHold(): void {
+        this.blockWorkRestore?.();
+        this.blockWorkRestore = undefined;
+        this.blockWorkRelease?.();
+        this.blockWorkRelease = undefined;
+    }
+
+    public recordForkLeave(forkId: ForkId): void {
+        this.restoreForkLeave();
+        const observation = {
+            scheduled: 0,
+            cancelled: 0,
+            settledStateObserved: 0
+        };
+        this.forkLeaveObservation = observation;
+        const timers = this.sm.timeoutManager;
+        const leave = this.sm.leaveChannelService;
+        const schedule = timers.scheduleTask;
+        const cancel = timers.cancelTask;
+        const settled = leave.onSettledStateObserved;
+        const handles = new Set<ReturnType<typeof setTimeout>>();
+        timers.scheduleTask = (...args) => {
+            const handle = schedule.apply(timers, args);
+            if (args[2] === `reduction-${forkId}`) {
+                observation.scheduled += 1;
+                handles.add(handle);
+            }
+            return handle;
+        };
+        timers.cancelTask = (handle) => {
+            if (handles.delete(handle)) observation.cancelled += 1;
+            cancel.call(timers, handle);
+        };
+        leave.onSettledStateObserved = async (...args) => {
+            await settled.apply(leave, args);
+            observation.settledStateObserved += 1;
+        };
+        this.restoreForkLeaveObservation = () => {
+            timers.scheduleTask = schedule;
+            timers.cancelTask = cancel;
+            leave.onSettledStateObserved = settled;
+        };
+    }
+
+    public restoreForkLeave(): void {
+        this.restoreForkLeaveObservation?.();
+        this.restoreForkLeaveObservation = undefined;
+    }
+
+    public releaseReductionHolds(): void {
+        this.restoreForkLeave();
+        this.releaseBlockWorkHold();
+        this.restoreReductionApplication();
+        this.restoreReductionAttempt();
+        this.releaseStateMutex();
+    }
+
+    public restoreReductionApplication(): void {
+        const sm = this.sm;
+        const application = this.stubOriginals.get("reductionApplication");
+        if (application) {
+            sm.stateApplicationService.unsafeApplyReductionGenesis =
+                application as typeof sm.stateApplicationService.unsafeApplyReductionGenesis;
+            this.stubOriginals.delete("reductionApplication");
+        }
+        const setState = this.stubOriginals.get("reductionApplicationSetState");
+        if (setState) {
+            sm.diamondStateMachine.setState =
+                setState as typeof sm.diamondStateMachine.setState;
+            this.stubOriginals.delete("reductionApplicationSetState");
+        }
+        const getParticipants = this.stubOriginals.get(
+            "reductionApplicationGetParticipants"
+        );
+        if (getParticipants) {
+            sm.diamondStateMachine.getParticipants =
+                getParticipants as typeof sm.diamondStateMachine.getParticipants;
+            this.stubOriginals.delete("reductionApplicationGetParticipants");
+        }
+        const getNextToWrite = this.stubOriginals.get(
+            "reductionApplicationGetNextToWrite"
+        );
+        if (getNextToWrite) {
+            sm.diamondStateMachine.getNextToWrite =
+                getNextToWrite as typeof sm.diamondStateMachine.getNextToWrite;
+            this.stubOriginals.delete("reductionApplicationGetNextToWrite");
+        }
+        this.reductionApplicationControl = undefined;
+        this.reductionApplicationGate?.release();
+        this.reductionApplicationGate = undefined;
+    }
+
+    public restoreReductionAttempt(): void {
+        const manager = this.sm.reductionManager;
+        const executor = manager["reductionExecutor"];
+        const computation = manager["reductionComputationService"];
+        const contract = this.sm.stateChannelManagerContract;
+        const admission = this.stubOriginals.get("reductionAdmission");
+        if (admission) {
+            Reflect.set(contract, "isForkDisputed", admission);
+            this.stubOriginals.delete("reductionAdmission");
+        }
+        const attempt = this.stubOriginals.get("reductionAttempt");
+        if (attempt) {
+            executor.tryReduce = attempt as typeof executor.tryReduce;
+            this.stubOriginals.delete("reductionAttempt");
+        }
+        const observed = this.stubOriginals.get("reductionObservedAttempt");
+        if (observed) {
+            executor.tryReduce = observed as typeof executor.tryReduce;
+            this.stubOriginals.delete("reductionObservedAttempt");
+        }
+        const disputes = this.stubOriginals.get("reductionDisputes");
+        if (disputes) {
+            executor.getSyncedForkDisputes =
+                disputes as typeof executor.getSyncedForkDisputes;
+            this.stubOriginals.delete("reductionDisputes");
+        }
+        const compute = this.stubOriginals.get("reductionCompute");
+        if (compute) {
+            computation.compute = compute as typeof computation.compute;
+            this.stubOriginals.delete("reductionCompute");
+        }
+        const gasLimit = this.stubOriginals.get("reductionSubmitGasLimit");
+        if (gasLimit) {
+            Reflect.set(contract, "getGasLimit", gasLimit);
+            this.stubOriginals.delete("reductionSubmitGasLimit");
+        }
+        const multicall = this.stubOriginals.get("reductionSubmitMulticall");
+        if (multicall) {
+            Reflect.set(contract, "multicall", multicall);
+            this.stubOriginals.delete("reductionSubmitMulticall");
+        }
+        this.reductionAttemptGate?.release();
+        this.reductionAttemptGate = undefined;
+    }
+
+    public releaseStateMutex(): void {
+        this.stateMutexGate?.release();
+        this.stateMutexGate = undefined;
+    }
+
     private createRpcHold(kind: HeldRpcReply["kind"]): HeldRpcReply {
         let release: () => void = () => undefined;
         const gate = new Promise<void>((resolve) => {
@@ -1076,6 +1406,190 @@ export class StubService extends ARpcService<
     }
 
     /** Release parked callers and reinstall the real query. */
+    /**
+     * Park every auditing-data rebuild (`DisputeManager.getAuditingData`)
+     * until released. A final dispute committed without its auditing data
+     * makes the commit handler rebuild it before installing the result, so
+     * the hold keeps that install waiting while an ordinary attempt runs.
+     */
+    public installAuditingDataRebuildHold(): void {
+        const disputeManager = this.sm.disputeManager;
+        if (!this.stubOriginals.has("auditingDataRebuild")) {
+            this.stubOriginals.set(
+                "auditingDataRebuild",
+                disputeManager.getAuditingData.bind(disputeManager)
+            );
+        }
+        const original = this.stubOriginals.get(
+            "auditingDataRebuild"
+        ) as typeof disputeManager.getAuditingData;
+        let releaseGate!: () => void;
+        const gate = new Promise<void>((resolve) => {
+            releaseGate = resolve;
+        });
+        const held: HeldOnChainSlashesQueryState = {
+            entered: 0,
+            released: false,
+            gate,
+            release: () => {
+                held.released = true;
+                releaseGate();
+            }
+        };
+        this.heldAuditingDataRebuild = held;
+        disputeManager.getAuditingData = (async (
+            ...args: Parameters<typeof original>
+        ) => {
+            held.entered += 1;
+            this.heldAuditingDataRebuildWaiters
+                .splice(0)
+                .forEach((resolve) => resolve());
+            await gate;
+            return original(...args);
+        }) as typeof disputeManager.getAuditingData;
+    }
+
+    public async joinAndLeavePendingLocalDiscovery(
+        topic: string
+    ): Promise<void> {
+        await LocalDiscoveryServer.tryStart();
+        await Promise.all([
+            LocalDiscoveryServer.connectToPeers(
+                this.p2pManager,
+                topic,
+                this.sm.signerAddress.toString()
+            ),
+            LocalDiscoveryServer.leave(topic, this.p2pManager)
+        ]);
+    }
+
+    public getLocalDiscoveryListenerCount(): number {
+        const servers = Reflect.get(LocalDiscoveryServer, "peerServers");
+        if (!(servers instanceof Set))
+            throw new Error("Missing discovery listener registry");
+        return [...servers].filter(
+            (server) =>
+                server instanceof WebSocketServer && server.address() !== null
+        ).length;
+    }
+
+    public expireCalldataPost(): void {
+        const contract = this.sm.stateChannelManagerContract;
+        if (this.stubOriginals.has("expiredCalldataPost")) return;
+        const original = contract.postBlockCalldata;
+        this.stubOriginals.set("expiredCalldataPost", original);
+        contract.postBlockCalldata = new Proxy(original, {
+            apply: async (target, receiver, parameters) =>
+                Reflect.apply(target, receiver, [
+                    parameters[0],
+                    (await Clock.getBlockchainTime()).timestamp - 1,
+                    { gasLimit: 1_000_000 }
+                ])
+        });
+    }
+
+    public restoreCalldataPost(): boolean {
+        const original = this.stubOriginals.get("expiredCalldataPost");
+        if (original === undefined) return false;
+        this.sm.stateChannelManagerContract.postBlockCalldata =
+            original as StateChannelManagerInterface["postBlockCalldata"];
+        this.stubOriginals.delete("expiredCalldataPost");
+        return true;
+    }
+
+    /**
+     * Park this peer's snapshot post at its contract send, after the post
+     * was prepared against the chain state of that moment; the send then
+     * runs for real against the chain state at release.
+     */
+    public installSnapshotPostSendHold(): void {
+        const contract = this.sm.stateChannelManagerContract;
+        if (!this.stubOriginals.has("snapshotPostSend")) {
+            this.stubOriginals.set("snapshotPostSend", contract.multicall);
+        }
+        const original = this.stubOriginals.get(
+            "snapshotPostSend"
+        ) as StateChannelManagerInterface["multicall"];
+        let releaseGate!: () => void;
+        const gate = new Promise<void>((resolve) => {
+            releaseGate = resolve;
+        });
+        const held: HeldOnChainSlashesQueryState = {
+            entered: 0,
+            released: false,
+            gate,
+            release: () => {
+                held.released = true;
+                releaseGate();
+            }
+        };
+        this.heldSnapshotPostSend = held;
+        // Only the send is held; simulation and population keep the real
+        // contract method's properties, including when another hold wraps it.
+        contract.multicall = new Proxy(original, {
+            apply: async (target, receiver, parameters) => {
+                held.entered += 1;
+                this.heldSnapshotPostSendWaiters
+                    .splice(0)
+                    .forEach((resolve) => resolve());
+                await gate;
+                return Reflect.apply(target, receiver, parameters);
+            }
+        });
+    }
+
+    public releaseSnapshotPostSendHold(): boolean {
+        this.heldSnapshotPostSend?.release();
+        this.heldSnapshotPostSend = undefined;
+        const original = this.stubOriginals.get("snapshotPostSend");
+        if (original === undefined) return false;
+        this.sm.stateChannelManagerContract.multicall =
+            original as StateChannelManagerInterface["multicall"];
+        this.stubOriginals.delete("snapshotPostSend");
+        return true;
+    }
+
+    /** Resolve with the parked count once a post is held at its send. */
+    public waitForHeldSnapshotPostSend(): Promise<number> {
+        const held = this.heldSnapshotPostSend;
+        if (!held) {
+            return Promise.reject(
+                new Error("snapshotPostSend hold not installed")
+            );
+        }
+        if (held.entered > 0) return Promise.resolve(held.entered);
+        return new Promise((resolve) =>
+            this.heldSnapshotPostSendWaiters.push(() => resolve(held.entered))
+        );
+    }
+
+    public releaseAuditingDataRebuildHold(): boolean {
+        this.heldAuditingDataRebuild?.release();
+        this.heldAuditingDataRebuild = undefined;
+        const original = this.stubOriginals.get("auditingDataRebuild");
+        if (original === undefined) return false;
+        this.sm.disputeManager.getAuditingData =
+            original as typeof this.sm.disputeManager.getAuditingData;
+        this.stubOriginals.delete("auditingDataRebuild");
+        return true;
+    }
+
+    /** Resolve with the parked-caller count once at least one rebuild is held. */
+    public waitForHeldAuditingDataRebuild(): Promise<number> {
+        const held = this.heldAuditingDataRebuild;
+        if (!held) {
+            return Promise.reject(
+                new Error("auditingDataRebuild hold not installed")
+            );
+        }
+        if (held.entered > 0) return Promise.resolve(held.entered);
+        return new Promise((resolve) =>
+            this.heldAuditingDataRebuildWaiters.push(() =>
+                resolve(held.entered)
+            )
+        );
+    }
+
     public releaseOnChainSlashesQueryHold(): boolean {
         this.heldOnChainSlashesQuery?.release();
         this.heldOnChainSlashesQuery = undefined;
@@ -1187,6 +1701,31 @@ export class StubService extends ARpcService<
     /** Record every provider getLogs span and forward it. */
     countChainLogQueries(): void {
         this.patchChainLogQueries(false);
+    }
+
+    failOnChainSlashesRead(): void {
+        const contract = this.sm.stateChannelManagerContract;
+        if (!this.stubOriginals.has("onChainSlashesRead")) {
+            this.stubOriginals.set(
+                "onChainSlashesRead",
+                contract.getOnChainSlashedParticipants
+            );
+        }
+        Reflect.set(contract, "getOnChainSlashedParticipants", async () => {
+            throw new Error("authoritative slash read failed");
+        });
+    }
+
+    restoreOnChainSlashesRead(): boolean {
+        const original = this.stubOriginals.get("onChainSlashesRead");
+        if (original === undefined) return false;
+        Reflect.set(
+            this.sm.stateChannelManagerContract,
+            "getOnChainSlashedParticipants",
+            original
+        );
+        this.stubOriginals.delete("onChainSlashesRead");
+        return true;
     }
 
     restoreChainLogQueries(): boolean {
@@ -1614,7 +2153,8 @@ export class StubService extends ARpcService<
      */
     public installDisputeSubmissionRecorder(
         holdSubmissions: boolean,
-        failure?: DisputeSubmissionFailureSpec
+        failure?: DisputeSubmissionFailureSpec,
+        forward = false
     ): void {
         const contract = this.sm.stateChannelManagerContract;
         if (!this.stubOriginals.has("disputeSubmissions")) {
@@ -1624,6 +2164,9 @@ export class StubService extends ARpcService<
                 uploadDisputeWithCalldata: contract.uploadDisputeWithCalldata
             } satisfies DisputeSubmissionOriginals);
         }
+        const originals = this.stubOriginals.get(
+            "disputeSubmissions"
+        ) as DisputeSubmissionOriginals;
         this.recordedDisputeSubmissions.length = 0;
         let release!: () => void;
         const gate = new Promise<void>((resolve) => {
@@ -1634,8 +2177,10 @@ export class StubService extends ARpcService<
             : undefined;
         this.disputeSubmissionFailure = failure;
 
+        let failuresRemaining = failure?.times ?? Infinity;
         const record = async (
-            submission: Omit<RecordedDisputeSubmission, "waited">
+            submission: Omit<RecordedDisputeSubmission, "waited">,
+            send: () => Promise<unknown>
         ) => {
             const entry: RecordedDisputeSubmission = {
                 ...submission,
@@ -1647,21 +2192,25 @@ export class StubService extends ARpcService<
                 hold.held += 1;
                 await hold.gate;
             }
-            if (failure?.at === "send") throw this.submissionFailure(failure);
+            const activeFailure = failuresRemaining > 0 ? failure : undefined;
+            if (activeFailure) failuresRemaining -= 1;
+            if (activeFailure?.at === "send")
+                throw this.submissionFailure(activeFailure);
+            if (forward && !activeFailure) return send();
             return {
                 // a tx that reverts also reverts the preflight `call` that
                 // tryHandleEvmError retries through
                 provider:
-                    failure?.at === "wait"
+                    activeFailure?.at === "wait"
                         ? {
                               call: async () => {
-                                  throw this.submissionFailure(failure);
+                                  throw this.submissionFailure(activeFailure);
                               }
                           }
                         : undefined,
                 wait: async () => {
-                    if (failure?.at === "wait") {
-                        throw this.submissionFailure(failure);
+                    if (activeFailure?.at === "wait") {
+                        throw this.submissionFailure(activeFailure);
                     }
                     entry.waited = true;
                     return null;
@@ -1672,16 +2221,23 @@ export class StubService extends ARpcService<
         contract.uploadDispute = this.asRecordingContractMethod(
             contract.uploadDispute,
             (confirmation: DisputeConfirmationStruct, overrides?: unknown) =>
-                record({
-                    method: "uploadDispute",
-                    innerMethods: [],
-                    encodedDispute: String(
-                        confirmation.signedDispute.encodedDispute
-                    ),
-                    encodedAuditingData: null,
-                    fraudProofParticipants: [],
-                    gasLimit: this.overrideGasLimit(overrides)
-                })
+                record(
+                    {
+                        method: "uploadDispute",
+                        innerMethods: [],
+                        encodedDispute: String(
+                            confirmation.signedDispute.encodedDispute
+                        ),
+                        encodedAuditingData: null,
+                        fraudProofParticipants: [],
+                        gasLimit: this.overrideGasLimit(overrides)
+                    },
+                    () =>
+                        Reflect.apply(originals.uploadDispute, contract, [
+                            confirmation,
+                            ...(overrides ? [overrides] : [])
+                        ])
+                )
         );
 
         contract.uploadDisputeWithCalldata = this.asRecordingContractMethod(
@@ -1690,29 +2246,43 @@ export class StubService extends ARpcService<
                 confirmation: DisputeConfirmationStruct,
                 auditingData: DisputeAuditingDataStruct
             ) =>
-                record({
-                    method: "uploadDisputeWithCalldata",
-                    innerMethods: [],
-                    encodedDispute: String(
-                        confirmation.signedDispute.encodedDispute
-                    ),
-                    encodedAuditingData: Codec.encode(
-                        auditingData,
-                        Type.DisputeAuditingData
-                    ) as string,
-                    fraudProofParticipants: [],
-                    gasLimit: null
-                })
+                record(
+                    {
+                        method: "uploadDisputeWithCalldata",
+                        innerMethods: [],
+                        encodedDispute: String(
+                            confirmation.signedDispute.encodedDispute
+                        ),
+                        encodedAuditingData: Codec.encode(
+                            auditingData,
+                            Type.DisputeAuditingData
+                        ) as string,
+                        fraudProofParticipants: [],
+                        gasLimit: null
+                    },
+                    () =>
+                        originals.uploadDisputeWithCalldata(
+                            confirmation,
+                            auditingData
+                        )
+                )
         );
 
         contract.multicall = this.asRecordingContractMethod(
             contract.multicall,
             (calls: string[], overrides?: unknown) =>
-                record({
-                    ...this.describeMulticall(calls),
-                    method: "multicall",
-                    gasLimit: this.overrideGasLimit(overrides)
-                })
+                record(
+                    {
+                        ...this.describeMulticall(calls),
+                        method: "multicall",
+                        gasLimit: this.overrideGasLimit(overrides)
+                    },
+                    () =>
+                        Reflect.apply(originals.multicall, contract, [
+                            calls,
+                            ...(overrides ? [overrides] : [])
+                        ])
+                )
         );
     }
 
@@ -1772,7 +2342,10 @@ export class StubService extends ARpcService<
             // Built from the error's own ABI fragment; a hand-hashed `Name()`
             // selector decodes to nothing once the error gains a parameter.
             return {
-                data: factory.encodedCustomErrorRevert(failure.customError)
+                data: factory.encodedCustomErrorRevert(
+                    failure.customError,
+                    failure.customErrorArgs
+                )
             };
         }
         return new Error(failure.message ?? "dispute upload failed");
@@ -2045,7 +2618,8 @@ export class StubService extends ARpcService<
         // same entry the gossip pipeline builds: a supplied copy carries its
         // sender into sourcePeers/signatureSources, a sourceless one doesn't
         const entry = sm.storage.queues.createEntry(block, {
-            senderAddress: options?.senderAddress
+            senderAddress: options?.senderAddress,
+            replayedFromProof: options?.replayedFromProof
         });
         // default: the live block strategy (PARTICIPATING). "dispute" builds a
         // real DisputeValidationStrategy - as dispute auditing does - so the

@@ -460,12 +460,9 @@ describe("E2E: Join channel race conditions", function () {
                 peersIndices: [0, 1, 2],
                 expectedCount: 1
             });
-            await h.event.waitForPeers(
-                "onDisputeKilled",
-                [0, 1, 2],
-                1,
-                { mode: "atLeast" }
-            );
+            await h.event.waitForPeers("onDisputeKilled", [0, 1, 2], 1, {
+                mode: "atLeast"
+            });
         });
 
         it("allows existing and pending participants to top up during a dispute and converge after reduction", async function () {

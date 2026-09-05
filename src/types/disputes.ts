@@ -41,7 +41,8 @@ export const DisputeInputEthersType = `tuple(
     bytes32 disputeAuditingDataHash,
     address disputer,
     ${TimeoutEthersType} timeout,
-    bool selfRemoval
+    bool selfRemoval,
+    bool requireExistingDisputeWindow
 )`;
 
 export const DisputeEthersType = `tuple(

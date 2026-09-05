@@ -655,6 +655,10 @@ describe("Unit: MembershipService", function () {
                     }
                     return true;
                 });
+                await waitFor(
+                    async () => (await recorder.submissions()).length === 1,
+                    h.event.protocolEventTimeoutMs()
+                );
                 expect(await recorder.submissions()).to.have.length(1);
             } finally {
                 await releaseSubmission();
@@ -709,6 +713,10 @@ describe("Unit: MembershipService", function () {
                 expect(result.startedAtThreshold).to.equal(true);
                 expect(result.blockHeight).to.be.greaterThan(
                     result.participantCount + 1
+                );
+                await waitFor(
+                    async () => (await recorder.submissions()).length === 1,
+                    h.event.protocolEventTimeoutMs()
                 );
                 expect(await recorder.submissions()).to.have.length(1);
             } finally {

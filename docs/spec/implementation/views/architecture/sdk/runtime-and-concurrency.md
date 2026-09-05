@@ -266,7 +266,10 @@ and precompiles before admission. A hook rejection disposes the partial graph
 and preserves the hook error. The client's `ready` promise is the single
 readiness signal; a host construction or hook failure settles it rejected
 (§3.4). Each isolated context starts its own event-loop monitor after its local
-ready work completes and uses the configured fatal-delay guard. The test harness starts its main-thread monitor after all
+ready work completes and uses the configured delay guard. A trip, like any error caught outside a
+request in the sdk or contract-executor worker, is reported to the application as one detached
+runtime error (`hostError`) and the worker keeps serving; an exit the runtime did not request is
+fatal for that worker. The test harness starts its main-thread monitor after all
 initial peer setup calls finish. A peer added later starts independently and
 does not change existing peers' monitors.
 In worker mode a single

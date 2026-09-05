@@ -156,6 +156,8 @@ describe("Unit: DisputeValidationService", function () {
             await h.scenario.preDisputeSetupCalldataPath();
             const { dispute, auditingData } =
                 await h.dispute.fetchConstructedDispute(0);
+            // Conditional admission supplies a reason, never an exception to proof validation.
+            dispute.input.requireExistingDisputeWindow = true;
             expect(dispute.postedAuditingData).to.equal(true);
 
             const confirmations =
@@ -335,6 +337,8 @@ describe("Unit: DisputeValidationService", function () {
             await h.scenario.preDisputeSetupCalldataPath();
             const { dispute, auditingData } =
                 await h.dispute.fetchConstructedDispute(0);
+            // Conditional admission supplies a reason, never an exception to proof validation.
+            dispute.input.requireExistingDisputeWindow = true;
             expect(dispute.postedAuditingData).to.equal(true);
 
             const bc =
@@ -368,6 +372,8 @@ describe("Unit: DisputeValidationService", function () {
             await h.scenario.preDisputeSetupCalldataPath();
             const { dispute, auditingData } =
                 await h.dispute.fetchConstructedDispute(0);
+            // Conditional admission supplies a reason, never an exception to proof validation.
+            dispute.input.requireExistingDisputeWindow = true;
             expect(dispute.postedAuditingData).to.equal(true);
 
             auditingData.latestStateSnapshot.timestamp =
@@ -807,6 +813,7 @@ describe("Unit: DisputeValidationService", function () {
             const h = TestSession.getHarness();
             await h.lifecycle.start(3, 0); // empty proof -> genesis snapshot branch
             const { dispute } = await h.dispute.fetchConstructedDispute(0);
+            dispute.input.requireExistingDisputeWindow = false;
             // no reason stated -> the audited path ends in InvalidDisputeReason
             const audited = await h.dispute.auditDispute(1, dispute);
             expect(audited).to.include({ outcome: "returned", isValid: false });
@@ -914,10 +921,26 @@ describe("Unit: DisputeValidationService", function () {
             );
         });
 
+        it("requireExistingDisputeWindow true with no other reason -> valid without a fraud proof", async function () {
+            const h = TestSession.getHarness();
+            await h.lifecycle.start(3, 3);
+            const { dispute } = await h.dispute.fetchConstructedDispute(0);
+            expect(dispute.input.timeout.participant).to.equal(
+                "0x0000000000000000000000000000000000000000"
+            );
+            expect(dispute.input.onChainSlashes).to.have.length(0);
+            expect(dispute.input.selfRemoval).to.equal(false);
+            dispute.input.requireExistingDisputeWindow = true;
+            const run = await h.dispute.auditDispute(1, dispute);
+            expect(run).to.include({ outcome: "returned", isValid: true });
+            expect(run.disputeFraudProofCount).to.equal(0);
+        });
+
         it("timeout.participant = 0 AND onChainSlashes = [] AND selfRemoval false -> false + InvalidDisputeReason", async function () {
             const h = TestSession.getHarness();
             await h.lifecycle.start(3, 3);
             const { dispute } = await h.dispute.fetchConstructedDispute(0);
+            dispute.input.requireExistingDisputeWindow = false;
             // premise: nothing states a reason
             expect(dispute.input.timeout.participant).to.equal(
                 "0x0000000000000000000000000000000000000000"

@@ -23,15 +23,19 @@ describe("Dispute reduction stale event", function () {
 
         await h.scenario.fourPeersDisputeResolutionAndSnapshotUpdateDetached();
         // The reduction commits DETACHED after the scenario returns: wait for
-        // the real chain event to reach ANY peer's mirrored handler (the
+        // the real chain event to reach an HONEST peer's mirrored handler (the
         // scenario picks the malicious peer dynamically, so no fixed index is
-        // safe). The harness spies record every delivery since peer creation.
+        // safe, and the slashed peer aborts its runtime on the event, so its
+        // handler cannot be replayed). The harness spies record every delivery
+        // since peer creation.
         const findObserverIndex = () =>
-            h.peers.findIndex(
-                (peer) =>
-                    (peer.eventSpies.onDisputeReducedResultCommitted
-                        ?.callCount ?? 0) > 0
-            );
+            h
+                .getHonestPeers()
+                .find(
+                    (peer) =>
+                        (peer.eventSpies.onDisputeReducedResultCommitted
+                            ?.callCount ?? 0) > 0
+                )?.index ?? -1;
         const deadline = Date.now() + 60000;
         while (findObserverIndex() < 0 && Date.now() < deadline) {
             await new Promise((resolve) => setTimeout(resolve, 250));

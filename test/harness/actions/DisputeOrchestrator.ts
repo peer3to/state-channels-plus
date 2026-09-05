@@ -1,3 +1,4 @@
+// @spec-test-coverage-ignore: shared dispute staging and resolution helper exercised by owning mapped test declarations
 import { PeerTestHarness } from "@test/fixtures/PeerTestHarness";
 import type { HarnessControlRpc } from "@test/fixtures/customRpc/harnessControl/HarnessControlRpc";
 import { CreateAndResolveDisputeResult } from "../core/types";
@@ -148,6 +149,11 @@ export class DisputeOrchestrator<
         maliciousPeerIndex: number;
         forkId?: ForkId;
         finalAuthorPeerIndex?: number;
+        /**
+         * Upload the final dispute without its auditing data, so every
+         * other peer rebuilds it on commit before installing the result.
+         */
+        withoutAuditingData?: boolean;
     }): Promise<SubmittedFinalDispute> {
         const forkId = options.forkId ?? this.harness.activeForkId!;
         const finalAuthor =
@@ -205,7 +211,8 @@ export class DisputeOrchestrator<
             return this.postFinalDispute(
                 forkId,
                 finalAuthor.index,
-                honestPeers.map((peer) => peer.index)
+                honestPeers.map((peer) => peer.index),
+                options.withoutAuditingData
             );
         } catch (error) {
             await this.restoreDisputeInitiation(
@@ -410,7 +417,7 @@ export class DisputeOrchestrator<
         const honestPeers = honestPeerIndices.map((idx) =>
             this.harness.getPeer(idx)
         );
-        const newForkId = options.expectedResolution
+        let newForkId = options.expectedResolution
             ? options.expectedResolution.forkId
             : (await this.harness.peerForkIds([honestPeers[0]!]))[0];
 
@@ -467,6 +474,50 @@ export class DisputeOrchestrator<
             const candidatePeers = syncPeerIndices.map((i) =>
                 this.harness.getPeer(i)
             );
+            // Two evictions can land as consecutive reductions: an invalid
+            // dispute's kill that settles after the honest dispute fixed its
+            // output evicts the poster on a follow-up fork. Without a pinned
+            // resolution, wait for the fork whose participants fit the cap;
+            // the checks below then report the newest fork precisely.
+            if (!options.expectedResolution) {
+                const settleMessage = `Honest peers did not settle on a fork with at most ${cap} participants after resolving ${originalForkId}`;
+                try {
+                    await this.harness.eventCountsBarrier.waitFor(
+                        async () => {
+                            const forkIds =
+                                await this.harness.peerForkIds(candidatePeers);
+                            if (!forkIds.every((id) => id === forkIds[0])) {
+                                return false;
+                            }
+                            const participants = await this.harness
+                                .control(candidatePeers[0]!)
+                                .query.getParticipants()
+                                .request();
+                            if (
+                                participants.length === 0 ||
+                                participants.length > cap
+                            ) {
+                                return false;
+                            }
+                            newForkId = forkIds[0]!;
+                            return true;
+                        },
+                        {
+                            timeoutMs: forkSettleTimeoutMs,
+                            timeoutMessage: settleMessage
+                        }
+                    );
+                } catch (error) {
+                    if (
+                        !(
+                            error instanceof Error &&
+                            error.message.includes(settleMessage)
+                        )
+                    ) {
+                        throw error;
+                    }
+                }
+            }
             const candidateForkIds =
                 await this.harness.peerForkIds(candidatePeers);
             const settledPeers = candidatePeers.filter(
@@ -518,11 +569,14 @@ export class DisputeOrchestrator<
     private async postFinalDispute(
         forkId: ForkId,
         finalAuthorPeerIndex: number,
-        suppressedPeerIndices: number[]
+        suppressedPeerIndices: number[],
+        withoutAuditingData = false
     ): Promise<SubmittedFinalDispute> {
         const posted = await this.harness.tamper.postTamperedDispute(
             finalAuthorPeerIndex,
-            () => {},
+            (dispute) => {
+                if (withoutAuditingData) dispute.postedAuditingData = false;
+            },
             {
                 forkId,
                 markMalicious: false,
@@ -539,7 +593,8 @@ export class DisputeOrchestrator<
         };
     }
 
-    private async restoreDisputeInitiation(
+    /** Restore dispute initiation on the peers a final-dispute staging suppressed. */
+    public async restoreDisputeInitiation(
         peerIndices: number[]
     ): Promise<void> {
         for (const peerIndex of peerIndices) {
