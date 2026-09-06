@@ -2,9 +2,6 @@ name: CI - Distributed Test Suite
 
 on:
     pull_request:
-        branches:
-            - master
-            - dispute
         types:
             - opened
             - synchronize
