@@ -7,6 +7,7 @@ import PeerProfile from "@/PeerProfile";
 import ARpcService from "@/rpc/ARpcService";
 import type Rpc from "@/rpc/Rpc";
 import { MAX_RPC_FRAME_BYTES } from "@/rpc/Rpc";
+import InitHandshakeService from "@/rpc/services/initHandshake/InitHandshakeService";
 import LobbyMatchingService from "@/rpc/services/lobbyMatching/LobbyMatchingService";
 import type { LobbyMatch } from "@/rpc/services/lobbyMatching/LobbyMatchingTypes";
 import {
@@ -248,6 +249,21 @@ export type LobbyRoleTimerProbe = {
     roleTimerScheduleCount: number;
     availabilityFramesBeforeExpiry: number;
     availabilityFramesAfterExpiry: number;
+};
+
+export type HandshakeResponseRefusalProbe = {
+    freshTransportClosed: boolean;
+    freshPeerInfoBanCalls: boolean[];
+    signerBlacklisted: boolean;
+    signerReconnectBanned: boolean;
+};
+
+export type LobbyCleanupOrderingProbe = {
+    leaveObserved: boolean;
+    sessionTransportOpenAtLeave: boolean;
+    bannedPeerReconnectBannedAtLeave: boolean;
+    sessionTransportClosedAfterCleanup: boolean;
+    bannedPeerReconnectBannedAfterCleanup: boolean;
 };
 
 export type LobbySessionCleanupProbe = {
@@ -2998,6 +3014,125 @@ export class P2PManagerProbeService extends ARpcService<
         } finally {
             timeoutManager.scheduleTask = originalScheduleTask;
         }
+    }
+
+    /**
+     * Drives the real handshake response path: a fresh Holepunch transport
+     * challenges on construction, and the probe answers with a valid signature
+     * from an identity this peer already refuses.
+     */
+    public async probeHandshakeResponseRefusal(
+        banMode: "reconnect" | "blacklist"
+    ): Promise<HandshakeResponseRefusalProbe> {
+        const wallet = ethers.Wallet.createRandom();
+        const signerAddress = getChecksumAddress(wallet.address);
+        // The identity is already known on its own discovery handle.
+        this.registeredHolepunchTransport(signerAddress);
+        if (banMode === "reconnect") {
+            this.p2pManager.banReconnect(signerAddress);
+        } else {
+            this.p2pManager.disconnectAndBlacklistPeerByEvmAddress(
+                signerAddress
+            );
+        }
+
+        // A rotated discovery key arrives as a fresh transport with its own
+        // peer info; constructing it starts the real handshake.
+        const {
+            transport: fresh,
+            peerInfo: freshPeerInfo,
+            socket
+        } = this.holepunchTransport();
+        const request = JSON.parse(socket.writes[0]) as {
+            requestId: string;
+            params: [string, number];
+        };
+        const [challengeHash, initTime] = request.params;
+        const signature = await wallet.signMessage(
+            InitHandshakeService.buildHandshakeChallengeMessage(challengeHash)
+        );
+        fresh.onMessage(
+            JSON.stringify({
+                rpcResponse: true,
+                requestId: request.requestId,
+                ok: true,
+                result: {
+                    signature,
+                    responseTime: initTime,
+                    preferredTransport: TransportType.HOLEPUNCH
+                }
+            })
+        );
+        for (let attempt = 0; attempt < 20 && !fresh.isClosed; attempt += 1) {
+            await new Promise((resolve) => setTimeout(resolve, 5));
+        }
+
+        return {
+            freshTransportClosed: fresh.isClosed,
+            freshPeerInfoBanCalls: [...freshPeerInfo.banCalls],
+            signerBlacklisted: this.p2pManager.isBlacklisted(signerAddress),
+            signerReconnectBanned:
+                this.p2pManager.isReconnectBanned(signerAddress)
+        };
+    }
+
+    /**
+     * Oracle for the cleanup order: the topic must be left while the session
+     * transports are still open and the session bans still in place.
+     */
+    public async probeLobbyCleanupOrdering(): Promise<LobbyCleanupOrderingProbe> {
+        const service = this.p2pManager.localRpc.lobbyMatchingService;
+        const topic = `0x${"81".repeat(32)}`;
+        const liveAddress = getChecksumAddress(
+            "0xffffffffffffffffffffffffffffffffffffffff"
+        );
+        const live = this.transport(liveAddress);
+        this.registerProfile(live, liveAddress);
+        const abusiveAddress = getChecksumAddress(
+            "0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
+        );
+        const abusive = this.transport(abusiveAddress);
+        this.registerProfile(abusive, abusiveAddress);
+        void service.match(topic);
+        await Promise.resolve();
+        service.onAuthenticatedTransport(live);
+        const wrongTopicRpc: Rpc = {
+            service: "lobbyMatchingService",
+            method: "advertise",
+            params: [`0x${"82".repeat(32)}`, "advertiser", 1, true]
+        };
+        for (let rejected = 0; rejected < 9; rejected += 1) {
+            service.runRPC(wrongTopicRpc, abusive);
+        }
+
+        // Record-only wrapper: observe the state at the moment the topic is
+        // left, then call through to the real implementation.
+        const originalLeaveDiscoveryKey =
+            this.p2pManager.leaveDiscoveryKey.bind(this.p2pManager);
+        let leaveObserved = false;
+        let sessionTransportOpenAtLeave = false;
+        let bannedPeerReconnectBannedAtLeave = false;
+        this.p2pManager.leaveDiscoveryKey = async (discoveryKey: string) => {
+            leaveObserved = true;
+            sessionTransportOpenAtLeave = !live.isClosed;
+            bannedPeerReconnectBannedAtLeave =
+                this.p2pManager.isReconnectBanned(abusiveAddress);
+            await originalLeaveDiscoveryKey(discoveryKey);
+        };
+        try {
+            await service.cancelMatching(topic);
+        } finally {
+            this.p2pManager.leaveDiscoveryKey = originalLeaveDiscoveryKey;
+        }
+
+        return {
+            leaveObserved,
+            sessionTransportOpenAtLeave,
+            bannedPeerReconnectBannedAtLeave,
+            sessionTransportClosedAfterCleanup: live.isClosed,
+            bannedPeerReconnectBannedAfterCleanup:
+                this.p2pManager.isReconnectBanned(abusiveAddress)
+        };
     }
 
     public async probeLobbySessionCleanup(): Promise<LobbySessionCleanupProbe> {

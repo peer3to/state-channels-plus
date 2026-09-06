@@ -459,4 +459,17 @@ describe("LobbyMatchingService", function () {
         expect(result.selectedPeerReconnectBanned).to.equal(false);
         expect(result.lateJoinerReconnectBannedAfterComplete).to.equal(false);
     });
+
+    it("leaves the lobby topic before closing its transports and lifting session bans", async function () {
+        const result = await fixture
+            .control()
+            .p2pManagerProbe.probeLobbyCleanupOrdering()
+            .request();
+
+        expect(result.leaveObserved).to.equal(true);
+        expect(result.sessionTransportOpenAtLeave).to.equal(true);
+        expect(result.bannedPeerReconnectBannedAtLeave).to.equal(true);
+        expect(result.sessionTransportClosedAfterCleanup).to.equal(true);
+        expect(result.bannedPeerReconnectBannedAfterCleanup).to.equal(false);
+    });
 });

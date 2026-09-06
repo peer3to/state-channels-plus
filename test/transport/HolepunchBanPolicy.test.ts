@@ -236,4 +236,27 @@ describe("ProfileManager Holepunch ban policy", function () {
         expect(result.disconnectionHookCalls).to.equal(0);
         expect(result.usableTrafficSent).to.equal(false);
     });
+
+    it("refuses a handshake response from a reconnect-banned signer without banning its new handle", async function () {
+        const result = await fixture
+            .control()
+            .p2pManagerProbe.probeHandshakeResponseRefusal("reconnect")
+            .request();
+
+        expect(result.freshTransportClosed).to.equal(true);
+        expect(result.signerBlacklisted).to.equal(false);
+        expect(result.signerReconnectBanned).to.equal(true);
+        expect(result.freshPeerInfoBanCalls).to.deep.equal([]);
+    });
+
+    it("bans the new handle of a blacklisted signer that answers a handshake", async function () {
+        const result = await fixture
+            .control()
+            .p2pManagerProbe.probeHandshakeResponseRefusal("blacklist")
+            .request();
+
+        expect(result.freshTransportClosed).to.equal(true);
+        expect(result.signerBlacklisted).to.equal(true);
+        expect(result.freshPeerInfoBanCalls).to.deep.equal([true]);
+    });
 });
