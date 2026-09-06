@@ -9,7 +9,7 @@ import { P2PManagerFixture } from "@test/fixtures/P2PManagerFixture";
 import { slotAccountIndex } from "@test/harness/core/slotAccounts";
 import { waitFor } from "@test/utils/waitFor";
 import { expect } from "chai";
-import { ethers, Wallet } from "ethers";
+import { ethers, Wallet, hexlify, id } from "ethers";
 
 describe("P2PManager", function () {
     let fixture: P2PManagerFixture | undefined;
@@ -1097,5 +1097,34 @@ describe("P2PManager", function () {
                 "failure"
             );
         });
+    });
+
+    it("tracks joined discovery keys and leaves them all", async function () {
+        // The keys are passed in mixed case so the probe's snapshots prove the
+        // set is keyed by the `ethers.hexlify` normalized form.
+        const firstKey = `0x${id("p2p-manager-joined-discovery-first")
+            .slice(2)
+            .toUpperCase()}`;
+        const secondKey = id("p2p-manager-joined-discovery-second");
+        const unknownKey = id("p2p-manager-joined-discovery-unknown");
+
+        const result = await fixture!
+            .control()
+            .p2pManagerProbe.probeJoinedDiscoveryKeys(
+                firstKey,
+                secondKey,
+                unknownKey
+            )
+            .request();
+
+        expect(result.initial).to.deep.equal([]);
+        expect(result.afterFirstJoin).to.deep.equal([hexlify(firstKey)]);
+        expect(result.afterSecondJoin).to.deep.equal([
+            hexlify(firstKey),
+            secondKey
+        ]);
+        expect(result.afterLeavingFirst).to.deep.equal([secondKey]);
+        expect(result.afterLeavingUnknown).to.deep.equal([secondKey]);
+        expect(result.afterLeavingAll).to.deep.equal([]);
     });
 });

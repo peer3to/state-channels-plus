@@ -1,7 +1,11 @@
+import { compareAddresses } from "@/rpc/services/openChannelNegotiation/OpenChannelNegotiationHelpers";
 import { TransportType } from "@/transport/TransportType";
 import { Status } from "@/types";
 import { sleep } from "@/utils";
-import { MathTestSession as TestSession } from "@test/harness";
+import {
+    MathTestSession as TestSession,
+    MIN_TEST_TIME_CONFIG
+} from "@test/harness";
 import { waitFor } from "@test/utils/waitFor";
 import { expect } from "chai";
 import { ethers } from "ethers";
@@ -1324,6 +1328,307 @@ describe("E2E: lobby matching", function () {
                 )
             );
             await Promise.allSettled(connects);
+        }
+    });
+
+    it("session-bans a non-selected lobby peer until the topic is left and never blacklists it", async function () {
+        const h = TestSession.getHarness();
+        await h.setup(3, { autoConnect: false });
+        const topic = ethers.id("e2e-lobby-non-selected-session-ban");
+        // Holding matched negotiation on every peer freezes the session right
+        // after the handoff, which is where the non-selected peer is dropped.
+        const releaseMatched = await Promise.all(
+            [0, 1, 2].map((index) => h.rpcStub.holdMatchedNegotiation(index))
+        );
+        // Only a peer that is already an authenticated lobby transport can be
+        // session-banned at handoff, so hold every `pick` reply until all three
+        // peers know each other, then let the selection through.
+        const releasePick = await Promise.all(
+            [0, 1, 2].map((index) => h.rpcStub.holdLobbyReply(index, "pick"))
+        );
+        const restoreDurations = await Promise.all(
+            [0, 1, 2].map((index) =>
+                h.rpcStub.overrideLobbyRoleDuration(index, 20_000)
+            )
+        );
+
+        try {
+            await h.network.joinLobby([0, 1, 2], topic);
+            await waitFor(
+                async () => {
+                    const transportTypes = await Promise.all(
+                        h.peers.flatMap((observer) =>
+                            h.peers
+                                .filter(
+                                    (target) => target.index !== observer.index
+                                )
+                                .map((target) =>
+                                    h
+                                        .control(observer)
+                                        .query.getPreferredTransportType(
+                                            target.address
+                                        )
+                                        .request()
+                                )
+                        )
+                    );
+                    return transportTypes.every((type) => type !== null);
+                },
+                h.event.protocolEventTimeoutMs(),
+                20
+            );
+            await Promise.all(releasePick.map((release) => release()));
+
+            let heldCounts: number[] = [];
+            await waitFor(
+                async () => {
+                    heldCounts = await Promise.all(
+                        h.peers.map((peer) =>
+                            h
+                                .control(peer)
+                                .stub.getHeldMatchedNegotiationCount()
+                                .request()
+                        )
+                    );
+                    return (
+                        heldCounts.filter((count) => count === 1).length === 2
+                    );
+                },
+                h.event.protocolEventTimeoutMs(),
+                20
+            );
+            const matchedPeers = h.peers.filter(
+                (_, index) => heldCounts[index] === 1
+            );
+            const unmatchedAddress = h.peers.find(
+                (_, index) => heldCounts[index] !== 1
+            )!.address;
+
+            for (const peer of matchedPeers) {
+                expect(
+                    await h
+                        .control(peer)
+                        .query.isReconnectBanned(unmatchedAddress)
+                        .request(),
+                    `peer ${peer.index} must session-ban the non-selected peer`
+                ).to.equal(true);
+                expect(
+                    await h
+                        .control(peer)
+                        .query.isBlacklisted(unmatchedAddress)
+                        .request(),
+                    `peer ${peer.index} must not exclude the non-selected peer`
+                ).to.equal(false);
+            }
+
+            // Absence oracle: the non-selected peer still observes the topic
+            // and is still announced on it, while the ban stops the pair from
+            // dialing or admitting it. Require its transport to go away on both
+            // matched peers and stay away for one agreement window.
+            await waitFor(
+                async () => {
+                    const closedByPeer = await Promise.all(
+                        matchedPeers.map((peer) =>
+                            h
+                                .control(peer)
+                                .query.isTransportClosed(unmatchedAddress)
+                                .request()
+                        )
+                    );
+                    return closedByPeer.every(Boolean);
+                },
+                h.event.protocolEventTimeoutMs(),
+                20
+            );
+            await sleep(MIN_TEST_TIME_CONFIG.agreementTime * 1000);
+            for (const peer of matchedPeers) {
+                expect(
+                    await h
+                        .control(peer)
+                        .query.isTransportClosed(unmatchedAddress)
+                        .request(),
+                    `peer ${peer.index} must not be redialed by the banned peer`
+                ).to.equal(true);
+            }
+
+            await Promise.all(releaseMatched.map((release) => release()));
+            let channelId = ethers.ZeroHash;
+            await waitFor(
+                async () => {
+                    channelId = await h
+                        .control(matchedPeers[0])
+                        .query.getChannelId()
+                        .request();
+                    return channelId !== ethers.ZeroHash;
+                },
+                h.event.protocolEventTimeoutMs({ withFirstBlockGrace: true }),
+                25
+            );
+            await waitFor(
+                () =>
+                    h
+                        .control(matchedPeers[0])
+                        .query.isChannelOpen(channelId)
+                        .request(),
+                h.event.protocolEventTimeoutMs({ withFirstBlockGrace: true }),
+                50
+            );
+
+            // The opened channel completes the lobby, which leaves the topic —
+            // and leaving the topic is what lifts the session bans.
+            await waitFor(
+                async () => {
+                    const bannedByPeer = await Promise.all(
+                        matchedPeers.map((peer) =>
+                            h
+                                .control(peer)
+                                .query.isReconnectBanned(unmatchedAddress)
+                                .request()
+                        )
+                    );
+                    return bannedByPeer.every((banned) => !banned);
+                },
+                h.event.protocolEventTimeoutMs(),
+                20
+            );
+            for (const observer of h.peers) {
+                for (const target of h.peers) {
+                    if (observer.index === target.index) continue;
+                    expect(
+                        await h
+                            .control(observer)
+                            .query.isReconnectBanned(target.address)
+                            .request(),
+                        `peer ${observer.index} must not keep a reconnect ban on peer ${target.index}`
+                    ).to.equal(false);
+                    expect(
+                        await h
+                            .control(observer)
+                            .query.isBlacklisted(target.address)
+                            .request(),
+                        `peer ${observer.index} must not exclude peer ${target.index}`
+                    ).to.equal(false);
+                }
+            }
+        } finally {
+            await Promise.all(releasePick.map((release) => release()));
+            await Promise.all(releaseMatched.map((release) => release()));
+            await h.network.leaveLobby([0, 1, 2], topic);
+            await Promise.all(restoreDurations.map((restore) => restore()));
+        }
+    });
+
+    it("leaves the lobby topic before closing session transports", async function () {
+        const h = TestSession.getHarness();
+        await h.setup(2, { autoConnect: false });
+        const topic = ethers.id("e2e-lobby-leave-drops-topic-first");
+        // The lower address bootstraps as the advertiser. Holding its `pick`
+        // reply keeps the selector's selection in flight, so the lobby session
+        // is still matching (never handed off) when the selector leaves.
+        const [advertiserIndex, selectorIndex] =
+            compareAddresses(h.peers[0].address, h.peers[1].address) < 0
+                ? [0, 1]
+                : [1, 0];
+        const releasePick = await h.rpcStub.holdLobbyReply(
+            advertiserIndex,
+            "pick"
+        );
+        const restoreDurations = await Promise.all(
+            [0, 1].map((index) =>
+                h.rpcStub.overrideLobbyRoleDuration(index, 20_000)
+            )
+        );
+
+        try {
+            await h.network.joinLobby([0, 1], topic);
+            await waitFor(
+                async () => {
+                    const [advertiserTransportType, selectorAvailability] =
+                        await Promise.all([
+                            h
+                                .control(h.peers[advertiserIndex])
+                                .query.getPreferredTransportType(
+                                    h.peers[selectorIndex].address
+                                )
+                                .request(),
+                            h
+                                .control(h.peers[selectorIndex])
+                                .query.getLobbyAvailability()
+                                .request()
+                        ]);
+                    return (
+                        advertiserTransportType !== null &&
+                        selectorAvailability.inFlight
+                    );
+                },
+                h.event.protocolEventTimeoutMs(),
+                20
+            );
+            expect(
+                await h
+                    .control(h.peers[selectorIndex])
+                    .query.getJoinedDiscoveryKeys()
+                    .request(),
+                "the lobby session must observe its topic before the leave"
+            ).to.include(topic);
+
+            await h.network.leaveLobby([selectorIndex], topic);
+
+            expect(
+                await h
+                    .control(h.peers[selectorIndex])
+                    .query.getJoinedDiscoveryKeys()
+                    .request(),
+                "leaving the lobby must stop observing its topic"
+            ).to.not.include(topic);
+            await waitFor(
+                async () =>
+                    await h
+                        .control(h.peers[selectorIndex])
+                        .query.isTransportClosed(
+                            h.peers[advertiserIndex].address
+                        )
+                        .request(),
+                h.event.protocolEventTimeoutMs(),
+                20
+            );
+
+            // Absence oracle: the advertiser never left the topic, so it is
+            // the side that could dial the selector back. Hold one agreement
+            // window and require the link to stay down with neither side
+            // excluding the other — an exclusion would keep them apart for the
+            // wrong reason.
+            await sleep(MIN_TEST_TIME_CONFIG.agreementTime * 1000);
+            expect(
+                await h
+                    .control(h.peers[selectorIndex])
+                    .query.isTransportClosed(h.peers[advertiserIndex].address)
+                    .request(),
+                "the selector must not be redialed after leaving"
+            ).to.equal(true);
+            expect(
+                await h
+                    .control(h.peers[advertiserIndex])
+                    .query.isTransportClosed(h.peers[selectorIndex].address)
+                    .request(),
+                "the advertiser must not hold a transport to the peer that left"
+            ).to.equal(true);
+            expect(
+                await h
+                    .control(h.peers[selectorIndex])
+                    .query.isBlacklisted(h.peers[advertiserIndex].address)
+                    .request()
+            ).to.equal(false);
+            expect(
+                await h
+                    .control(h.peers[advertiserIndex])
+                    .query.isBlacklisted(h.peers[selectorIndex].address)
+                    .request()
+            ).to.equal(false);
+        } finally {
+            await releasePick();
+            await h.network.leaveLobby([0, 1], topic);
+            await Promise.all(restoreDurations.map((restore) => restore()));
         }
     });
 });

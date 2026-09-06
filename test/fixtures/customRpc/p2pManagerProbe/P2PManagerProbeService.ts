@@ -31,6 +31,7 @@ import {
     Type,
     getChecksumAddress
 } from "@/utils";
+import type { DiscoveryKey } from "@/utils/discoveryKey";
 import {
     RecordingBannablePeerInfo,
     RecordingHolepunchSocket,
@@ -465,6 +466,15 @@ export type HolepunchTopicProbe = {
         options: { server: boolean; client: boolean };
     }[];
     leaveCalls: string[];
+};
+
+export type JoinedDiscoveryKeysProbe = {
+    initial: DiscoveryKey[];
+    afterFirstJoin: DiscoveryKey[];
+    afterSecondJoin: DiscoveryKey[];
+    afterLeavingFirst: DiscoveryKey[];
+    afterLeavingUnknown: DiscoveryKey[];
+    afterLeavingAll: DiscoveryKey[];
 };
 
 export type HandshakeFailureProbe = {
@@ -2049,6 +2059,41 @@ export class P2PManagerProbeService extends ARpcService<
             }
             this.p2pManager.holepunch.swarm = previousSwarm;
             this.p2pManager.holepunch.topics = [];
+        }
+    }
+
+    /**
+     * Drives the real join/leave bookkeeping over two distinct keys, plus a
+     * key that was never joined, and snapshots the observed set after each
+     * step.
+     */
+    public async probeJoinedDiscoveryKeys(
+        firstKey: string,
+        secondKey: string,
+        unknownKey: string
+    ): Promise<JoinedDiscoveryKeysProbe> {
+        const initial = this.p2pManager.getJoinedDiscoveryKeys();
+        try {
+            await this.p2pManager.joinDiscoveryKey(firstKey);
+            const afterFirstJoin = this.p2pManager.getJoinedDiscoveryKeys();
+            await this.p2pManager.joinDiscoveryKey(secondKey);
+            const afterSecondJoin = this.p2pManager.getJoinedDiscoveryKeys();
+            await this.p2pManager.leaveDiscoveryKey(firstKey);
+            const afterLeavingFirst = this.p2pManager.getJoinedDiscoveryKeys();
+            await this.p2pManager.leaveDiscoveryKey(unknownKey);
+            const afterLeavingUnknown =
+                this.p2pManager.getJoinedDiscoveryKeys();
+            await this.p2pManager.leaveAllDiscoveryKeys();
+            return {
+                initial,
+                afterFirstJoin,
+                afterSecondJoin,
+                afterLeavingFirst,
+                afterLeavingUnknown,
+                afterLeavingAll: this.p2pManager.getJoinedDiscoveryKeys()
+            };
+        } finally {
+            await this.p2pManager.leaveAllDiscoveryKeys();
         }
     }
 

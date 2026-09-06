@@ -26,6 +26,7 @@ import type {
     ReconnectBanPrecedenceProbe,
     ReconnectBanWebRtcCloseProbe,
     HolepunchTopicProbe,
+    JoinedDiscoveryKeysProbe,
     HandshakeFailureProbe,
     LateHandshakeProbe,
     ReplacementHandshakeProbe,
@@ -290,6 +291,18 @@ export class P2PManagerProbeRpcMethods extends ARpcMethods<
         duplicate = false
     ): Promise<HolepunchTopicProbe> {
         return this.service.probeHolepunchRejoinAfterLeave(duplicate);
+    }
+
+    public probeJoinedDiscoveryKeys(
+        firstKey: string,
+        secondKey: string,
+        unknownKey: string
+    ): Promise<JoinedDiscoveryKeysProbe> {
+        return this.service.probeJoinedDiscoveryKeys(
+            firstKey,
+            secondKey,
+            unknownKey
+        );
     }
 
     public probeHandshakeParticipantReadFailure(
