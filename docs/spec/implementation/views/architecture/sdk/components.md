@@ -30,6 +30,12 @@
   oversized frames (`MAX_RPC_FRAME_BYTES`) and undecodable/unknown-service
   frames by disconnecting. Blacklisting is by EVM address via
   `ProfileManager`; `shouldSignBlock` and handshake admission consult it.
+  `ProfileManager` also owns the weaker **reconnect ban** (`banReconnect` /
+  `allowReconnect` / `isReconnectBanned`, wrapped on `P2PManager`): it stops
+  discovery from re-dialing or admitting an identity and is refused at handshake
+  verification, but records no exclusion and lifts with its cause. `P2PManager`
+  additionally tracks the discovery keys it observes, so
+  `leaveAllDiscoveryKeys` can stop every redial before transports are closed.
 - **RPC model.** [`MainRpcService`](../../../../../../src/rpc/MainRpcService.ts#L10) is
   the local dispatch root; `remoteRpc`
   ([`RemoteRpcProxy`](../../../../../../src/rpc/RemoteRpcProxy.ts#L21)) is the typed

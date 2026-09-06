@@ -548,6 +548,15 @@ EVM-address index to that profile, and the profile then survives transport churn
 whether an unauthenticated ban must survive a new SDK peer handle or process restart.
 (Divergence class: decision pending.)
 
+Two distinct ban strengths appear in the table below. A **blacklist** is an exclusion: it bans the
+identity's discovery handle and never lifts on its own. A **reconnect ban**
+(`ProfileManager.banReconnect`) bans the discovery handle too and is refused at handshake
+verification, but writes no blacklist mark and is lifted by whoever placed it. It exists because
+discovery re-dials any peer that shares an observed topic until its peer info is banned — closing a
+transport alone only pauses the peer. A blacklist implies a reconnect ban; lifting a reconnect ban
+never lifts a blacklist, and neither the WebRTC-close fallback release nor the WebRTC→Holepunch
+downgrade release lifts a reconnect ban.
+
 | Failure | Where | Consequence |
 | --- | --- | --- |
 | Oversized frame | `onRpc` step 1 | Disconnect |
@@ -563,6 +572,10 @@ whether an unauthenticated ban must survive a new SDK peer handle or process res
 | Duplicate handshake ack | `initHandshakeService` | Disconnect + blacklist |
 | Handshake response invalid/timeout (outgoing) | `initHandshakeService` | Disconnect |
 | Handshake ack timeout | `initHandshakeService` | Blacklist by verified address, else disconnect |
+| Response signer already blacklisted | `initHandshakeService` | Refuse + disconnect; also ban the discovery handle the transport arrived on (a rotated key must not bypass exclusion). No new blacklist |
+| Response signer reconnect-banned | `initHandshakeService` | Refuse + disconnect. No blacklist, no extra handle ban |
+| Non-selected lobby candidate at commitment handoff | `lobbyMatchingService` | Disconnect + session reconnect ban; lifted when the lobby leaves the topic. Not an exclusion |
+| Lobby ignored-traffic bound exceeded | `lobbyMatchingService` | Disconnect + session reconnect ban; lifted when the lobby leaves the topic. Not an exclusion |
 | Block confirmation judged Byzantine (strategy verdict `false`) | `stateTransitionService` → pipeline | Disconnect + blacklist |
 | Block confirmation invalid but tolerated (duplicate, wrong fork, unknown sender…) | pipeline strategies | Ignore (entry dropped or queued; connection kept) — see [block-confirmation-pipeline.md](../block-confirmation-pipeline.md) §9 |
 | Provable equivocation / invalid transition in ingested blocks | pipeline, not RPC layer | Fraud-proof / dispute work ([dispute-pipeline.md](../dispute-pipeline.md)); the RPC layer itself never constructs proofs |

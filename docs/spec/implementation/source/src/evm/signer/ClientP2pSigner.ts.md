@@ -31,6 +31,13 @@ The client-side signer facade in isolated deployments: forwards signing/collecti
 Channel IDs use the shared validation-only bytes32 check. Existing normalization, option decoding and public errors remain at their original boundaries. See [ClientP2pSigner.ts](../../../../../../../src/evm/signer/ClientP2pSigner.ts#L1).
 
 1. **Signing requests cross the boundary; keys do not** ([`REQ-ID-3-KR0BE3`](../../../../../specification/protocol-model/identity.md#req-id-3-kr0be3)).
+2. **`disconnectFromPeers` returns the host's promise instead of firing and forgetting**
+   ([#L227](../../../../../../../src/evm/signer/ClientP2pSigner.ts#L227)). The host operation now leaves every observed discovery key before
+   closing transports, so it has a completion the caller needs: until the leave lands, discovery can
+   still re-dial. Returning the request promise makes the client facade's contract identical to the
+   inline signer's and keeps the isolated and inline deployments observationally equal
+   ([`INV-RUNTIME-1-AKRHAK`](../../../../../specification/runtime/execution.md#inv-runtime-1-akrhak),
+   [`REQ-UPG-7-KQPXRE`](../../../../../specification/peer-communication/transport-upgrade.md#req-upg-7-kqpxre)).
 
 ## Inputs, outputs, state, and side effects
 
@@ -46,9 +53,9 @@ Channel IDs use the shared validation-only bytes32 check. Existing normalization
 A file may contribute to several requirements; this report describes the contribution and never
 claims complete conformance for a requirement that depends on other files.
 
-| Source file                                                                  | Specification IDs                                                                            |
-| ---------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------- |
-| [ClientP2pSigner.ts](../../../../../../../src/evm/signer/ClientP2pSigner.ts) | [`REQ-ID-3-KR0BE3`](../../../../../specification/protocol-model/identity.md#req-id-3-kr0be3) |
+| Source file                                                                  | Specification IDs                                                                                                                                                                                                                                                                                           |
+| ---------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| [ClientP2pSigner.ts](../../../../../../../src/evm/signer/ClientP2pSigner.ts) | [`REQ-ID-3-KR0BE3`](../../../../../specification/protocol-model/identity.md#req-id-3-kr0be3), [`INV-RUNTIME-1-AKRHAK`](../../../../../specification/runtime/execution.md#inv-runtime-1-akrhak), [`REQ-UPG-7-KQPXRE`](../../../../../specification/peer-communication/transport-upgrade.md#req-upg-7-kqpxre) |
 
 ## Assumptions, dependencies, trust boundaries, and limits
 
@@ -57,6 +64,8 @@ claims complete conformance for a requirement that depends on other files.
 ## Specification adherence
 
 - Signing confinement per the identity rules.
+- The client's disconnect operation settles only when the host's leave-then-close has completed, so the
+  isolated deployment reports the same completion as the inline one.
 
 ## Specification contradictions
 
@@ -72,8 +81,9 @@ Status enum: `Covered` | `Partial` | `Contradicts` | `Missing`. Evidence cells a
 **Here:** / **Other files:** so each row is auditable from its links alone; genuine gaps go in the
 Gap column. Audit state is file-level (Status header), never a row status.
 
-| Requirement / invariant | Implementation status | Evidence | Gap / divergence |
-| ----------------------- | --------------------- | -------- | ---------------- |
+| Requirement / invariant                                                                                     | Implementation status | Evidence                                                                                                                                                                                                                                                                                                                                                      | Gap / divergence                             |
+| ----------------------------------------------------------------------------------------------------------- | --------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------- |
+| [`REQ-UPG-7-KQPXRE`](../../../../../specification/peer-communication/transport-upgrade.md#req-upg-7-kqpxre) | Partial               | **Here:** the disconnect request's promise is returned to the caller ([#L227](../../../../../../../src/evm/signer/ClientP2pSigner.ts#L227)), so the client observes the leave-then-close completion. **Other files:** [P2pRuntimeHost](../p2pRuntime/P2pRuntimeHost.ts.md) awaits the host operation; [LocalP2pSigner](./LocalP2pSigner.ts.md) implements it. | The client takes no discovery action itself. |
 
 ## Component test obligations
 

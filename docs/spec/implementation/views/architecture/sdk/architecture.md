@@ -113,6 +113,13 @@ p2p signer (`signMessage`, `signTypedData`), enshrined-contract execution
 `dispose`. Host → client messages: `ready`, `response`, `busEvent`,
 `hostError`, `webRTCBridgePort`.
 
+`disconnectFromPeers` is awaited on both sides: the host leaves every discovery
+key it observes (`P2PManager.leaveAllDiscoveryKeys`) before `disconnectAll`,
+because discovery re-dials any peer that still shares an observed key — closing
+first would make the disconnect a pause. The client facade therefore returns the
+request promise rather than firing and forgetting. It bans nobody; a later
+`connectToChannel` re-observes its key and peers reconnect.
+
 Startup sequence: config → resolve signer → start host (inline or worker) →
 client connects → `deployStateMachine` runs twice through the deployment
 bridge signer → `deployComplete` triggers `buildRuntime` → host posts `ready`

@@ -14,11 +14,20 @@ penalties, broadcast, and peer-registry snapshots. The ingress probes authentica
 and prove that oversized, malformed-envelope, unknown-service, and unknown-endpoint traffic
 blacklists them. A throwing local service only disconnects. The lifecycle probe also proves that a
 fault on a retired authenticated transport blacklists the current address profile and closes both
-transports.
+transports. A final case drives the joined-discovery-key bookkeeping (`joinDiscoveryKey` /
+`leaveDiscoveryKey` / `leaveAllDiscoveryKeys` / `getJoinedDiscoveryKeys`) over two distinct keys
+plus a never-joined key.
 
 The initial-sync genesis and abort cases keep the original participants authoring through the fresh
 observer's spawn and the held-request window. This prevents a participant timeout from changing the
 fork before the settlement behavior is exercised; protocol time values are unchanged.
+
+Unassigned: [`UNIT-TEST-P2P-MANAGER-2-HR5HCB.P4`](../../../implementation/source/src/P2PManager.ts.md#unit-test-p2p-manager-2-hr5hcb.p4). The
+discovery-key case proves the reported set, the single-key leave, the no-op leave of a key that was
+never joined, and that leave-all empties the set, but it never joins the same key twice and never
+joins a malformed key, so the permutation's "including a duplicate and a rejected invalid key"
+clause has no oracle. Partial credit is not recorded, so the permutation stays a tracked gap until
+the case is extended.
 
 ## Tests and covered test IDs
 
@@ -82,3 +91,4 @@ coverage records the first-participant initial-load call and its explicit two-wi
 | [`P2PManager > targeted connect host composition > a late sync success after the abort changes nothing`](../../../../../test/P2PManager.test.ts#L1067) (line 1067)                                             | [`UNIT-TEST-P2P-MANAGER-1-9DNSRZ.P33`](../../../implementation/source/src/P2PManager.ts.md#unit-test-p2p-manager-1-9dnsrz.p33)                                                                                                                                                   |
 | [`P2PManager > targeted connect host composition > a late sync failure after the abort changes nothing`](../../../../../test/P2PManager.test.ts#L1084) (line 1084)                                             | [`UNIT-TEST-P2P-MANAGER-1-9DNSRZ.P34`](../../../implementation/source/src/P2PManager.ts.md#unit-test-p2p-manager-1-9dnsrz.p34)                                                                                                                                                   |
 | [`P2PManager > prefers a transport address over its registered profile address`](../../../../../test/P2PManager.test.ts#L27) (line 27)                                                                         | [`UNIT-TEST-P2PMANAGER-32-RX8SQP.P1`](../../../implementation/source/src/P2PManager.ts.md#unit-test-p2pmanager-32-rx8sqp.p1)                                                                                                                                                     |
+| [`P2PManager > tracks joined discovery keys and leaves them all`](../../../../../test/P2PManager.test.ts#L1102) (line 1102)                                                                                    | —                                                                                                                                                                                                                                                                                |
