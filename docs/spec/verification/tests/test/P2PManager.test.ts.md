@@ -19,7 +19,9 @@ transports. Three discovery cases close the suite: one drives the joined-discove
 two distinct keys plus a never-joined key; one completes real handshakes with and without an
 observed key and asserts the refusal is penalty-free and reversible, with a WebRTC upgrade still
 admitted; and one holds a join inside the discovery backend, races `leaveAllDiscoveryKeys` against
-it, and asserts the raced key is left rather than landing afterwards.
+it, and asserts the raced key is left rather than landing afterwards. A fourth proves that a further
+transport for a peer that still holds a live admitted transport is a route replacement, not a
+discovery admission, and stays admitted while no key is observed.
 
 The initial-sync genesis and abort cases keep the original participants authoring through the fresh
 observer's spawn and the held-request window. This prevents a participant timeout from changing the
@@ -96,3 +98,4 @@ coverage records the first-participant initial-load call and its explicit two-wi
 | [`P2PManager > tracks joined discovery keys and leaves them all`](../../../../../test/P2PManager.test.ts#L1102) (line 1102)                                                                                    | —                                                                                                                                                                                                                                                                                |
 | [`P2PManager > refuses a discovery admission while no key is observed and admits again once one is`](../../../../../test/P2PManager.test.ts#L1131) (line 1131)                                                 | [`UNIT-TEST-P2P-MANAGER-2-HR5HCB.P5`](../../../implementation/source/src/P2PManager.ts.md#unit-test-p2p-manager-2-hr5hcb.p5)                                                                                                                                                     |
 | [`P2PManager > leaves a discovery key whose join was still in flight when the disconnect ran`](../../../../../test/P2PManager.test.ts#L1157) (line 1157)                                                       | [`UNIT-TEST-P2P-MANAGER-2-HR5HCB.P6`](../../../implementation/source/src/P2PManager.ts.md#unit-test-p2p-manager-2-hr5hcb.p6)                                                                                                                                                     |
+| [`P2PManager > admits a replacement transport for an already connected peer while no key is observed`](../../../../../test/P2PManager.test.ts#L1172) (line 1172)                                               | [`UNIT-TEST-P2P-MANAGER-2-HR5HCB.P7`](../../../implementation/source/src/P2PManager.ts.md#unit-test-p2p-manager-2-hr5hcb.p7), [`REQ-UPG-7-KQPXRE.T1.P4`](../../../specification/peer-communication/transport-upgrade.md#req-upg-7-kqpxre.t1.p4)                                  |

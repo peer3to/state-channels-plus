@@ -85,6 +85,10 @@ None demonstrated.
 
 ## Conformance traceability
 
+Status enum: `Covered` | `Partial` | `Contradicts` | `Missing`. Evidence cells are structured
+**Here:** / **Other files:** so each row is auditable from its links alone; genuine gaps go in the
+Gap column. Audit state is file-level (Status header), never a row status.
+
 | Requirement / invariant                                                                                  | Implementation status | Evidence                                                                                                                                                                                                                                                                                                                                                                            | Gap / divergence                                                    |
 | -------------------------------------------------------------------------------------------------------- | --------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------- |
 | [`REQ-UPG-6-BC60XD`](../../../../specification/peer-communication/transport-upgrade.md#req-upg-6-bc60xd) | Covered               | **Here:** exact channel bytes and targeted domain separation are preserved by the two derivation functions. **Other files:** [P2PManager.ts.md](../P2PManager.ts.md) owns discovery admission and dispatch.                                                                                                                                                                         | None for derivation.                                                |
