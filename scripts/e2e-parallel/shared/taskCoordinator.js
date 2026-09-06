@@ -1,4 +1,5 @@
 const logging = require("./logging");
+const { validDuration } = require("./durationCache");
 
 function reduceAttemptOutput(stdout = "", stderr = "") {
     const combined = `${stdout}${stderr}`;
@@ -83,6 +84,7 @@ class TaskCoordinator {
         this.replications = new Set();
         this.settledSpeculativeAssignments = new Map();
         this.speculative = options.speculative === true;
+        this.frontStarvationRetry = options.frontStarvationRetry === true;
         this.onWorkAvailable = options.onWorkAvailable || (() => {});
         this.onResult = options.onResult || (() => {});
     }
@@ -150,6 +152,9 @@ class TaskCoordinator {
         if (this.completedTaskIds.has(assignment.taskId)) {
             return { accepted: false, reason: "redundant-attempt" };
         }
+        attempt.durationMs = validDuration(attempt.durationMs)
+            ? attempt.durationMs
+            : undefined;
         this.sumDurationMs += attempt.durationMs || 0;
         const parsed = reduceAttempt(assignment.task, attempt);
 
@@ -177,6 +182,13 @@ class TaskCoordinator {
             ];
             if ((task.infrastructureRetryCount || 0) === 0) {
                 task.infrastructureRetryCount = 1;
+                this.recordAttempt(
+                    assignment,
+                    attempt,
+                    "retry-infrastructure",
+                    1,
+                    parsed
+                );
                 this.requeue(assignment);
                 return {
                     accepted: true,
@@ -194,8 +206,18 @@ class TaskCoordinator {
             (assignment.task.starvationRetryCount || 0) === 0
         ) {
             assignment.task.starvationRetryCount = 1;
-            this.queue.push({ task: assignment.task, seq: assignment.seq });
-            this.nudgeIdleWorkers();
+            this.recordAttempt(
+                assignment,
+                attempt,
+                "retry-starvation",
+                attempt.code,
+                parsed
+            );
+            if (this.frontStarvationRetry) this.requeue(assignment);
+            else {
+                this.queue.push({ task: assignment.task, seq: assignment.seq });
+                this.nudgeIdleWorkers();
+            }
             return {
                 accepted: true,
                 disposition: "retry-starvation",
@@ -273,7 +295,22 @@ class TaskCoordinator {
         };
     }
 
+    recordAttempt(assignment, attempt, disposition, code, parsed) {
+        assignment.task.attempts ||= [];
+        assignment.task.attempts.push({
+            workerId: assignment.workerId,
+            disposition,
+            code,
+            durationMs: attempt.durationMs,
+            cancelled: attempt.cancelled === true,
+            infrastructureFailure: Boolean(attempt.infrastructureFailure),
+            starved: parsed.starveCount > 0,
+            oom: parsed.oomCount > 0
+        });
+    }
+
     finalize(assignment, attempt, code, parsed) {
+        this.recordAttempt(assignment, attempt, "complete", code, parsed);
         this.completedTaskIds.add(assignment.taskId);
         for (const [attemptId, other] of this.assignments) {
             if (other.taskId === assignment.taskId) {
@@ -304,6 +341,9 @@ class TaskCoordinator {
 
     completeSettledAttempt(assignment, attempt) {
         if (attempt.reduced) validateReducedAttempt(attempt.reduced);
+        attempt.durationMs = validDuration(attempt.durationMs)
+            ? attempt.durationMs
+            : undefined;
         this.sumDurationMs += attempt.durationMs || 0;
         if (
             attempt.cancelled ||
@@ -319,6 +359,13 @@ class TaskCoordinator {
         }
         this.failedTaskIds.add(assignment.taskId);
         this.failed.push(assignment.task);
+        this.recordAttempt(
+            assignment,
+            attempt,
+            "late-failure",
+            attempt.code,
+            parsed
+        );
         const result = {
             accepted: true,
             disposition: "late-failure",

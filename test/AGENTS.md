@@ -295,3 +295,8 @@ with the suite still green.
   canonical full gate with `yarn test:parallel:distributed`. See the "Distributed
   parallel tests" section in `README.md` for setup and options.
 - Narrow first: run the single `*.test.ts` you touched before the suite.
+
+For changes under `scripts/e2e-parallel` or `test/scripts`, run the full gate with
+`yarn test:parallel:distributed --runner-tests`. The flag-free gate excludes
+`test/scripts/**`; harness self-tests remain included. Explicit grep or test-pattern
+selection includes matching runner tests without the flag. CI uses `--runner-tests`.

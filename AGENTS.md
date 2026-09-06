@@ -334,3 +334,8 @@ limit, so it implements only what needs its own storage and composition (`open`,
   don't reach for `Awaited<ReturnType<…>>`-style gymnastics to avoid a name —
   that's worse than the type it replaces; it's for generics, not one-offs.)
 - Never log with `console.*`. Use the internal logger (the one returned during `p2pSetup`); its output is collected and shipped for analysis, so `console.*` calls are invisible to that pipeline. This applies to main-thread code too. If a module has no logger in scope, thread one through its options/params rather than reaching for `console.*`. Exception: `scripts/` CLIs (test runners, infra tooling) write their user-facing output with `console.*` by design — the rule governs `src/` and harness code whose logs must ship through the pipeline.
+
+For changes under `scripts/e2e-parallel` or `test/scripts`, run the full gate with
+`yarn test:parallel:distributed --runner-tests`. The flag-free gate excludes
+`test/scripts/**`; harness self-tests remain included. Explicit grep or test-pattern
+selection includes matching runner tests without the flag. CI uses `--runner-tests`.

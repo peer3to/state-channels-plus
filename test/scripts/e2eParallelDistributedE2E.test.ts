@@ -13,6 +13,15 @@ import {
     createSocketPair,
     TEST_DISTRIBUTED_CONNECTION_TIMEOUT_MS
 } from "../fixtures/distributed/testTransport";
+import {
+    DurationCacheFixture,
+    cacheTask,
+    completedTask
+} from "../fixtures/distributed/durationCache";
+import {
+    TaskRunFixture,
+    runOrderedTasks
+} from "../fixtures/distributed/taskParticipant";
 
 const {
     DISTRIBUTED_PROTOCOL_VERSION,
@@ -561,10 +570,9 @@ describe("distributed parallel runner", function () {
             enumerable: false
         });
         try {
-            const preparationWorker = await pool.startServer(
-                "quarantine-worker",
-                { environmentBackend: preparationBackend }
-            );
+            await pool.startServer("quarantine-worker", {
+                environmentBackend: preparationBackend
+            });
             const protocolWorker = await pool.startServer("protocol-worker", {
                 environmentBackend: protocolBackend
             });
@@ -590,15 +598,15 @@ describe("distributed parallel runner", function () {
                 baseEnv: {},
                 dht: pool.createOrchestratorDht()
             });
-            // The quarantine worker's connection lives only for its 50 ms
-            // failing preparation, so both workers are active together only
-            // in a short window; poll fast enough to observe it.
+            // Keep the protocol worker available until both preparation failures
+            // are accounted for; otherwise a loaded run can end after only one.
             await waitFor(
                 () =>
-                    preparationWorker.manager.active !== null &&
+                    terminal
+                        .join("")
+                        .includes("Quarantined after 2 failure(s)") &&
                     protocolWorker.manager.active !== null,
-                TEST_DISTRIBUTED_CONNECTION_TIMEOUT_MS,
-                5
+                TEST_DISTRIBUTED_CONNECTION_TIMEOUT_MS
             );
             const malformed = Buffer.alloc(5);
             malformed.writeUInt32BE(1, 0);
@@ -965,6 +973,155 @@ describe("distributed parallel runner", function () {
         } finally {
             await pair.close();
             fs.rmSync(root, { recursive: true, force: true });
+        }
+    });
+    it("dispatches duration-ranked tasks through the real prefetched scheduler", async function () {
+        const f = new DurationCacheFixture();
+        try {
+            const source = [
+                completedTask("short", 0, 1),
+                completedTask("long", 0, 100)
+            ];
+            f.save(source);
+            const ranked = f
+                .open()
+                .rank([
+                    cacheTask("short"),
+                    cacheTask("long"),
+                    cacheTask("new")
+                ]);
+            const result = await runOrderedTasks(
+                ranked.tasks.map((t: { label: string }) => t.label)
+            );
+            expect(result.labels).to.deep.equal(["new", "long", "short"]);
+            expect(result.result.completed).to.equal(3);
+            expect(result.errors).to.deep.equal([]);
+            expect(
+                result.tasks.every((t) => t.attempts?.length === 1)
+            ).to.equal(true);
+        } finally {
+            f.close();
+        }
+    });
+    it("keeps discovery order and reports a completed failure through the participant", async function () {
+        const fixture = await TaskRunFixture.create();
+        try {
+            const p = await fixture.addServer("failure-worker");
+            const tasks = [cacheTask("first"), cacheTask("second")];
+            const run = fixture.run(tasks);
+            await waitFor(() => p.started.length === 1);
+            p.release(p.started[0], { code: 1 });
+            await waitFor(() => p.started.length === 2);
+            p.release(p.started[1]);
+            const result = await run;
+            expect(p.assignments.map((a) => a.task.label)).to.deep.equal([
+                "first",
+                "second"
+            ]);
+            expect(result.failed.map((t) => t.label)).to.deep.equal(["first"]);
+            expect(result.labelFor(tasks[0].attempts![0].workerId)).to.equal(
+                "failure-worker"
+            );
+        } finally {
+            await fixture.close();
+        }
+    });
+    it("keeps one buffered task and lets another server receive remaining work", async function () {
+        const fixture = await TaskRunFixture.create();
+        try {
+            const a = await fixture.addServer("buffer-a");
+            const tasks = [
+                cacheTask("one"),
+                cacheTask("two"),
+                cacheTask("three")
+            ];
+            const run = fixture.run(tasks);
+            await waitFor(() => a.assignments.length === 2);
+            expect(a.started.length).to.equal(1);
+            const b = await fixture.addServer("buffer-b");
+            await waitFor(() => b.started.length === 1);
+            expect(b.started[0].task.label).to.equal("three");
+            b.release(b.started[0]);
+            a.release(a.started[0]);
+            await waitFor(() => a.started.length === 2);
+            a.release(a.started[1]);
+            const result = await run;
+            expect(result.completed).to.equal(3);
+            expect(result.failed).to.have.length(0);
+        } finally {
+            await fixture.close();
+        }
+    });
+    it("a null response keeps the real scheduler alive for a later work notification", async function () {
+        const fixture = await TaskRunFixture.create();
+        try {
+            const p = await fixture.addServer("wake-worker");
+            const tasks = [cacheTask("retry")];
+            const run = fixture.run(tasks, true);
+            await waitFor(
+                () => p.started.length === 1 && p.responses.includes(null)
+            );
+            expect(p.scheduler.stopped).to.equal(false);
+            p.release(p.started[0], { code: 1, starved: true });
+            await waitFor(() => p.started.length === 2);
+            p.release(p.started[1]);
+            const result = await run;
+            expect(result.completed).to.equal(1);
+            expect(tasks[0].attempts?.map((a) => a.disposition)).to.deep.equal([
+                "retry-starvation",
+                "complete"
+            ]);
+            expect(p.errors).to.deep.equal([]);
+        } finally {
+            await fixture.close();
+        }
+    });
+    it("retains starvation server attribution when a different server retries after disconnect", async function () {
+        const fixture = await TaskRunFixture.create();
+        try {
+            const a = await fixture.addServer("starved-server");
+            const b = await fixture.addServer("recovery-server");
+            b.capacity = 0;
+            const tasks = [cacheTask("recover")];
+            const run = fixture.run(tasks, true);
+            await waitFor(
+                () => a.started.length === 1 && a.responses.includes(null)
+            );
+            a.capacity = 0;
+            a.release(a.started[0], { code: 1, starved: true });
+            await waitFor(() => tasks[0].attempts?.length === 1);
+            await a.disconnect();
+            b.capacity = 1;
+            b.scheduler.workAvailable();
+            await waitFor(() => b.started.length === 1);
+            b.release(b.started[0]);
+            const result = await run;
+            expect(result.failed).to.have.length(0);
+            expect(
+                tasks[0].attempts?.map((attempt) =>
+                    result.labelFor(attempt.workerId)
+                )
+            ).to.deep.equal(["starved-server", "recovery-server"]);
+        } finally {
+            await fixture.close();
+        }
+    });
+    it("cancellation preserves completed ledgers and leaves held tasks incomplete", async function () {
+        const fixture = await TaskRunFixture.create();
+        try {
+            const p = await fixture.addServer("cancel-worker");
+            const tasks = [cacheTask("done"), cacheTask("held")];
+            const run = fixture.run(tasks);
+            await waitFor(() => p.started.length === 1);
+            p.release(p.started[0]);
+            await waitFor(() => p.started.length === 2);
+            fixture.cancellation.abort();
+            const result = await run;
+            expect(result.completed).to.equal(1);
+            expect(tasks[0].attempts).to.have.length(1);
+            expect(tasks[1].attempts).to.equal(undefined);
+        } finally {
+            await fixture.close();
         }
     });
 });

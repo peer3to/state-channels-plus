@@ -45,6 +45,18 @@ export class DisputeOrchestrator<
         protected logger: Logger
     ) {}
 
+    async selfRemove(peerIndex: number) {
+        const h = this.harness;
+        const peer = h.getPeer(peerIndex);
+        await h.control(peer).dispute.setForceExit(true).request();
+        h.context.leftChannelPeerIndices = [
+            ...new Set([...h.context.leftChannelPeerIndices, peerIndex])
+        ];
+        await h.execOnHost(peer, async (sm) => {
+            await sm.disputeManager.dispute(sm.forkId);
+        });
+    }
+
     /**
      * Construct a dispute host-side on `peerIndex` and return its structs.
      * They come back ABI-encoded (raw ethers structs don't survive JSON across

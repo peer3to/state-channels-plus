@@ -203,6 +203,27 @@ yarn test:parallel:distributed \
 each leased worker. The final summary prints that active limit in the existing
 capacity block and labels the worker's advertised maximum.
 
+The default gate excludes `test/scripts/**`. Use `--runner-tests` to include
+runner self-tests, as CI does. An explicit `--grep` or test-pattern selection
+still includes matching runner tests. Harness self-tests remain in the default gate.
+
+The orchestrator uses a local duration cache by default. It schedules unknown
+tests first, then previous failures, then remaining tests from longest to
+shortest. Ties keep discovery order. When ranking is applied, Forge tasks run
+first in ranked order, then the first half of the remaining list is shuffled
+at random; the shorter half stays ranked. Each worker still receives one task per
+request and keeps its one-task prefetch. With cached ranking, a starvation
+retry goes to the front for the next eligible worker. Retry limits stay the same.
+
+CI can bypass cache reads, ranking and writes with:
+
+```shell
+yarn test:parallel:distributed --disable-duration-cache --runner-tests
+```
+
+Server names remain in progress, retry and failure summaries with the cache
+disabled. A retry reports both the server where it starved and where it passed.
+
 The source archive contains tracked and non-ignored files from the test
 repository and every recursive `link:` or `file:` dependency. Their relative
 filesystem layout is preserved, so links such as
@@ -212,6 +233,16 @@ verifies and extracts source, installs each repository with pnpm, provisions tes
 infrastructure, and executes every task inside the same isolated environment.
 
 #### Distributed storage and cleanup
+
+The orchestrator stores `temp/distributed-orchestrator/duration-cache.json`
+locally. It reads this file once at startup and publishes one complete snapshot
+after all tests finish, including completed runs with failures. A missing or
+invalid file uses discovery order; the first completed run creates the cache.
+Cancelled or incomplete runs leave the old cache unchanged. Publication uses a
+unique sibling temporary file and atomic rename; concurrent runs use the last
+successful write. Cache errors never change the gate result. A filtered run
+preserves records for tests it did not select. `--disable-duration-cache` skips
+the entire cache operation. Local runs have no duration cache.
 
 `distributed-worker` is the default directory for worker-managed data, not a
 separate process. When the server starts from this repository without an

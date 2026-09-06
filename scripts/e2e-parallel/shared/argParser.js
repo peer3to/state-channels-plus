@@ -36,6 +36,8 @@ Options:
       --no-sdk-thread            Run the SDK host on the main thread
       --vm-thread                Run the VM executor in a worker thread
       --no-vm-thread             Run the VM executor on the main thread
+      --runner-tests             Include runner self-tests in the default gate
+      --disable-duration-cache   Ignore duration cache (CI); server reporting stays enabled
       --dry-run                  Print resolved scheduling configuration only
       --distributed              Run tasks on authenticated remote workers
       --discovery-timeout <ms>   Time to wait for the first worker
@@ -67,6 +69,7 @@ function parseCliArgs(argv) {
         logDirProvided: false,
         allowLogdirPurge: false,
         keepInfraLogs: false,
+        runnerTests: false,
         grep: undefined,
         testPattern: undefined,
         mochaTestPattern: undefined,
@@ -79,6 +82,7 @@ function parseCliArgs(argv) {
         forgeOnly: false,
         forgeThreads: DEFAULT_FORGE_THREADS,
         dryRun: false,
+        disableDurationCache: false,
         // Warm slot pool size; undefined → DEFAULT_SLOTS.
         slots: undefined,
         // Optional hard cap on concurrent running tests (on top of the
@@ -419,6 +423,14 @@ function parseCliArgs(argv) {
             continue;
         }
 
+        if (arg === "--runner-tests") {
+            options.runnerTests = true;
+            continue;
+        }
+        if (arg === "--disable-duration-cache") {
+            options.disableDurationCache = true;
+            continue;
+        }
         if (arg === "--dry-run") {
             options.dryRun = true;
             continue;

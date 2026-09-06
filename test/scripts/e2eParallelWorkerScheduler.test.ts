@@ -3,6 +3,7 @@ import { expect } from "chai";
 import { fork } from "child_process";
 import fs from "fs";
 import path from "path";
+import { waitFor } from "../utils/waitFor";
 
 const {
     WorkerScheduler
@@ -632,5 +633,32 @@ describe("distributed worker scheduler", function () {
 
         expect(startedAt).to.have.length(2);
         expect(startedAt[1] - startedAt[0]).to.be.greaterThanOrEqual(25);
+    });
+    it("starts its buffered task when capacity frees and prefetches exactly one replacement", async function () {
+        let requests = 0;
+        const started: number[] = [];
+        const releases: Array<() => void> = [];
+        const scheduler = new WorkerScheduler({
+            prefetch: true,
+            retryMs: 10,
+            canRun: async (running: number) => running < 1,
+            requestTask: async () => ({ id: ++requests }),
+            runTask: async (task: { id: number }) => {
+                started.push(task.id);
+                await new Promise<void>((resolve) => releases.push(resolve));
+            }
+        });
+        try {
+            scheduler.start();
+            await waitFor(() => requests === 2 && releases.length === 1);
+            expect(scheduler.bufferedCount).to.equal(1);
+            releases[0]();
+            await waitFor(() => started.length === 2 && requests === 3);
+            expect(started).to.deep.equal([1, 2]);
+            expect(scheduler.bufferedCount).to.equal(1);
+        } finally {
+            scheduler.stop();
+            releases.forEach((release) => release());
+        }
     });
 });

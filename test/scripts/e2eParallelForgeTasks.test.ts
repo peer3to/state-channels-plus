@@ -336,6 +336,33 @@ function runParallelDryEntry(args: string[], cwd = REPO_ROOT) {
 }
 
 describe("parallel forge task discovery", function () {
+    it("uses portable source and contract identity without changing the wire task", function () {
+        const root = fs.mkdtempSync(path.join(os.tmpdir(), "forge-identity-"));
+        try {
+            const dir = path.join(root, "test");
+            fs.mkdirSync(dir);
+            fs.writeFileSync(
+                path.join(dir, "Identity.t.sol"),
+                "contract IdentityTest { function testOne() public {} }"
+            );
+            const discovery = require("../../scripts/e2e-parallel/shared/forgeTaskDiscovery");
+            const { tasks } = discovery.discoverForgeTasks(dir, undefined, {
+                projectRoot: root
+            });
+            expect(tasks[0].identity).to.equal(
+                JSON.stringify(["forge", "test/Identity.t.sol", "IdentityTest"])
+            );
+            expect(
+                require("../../scripts/e2e-parallel/distributed/taskWire").toWireTask(
+                    tasks[0],
+                    root
+                )
+            ).to.not.have.property("identity");
+        } finally {
+            fs.rmSync(root, { recursive: true, force: true });
+        }
+    });
+
     it("does not invoke Foundry when parity artifacts are cold", function () {
         const root = fs.mkdtempSync(
             path.join(os.tmpdir(), "cold-forge-parity-")

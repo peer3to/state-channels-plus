@@ -1,5 +1,9 @@
 // @spec-test-coverage-ignore: developer test-orchestration tooling; not protocol behavior, no specification or implementation IDs apply
 import { expect } from "chai";
+import {
+    attemptSequence,
+    cacheTask
+} from "../fixtures/distributed/durationCache";
 
 const {
     TaskCoordinator
@@ -467,5 +471,70 @@ describe("distributed task coordinator", function () {
         expect(duplicate.taskId).to.equal(original.taskId);
         expect(duplicate.attemptId).not.to.equal(original.attemptId);
         expect(coordinator.requestTask("other")).to.equal(null);
+    });
+    it("records retries once and front-retries on either eligible server", function () {
+        for (const worker of ["a", "b"]) {
+            const x = attemptSequence({ frontStarvationRetry: true });
+            const first = x.coordinator.requestTask("a");
+            x.complete("a", first, { reduced: x.starved });
+            const retry = x.coordinator.requestTask(worker);
+            expect(retry.task.label).to.equal("long");
+            x.complete(worker, retry);
+            expect(
+                x.tasks[0].attempts?.map((a) => a.disposition)
+            ).to.deep.equal(["retry-starvation", "complete"]);
+            expect(x.tasks[0].attempts?.map((a) => a.workerId)).to.deep.equal([
+                "a",
+                worker
+            ]);
+        }
+        const x = attemptSequence();
+        const first = x.coordinator.requestTask("a");
+        x.complete("a", first, { reduced: x.starved });
+        expect(x.coordinator.requestTask("b").task.label).to.equal("short");
+    });
+    it("records infrastructure retries and rejects duplicate or wrong-worker ledger entries", function () {
+        const x = attemptSequence();
+        const a = x.coordinator.requestTask("a");
+        x.complete("wrong", a);
+        expect(x.tasks[0].attempts).to.equal(undefined);
+        x.complete("a", a, {
+            infrastructureFailure: "disk unavailable",
+            code: 1
+        });
+        x.complete("a", a);
+        const b = x.coordinator.requestTask("b");
+        x.complete("b", b, {
+            infrastructureFailure: "disk unavailable",
+            code: 1
+        });
+        expect(x.tasks[0].attempts?.map((a) => a.disposition)).to.deep.equal([
+            "retry-infrastructure",
+            "complete"
+        ]);
+        expect(
+            x.tasks[0].attempts?.every((a) => a.infrastructureFailure)
+        ).to.equal(true);
+    });
+    it("keeps totals finite for invalid regular and late speculative durations", function () {
+        const t = cacheTask("one");
+        const co = new TaskCoordinator([t], { speculative: true });
+        const a = co.requestTask("a"),
+            b = co.requestTask("b");
+        co.completeAttempt("a", {
+            attemptId: a.attemptId,
+            code: 0,
+            durationMs: NaN
+        });
+        co.completeAttempt("b", {
+            attemptId: b.attemptId,
+            code: 1,
+            durationMs: Infinity
+        });
+        expect(co.finish().sumDurationMs).to.equal(0);
+        expect(t.attempts?.map((a) => a.disposition)).to.deep.equal([
+            "complete",
+            "late-failure"
+        ]);
     });
 });

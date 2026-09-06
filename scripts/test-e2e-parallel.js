@@ -47,6 +47,10 @@ const {
 const {
     buildRemoteEnvironment
 } = require("./e2e-parallel/distributed/remoteEnvironment");
+const {
+    DurationCache,
+    spreadRankedTasks
+} = require("./e2e-parallel/shared/durationCache");
 const { runDistributed } = require("./e2e-parallel/distributed/orchestrator");
 
 // Module-level teardown ref so main().catch can tear down infra on any throw.
@@ -140,6 +144,25 @@ function buildBaseEnv(threadModes) {
     };
 }
 
+function selectRunnerTests(tasks, cli, projectRoot = process.cwd()) {
+    if (
+        cli.runnerTests ||
+        [
+            cli.grep,
+            cli.testPattern,
+            cli.mochaTestPattern,
+            cli.forgeTestPattern
+        ].some((value) => value !== undefined)
+    )
+        return tasks;
+    const scriptsRoot = path.join(projectRoot, "test", "scripts") + path.sep;
+    return tasks.filter(
+        (task) =>
+            task.runner !== "hardhat" ||
+            !task.args.some((arg) => path.resolve(arg).startsWith(scriptsRoot))
+    );
+}
+
 async function main(options = {}) {
     const cli = { ...parseCliArgs(process.argv), ...options };
     if (cli.help) {
@@ -193,7 +216,10 @@ async function main(options = {}) {
         process.exit(1);
     }
     const forgeTasks = forgeDiscovery.tasks;
-    const tasks = [...mochaDiscovery.tasks, ...forgeTasks];
+    let tasks = selectRunnerTests(
+        [...mochaDiscovery.tasks, ...forgeTasks],
+        cli
+    );
 
     // ---- resolve config ----
     const requestedSlotCount = cli.slots ?? DEFAULT_SLOTS;
@@ -216,6 +242,27 @@ async function main(options = {}) {
         MAX_SLOTS_FROM_POOL,
         cli.workers ?? MAX_SLOTS_FROM_POOL
     );
+
+    const durationCache = new DurationCache({
+        file: path.join(
+            process.cwd(),
+            "temp",
+            "distributed-orchestrator",
+            "duration-cache.json"
+        ),
+        configurationKey: JSON.stringify([
+            threadModes.sdkThread,
+            threadModes.vmThread,
+            cli.forgeThreads
+        ]),
+        enabled: cli.distributed && !cli.disableDurationCache
+    });
+    const ranking = durationCache.rank(tasks);
+    tasks = spreadRankedTasks(ranking);
+    if (cli.distributed)
+        console.log(
+            `Duration cache: ${!durationCache.enabled ? "disabled" : ranking.rankingApplied ? "ranking applied" : "no usable file; discovery order"}`
+        );
 
     if (cli.dryRun) {
         if (cli.distributed) {
@@ -329,6 +376,7 @@ async function main(options = {}) {
                 );
                 const stats = await runDistributed({
                     tasks,
+                    frontStarvationRetry: ranking.rankingApplied,
                     projectRoot: process.cwd(),
                     archivePath,
                     manifest,
@@ -368,6 +416,12 @@ async function main(options = {}) {
                         }
                     )
                 });
+                publishDistributedDurationCache(
+                    durationCache,
+                    tasks,
+                    stats,
+                    signalExitCode
+                );
                 if (signalExitCode) {
                     console.error(
                         `Distributed run cancelled by ${signalExitCode === 130 ? "SIGINT" : "SIGTERM"}; ${stats.completed}/${tasks.length} tasks completed`
@@ -376,6 +430,7 @@ async function main(options = {}) {
                     return;
                 }
                 logging.summary({
+                    labelFor: stats.labelFor,
                     tasks,
                     failed: stats.failed,
                     completed: stats.completed,
@@ -470,6 +525,17 @@ async function main(options = {}) {
     }
 }
 
+function publishDistributedDurationCache(cache, tasks, stats, signalExitCode) {
+    if (
+        !cache?.enabled ||
+        signalExitCode ||
+        !tasks.length ||
+        stats.completed !== tasks.length
+    )
+        return;
+    cache.publish(tasks);
+}
+
 if (require.main === module) {
     main().catch((err) => {
         _teardown();
@@ -479,6 +545,8 @@ if (require.main === module) {
 }
 
 module.exports = {
+    selectRunnerTests,
+    publishDistributedDurationCache,
     buildBaseEnv,
     discoveryFailureMessage,
     validateDiscoveryResults,

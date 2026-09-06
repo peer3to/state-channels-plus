@@ -5,6 +5,7 @@ import fs from "fs";
 import os from "os";
 import path from "path";
 import { EventEmitter } from "events";
+import { captureRunnerOutput } from "../fixtures/distributed/durationCache";
 
 const {
     OrchestratorLogStore,
@@ -670,5 +671,38 @@ describe("distributed orchestrator logs", function () {
         } finally {
             fs.rmSync(root, { recursive: true, force: true });
         }
+    });
+    it("labels successful results and both retry kinds with their server", function () {
+        const log = require("../../scripts/e2e-parallel/shared/logging");
+        const output = captureRunnerOutput(() => {
+            log.result({
+                completed: 1,
+                total: 1,
+                code: 0,
+                label: "sample",
+                durationMs: 1,
+                worker: "server-3",
+                timing: log.parseTimings("")
+            });
+            log.starvationRetry({
+                seq: 1,
+                total: 1,
+                label: "sample",
+                starveCount: 1,
+                worker: "server-3"
+            });
+            log.infrastructureRetry({
+                seq: 1,
+                total: 1,
+                label: "sample",
+                reason: "disk",
+                worker: "server-8"
+            });
+        });
+        expect(output.split("\n")[0]).to.equal(
+            "[1/1] server-3 · PASS (0.00s) · timing n/a"
+        );
+        expect(output).to.include("server-3 · STARVED");
+        expect(output).to.include("server-8 · INFRASTRUCTURE FAILURE");
     });
 });

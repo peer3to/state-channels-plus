@@ -395,6 +395,7 @@ async function runDistributed(options) {
 
     const coordinator = new TaskCoordinator(options.tasks, {
         speculative: true,
+        frontStarvationRetry: options.frontStarvationRetry,
         onWorkAvailable(workerId) {
             const worker = workers.get(workerId);
             worker?.peer
@@ -774,6 +775,7 @@ async function runDistributed(options) {
                     seq: message.header.assignment.seq,
                     total: options.tasks.length,
                     label: message.header.result.label,
+                    worker: workerLabelById.get(worker.id) || worker.id,
                     starveCount: completion.parsed.starveCount
                 });
             } else if (completion.disposition === "retry-infrastructure") {
@@ -781,6 +783,7 @@ async function runDistributed(options) {
                     seq: message.header.assignment.seq,
                     total: options.tasks.length,
                     label: message.header.result.label,
+                    worker: workerLabelById.get(worker.id) || worker.id,
                     reason: completion.failureReason
                 });
             }
@@ -1028,6 +1031,7 @@ async function runDistributed(options) {
         completed: state.completed,
         sumDurationMs: state.sumDurationMs,
         ...resourceStats,
+        labelFor: (workerId) => workerLabelById.get(workerId) || workerId,
         workers: workerLabels
     };
 }

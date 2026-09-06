@@ -52,7 +52,7 @@ jobs:
               env:
                   SCP_TEST_POOL_SECRET: ${{ secrets.SCP_TEST_POOL_SECRET }}
                   SCP_TEST_ORCHESTRATOR_SEED: ${{ secrets.SCP_TEST_ORCHESTRATOR_SEED }}
-              run: yarn test:parallel:distributed --discovery-timeout 300000
+              run: yarn test:parallel:distributed --discovery-timeout 300000 --disable-duration-cache --runner-tests
 
             - name: Upload run logs
               if: always()

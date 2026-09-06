@@ -287,22 +287,12 @@ describe("E2E: Join channel race conditions", function () {
                 pendingBefore.map((a: unknown) => String(a).toLowerCase())
             ).to.include(joiner.address.toLowerCase());
 
-            // Peer 0 voluntarily self-removes by setting forceExit and filing a
-            // dispute. The dispute is valid (selfRemoval=true) and not slashed.
+            // Submit through the runtime so its marker records this self-removal.
+            // A direct upload would let it submit duplicate evidence on commit.
             const leaverIndex = 0;
             const leaverAddress = h.getPeer(leaverIndex).address;
             const originalForkId = h.activeForkId!;
-            await h
-                .control(h.getPeer(leaverIndex))
-                .dispute.setForceExit(true)
-                .request();
-            h.context.leftChannelPeerIndices = [
-                ...h.context.leftChannelPeerIndices,
-                leaverIndex
-            ];
-            await h.tamper.postTamperedDispute(leaverIndex, () => {}, {
-                markMalicious: false
-            });
+            await h.dispute.selfRemove(leaverIndex);
 
             const remainingPeerIndices = h
                 .getActiveHonestPeers()
@@ -486,14 +476,7 @@ describe("E2E: Join channel race conditions", function () {
             );
             const leaverIndex = 0;
             const originalForkId = h.activeForkId!;
-            await h
-                .control(h.getPeer(leaverIndex))
-                .dispute.setForceExit(true)
-                .request();
-            h.context.leftChannelPeerIndices = [leaverIndex];
-            await h.tamper.postTamperedDispute(leaverIndex, () => {}, {
-                markMalicious: false
-            });
+            await h.dispute.selfRemove(leaverIndex);
             const remainingPeerIndices = h
                 .getActiveHonestPeers()
                 .map((peer) => peer.index);

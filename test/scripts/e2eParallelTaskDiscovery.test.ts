@@ -10,11 +10,13 @@ const { discoverTasks } =
             testDir: string,
             grep?: string,
             e2eDir?: string,
-            testPattern?: string
+            testPattern?: string,
+            projectRoot?: string
         ) => {
             files: string[];
             tasks: Array<{
                 fullTitle: string;
+                identity: string;
                 isE2E: boolean;
                 args: string[];
             }>;
@@ -25,7 +27,75 @@ const {
     fromWireTask
 } = require("../../scripts/e2e-parallel/distributed/taskWire.js");
 
+const { selectRunnerTests } = require("../../scripts/test-e2e-parallel");
+
 describe("parallel Mocha task discovery", function () {
+    it("default selection excludes runner tests but retains harness tests and honors explicit selections", function () {
+        const root = fs.mkdtempSync(
+            path.join(os.tmpdir(), "runner-selection-")
+        );
+        try {
+            for (const bucket of ["scripts", "harness", "unit"]) {
+                const directory = path.join(root, "test", bucket);
+                fs.mkdirSync(directory, { recursive: true });
+                fs.writeFileSync(
+                    path.join(directory, "one.test.ts"),
+                    `describe("${bucket}", () => { it("works", () => {}); });`
+                );
+            }
+            const tasks = discoverTasks(
+                path.join(root, "test"),
+                undefined,
+                undefined,
+                undefined,
+                root
+            ).tasks;
+            expect(
+                selectRunnerTests(tasks, {}, root).map(
+                    (task: { fullTitle: string }) => task.fullTitle
+                )
+            ).to.have.members(["harness works", "unit works"]);
+            expect(
+                selectRunnerTests(tasks, { runnerTests: true }, root)
+            ).to.equal(tasks);
+            const selected = discoverTasks(
+                path.join(root, "test"),
+                undefined,
+                undefined,
+                "scripts/*.test.ts",
+                root
+            ).tasks;
+            expect(
+                selectRunnerTests(
+                    selected,
+                    { testPattern: "scripts/*.test.ts" },
+                    root
+                )
+            ).to.equal(selected);
+            expect(selected.map((task) => task.fullTitle)).to.deep.equal([
+                "scripts works"
+            ]);
+            expect(selectRunnerTests(tasks, { grep: "works" }, root)).to.equal(
+                tasks
+            );
+            expect(
+                selectRunnerTests(
+                    tasks,
+                    { mochaTestPattern: "scripts/*.test.ts" },
+                    root
+                )
+            ).to.equal(tasks);
+            expect(
+                selectRunnerTests(
+                    tasks,
+                    { forgeTestPattern: "**/*.t.sol" },
+                    root
+                )
+            ).to.equal(tasks);
+        } finally {
+            fs.rmSync(root, { recursive: true, force: true });
+        }
+    });
     it("round-trips task paths under the project and rejects escapes", function () {
         const root = fs.mkdtempSync(path.join(os.tmpdir(), "task-wire-"));
         try {
@@ -198,6 +268,58 @@ describe("parallel Mocha task discovery", function () {
             ]);
         } finally {
             fs.rmSync(root, { recursive: true, force: true });
+        }
+    });
+    it("gives static and enumerated tests portable source and full-title identities", function () {
+        const roots = [
+            fs.mkdtempSync(path.join(os.tmpdir(), "identity-a-")),
+            fs.mkdtempSync(path.join(os.tmpdir(), "identity-b-"))
+        ];
+        try {
+            const identities = roots.map((root) => {
+                const dir = path.join(root, "test");
+                fs.mkdirSync(dir);
+                fs.writeFileSync(
+                    path.join(dir, "same.test.ts"),
+                    'describe("outer",()=>{it("static",()=>{}); for(const x of [1,2]) it(`dynamic ${x}`,()=>{});});'
+                );
+                fs.mkdirSync(path.join(dir, "nested"));
+                fs.writeFileSync(
+                    path.join(dir, "nested", "same.test.ts"),
+                    'describe("outer",()=>{it("static",()=>{});});'
+                );
+                const { tasks } = discoverTasks(
+                    dir,
+                    undefined,
+                    path.join(dir, "e2e"),
+                    "**/*.ts",
+                    root
+                );
+                expect(
+                    new Set(tasks.map((t: { identity: string }) => t.identity))
+                        .size
+                ).to.equal(4);
+                for (const task of tasks) {
+                    expect(toWireTask(task, root)).to.not.have.property(
+                        "identity"
+                    );
+                }
+                return tasks
+                    .map((t: { identity: string }) => t.identity)
+                    .sort();
+            });
+            expect(identities[0]).to.deep.equal(identities[1]);
+            expect(identities[0]).to.include(
+                JSON.stringify([
+                    "hardhat",
+                    "test/same.test.ts",
+                    "outer dynamic 1"
+                ])
+            );
+        } finally {
+            roots.forEach((root) =>
+                fs.rmSync(root, { recursive: true, force: true })
+            );
         }
     });
 });

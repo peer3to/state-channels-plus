@@ -360,20 +360,20 @@ function hold({ seq, total, reason, buffered }) {
 }
 
 // Light yellow: a starved task gets its single clean retry.
-function starvationRetry({ seq, total, label, starveCount }) {
+function starvationRetry({ seq, total, label, starveCount, worker = "local" }) {
     console.log(
         colorize(
             "lightYellow",
-            `[${seq}/${total}] STARVED x${starveCount} — rescheduling once [${label}]`
+            `[${seq}/${total}] ${worker} · STARVED x${starveCount} — rescheduling once [${label}]`
         )
     );
 }
 
-function infrastructureRetry({ seq, total, label, reason }) {
+function infrastructureRetry({ seq, total, label, reason, worker = "local" }) {
     console.log(
         colorize(
             "lightYellow",
-            `[${seq}/${total}] INFRASTRUCTURE FAILURE — rescheduling once [${label}] · ${reason}`
+            `[${seq}/${total}] ${worker} · INFRASTRUCTURE FAILURE — rescheduling once [${label}] · ${reason}`
         )
     );
 }
@@ -395,7 +395,7 @@ function result({
     starveCount,
     timing,
     repeatedStarvation = false,
-    worker
+    worker = "local"
 }) {
     const tag = `[${completed}/${total}]${worker ? ` ${worker} ·` : ""}`;
     const duration = formatDurationMs(durationMs);
@@ -467,6 +467,42 @@ function summaryCounts(total, failed, completed = total) {
     };
 }
 
+function attemptAttribution(task, labelFor, category = "failure") {
+    const attempts = (task.attempts || []).filter((attempt) => {
+        if (category === "starvation")
+            return (
+                attempt.starved ||
+                (attempt.disposition === "complete" && attempt.code === 0)
+            );
+        if (category === "oom") return attempt.oom;
+        return (
+            !attempt.cancelled &&
+            attempt.code !== 0 &&
+            ["complete", "late-failure", "retry-infrastructure"].includes(
+                attempt.disposition
+            )
+        );
+    });
+    if (!attempts.length) return "";
+    return (
+        " · " +
+        attempts
+            .map((attempt) => {
+                const outcome = attempt.starved
+                    ? "starved"
+                    : attempt.oom
+                      ? "OOM"
+                      : attempt.infrastructureFailure
+                        ? "infrastructure failure"
+                        : attempt.code === 0
+                          ? "passed"
+                          : "failed";
+                return `${outcome} on ${labelFor(attempt.workerId)}`;
+            })
+            .join("; ")
+    );
+}
+
 function summary({
     tasks,
     failed,
@@ -481,7 +517,8 @@ function summary({
     memBoundGb,
     targetLoad,
     gasPeak = new Map(),
-    workers = []
+    workers = [],
+    labelFor = () => "local"
 }) {
     const counts = summaryCounts(tasks.length, failed.length, completed);
     const totalFailing = counts.failing;
@@ -509,7 +546,12 @@ function summary({
         console.log(colorize("red", `  ${totalFailing} failing`));
         console.log(colorize("red", "  Failed tasks:"));
         for (const task of failed) {
-            console.log(colorize("red", `    - ${task.label}`));
+            console.log(
+                colorize(
+                    "red",
+                    `    - ${task.label}${attemptAttribution(task, labelFor)}`
+                )
+            );
         }
     }
     if (counts.notRun > 0) {
@@ -524,7 +566,9 @@ function summary({
             )
         );
         for (const t of oomTasks) {
-            console.log(`    - ${t.label}: ${t.oomCount} OOM`);
+            console.log(
+                `    - ${t.label}: ${t.oomCount} OOM${attemptAttribution(t, labelFor, "oom")}`
+            );
         }
         console.log(
             `  Raise SCP_WORKER_MAX_OLD_SPACE_MB / NODE_OPTIONS=--max-old-space-size, lower --slots, or lower --target-load.`
@@ -538,7 +582,9 @@ function summary({
             )
         );
         for (const task of starvation.recovered) {
-            console.log(`    - ${task.label}: starved x${task.starveCount}`);
+            console.log(
+                `    - ${task.label}: starved x${task.starveCount}${attemptAttribution(task, labelFor, "starvation")}`
+            );
         }
     }
     if (starvation.repeated.length > 0) {
@@ -553,7 +599,9 @@ function summary({
             )
         );
         for (const t of starvation.repeated) {
-            console.log(`    - ${t.label}: starved x${t.starveCount}`);
+            console.log(
+                `    - ${t.label}: starved x${t.starveCount}${attemptAttribution(t, labelFor, "starvation")}`
+            );
         }
     }
     console.log(

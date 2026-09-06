@@ -5,6 +5,7 @@ const path = require("path");
 const { globSync } = require("glob");
 const { Project, SyntaxKind } = require("ts-morph");
 const { MAX_LOG_NAME_LEN } = require("./constants");
+const { taskIdentity } = require("./durationCache");
 const { TASK_RUNNERS } = require("./taskRunners");
 
 function getStringLiteralValue(node) {
@@ -152,7 +153,8 @@ function discoverTasks(
     testDir,
     grep,
     e2eDir = path.resolve("test/e2e"),
-    testPattern = DEFAULT_MOCHA_TEST_PATTERN
+    testPattern = DEFAULT_MOCHA_TEST_PATTERN,
+    projectRoot = process.cwd()
 ) {
     const files = globSync(path.join(testDir, testPattern), { nodir: true })
         .filter(isMochaTestFile)
@@ -169,6 +171,12 @@ function discoverTasks(
             for (const fullTitle of enumerateMochaTests(f)) {
                 const taskGrep = `^${escapeRegex(fullTitle)}$`;
                 tasks.push({
+                    identity: taskIdentity(
+                        TASK_RUNNERS.HARDHAT,
+                        f,
+                        fullTitle,
+                        projectRoot
+                    ),
                     label: `test:${path.basename(f)}:${fullTitle}`,
                     args: ["test", "--no-compile", f, "--grep", taskGrep],
                     logName: sanitizeFileName(
@@ -187,6 +195,12 @@ function discoverTasks(
                 `${path.basename(f, path.extname(f))}__${suite}__${test}`
             );
             tasks.push({
+                identity: taskIdentity(
+                    TASK_RUNNERS.HARDHAT,
+                    f,
+                    fullTitle,
+                    projectRoot
+                ),
                 label: `test:${path.basename(f)}:${test}`,
                 args: ["test", "--no-compile", f, "--grep", taskGrep],
                 logName,

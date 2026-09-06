@@ -12,6 +12,7 @@ const {
 } = require("../../../scripts/e2e-parallel/distributed/protocol.js");
 
 export class TestIsolatedRuntimeBackend {
+    readonly frames = new EventEmitter();
     readonly calls: Array<{ operation: string; value?: unknown }> = [];
     readonly controls: Array<{
         stdin: PassThrough;
@@ -137,6 +138,7 @@ export class TestIsolatedRuntimeBackend {
                 };
             }) => {
                 this.calls.push({ operation: "frame", value: frame });
+                this.frames.emit("frame", frame);
                 if (frame.kind === "WORKSPACE_OFFER") {
                     this.resolveFirstWorkspaceOfferReceived();
                     if (!this.respondToWorkspaceOffer) return;

@@ -4,6 +4,7 @@ import { spawnSync } from "child_process";
 import fs from "fs";
 import os from "os";
 import path from "path";
+import { attributionSummary } from "../fixtures/distributed/durationCache";
 
 // CommonJS dev scripts for the parallel e2e runner. We test the
 // destructive-tooling guards: a mis-resolved / symlinked log dir must never
@@ -93,6 +94,83 @@ const { buildBaseEnv, main, resolveDistributedOrchestratorKeyPair } =
 const argv = (...args: string[]) => ["node", "runner", ...args];
 
 describe("e2e-parallel argParser - logDir validation", function () {
+    it("accepts the runner tests flag in local and distributed modes", function () {
+        const parser = require("../../scripts/e2e-parallel/shared/argParser");
+        expect(parser.parseCliArgs(argv()).runnerTests).to.equal(false);
+        expect(
+            parser.parseCliArgs(argv("--runner-tests")).runnerTests
+        ).to.equal(true);
+        expect(
+            parser.parseCliArgs(argv("--distributed", "--runner-tests"))
+                .runnerTests
+        ).to.equal(true);
+    });
+    it("accepts the duration cache disable flag locally and distributed and documents it", function () {
+        const parser = require("../../scripts/e2e-parallel/shared/argParser");
+        expect(
+            parser.parseCliArgs(argv("--disable-duration-cache"))
+                .disableDurationCache
+        ).to.equal(true);
+        expect(
+            parser.parseCliArgs(
+                argv("--distributed", "--disable-duration-cache")
+            ).disableDurationCache
+        ).to.equal(true);
+        expect(parser.getHelpText()).to.include("--disable-duration-cache");
+    });
+    it("distributed dry-run reads the duration cache without publishing or creating temporary files", function () {
+        const root = fs.mkdtempSync(
+            path.join(os.tmpdir(), "duration-dry-run-")
+        );
+        try {
+            fs.mkdirSync(path.join(root, "test"));
+            fs.writeFileSync(
+                path.join(root, "test", "one.test.ts"),
+                'describe("one",()=>{it("runs",()=>{});});'
+            );
+            const directory = path.join(
+                root,
+                "temp",
+                "distributed-orchestrator"
+            );
+            fs.mkdirSync(directory, { recursive: true });
+            const cache = path.join(directory, "duration-cache.json");
+            const bytes = JSON.stringify({ version: 1, records: {} });
+            fs.writeFileSync(cache, bytes);
+            const run = spawnSync(
+                process.execPath,
+                [
+                    path.resolve("scripts/test-e2e-parallel.js"),
+                    "--distributed",
+                    "--dry-run",
+                    "--no-forge"
+                ],
+                { cwd: root, encoding: "utf8" }
+            );
+            expect(run.status, run.stderr).to.equal(0);
+            expect(run.stdout).to.include("ranking applied");
+            expect(fs.readFileSync(cache, "utf8")).to.equal(bytes);
+            expect(fs.readdirSync(directory)).to.deep.equal([
+                "duration-cache.json"
+            ]);
+            const disabled = spawnSync(
+                process.execPath,
+                [
+                    path.resolve("scripts/test-e2e-parallel.js"),
+                    "--distributed",
+                    "--dry-run",
+                    "--no-forge",
+                    "--disable-duration-cache"
+                ],
+                { cwd: root, encoding: "utf8" }
+            );
+            expect(disabled.status, disabled.stderr).to.equal(0);
+            expect(disabled.stdout).to.include("Duration cache: disabled");
+        } finally {
+            fs.rmSync(root, { recursive: true, force: true });
+        }
+    });
+
     it("does not count interrupted tasks as passing", function () {
         expect(summaryCounts(789, 32, 100)).to.deep.equal({
             passing: 68,
@@ -194,7 +272,9 @@ describe("e2e-parallel argParser - logDir validation", function () {
             "--forward-env",
             "--forge-only",
             "--no-forge",
-            "--forge-threads"
+            "--forge-threads",
+            "--runner-tests",
+            "--disable-duration-cache"
         ]) {
             expect(help).to.include(option);
         }
@@ -355,8 +435,9 @@ describe("e2e-parallel argParser - logDir validation", function () {
             console.log = original;
             process.argv = originalArgv;
         }
-        expect(lines).to.have.length(1);
-        expect(lines[0]).to.match(
+        expect(lines).to.have.length(2);
+        expect(lines[0]).to.match(/^Duration cache: /);
+        expect(lines[1]).to.match(
             /^Distributed dry run: \d+ task\(s\) \(\d+ forge\); slots=worker default; remaining capacity is configured by test:parallel:server$/
         );
     });
@@ -663,6 +744,34 @@ describe("e2e-parallel logging - starvation diagnostics", function () {
 
         expect(countStarvation(output)).to.equal(2);
         expect(parseTimings(output).maxEventLoopDelayMs).to.equal(1100);
+    });
+    it("names the server in failed-task summaries", function () {
+        expect(attributionSummary("fail")).to.include(
+            "- attributed · failed on server-3"
+        );
+    });
+    it("names the server in OOM summaries", function () {
+        expect(attributionSummary("oom")).to.include(
+            "- attributed: 1 OOM · OOM on server-3"
+        );
+    });
+    it("names both starvation and recovery servers", function () {
+        expect(attributionSummary("recovered")).to.include(
+            "starved on server-3; passed on server-8"
+        );
+    });
+    it("names both servers after repeated starvation", function () {
+        expect(attributionSummary("repeated")).to.include(
+            "starved on server-3; starved on server-8"
+        );
+    });
+    it("names the server for exhausted infrastructure retry", function () {
+        expect(attributionSummary("infra")).to.include(
+            "infrastructure failure on server-3; infrastructure failure on server-8"
+        );
+    });
+    it("uses local attribution for the local runner", function () {
+        expect(attributionSummary("local")).to.include("failed on local");
     });
 });
 

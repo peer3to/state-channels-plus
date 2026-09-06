@@ -1007,17 +1007,7 @@ describe("E2E: Spectate Service", function () {
             // window where no peer has posted a block yet.
             const leaverIndex = 0;
             const originalForkId = h.activeForkId!;
-            await h
-                .control(h.getPeer(leaverIndex))
-                .dispute.setForceExit(true)
-                .request();
-            h.context.leftChannelPeerIndices = [
-                ...h.context.leftChannelPeerIndices,
-                leaverIndex
-            ];
-            await h.tamper.postTamperedDispute(leaverIndex, () => {}, {
-                markMalicious: false
-            });
+            await h.dispute.selfRemove(leaverIndex);
 
             const remainingPeerIndices = h
                 .getActiveHonestPeers()

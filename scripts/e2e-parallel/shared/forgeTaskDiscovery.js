@@ -3,6 +3,7 @@ const path = require("path");
 const { globSync } = require("glob");
 const { DEFAULT_FORGE_THREADS, FORGE_TEST_TASK } = require("./forgeConfig");
 const { escapeRegex, sanitizeFileName } = require("./taskDiscovery");
+const { taskIdentity } = require("./durationCache");
 const { TASK_RUNNERS } = require("./taskRunners");
 
 // Foundry does not confine test contracts to `*.t.sol`, so the glob has to
@@ -330,7 +331,8 @@ function assertUniqueContractNames(discovered) {
 function discoverForgeTasks(testDir, grep, options = {}) {
     const {
         threads = DEFAULT_FORGE_THREADS,
-        testPattern = DEFAULT_FORGE_TEST_PATTERN
+        testPattern = DEFAULT_FORGE_TEST_PATTERN,
+        projectRoot = process.cwd()
     } = options;
     if (!Number.isInteger(threads) || threads < 1) {
         throw new Error(
@@ -348,6 +350,7 @@ function discoverForgeTasks(testDir, grep, options = {}) {
     );
     assertUniqueContractNames(discovered);
     let tasks = discovered.map(({ file, contract }) => ({
+        identity: taskIdentity(TASK_RUNNERS.FORGE, file, contract, projectRoot),
         label: `forge:${path.basename(file)}:${contract}`,
         args: [
             FORGE_TEST_TASK,
