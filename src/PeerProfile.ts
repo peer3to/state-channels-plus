@@ -124,6 +124,12 @@ class PeerProfile {
         if (peerInfo) this.setHolepunchPeerInfo(peerInfo);
         if (profile.isBlackListed) this.blacklist();
         if (profile.isReconnectBanned) this.banReconnect();
+        // The absorbed handle is the one this identity is reachable on now, so
+        // a standing exclusion or suspension has to follow it. `allowReconnect`
+        // then finds and lifts the ban on the handle that actually carries it.
+        if (peerInfo && (this.isBlackListed || this.isReconnectBanned)) {
+            peerInfo.ban(true);
+        }
     }
     public setHolepunchPeerInfo(peerInfo: BannablePeerInfo) {
         this.holepunchPeerInfo = peerInfo;

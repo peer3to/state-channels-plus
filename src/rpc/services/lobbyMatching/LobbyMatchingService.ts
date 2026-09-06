@@ -82,6 +82,13 @@ export default class LobbyMatchingService extends ARpcService<LobbyMatchingRpcMe
     };
     private observedTargetChannelId?: string;
     private unsubscribeTargetOpened?: () => void;
+    /**
+     * A cleanup that has not settled yet. It clears `activeTopic` before it
+     * suspends on the discovery leave, so a session started inside that window
+     * would be torn down by the older cleanup when it resumes; `match` waits
+     * this out first. Never rejects.
+     */
+    private cleanupInFlight?: Promise<void>;
 
     constructor(
         p2pManager: P2PManager,
@@ -124,6 +131,11 @@ export default class LobbyMatchingService extends ARpcService<LobbyMatchingRpcMe
         const normalizedTarget = observedTargetChannelId
             ? this.validateTopic(observedTargetChannelId)
             : undefined;
+        // A cleanup that started elsewhere clears `activeTopic` before it
+        // suspends on the discovery leave, so a session started inside that
+        // window shares the instance-wide collections with the session the old
+        // cleanup is still tearing down. Decide on settled state instead.
+        if (this.cleanupInFlight) await this.settleCleanupInFlight();
 
         if (this.activeTopic && !this.matchResolve) {
             throw new Error(
@@ -712,7 +724,35 @@ export default class LobbyMatchingService extends ARpcService<LobbyMatchingRpcMe
         resolve(match);
     }
 
-    private async cleanup(
+    /**
+     * Runs one cleanup and publishes it as the in-flight one, so a `match` on
+     * this instance cannot start a session into the shared collections while an
+     * earlier cleanup is still tearing its own session down.
+     */
+    private cleanup(
+        options: { preserveHandedOffTransports?: boolean } = {}
+    ): Promise<void> {
+        const settled = this.runCleanup(options);
+        const tracked: Promise<void> = settled
+            .then(
+                () => undefined,
+                () => undefined
+            )
+            .then(() => {
+                if (this.cleanupInFlight === tracked) {
+                    this.cleanupInFlight = undefined;
+                }
+            });
+        this.cleanupInFlight = tracked;
+        return settled;
+    }
+
+    /** Waits out every cleanup still running, including ones started meanwhile. */
+    private async settleCleanupInFlight(): Promise<void> {
+        while (this.cleanupInFlight) await this.cleanupInFlight;
+    }
+
+    private async runCleanup(
         options: { preserveHandedOffTransports?: boolean } = {}
     ): Promise<void> {
         const topic = this.activeTopic;
@@ -828,10 +868,14 @@ export default class LobbyMatchingService extends ARpcService<LobbyMatchingRpcMe
      * for the rest of the session instead; cleanup lifts the ban when the
      * topic is left. This is not an exclusion. The selected peer is never
      * banned: negotiation still needs to reach it.
+     *
+     * With no active topic there is no session left to lift the ban, and none
+     * is needed: nothing observes the topic any more, so a plain close is final.
      */
     private disconnectForSession(transport: ATransport): void {
         const address = this.peerAddress(transport);
         if (
+            this.activeTopic &&
             address &&
             address !== this.handedOffPeerAddress &&
             this.p2pManager.banReconnect(address)

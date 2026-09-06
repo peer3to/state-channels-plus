@@ -65,6 +65,13 @@ class ProfileManager {
                 transport.close(true);
                 return undefined;
             }
+            // A suspension placed after the handshake response was verified
+            // still has to refuse here, the final admission boundary. It never
+            // escalates to an exclusion: the identity is only suspended.
+            if (existingProfile.isReconnectBanned) {
+                transport.close(true);
+                return undefined;
+            }
             const currentTransport = existingProfile.getTransport();
             if (
                 currentTransport?.transportType === TransportType.WEBRTC &&
@@ -243,6 +250,40 @@ class ProfileManager {
     public isReconnectBanned(evmAddress: Address): boolean {
         return (
             this.getProfileByEvmAddress(evmAddress)?.isReconnectBanned ?? false
+        );
+    }
+
+    /**
+     * Move the discovery handle a refused transport arrived on onto the
+     * identity's own profile. A standing suspension then follows the handle the
+     * identity is currently reachable on, so `allowReconnect` finds and lifts it
+     * there instead of leaving a ban on an object nothing references again.
+     */
+    public adoptRefusedTransportHandle(
+        transport: ATransport,
+        evmAddress: Address
+    ): void {
+        const identityProfile = this.getProfileByEvmAddress(evmAddress);
+        const transportProfile = this.mapTransportToProfile.get(transport);
+        if (
+            !identityProfile ||
+            !transportProfile ||
+            transportProfile === identityProfile
+        ) {
+            return;
+        }
+        identityProfile.absorbLifecycleFrom(transportProfile);
+    }
+
+    /** True while the identity holds a live transport other than this one. */
+    public hasOtherLiveTransport(
+        evmAddress: Address,
+        transport: ATransport
+    ): boolean {
+        return (
+            this.getProfileByEvmAddress(evmAddress)
+                ?.getLiveTransports()
+                .some((liveTransport) => liveTransport !== transport) ?? false
         );
     }
 

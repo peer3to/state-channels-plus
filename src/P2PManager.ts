@@ -203,9 +203,14 @@ class P2PManager<TCustomRpc extends MainRpcService = MainRpcService>
         // peer that still shares the key we just left keeps reaching us. WebRTC
         // is exempt because it only ever arrives as a same-peer upgrade between
         // already-authenticated peers, never as a fresh discovery admission.
+        // A peer that still holds another live transport is not a discovery
+        // admission either: it is replacing a route we already accepted (a
+        // matched lobby peer redialing between the lobby leaving its topic and
+        // the channel key being joined), so its replacement stays admitted.
         if (
             this.joinedDiscoveryKeys.size === 0 &&
-            transport.transportType !== TransportType.WEBRTC
+            transport.transportType !== TransportType.WEBRTC &&
+            !this.profileManager.hasOtherLiveTransport(peerAddress, transport)
         ) {
             this.logger.debug(
                 "Refusing discovery admission while no discovery key is observed",

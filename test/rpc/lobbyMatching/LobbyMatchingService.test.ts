@@ -472,4 +472,33 @@ describe("LobbyMatchingService", function () {
         expect(result.sessionTransportClosedAfterCleanup).to.equal(true);
         expect(result.bannedPeerReconnectBannedAfterCleanup).to.equal(false);
     });
+
+    it("does not session-ban rejected lobby traffic once the session has ended", async function () {
+        const result = await fixture
+            .control()
+            .p2pManagerProbe.probeRejectedRpcAfterLobbyEnded()
+            .request();
+
+        expect(result.sessionStarted).to.equal(true);
+        expect(result.transportClosedAfterOverflow).to.equal(true);
+        // No session is left to lift a ban, so none may be placed.
+        expect(result.reconnectBannedAfterOverflow).to.equal(false);
+        expect(result.reconnectAdmitted).to.equal(true);
+    });
+
+    it("starts a replacement match only after the previous cleanup has settled", async function () {
+        const result = await fixture
+            .control()
+            .p2pManagerProbe.probeCleanupSerializesWithMatch()
+            .request();
+
+        // The held cleanup owns the instance until it settles.
+        expect(result.topicWhileCleanupHeld).to.equal(undefined);
+        expect(result.secondSessionStarted).to.equal(true);
+        expect(result.secondTransportOpen).to.equal(true);
+        expect(result.secondSessionBanned).to.equal(true);
+        expect(result.secondSessionLeft).to.equal(true);
+        expect(result.secondResolvedUndefined).to.equal(true);
+        expect(result.banLiftedAfterSecondCleanup).to.equal(true);
+    });
 });

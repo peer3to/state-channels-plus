@@ -235,6 +235,15 @@ class InitHandshakeService extends ARpcService<InitHandshakeRpcMethods> {
             // excluded identity bans the handle it came in on as well.
             if (isBlacklisted) {
                 this.p2pManager.profileManager.banTransportReconnect(transport);
+            } else {
+                // A suspended identity otherwise redials this handle and reruns
+                // the whole handshake until the session ends. Move the handle
+                // onto the identity's profile so the suspension bans it and the
+                // session's `allowReconnect` can release it again.
+                this.p2pManager.profileManager.adoptRefusedTransportHandle(
+                    transport,
+                    signerAddress
+                );
             }
             this.p2pManager.disconnectConnection(transport);
             return;

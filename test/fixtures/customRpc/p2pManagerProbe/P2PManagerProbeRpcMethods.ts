@@ -51,7 +51,12 @@ import type {
     LobbyExhaustionTimerProbe,
     LobbyLatePickProbe,
     DiscoveryAdmissionGateProbe,
-    DiscoveryJoinLeaveRaceProbe
+    DiscoveryJoinLeaveRaceProbe,
+    ReconnectBanFinalAdmissionProbe,
+    ReconnectBanHandleAdoptionProbe,
+    RejectedRpcAfterLobbyEndedProbe,
+    CleanupMatchSerializationProbe,
+    ReplacementAdmissionGateProbe
 } from "./P2PManagerProbeService";
 import type P2PManager from "@/P2PManager";
 import ARpcMethods from "@/rpc/ARpcMethods";
@@ -438,5 +443,33 @@ export class P2PManagerProbeRpcMethods extends ARpcMethods<
         discoveryKey: string
     ): Promise<DiscoveryJoinLeaveRaceProbe> {
         return this.service.probeDiscoveryJoinLeaveRace(discoveryKey);
+    }
+
+    public probeReconnectBanAtFinalAdmission(): Promise<ReconnectBanFinalAdmissionProbe> {
+        return this.service.probeReconnectBanAtFinalAdmission();
+    }
+
+    public probeReconnectBanHandleAdoption(): Promise<ReconnectBanHandleAdoptionProbe> {
+        return this.service.probeReconnectBanHandleAdoption();
+    }
+
+    public probeRejectedRpcAfterLobbyEnded(): Promise<RejectedRpcAfterLobbyEndedProbe> {
+        return this.service.probeRejectedRpcAfterLobbyEnded();
+    }
+
+    public probeCleanupSerializesWithMatch(): Promise<CleanupMatchSerializationProbe> {
+        return this.service.probeCleanupSerializesWithMatch();
+    }
+
+    public probeReplacementAdmissionWithoutDiscoveryKey(
+        establishedAddress: string,
+        freshAddress: string,
+        discoveryKey: string
+    ): Promise<ReplacementAdmissionGateProbe> {
+        return this.service.probeReplacementAdmissionWithoutDiscoveryKey(
+            establishedAddress,
+            freshAddress,
+            discoveryKey
+        );
     }
 }

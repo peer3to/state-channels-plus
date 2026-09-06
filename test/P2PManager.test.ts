@@ -1168,4 +1168,26 @@ describe("P2PManager", function () {
         expect(result.observedAfterLeaveAll).to.deep.equal([]);
         expect(result.backendLeftKeys).to.deep.equal([discoveryKey]);
     });
+
+    it("admits a replacement transport for an already connected peer while no key is observed", async function () {
+        const discoveryKey = id("p2p-manager-replacement-admission-gate");
+
+        const result = await fixture!
+            .control()
+            .p2pManagerProbe.probeReplacementAdmissionWithoutDiscoveryKey(
+                Wallet.createRandom().address,
+                Wallet.createRandom().address,
+                discoveryKey
+            )
+            .request();
+
+        expect(result.establishedConnected).to.equal(true);
+        expect(result.establishedTransportStillLive).to.equal(true);
+        // Replacing a route we already accepted is not a discovery admission.
+        expect(result.replacementConnected).to.equal(true);
+        expect(result.replacementTransportClosed).to.equal(false);
+        // An identity nothing has reached is still refused.
+        expect(result.freshIdentityConnected).to.equal(false);
+        expect(result.freshIdentityTransportClosed).to.equal(true);
+    });
 });

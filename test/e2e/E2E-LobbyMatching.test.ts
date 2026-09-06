@@ -1631,4 +1631,118 @@ describe("E2E: lobby matching", function () {
             await Promise.all(restoreDurations.map((restore) => restore()));
         }
     });
+
+    it("disconnectFromPeers settles a pending lobby join and closes its lobby transports", async function () {
+        const h = TestSession.getHarness();
+        await h.setup(2, { autoConnect: false });
+        const topic = ethers.id("e2e-lobby-disconnect-from-peers");
+        // The lower address bootstraps as the advertiser. Holding its `pick`
+        // reply keeps the selector's selection in flight, so the lobby session
+        // is still matching — its join pending and its lobby transport open —
+        // when the selector disconnects.
+        const [advertiserIndex, selectorIndex] =
+            compareAddresses(h.peers[0].address, h.peers[1].address) < 0
+                ? [0, 1]
+                : [1, 0];
+        const releasePick = await h.rpcStub.holdLobbyReply(
+            advertiserIndex,
+            "pick"
+        );
+        const restoreDurations = await Promise.all(
+            [0, 1].map((index) =>
+                h.rpcStub.overrideLobbyRoleDuration(index, 20_000)
+            )
+        );
+
+        try {
+            await h.network.joinLobby([0, 1], topic);
+            await waitFor(
+                async () => {
+                    const [advertiserTransportType, selectorAvailability] =
+                        await Promise.all([
+                            h
+                                .control(h.peers[advertiserIndex])
+                                .query.getPreferredTransportType(
+                                    h.peers[selectorIndex].address
+                                )
+                                .request(),
+                            h
+                                .control(h.peers[selectorIndex])
+                                .query.getLobbyAvailability()
+                                .request()
+                        ]);
+                    return (
+                        advertiserTransportType !== null &&
+                        selectorAvailability.inFlight
+                    );
+                },
+                h.event.protocolEventTimeoutMs(),
+                20
+            );
+            // The lobby owns its transports: they sit outside the ordinary
+            // connection set that `disconnectAll` iterates.
+            expect(
+                await h
+                    .control(h.peers[selectorIndex])
+                    .query.getOpenConnectionCount()
+                    .request(),
+                "a lobby transport must not be an ordinary connection"
+            ).to.equal(0);
+
+            await h
+                .getPeer(selectorIndex)
+                .p2pInstance.p2pSigner.disconnectFromPeers();
+
+            expect(
+                await h
+                    .control(h.peers[selectorIndex])
+                    .query.getJoinedDiscoveryKeys()
+                    .request(),
+                "disconnectFromPeers must stop observing the lobby topic"
+            ).to.deep.equal([]);
+            expect(
+                await h
+                    .control(h.peers[selectorIndex])
+                    .query.isTransportClosed(h.peers[advertiserIndex].address)
+                    .request(),
+                "the lobby-owned transport must be closed with the topic"
+            ).to.equal(true);
+            const availability = await h
+                .control(h.peers[selectorIndex])
+                .query.getLobbyAvailability()
+                .request();
+            expect(
+                availability.topic,
+                "the lobby session must be gone"
+            ).to.equal(undefined);
+            expect(
+                availability.matching,
+                "the pending match must be settled"
+            ).to.equal(false);
+            expect(
+                await h
+                    .control(h.peers[selectorIndex])
+                    .query.getStatus()
+                    .request()
+            ).to.equal(Status.NOT_OPENED);
+            expect(
+                await h
+                    .control(h.peers[selectorIndex])
+                    .query.isBlacklisted(h.peers[advertiserIndex].address)
+                    .request(),
+                "ending participation must not exclude the peer"
+            ).to.equal(false);
+            expect(
+                await h
+                    .control(h.peers[selectorIndex])
+                    .query.isReconnectBanned(h.peers[advertiserIndex].address)
+                    .request(),
+                "ending participation must not suspend the peer"
+            ).to.equal(false);
+        } finally {
+            await releasePick();
+            await h.network.leaveLobby([0, 1], topic);
+            await Promise.all(restoreDurations.map((restore) => restore()));
+        }
+    });
 });

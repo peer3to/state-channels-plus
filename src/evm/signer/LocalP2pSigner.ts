@@ -383,8 +383,14 @@ class LocalP2pSigner<TCustomRpc extends MainRpcService = MainRpcService>
     /**
      * Leave every observed discovery key, then close every connection. A
      * close alone is a pause: discovery re-dials peers that share a key.
+     *
+     * Matching owns the lobby topic, the lobby transports, and the session
+     * suspensions it placed, and none of them are in the ordinary connection
+     * set. Leaving its key from here would strand all three, so its own
+     * lifecycle owner settles the match and tears the session down first.
      */
     public async disconnectFromPeers(): Promise<void> {
+        await this.p2pManager.localRpc.lobbyMatchingService.dispose();
         await this.p2pManager.leaveAllDiscoveryKeys();
         this.p2pManager.disconnectAll();
     }

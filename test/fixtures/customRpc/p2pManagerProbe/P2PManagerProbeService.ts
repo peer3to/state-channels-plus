@@ -466,7 +466,7 @@ export type ReconnectBanPrecedenceProbe = {
 };
 
 export type ReconnectBanWebRtcCloseProbe = {
-    banCallsAfterUpgrade: boolean[];
+    banCallsAfterUpgradeAndBan: boolean[];
     banCallsAfterCurrentClose: boolean[];
     reconnectBannedAfterClose: boolean;
 };
@@ -537,6 +537,50 @@ export type DiscoveryJoinLeaveRaceProbe = {
     observedDuringJoin: DiscoveryKey[];
     observedAfterLeaveAll: DiscoveryKey[];
     backendLeftKeys: string[];
+};
+
+export type ReconnectBanFinalAdmissionProbe = {
+    responseAcceptedBeforeBan: boolean;
+    replacementTransportClosed: boolean;
+    replacementAuthenticated: boolean;
+    replacementConnected: boolean;
+    establishedTransportRetained: boolean;
+    signerBlacklisted: boolean;
+    signerReconnectBanned: boolean;
+};
+
+export type ReconnectBanHandleAdoptionProbe = {
+    redialTransportClosed: boolean;
+    redialHandleBanCalls: boolean[];
+    redialHandleBanCallsAfterAllow: boolean[];
+    signerBlacklisted: boolean;
+    signerReconnectBannedAfterAllow: boolean;
+};
+
+export type RejectedRpcAfterLobbyEndedProbe = {
+    sessionStarted: boolean;
+    reconnectBannedAfterOverflow: boolean;
+    transportClosedAfterOverflow: boolean;
+    reconnectAdmitted: boolean;
+};
+
+export type CleanupMatchSerializationProbe = {
+    topicWhileCleanupHeld: string | undefined;
+    secondSessionStarted: boolean;
+    secondTransportOpen: boolean;
+    secondSessionBanned: boolean;
+    secondSessionLeft: boolean;
+    secondResolvedUndefined: boolean;
+    banLiftedAfterSecondCleanup: boolean;
+};
+
+export type ReplacementAdmissionGateProbe = {
+    establishedConnected: boolean;
+    establishedTransportStillLive: boolean;
+    replacementConnected: boolean;
+    replacementTransportClosed: boolean;
+    freshIdentityConnected: boolean;
+    freshIdentityTransportClosed: boolean;
 };
 
 export class P2PManagerProbeService extends ARpcService<
@@ -1697,16 +1741,18 @@ export class P2PManagerProbeService extends ARpcService<
         address: string
     ): ReconnectBanWebRtcCloseProbe {
         const { peerInfo } = this.registeredHolepunchTransport(address);
-        this.p2pManager.banReconnect(address);
+        // The upgrade lands first: a suspension is refused at verification, so
+        // the WebRTC route an identity holds is one it had before the ban.
         const webRTC = new WebRTCTransport(
             new RecordingWebRTCDataChannel(),
             this.p2pManager
         );
         this.authenticateTransport(webRTC, address);
-        const banCallsAfterUpgrade = [...peerInfo.banCalls];
+        this.p2pManager.banReconnect(address);
+        const banCallsAfterUpgradeAndBan = [...peerInfo.banCalls];
         this.p2pManager.disconnectConnection(webRTC);
         return {
-            banCallsAfterUpgrade,
+            banCallsAfterUpgradeAndBan,
             banCallsAfterCurrentClose: [...peerInfo.banCalls],
             reconnectBannedAfterClose:
                 this.p2pManager.isReconnectBanned(address)
@@ -4820,6 +4866,327 @@ export class P2PManagerProbeService extends ARpcService<
             releaseJoin();
             LocalDiscoveryServer.connectToPeers = originalConnectToPeers;
             LocalDiscoveryServer.leave = originalLeave;
+            await this.p2pManager.leaveAllDiscoveryKeys();
+        }
+    }
+
+    /** Bounded wait for a staged condition; time is the input, not the oracle. */
+    private async waitUntil(condition: () => boolean): Promise<boolean> {
+        for (let attempt = 0; attempt < 200 && !condition(); attempt += 1) {
+            await new Promise((resolve) => setTimeout(resolve, 5));
+        }
+        return condition();
+    }
+
+    /**
+     * Answers the challenge a freshly constructed Holepunch transport sent, with
+     * a real signature from `wallet`. Returns the challenge hash so the caller
+     * can deliver the matching ack later.
+     */
+    private async answerHandshakeChallenge(
+        transport: HolepunchTransport,
+        socket: RecordingHolepunchSocket,
+        wallet: ethers.HDNodeWallet
+    ): Promise<string> {
+        const request = JSON.parse(socket.writes[0]) as {
+            requestId: string;
+            params: [string, number];
+        };
+        const [challengeHash, initTime] = request.params;
+        const signature = await wallet.signMessage(
+            InitHandshakeService.buildHandshakeChallengeMessage(challengeHash)
+        );
+        transport.onMessage(
+            JSON.stringify({
+                rpcResponse: true,
+                requestId: request.requestId,
+                ok: true,
+                result: {
+                    signature,
+                    responseTime: initTime,
+                    preferredTransport: TransportType.HOLEPUNCH
+                }
+            })
+        );
+        return challengeHash;
+    }
+
+    /**
+     * Drives the ack-gated finalize with a suspension placed after the response
+     * was already accepted: the response passes, then the identity is
+     * reconnect-banned, then the held ack is delivered.
+     */
+    public async probeReconnectBanAtFinalAdmission(): Promise<ReconnectBanFinalAdmissionProbe> {
+        this.p2pManager.stateManager.setStatus(Status.SYNCED);
+        const wallet = ethers.Wallet.createRandom();
+        const signerAddress = getChecksumAddress(wallet.address);
+        // The identity already holds one admitted transport.
+        const established = this.registeredHolepunchTransport(signerAddress);
+
+        const { transport: replacement, socket } = this.holepunchTransport();
+        const challengeHash = await this.answerHandshakeChallenge(
+            replacement,
+            socket,
+            wallet
+        );
+        // Our own ack frame is written once the response is verified; that is
+        // the window the ban is placed in.
+        const responseAcceptedBeforeBan = await this.waitUntil(
+            () => socket.writes.length > 1
+        );
+
+        this.p2pManager.banReconnect(signerAddress);
+
+        replacement.onMessage(
+            JSON.stringify({
+                service: "initHandshakeService",
+                method: "onInitHandshakeAck",
+                params: [challengeHash]
+            })
+        );
+        await this.waitUntil(() => replacement.isClosed);
+
+        const profile =
+            this.p2pManager.profileManager.getProfileByEvmAddress(
+                signerAddress
+            );
+        return {
+            responseAcceptedBeforeBan,
+            replacementTransportClosed: replacement.isClosed,
+            replacementAuthenticated: replacement.peerAddress !== undefined,
+            replacementConnected:
+                this.p2pManager.openConnections.includes(replacement),
+            establishedTransportRetained:
+                profile?.getTransport() === established.transport,
+            signerBlacklisted: this.p2pManager.isBlacklisted(signerAddress),
+            signerReconnectBanned:
+                this.p2pManager.isReconnectBanned(signerAddress)
+        };
+    }
+
+    /**
+     * A suspended identity with no Holepunch handle of its own redials on a
+     * fresh one. The refusal must move that handle onto the identity so the
+     * suspension bans it and `allowReconnect` can release it again.
+     */
+    public async probeReconnectBanHandleAdoption(): Promise<ReconnectBanHandleAdoptionProbe> {
+        this.p2pManager.stateManager.setStatus(Status.SYNCED);
+        const wallet = ethers.Wallet.createRandom();
+        const signerAddress = getChecksumAddress(wallet.address);
+        // The identity is known through a transport that carries no Holepunch
+        // handle, so the suspension has nothing to ban until the redial lands.
+        const known = this.transport(signerAddress);
+        this.registerProfile(known, signerAddress);
+        this.p2pManager.banReconnect(signerAddress);
+
+        const {
+            transport: redial,
+            peerInfo: redialPeerInfo,
+            socket
+        } = this.holepunchTransport();
+        await this.answerHandshakeChallenge(redial, socket, wallet);
+        await this.waitUntil(() => redial.isClosed);
+        const redialHandleBanCalls = [...redialPeerInfo.banCalls];
+
+        this.p2pManager.allowReconnect(signerAddress);
+
+        return {
+            redialTransportClosed: redial.isClosed,
+            redialHandleBanCalls,
+            redialHandleBanCallsAfterAllow: [...redialPeerInfo.banCalls],
+            signerBlacklisted: this.p2pManager.isBlacklisted(signerAddress),
+            signerReconnectBannedAfterAllow:
+                this.p2pManager.isReconnectBanned(signerAddress)
+        };
+    }
+
+    /**
+     * Rejected lobby traffic arriving after the session ended still reaches
+     * `disconnectForSession`. With no topic left to lift a ban, none may be
+     * placed: nothing would ever release it.
+     */
+    public async probeRejectedRpcAfterLobbyEnded(): Promise<RejectedRpcAfterLobbyEndedProbe> {
+        const service = new LobbyMatchingService(this.p2pManager);
+        const topic = `0x${"73".repeat(32)}`;
+        const abusiveAddress = getChecksumAddress(
+            ethers.Wallet.createRandom().address
+        );
+        const abusive = this.transport(abusiveAddress);
+        this.registerProfile(abusive, abusiveAddress);
+        void service.match(topic);
+        const sessionStarted = await this.waitUntil(
+            () => service.getAvailability().topic === topic
+        );
+        await service.cancelMatching(topic);
+
+        const wrongTopicRpc: Rpc = {
+            service: "lobbyMatchingService",
+            method: "advertise",
+            params: [`0x${"74".repeat(32)}`, "advertiser", 1, true]
+        };
+        for (let rejected = 0; rejected < 9; rejected += 1) {
+            service.runRPC(wrongTopicRpc, abusive);
+        }
+        const reconnectBannedAfterOverflow =
+            this.p2pManager.isReconnectBanned(abusiveAddress);
+        const transportClosedAfterOverflow = abusive.isClosed;
+
+        // A legitimate reconnect from the same identity must still be admitted:
+        // a ban with no session left to lift it would refuse it forever.
+        const { transport: reconnect } = this.holepunchTransport();
+        const admitted =
+            this.p2pManager.profileManager.authenticateTransport(
+                reconnect,
+                abusiveAddress
+            ) !== undefined;
+        this.p2pManager.disconnectConnection(reconnect);
+
+        return {
+            sessionStarted,
+            reconnectBannedAfterOverflow,
+            transportClosedAfterOverflow,
+            reconnectAdmitted: admitted
+        };
+    }
+
+    /**
+     * Holds a cleanup at its discovery leave and starts a different-topic match
+     * on the same instance: the new session may not exist until the old cleanup
+     * has fully settled, or the old cleanup tears it down when it resumes.
+     */
+    public async probeCleanupSerializesWithMatch(): Promise<CleanupMatchSerializationProbe> {
+        const service = new LobbyMatchingService(this.p2pManager);
+        const firstTopic = `0x${"75".repeat(32)}`;
+        const secondTopic = `0x${"76".repeat(32)}`;
+        const firstAddress = getChecksumAddress(
+            ethers.Wallet.createRandom().address
+        );
+        const secondAddress = getChecksumAddress(
+            ethers.Wallet.createRandom().address
+        );
+        const abusiveAddress = getChecksumAddress(
+            ethers.Wallet.createRandom().address
+        );
+        const first = this.transport(firstAddress);
+        const second = this.transport(secondAddress);
+        const abusive = this.transport(abusiveAddress);
+        for (const [transport, address] of [
+            [first, firstAddress],
+            [second, secondAddress],
+            [abusive, abusiveAddress]
+        ] as const) {
+            this.registerProfile(transport, address);
+        }
+
+        void service.match(firstTopic);
+        await this.waitUntil(
+            () => service.getAvailability().topic === firstTopic
+        );
+        service.onAuthenticatedTransport(first);
+
+        const originalLeaveDiscoveryKey =
+            this.p2pManager.leaveDiscoveryKey.bind(this.p2pManager);
+        let leaveReached = false;
+        let releaseLeave!: () => void;
+        const heldLeave = new Promise<void>((resolve) => {
+            releaseLeave = resolve;
+        });
+        this.p2pManager.leaveDiscoveryKey = async (discoveryKey: string) => {
+            leaveReached = true;
+            await heldLeave;
+            await originalLeaveDiscoveryKey(discoveryKey);
+        };
+
+        try {
+            const leaving = service.cancelMatching(firstTopic);
+            await this.waitUntil(() => leaveReached);
+
+            const secondMatch = service.match(secondTopic);
+            // Time is the input: give an unserialized `match` every chance to
+            // start its session while the old cleanup is still suspended.
+            await new Promise((resolve) => setTimeout(resolve, 20));
+            const topicWhileCleanupHeld = service.getAvailability().topic;
+
+            releaseLeave();
+            await leaving;
+            const secondSessionStarted = await this.waitUntil(
+                () => service.getAvailability().topic === secondTopic
+            );
+            service.onAuthenticatedTransport(second);
+            const wrongTopicRpc: Rpc = {
+                service: "lobbyMatchingService",
+                method: "advertise",
+                params: [`0x${"77".repeat(32)}`, "advertiser", 1, true]
+            };
+            for (let rejected = 0; rejected < 9; rejected += 1) {
+                service.runRPC(wrongTopicRpc, abusive);
+            }
+
+            const secondTransportOpen = !second.isClosed;
+            const secondSessionBanned =
+                this.p2pManager.isReconnectBanned(abusiveAddress);
+
+            const secondSessionLeft = await service.cancelMatching(secondTopic);
+            const secondResolvedUndefined = (await secondMatch) === undefined;
+
+            return {
+                topicWhileCleanupHeld,
+                secondSessionStarted,
+                secondTransportOpen,
+                secondSessionBanned,
+                secondSessionLeft,
+                secondResolvedUndefined,
+                banLiftedAfterSecondCleanup:
+                    !this.p2pManager.isReconnectBanned(abusiveAddress)
+            };
+        } finally {
+            releaseLeave();
+            this.p2pManager.leaveDiscoveryKey = originalLeaveDiscoveryKey;
+            await this.p2pManager.leaveAllDiscoveryKeys();
+        }
+    }
+
+    /**
+     * A replacement transport for a peer that already holds a live admitted one
+     * is not a discovery admission, so the no-key gate must let it through
+     * while still refusing an identity nothing has ever reached.
+     */
+    public async probeReplacementAdmissionWithoutDiscoveryKey(
+        establishedAddressInput: string,
+        freshAddressInput: string,
+        discoveryKey: string
+    ): Promise<ReplacementAdmissionGateProbe> {
+        this.p2pManager.stateManager.setStatus(Status.SYNCED);
+        const establishedAddress = getChecksumAddress(establishedAddressInput);
+        const freshAddress = getChecksumAddress(freshAddressInput);
+        try {
+            await this.p2pManager.joinDiscoveryKey(discoveryKey);
+            const established =
+                this.registeredHolepunchTransport(establishedAddress);
+            await this.completeHandshakeFor(establishedAddress);
+            const establishedConnected =
+                this.p2pManager.openConnections.includes(established.transport);
+
+            await this.p2pManager.leaveAllDiscoveryKeys();
+
+            const { transport: replacement } = this.holepunchTransport();
+            this.authenticateTransport(replacement, establishedAddress);
+            await this.completeHandshakeFor(establishedAddress);
+
+            const fresh = this.registeredHolepunchTransport(freshAddress);
+            await this.completeHandshakeFor(freshAddress);
+
+            return {
+                establishedConnected,
+                establishedTransportStillLive: !established.transport.isClosed,
+                replacementConnected:
+                    this.p2pManager.openConnections.includes(replacement),
+                replacementTransportClosed: replacement.isClosed,
+                freshIdentityConnected:
+                    this.p2pManager.openConnections.includes(fresh.transport),
+                freshIdentityTransportClosed: fresh.transport.isClosed
+            };
+        } finally {
             await this.p2pManager.leaveAllDiscoveryKeys();
         }
     }

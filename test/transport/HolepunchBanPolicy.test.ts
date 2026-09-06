@@ -214,7 +214,7 @@ describe("ProfileManager Holepunch ban policy", function () {
             .p2pManagerProbe.probeReconnectBanWebRtcClose(fixture.address(1))
             .request();
 
-        expect(result.banCallsAfterUpgrade).to.deep.equal([true, true]);
+        expect(result.banCallsAfterUpgradeAndBan).to.deep.equal([true, true]);
         expect(result.banCallsAfterCurrentClose).to.deep.equal([true, true]);
         expect(result.reconnectBannedAfterClose).to.equal(true);
     });
@@ -237,7 +237,7 @@ describe("ProfileManager Holepunch ban policy", function () {
         expect(result.usableTrafficSent).to.equal(false);
     });
 
-    it("refuses a handshake response from a reconnect-banned signer without banning its new handle", async function () {
+    it("refuses a handshake response from a reconnect-banned signer and bans its new handle", async function () {
         const result = await fixture
             .control()
             .p2pManagerProbe.probeHandshakeResponseRefusal("reconnect")
@@ -246,7 +246,9 @@ describe("ProfileManager Holepunch ban policy", function () {
         expect(result.freshTransportClosed).to.equal(true);
         expect(result.signerBlacklisted).to.equal(false);
         expect(result.signerReconnectBanned).to.equal(true);
-        expect(result.freshPeerInfoBanCalls).to.deep.equal([]);
+        // The suspension follows the handle the identity redialed on, so the
+        // peer stops repeating the dial/handshake/refuse cycle.
+        expect(result.freshPeerInfoBanCalls).to.deep.equal([true]);
     });
 
     it("bans the new handle of a blacklisted signer that answers a handshake", async function () {
@@ -258,5 +260,40 @@ describe("ProfileManager Holepunch ban policy", function () {
         expect(result.freshTransportClosed).to.equal(true);
         expect(result.signerBlacklisted).to.equal(true);
         expect(result.freshPeerInfoBanCalls).to.deep.equal([true]);
+    });
+
+    it("refuses a reconnect-banned identity at the ack-gated finalize without excluding it", async function () {
+        const result = await fixture
+            .control()
+            .p2pManagerProbe.probeReconnectBanAtFinalAdmission()
+            .request();
+
+        // The staged race is real: the response was accepted before the ban.
+        expect(result.responseAcceptedBeforeBan).to.equal(true);
+        expect(result.replacementTransportClosed).to.equal(true);
+        expect(result.replacementAuthenticated).to.equal(false);
+        expect(result.replacementConnected).to.equal(false);
+        expect(result.establishedTransportRetained).to.equal(true);
+        // A suspension refusal never escalates to an exclusion.
+        expect(result.signerBlacklisted).to.equal(false);
+        expect(result.signerReconnectBanned).to.equal(true);
+    });
+
+    it("bans the redial handle of a suspended identity and releases it on allow", async function () {
+        const result = await fixture
+            .control()
+            .p2pManagerProbe.probeReconnectBanHandleAdoption()
+            .request();
+
+        expect(result.redialTransportClosed).to.equal(true);
+        expect(result.redialHandleBanCalls).to.deep.equal([true]);
+        // The identity owns the handle now, so lifting the suspension makes it
+        // dialable again instead of leaving a ban nothing can reach.
+        expect(result.redialHandleBanCallsAfterAllow).to.deep.equal([
+            true,
+            false
+        ]);
+        expect(result.signerBlacklisted).to.equal(false);
+        expect(result.signerReconnectBannedAfterAllow).to.equal(false);
     });
 });
