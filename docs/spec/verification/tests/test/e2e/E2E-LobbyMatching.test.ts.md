@@ -25,7 +25,8 @@ Unassigned: [`REQ-LOBBY-9-N894C0.T1.P18`](../../../../specification/peer-communi
 session-ban case below proves the permutation for a non-selected candidate only. Its second
 subject, a peer past the ignored-traffic bound, is exercised at unit level by
 `test/rpc/lobbyMatching/LobbyMatchingService.test.ts` — with no redial oracle there — so no single
-declaration covers the permutation in full and partial credit is not recorded.
+declaration covers the permutation in full and partial credit is not recorded — see
+[`OQ-VER-PERMUTATION-SPLIT-1-GBB0NX`](../../../open-questions.md#oq-ver-permutation-split-1-gbb0nx).
 
 ## Tests and covered test IDs
 

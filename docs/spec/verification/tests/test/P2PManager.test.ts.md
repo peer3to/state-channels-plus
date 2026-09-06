@@ -27,7 +27,7 @@ discovery-key case proves the reported set, the single-key leave, the no-op leav
 never joined, and that leave-all empties the set, but it never joins the same key twice and never
 joins a malformed key, so the permutation's "including a duplicate and a rejected invalid key"
 clause has no oracle. Partial credit is not recorded, so the permutation stays a tracked gap until
-the case is extended.
+the case is extended — see [`OQ-VER-PERMUTATION-SPLIT-1-GBB0NX`](../../open-questions.md#oq-ver-permutation-split-1-gbb0nx).
 
 ## Tests and covered test IDs
 
