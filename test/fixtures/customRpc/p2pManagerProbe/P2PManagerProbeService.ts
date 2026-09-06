@@ -28,6 +28,7 @@ import type { Bytes } from "@/types/types";
 import {
     Codec,
     DetachedPromises,
+    LocalDiscoveryServer,
     SignatureUtils,
     Type,
     getChecksumAddress
@@ -518,6 +519,24 @@ export type ReplacementHandshakeProbe = {
     connectedCount: number;
     replacementConnected: boolean;
     hookCount: number;
+};
+
+export type DiscoveryAdmissionGateProbe = {
+    refusedConnected: boolean;
+    refusedTransportClosed: boolean;
+    refusedSocketDestroyed: boolean;
+    refusedBanCalls: boolean[];
+    refusedBlacklisted: boolean;
+    refusedReconnectBanned: boolean;
+    webRtcConnected: boolean;
+    admittedConnected: boolean;
+    admittedTransportClosed: boolean;
+};
+
+export type DiscoveryJoinLeaveRaceProbe = {
+    observedDuringJoin: DiscoveryKey[];
+    observedAfterLeaveAll: DiscoveryKey[];
+    backendLeftKeys: string[];
 };
 
 export class P2PManagerProbeService extends ARpcService<
@@ -1823,42 +1842,47 @@ export class P2PManagerProbeService extends ARpcService<
     public async probeWebRtcCloseAcceptsHolepunch(
         address: string
     ): Promise<RelayAdmissionProbe> {
-        const { peerInfo: originalPeerInfo, profile } =
-            this.registeredHolepunchTransport(address);
-        const webRTC = new WebRTCTransport(
-            new RecordingWebRTCDataChannel(),
-            this.p2pManager
-        );
-        this.authenticateTransport(webRTC, address);
-        this.p2pManager.addConnection(webRTC);
-        webRTC.close();
+        await this.observeFixtureDiscoveryKey("webrtc-close-accepts-holepunch");
+        try {
+            const { peerInfo: originalPeerInfo, profile } =
+                this.registeredHolepunchTransport(address);
+            const webRTC = new WebRTCTransport(
+                new RecordingWebRTCDataChannel(),
+                this.p2pManager
+            );
+            this.authenticateTransport(webRTC, address);
+            this.p2pManager.addConnection(webRTC);
+            webRTC.close();
 
-        const {
-            transport: attempted,
-            peerInfo: attemptedPeerInfo,
-            socket: attemptedSocket
-        } = this.holepunchTransport();
-        const disconnectionHookCalls =
-            await this.finalizeAndCountDisconnections(attempted, address);
-        const admitted = this.isAuthenticatedCurrentTransport(attempted);
-        if (admitted) {
-            attempted.send({
-                service: "probe",
-                method: "ordinaryTraffic",
-                params: ["usable"]
+            const {
+                transport: attempted,
+                peerInfo: attemptedPeerInfo,
+                socket: attemptedSocket
+            } = this.holepunchTransport();
+            const disconnectionHookCalls =
+                await this.finalizeAndCountDisconnections(attempted, address);
+            const admitted = this.isAuthenticatedCurrentTransport(attempted);
+            if (admitted) {
+                attempted.send({
+                    service: "probe",
+                    method: "ordinaryTraffic",
+                    params: ["usable"]
+                });
+            }
+
+            return this.relayAdmissionResult({
+                address,
+                admitted,
+                attempted,
+                attemptedPeerInfo,
+                attemptedSocket,
+                originalPeerInfo,
+                profile,
+                disconnectionHookCalls
             });
+        } finally {
+            await this.p2pManager.leaveAllDiscoveryKeys();
         }
-
-        return this.relayAdmissionResult({
-            address,
-            admitted,
-            attempted,
-            attemptedPeerInfo,
-            attemptedSocket,
-            originalPeerInfo,
-            profile,
-            disconnectionHookCalls
-        });
     }
 
     public async probeBlacklistRejectsHolepunch(
@@ -2143,6 +2167,10 @@ export class P2PManagerProbeService extends ARpcService<
             transport,
             getChecksumAddress(address)
         );
+        // Observe the key before OPENED: `joinDiscoveryKey` waits out the
+        // initial sync while the runtime is OPENED, and this probe only needs
+        // the membership that admission reads.
+        await this.observeFixtureDiscoveryKey("handshake-participant-read");
         stateManager.setStatus(Status.OPENED);
         await stateManager.setChannelId("0x12");
         const originalDebug = this.p2pManager.logger.debug.bind(
@@ -2191,6 +2219,7 @@ export class P2PManagerProbeService extends ARpcService<
             };
         } finally {
             await stateManager.setChannelId(originalChannelId);
+            await this.p2pManager.leaveAllDiscoveryKeys();
             sync.restore();
             debug.restore();
             unsubscribeConnection();
@@ -2299,6 +2328,7 @@ export class P2PManagerProbeService extends ARpcService<
     ): Promise<ReplacementHandshakeProbe> {
         const stateManager = this.p2pManager.stateManager;
         stateManager.setStatus(Status.SYNCED);
+        await this.observeFixtureDiscoveryKey("replacement-handshake");
         const normalizedAddress = getChecksumAddress(address);
         const first = this.transport(normalizedAddress);
         const profile = this.registerProfile(first, normalizedAddress);
@@ -2340,6 +2370,7 @@ export class P2PManagerProbeService extends ARpcService<
                 hookCount
             };
         } finally {
+            await this.p2pManager.leaveAllDiscoveryKeys();
             unsubscribeConnection();
         }
     }
@@ -4655,5 +4686,141 @@ export class P2PManagerProbeService extends ARpcService<
 
     private encodeBalance(amount: bigint | number, data = "0x"): string {
         return String(Codec.encode({ amount, data }, Type.Balance));
+    }
+
+    /**
+     * Observes one fixture-private discovery key. An ordinary admission only
+     * happens through an observed key in production, so a probe that expects a
+     * transport to be promoted has to stage that precondition.
+     */
+    private async observeFixtureDiscoveryKey(label: string): Promise<void> {
+        await this.p2pManager.joinDiscoveryKey(ethers.id(label));
+    }
+
+    /** Fires the real completion hook and lets the routing microtask drain. */
+    private async completeHandshakeFor(address: string): Promise<void> {
+        this.p2pManager.stateManager.p2pEventHooks.handshakeCompleted?.(
+            getChecksumAddress(address)
+        );
+        await Promise.resolve();
+    }
+
+    /**
+     * Drives the discovery-admission gate: a Holepunch peer completing its
+     * handshake while no key is observed, a WebRTC upgrade in the same window,
+     * and a Holepunch peer once a key is observed again.
+     */
+    public async probeDiscoveryAdmissionGate(
+        refusedAddressInput: string,
+        webRtcAddressInput: string,
+        admittedAddressInput: string,
+        discoveryKey: string
+    ): Promise<DiscoveryAdmissionGateProbe> {
+        const stateManager = this.p2pManager.stateManager;
+        stateManager.setStatus(Status.SYNCED);
+        const refusedAddress = getChecksumAddress(refusedAddressInput);
+        const webRtcAddress = getChecksumAddress(webRtcAddressInput);
+        const admittedAddress = getChecksumAddress(admittedAddressInput);
+        try {
+            const refused = this.registeredHolepunchTransport(refusedAddress);
+            await this.completeHandshakeFor(refusedAddress);
+
+            const webRTC = new WebRTCTransport(
+                new RecordingWebRTCDataChannel(),
+                this.p2pManager
+            );
+            this.authenticateTransport(webRTC, webRtcAddress);
+            await this.completeHandshakeFor(webRtcAddress);
+
+            await this.p2pManager.joinDiscoveryKey(discoveryKey);
+            const admitted = this.registeredHolepunchTransport(admittedAddress);
+            await this.completeHandshakeFor(admittedAddress);
+
+            return {
+                refusedConnected: this.p2pManager.openConnections.includes(
+                    refused.transport
+                ),
+                refusedTransportClosed: refused.transport.isClosed,
+                refusedSocketDestroyed: refused.socket.destroyed,
+                refusedBanCalls: [...refused.peerInfo.banCalls],
+                refusedBlacklisted:
+                    this.p2pManager.isBlacklisted(refusedAddress),
+                refusedReconnectBanned:
+                    this.p2pManager.isReconnectBanned(refusedAddress),
+                webRtcConnected:
+                    this.p2pManager.openConnections.includes(webRTC),
+                admittedConnected: this.p2pManager.openConnections.includes(
+                    admitted.transport
+                ),
+                admittedTransportClosed: admitted.transport.isClosed
+            };
+        } finally {
+            await this.p2pManager.leaveAllDiscoveryKeys();
+        }
+    }
+
+    /**
+     * Stages the join/leave race: the backend join is held at its await
+     * boundary, `leaveAllDiscoveryKeys` runs against the still-empty set, then
+     * the join is released. Record-only wrappers observe the backend calls and
+     * are restored in `finally`.
+     */
+    public async probeDiscoveryJoinLeaveRace(
+        discoveryKey: string
+    ): Promise<DiscoveryJoinLeaveRaceProbe> {
+        const originalConnectToPeers =
+            LocalDiscoveryServer.connectToPeers.bind(LocalDiscoveryServer);
+        const originalLeave =
+            LocalDiscoveryServer.leave.bind(LocalDiscoveryServer);
+        const backendLeftKeys: string[] = [];
+        let joinReachedBackend = false;
+        let releaseJoin!: () => void;
+        const heldJoin = new Promise<void>((resolve) => {
+            releaseJoin = resolve;
+        });
+
+        LocalDiscoveryServer.connectToPeers = async (
+            p2pManager,
+            rendezvousKey,
+            myPeerAddress
+        ) => {
+            joinReachedBackend = true;
+            await heldJoin;
+            await originalConnectToPeers(
+                p2pManager,
+                rendezvousKey,
+                myPeerAddress
+            );
+        };
+        LocalDiscoveryServer.leave = async (rendezvousKey, p2pManager) => {
+            backendLeftKeys.push(rendezvousKey);
+            await originalLeave(rendezvousKey, p2pManager);
+        };
+
+        try {
+            const join = this.p2pManager.joinDiscoveryKey(discoveryKey);
+            // Time is the input here: wait until the join is parked inside the
+            // backend so the leave really races an in-flight join.
+            while (!joinReachedBackend) {
+                await new Promise((resolve) => setTimeout(resolve, 1));
+            }
+            const observedDuringJoin = this.p2pManager.getJoinedDiscoveryKeys();
+
+            const leaveAll = this.p2pManager.leaveAllDiscoveryKeys();
+            releaseJoin();
+            await join;
+            await leaveAll;
+
+            return {
+                observedDuringJoin,
+                observedAfterLeaveAll: this.p2pManager.getJoinedDiscoveryKeys(),
+                backendLeftKeys
+            };
+        } finally {
+            releaseJoin();
+            LocalDiscoveryServer.connectToPeers = originalConnectToPeers;
+            LocalDiscoveryServer.leave = originalLeave;
+            await this.p2pManager.leaveAllDiscoveryKeys();
+        }
     }
 }

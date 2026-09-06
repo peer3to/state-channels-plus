@@ -18,6 +18,7 @@ import type { RpcResponse } from "@/rpc/Rpc";
 import ATransport from "@/transport/ATransport";
 import { TransportType } from "@/transport/TransportType";
 import { getChecksumAddress } from "@/utils";
+import { id } from "ethers";
 
 class GuardTransport extends ATransport {
     public transportType = TransportType.HOLEPUNCH;
@@ -846,32 +847,41 @@ export class HandshakeCompletedGuardProbeService extends ARpcService<
     }
 
     public async probeExactTransportQueueOwnership(): Promise<ExactTransportQueueGuardProbe> {
-        const address = "0xA000000000000000000000000000000000000013";
-        const original = this.transport(address);
-        const profile = this.register(original, false);
-        const target = new GuardTargetService(this.p2pManager);
-        this.prepareHandshake(original);
+        // An ordinary admission only happens through an observed discovery key,
+        // so the promotion path this probe drives needs that precondition.
+        await this.p2pManager.joinDiscoveryKey(
+            id("guard-exact-transport-queue-ownership")
+        );
+        try {
+            const address = "0xA000000000000000000000000000000000000013";
+            const original = this.transport(address);
+            const profile = this.register(original, false);
+            const target = new GuardTargetService(this.p2pManager);
+            this.prepareHandshake(original);
 
-        target.runRPC(this.rpc("original-first"), original);
-        target.runRPC(this.rpc("original-second"), original);
-        const beforeAuthentication = [...target.invocations];
+            target.runRPC(this.rpc("original-first"), original);
+            target.runRPC(this.rpc("original-second"), original);
+            const beforeAuthentication = [...target.invocations];
 
-        const replacement = this.transport(address);
-        this.prepareHandshake(replacement);
-        await this.finalizeHandshake(replacement);
-        const afterReplacementAuthentication = [...target.invocations];
+            const replacement = this.transport(address);
+            this.prepareHandshake(replacement);
+            await this.finalizeHandshake(replacement);
+            const afterReplacementAuthentication = [...target.invocations];
 
-        await this.finalizeHandshake(original);
+            await this.finalizeHandshake(original);
 
-        return {
-            beforeAuthentication,
-            afterReplacementAuthentication,
-            finalInvocations: [...target.invocations],
-            originalAuthenticated: original.peerAddress !== undefined,
-            replacementAuthenticated: replacement.peerAddress !== undefined,
-            originalCurrent: profile.getTransport() === original,
-            profileBlacklisted: profile.isBlackListed
-        };
+            return {
+                beforeAuthentication,
+                afterReplacementAuthentication,
+                finalInvocations: [...target.invocations],
+                originalAuthenticated: original.peerAddress !== undefined,
+                replacementAuthenticated: replacement.peerAddress !== undefined,
+                originalCurrent: profile.getTransport() === original,
+                profileBlacklisted: profile.isBlackListed
+            };
+        } finally {
+            await this.p2pManager.leaveAllDiscoveryKeys();
+        }
     }
 
     public async probeClosedTransportDispatch(): Promise<ClosedTransportDispatchGuardProbe> {

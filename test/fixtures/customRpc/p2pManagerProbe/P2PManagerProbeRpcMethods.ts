@@ -49,7 +49,9 @@ import type {
     LobbyRoleTimerProbe,
     LobbyRetryEpochProbe,
     LobbyExhaustionTimerProbe,
-    LobbyLatePickProbe
+    LobbyLatePickProbe,
+    DiscoveryAdmissionGateProbe,
+    DiscoveryJoinLeaveRaceProbe
 } from "./P2PManagerProbeService";
 import type P2PManager from "@/P2PManager";
 import ARpcMethods from "@/rpc/ARpcMethods";
@@ -416,5 +418,25 @@ export class P2PManagerProbeRpcMethods extends ARpcMethods<
 
     public probeTargetedNegotiationRaces(): Promise<TargetedNegotiationRaceProbe> {
         return this.service.probeTargetedNegotiationRaces();
+    }
+
+    public probeDiscoveryAdmissionGate(
+        refusedAddress: string,
+        webRtcAddress: string,
+        admittedAddress: string,
+        discoveryKey: string
+    ): Promise<DiscoveryAdmissionGateProbe> {
+        return this.service.probeDiscoveryAdmissionGate(
+            refusedAddress,
+            webRtcAddress,
+            admittedAddress,
+            discoveryKey
+        );
+    }
+
+    public probeDiscoveryJoinLeaveRace(
+        discoveryKey: string
+    ): Promise<DiscoveryJoinLeaveRaceProbe> {
+        return this.service.probeDiscoveryJoinLeaveRace(discoveryKey);
     }
 }

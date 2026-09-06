@@ -74,6 +74,14 @@ class P2PManager<TCustomRpc extends MainRpcService = MainRpcService>
     // Discovery keys this runtime observes. Discovery re-dials every peer that
     // shares one, so leaving them is what makes a disconnect stick.
     private readonly joinedDiscoveryKeys = new Set<DiscoveryKey>();
+    // Joins whose discovery backend has not answered yet. They are not in
+    // `joinedDiscoveryKeys` and would otherwise be invisible to a concurrent
+    // `leaveAllDiscoveryKeys`, so the key would land after the caller believes
+    // discovery is empty.
+    private readonly pendingDiscoveryJoins = new Map<
+        DiscoveryKey,
+        Promise<void>
+    >();
 
     constructor(
         stateManager: StateManager<TCustomRpc>,
@@ -187,6 +195,26 @@ class P2PManager<TCustomRpc extends MainRpcService = MainRpcService>
                     lobbyTransport
                 );
             }
+            return;
+        }
+
+        // While no discovery key is observed, nothing may be admitted through
+        // discovery: leaving a key does not close the listening server, so a
+        // peer that still shares the key we just left keeps reaching us. WebRTC
+        // is exempt because it only ever arrives as a same-peer upgrade between
+        // already-authenticated peers, never as a fresh discovery admission.
+        if (
+            this.joinedDiscoveryKeys.size === 0 &&
+            transport.transportType !== TransportType.WEBRTC
+        ) {
+            this.logger.debug(
+                "Refusing discovery admission while no discovery key is observed",
+                {
+                    peerAddress,
+                    transportType: TransportType[transport.transportType]
+                }
+            );
+            this.disconnectConnection(transport);
             return;
         }
 
@@ -425,23 +453,22 @@ class P2PManager<TCustomRpc extends MainRpcService = MainRpcService>
         const initialSync = waitForInitialSync
             ? this.getInitialSyncPromise()
             : undefined;
-        // TODO: Give Holepunch and LocalDiscoveryServer the same lifecycle API
-        // and inject the selected backend so P2PManager does not know which
-        // discovery implementation it is using.
-        if (config.DEBUG_LOCAL_TRANSPORT) {
-            if (isNodeRuntime() || config.LOCAL_DISCOVERY_REGISTRY_URL) {
-                await LocalDiscoveryServer.tryStart();
-                await LocalDiscoveryServer.connectToPeers(
-                    this.self,
-                    normalizedKey,
-                    this.stateManager.signerAddress.toString()
-                );
+        const join = this.observeDiscoveryKey(normalizedKey);
+        // A settled-either-way handle: a waiter only needs to know when the
+        // join stopped being in flight, not whether the backend accepted it.
+        const pending = join.then(
+            () => undefined,
+            () => undefined
+        );
+        this.pendingDiscoveryJoins.set(normalizedKey, pending);
+        try {
+            await join;
+        } finally {
+            // A later join for the same key owns the entry; only clear our own.
+            if (this.pendingDiscoveryJoins.get(normalizedKey) === pending) {
+                this.pendingDiscoveryJoins.delete(normalizedKey);
             }
-        } else {
-            const topic = Buffer.from(normalizedKey.slice(2), "hex");
-            await this.holepunch.join(topic);
         }
-        this.joinedDiscoveryKeys.add(normalizedKey);
 
         if (!initialSync) return;
         // The status may have left OPENED during the discovery join (chain
@@ -461,6 +488,29 @@ class P2PManager<TCustomRpc extends MainRpcService = MainRpcService>
         }
         this.armInitialSyncDeadline();
         await initialSync;
+    }
+
+    /** Joins the configured discovery backend, then records the observed key. */
+    private async observeDiscoveryKey(
+        normalizedKey: DiscoveryKey
+    ): Promise<void> {
+        // TODO: Give Holepunch and LocalDiscoveryServer the same lifecycle API
+        // and inject the selected backend so P2PManager does not know which
+        // discovery implementation it is using.
+        if (config.DEBUG_LOCAL_TRANSPORT) {
+            if (isNodeRuntime() || config.LOCAL_DISCOVERY_REGISTRY_URL) {
+                await LocalDiscoveryServer.tryStart();
+                await LocalDiscoveryServer.connectToPeers(
+                    this.self,
+                    normalizedKey,
+                    this.stateManager.signerAddress.toString()
+                );
+            }
+        } else {
+            const topic = Buffer.from(normalizedKey.slice(2), "hex");
+            await this.holepunch.join(topic);
+        }
+        this.joinedDiscoveryKeys.add(normalizedKey);
     }
 
     /**
@@ -526,6 +576,10 @@ class P2PManager<TCustomRpc extends MainRpcService = MainRpcService>
 
     /** Stop observing every discovery key; no peer is re-dialed afterwards. */
     public async leaveAllDiscoveryKeys(): Promise<void> {
+        // Await the joins in flight at call time first. Their key is not in the
+        // set yet, so leaving without them would let a racing join land after
+        // the caller believes discovery is empty.
+        await Promise.all([...this.pendingDiscoveryJoins.values()]);
         for (const discoveryKey of [...this.joinedDiscoveryKeys]) {
             await this.leaveDiscoveryKey(discoveryKey);
         }

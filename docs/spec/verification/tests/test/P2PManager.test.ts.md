@@ -14,14 +14,16 @@ penalties, broadcast, and peer-registry snapshots. The ingress probes authentica
 and prove that oversized, malformed-envelope, unknown-service, and unknown-endpoint traffic
 blacklists them. A throwing local service only disconnects. The lifecycle probe also proves that a
 fault on a retired authenticated transport blacklists the current address profile and closes both
-transports. A final case drives the joined-discovery-key bookkeeping (`joinDiscoveryKey` /
-`leaveDiscoveryKey` / `leaveAllDiscoveryKeys` / `getJoinedDiscoveryKeys`) over two distinct keys
-plus a never-joined key.
+transports. Three discovery cases close the suite: one drives the joined-discovery-key bookkeeping
+(`joinDiscoveryKey` / `leaveDiscoveryKey` / `leaveAllDiscoveryKeys` / `getJoinedDiscoveryKeys`) over
+two distinct keys plus a never-joined key; one completes real handshakes with and without an
+observed key and asserts the refusal is penalty-free and reversible, with a WebRTC upgrade still
+admitted; and one holds a join inside the discovery backend, races `leaveAllDiscoveryKeys` against
+it, and asserts the raced key is left rather than landing afterwards.
 
 The initial-sync genesis and abort cases keep the original participants authoring through the fresh
 observer's spawn and the held-request window. This prevents a participant timeout from changing the
 fork before the settlement behavior is exercised; protocol time values are unchanged.
-
 Unassigned: [`UNIT-TEST-P2P-MANAGER-2-HR5HCB.P4`](../../../implementation/source/src/P2PManager.ts.md#unit-test-p2p-manager-2-hr5hcb.p4). The
 discovery-key case proves the reported set, the single-key leave, the no-op leave of a key that was
 never joined, and that leave-all empties the set, but it never joins the same key twice and never
@@ -92,3 +94,5 @@ coverage records the first-participant initial-load call and its explicit two-wi
 | [`P2PManager > targeted connect host composition > a late sync failure after the abort changes nothing`](../../../../../test/P2PManager.test.ts#L1084) (line 1084)                                             | [`UNIT-TEST-P2P-MANAGER-1-9DNSRZ.P34`](../../../implementation/source/src/P2PManager.ts.md#unit-test-p2p-manager-1-9dnsrz.p34)                                                                                                                                                   |
 | [`P2PManager > prefers a transport address over its registered profile address`](../../../../../test/P2PManager.test.ts#L27) (line 27)                                                                         | [`UNIT-TEST-P2PMANAGER-32-RX8SQP.P1`](../../../implementation/source/src/P2PManager.ts.md#unit-test-p2pmanager-32-rx8sqp.p1)                                                                                                                                                     |
 | [`P2PManager > tracks joined discovery keys and leaves them all`](../../../../../test/P2PManager.test.ts#L1102) (line 1102)                                                                                    | —                                                                                                                                                                                                                                                                                |
+| [`P2PManager > refuses a discovery admission while no key is observed and admits again once one is`](../../../../../test/P2PManager.test.ts#L1131) (line 1131)                                                 | [`UNIT-TEST-P2P-MANAGER-2-HR5HCB.P5`](../../../implementation/source/src/P2PManager.ts.md#unit-test-p2p-manager-2-hr5hcb.p5)                                                                                                                                                     |
+| [`P2PManager > leaves a discovery key whose join was still in flight when the disconnect ran`](../../../../../test/P2PManager.test.ts#L1157) (line 1157)                                                       | [`UNIT-TEST-P2P-MANAGER-2-HR5HCB.P6`](../../../implementation/source/src/P2PManager.ts.md#unit-test-p2p-manager-2-hr5hcb.p6)                                                                                                                                                     |

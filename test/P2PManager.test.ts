@@ -1127,4 +1127,45 @@ describe("P2PManager", function () {
         expect(result.afterLeavingUnknown).to.deep.equal([secondKey]);
         expect(result.afterLeavingAll).to.deep.equal([]);
     });
+
+    it("refuses a discovery admission while no key is observed and admits again once one is", async function () {
+        const discoveryKey = id("p2p-manager-discovery-admission-gate");
+
+        const result = await fixture!
+            .control()
+            .p2pManagerProbe.probeDiscoveryAdmissionGate(
+                Wallet.createRandom().address,
+                Wallet.createRandom().address,
+                Wallet.createRandom().address,
+                discoveryKey
+            )
+            .request();
+
+        expect(result.refusedConnected).to.equal(false);
+        expect(result.refusedTransportClosed).to.equal(true);
+        expect(result.refusedSocketDestroyed).to.equal(true);
+        // Stopping observation is neutral bookkeeping: the refusal must not
+        // exclude, penalize, or suspend the identity.
+        expect(result.refusedBanCalls).to.deep.equal([]);
+        expect(result.refusedBlacklisted).to.equal(false);
+        expect(result.refusedReconnectBanned).to.equal(false);
+        expect(result.webRtcConnected).to.equal(true);
+        expect(result.admittedConnected).to.equal(true);
+        expect(result.admittedTransportClosed).to.equal(false);
+    });
+
+    it("leaves a discovery key whose join was still in flight when the disconnect ran", async function () {
+        const discoveryKey = id("p2p-manager-discovery-join-leave-race");
+
+        const result = await fixture!
+            .control()
+            .p2pManagerProbe.probeDiscoveryJoinLeaveRace(discoveryKey)
+            .request();
+
+        // The staged race is real: the key was not observable yet when the
+        // leave started.
+        expect(result.observedDuringJoin).to.deep.equal([]);
+        expect(result.observedAfterLeaveAll).to.deep.equal([]);
+        expect(result.backendLeftKeys).to.deep.equal([discoveryKey]);
+    });
 });
