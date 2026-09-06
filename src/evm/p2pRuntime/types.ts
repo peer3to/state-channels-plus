@@ -1,8 +1,8 @@
-import type { EventLoopDelayDetails } from "@/utils/logging/performanceMonitorInternal";
-import type { Config } from "@/utils/config";
+import type { RuntimeRequestInput } from "./worker/protocol";
 import type { EvmCustomPrecompileManifest } from "@/evm/EvmFactory";
 import type { CustomRpcManifest } from "@/rpc/registry";
-import type { RuntimeRequestInput } from "./worker/protocol";
+import type { Config } from "@/utils/config";
+import type { EventLoopDelayDetails } from "@/utils/logging/performanceMonitorInternal";
 
 /**
  * Transport definitions for the p2p runtime channel.

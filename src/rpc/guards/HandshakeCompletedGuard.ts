@@ -1,11 +1,11 @@
-import type Rpc from "@/rpc/Rpc";
-import type ATransport from "@/transport/ATransport";
-import type ARpcService from "@/rpc/ARpcService";
 import type ARpcMethods from "@/rpc/ARpcMethods";
+import type ARpcService from "@/rpc/ARpcService";
 import {
     DeferredAdmissionGuard,
     type DeferredAdmissionPolicy
 } from "@/rpc/guards/DeferredAdmissionGuard";
+import type Rpc from "@/rpc/Rpc";
+import type ATransport from "@/transport/ATransport";
 
 export interface HandshakeCompletedGuardOptions {
     onFailure?: (rpc: Rpc, transport: ATransport) => void;

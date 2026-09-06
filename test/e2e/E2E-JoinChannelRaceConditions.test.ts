@@ -1,14 +1,14 @@
-import { MathTestSession as TestSession } from "@test/harness";
-import { Codec, hash, tryDecodeCustomError, Type } from "@/utils";
+import Clock from "@/Clock";
 import StateSnapshot from "@/models/StateSnapshot";
 import { Status } from "@/types";
+import { Codec, hash, tryDecodeCustomError, Type } from "@/utils";
+import { MathTestSession as TestSession } from "@test/harness";
 import {
     encodeMathState,
     type MathStateDecoded
 } from "@test/utils/mathHarnessAbi";
 import { waitFor } from "@test/utils/waitFor";
 import { expect } from "chai";
-import Clock from "@/Clock";
 
 describe("E2E: Join channel race conditions", function () {
     describe("Snapshot vs join race", function () {
@@ -292,25 +292,8 @@ describe("E2E: Join channel race conditions", function () {
             const leaverIndex = 0;
             const leaverAddress = h.getPeer(leaverIndex).address;
             const originalForkId = h.activeForkId!;
-            await h
-                .control(h.getPeer(leaverIndex))
-                .dispute.setForceExit(true)
-                .request();
-            h.context.leftChannelPeerIndices = [
-                ...h.context.leftChannelPeerIndices,
-                leaverIndex
-            ];
-            await h.tamper.postTamperedDispute(leaverIndex, () => {}, {
-                markMalicious: false
-            });
-
-            const remainingPeerIndices = h
-                .getActiveHonestPeers()
-                .map((p) => p.index);
-            await h.assert.dispute.committedWait({
-                peersIndices: remainingPeerIndices,
-                expectedCount: 1
-            });
+            const remainingPeerIndices =
+                await h.dispute.selfRemoveViaDisputeWait({ leaverIndex });
 
             // While the window is open, joiner remains in on-chain pending set
             const pendingDuring = await h.channelManager.getPendingParticipants(

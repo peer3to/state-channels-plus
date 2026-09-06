@@ -1,4 +1,5 @@
-import type { LoggerPerformanceMonitorOptions } from "./Logger";
+import type { LoggerPerformanceMonitorOptions, Logger } from "./Logger";
+import { config } from "../config";
 
 /**
  * Structured data the watchdog attaches to its error. It rides the error as
@@ -60,3 +61,55 @@ export type PerformanceMonitorInternalOptions =
         /** Fires once the sampling interval is installed. */
         onStarted?: () => void;
     };
+
+export function reportPerformanceSample(
+    logger: Logger,
+    sample: PerformanceSample,
+    options: LoggerPerformanceMonitorOptions,
+    runtime: "node" | "browser"
+): EventLoopDelayDetails | undefined {
+    const { dMean, d50, d90, d99, dMax, utilization } = sample;
+    const longTaskMax = sample.longTaskMax ?? 0;
+    const delayWarnThresholdMs = options.delayWarnThresholdMs ?? 200;
+    const utilizationWarnThreshold = options.utilizationWarnThreshold ?? 0.8;
+    const shouldWarn =
+        utilization > utilizationWarnThreshold ||
+        dMean > delayWarnThresholdMs ||
+        d50 > delayWarnThresholdMs ||
+        d90 > delayWarnThresholdMs ||
+        d99 > delayWarnThresholdMs ||
+        dMax > delayWarnThresholdMs ||
+        (runtime === "browser" && longTaskMax > delayWarnThresholdMs);
+    const metadata = {
+        runtime,
+        dMean,
+        d50,
+        d90,
+        d99,
+        dMax,
+        ...(runtime === "node"
+            ? { utilization }
+            : {
+                  estimatedUtilization: utilization,
+                  longTaskCount: sample.longTaskCount ?? 0,
+                  longTaskMean: sample.longTaskMean ?? 0,
+                  longTaskMax
+              })
+    };
+    const logFn = shouldWarn
+        ? logger.warn.bind(logger)
+        : logger.verbose.bind(logger);
+    logFn(
+        `Event Loop mean delay: ${dMean}ms, max: ${dMax}ms, ${runtime === "browser" ? "estimated utilization" : "utilization"}: ${utilization}`,
+        metadata
+    );
+    const delayErrorThresholdMs =
+        options.delayErrorThresholdMs !== undefined
+            ? options.delayErrorThresholdMs
+            : (config.EVENT_LOOP_DELAY_ERROR_THRESHOLD_SECONDS || 0) * 1000;
+    const maxDelayMs =
+        runtime === "browser" ? Math.max(dMax, longTaskMax) : dMax;
+    return delayErrorThresholdMs > 0 && maxDelayMs > delayErrorThresholdMs
+        ? { ...metadata, delayErrorThresholdMs }
+        : undefined;
+}

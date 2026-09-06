@@ -1,26 +1,26 @@
 // @spec-test-coverage-ignore: typed raw-RPC harness actions exercised by mapped lobby E2E declarations
-import { ethers, Signer } from "ethers";
-import { PeerTestHarness } from "@test/fixtures/PeerTestHarness";
-import * as factory from "@test/factory";
 import { Block } from "@/models";
+import type Rpc from "@/rpc/Rpc";
 import type { Address } from "@/types/types";
-import type { BlockConfirmationStruct } from "@typechain-types/contracts/V1/types/DataTypes";
-import type { HarnessControlRpc } from "@test/fixtures/customRpc/harnessControl/HarnessControlRpc";
-import type { TestPeer } from "@test/harness/core/types";
-import { Codec, Logger, Type } from "@/utils";
 import { ForkId, Bytes, BlockHeight } from "@/types/types";
-import { BlockStruct } from "@typechain-types/contracts/V1/types/DataTypes";
+import { Codec, Logger, Type } from "@/utils";
+import * as factory from "@test/factory";
+import type { HarnessControlRpc } from "@test/fixtures/customRpc/harnessControl/HarnessControlRpc";
+import type {
+    LobbyRawMethod,
+    NegotiationRawMethod
+} from "@test/fixtures/customRpc/harnessControl/services/byzantine/ByzantineService";
+import { PeerTestHarness } from "@test/fixtures/PeerTestHarness";
 import {
     DisputeTampering,
     DisputeTamper,
     ConstructDisputeTamper
 } from "@test/harness/actions/DisputeTamperingActions";
+import type { TestPeer } from "@test/harness/core/types";
+import type { BlockConfirmationStruct } from "@typechain-types/contracts/V1/types/DataTypes";
+import { BlockStruct } from "@typechain-types/contracts/V1/types/DataTypes";
 import { DisputeStruct } from "@typechain-types/contracts/V1/types/ProofTypes";
-import type Rpc from "@/rpc/Rpc";
-import type {
-    LobbyRawMethod,
-    NegotiationRawMethod
-} from "@test/fixtures/customRpc/harnessControl/services/byzantine/ByzantineService";
+import { ethers, Signer } from "ethers";
 
 export class ByzantineActions<
     TCustomRpc extends HarnessControlRpc = HarnessControlRpc
@@ -309,7 +309,7 @@ export class ByzantineActions<
             await this.craftInvalidTransitionBlock(observerIndex, options);
         const validation = await this.harness
             .control(this.harness.getPeer(observerIndex))
-            .stub.runBlockValidation(encodedBlock)
+            .validation.runBlockValidation(encodedBlock)
             .request();
         if (validation.fraudProofType === null) {
             throw new Error(

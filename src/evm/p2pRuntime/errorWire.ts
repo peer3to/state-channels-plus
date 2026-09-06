@@ -1,11 +1,10 @@
-import { ethers } from "ethers";
-
+import type { SerializedError } from "./types";
 import {
     getErrorPeerAddress,
     maybeStampErrorWithPeerAddress
 } from "@/utils/errorPeerAddress";
 import type { EventLoopDelayDetails } from "@/utils/logging/performanceMonitorInternal";
-import type { SerializedError } from "./types";
+import { ethers } from "ethers";
 
 /**
  * The one error codec for every isolation boundary: the contract-executor

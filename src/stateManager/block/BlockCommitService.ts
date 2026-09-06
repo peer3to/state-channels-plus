@@ -1,17 +1,16 @@
-import type { MessageBlockStruct } from "@typechain-types/contracts/V1/types/DataTypes";
-
+import type { ParticipantChanges } from "./SnapshotAssemblyService";
+import type StateManager from "../StateManager";
+import type AValidationStrategy from "../validationStrategy/AValidationStrategy";
+import DisputeValidationStrategy from "../validationStrategy/DisputeValidationStrategy";
 import Clock from "@/Clock";
 import { Block, StateSnapshot } from "@/models";
-import type { ParticipantChanges } from "./SnapshotAssemblyService";
 import { Status, timeoutWaitTime } from "@/types";
 import { Bytes } from "@/types/types";
 import { Logger } from "@/utils";
 import { LoggerUtils } from "@/utils/LoggerUtils";
 import P2pEventHooksUtils from "@/utils/P2pEventHooksUtils";
 
-import type StateManager from "../StateManager";
-import type AValidationStrategy from "../validationStrategy/AValidationStrategy";
-import DisputeValidationStrategy from "../validationStrategy/DisputeValidationStrategy";
+import type { MessageBlockStruct } from "@typechain-types/contracts/V1/types/DataTypes";
 
 /**
  * Commits a validated block: persists the snapshot, state and block, signs and

@@ -1,23 +1,23 @@
 // @spec-test-coverage-ignore: worker-side support for HandshakeCompletedGuard component tests
+import type { PingPongRpc } from "../PingPongRpcManifest";
+import { HandshakeCompletedGuardProbeRpcMethods } from "./HandshakeCompletedGuardProbeRpcMethods";
 import type P2PManager from "@/P2PManager";
 import PeerProfile from "@/PeerProfile";
 import ARpcMethods from "@/rpc/ARpcMethods";
 import ARpcService from "@/rpc/ARpcService";
 import {
-    HandshakeCompletedGuard,
-    type HandshakeCompletedGuardOptions
-} from "@/rpc/guards/HandshakeCompletedGuard";
-import {
     DeferredAdmissionGuard,
     type DeferredAdmissionPolicy
 } from "@/rpc/guards/DeferredAdmissionGuard";
+import {
+    HandshakeCompletedGuard,
+    type HandshakeCompletedGuardOptions
+} from "@/rpc/guards/HandshakeCompletedGuard";
 import type Rpc from "@/rpc/Rpc";
 import type { RpcResponse } from "@/rpc/Rpc";
 import ATransport from "@/transport/ATransport";
 import { TransportType } from "@/transport/TransportType";
 import { getChecksumAddress } from "@/utils";
-import type { PingPongRpc } from "../PingPongRpcManifest";
-import { HandshakeCompletedGuardProbeRpcMethods } from "./HandshakeCompletedGuardProbeRpcMethods";
 
 class GuardTransport extends ATransport {
     public transportType = TransportType.HOLEPUNCH;

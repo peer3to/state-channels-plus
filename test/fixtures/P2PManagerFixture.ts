@@ -1,13 +1,13 @@
 // @spec-test-coverage-ignore: shared runtime setup for P2PManager component tests
-import path from "node:path";
 
-import { MathStateMachine } from "@typechain-types";
-import { DEFAULT_MATH_HARNESS_DEPLOYMENT } from "@test/harness/core/defaultMathHarnessDeployment";
-import { PeerTestHarness } from "@test/fixtures/PeerTestHarness";
-import type { PingPongRpc } from "@test/fixtures/customRpc/PingPongRpcManifest";
 import type { RemoteRpcProxyType } from "@/rpc/RemoteRpcProxy";
 import { Status } from "@/types";
+import type { PingPongRpc } from "@test/fixtures/customRpc/PingPongRpcManifest";
+import { PeerTestHarness } from "@test/fixtures/PeerTestHarness";
+import { DEFAULT_MATH_HARNESS_DEPLOYMENT } from "@test/harness/core/defaultMathHarnessDeployment";
 import type { HarnessOptions } from "@test/harness/core/types";
+import { MathStateMachine } from "@typechain-types";
+import path from "node:path";
 
 export type HandshakeRoutingFixtureResult = {
     connected: boolean;

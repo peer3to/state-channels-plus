@@ -1,8 +1,8 @@
 // @spec-test-coverage-ignore: real dispute attempts with controlled upload/read failures
-import { expect } from "chai";
+import type { MathPeerTestHarness } from "./MathPeerTestHarness";
 import { MathTestSession as TestSession } from "@test/harness";
 import { waitFor } from "@test/utils/waitFor";
-import type { MathPeerTestHarness } from "./MathPeerTestHarness";
+import { expect } from "chai";
 
 export async function assertDisputeRefreshPolicy(
     h: MathPeerTestHarness,
@@ -147,7 +147,7 @@ export async function assertBackgroundDisputeFailure(
         // must not supply a different top-level error while this one is observed.
         await Promise.all(
             h.peers.map((other) =>
-                h.control(other).stub.stubSuppressDisputeInitiation().request()
+                h.dispute.suppressDisputeInitiation([other.index])
             )
         );
         // Attach the normal diagnostic drain while submission is held. The harness's

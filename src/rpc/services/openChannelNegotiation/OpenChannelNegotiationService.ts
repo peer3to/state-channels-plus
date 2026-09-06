@@ -1,17 +1,27 @@
-import { ethers, ZeroHash } from "ethers";
-
+import {
+    DEFAULT_JOIN_AMOUNT,
+    OPEN_CHANNEL_DEADLINE_SECONDS,
+    compareAddresses,
+    deriveNegotiatedChannelId,
+    getOpenChannelProposalMismatch,
+    type Address
+} from "./OpenChannelNegotiationHelpers";
+import OpenChannelNegotiationRpcMethods, {
+    type OpenChannelNegotiationP2PManager
+} from "./OpenChannelNegotiationRpcMethods";
 import Clock from "@/Clock";
-import type {
-    BalanceStruct,
-    OpenChannelStruct
-} from "@typechain-types/contracts/V1/types/DataTypes";
+
 import ARpcService from "@/rpc/ARpcService";
-import type Rpc from "@/rpc/Rpc";
 import {
     DeferredAdmissionGuard,
     HandshakeCompletedGuard,
     type DeferredAdmissionPolicy
 } from "@/rpc/guards";
+import type Rpc from "@/rpc/Rpc";
+import type {
+    LobbyMatch,
+    LobbyJoinResult
+} from "@/rpc/services/lobbyMatching/LobbyMatchingTypes";
 import type ATransport from "@/transport/ATransport";
 import { Status } from "@/types";
 import {
@@ -23,20 +33,13 @@ import {
     getChecksumAddress,
     tryDecodeCustomError
 } from "@/utils";
-import type { LobbyMatch } from "@/rpc/services/lobbyMatching/LobbyMatchingTypes";
-import type { LobbyJoinResult } from "@/rpc/services/lobbyMatching/LobbyMatchingTypes";
-
-import OpenChannelNegotiationRpcMethods, {
-    type OpenChannelNegotiationP2PManager
-} from "./OpenChannelNegotiationRpcMethods";
-import {
-    DEFAULT_JOIN_AMOUNT,
-    OPEN_CHANNEL_DEADLINE_SECONDS,
-    compareAddresses,
-    deriveNegotiatedChannelId,
-    getOpenChannelProposalMismatch,
-    type Address
-} from "./OpenChannelNegotiationHelpers";
+import { requireBytes32 } from "@/utils/bytes32";
+import { errorMessage } from "@/utils/errorMessage";
+import type {
+    BalanceStruct,
+    OpenChannelStruct
+} from "@typechain-types/contracts/V1/types/DataTypes";
+import { ethers, ZeroHash } from "ethers";
 
 type MatchedAttempt = LobbyMatch & {
     mode: NegotiationMode;
@@ -176,7 +179,10 @@ export default class OpenChannelNegotiationService extends ARpcService<
             amount: DEFAULT_JOIN_AMOUNT,
             data: "0x"
         };
-        await this.requirePositiveBalance(balance, "local opening balance");
+        await this.p2pManager.stateManager.diamondStateMachine.requirePositiveBalance(
+            balance,
+            "local opening balance"
+        );
         this.state.myBalance = balance;
         const channelId =
             mode === "targeted"
@@ -250,21 +256,17 @@ export default class OpenChannelNegotiationService extends ARpcService<
         const attempt = this.state.attempt;
         if (!attempt || attempt.channelId !== channelId) return;
         this.state.channelOpened = true;
-        attempt.classifyObservedOpening =
-            this.classifyObservedOpening(attempt);
+        attempt.classifyObservedOpening = this.classifyObservedOpening(attempt);
     }
 
     public isRpcAdmitted(rpc: Rpc, transport: ATransport): boolean {
-        const attempt = this.state.attempt;
-        const peer = transport.peerAddress
-            ? getChecksumAddress(transport.peerAddress)
-            : undefined;
         return (
-            !!attempt &&
-            peer === attempt.peerAddress &&
-            rpc.params[0] === attempt.attemptNonce &&
-            rpc.params[1] === attempt.selectorChallenge &&
-            rpc.params[2] === attempt.advertiserChallenge
+            this.findCommittedAttempt(
+                transport,
+                rpc.params[0],
+                rpc.params[1],
+                rpc.params[2]
+            ) !== undefined
         );
     }
 
@@ -284,7 +286,7 @@ export default class OpenChannelNegotiationService extends ARpcService<
         let balance: BalanceStruct;
         try {
             balance = Codec.decode(encodedBalance, Type.Balance);
-            await this.requirePositiveBalance(
+            await this.p2pManager.stateManager.diamondStateMachine.requirePositiveBalance(
                 balance,
                 "remote opening balance"
             );
@@ -490,7 +492,7 @@ export default class OpenChannelNegotiationService extends ARpcService<
             let theirBalance: BalanceStruct;
             try {
                 theirBalance = Codec.decode(terms.encodedBalance, Type.Balance);
-                await this.requirePositiveBalance(
+                await this.p2pManager.stateManager.diamondStateMachine.requirePositiveBalance(
                     theirBalance,
                     "remote opening balance"
                 );
@@ -548,27 +550,17 @@ export default class OpenChannelNegotiationService extends ARpcService<
                         "Opening proposal request failed after local signing; awaiting chain observation",
                         {
                             peerAddress: attempt.peerAddress,
-                            error:
-                                error instanceof Error
-                                    ? error.message
-                                    : String(error)
+                            error: errorMessage(error)
                         }
                     );
                 } else {
                     if (attempt.mode === "targeted") {
                         await this.clearAttempt(
-                            error instanceof Error
-                                ? error.message
-                                : String(error),
+                            errorMessage(error),
                             "targeted-failed"
                         );
                     } else {
-                        this.protocolFailure(
-                            attempt,
-                            error instanceof Error
-                                ? error.message
-                                : String(error)
-                        );
+                        this.protocolFailure(attempt, errorMessage(error));
                     }
                 }
             }
@@ -651,9 +643,7 @@ export default class OpenChannelNegotiationService extends ARpcService<
                     }
                     await this.clearAttempt(
                         "opening payload expired",
-                        attempt.mode === "targeted"
-                            ? "targeted-failed"
-                            : "retry"
+                        this.failureOutcome(attempt)
                     );
                 },
                 delayMs,
@@ -669,7 +659,7 @@ export default class OpenChannelNegotiationService extends ARpcService<
         if (!attempt.localOpeningSignatureIssued) {
             void this.clearAttempt(
                 "committed peer disconnected",
-                attempt.mode === "targeted" ? "targeted-failed" : "retry"
+                this.failureOutcome(attempt)
             );
         }
     }
@@ -683,11 +673,21 @@ export default class OpenChannelNegotiationService extends ARpcService<
             attempt.peerAddress
         );
         if (!attempt.localOpeningSignatureIssued) {
-            void this.clearAttempt(
-                reason,
-                attempt.mode === "targeted" ? "targeted-failed" : "retry"
-            );
+            void this.clearAttempt(reason, this.failureOutcome(attempt));
         }
+    }
+
+    private detachAttempt(attempt: MatchedAttempt): void {
+        this.clearAttemptTimeout(attempt);
+        attempt.unsubscribeDisconnected?.();
+        attempt.unsubscribeChannelOpened?.();
+        this.state.attempt = undefined;
+    }
+
+    private failureOutcome(
+        attempt: MatchedAttempt
+    ): "retry" | "targeted-failed" {
+        return attempt.mode === "targeted" ? "targeted-failed" : "retry";
     }
 
     private async clearAttempt(
@@ -697,10 +697,7 @@ export default class OpenChannelNegotiationService extends ARpcService<
         const attempt = this.state.attempt;
         if (!attempt) return;
         this.logger.info("Negotiation attempt cleared", { reason });
-        this.clearAttemptTimeout(attempt);
-        attempt.unsubscribeDisconnected?.();
-        attempt.unsubscribeChannelOpened?.();
-        this.state.attempt = undefined;
+        this.detachAttempt(attempt);
         if (attempt.mode === "ordinary") {
             await this.p2pManager.stateManager.clearChannelId();
             if (!this.p2pManager.stateManager.isDisposed) {
@@ -717,10 +714,7 @@ export default class OpenChannelNegotiationService extends ARpcService<
 
     private completeOpenedAttempt(attempt: MatchedAttempt): void {
         if (this.state.attempt !== attempt) return;
-        this.clearAttemptTimeout(attempt);
-        attempt.unsubscribeDisconnected?.();
-        attempt.unsubscribeChannelOpened?.();
-        this.state.attempt = undefined;
+        this.detachAttempt(attempt);
         attempt.resolveOutcome({
             status: "opened",
             result: {
@@ -741,10 +735,7 @@ export default class OpenChannelNegotiationService extends ARpcService<
             return;
         }
         attempt.observedOpenHandoff = true;
-        this.clearAttemptTimeout(attempt);
-        attempt.unsubscribeDisconnected?.();
-        attempt.unsubscribeChannelOpened?.();
-        this.state.attempt = undefined;
+        this.detachAttempt(attempt);
         attempt.resolveOutcome({
             status: "observed-target-open",
             channelId: attempt.channelId
@@ -821,23 +812,38 @@ export default class OpenChannelNegotiationService extends ARpcService<
         }
     }
 
+    private findCommittedAttempt(
+        transport: ATransport,
+        attemptNonce: unknown,
+        selectorChallenge: unknown,
+        advertiserChallenge: unknown
+    ): MatchedAttempt | undefined {
+        const attempt = this.state.attempt;
+        const peer = transport.peerAddress
+            ? getChecksumAddress(transport.peerAddress)
+            : undefined;
+        return attempt &&
+            peer === attempt.peerAddress &&
+            attemptNonce === attempt.attemptNonce &&
+            selectorChallenge === attempt.selectorChallenge &&
+            advertiserChallenge === attempt.advertiserChallenge
+            ? attempt
+            : undefined;
+    }
+
     private requireAttempt(
         transport: ATransport,
         attemptNonce: string,
         selectorChallenge: string,
         advertiserChallenge: string
     ): MatchedAttempt {
-        const attempt = this.state.attempt;
-        const peer = transport.peerAddress
-            ? getChecksumAddress(transport.peerAddress)
-            : undefined;
-        if (
-            !attempt ||
-            peer !== attempt.peerAddress ||
-            attemptNonce !== attempt.attemptNonce ||
-            selectorChallenge !== attempt.selectorChallenge ||
-            advertiserChallenge !== attempt.advertiserChallenge
-        ) {
+        const attempt = this.findCommittedAttempt(
+            transport,
+            attemptNonce,
+            selectorChallenge,
+            advertiserChallenge
+        );
+        if (!attempt) {
             throw new Error("Negotiation attempt does not match commitment");
         }
         return attempt;
@@ -866,22 +872,6 @@ export default class OpenChannelNegotiationService extends ARpcService<
         };
     }
 
-    private async requirePositiveBalance(
-        balance: BalanceStruct,
-        label: string
-    ): Promise<void> {
-        const zeroBalance =
-            await this.p2pManager.stateManager.diamondStateMachine.getZeroBalance();
-        if (
-            !(await this.p2pManager.stateManager.diamondStateMachine.isBalanceLesserThan(
-                zeroBalance,
-                balance
-            ))
-        ) {
-            throw new Error(`${label} must be greater than zero`);
-        }
-    }
-
     private balancesMatch(a: BalanceStruct, b: BalanceStruct): boolean {
         return (
             BigInt(a.amount) === BigInt(b.amount) &&
@@ -890,11 +880,10 @@ export default class OpenChannelNegotiationService extends ARpcService<
     }
 
     private requireTargetChannelId(channelId?: string): string {
-        if (!channelId || !ethers.isHexString(channelId, 32)) {
-            throw new Error(
-                "Targeted negotiation requires a bytes32 channel ID"
-            );
-        }
+        requireBytes32(
+            channelId,
+            "Targeted negotiation requires a bytes32 channel ID"
+        );
         const normalized = ethers.hexlify(channelId);
         if (
             ethers.hexlify(String(this.p2pManager.stateManager.channelId)) !==

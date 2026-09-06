@@ -1,28 +1,29 @@
-import IOnMessage from "@/IOnMessage";
-import type StateManager from "@/stateManager";
-import Rpc, {
-    deserializeRpc,
-    deserializeRpcResponse,
-    MAX_RPC_FRAME_BYTES,
-    RpcResponse
-} from "@/rpc/Rpc";
-import MainRpcService from "@/rpc/MainRpcService";
-import { P2pSigner } from "@/evm";
-import { ATransport, LoopbackTransport, TransportType } from "@/transport";
-import ProfileManager from "@/ProfileManager";
-import Holepunch from "@/Holepunch";
-import { ethers } from "ethers";
-import { DebugProxy, getChecksumAddress, LocalDiscoveryServer } from "@/utils";
-import type { Logger } from "@/utils";
-import { Buffer } from "buffer";
-import { config, isNodeRuntime } from "@/utils/config";
-import { Status } from "@/types";
+import type { CustomRpcConstructor } from "./rpc/registry";
+import RemoteRpcProxy, { RemoteRpcProxyType } from "./rpc/RemoteRpcProxy";
 import { Address } from "./types/types";
 import { hasRpcService } from "./utils/ObjectChecks";
+import { P2pSigner } from "@/evm";
+import Holepunch from "@/Holepunch";
+import IOnMessage from "@/IOnMessage";
+import ProfileManager from "@/ProfileManager";
 import type ARpcService from "@/rpc/ARpcService";
-import RemoteRpcProxy, { RemoteRpcProxyType } from "./rpc/RemoteRpcProxy";
-import type { CustomRpcConstructor } from "./rpc/registry";
+import MainRpcService from "@/rpc/MainRpcService";
+import Rpc, {
+    MAX_RPC_FRAME_BYTES,
+    RpcResponse,
+    deserializeRpcFrame
+} from "@/rpc/Rpc";
+import type StateManager from "@/stateManager";
+import { ATransport, LoopbackTransport, TransportType } from "@/transport";
+import { Status } from "@/types";
+import { DebugProxy, getChecksumAddress, LocalDiscoveryServer } from "@/utils";
+import type { Logger } from "@/utils";
+import { requireBytes32 } from "@/utils/bytes32";
+import { config, isNodeRuntime } from "@/utils/config";
+import { errorMessage } from "@/utils/errorMessage";
 import { LoggerUtils } from "@/utils/LoggerUtils";
+import { Buffer } from "buffer";
+import { ethers } from "ethers";
 
 class P2PManager<TCustomRpc extends MainRpcService = MainRpcService>
     implements IOnMessage
@@ -211,10 +212,7 @@ class P2PManager<TCustomRpc extends MainRpcService = MainRpcService>
                     "Skipping sync after handshake because the participant read failed",
                     {
                         peerAddress,
-                        error:
-                            error instanceof Error
-                                ? error.message
-                                : String(error)
+                        error: errorMessage(error)
                     }
                 );
             }
@@ -382,12 +380,12 @@ class P2PManager<TCustomRpc extends MainRpcService = MainRpcService>
                 this.disconnectAndBlacklistPeer(transport);
                 return;
             }
-            const response = deserializeRpcResponse(serializedRpc);
-            if (response) {
-                this.handleRpcResponse(response, transport);
+            const frame = deserializeRpcFrame(serializedRpc);
+            if (frame?.kind === "response") {
+                this.handleRpcResponse(frame.response, transport);
                 return;
             }
-            const rpc = deserializeRpc(serializedRpc);
+            const rpc = frame?.rpc;
             this.logger.verbose("onRpc", {
                 rpc: rpc ? LoggerUtils.getRpcLogMetadata(rpc) : undefined,
                 transportType: TransportType[transport.transportType],
@@ -412,7 +410,7 @@ class P2PManager<TCustomRpc extends MainRpcService = MainRpcService>
         } catch (e) {
             this.disconnectConnection(transport);
             this.logger.error("onRpc - error handling RPC frame", {
-                error: e instanceof Error ? e.message : String(e),
+                error: errorMessage(e),
                 stack: e instanceof Error ? e.stack : undefined,
                 transportType: TransportType[transport.transportType],
                 peerAddress: transport.peerAddress
@@ -420,9 +418,7 @@ class P2PManager<TCustomRpc extends MainRpcService = MainRpcService>
         }
     }
     public async joinDiscoveryKey(discoveryKey: string): Promise<void> {
-        if (!ethers.isHexString(discoveryKey, 32)) {
-            throw new Error("Discovery key must be exactly 32 bytes");
-        }
+        requireBytes32(discoveryKey, "Discovery key must be exactly 32 bytes");
         const normalizedKey = ethers.hexlify(discoveryKey);
         const waitForInitialSync = this.stateManager.status === Status.OPENED;
         const initialSync = waitForInitialSync
@@ -522,9 +518,7 @@ class P2PManager<TCustomRpc extends MainRpcService = MainRpcService>
     }
 
     public async leaveDiscoveryKey(discoveryKey: string): Promise<void> {
-        if (!ethers.isHexString(discoveryKey, 32)) {
-            throw new Error("Discovery key must be exactly 32 bytes");
-        }
+        requireBytes32(discoveryKey, "Discovery key must be exactly 32 bytes");
         const normalizedKey = ethers.hexlify(discoveryKey);
         if (config.DEBUG_LOCAL_TRANSPORT) {
             await LocalDiscoveryServer.leave(normalizedKey, this.self);
@@ -601,24 +595,11 @@ class P2PManager<TCustomRpc extends MainRpcService = MainRpcService>
 
     /**
      * Returns a snapshot of currently connected peer identities (EVM addresses).
+     * Resolve transport addresses first, falling back to their registered profiles.
      */
     public getConnectedPeers(): Set<Address> {
         const addresses = new Set<Address>();
-        this.collectPeerAddresses(this.openConnections, addresses);
-        return addresses;
-    }
-
-    /**
-     * Resolves each transport's peer address (transport first, falling back to
-     * its `ProfileManager` profile) into `addresses`. One owner so the
-     * promoted-only and handshake-completed views can never disagree on how an
-     * address is resolved or normalized.
-     */
-    private collectPeerAddresses(
-        transports: Iterable<ATransport>,
-        addresses: Set<Address>
-    ): void {
-        for (const transport of transports) {
+        for (const transport of this.openConnections) {
             const fromTransport = transport.peerAddress;
             if (fromTransport) {
                 // Boundary: transport.peerAddress can originate outside ethers.
@@ -633,6 +614,7 @@ class P2PManager<TCustomRpc extends MainRpcService = MainRpcService>
                 addresses.add(fromProfile.toString());
             }
         }
+        return addresses;
     }
 }
 

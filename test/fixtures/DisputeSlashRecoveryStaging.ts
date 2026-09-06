@@ -1,12 +1,12 @@
 // @spec-test-coverage-ignore: real kill and authoritative event recovery staging
-import { expect } from "chai";
-import { Codec, Type, hash } from "@/utils";
+import type { MathPeerTestHarness } from "./MathPeerTestHarness";
 import {
     DisputeFraudProofType,
     toSolidityDisputeFraudProofType
 } from "@/types/sol-enums";
-import type { MathPeerTestHarness } from "./MathPeerTestHarness";
+import { Codec, Type, hash } from "@/utils";
 import { waitFor } from "@test/utils/waitFor";
+import { expect } from "chai";
 
 export async function assertKilledOpenerSubmissionRace(
     h: MathPeerTestHarness,
@@ -26,10 +26,7 @@ export async function assertKilledOpenerSubmissionRace(
                         .stub.stubHoldReductionTasks()
                         .request();
                     if (peer.index !== 0)
-                        await h
-                            .control(peer)
-                            .stub.stubSuppressDisputeInitiation()
-                            .request();
+                        await h.dispute.suppressDisputeInitiation([peer.index]);
                 }
             }
         });
@@ -290,10 +287,7 @@ export async function assertRecoveredSlashTimestampAndDedup(
             killerIndex: 2,
             beforeDispute: async () => {
                 for (const peer of h.peers) {
-                    await h
-                        .control(peer)
-                        .stub.stubSuppressDisputeInitiation()
-                        .request();
+                    await h.dispute.suppressDisputeInitiation([peer.index]);
                     await h
                         .control(peer)
                         .stub.stubHoldReductionTasks()

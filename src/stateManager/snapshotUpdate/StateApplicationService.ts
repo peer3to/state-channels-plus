@@ -1,17 +1,17 @@
+import type StateManager from "../StateManager";
+import Clock from "@/Clock";
+
+import { StateSnapshot } from "@/models";
+import { Status, timeoutWaitTime as timeoutWaitTimeSeconds } from "@/types";
+import { Address, Bytes, ForkId, Timestamp } from "@/types/types";
+import { addressesEqual, Logger } from "@/utils";
+import { errorMessage } from "@/utils/errorMessage";
+import P2pEventHooksUtils from "@/utils/P2pEventHooksUtils";
 import type {
     MessageBlockStruct,
     SnapshotDataStruct,
     StateSnapshotStruct
 } from "@typechain-types/contracts/V1/types/DataTypes";
-
-import Clock from "@/Clock";
-import { StateSnapshot } from "@/models";
-import { Status, timeoutWaitTime as timeoutWaitTimeSeconds } from "@/types";
-import { Address, Bytes, ForkId, Timestamp } from "@/types/types";
-import { addressesEqual, Logger } from "@/utils";
-import P2pEventHooksUtils from "@/utils/P2pEventHooksUtils";
-
-import type StateManager from "../StateManager";
 
 /**
  * Applies a received snapshot as the session's latest state: persists it,
@@ -107,8 +107,7 @@ export default class StateApplicationService {
                 "Reduction genesis inspection failed after the VM write; aborting",
                 {
                     forkId,
-                    error:
-                        error instanceof Error ? error.message : String(error)
+                    error: errorMessage(error)
                 }
             );
             sm.abort();

@@ -1,10 +1,9 @@
-import { expect } from "chai";
-
 import { Status } from "@/types";
 import {
     MathTestSession as TestSession,
     MIN_TEST_TIME_CONFIG
 } from "@test/harness";
+import { expect } from "chai";
 
 // A non-participant that sends a spectator a block it must reject should be
 // dropped + blacklisted, never able to take the spectator offline. Covers both

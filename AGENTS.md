@@ -179,6 +179,18 @@ methods }`. Never interleave a field declaration between methods. When adding a
   new field, put it with the other fields at the top of the class (keep any
   explanatory comment with it), not next to the method that happens to use it.
 
+### Import order
+
+- Run `yarn lint:imports` to check source and test imports. Use
+  `yarn lint:imports:fix src test` for the mechanical fix. The shared
+  `import/order` rule sorts module paths alphabetically, ignoring case, in one
+  group; named members and existing blank lines keep their formatting.
+- Keep side-effect imports in place and keep TypeScript suppression comments
+  attached to their original import. Check both TypeScript builds after sorting.
+- Generated artifacts and Solidity enums are excluded. Keep repo-wide ordering
+  changes separate from behavior changes. lint-staged applies the rule to staged
+  files, and CI checks it before running the distributed suite.
+
 ### Comments
 
 - Keep comments simple and to the point. No long essays.

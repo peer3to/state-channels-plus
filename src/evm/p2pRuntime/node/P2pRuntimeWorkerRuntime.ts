@@ -1,16 +1,16 @@
-import { parentPort, Worker, type MessagePort } from "node:worker_threads";
-import * as path from "node:path";
-import * as fs from "node:fs";
-import { resolveWorkerResourceLimits } from "../../node/workerResourceLimits";
-import { instrumentWorkerStartup } from "../../node/workerStartupTiming";
+import { adaptPort } from "./P2pRuntimeChannel";
 import { startCpuProfilerIfEnabled } from "../../node/workerCpuProfiler";
+import { resolveWorkerResourceLimits } from "../../node/workerResourceLimits";
 import { createWorkerShutdown } from "../../node/workerShutdown";
+import { instrumentWorkerStartup } from "../../node/workerStartupTiming";
 import type {
     P2pRuntimeWorker,
     RuntimePort,
     WorkerBootstrapMessage
 } from "../types";
-import { adaptPort } from "./P2pRuntimeChannel";
+import * as fs from "node:fs";
+import * as path from "node:path";
+import { parentPort, Worker, type MessagePort } from "node:worker_threads";
 
 export function createP2pRuntimeWorker(): P2pRuntimeWorker {
     const jsWorkerPath = path.join(

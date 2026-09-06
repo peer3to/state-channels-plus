@@ -2,10 +2,10 @@
 // Must run before any EVM/stream import pulls in Node globals.
 import "@/evm/p2pRuntime/worker/nodeGlobalsShim";
 
-import * as path from "node:path";
-import { workerData } from "node:worker_threads";
-
-import { createConfig } from "@/utils/config";
+import type { WatchdogWorkerData } from "./watchdogContractExecutorWorkerEntry";
+import { createContractExecutor } from "@/evm/contractExecutor/createContractExecutor";
+import { createContractExecutorWorkerFromPath } from "@/evm/contractExecutor/node/ContractExecutorWorkerRuntime";
+import { serializeError } from "@/evm/p2pRuntime/errorWire";
 import {
     onWorkerBootstrap,
     adaptTransferredPort,
@@ -13,10 +13,9 @@ import {
     closeWorkerBootstrapPort
 } from "@/evm/p2pRuntime/node/P2pRuntimeWorkerRuntime";
 import { startP2pRuntimeHost } from "@/evm/p2pRuntime/P2pRuntimeHost";
-import { serializeError } from "@/evm/p2pRuntime/errorWire";
-import { createContractExecutor } from "@/evm/contractExecutor/createContractExecutor";
-import { createContractExecutorWorkerFromPath } from "@/evm/contractExecutor/node/ContractExecutorWorkerRuntime";
-import type { WatchdogWorkerData } from "./watchdogContractExecutorWorkerEntry";
+import { createConfig } from "@/utils/config";
+import * as path from "node:path";
+import { workerData } from "node:worker_threads";
 
 /**
  * The real sdk worker bootstrap with one difference: the host receives a

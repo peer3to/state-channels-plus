@@ -1,9 +1,9 @@
 // @spec-test-coverage-ignore: harness network observations used by mapped component and E2E declarations
-import ARpcService from "@/rpc/ARpcService";
+import NetworkRpcMethods from "./NetworkRpcMethods";
 import type P2PManager from "@/P2PManager";
+import ARpcService from "@/rpc/ARpcService";
 import type ATransport from "@/transport/ATransport";
 import type { Address } from "@/types";
-import NetworkRpcMethods from "./NetworkRpcMethods";
 
 /** Connection / network control operations exposed to the test harness. */
 export class NetworkService extends ARpcService<NetworkRpcMethods> {

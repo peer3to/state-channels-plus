@@ -1,6 +1,6 @@
+import { DisputeFraudProofType } from "@/types/sol-enums";
 import { addressesEqual } from "@/utils";
 import { assertHonestLeaverDisputeOrdering } from "@test/fixtures/HonestLeaverDisputeStaging";
-import { DisputeFraudProofType } from "@/types/sol-enums";
 import {
     DisputeTampering,
     MathTestSession as TestSession
@@ -20,15 +20,7 @@ describe("E2E: dispute validation / disputeInputFields / selfRemoval", function 
         const disputedForkId = h.activeForkId!;
 
         // forceExit yields a valid self-removal dispute; post untampered.
-        await h
-            .control(h.getPeer(leaverIndex))
-            .dispute.setForceExit(true)
-            .request();
         // Voluntary exit: skip sync barrier, don't mark malicious.
-        h.context.leftChannelPeerIndices = [
-            ...h.context.leftChannelPeerIndices,
-            leaverIndex
-        ];
 
         // The dispute is posted on the leaver's behalf, so its runtime never
         // records that it disputed; on the commit it would re-upload the same
@@ -36,25 +28,16 @@ describe("E2E: dispute validation / disputeInputFields / selfRemoval", function 
         // evidence period on a loaded host. The runtime does not initiate
         // for the whole case: the commit event reaches it after the post,
         // so a restore right after the commit still lets that upload out.
-        await h
-            .control(h.getPeer(leaverIndex))
-            .stub.stubSuppressDisputeInitiation()
-            .request();
+        await h.dispute.suppressDisputeInitiation([
+            h.getPeer(leaverIndex).index
+        ]);
         try {
-            await h.tamper.postTamperedDispute(leaverIndex, () => {}, {
-                forkId: disputedForkId,
-                markMalicious: false
-            });
-
-            const remainingPeerIndices = h
-                .getActiveHonestPeers()
-                .map((p) => p.index);
-
             // One dispute commits on-chain.
-            await h.assert.dispute.committedWait({
-                peersIndices: remainingPeerIndices,
-                expectedCount: 1
-            });
+            const remainingPeerIndices =
+                await h.dispute.selfRemoveViaDisputeWait({
+                    leaverIndex,
+                    forkId: disputedForkId
+                });
 
             // Nobody should kill a valid self-removal dispute.
             await h.event.waitWhileEventCountsStayAtMost(

@@ -1,10 +1,9 @@
-import { expect } from "chai";
-import { ethers } from "ethers";
-
 import { Status } from "@/types";
 import { P2PManagerFixture } from "@test/fixtures/P2PManagerFixture";
 import { slotAccountIndex } from "@test/harness/core/slotAccounts";
 import { waitFor } from "@test/utils/waitFor";
+import { expect } from "chai";
+import { ethers } from "ethers";
 
 describe("OpenChannelNegotiationService", function () {
     let fixture: P2PManagerFixture;
@@ -22,6 +21,102 @@ describe("OpenChannelNegotiationService", function () {
 
     afterEach(async function () {
         await fixture.cleanup();
+    });
+
+    it("characterizes selector commitment admission", async function () {
+        const result = await fixture
+            .control()
+            .p2pManagerProbe.probeCommitmentComparison(
+                fixture.address(1),
+                "selector"
+            )
+            .request();
+        expect(result.admitted).to.equal(false);
+        expect(result.active).to.equal(true);
+        expect(result.threw).to.equal(false);
+    });
+
+    it("characterizes advertiser commitment admission", async function () {
+        const result = await fixture
+            .control()
+            .p2pManagerProbe.probeCommitmentComparison(
+                fixture.address(1),
+                "advertiser"
+            )
+            .request();
+        expect(result.admitted).to.equal(false);
+        expect(result.active).to.equal(true);
+        expect(result.threw).to.equal(false);
+    });
+
+    it("characterizes absent commitment admission", async function () {
+        const result = await fixture
+            .control()
+            .p2pManagerProbe.probeCommitmentComparison(
+                fixture.address(1),
+                "absent"
+            )
+            .request();
+        expect(result.admitted).to.equal(false);
+        expect(result.active).to.equal(false);
+        expect(result.threw).to.equal(false);
+    });
+
+    it("characterizes malformed commitment admission", async function () {
+        const result = await fixture
+            .control()
+            .p2pManagerProbe.probeCommitmentComparison(
+                fixture.address(1),
+                "malformed"
+            )
+            .request();
+        expect(result.admitted).to.equal(false);
+        expect(result.active).to.equal(false);
+        expect(result.threw).to.equal(true);
+    });
+
+    it("rejects zero local opening balance before installing an attempt", async function () {
+        const h = fixture.getHarness();
+        const result = await h.execOnHost(
+            h.getPeer(0),
+            async (sm, match) => {
+                const service =
+                    sm.p2pManager.localRpc.openChannelNegotiationService;
+                let message = "";
+                try {
+                    await service.initMatchedNegotiation(match, {
+                        balance: { amount: 0n, data: "0x1234" }
+                    });
+                } catch (error) {
+                    message =
+                        error instanceof Error ? error.message : String(error);
+                }
+                return { message, active: !!service.state.attempt };
+            },
+            {
+                peerAddress: fixture.address(1),
+                selectorAddress: fixture.address(0),
+                advertiserAddress: fixture.address(1),
+                attemptNonce: ethers.id("zero-local-attempt"),
+                selectorChallenge: ethers.id("zero-local-selector"),
+                advertiserChallenge: ethers.id("zero-local-advertiser")
+            }
+        );
+        expect(result.message).to.equal(
+            "local opening balance must be greater than zero"
+        );
+        expect(result.active).to.equal(false);
+    });
+
+    it("blacklists zero remote opening balance and clears its unsigned attempt", async function () {
+        const result = await fixture
+            .control()
+            .p2pManagerProbe.probeInvalidNegotiationAmount(true)
+            .request();
+        expect(result.error).to.equal("Invalid opening balance");
+        expect(result.peerBlacklisted).to.equal(true);
+        expect(result.channelId).to.equal(ethers.ZeroHash);
+        expect(result.status).to.equal(Status.DISCOVERING);
     });
 
     it("replays an early committed request and clears an unsigned abandoned attempt", async function () {

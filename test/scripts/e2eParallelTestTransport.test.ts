@@ -1,10 +1,10 @@
 // @spec-test-coverage-ignore: developer test-orchestration tooling; not protocol behavior, no specification or implementation IDs apply
-import { expect } from "chai";
-import dgram from "dgram";
 import {
     createLocalDhtNetwork,
     type LocalDhtNetwork
 } from "../fixtures/distributed/testTransport";
+import { expect } from "chai";
+import dgram from "dgram";
 
 type DhtNode = {
     ready(): Promise<void>;

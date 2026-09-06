@@ -23,6 +23,8 @@ Hook composition/merging utilities for integrator event hooks.
 
 ## Key design decisions
 
+Error text delegates to the dependency-free errorMessage helper. Existing catch policy, stack fields, log messages and error propagation remain at this call site. See [P2pEventHooksUtils.ts](../../../../../../src/utils/P2pEventHooksUtils.ts#L16).
+
 _None — the file is declarative/mechanical; behavior-shaping decisions live with its consumers._
 
 ## Inputs, outputs, state, and side effects
@@ -85,3 +87,5 @@ normal automation. This contributes to
 [`REQ-TJOIN-7-NNGTAY`](../../../../specification/peer-communication/targeted-channel-join.md#req-tjoin-7-nngtay).
 
 - Consumers per the views.
+
+Shared operation owners: [errorMessage.ts.md](errorMessage.ts.md).

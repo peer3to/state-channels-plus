@@ -1,9 +1,8 @@
+import { startLocalDiscoveryRelayHub } from "./localDiscoveryRelayHub.mjs";
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-
-import { startLocalDiscoveryRelayHub } from "./localDiscoveryRelayHub.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const projectRoot = path.resolve(__dirname, "../..");

@@ -1,5 +1,3 @@
-import { expect } from "chai";
-
 import {
     convertEthersValue,
     createEthersResultProxy
@@ -9,6 +7,7 @@ import {
     EthersResultProxyContractFixture,
     EthersResultProxyEventLog
 } from "@test/fixtures/EthersResultProxyFixture";
+import { expect } from "chai";
 
 describe("EthersResultProxy", function () {
     it("recursively converts Results in arrays and plain objects while retaining clean branches", function () {

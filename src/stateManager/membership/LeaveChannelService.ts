@@ -1,7 +1,8 @@
+import { Block } from "@/models";
 import type { ParticipantChanges } from "@/stateManager/block/SnapshotAssemblyService";
 import type StateManager from "@/stateManager/StateManager";
-import { Block } from "@/models";
 import { Status } from "@/types";
+import { isCommittedParticipantStatus } from "@/types/flags";
 import type { Address, ForkId } from "@/types/types";
 import { addressesEqual, DetachedPromises, Logger } from "@/utils";
 import { config } from "@/utils/config";
@@ -32,11 +33,6 @@ export type LeaveChannelState = {
     phase: LeavePhase;
     leaveTurnEmitted: boolean;
 };
-
-const COMMITTED_STATUSES = new Set<Status>([
-    Status.PENDING_PARTICIPANT,
-    Status.PARTICIPATING
-]);
 
 /** Owns the terminal leave operation for one runtime. */
 export default class LeaveChannelService {
@@ -94,7 +90,7 @@ export default class LeaveChannelService {
         };
         this.operation = operation;
 
-        if (!COMMITTED_STATUSES.has(this.stateManager.status)) {
+        if (!isCommittedParticipantStatus(this.stateManager.status)) {
             operation.resolve();
             return operation.promise;
         }
@@ -184,7 +180,7 @@ export default class LeaveChannelService {
         if (
             remainsLocal &&
             sm.forkId !== operation.forkId &&
-            COMMITTED_STATUSES.has(sm.status)
+            isCommittedParticipantStatus(sm.status)
         ) {
             operation.forkId = sm.forkId;
             operation.ingestedBlockCount = 0;

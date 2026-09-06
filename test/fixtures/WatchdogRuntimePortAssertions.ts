@@ -1,17 +1,16 @@
 // @spec-test-coverage-ignore: shared watchdog runtime-port assertion exercised by the mapped test declarations
-import { expect } from "chai";
-import { randomUUID } from "node:crypto";
-import { BroadcastChannel } from "node:worker_threads";
-
 import { sleep } from "@/utils";
-import { setupWatchdogP2pInstance } from "@test/fixtures/RuntimeTransportModesFixture";
 import {
     WATCHDOG_WORKER_DELAY_ERROR_THRESHOLD_MS,
     WATCHDOG_WORKER_ORIGINAL_ERROR,
     WATCHDOG_WORKER_TRIPPED_DELAY_MS,
     type WatchdogWorkerMode
 } from "@test/evm/workers/watchdogContractExecutorWorkerCore";
+import { setupWatchdogP2pInstance } from "@test/fixtures/RuntimeTransportModesFixture";
 import { waitFor } from "@test/utils/waitFor";
+import { expect } from "chai";
+import { randomUUID } from "node:crypto";
+import { BroadcastChannel } from "node:worker_threads";
 
 const WATCHDOG_MESSAGE = `Event loop delay ${WATCHDOG_WORKER_TRIPPED_DELAY_MS}ms exceeded configured threshold ${WATCHDOG_WORKER_DELAY_ERROR_THRESHOLD_MS}ms`;
 

@@ -1,6 +1,6 @@
 // @spec-test-coverage-ignore: browser page script for the WebRTC smokes; evidence is mapped from run-worker-contract-executor.mjs
-import WebRTCSetupService from "../../src/rpc/services/WebRTCSetup/WebRTCSetupService.ts";
 import { installWebRTCMainThreadBridge } from "../../src/rpc/services/WebRTCSetup/connection/WebRTCMainThreadBridge.ts";
+import WebRTCSetupService from "../../src/rpc/services/WebRTCSetup/WebRTCSetupService.ts";
 import { TransportType } from "../../src/transport/TransportType.ts";
 
 const MAIN_A_ADDRESS = "0x0000000000000000000000000000000000000001";

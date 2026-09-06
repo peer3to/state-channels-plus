@@ -1,8 +1,8 @@
 // @spec-test-coverage-ignore: shared live fork-switch staging for mapped reduction tests
-import { expect } from "chai";
 import type { MathPeerTestHarness } from "./MathPeerTestHarness";
-import { waitFor } from "@test/utils/waitFor";
 import type { ForkId } from "@/types/types";
+import { waitFor } from "@test/utils/waitFor";
+import { expect } from "chai";
 
 export async function assertLiveForkSwitch(
     h: MathPeerTestHarness,
@@ -223,10 +223,7 @@ export async function assertRefusalAfterLiveForkSwitch(
     const { sourceForkId } = await h.scenario.stageReducibleDisputedFork({
         disputingPeerIndices: [2, 3],
         beforeDispute: async () => {
-            await h
-                .control(h.getPeer(0))
-                .stub.stubSuppressDisputeInitiation()
-                .request();
+            await h.dispute.suppressDisputeInitiation([h.getPeer(0).index]);
         }
     });
     const target = h.getPeer(0);

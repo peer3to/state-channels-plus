@@ -9,4 +9,5 @@ This subsystem owns caller-topic lobby admission and exclusive two-peer matching
 - [LobbyMatchingRpcMethods.ts](./LobbyMatchingRpcMethods.ts.md)
 - [LobbyMatchingService.ts](./LobbyMatchingService.ts.md)
 - [LobbyMatchingTypes.ts](./LobbyMatchingTypes.ts.md)
+- [LobbyMatchingValidation.ts](./LobbyMatchingValidation.ts.md)
 - [LobbyRpcAdmissionGuard.ts](./LobbyRpcAdmissionGuard.ts.md)

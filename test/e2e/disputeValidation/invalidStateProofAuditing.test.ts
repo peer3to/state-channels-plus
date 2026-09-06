@@ -1,12 +1,12 @@
-import { Codec, Type, hash } from "@/utils";
+import { hexString } from "../../factory";
 import {
     DisputeFraudProofType,
     toSolidityDisputeFraudProofType
 } from "@/types/sol-enums";
-import { DisputeAuditingDataStruct } from "@typechain-types/contracts/V1/types/DisputeTypes";
+import { Codec, Type, hash } from "@/utils";
 import { MathTestSession as TestSession } from "@test/harness";
+import { DisputeAuditingDataStruct } from "@typechain-types/contracts/V1/types/DisputeTypes";
 import { expect } from "chai";
-import { hexString } from "../../factory";
 
 describe("E2E: dispute validation / invalidStateProofAuditing", function () {
     it("[calldata posted] auditingData.latestFinalizedStateStateMachineState = random → proof author slashed; valid dispute resolves", async function () {

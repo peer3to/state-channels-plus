@@ -1,3 +1,5 @@
+import { config, isNodeRuntime } from "../../config";
+import { formatTimeFromSeconds } from "../formatUtils";
 import {
     LogEntry,
     Logger,
@@ -5,17 +7,17 @@ import {
     LogLevel,
     SharedLoggerContext
 } from "../Logger";
+import type { LogStore } from "../logStore";
 import type {
     EventLoopDelayDetails,
     PerformanceMonitorInternalOptions,
     PerformanceSampleSource
 } from "../performanceMonitorInternal";
+import { reportPerformanceSample } from "../performanceMonitorInternal";
 import { NodeLogUploader } from "./NodeLogUploader";
 import type { LogUploaderOptions } from "../LogUploader";
-import type { LogStore } from "../logStore";
 import { Colors } from "./colors";
-import { config, isNodeRuntime } from "../../config";
-import { formatTimeFromSeconds } from "../formatUtils";
+import { errorMessage } from "@/utils/errorMessage";
 
 /**
  * The real Node sample source: the perf_hooks delay histogram plus event-loop
@@ -169,19 +171,18 @@ export class NodeLogger extends Logger {
             level !== "debug" &&
             level !== "verbose" // don't use groups for debug/verbose since group labels are always INFO...
         ) {
-            // eslint-disable-next-line no-console
             console.groupCollapsed(formattedMessage);
-            // eslint-disable-next-line no-console
+
             console.log(formattedMeta);
-            // eslint-disable-next-line no-console
+
             console.log(logEntry.stack);
-            // eslint-disable-next-line no-console
+
             console.groupEnd();
             return;
         }
 
         // Fallback when groups are not supported
-        // eslint-disable-next-line no-console
+
         console.log(formattedMessage, formattedMeta, logEntry.stack);
     }
 
@@ -191,20 +192,8 @@ export class NodeLogger extends Logger {
         let stopped = false;
         let stopMonitor: (() => void) | undefined;
 
-        const getDelayErrorThresholdMs = () => {
-            if (options.delayErrorThresholdMs !== undefined) {
-                return options.delayErrorThresholdMs;
-            }
-            return (
-                (config.EVENT_LOOP_DELAY_ERROR_THRESHOLD_SECONDS || 0) * 1000
-            );
-        };
-
         const intervalMs = options.intervalMs ?? 1000;
         const sampleIntervalMs = options.sampleIntervalMs ?? 10;
-        const delayWarnThresholdMs = options.delayWarnThresholdMs ?? 200;
-        const utilizationWarnThreshold =
-            options.utilizationWarnThreshold ?? 0.8;
 
         // Report the running event-loop-delay peak for this thread to the
         // parallel test runner (a ##E2E_TIMING## marker on stdout, which
@@ -237,40 +226,14 @@ export class NodeLogger extends Logger {
                         })}\n`
                     );
                 }
-                const shouldWarn =
-                    utilization > utilizationWarnThreshold ||
-                    dMean > delayWarnThresholdMs ||
-                    d50 > delayWarnThresholdMs ||
-                    d90 > delayWarnThresholdMs ||
-                    d99 > delayWarnThresholdMs ||
-                    dMax > delayWarnThresholdMs;
-                const logFn = shouldWarn
-                    ? this.warn.bind(this)
-                    : this.verbose.bind(this);
-                logFn(
-                    `Event Loop mean delay: ${dMean}ms, max: ${dMax}ms, utilization: ${utilization}`,
-                    {
-                        runtime: "node",
-                        dMean,
-                        d50,
-                        d90,
-                        d99,
-                        dMax,
-                        utilization
-                    }
+                const details = reportPerformanceSample(
+                    this,
+                    { dMean, d50, d90, d99, dMax, utilization },
+                    options,
+                    "node"
                 );
-                const delayErrorThresholdMs = getDelayErrorThresholdMs();
-                if (delayErrorThresholdMs > 0 && dMax > delayErrorThresholdMs) {
-                    const details: EventLoopDelayDetails = {
-                        runtime: "node",
-                        dMean,
-                        d50,
-                        d90,
-                        d99,
-                        dMax,
-                        utilization,
-                        delayErrorThresholdMs
-                    };
+                if (details) {
+                    const { delayErrorThresholdMs } = details;
                     stopped = true;
                     stopMonitor?.();
                     const error = new Error(
@@ -301,10 +264,7 @@ export class NodeLogger extends Logger {
                 .catch((error) => {
                     if (stopped) return;
                     this.warn("Event loop performance monitoring unavailable", {
-                        error:
-                            error instanceof Error
-                                ? error.message
-                                : String(error)
+                        error: errorMessage(error)
                     });
                 });
         }

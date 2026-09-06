@@ -1,16 +1,16 @@
-import { Buffer } from "buffer";
-import ContractExecutor from "../ContractExecutor";
 import { createEvm } from "../../EvmFactory";
-import { config, createConfig } from "@/utils/config";
-import { createLogger } from "@platform/createLogger";
-import type { Logger } from "@/utils";
-import type { PerformanceMonitorInternalOptions } from "@/utils/logging/performanceMonitorInternal";
-import { serializeError } from "@/evm/p2pRuntime/errorWire";
+import ContractExecutor from "../ContractExecutor";
 import type {
     ContractExecutorRequestPayload,
     WorkerHostMessage,
     WorkerRequestMessage
 } from "./protocol";
+import { serializeError } from "@/evm/p2pRuntime/errorWire";
+import type { Logger } from "@/utils";
+import { config, createConfig } from "@/utils/config";
+import type { PerformanceMonitorInternalOptions } from "@/utils/logging/performanceMonitorInternal";
+import { createLogger } from "@platform/createLogger";
+import { Buffer } from "buffer";
 
 const workerGlobal = globalThis as unknown as {
     Buffer?: typeof Buffer;

@@ -31,6 +31,8 @@ The inline signer facade: local key-backed signing plus the join-collection entr
 
 ## Key design decisions
 
+Lobby input checks delegate to the shared topic/timeout validators, then the application state machine checks positive balance. Validation order and the original messages stay unchanged. See [LocalP2pSigner.ts](../../../../../../../src/evm/signer/LocalP2pSigner.ts#L283).
+
 1. **One facade for signing + protocol collection** so integrators never touch services directly.
 2. **Host-owned composition** keeps live profiles, attempts, timers, and retry state out of the runtime port.
 
@@ -48,8 +50,8 @@ The inline signer facade: local key-backed signing plus the join-collection entr
 A file may contribute to several requirements; this report describes the contribution and never
 claims complete conformance for a requirement that depends on other files.
 
-| Source file                                                                | Specification IDs                                                                            |
-| -------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------- |
+| Source file                                                                | Specification IDs                                                                                                                                                                                                                                                                                                                      |
+| -------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | [LocalP2pSigner.ts](../../../../../../../src/evm/signer/LocalP2pSigner.ts) | [`REQ-ID-3-KR0BE3`](../../../../../specification/protocol-model/identity.md#req-id-3-kr0be3), [`REQ-TJOIN-6-0HEVYH`](../../../../../specification/peer-communication/targeted-channel-join.md#req-tjoin-6-0hevyh), [`REQ-TJOIN-7-NNGTAY`](../../../../../specification/peer-communication/targeted-channel-join.md#req-tjoin-7-nngtay) |
 
 ## Assumptions, dependencies, trust boundaries, and limits
@@ -94,10 +96,10 @@ connect and membership operations while terminal leave is pending. Its internal 
 state manager service. That route is internal to `P2pInstance.leaveChannel`; calling it directly waits for
 settled removal but does not dispose the outer runtime. These boundaries implement [`REQ-TJOIN-6-0HEVYH`](../../../../../specification/peer-communication/targeted-channel-join.md#req-tjoin-6-0hevyh) and contribute to [`REQ-TJOIN-7-NNGTAY`](../../../../../specification/peer-communication/targeted-channel-join.md#req-tjoin-7-nngtay).
 
-| Requirement / invariant | Implementation status | Evidence | Gap / divergence |
-| --- | --- | --- | --- |
-| [`REQ-TJOIN-6-0HEVYH`](../../../../../specification/peer-communication/targeted-channel-join.md#req-tjoin-6-0hevyh) | Covered | **Here:** normalized different-ID rejection occurs before clear/set and the public setter is absent. **Other files:** the worker protocol and host expose no setter request. | None. |
-| [`REQ-TJOIN-7-NNGTAY`](../../../../../specification/peer-communication/targeted-channel-join.md#req-tjoin-7-nngtay) | Covered | **Here:** leave delegates to the single service operation and channel or membership work is gated while it is active. **Other files:** the leave service owns progress and the instance owns terminal disposal. | None. |
+| Requirement / invariant                                                                                             | Implementation status | Evidence                                                                                                                                                                                                        | Gap / divergence |
+| ------------------------------------------------------------------------------------------------------------------- | --------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------- |
+| [`REQ-TJOIN-6-0HEVYH`](../../../../../specification/peer-communication/targeted-channel-join.md#req-tjoin-6-0hevyh) | Covered               | **Here:** normalized different-ID rejection occurs before clear/set and the public setter is absent. **Other files:** the worker protocol and host expose no setter request.                                    | None.            |
+| [`REQ-TJOIN-7-NNGTAY`](../../../../../specification/peer-communication/targeted-channel-join.md#req-tjoin-7-nngtay) | Covered               | **Here:** leave delegates to the single service operation and channel or membership work is gated while it is active. **Other files:** the leave service owns progress and the instance owns terminal disposal. | None.            |
 
 - [identity.md](../../../../../specification/protocol-model/identity.md), [P2pRuntimeHost](../p2pRuntime/P2pRuntimeHost.ts.md).
 
@@ -111,3 +113,5 @@ normalization copy, or lifecycle engine. `joinLobby` remains a distinct wrapper.
 Component obligations use [`UNIT-TEST-LOCAL-P2P-SIGNER-1-Q80VPW`](LocalP2pSigner.ts.md#unit-test-local-p2p-signer-1-q80vpw): `.P1` terminal targeted `false` without
 implicit rematch, `.P2` fresh explicit same-ID pre-sync retry, plus separate disposed-observer and committed
 preservation permutations. See [`REQ-TJOIN-1-5VGR1F`](../../../../../specification/peer-communication/targeted-channel-join.md#req-tjoin-1-5vgr1f)–[`REQ-TJOIN-5-Q795M7`](../../../../../specification/peer-communication/targeted-channel-join.md#req-tjoin-5-q795m7).
+
+Shared operation owners: [errorMessage.ts.md](../../utils/errorMessage.ts.md), [bytes32.ts.md](../../utils/bytes32.ts.md), [ADiamondStateMachine.ts.md](../../ADiamondStateMachine.ts.md).

@@ -1,7 +1,7 @@
 // @spec-test-coverage-ignore: shared ABI assertions; executable evidence is mapped from the owning unit tests
-import { ethers, Fragment, InterfaceAbi } from "ethers";
 import { fragmentKey } from "@/utils/contractAbi";
 import { errorAbis } from "@/utils/GeneratedArtifacts";
+import { ethers, Fragment, InterfaceAbi } from "ethers";
 
 export function abiFragments(abi: InterfaceAbi): readonly Fragment[] {
     return ethers.Interface.from(abi).fragments;

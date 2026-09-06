@@ -27,6 +27,8 @@ post timing, and the subjective agreement window (live only, never evidence).
 
 ## Key design decisions
 
+Failed time-check metadata moves to LoggerUtils with the already-captured now value. Validation thresholds, strategy instanceof policy and return values remain here. See [ValidationService.ts](../../../../../../../src/stateManager/ingest/ValidationService.ts#L524).
+
 1. **Every predicate against one pre-state** under the caller's mutex ([`REQ-BLOCK-PIPE-2-PCXNT6`](../../../../../specification/block-progression/block-processing.md#req-block-pipe-2-pcxnt6)).
 2. **Objective time checks run the exact fraud-proof struct through the mirrored predicate** — the check and the future proof cannot disagree ([`REQ-MIRROR-1-XCY9CB`](../../../../../specification/enforcement/local-mirror.md#req-mirror-1-xcy9cb)).
 3. **Retroactive legitimization:** a failing timestamp first triggers predecessor-calldata recovery and a re-run — an on-chain post can grant the window that makes it valid.

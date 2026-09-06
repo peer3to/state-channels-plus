@@ -1,5 +1,5 @@
-import { MathTestSession as TestSession } from "@test/harness";
 import { hash as randomHash } from "@test/factory";
+import { MathTestSession as TestSession } from "@test/harness";
 import { expect } from "chai";
 import { ethers } from "ethers";
 

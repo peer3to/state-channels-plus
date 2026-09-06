@@ -24,6 +24,8 @@ network transport).
 
 ## Key design decisions
 
+Frame delivery inherits the identical base onMessage implementation; connection and close behavior remain here. See [LocalTransport.ts](../../../../../../src/transport/LocalTransport.ts#L6).
+
 1. **Untrusted despite being local** — test peers exercise the real trust boundary.
 
 ## Inputs, outputs, state, and side effects

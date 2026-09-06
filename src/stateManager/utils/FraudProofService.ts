@@ -1,5 +1,10 @@
-import Storage from "@/storage";
 import { Block, StateSnapshot } from "@/models";
+import Storage from "@/storage";
+import { FraudProofType, toSolidityFraudProofType } from "@/types/sol-enums";
+import { Address, Bytes, Hash, Signature } from "@/types/types";
+import { Logger } from "@/utils";
+import { Codec, FraudStruct } from "@/utils/Codec";
+import { LoggerUtils } from "@/utils/LoggerUtils";
 import {
     MessageBlockStruct,
     SignedBlockStruct
@@ -12,11 +17,6 @@ import {
     ForgedInboundMessageBlockProofStruct
 } from "@typechain-types/contracts/V1/types/FraudProofTypes";
 import { FraudProofStruct } from "@typechain-types/contracts/V1/types/ProofTypes";
-import { Address, Bytes, Hash, Signature } from "@/types/types";
-import { Logger } from "@/utils";
-import { Codec, FraudStruct } from "@/utils/Codec";
-import { FraudProofType, toSolidityFraudProofType } from "@/types/sol-enums";
-import { LoggerUtils } from "@/utils/LoggerUtils";
 
 const createEmptySignedBlock = (): SignedBlockStruct => ({
     encodedBlock: "0x",

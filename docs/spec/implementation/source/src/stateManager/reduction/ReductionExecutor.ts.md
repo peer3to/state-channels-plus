@@ -27,6 +27,8 @@ convergence), install-locally-then-submit-detached.
 
 ## Key design decisions
 
+Error text delegates to the dependency-free errorMessage helper. Existing catch policy, stack fields, log messages and error propagation remain at this call site. See [ReductionExecutor.ts](../../../../../../../src/stateManager/reduction/ReductionExecutor.ts#L1).
+
 1. **Install before submit.** The local fork transition happens once the deterministic result is known; the transaction is detached — another reducer's identical result is convergence, not conflict ([`REQ-DISPUTE-PIPE-6-6FZB9M`](../../../../../specification/disputes/dispute-processing.md#req-dispute-pipe-6-6fzb9m)).
 2. **Chain-backed dispute set only:** missing events are recovered by bounded targeted queries before any reduce ([`REQ-DISPUTE-PIPE-3-PHE3SQ`](../../../../../specification/disputes/dispute-processing.md#req-dispute-pipe-3-phe3sq) input discipline).
 3. **Kill-period memoization is one-directional:** 'expired' is terminal; 'not yet' rechecks.
@@ -94,3 +96,5 @@ Exact test evidence is mapped against these IDs in the verification test reports
 # Terminal leave contribution
 
 After a settled self-removal reduction installs a successor where the leaving signer is `SYNCED`, the removed runtime does not submit a redundant reduction transaction. This prevents terminal disposal from interrupting an obsolete provider transaction while remaining participants retain normal reduction submission. This contributes to [`REQ-LIF-10-QR8NQ9`](../../../../../specification/settlement/lifecycle.md#req-lif-10-qr8nq9).
+
+Shared operation owners: [errorMessage.ts.md](../../utils/errorMessage.ts.md).

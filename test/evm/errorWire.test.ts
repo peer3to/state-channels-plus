@@ -1,6 +1,5 @@
-import { expect } from "chai";
-
 import { deserializeError, serializeError } from "@/evm/p2pRuntime/errorWire";
+import { expect } from "chai";
 
 describe("errorWire", function () {
     it("keeps the original error when its metadata toJSON throws", function () {

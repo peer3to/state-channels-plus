@@ -1,4 +1,5 @@
-import { assertRefusalAfterLiveForkSwitch } from "@test/fixtures/ReductionForkSwitchStaging";
+import type { Hash } from "@/types/types";
+import { Codec, hash, Type } from "@/utils";
 import {
     assertDisputeRefreshPolicy,
     assertBackgroundDisputeFailure
@@ -7,11 +8,10 @@ import {
     assertAdmittedBlockPrecedesDispute,
     assertBlockWorkAfterDisputeRollback
 } from "@test/fixtures/DisputeSigningStaging";
+import { assertRefusalAfterLiveForkSwitch } from "@test/fixtures/ReductionForkSwitchStaging";
+import { MathTestSession as TestSession } from "@test/harness";
 import { expect } from "chai";
 import { ZeroAddress } from "ethers";
-import { Codec, hash, Type } from "@/utils";
-import type { Hash } from "@/types/types";
-import { MathTestSession as TestSession } from "@test/harness";
 
 describe("Unit: DisputeManager", function () {
     it("inline background fraud dispute reports an unexpected recovery error to top-level handling", async function () {
@@ -207,10 +207,7 @@ describe("Unit: DisputeManager", function () {
                 },
                 { forkId },
                 {
-                    timeoutMs:
-                        h.event.protocolEventTimeoutMs({
-                            withFirstBlockGrace: true
-                        }) * 2
+                    timeoutMs: h.event.hostExecTimeoutMs()
                 }
             );
 
@@ -286,10 +283,7 @@ describe("Unit: DisputeManager", function () {
                 },
                 { forkId },
                 {
-                    timeoutMs:
-                        h.event.protocolEventTimeoutMs({
-                            withFirstBlockGrace: true
-                        }) * 2
+                    timeoutMs: h.event.hostExecTimeoutMs()
                 }
             );
 
@@ -435,10 +429,7 @@ describe("Unit: DisputeManager", function () {
                 },
                 { forkId },
                 {
-                    timeoutMs:
-                        h.event.protocolEventTimeoutMs({
-                            withFirstBlockGrace: true
-                        }) * 2
+                    timeoutMs: h.event.hostExecTimeoutMs()
                 }
             );
 
@@ -777,10 +768,7 @@ describe("Unit: DisputeManager", function () {
                     },
                     { forkId },
                     {
-                        timeoutMs:
-                            h.event.protocolEventTimeoutMs({
-                                withFirstBlockGrace: true
-                            }) * 2
+                        timeoutMs: h.event.hostExecTimeoutMs()
                     }
                 );
                 await laggingCtl.stub.restoreChainLogQueries().request();
@@ -860,10 +848,7 @@ describe("Unit: DisputeManager", function () {
                 },
                 { forkId },
                 {
-                    timeoutMs:
-                        h.event.protocolEventTimeoutMs({
-                            withFirstBlockGrace: true
-                        }) * 2
+                    timeoutMs: h.event.hostExecTimeoutMs()
                 }
             );
 
@@ -901,10 +886,7 @@ describe("Unit: DisputeManager", function () {
                 },
                 { forkId },
                 {
-                    timeoutMs:
-                        h.event.protocolEventTimeoutMs({
-                            withFirstBlockGrace: true
-                        }) * 2
+                    timeoutMs: h.event.hostExecTimeoutMs()
                 }
             );
 
@@ -945,10 +927,7 @@ describe("Unit: DisputeManager", function () {
                 },
                 { forkId },
                 {
-                    timeoutMs:
-                        h.event.protocolEventTimeoutMs({
-                            withFirstBlockGrace: true
-                        }) * 2
+                    timeoutMs: h.event.hostExecTimeoutMs()
                 }
             );
 
@@ -992,10 +971,7 @@ describe("Unit: DisputeManager", function () {
                 },
                 { forkId },
                 {
-                    timeoutMs:
-                        h.event.protocolEventTimeoutMs({
-                            withFirstBlockGrace: true
-                        }) * 2
+                    timeoutMs: h.event.hostExecTimeoutMs()
                 }
             );
 
@@ -1057,10 +1033,7 @@ describe("Unit: DisputeManager", function () {
                 },
                 { forkId },
                 {
-                    timeoutMs:
-                        h.event.protocolEventTimeoutMs({
-                            withFirstBlockGrace: true
-                        }) * 2
+                    timeoutMs: h.event.hostExecTimeoutMs()
                 }
             );
 
@@ -1102,10 +1075,7 @@ describe("Unit: DisputeManager", function () {
                 },
                 { forkId },
                 {
-                    timeoutMs:
-                        h.event.protocolEventTimeoutMs({
-                            withFirstBlockGrace: true
-                        }) * 2
+                    timeoutMs: h.event.hostExecTimeoutMs()
                 }
             );
 
@@ -1150,10 +1120,7 @@ describe("Unit: DisputeManager", function () {
                 },
                 { forkId },
                 {
-                    timeoutMs:
-                        h.event.protocolEventTimeoutMs({
-                            withFirstBlockGrace: true
-                        }) * 2
+                    timeoutMs: h.event.hostExecTimeoutMs()
                 }
             );
 
@@ -1194,10 +1161,7 @@ describe("Unit: DisputeManager", function () {
                 },
                 { forkId },
                 {
-                    timeoutMs:
-                        h.event.protocolEventTimeoutMs({
-                            withFirstBlockGrace: true
-                        }) * 2
+                    timeoutMs: h.event.hostExecTimeoutMs()
                 }
             );
 
@@ -1245,10 +1209,7 @@ describe("Unit: DisputeManager", function () {
                 },
                 { forkId },
                 {
-                    timeoutMs:
-                        h.event.protocolEventTimeoutMs({
-                            withFirstBlockGrace: true
-                        }) * 2
+                    timeoutMs: h.event.hostExecTimeoutMs()
                 }
             );
             expect(first.rejected).to.contain(
@@ -1268,10 +1229,7 @@ describe("Unit: DisputeManager", function () {
                 },
                 { forkId },
                 {
-                    timeoutMs:
-                        h.event.protocolEventTimeoutMs({
-                            withFirstBlockGrace: true
-                        }) * 2
+                    timeoutMs: h.event.hostExecTimeoutMs()
                 }
             );
             expect(second.disputed).to.equal(true);
@@ -1316,10 +1274,7 @@ describe("Unit: DisputeManager", function () {
                 },
                 { forkId },
                 {
-                    timeoutMs:
-                        h.event.protocolEventTimeoutMs({
-                            withFirstBlockGrace: true
-                        }) * 2
+                    timeoutMs: h.event.hostExecTimeoutMs()
                 }
             );
             try {
@@ -1371,10 +1326,7 @@ describe("Unit: DisputeManager", function () {
                 },
                 { forkId },
                 {
-                    timeoutMs:
-                        h.event.protocolEventTimeoutMs({
-                            withFirstBlockGrace: true
-                        }) * 2
+                    timeoutMs: h.event.hostExecTimeoutMs()
                 }
             );
             let delivered: number | null = null;
@@ -1439,10 +1391,7 @@ describe("Unit: DisputeManager", function () {
                 },
                 { forkId },
                 {
-                    timeoutMs:
-                        h.event.protocolEventTimeoutMs({
-                            withFirstBlockGrace: true
-                        }) * 2
+                    timeoutMs: h.event.hostExecTimeoutMs()
                 }
             );
 
@@ -1477,10 +1426,7 @@ describe("Unit: DisputeManager", function () {
                 },
                 { forkId },
                 {
-                    timeoutMs:
-                        h.event.protocolEventTimeoutMs({
-                            withFirstBlockGrace: true
-                        }) * 2
+                    timeoutMs: h.event.hostExecTimeoutMs()
                 }
             );
 
@@ -1550,10 +1496,7 @@ describe("Unit: DisputeManager", function () {
                 },
                 { forkId },
                 {
-                    timeoutMs:
-                        h.event.protocolEventTimeoutMs({
-                            withFirstBlockGrace: true
-                        }) * 2
+                    timeoutMs: h.event.hostExecTimeoutMs()
                 }
             );
             await probe.waitUntilHeld();
@@ -1582,10 +1525,7 @@ describe("Unit: DisputeManager", function () {
                 },
                 { forkId },
                 {
-                    timeoutMs:
-                        h.event.protocolEventTimeoutMs({
-                            withFirstBlockGrace: true
-                        }) * 2
+                    timeoutMs: h.event.hostExecTimeoutMs()
                 }
             );
             await h.rpcStub.waitUntilDisputeMutexContended(peer.index);
@@ -1644,10 +1584,7 @@ describe("Unit: DisputeManager", function () {
                 },
                 { forkId },
                 {
-                    timeoutMs:
-                        h.event.protocolEventTimeoutMs({
-                            withFirstBlockGrace: true
-                        }) * 2
+                    timeoutMs: h.event.hostExecTimeoutMs()
                 }
             );
 
@@ -1697,10 +1634,7 @@ describe("Unit: DisputeManager", function () {
                 },
                 {},
                 {
-                    timeoutMs:
-                        h.event.protocolEventTimeoutMs({
-                            withFirstBlockGrace: true
-                        }) * 2
+                    timeoutMs: h.event.hostExecTimeoutMs()
                 }
             );
 
@@ -1740,10 +1674,7 @@ describe("Unit: DisputeManager", function () {
                 },
                 {},
                 {
-                    timeoutMs:
-                        h.event.protocolEventTimeoutMs({
-                            withFirstBlockGrace: true
-                        }) * 2
+                    timeoutMs: h.event.hostExecTimeoutMs()
                 }
             );
 
@@ -1805,10 +1736,7 @@ describe("Unit: DisputeManager", function () {
                 },
                 {},
                 {
-                    timeoutMs:
-                        h.event.protocolEventTimeoutMs({
-                            withFirstBlockGrace: true
-                        }) * 2
+                    timeoutMs: h.event.hostExecTimeoutMs()
                 }
             );
 
@@ -1855,10 +1783,7 @@ describe("Unit: DisputeManager", function () {
                 },
                 {},
                 {
-                    timeoutMs:
-                        h.event.protocolEventTimeoutMs({
-                            withFirstBlockGrace: true
-                        }) * 2
+                    timeoutMs: h.event.hostExecTimeoutMs()
                 }
             );
 
@@ -1896,10 +1821,7 @@ describe("Unit: DisputeManager", function () {
                     },
                     {},
                     {
-                        timeoutMs:
-                            h.event.protocolEventTimeoutMs({
-                                withFirstBlockGrace: true
-                            }) * 2
+                        timeoutMs: h.event.hostExecTimeoutMs()
                     }
                 );
             const first = kill();
@@ -1955,10 +1877,7 @@ describe("Unit: DisputeManager", function () {
                 },
                 { forkId },
                 {
-                    timeoutMs:
-                        h.event.protocolEventTimeoutMs({
-                            withFirstBlockGrace: true
-                        }) * 2
+                    timeoutMs: h.event.hostExecTimeoutMs()
                 }
             );
             // the park is scoped to constructDispute, so this pins that call
@@ -1968,7 +1887,7 @@ describe("Unit: DisputeManager", function () {
             // store the proof inside the window, then let the construction finish
             const validation = await h
                 .control(observer)
-                .stub.runBlockValidation(encodedBlock)
+                .validation.runBlockValidation(encodedBlock)
                 .request();
             expect(validation.fraudProofType).to.not.be.null;
 

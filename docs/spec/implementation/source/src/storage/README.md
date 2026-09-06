@@ -23,3 +23,4 @@ _Pending authoring: shared responsibility, design decisions, assumptions, cross-
 - [Storage.ts](./Storage.ts.md)
 - [TimeoutStorage.ts](./TimeoutStorage.ts.md)
 - [index.ts](./index.ts.md)
+- [keys.ts](./keys.ts.md)

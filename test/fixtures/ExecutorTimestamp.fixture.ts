@@ -1,9 +1,9 @@
 // @spec-test-coverage-ignore: real timestamp bytecode and executor assertions shared by mapped tests
-import { expect } from "chai";
-import type AContractExecutor from "@/evm/contractExecutor/AContractExecutor";
 import Clock from "@/Clock";
+import type AContractExecutor from "@/evm/contractExecutor/AContractExecutor";
 import { createContractExecutor } from "@/evm/contractExecutor/createContractExecutor";
 import { sleep } from "@/utils";
+import { expect } from "chai";
 
 export const wallSeconds = () => Math.floor(Date.now() / 1000);
 export const TIMESTAMP_INIT_CODE = "0x684260005260206000f360005260096017f3";

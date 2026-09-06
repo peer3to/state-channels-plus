@@ -1,9 +1,9 @@
-import { ErrorDescription, Signer, ethers } from "ethers";
 import { errorAbis } from "./GeneratedArtifacts";
-import { TransactionResponse } from "ethers";
+import { LoggerUtils } from "./LoggerUtils";
 import { Logger } from "./logging";
 import { ForkId } from "@/types";
-import { LoggerUtils } from "./LoggerUtils";
+import { ErrorDescription, Signer, ethers } from "ethers";
+import { TransactionResponse } from "ethers";
 
 export type RaceConditionErrorName =
     | "RaceConditionChannelAlreadyOpen"

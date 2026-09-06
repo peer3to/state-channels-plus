@@ -1,12 +1,11 @@
-import { expect } from "chai";
-
 import { DisputeFraudProofType } from "@/types/sol-enums";
+import { Bytes, Hash } from "@/types/types";
+import { Codec, Type } from "@/utils";
 import {
     DisputeTampering,
     MathTestSession as TestSession
 } from "@test/harness";
-import { Bytes, Hash } from "@/types/types";
-import { Codec, Type } from "@/utils";
+import { expect } from "chai";
 
 // dispute.input.latestInboundMessageBlockHash is validated by walking the on-chain
 // inbound chain backwards. Junk values that don't exist anywhere in the chain are
@@ -21,10 +20,7 @@ describe("E2E: dispute validation / inboundHash", function () {
 
         // Construct the honest replacement after the kill's slash is observed.
         // A pre-kill output can finalize against the smaller post-kill threshold.
-        await h
-            .control(h.getPeer(2))
-            .stub.stubSuppressDisputeInitiation()
-            .request();
+        await h.dispute.suppressDisputeInitiation([h.getPeer(2).index]);
 
         await h.tamper.stubConstructDispute(0, (dispute, sm) => {
             dispute.input.latestInboundMessageBlockHash =
@@ -54,10 +50,7 @@ describe("E2E: dispute validation / inboundHash", function () {
         const forkId = h.activeForkId!;
 
         // Keep the same kill-before-replacement ordering as the random-hash case.
-        await h
-            .control(h.getPeer(2))
-            .stub.stubSuppressDisputeInitiation()
-            .request();
+        await h.dispute.suppressDisputeInitiation([h.getPeer(2).index]);
 
         await h.tamper.stubConstructDispute(0, (dispute, sm) => {
             dispute.input.latestInboundMessageBlockHash = sm.p2pManager.localRpc
@@ -201,10 +194,7 @@ describe("E2E: dispute validation / inboundHash", function () {
 
         // peer 0 never initiates -> the committed dispute is the lagging
         // peer's, while peer 0 still audits and kills for real
-        await h
-            .control(h.getPeer(0))
-            .stub.stubSuppressDisputeInitiation()
-            .request();
+        await h.dispute.suppressDisputeInitiation([h.getPeer(0).index]);
 
         await h.byzantine.submitDoubleSignBlock(attackerIndex);
 

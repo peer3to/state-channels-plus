@@ -1,10 +1,10 @@
-import { parentPort } from "node:worker_threads";
-import { createContractExecutorWorkerHost } from "../worker/ContractExecutorWorkerHostCore";
 import { onUnhandledWorkerError } from "../../p2pRuntime/node/P2pRuntimeWorkerRuntime";
+import { createContractExecutorWorkerHost } from "../worker/ContractExecutorWorkerHostCore";
 import type {
     WorkerHostMessage,
     WorkerRequestMessage
 } from "../worker/protocol";
+import { parentPort } from "node:worker_threads";
 
 if (!parentPort) {
     throw new Error("Contract executor worker host requires a parent port");

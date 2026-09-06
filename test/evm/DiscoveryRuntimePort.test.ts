@@ -1,37 +1,19 @@
-import { expect } from "chai";
-import { ethers } from "ethers";
-
 import { Status } from "@/types";
-import { MathTestSession as TestSession } from "@test/harness";
-import { waitFor } from "@test/utils/waitFor";
-import { compareAddresses } from "@/rpc/services/openChannelNegotiation/OpenChannelNegotiationHelpers";
 import {
     addressesEqual,
     channelIdToTargetedJoinTopic,
     Codec,
-    Type
+    Type,
+    sleep
 } from "@/utils";
+import { assertClean, setup } from "@test/fixtures/DiscoveryRuntimePortStaging";
 import { TargetedChannelJoinFixture } from "@test/fixtures/TargetedChannelJoinFixture";
-import { sleep } from "@/utils";
+import { MathTestSession as TestSession } from "@test/harness";
+import { waitFor } from "@test/utils/waitFor";
+import { expect } from "chai";
+import { ethers } from "ethers";
 
 describe("connectToChannel input validation", function () {
-    const setup = async () => {
-        const h = TestSession.getHarness();
-        await h.setup(2, { autoConnect: false });
-        return { h, signer: h.peers[0].p2pInstance.p2pSigner };
-    };
-
-    const assertClean = async (
-        h: ReturnType<typeof TestSession.getHarness>
-    ) => {
-        expect(
-            await h.control(h.peers[0]).query.getChannelId().request()
-        ).to.equal(ethers.ZeroHash);
-        expect(
-            await h.control(h.peers[0]).query.getStatus().request()
-        ).to.equal(Status.NOT_OPENED);
-    };
-
     it("invalid channel ID rejects before state mutation", async function () {
         const { h, signer } = await setup();
         await expect(signer.connectToChannel("0x12")).to.be.rejectedWith(
@@ -1476,10 +1458,7 @@ describe("discovery runtime port", function () {
     it("settles joinLobby when the runtime is disposed after local signing", async function () {
         const h = TestSession.getHarness();
         await h.setup(2, { autoConnect: false });
-        const lowerIndex =
-            compareAddresses(h.peers[0].address, h.peers[1].address) < 0
-                ? 0
-                : 1;
+        const lowerIndex = h.network.lobbyRoleIndices()[0];
         const higherIndex = lowerIndex === 0 ? 1 : 0;
         const release = await h.rpcStub.holdNegotiationReply(
             higherIndex,

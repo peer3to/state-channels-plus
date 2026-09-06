@@ -25,6 +25,8 @@ dispatched frame — the last three stages of the ingress dispatch order. Subcla
 
 ## Key design decisions
 
+Error text delegates to the dependency-free errorMessage helper. Existing catch policy, stack fields, log messages and error propagation remain at this call site. See [ARpcService.ts](../../../../../../src/rpc/ARpcService.ts#L9).
+
 1. **Guards run before method-existence disclosure.** An unauthenticated probe on a gated service hits the guard consequence even for nonexistent methods, learning nothing ([#L49](../../../../../../src/rpc/ARpcService.ts#L49)).
 2. **Trusted-loopback exemption.** Guards are skipped only when `transport.isTrusted` — true solely for self-delivery ([#L50](../../../../../../src/rpc/ARpcService.ts#L50)).
 3. **Handler errors answer, they don't disconnect.** On the request path a thrown handler error returns `{ok:false}` so the caller's promise rejects while the session survives; fire-and-forget errors escalate to disconnect. A failed response send is attempted once and disconnects the transport ([#L72](../../../../../../src/rpc/ARpcService.ts#L72)).
@@ -101,3 +103,5 @@ Exact test evidence is mapped against these IDs in the verification test reports
 ## Related source reports
 
 - [guards/runGuards](./guards/runGuards.ts.md), [guards/HandshakeCompletedGuard](./guards/HandshakeCompletedGuard.ts.md), [P2PManager](../P2PManager.ts.md), [ObjectChecks](../utils/ObjectChecks.ts.md).
+
+Shared operation owners: [errorMessage.ts.md](../utils/errorMessage.ts.md).

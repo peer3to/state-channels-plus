@@ -1,20 +1,15 @@
-import { expect } from "chai";
-import { ethers } from "ethers";
-
-import { compareAddresses } from "@/rpc/services/openChannelNegotiation/OpenChannelNegotiationHelpers";
 import { sleep } from "@/utils";
 import { MathTestSession as TestSession } from "@test/harness";
 import { waitFor } from "@test/utils/waitFor";
+import { expect } from "chai";
+import { ethers } from "ethers";
 
 describe("LocalDiscoveryServer topic lifecycle", function () {
     it("redials an eligible disconnected peer while the topic remains observed and stops after leave", async function () {
         const h = TestSession.getHarness();
         await h.setup(2, { autoConnect: false });
         const topic = ethers.id("local-discovery-redial-until-leave");
-        const primaryIndex =
-            compareAddresses(h.peers[0].address, h.peers[1].address) < 0
-                ? 0
-                : 1;
+        const primaryIndex = h.network.lobbyRoleIndices()[0];
         const otherIndex = 1 - primaryIndex;
         const primary = h.peers[primaryIndex];
         const other = h.peers[otherIndex];
@@ -86,10 +81,7 @@ describe("LocalDiscoveryServer topic lifecycle", function () {
         const h = TestSession.getHarness();
         await h.setup(2, { autoConnect: false });
         const topic = ethers.id("local-discovery-blacklist-stops-redial");
-        const primaryIndex =
-            compareAddresses(h.peers[0].address, h.peers[1].address) < 0
-                ? 0
-                : 1;
+        const primaryIndex = h.network.lobbyRoleIndices()[0];
         const otherIndex = 1 - primaryIndex;
         const primary = h.peers[primaryIndex];
         const other = h.peers[otherIndex];
@@ -130,10 +122,7 @@ describe("LocalDiscoveryServer topic lifecycle", function () {
         await h.setup(2, { autoConnect: false });
         const firstTopic = ethers.id("local-discovery-dedupe-first-topic");
         const secondTopic = ethers.id("local-discovery-dedupe-second-topic");
-        const primaryIndex =
-            compareAddresses(h.peers[0].address, h.peers[1].address) < 0
-                ? 0
-                : 1;
+        const primaryIndex = h.network.lobbyRoleIndices()[0];
         const primary = h.peers[primaryIndex];
         const other = h.peers[1 - primaryIndex];
 

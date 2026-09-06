@@ -1,9 +1,8 @@
-import { expect } from "chai";
-
+import { randomAddress } from "@test/factory";
+import { PeerTestHarness } from "@test/fixtures/PeerTestHarness";
 import { MathTestSession as TestSession } from "@test/harness";
 import { DEFAULT_MATH_HARNESS_DEPLOYMENT } from "@test/harness/core/defaultMathHarnessDeployment";
-import { PeerTestHarness } from "@test/fixtures/PeerTestHarness";
-import { randomAddress } from "@test/factory";
+import { expect } from "chai";
 
 /**
  * The unified event bus, end to end through the real runtime.
@@ -108,10 +107,7 @@ describe("EventBus (worker + main thread)", function () {
                 }),
             {},
             {
-                timeoutMs:
-                    h.event.protocolEventTimeoutMs({
-                        withFirstBlockGrace: true
-                    }) * 2
+                timeoutMs: h.event.hostExecTimeoutMs()
             }
         );
 
@@ -349,10 +345,7 @@ describe("EventBus (worker + main thread)", function () {
             },
             {},
             {
-                timeoutMs:
-                    h.event.protocolEventTimeoutMs({
-                        withFirstBlockGrace: true
-                    }) * 2
+                timeoutMs: h.event.hostExecTimeoutMs()
             }
         );
 
@@ -516,10 +509,7 @@ describe("EventBus (worker + main thread)", function () {
                 }),
             {},
             {
-                timeoutMs:
-                    h.event.protocolEventTimeoutMs({
-                        withFirstBlockGrace: true
-                    }) * 2
+                timeoutMs: h.event.hostExecTimeoutMs()
             }
         );
 
@@ -591,10 +581,7 @@ describe("EventBus (worker + main thread)", function () {
                 }),
             { fenceAddress },
             {
-                timeoutMs:
-                    h.event.protocolEventTimeoutMs({
-                        withFirstBlockGrace: true
-                    }) * 2
+                timeoutMs: h.event.hostExecTimeoutMs()
             }
         );
 
@@ -798,10 +785,7 @@ describe("EventBus (worker + main thread)", function () {
                 },
                 {},
                 {
-                    timeoutMs:
-                        standalone.event.protocolEventTimeoutMs({
-                            withFirstBlockGrace: true
-                        }) * 2
+                    timeoutMs: standalone.event.hostExecTimeoutMs()
                 }
             );
             await peer.p2pInstance.dispose();
@@ -837,10 +821,7 @@ describe("EventBus (worker + main thread)", function () {
             },
             {},
             {
-                timeoutMs:
-                    h.event.protocolEventTimeoutMs({
-                        withFirstBlockGrace: true
-                    }) * 2
+                timeoutMs: h.event.hostExecTimeoutMs()
             }
         );
 
@@ -878,10 +859,7 @@ describe("EventBus (worker + main thread)", function () {
             },
             {},
             {
-                timeoutMs:
-                    h.event.protocolEventTimeoutMs({
-                        withFirstBlockGrace: true
-                    }) * 2
+                timeoutMs: h.event.hostExecTimeoutMs()
             }
         );
 

@@ -1,16 +1,16 @@
 // @spec-test-coverage-ignore: test-harness query support exercised by owning mapped test declarations
-import { ethers } from "ethers";
 
+import type { QueryService } from "./QueryService";
+import Clock from "@/Clock";
+import StateSnapshot from "@/models/StateSnapshot";
 import ARpcMethods from "@/rpc/ARpcMethods";
 import type ATransport from "@/transport/ATransport";
-import Clock from "@/Clock";
+import { Status } from "@/types/flags";
+import type { Address, ForkId, Hash, BlockHeight } from "@/types/types";
 import { Codec, Type, hash } from "@/utils";
 import { getChecksumAddress } from "@/utils/address";
-import { Status } from "@/types/flags";
-import StateSnapshot from "@/models/StateSnapshot";
-import type { Address, ForkId, Hash, BlockHeight } from "@/types/types";
-import type { QueryService } from "./QueryService";
 import { config } from "@/utils/config";
+import { ethers } from "ethers";
 
 /** Serializable inputs needed to assemble a block on top of a fork's head. */
 export interface BlockBuildingContext {

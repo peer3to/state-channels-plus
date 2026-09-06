@@ -1,12 +1,12 @@
 // @spec-test-coverage-ignore: support fixture for the mapped RpcHandler integration cases; it is not an evidence unit
-import path from "node:path";
-import type { MathStateMachine } from "@typechain-types";
 
 import type { RemoteRpcProxyType } from "@/rpc/RemoteRpcProxy";
-import { PeerTestHarness } from "@test/fixtures/PeerTestHarness";
 import type { PingPongRpc } from "@test/fixtures/customRpc/PingPongRpcManifest";
+import { PeerTestHarness } from "@test/fixtures/PeerTestHarness";
 import { DEFAULT_MATH_HARNESS_DEPLOYMENT } from "@test/harness/core/defaultMathHarnessDeployment";
 import { waitFor } from "@test/utils/waitFor";
+import type { MathStateMachine } from "@typechain-types";
+import path from "node:path";
 
 const PING_PONG_MANIFEST = path.resolve(
     __dirname,
@@ -28,7 +28,7 @@ export class RpcHandlerFixture {
             customRpcManifest: { module: PING_PONG_MANIFEST }
         });
         await this.harness.lifecycle.openChannel();
-        await this.harness.rpc.connectPeers(
+        await this.harness.network.connectPeers(
             Array.from({ length: numPeers }, (_, index) => index)
         );
         await this.harness.network.waitForP2PConnections();

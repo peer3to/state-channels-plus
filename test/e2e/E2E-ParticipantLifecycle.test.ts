@@ -1,11 +1,11 @@
-import { MathTestSession as TestSession } from "@test/harness";
-import { expect } from "chai";
-import { Status } from "@/types";
 import { Block } from "@/models";
-import { Codec, SignatureUtils, Type } from "@/utils";
+import { Status } from "@/types";
 import type { Address, Bytes } from "@/types/types";
+import { Codec, SignatureUtils, Type } from "@/utils";
+import { MathTestSession as TestSession } from "@test/harness";
 import { createOpenChannelTestObject } from "@test/test_utils/testHelpers";
 import { waitFor } from "@test/utils/waitFor";
+import { expect } from "chai";
 
 /**
  * E2E Tests for Participant Lifecycle (Exit + Join)

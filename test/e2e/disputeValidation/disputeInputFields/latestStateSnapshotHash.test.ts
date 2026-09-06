@@ -17,10 +17,9 @@ describe("E2E: dispute validation / disputeInputFields / latestStateSnapshotHash
 
                     // Construct the honest replacement after the kill is observed;
                     // an earlier output can finalize before it includes that slash.
-                    await h
-                        .control(h.getPeer(0))
-                        .stub.stubSuppressDisputeInitiation()
-                        .request();
+                    await h.dispute.suppressDisputeInitiation([
+                        h.getPeer(0).index
+                    ]);
 
                     await h.tamper.stubConstructDispute(1, (dispute, sm) => {
                         dispute.input.stateProof.milestones = [];
@@ -64,10 +63,9 @@ describe("E2E: dispute validation / disputeInputFields / latestStateSnapshotHash
 
                     // Build the honest replacement after the kill's slash is observed;
                     // a pre-kill output can finalize against the smaller threshold.
-                    await h
-                        .control(h.getPeer(0))
-                        .stub.stubSuppressDisputeInitiation()
-                        .request();
+                    await h.dispute.suppressDisputeInitiation([
+                        h.getPeer(0).index
+                    ]);
 
                     await h.tamper.stubConstructDispute(1, (d, sm) => {
                         const svc = sm.p2pManager.localRpc.dispute;

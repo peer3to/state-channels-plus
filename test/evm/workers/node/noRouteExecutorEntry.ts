@@ -1,10 +1,9 @@
 // @spec-test-coverage-ignore: Node test-worker entry exercised by the mapped no-route executor case
-import { BroadcastChannel, parentPort, workerData } from "node:worker_threads";
-import path from "node:path";
-
+import type { WatchdogWorkerData } from "./watchdogContractExecutorWorkerEntry";
 import { createContractExecutor } from "@/evm/contractExecutor/createContractExecutor";
 import { createContractExecutorWorkerFromPath } from "@/evm/contractExecutor/node/ContractExecutorWorkerRuntime";
-import type { WatchdogWorkerData } from "./watchdogContractExecutorWorkerEntry";
+import path from "node:path";
+import { BroadcastChannel, parentPort, workerData } from "node:worker_threads";
 
 /**
  * Runs one dedicated-worker executor with no detached-error route inside its

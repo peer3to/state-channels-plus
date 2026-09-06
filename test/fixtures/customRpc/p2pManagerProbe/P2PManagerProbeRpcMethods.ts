@@ -1,7 +1,4 @@
 // @spec-test-coverage-ignore: loopback endpoints for mapped P2PManager component cases
-import type P2PManager from "@/P2PManager";
-import ARpcMethods from "@/rpc/ARpcMethods";
-import type ATransport from "@/transport/ATransport";
 import type { PingPongRpc } from "../PingPongRpcManifest";
 import type {
     DispatchHeadProbe,
@@ -47,6 +44,9 @@ import type {
     LobbyExhaustionTimerProbe,
     LobbyLatePickProbe
 } from "./P2PManagerProbeService";
+import type P2PManager from "@/P2PManager";
+import ARpcMethods from "@/rpc/ARpcMethods";
+import type ATransport from "@/transport/ATransport";
 
 export class P2PManagerProbeRpcMethods extends ARpcMethods<
     P2PManager<PingPongRpc>
@@ -145,6 +145,34 @@ export class P2PManagerProbeRpcMethods extends ARpcMethods<
         return this.service.probeBulkPenalty(firstAddress, secondAddress);
     }
 
+    public probeConnectedPeerPrecedence(
+        profileAddress: string,
+        transportAddress: string
+    ) {
+        return this.service.probeConnectedPeerPrecedence(
+            profileAddress,
+            transportAddress
+        );
+    }
+
+    public probeLobbyFilterOrder(peerAddress: string) {
+        return this.service.probeLobbyFilterOrder(peerAddress);
+    }
+
+    public probeLobbyFilterBoundary(
+        peerAddress: string,
+        mode: "self" | "unknown" | "throw"
+    ) {
+        return this.service.probeLobbyFilterBoundary(peerAddress, mode);
+    }
+
+    public probeCommitmentComparison(
+        peerAddress: string,
+        mismatch: "selector" | "advertiser" | "absent" | "malformed"
+    ) {
+        return this.service.probeCommitmentComparison(peerAddress, mismatch);
+    }
+
     public probeConnectedPeerFallback(
         address: string
     ): ConnectedPeerFallbackProbe {
@@ -236,8 +264,10 @@ export class P2PManagerProbeRpcMethods extends ARpcMethods<
         return this.service.probeHolepunchLeaveBeforeSwarm();
     }
 
-    public probeHolepunchRejoinAfterLeave(): Promise<HolepunchTopicProbe> {
-        return this.service.probeHolepunchRejoinAfterLeave();
+    public probeHolepunchRejoinAfterLeave(
+        duplicate = false
+    ): Promise<HolepunchTopicProbe> {
+        return this.service.probeHolepunchRejoinAfterLeave(duplicate);
     }
 
     public probeHandshakeParticipantReadFailure(
@@ -316,8 +346,10 @@ export class P2PManagerProbeRpcMethods extends ARpcMethods<
         return this.service.probeMatchedNegotiationAdmission();
     }
 
-    public probeInvalidNegotiationAmount(): Promise<InvalidNegotiationAmountProbe> {
-        return this.service.probeInvalidNegotiationAmount();
+    public probeInvalidNegotiationAmount(
+        zeroBalance = false
+    ): Promise<InvalidNegotiationAmountProbe> {
+        return this.service.probeInvalidNegotiationAmount(zeroBalance);
     }
 
     public probeNegotiationFailure(

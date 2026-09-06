@@ -1,8 +1,8 @@
 // @spec-test-coverage-ignore: test-only lock process fixture; no SDK behavior applies
-const fs = require("fs");
 const {
     acquireHostLock
 } = require("../../../scripts/e2e-parallel/distributed/hostLock");
+const fs = require("fs");
 
 const [lockPath, mode, resumePath] = process.argv.slice(2);
 

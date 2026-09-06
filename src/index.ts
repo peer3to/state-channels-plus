@@ -9,6 +9,12 @@ import {
 } from "@/evm";
 import P2pEventHooks from "@/P2pEventHooks";
 import P2PManager from "@/P2PManager";
+
+import ARpcMethods from "@/rpc/ARpcMethods";
+import ARpcService from "@/rpc/ARpcService";
+import { HandshakeCompletedGuard } from "@/rpc/guards";
+import MainRpcService from "@/rpc/MainRpcService";
+import { ATransport } from "@/transport";
 import {
     Codec,
     DeployUtils,
@@ -17,12 +23,6 @@ import {
     config,
     getChecksumAddress
 } from "@/utils";
-
-import ARpcMethods from "@/rpc/ARpcMethods";
-import ARpcService from "@/rpc/ARpcService";
-import MainRpcService from "@/rpc/MainRpcService";
-import { HandshakeCompletedGuard } from "@/rpc/guards";
-import { ATransport } from "@/transport";
 export * from "@/rpc/services";
 export type { CustomRpcConstructor } from "@/rpc";
 

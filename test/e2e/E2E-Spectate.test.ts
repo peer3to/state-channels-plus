@@ -1,10 +1,10 @@
-import { MathTestSession as TestSession } from "@test/harness";
-import { expect } from "chai";
-import { ethers } from "ethers";
 import { Block } from "@/models";
 import { Status } from "@/types";
 import { Codec, Type } from "@/utils";
+import { MathTestSession as TestSession } from "@test/harness";
 import { waitFor } from "@test/utils/waitFor";
+import { expect } from "chai";
+import { ethers } from "ethers";
 
 /**
  * E2E Tests for Spectate Service
@@ -1007,25 +1007,8 @@ describe("E2E: Spectate Service", function () {
             // window where no peer has posted a block yet.
             const leaverIndex = 0;
             const originalForkId = h.activeForkId!;
-            await h
-                .control(h.getPeer(leaverIndex))
-                .dispute.setForceExit(true)
-                .request();
-            h.context.leftChannelPeerIndices = [
-                ...h.context.leftChannelPeerIndices,
-                leaverIndex
-            ];
-            await h.tamper.postTamperedDispute(leaverIndex, () => {}, {
-                markMalicious: false
-            });
-
-            const remainingPeerIndices = h
-                .getActiveHonestPeers()
-                .map((p) => p.index);
-            await h.assert.dispute.committedWait({
-                peersIndices: remainingPeerIndices,
-                expectedCount: 1
-            });
+            const remainingPeerIndices =
+                await h.dispute.selfRemoveViaDisputeWait({ leaverIndex });
 
             await h.dispute.resolveDisputeWait({
                 forkId: originalForkId,

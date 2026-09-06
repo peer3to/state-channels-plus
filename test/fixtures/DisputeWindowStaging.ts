@@ -1,8 +1,8 @@
 // @spec-test-coverage-ignore: real dispute admission staging shared by mapped workflow tests
+import type { MathPeerTestHarness } from "./MathPeerTestHarness";
+import { Codec, Type, hash, sleep } from "@/utils";
 import { expect } from "chai";
 import { hexlify } from "ethers";
-import { Codec, Type, hash, sleep } from "@/utils";
-import type { MathPeerTestHarness } from "./MathPeerTestHarness";
 
 export async function assertStateOnlyContribution(
     h: MathPeerTestHarness,
@@ -14,8 +14,9 @@ export async function assertStateOnlyContribution(
     const contributor = h.getPeer(1);
     // Explicit uploads own these two attempts. Prepare both before the window
     // opens, so host preparation is not part of the evidence-period budget.
-    for (const peer of h.peers)
-        await h.control(peer).stub.stubSuppressDisputeInitiation().request();
+    await h.dispute.suppressDisputeInitiation(
+        h.peers.map((peer) => peer.index)
+    );
     await h.control(opener).dispute.setForceExit(true).request();
     const opening = await h.dispute.fetchConstructedDispute(
         opener.index,
@@ -95,7 +96,7 @@ export async function assertMissingWindowRefused(
     await h.lifecycle.start(3, 4);
     const forkId = h.activeForkId!;
     for (const peer of h.peers) {
-        await h.control(peer).stub.stubSuppressDisputeInitiation().request();
+        await h.dispute.suppressDisputeInitiation([peer.index]);
         await h.control(peer).stub.stubHoldReductionTasks().request();
     }
     const contributor = h.getPeer(1);

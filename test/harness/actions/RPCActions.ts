@@ -1,12 +1,12 @@
-import { ethers } from "ethers";
-import { waitFor } from "@test/utils/waitFor";
-// @spec-test-coverage-ignore: shared lobby query actions exercised by owning mapped E2E declarations
-import { PeerTestHarness } from "@test/fixtures/PeerTestHarness";
-import type { HarnessControlRpc } from "@test/fixtures/customRpc/harnessControl/HarnessControlRpc";
-import { Logger } from "@/utils";
-import { ForkId, Address } from "@/types/types";
-import { hash as fakeHash } from "@test/factory";
 import Clock from "@/Clock";
+import { ForkId, Address } from "@/types/types";
+import { Logger } from "@/utils";
+import { hash as fakeHash } from "@test/factory";
+import type { HarnessControlRpc } from "@test/fixtures/customRpc/harnessControl/HarnessControlRpc";
+import { PeerTestHarness } from "@test/fixtures/PeerTestHarness";
+import { waitFor } from "@test/utils/waitFor";
+import { ethers } from "ethers";
+// @spec-test-coverage-ignore: shared lobby query actions exercised by owning mapped E2E declarations
 
 /**
  * Actions for RPC service testing.
@@ -168,24 +168,6 @@ export class RPCActions<
                 buildingPeerObj.address
             )
             .request();
-    }
-
-    async connectPeers(peerIndices: number[]): Promise<void> {
-        await this.harness.network.connectPeers(peerIndices);
-    }
-
-    async joinLobby(
-        peerIndices: number[],
-        rendezvousTopic: string
-    ): Promise<void> {
-        await this.harness.network.joinLobby(peerIndices, rendezvousTopic);
-    }
-
-    async leaveLobby(
-        peerIndices: number[],
-        rendezvousTopic: string
-    ): Promise<void> {
-        await this.harness.network.leaveLobby(peerIndices, rendezvousTopic);
     }
 
     /**

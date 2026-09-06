@@ -1,8 +1,3 @@
-import { StateChannelManagerInterface } from "@typechain-types";
-import { MessageBlockStruct } from "@typechain-types/contracts/V1/types/DataTypes";
-import { BytesLike, Filter, Log, Result, hexlify, zeroPadValue } from "ethers";
-
-import type { LocalDiamondContract } from "@/utils/localDiamond";
 import Clock from "@/Clock";
 import { EventHandler } from "@/eventHandlers/EventHandler";
 import Storage from "@/storage";
@@ -24,12 +19,16 @@ import {
     Logger,
     Type
 } from "@/utils";
+import { ChannelKey, channelKey as toChannelKey } from "@/utils/channelKey";
+import type { LocalDiamondContract } from "@/utils/localDiamond";
 import { LoggerUtils } from "@/utils/LoggerUtils";
+import { StateChannelManagerInterface } from "@typechain-types";
+import { MessageBlockStruct } from "@typechain-types/contracts/V1/types/DataTypes";
+import { BytesLike, Filter, Log, Result, hexlify, zeroPadValue } from "ethers";
 
 type BlockState = { pending: number; complete: boolean; failed: boolean };
 type OnChainBlockValidationKey = string;
 type EventKey = string;
-type ChannelKey = string;
 type BlockNumber = number;
 /** A dispute commitment lowercased, so hash comparisons are case-stable. */
 export type NormalizedDisputeCommitment = string;
@@ -125,7 +124,7 @@ export default class EventSyncService {
         const existing = this.eventPromises.get(eventKey);
         if (existing) return existing;
 
-        const channelKey = this.getChannelKey(scheduledChannelId);
+        const channelKey = toChannelKey(scheduledChannelId);
         const states = this.getBlockStates(channelKey);
         const state = states.get(log.blockNumber) ?? {
             pending: 0,
@@ -606,10 +605,7 @@ export default class EventSyncService {
         // parseLog is invoked directly, outside createEthersResultProxy, so
         // normalize nested Result structs before they reach storage/models.
         const args = convertEthersValue(parsed.args);
-        if (
-            this.getChannelKey(args.channelId) !==
-            this.getChannelKey(scheduledChannelId)
-        ) {
+        if (toChannelKey(args.channelId) !== toChannelKey(scheduledChannelId)) {
             this.logger.warn("Ignoring manager event for another channel", {
                 scheduledChannelId,
                 eventChannelId: args.channelId,
@@ -783,10 +779,6 @@ export default class EventSyncService {
         const provider = this.stateChannelManagerContract.runner?.provider;
         if (!provider) throw new Error("EventSyncService requires a provider");
         return provider;
-    }
-
-    private getChannelKey(channelId: ChannelId): ChannelKey {
-        return String(channelId).toLowerCase();
     }
 
     private isSupportedEventName(

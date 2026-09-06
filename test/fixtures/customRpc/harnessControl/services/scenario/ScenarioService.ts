@@ -1,7 +1,7 @@
-import ARpcService from "@/rpc/ARpcService";
-import type P2PManager from "@/P2PManager";
-import type ATransport from "@/transport/ATransport";
 import ScenarioRpcMethods from "./ScenarioRpcMethods";
+import type P2PManager from "@/P2PManager";
+import ARpcService from "@/rpc/ARpcService";
+import type ATransport from "@/transport/ATransport";
 
 /**
  * Runs harness-supplied `(sm, args) => result` bodies host-side, with the live

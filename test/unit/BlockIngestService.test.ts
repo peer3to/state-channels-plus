@@ -1,13 +1,13 @@
-import { expect } from "chai";
-import { waitFor } from "@test/utils/waitFor";
+import * as factory from "../factory";
+import type { Address, ForkId, Hash } from "@/types/types";
 import { Codec, Type } from "@/utils";
 import {
     MathPeerTestHarness,
     MathTestSession as TestSession
 } from "@test/harness";
-import * as factory from "../factory";
-import type { Address, ForkId, Hash } from "@/types/types";
+import { waitFor } from "@test/utils/waitFor";
 import type { MessageBlockStruct } from "@typechain-types/contracts/V1/types/DataTypes";
+import { expect } from "chai";
 
 // the pipeline is entered the way production does: through the queue
 // (transition.ingestBlockConfirmation) or, for callers with no transport, by
@@ -522,7 +522,7 @@ describe("Unit: BlockIngestService", function () {
                 .request();
             const probe = await h
                 .control(observer)
-                .stub.runBlockIngest(encoded)
+                .validation.runBlockIngest(encoded)
                 .request();
             const turnAfter = await h
                 .control(observer)
@@ -606,7 +606,7 @@ describe("Unit: BlockIngestService", function () {
 
             const probe = await h
                 .control(observer)
-                .stub.runBlockIngest(encoded)
+                .validation.runBlockIngest(encoded)
                 .request();
 
             expect(probe.keepConnection).to.equal(false);
@@ -672,7 +672,7 @@ describe("Unit: BlockIngestService", function () {
 
             const probe = await h
                 .control(observer)
-                .stub.runBlockIngest(encoded)
+                .validation.runBlockIngest(encoded)
                 .request();
             const headAfter = await h
                 .control(observer)

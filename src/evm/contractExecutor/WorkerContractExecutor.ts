@@ -1,25 +1,25 @@
-import { ethers } from "ethers";
-import type { Address, Bytes } from "@/types/types";
-import type { Logger } from "@/utils";
-import { config } from "@/utils/config";
 import type { EvmCustomPrecompileManifest } from "../EvmFactory";
 import AContractExecutor, {
     type ContractExecutionResult
 } from "./AContractExecutor";
+import type {
+    ContractExecutorWorkerErrorHandler,
+    ContractExecutorWorkerMessageHandler,
+    WorkerLike
+} from "./types";
 import type {
     ContractExecutorRequestPayload,
     WorkerCallMethod,
     WorkerCustomPrecompile,
     WorkerResponseMessage
 } from "./worker/protocol";
-import { createContractExecutorWorker } from "@platform/contractExecutorWorkerRuntime";
-import type {
-    ContractExecutorWorkerErrorHandler,
-    ContractExecutorWorkerMessageHandler,
-    WorkerLike
-} from "./types";
-import { LoggerUtils } from "@/utils/LoggerUtils";
 import { deserializeError } from "@/evm/p2pRuntime/errorWire";
+import type { Address, Bytes } from "@/types/types";
+import type { Logger } from "@/utils";
+import { config } from "@/utils/config";
+import { LoggerUtils } from "@/utils/LoggerUtils";
+import { createContractExecutorWorker } from "@platform/contractExecutorWorkerRuntime";
+import { ethers } from "ethers";
 
 /**
  * Internal construction dependencies, not part of the package API. Tests

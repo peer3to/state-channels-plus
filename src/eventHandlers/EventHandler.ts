@@ -1,3 +1,34 @@
+import ADiamondStateMachine from "@/ADiamondStateMachine";
+import { PartialAuditingDataError } from "@/disputeManager/DisputeManager";
+import { Block, StateSnapshot } from "@/models";
+import P2pEventHooks from "@/P2pEventHooks";
+import type StateManager from "@/stateManager";
+import type { ReductionGenesis } from "@/stateManager/reduction";
+import CalldataCommittedStrategy from "@/stateManager/validationStrategy/CalldataCommittedStrategy";
+import Storage from "@/storage";
+import { Status } from "@/types";
+import { isCommittedParticipantStatus } from "@/types/flags";
+import {
+    ChannelId,
+    Timestamp,
+    Address,
+    Hash,
+    ForkId,
+    Bytes
+} from "@/types/types";
+import {
+    addressesEqual,
+    Codec,
+    DetachedPromises,
+    hash,
+    Logger,
+    tryDecodeCustomError,
+    Type
+} from "@/utils";
+import { errorMessage } from "@/utils/errorMessage";
+import { tryHandleEvmError } from "@/utils/evmErrorHandler";
+import { LoggerUtils } from "@/utils/LoggerUtils";
+import P2pEventHooksUtils from "@/utils/P2pEventHooksUtils";
 import {
     BlockConfirmationStruct,
     MessageBlockStruct,
@@ -9,37 +40,8 @@ import {
     DisputeConfirmationStruct,
     DisputeStruct
 } from "@typechain-types/contracts/V1/types/DisputeTypes";
-import type StateManager from "@/stateManager";
-import P2pEventHooks from "@/P2pEventHooks";
-import {
-    ChannelId,
-    Timestamp,
-    Address,
-    Hash,
-    ForkId,
-    Bytes
-} from "@/types/types";
-import Storage from "@/storage";
-import ADiamondStateMachine from "@/ADiamondStateMachine";
-import {
-    addressesEqual,
-    Codec,
-    DetachedPromises,
-    hash,
-    Logger,
-    tryDecodeCustomError,
-    Type
-} from "@/utils";
-import { tryHandleEvmError } from "@/utils/evmErrorHandler";
 import { TransactionResponse } from "ethers";
-import { LoggerUtils } from "@/utils/LoggerUtils";
-import P2pEventHooksUtils from "@/utils/P2pEventHooksUtils";
 import { isEqual } from "lodash";
-import CalldataCommittedStrategy from "@/stateManager/validationStrategy/CalldataCommittedStrategy";
-import type { ReductionGenesis } from "@/stateManager/reduction";
-import { PartialAuditingDataError } from "@/disputeManager/DisputeManager";
-import { Status } from "@/types";
-import { Block, StateSnapshot } from "@/models";
 
 export type EventCoordinate = {
     blockNumber: number;
@@ -159,10 +161,7 @@ export class EventHandler {
                 );
                 return;
             }
-            if (
-                status === Status.PENDING_PARTICIPANT ||
-                status === Status.PARTICIPATING
-            ) {
+            if (isCommittedParticipantStatus(status)) {
                 const snapshotParticipants = stateSnapshot.snapshotData
                     .participants as Address[];
                 const signerRemoved = !snapshotParticipants.some((p) =>
@@ -497,10 +496,7 @@ export class EventHandler {
                 };
             } catch (error) {
                 const status = this.stateManager.status;
-                if (
-                    status !== Status.PARTICIPATING &&
-                    status !== Status.PENDING_PARTICIPANT
-                ) {
+                if (!isCommittedParticipantStatus(status)) {
                     this.logger.warn(
                         "Unable to prepare final dispute genesis as a non-participant; aborting",
                         { channelId, forkId, status, error }
@@ -824,10 +820,7 @@ export class EventHandler {
             );
         } catch (error) {
             const status = this.stateManager.status;
-            if (
-                status !== Status.PARTICIPATING &&
-                status !== Status.PENDING_PARTICIPANT
-            ) {
+            if (!isCommittedParticipantStatus(status)) {
                 this.logger.warn(
                     "Unable to validate dispute reduction as a non-participant; aborting",
                     { channelId, forkId, reducedForkId, status, error }
@@ -1072,10 +1065,7 @@ export class EventHandler {
                             "Unhandled error in challengeDisputeReduction",
                             {
                                 forkId,
-                                error:
-                                    error instanceof Error
-                                        ? error.message
-                                        : String(error)
+                                error: errorMessage(error)
                             }
                         );
                         // Do NOT rethrow — ancestor is the ethers listener with no catch.

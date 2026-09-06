@@ -1,14 +1,14 @@
-import { expect } from "chai";
-import { ethers } from "ethers";
-import { Codec, Type } from "@/utils";
 import { BlockValidationResult, Status } from "@/types";
+import type { Address } from "@/types/types";
+import { Codec, Type } from "@/utils";
+import * as factory from "@test/factory";
 import {
     MathTestSession as TestSession,
     MIN_TEST_TIME_CONFIG
 } from "@test/harness";
 import { waitFor } from "@test/utils/waitFor";
-import * as factory from "@test/factory";
-import type { Address } from "@/types/types";
+import { expect } from "chai";
+import { ethers } from "ethers";
 
 /**
  * Unit-scope harness tests for BlockQueueManager's ingest guards and the

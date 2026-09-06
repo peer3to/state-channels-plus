@@ -1,4 +1,3 @@
-import { expect } from "chai";
 import {
     evidencePeriodWaitMs,
     MIN_TEST_TIME_CONFIG,
@@ -6,6 +5,7 @@ import {
     protocolEventTimeoutMs,
     resolveTestTimeConfig
 } from "./core/testTimeConfig";
+import { expect } from "chai";
 
 describe("test time config", () => {
     it("resolves the minimum-safe baseline", () => {

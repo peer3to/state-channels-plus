@@ -21,10 +21,7 @@ describe("E2E: dispute validation / stateProof / last-milestone finality and aud
 
             // This case audits peer 2's missing-data claim. A second valid dispute
             // would make every auditor replay that proof first inside the same window.
-            await h
-                .control(h.getPeer(0))
-                .stub.stubSuppressDisputeInitiation()
-                .request();
+            await h.dispute.suppressDisputeInitiation([h.getPeer(0).index]);
 
             // Peer 1 submits a faulty block
             await h.byzantine.submitInvalidStateTransitionBlock(1);

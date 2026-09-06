@@ -1,7 +1,7 @@
-import type { Logger } from "@/utils";
 import type { EvmCustomPrecompileManifest } from "../EvmFactory";
 import type AContractExecutor from "./AContractExecutor";
 import { createContractExecutor } from "./createContractExecutor";
+import type { Logger } from "@/utils";
 
 export type ContractExecutorFactoryOptions = {
     logger?: Logger;

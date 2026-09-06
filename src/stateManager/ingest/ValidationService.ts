@@ -1,16 +1,14 @@
-import { StateChannelManagerInterface } from "@typechain-types";
-import { ZeroHash } from "ethers";
-
+import EventSyncService from "../eventSync/EventSyncService";
+import FraudProofService from "../utils/FraudProofService";
+import AValidationStrategy from "../validationStrategy/AValidationStrategy";
+import BlockValidationStrategy from "../validationStrategy/BlockValidationStrategy";
 import ADiamondStateMachine from "@/ADiamondStateMachine";
+
 import Clock from "@/Clock";
+import { Block, StateSnapshot } from "@/models";
+import type StateManager from "@/stateManager";
 import Storage from "@/storage";
 import type { QueuedBlockEntry } from "@/storage/QueueStorage";
-import { Block, StateSnapshot } from "@/models";
-import { Codec, hash, Logger, Type } from "@/utils";
-import type {
-    BlockConfirmationStruct,
-    MessageBlockStruct
-} from "@typechain-types/contracts/V1/types/DataTypes";
 import {
     BlockValidationResult,
     TimeConfig,
@@ -18,13 +16,15 @@ import {
     timeoutWaitTime
 } from "@/types";
 import { Address, ChannelId, ForkId, Timestamp } from "@/types/types";
-
-import FraudProofService from "../utils/FraudProofService";
-import AValidationStrategy from "../validationStrategy/AValidationStrategy";
-import type StateManager from "@/stateManager";
+import { Codec, hash, Logger, Type } from "@/utils";
 import { LoggerUtils } from "@/utils/LoggerUtils";
-import BlockValidationStrategy from "../validationStrategy/BlockValidationStrategy";
-import EventSyncService from "../eventSync/EventSyncService";
+import { StateChannelManagerInterface } from "@typechain-types";
+import type {
+    BlockConfirmationStruct,
+    MessageBlockStruct
+} from "@typechain-types/contracts/V1/types/DataTypes";
+
+import { ZeroHash } from "ethers";
 
 export enum OnChainPostTiming {
     NOT_POSTED,
@@ -191,9 +191,10 @@ export default class ValidationService {
         if (timeResult !== BlockValidationResult.SUCCESS) {
             this.logger.warn("Time validation failed", {
                 strategy: strategy.name,
-                validationResult:
-                    BlockValidationResult[timeResult] ??
-                    `UNKNOWN(${timeResult})`,
+                validationResult: LoggerUtils.enumToString(
+                    BlockValidationResult,
+                    timeResult
+                ),
                 blockHeight: block.height
             });
             return timeResult;
@@ -476,51 +477,6 @@ export default class ValidationService {
     ): Promise<BlockValidationResult> {
         const nowSeconds = Clock.getTimeInSeconds();
 
-        const logTimeFailure = (args: {
-            validationResult: BlockValidationResult;
-            checkType: "objective" | "subjective";
-            allowedSkewSeconds: number;
-            violatedRule: string;
-            previousTimestamp?: Timestamp;
-            previousOriginalTimestamp?: Timestamp;
-        }) => {
-            const blockTimestamp = block.timestamp;
-            const differenceSeconds = Math.abs(nowSeconds - blockTimestamp);
-            const excessSeconds = Math.max(
-                0,
-                differenceSeconds - args.allowedSkewSeconds
-            );
-            const validationResultString =
-                BlockValidationResult[args.validationResult] ??
-                `UNKNOWN(${args.validationResult})`;
-            const logData: Record<string, any> = {
-                checkType: args.checkType,
-                violatedRule: args.violatedRule,
-                validationResult: validationResultString,
-                blockHeight: block.height,
-                nowSeconds,
-                blockTimestamp,
-                differenceSeconds,
-                allowedSkewSeconds: args.allowedSkewSeconds,
-                excessSeconds
-            };
-            // Add previous timestamp context for objective checks
-            if (
-                args.checkType === "objective" &&
-                args.previousTimestamp !== undefined
-            ) {
-                logData.previousTimestamp = args.previousTimestamp;
-                if (args.previousOriginalTimestamp !== undefined) {
-                    logData.previousOriginalTimestamp =
-                        args.previousOriginalTimestamp;
-                }
-            }
-            this.logger.warn(
-                "Time validation failed - block timestamp outside allowed window",
-                logData
-            );
-        };
-
         // Calculate previousTimestamp
         let previousTimestamp: Timestamp;
         let previousOriginalTimestamp: Timestamp;
@@ -565,7 +521,9 @@ export default class ValidationService {
                 previousBlock.onChainTimestamp !== undefined
             ) {
                 // Already has best timestamp - persist InvalidTimestamp fraud proof
-                logTimeFailure({
+                LoggerUtils.logTimeValidationFailed(this.logger, {
+                    block,
+                    nowSeconds,
                     validationResult: BlockValidationResult.DISPUTE,
                     checkType: "objective",
                     allowedSkewSeconds: graceSeconds + this.timeConfig.p2pTime,
@@ -607,7 +565,9 @@ export default class ValidationService {
             ) {
                 // False - persist InvalidTimestamp fraud proof
                 // Re-check which rule was violated (previousTimestamp may have changed, but we already computed violatedRule above)
-                logTimeFailure({
+                LoggerUtils.logTimeValidationFailed(this.logger, {
+                    block,
+                    nowSeconds,
                     validationResult: BlockValidationResult.DISPUTE,
                     checkType: "objective",
                     allowedSkewSeconds: graceSeconds + this.timeConfig.p2pTime,
@@ -636,7 +596,9 @@ export default class ValidationService {
         );
         if (onChainPostTiming === OnChainPostTiming.TOO_LATE) {
             // Block posted too late - create InvalidTimestamp fraud proof
-            logTimeFailure({
+            LoggerUtils.logTimeValidationFailed(this.logger, {
+                block,
+                nowSeconds,
                 validationResult: BlockValidationResult.DISPUTE,
                 checkType: "objective",
                 allowedSkewSeconds: timeoutWaitTime(
@@ -677,7 +639,9 @@ export default class ValidationService {
             !replayedFromProof &&
             strategy instanceof BlockValidationStrategy
         ) {
-            logTimeFailure({
+            LoggerUtils.logTimeValidationFailed(this.logger, {
+                block,
+                nowSeconds,
                 validationResult: BlockValidationResult.NOT_ENOUGH_TIME,
                 checkType: "subjective",
                 allowedSkewSeconds: this.timeConfig.agreementTime,

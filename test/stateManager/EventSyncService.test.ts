@@ -1,13 +1,12 @@
+import { Hash } from "@/types/types";
 import {
     assertDirectSlashRecovery,
     assertRecoveredSlashTimestampAndDedup
 } from "@test/fixtures/DisputeSlashRecoveryStaging";
-import { expect } from "chai";
-import { hexlify, zeroPadValue } from "ethers";
-
-import { Hash } from "@/types/types";
 import { MathTestSession as TestSession } from "@test/harness";
 import { waitFor } from "@test/utils/waitFor";
+import { expect } from "chai";
+import { hexlify, zeroPadValue } from "ethers";
 
 // mirrors LOG_RECOVERY_ATTEMPTS in EventSyncService
 const LOG_RECOVERY_ATTEMPTS = 3;
@@ -28,7 +27,7 @@ describe("EventSyncService", function () {
         await h.lifecycle.start(4, 0);
         const result = await h
             .control(h.getPeer(0))
-            .stub.probeConcurrentCalldataRecovery()
+            .validation.probeConcurrentCalldataRecovery()
             .request();
 
         expect(result.queryCount).to.equal(2);
@@ -65,7 +64,7 @@ describe("EventSyncService", function () {
 
             const probe = await h
                 .control(h.getPeer(0))
-                .stub.probeInboundRunRecovery(inboundHead)
+                .validation.probeInboundRunRecovery(inboundHead)
                 .request();
 
             expect(probe.threw).to.equal(null);
@@ -86,7 +85,7 @@ describe("EventSyncService", function () {
 
             const probe = await h
                 .control(h.getPeer(lagging))
-                .stub.probeInboundRunRecovery(inboundHead)
+                .validation.probeInboundRunRecovery(inboundHead)
                 .request();
 
             expect(probe.threw).to.equal(null);
@@ -126,7 +125,7 @@ describe("EventSyncService", function () {
 
             const probe = await h
                 .control(h.getPeer(lagging))
-                .stub.probeInboundRunRecovery(inboundHead)
+                .validation.probeInboundRunRecovery(inboundHead)
                 .request();
 
             expect(probe.threw).to.equal(null);
@@ -153,7 +152,7 @@ describe("EventSyncService", function () {
 
             const probe = await h
                 .control(h.getPeer(lagging))
-                .stub.probeInboundRunRecovery(inboundHead)
+                .validation.probeInboundRunRecovery(inboundHead)
                 .request();
 
             expect(probe.threw).to.equal(null);
@@ -203,7 +202,7 @@ describe("EventSyncService", function () {
 
             const probe = await h
                 .control(h.getPeer(lagging))
-                .stub.probeInboundRunRecovery(inboundHead)
+                .validation.probeInboundRunRecovery(inboundHead)
                 .request();
 
             expect(probe.threw).to.equal(null);
@@ -227,7 +226,7 @@ describe("EventSyncService", function () {
             // the same recoverable gap as above, but every getLogs throws
             const probe = await h
                 .control(h.getPeer(lagging))
-                .stub.probeInboundRunRecovery(inboundHead, {
+                .validation.probeInboundRunRecovery(inboundHead, {
                     failChainQueries: true
                 })
                 .request();
@@ -252,7 +251,7 @@ describe("EventSyncService", function () {
 
             const probe = await h
                 .control(leader)
-                .stub.probeBlockCalldataRecovery()
+                .validation.probeBlockCalldataRecovery()
                 .request();
 
             expect(probe.threw).to.equal(null);
@@ -269,7 +268,9 @@ describe("EventSyncService", function () {
 
             const probe = await h
                 .control(leader)
-                .stub.probeBlockCalldataRecovery({ failChainQueries: true })
+                .validation.probeBlockCalldataRecovery({
+                    failChainQueries: true
+                })
                 .request();
 
             expect(probe.threw).to.equal(null);

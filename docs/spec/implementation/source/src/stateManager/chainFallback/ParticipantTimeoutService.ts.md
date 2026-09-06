@@ -9,9 +9,9 @@ Schedules checks for a silent writer, recovers relevant calldata and constructs 
 
 ## Key design decisions
 
-1. [scheduleCheck](../../../../../../../src/stateManager/chainFallback/ParticipantTimeoutService.ts#L32) refuses disposed runtimes and obsolete forks before allocating a timer. Every scheduled callback enters the same timeout check.
-2. [tryTimeoutParticipant](../../../../../../../src/stateManager/chainFallback/ParticipantTimeoutService.ts#L54) checks current membership, accepted blocks, local deadline, window creation and predecessor/target calldata. A local deadline or pending validation causes a scheduled recheck; an older dispute window stops the claim.
-3. [createTimeOutDispute](../../../../../../../src/stateManager/chainFallback/ParticipantTimeoutService.ts#L312) builds the timeout from stored predecessor evidence and rechecks fork/disposal and accepted-block state after awaited reads, before storing the claim and calling the normal dispute owner.
+1. [scheduleCheck](../../../../../../../src/stateManager/chainFallback/ParticipantTimeoutService.ts#L30) refuses disposed runtimes and obsolete forks before allocating a timer. Every scheduled callback enters the same timeout check.
+2. [tryTimeoutParticipant](../../../../../../../src/stateManager/chainFallback/ParticipantTimeoutService.ts#L52) checks current membership, accepted blocks, local deadline, window creation and predecessor/target calldata. A local deadline or pending validation causes a scheduled recheck; an older dispute window stops the claim.
+3. [createTimeOutDispute](../../../../../../../src/stateManager/chainFallback/ParticipantTimeoutService.ts#L310) builds the timeout from stored predecessor evidence and rechecks fork/disposal and accepted-block state after awaited reads, before storing the claim and calling the normal dispute owner.
 4. DisputeManager owns decoding the refused transaction, clearing its marker and releasing its mutex. It passes the attempted slot and the chain timestamp difference to this existing scheduler. This service reconstructs evidence on wake-up; it never resends an old transaction.
 
 ## Inputs, outputs, state, and side effects

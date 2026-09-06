@@ -1,18 +1,17 @@
-import { assertLiveForkSwitch } from "@test/fixtures/ReductionForkSwitchStaging";
-import { expect } from "chai";
-import { id } from "ethers";
-
 import { Status } from "@/types";
 import { sleep } from "@/utils";
-import { MathTestSession as TestSession } from "@test/harness";
+import type { ReductionApplicationControl } from "@test/fixtures/customRpc/harnessControl/services/stub/StubService";
+import { REDUCTION_ATTEMPT_STUB_FAILURE } from "@test/fixtures/customRpc/harnessControl/services/stub/StubService";
 import {
     assertDisposalDuringGenesisApplication,
     assertReadFailureDuringGenesisApplication
 } from "@test/fixtures/ReductionDisposalStaging";
-import type { ReductionApplicationControl } from "@test/fixtures/customRpc/harnessControl/services/stub/StubService";
-import { REDUCTION_ATTEMPT_STUB_FAILURE } from "@test/fixtures/customRpc/harnessControl/services/stub/StubService";
-import { waitFor } from "@test/utils/waitFor";
+import { assertLiveForkSwitch } from "@test/fixtures/ReductionForkSwitchStaging";
+import { MathTestSession as TestSession } from "@test/harness";
 import type { SubmittedFinalDispute } from "@test/harness/actions/DisputeOrchestrator";
+import { waitFor } from "@test/utils/waitFor";
+import { expect } from "chai";
+import { id } from "ethers";
 
 describe("ReductionManager", function () {
     it("a live fork switch after a held dispute read reschedules no old-fork work", async function () {

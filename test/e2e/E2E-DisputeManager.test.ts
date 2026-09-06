@@ -1,12 +1,12 @@
+import { DisputeFraudProofType } from "@/types/sol-enums";
+import { Codec, Type, hash, sleep } from "@/utils";
 import { assertKilledOpenerSubmissionRace } from "@test/fixtures/DisputeSlashRecoveryStaging";
 import {
     assertStateOnlyContribution,
     assertMissingWindowRefused
 } from "@test/fixtures/DisputeWindowStaging";
-import { expect } from "chai";
-import { DisputeFraudProofType } from "@/types/sol-enums";
-import { Codec, Type, hash, sleep } from "@/utils";
 import { MathTestSession as TestSession } from "@test/harness";
+import { expect } from "chai";
 
 /**
  * E2E Tests for Dispute Management
@@ -284,10 +284,9 @@ describe("E2E: Dispute Manager", function () {
                     passFirst: false
                 }
             );
-            await h
-                .control(h.getPeer(missedPeerIndex))
-                .stub.stubSuppressDisputeInitiation()
-                .request();
+            await h.dispute.suppressDisputeInitiation([
+                h.getPeer(missedPeerIndex).index
+            ]);
             await h.byzantine.blacklistAndDisconnect(missedPeerIndex);
             await h.transition.advanceState({
                 waitForPeers: connectedPeerIndices

@@ -1,12 +1,31 @@
+import { Status } from "@/types";
+import { Codec, sleep, Type } from "@/utils";
+import { MathTestSession as TestSession } from "@test/harness";
+import { waitFor } from "@test/utils/waitFor";
 import { expect } from "chai";
 import { ethers } from "ethers";
 
-import { MathTestSession as TestSession } from "@test/harness";
-import { Codec, sleep, Type } from "@/utils";
-import { Status } from "@/types";
-import { waitFor } from "@test/utils/waitFor";
-
 describe("harness network control", function () {
+    it("orders lobby roles by the two real peer addresses in either peer ordering", async function () {
+        const h = TestSession.getHarness();
+        await h.setup(2, { autoConnect: false });
+        const [advertiser, selector] = h.network.lobbyRoleIndices();
+        expect(
+            BigInt(h.peers[advertiser].address) <
+                BigInt(h.peers[selector].address)
+        ).to.equal(true);
+        const original = [...h.peers];
+        try {
+            h.peers.reverse();
+            expect(h.network.lobbyRoleIndices()).to.deep.equal([
+                1 - advertiser,
+                1 - selector
+            ]);
+        } finally {
+            h.peers.splice(0, h.peers.length, ...original);
+        }
+    });
+
     it("intentional peer isolation blacklists both Holepunch directions", async function () {
         const h = TestSession.getHarness();
         await h.lifecycle.start(2, 0);

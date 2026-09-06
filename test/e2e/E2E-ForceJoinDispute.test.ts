@@ -1,7 +1,7 @@
-import { MathTestSession as TestSession } from "@test/harness";
-import { expect } from "chai";
 import { Status } from "@/types";
+import { MathTestSession as TestSession } from "@test/harness";
 import { waitFor } from "@test/utils/waitFor";
+import { expect } from "chai";
 
 describe("E2E: Force Join Dispute", function () {
     it("should force an omitted join into the reduced fork and schedule the joiner as an author", async function () {

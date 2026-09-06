@@ -1,13 +1,19 @@
-import { ethers, Signer } from "ethers";
 import {
-    StateChannelManagerInterface,
-    AStateMachine as AStateMachineContract
-} from "@typechain-types";
-import { TransactionStruct } from "@typechain-types/contracts/V1/types/DataTypes";
-
+    type AContractExecutor,
+    type ContractExecutionLog
+} from "./contractExecutor";
+import P2pInstance from "./P2pInstance";
 import StateManager from "../stateManager/StateManager";
+import {
+    setupP2pRuntime,
+    type P2pSetupOptions
+} from "./p2pRuntime/setupP2pRuntime";
+import LocalContractExecutorSigner from "./signer/LocalContractExecutorSigner";
+import ADiamondStateMachine from "@/ADiamondStateMachine";
+import MainRpcService from "@/rpc/MainRpcService";
 import { TimeConfig } from "@/types";
 import { BalanceEthersType, MessageEthersType } from "@/types/ethers";
+import { Address, Bytes } from "@/types/types";
 import {
     Codec,
     convertEthersValue,
@@ -15,29 +21,22 @@ import {
     connectLocalDiamond,
     type LocalDiamondContract
 } from "@/utils";
-import ADiamondStateMachine from "@/ADiamondStateMachine";
-import P2pInstance from "./P2pInstance";
+import { errorMessage } from "@/utils/errorMessage";
 import {
-    setupP2pRuntime,
-    type P2pSetupOptions
-} from "./p2pRuntime/setupP2pRuntime";
-import {
-    type AContractExecutor,
-    type ContractExecutionLog
-} from "./contractExecutor";
-import { Address, Bytes } from "@/types/types";
+    StateChannelManagerInterface,
+    AStateMachine as AStateMachineContract
+} from "@typechain-types";
 import {
     BalanceStruct,
     MessageStruct
 } from "@typechain-types/contracts/V1/AStateMachine";
+import { TransactionStruct } from "@typechain-types/contracts/V1/types/DataTypes";
+import { ethers, Signer } from "ethers";
 import {
     deployLocalDiamondWithStateMachineAddress,
     DeploymentResult,
     LocalStateMachineDeployer
 } from "scripts/V1/deploy";
-import LocalContractExecutorSigner from "./signer/LocalContractExecutorSigner";
-
-import MainRpcService from "@/rpc/MainRpcService";
 
 /**
  * Manages peer-to-peer communication and state machines
@@ -71,11 +70,8 @@ class EvmDiamondStateMachine extends ADiamondStateMachine {
     }
 
     private createContextError(methodName: string, error: unknown): Error {
-        const errorMessage =
-            error instanceof Error ? error.message : String(error);
-        return new Error(
-            `StateMachineInterface.${methodName}: ${errorMessage}`
-        );
+        const message = errorMessage(error);
+        return new Error(`StateMachineInterface.${methodName}: ${message}`);
     }
 
     public getStateMachineAddress(): Address {
@@ -129,8 +125,7 @@ class EvmDiamondStateMachine extends ADiamondStateMachine {
             } catch (error) {
                 this.stateManager?.logger.error("Contract event emit failed", {
                     eventName: event.name,
-                    error:
-                        error instanceof Error ? error.message : String(error)
+                    error: errorMessage(error)
                 });
             }
         }

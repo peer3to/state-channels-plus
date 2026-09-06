@@ -1,5 +1,5 @@
-import { DisputeFraudProofType } from "@/types/sol-enums";
 import Clock from "@/Clock";
+import { DisputeFraudProofType } from "@/types/sol-enums";
 import { Codec, Type } from "@/utils";
 import { MathTestSession as TestSession } from "@test/harness";
 import { expect } from "chai";
@@ -16,10 +16,7 @@ describe("E2E: dispute validation / stateProof / milestone block content integri
             // The disconnected peer learns of the window late and would
             // upload its own dispute after the evidence period, which the
             // chain refuses; its dispute is not part of the case.
-            await h
-                .control(h.getPeer(3))
-                .stub.stubSuppressDisputeInitiation()
-                .request();
+            await h.dispute.suppressDisputeInitiation([h.getPeer(3).index]);
             await h.transition.advanceState({ waitForPeers: [0, 1, 2, 4] });
             const disputedForkId = h.activeForkId;
             if (!disputedForkId) throw new Error("Expected an active fork");

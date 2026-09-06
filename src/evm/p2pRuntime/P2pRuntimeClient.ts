@@ -1,14 +1,4 @@
-import { ethers, type InterfaceAbi } from "ethers";
-import { StateChannelManagerInterface } from "@typechain-types";
-
-import type { Address } from "@/types/types";
-import { connectStateChannelManager } from "@/utils/stateChannelManager";
-import type { Logger } from "@/utils";
-import { maybeStampErrorWithPeerAddress } from "@/utils/errorPeerAddress";
 import { deserializeError } from "./errorWire";
-import ClientP2pSigner from "../signer/ClientP2pSigner";
-import ClientChainSigner from "../signer/ClientChainSigner";
-import { attachContractEvents, EventBus } from "@/events/EventBus";
 import type {
     RuntimeBusEventMessage,
     RuntimeClientRequest,
@@ -20,6 +10,16 @@ import type {
     SerializedContract,
     SerializedError
 } from "./types";
+import ClientChainSigner from "../signer/ClientChainSigner";
+import ClientP2pSigner from "../signer/ClientP2pSigner";
+import { attachContractEvents, EventBus } from "@/events/EventBus";
+import type { Address } from "@/types/types";
+import type { Logger } from "@/utils";
+import { errorMessage } from "@/utils/errorMessage";
+import { maybeStampErrorWithPeerAddress } from "@/utils/errorPeerAddress";
+import { connectStateChannelManager } from "@/utils/stateChannelManager";
+import { StateChannelManagerInterface } from "@typechain-types";
+import { ethers, type InterfaceAbi } from "ethers";
 
 export interface P2pRuntimeClientOptions {
     /** Address of the signer that authors transactions in the host. */
@@ -83,7 +83,7 @@ class P2pRuntimeClient<T = ethers.Contract> {
             options.logger?.error("Event bus listener failed", {
                 kind,
                 eventName,
-                error: error instanceof Error ? error.message : String(error)
+                error: errorMessage(error)
             })
         );
         this.port = port;

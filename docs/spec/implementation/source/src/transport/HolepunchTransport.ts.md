@@ -24,6 +24,8 @@ profile created by `ATransport`, and starts authentication immediately.
 
 ## Key design decisions
 
+Frame delivery inherits the identical base onMessage implementation; transport-specific connection and close behavior remain here. See [HolepunchTransport.ts](../../../../../../src/transport/HolepunchTransport.ts#L7).
+
 1. **Handshake-on-construct:** no window where an unauthenticated bootstrap connection idles usable.
 2. **Ban policy stays outside the transport.** Construction supplies the SDK handle to its profile;
    the transport neither decides nor exposes ban/unban policy.

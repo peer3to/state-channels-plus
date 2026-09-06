@@ -27,6 +27,8 @@ enters here as a fresh entry carrying its origin.
 
 ## Key design decisions
 
+Error text delegates to the dependency-free errorMessage helper. Existing catch policy, stack fields, log messages and error propagation remain at this call site. See [BlockIngestService.ts](../../../../../../../src/stateManager/ingest/BlockIngestService.ts#L1).
+
 1. **One execution boundary for every origin.** Network deliveries, calldata recovery, dispute
    replay, and synchronization replay all execute here, so the same predicate chain and commit
    rules apply ([`REQ-BLOCK-PIPE-4-CF52J6`](../../../../../specification/block-progression/block-processing.md#req-block-pipe-4-cf52j6)).
@@ -96,3 +98,5 @@ Exact test evidence is mapped against these IDs in the verification test reports
 ## Related source reports
 
 - [ValidationService](ValidationService.ts.md), [BlockQueueManager](BlockQueueManager.ts.md), [QueueStorage](../../storage/QueueStorage.ts.md), [SpectateService](../../rpc/services/spectate/SpectateService.ts.md)
+
+Shared operation owners: [errorMessage.ts.md](../../utils/errorMessage.ts.md).

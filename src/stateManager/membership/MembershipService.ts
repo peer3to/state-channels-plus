@@ -1,18 +1,19 @@
+import type { ParticipantChanges } from "../block/SnapshotAssemblyService";
+import type StateManager from "../StateManager";
+import Clock from "@/Clock";
+
+import { Block, StateSnapshot } from "@/models";
+import { Status } from "@/types";
+import { isCommittedParticipantStatus } from "@/types/flags";
+import { Address, ChannelId, ForkId, Hash } from "@/types/types";
+import { addressesEqual, Logger, union } from "@/utils";
+import { errorMessage } from "@/utils/errorMessage";
+import { tryDecodeCustomError } from "@/utils/evmErrorHandler";
 import type {
     JoinChannelConfirmationStruct,
     MessageBlockStruct
 } from "@typechain-types/contracts/V1/types/DataTypes";
 import { isError } from "ethers";
-
-import Clock from "@/Clock";
-import { Block, StateSnapshot } from "@/models";
-import type { ParticipantChanges } from "../block/SnapshotAssemblyService";
-import { Status } from "@/types";
-import { Address, ChannelId, ForkId, Hash } from "@/types/types";
-import { addressesEqual, Logger, union } from "@/utils";
-import { tryDecodeCustomError } from "@/utils/evmErrorHandler";
-
-import type StateManager from "../StateManager";
 
 /**
  * The membership domain: the channel's participant union (on-chain current +
@@ -122,20 +123,14 @@ export default class MembershipService {
                     this.logger.warn(
                         "joinChannel - failed to reconcile uncertain submission",
                         {
-                            error:
-                                reconciliationError instanceof Error
-                                    ? reconciliationError.message
-                                    : String(reconciliationError)
+                            error: errorMessage(reconciliationError)
                         }
                     );
                 }
                 this.logger.warn(
                     "joinChannel - submission outcome uncertain; preserving pending state",
                     {
-                        error:
-                            error instanceof Error
-                                ? error.message
-                                : String(error)
+                        error: errorMessage(error)
                     }
                 );
                 return false;
@@ -160,7 +155,7 @@ export default class MembershipService {
                     return false;
             }
             this.logger.warn("joinChannel - tx failed, reverting to SYNCED", {
-                error: error instanceof Error ? error.message : String(error)
+                error: errorMessage(error)
             });
             return false;
         }
@@ -172,10 +167,7 @@ export default class MembershipService {
         expectedForkId: ForkId
     ): Promise<boolean> {
         const sm = this.stateManager;
-        if (
-            sm.status !== Status.PARTICIPATING &&
-            sm.status !== Status.PENDING_PARTICIPANT
-        ) {
+        if (!isCommittedParticipantStatus(sm.status)) {
             throw new Error(
                 `topUpBalance requires PARTICIPATING or PENDING_PARTICIPANT status, got ${Status[sm.status]}`
             );
@@ -228,8 +220,7 @@ export default class MembershipService {
                 {
                     forkId: sm.forkId,
                     blockHeight: block.height,
-                    error:
-                        error instanceof Error ? error.message : String(error)
+                    error: errorMessage(error)
                 }
             );
             return;
@@ -260,8 +251,7 @@ export default class MembershipService {
                 {
                     forkId: sm.forkId,
                     blockHeight: block.height,
-                    error:
-                        error instanceof Error ? error.message : String(error)
+                    error: errorMessage(error)
                 }
             );
             return;
@@ -276,10 +266,7 @@ export default class MembershipService {
                     {
                         forkId: sm.forkId,
                         blockHeight: block.height,
-                        error:
-                            error instanceof Error
-                                ? error.message
-                                : String(error)
+                        error: errorMessage(error)
                     }
                 );
                 return;
@@ -347,10 +334,7 @@ export default class MembershipService {
                         this.logger.error(
                             `startMaybeExitOnChain - failed to post state snapshot`,
                             {
-                                error:
-                                    error instanceof Error
-                                        ? error.message
-                                        : String(error)
+                                error: errorMessage(error)
                             }
                         );
                         try {
@@ -360,10 +344,7 @@ export default class MembershipService {
                             this.logger.error(
                                 "startMaybeExitOnChain - failed to create self-removal dispute after snapshot failure",
                                 {
-                                    error:
-                                        disputeError instanceof Error
-                                            ? disputeError.message
-                                            : String(disputeError)
+                                    error: errorMessage(disputeError)
                                 }
                             );
                         }
@@ -384,10 +365,7 @@ export default class MembershipService {
                         this.logger.error(
                             `startMaybeExitOnChain - failed to create self-removal dispute`,
                             {
-                                error:
-                                    error instanceof Error
-                                        ? error.message
-                                        : String(error)
+                                error: errorMessage(error)
                             }
                         );
                     }

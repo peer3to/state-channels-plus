@@ -1,11 +1,11 @@
+import { Status } from "@/types";
 import {
     assertEarlyTimeoutRetry,
     assertTimeoutRetryAfterForkSwitch,
     assertObsoleteEarlyTimeoutRetry
 } from "@test/fixtures/EarlyTimeoutRetryStaging";
-import { expect } from "chai";
-import { Status } from "@/types";
 import { MathTestSession as TestSession } from "@test/harness";
+import { expect } from "chai";
 
 // the guard cases call tryTimeoutParticipant directly with the dispute
 // submission recorder installed, so a guard that failed to hold would show up

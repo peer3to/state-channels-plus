@@ -1,10 +1,10 @@
 // @spec-test-coverage-ignore: shared sync assertion exercised by owning mapped test declarations
-import type { ForkId, Hash } from "@/types/types";
-import { expect } from "chai";
-import { PeerTestHarness } from "@test/fixtures/PeerTestHarness";
-import type { HarnessControlRpc } from "@test/fixtures/customRpc/harnessControl/HarnessControlRpc";
-import { ZeroHash } from "ethers";
 import StateSnapshot from "@/models/StateSnapshot";
+import type { ForkId, Hash } from "@/types/types";
+import type { HarnessControlRpc } from "@test/fixtures/customRpc/harnessControl/HarnessControlRpc";
+import { PeerTestHarness } from "@test/fixtures/PeerTestHarness";
+import { expect } from "chai";
+import { ZeroHash } from "ethers";
 
 export class AssertSyncActions<
     TCustomRpc extends HarnessControlRpc = HarnessControlRpc

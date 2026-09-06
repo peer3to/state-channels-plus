@@ -1,7 +1,7 @@
-import { expect } from "chai";
-import { AxiosError } from "axios";
 import { encodeLogEntry } from "@/utils/logging/logEncoder";
 import { LogEntry } from "@/utils/logging/Logger";
+import { AxiosError } from "axios";
+import { expect } from "chai";
 
 const SECRETS = ["Bearer top-secret", "session=cookie-secret", "body-secret"];
 

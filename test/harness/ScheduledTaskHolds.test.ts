@@ -1,30 +1,6 @@
 // @spec-test-coverage-ignore: harness helper contract test; the helper is test infrastructure with no specification or implementation IDs
-import { expect } from "chai";
-
 import { MathTestSession as TestSession } from "@test/harness";
-
-/** Schedule one zero-delay task host-side and report whether it ran. */
-async function scheduleProbe(
-    h: ReturnType<typeof TestSession.getHarness>,
-    taskName: string
-): Promise<boolean> {
-    return h.execOnHost(
-        h.getPeer(0),
-        async (sm, args) => {
-            let ran = false;
-            sm.timeoutManager.scheduleTask(
-                () => {
-                    ran = true;
-                },
-                0,
-                args.taskName
-            );
-            await new Promise((resolve) => setTimeout(resolve, 20));
-            return ran;
-        },
-        { taskName }
-    );
-}
+import { expect } from "chai";
 
 describe("scheduled task holds", function () {
     it("keeps the newer prefix held when the older prefix is restored first", async function () {
@@ -34,18 +10,48 @@ describe("scheduled task holds", function () {
         await stub.stubHoldScheduledTasks("older-").request();
         await stub.stubHoldScheduledTasks("newer-").request();
 
-        expect(await scheduleProbe(h, "older-1")).to.equal(false);
-        expect(await scheduleProbe(h, "newer-1")).to.equal(false);
-        expect(await scheduleProbe(h, "other-1")).to.equal(true);
+        expect(
+            await h
+                .control(h.getPeer(0))
+                .stub.scheduleProbe("older-1")
+                .request()
+        ).to.equal(false);
+        expect(
+            await h
+                .control(h.getPeer(0))
+                .stub.scheduleProbe("newer-1")
+                .request()
+        ).to.equal(false);
+        expect(
+            await h
+                .control(h.getPeer(0))
+                .stub.scheduleProbe("other-1")
+                .request()
+        ).to.equal(true);
 
         await stub.restoreHeldScheduledTasks("older-", false).request();
-        expect(await scheduleProbe(h, "older-2")).to.equal(true);
-        expect(await scheduleProbe(h, "newer-2")).to.equal(false);
+        expect(
+            await h
+                .control(h.getPeer(0))
+                .stub.scheduleProbe("older-2")
+                .request()
+        ).to.equal(true);
+        expect(
+            await h
+                .control(h.getPeer(0))
+                .stub.scheduleProbe("newer-2")
+                .request()
+        ).to.equal(false);
         expect(
             await stub.getHeldScheduledTaskCount("newer-").request()
         ).to.equal(2);
 
         await stub.restoreHeldScheduledTasks("newer-", true).request();
-        expect(await scheduleProbe(h, "newer-3")).to.equal(true);
+        expect(
+            await h
+                .control(h.getPeer(0))
+                .stub.scheduleProbe("newer-3")
+                .request()
+        ).to.equal(true);
     });
 });

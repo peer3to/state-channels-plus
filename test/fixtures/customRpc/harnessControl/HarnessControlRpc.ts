@@ -1,19 +1,20 @@
 // @spec-test-coverage-ignore: harness service composition exercised by owning mapped tests
-import MainRpcService from "@/rpc/MainRpcService";
-import type P2PManager from "@/P2PManager";
 
-import { QueryService } from "./services/query/QueryService";
-import { NetworkService } from "./services/network/NetworkService";
+import { BalanceService } from "./services/balance/BalanceService";
 import { ByzantineService } from "./services/byzantine/ByzantineService";
-import { StubService } from "./services/stub/StubService";
+import { DisputeService } from "./services/dispute/DisputeService";
 import { HandshakeService } from "./services/handshake/HandshakeService";
+import { LifecycleService } from "./services/lifecycle/LifecycleService";
+import { NetworkService } from "./services/network/NetworkService";
+import { QueryService } from "./services/query/QueryService";
+import { ScenarioService } from "./services/scenario/ScenarioService";
 import { SignerService } from "./services/signer/SignerService";
 import { SpectateControlService } from "./services/spectate/SpectateControlService";
-import { ScenarioService } from "./services/scenario/ScenarioService";
-import { DisputeService } from "./services/dispute/DisputeService";
+import { StubService } from "./services/stub/StubService";
 import { TransitionService } from "./services/transition/TransitionService";
-import { BalanceService } from "./services/balance/BalanceService";
-import { LifecycleService } from "./services/lifecycle/LifecycleService";
+import { ValidationProbeService } from "./services/validationProbe/ValidationProbeService";
+import type P2PManager from "@/P2PManager";
+import MainRpcService from "@/rpc/MainRpcService";
 
 /**
  * Host-side harness-control RPC.
@@ -50,6 +51,7 @@ export class HarnessControlRpc extends MainRpcService {
     transition: TransitionService;
     balance: BalanceService;
     lifecycle: LifecycleService;
+    validation: ValidationProbeService;
 
     constructor(p2pManager: P2PManager<HarnessControlRpc>) {
         super(p2pManager);
@@ -65,6 +67,7 @@ export class HarnessControlRpc extends MainRpcService {
         this.transition = new TransitionService(p2pManager, this.stub);
         this.balance = new BalanceService(p2pManager);
         this.lifecycle = new LifecycleService(p2pManager);
+        this.validation = new ValidationProbeService(p2pManager);
     }
 
     /**

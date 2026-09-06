@@ -1,7 +1,7 @@
-import { expect } from "chai";
 import { Status } from "@/types";
 import { addressesEqual } from "@/utils";
 import { MathTestSession as TestSession } from "@test/harness";
+import { expect } from "chai";
 
 // shouldSignBlock is the commit step's sign/no-sign policy; its arms are
 // driven directly (bracket access - the method is private) against real

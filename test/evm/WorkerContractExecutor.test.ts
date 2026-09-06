@@ -1,26 +1,26 @@
-import { expect } from "chai";
-import { ethers } from "ethers";
-import { Address } from "@ethereumjs/util";
-import { randomUUID } from "node:crypto";
-import path from "node:path";
-import { BroadcastChannel, Worker } from "node:worker_threads";
-import { createContractExecutor } from "@/evm/contractExecutor/createContractExecutor";
 import {
     createContractExecutorFactory,
     type ContractExecutorFactoryOptions,
     type EvmCustomPrecompileManifest
 } from "@/evm";
+import { createContractExecutor } from "@/evm/contractExecutor/createContractExecutor";
 import { createContractExecutorWorkerFromPath } from "@/evm/contractExecutor/node/ContractExecutorWorkerRuntime";
-import type { WatchdogWorkerData } from "@test/evm/workers/node/watchdogContractExecutorWorkerEntry";
-import type { NoRouteWorkerReport } from "@test/evm/workers/node/noRouteExecutorEntry";
 import type { Logger } from "@/utils";
+import { sleep } from "@/utils";
+import { Address } from "@ethereumjs/util";
+import type { NoRouteWorkerReport } from "@test/evm/workers/node/noRouteExecutorEntry";
+import type { WatchdogWorkerData } from "@test/evm/workers/node/watchdogContractExecutorWorkerEntry";
 import {
     WATCHDOG_WORKER_DELAY_ERROR_THRESHOLD_MS,
     WATCHDOG_WORKER_ORIGINAL_ERROR,
     WATCHDOG_WORKER_TRIPPED_DELAY_MS
 } from "@test/evm/workers/watchdogContractExecutorWorkerCore";
-import { sleep } from "@/utils";
 import { waitFor } from "@test/utils/waitFor";
+import { expect } from "chai";
+import { ethers } from "ethers";
+import { randomUUID } from "node:crypto";
+import path from "node:path";
+import { BroadcastChannel, Worker } from "node:worker_threads";
 
 const WATCHDOG_WORKER_ENTRY = path.resolve(
     __dirname,

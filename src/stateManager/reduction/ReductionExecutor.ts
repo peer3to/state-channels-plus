@@ -1,12 +1,12 @@
-import { TransactionResponse } from "ethers";
-
-import type { DisputeStruct } from "@typechain-types/contracts/V1/types/DisputeTypes";
-
+import type ReductionComputationService from "./ReductionComputationService";
+import type { ReductionComputation } from "./ReductionComputationService";
+import type StateManager from "../StateManager";
 import Clock from "@/Clock";
 import { StateSnapshot } from "@/models";
 import { Status } from "@/types";
 import type { ForkId, Timestamp } from "@/types/types";
 import { DetachedPromises, Logger, Mutex } from "@/utils";
+import { errorMessage } from "@/utils/errorMessage";
 import {
     type CustomEvmError,
     type RaceConditionErrorHandlers,
@@ -16,9 +16,8 @@ import {
 } from "@/utils/evmErrorHandler";
 import { LoggerUtils } from "@/utils/LoggerUtils";
 
-import type ReductionComputationService from "./ReductionComputationService";
-import type { ReductionComputation } from "./ReductionComputationService";
-import type StateManager from "../StateManager";
+import type { DisputeStruct } from "@typechain-types/contracts/V1/types/DisputeTypes";
+import { TransactionResponse } from "ethers";
 
 type KillPeriodObservation = {
     windowExists: boolean;
@@ -343,7 +342,7 @@ export default class ReductionExecutor {
                 customError: LoggerUtils.getCustomEvmErrorMetadata(
                     tryDecodeCustomError(error)
                 ),
-                error: error instanceof Error ? error.message : String(error)
+                error: errorMessage(error)
             });
             throw error;
         }

@@ -24,6 +24,8 @@ sync scheduler in arrival order.
 
 ## Key design decisions
 
+Channel identity uses the shared permissive string/lowercase conversion; event matching and replacement checks retain their existing order. See [StateChannelEventListener.ts](../../../../../src/StateChannelEventListener.ts#L1).
+
 1. **Thin by design** — ordering/recovery discipline lives in the sync service, not the listener.
 
 ## Inputs, outputs, state, and side effects
@@ -88,3 +90,5 @@ cleanup retains it, so later `ChannelOpened(target)` still reaches the live runt
 cleanup calls `clearChannelId` and removes the filter. Obligations use
 [`UNIT-TEST-STATE-CHANNEL-EVENT-LISTENER-1-XHNMVW.P1`](StateChannelEventListener.ts.md#unit-test-state-channel-event-listener-1-xhnmvw.p1) for retained same-target delivery and `.P2` for ordinary
 clear.
+
+Shared operation owners: [channelKey.ts.md](utils/channelKey.ts.md).

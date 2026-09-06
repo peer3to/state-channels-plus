@@ -191,10 +191,24 @@ try {
             contractExecutorClock,
             webRTCMainThread,
             webRTCDedicatedWorker,
-            webRTCProxyWorker
+            webRTCProxyWorker,
+            performanceReporting:
+                await globalThis.runBrowserPerformanceReportingSmoke()
         };
     });
 
+    assert.equal(result.performanceReporting.details.longTaskMax, 201);
+    assert.equal(result.performanceReporting.details.dMax, 1);
+    assert.equal(result.performanceReporting.details.runtime, "browser");
+    assert.equal(result.performanceReporting.entries[0].level, "warn");
+    assert.equal(
+        result.performanceReporting.entries[0].meta[0].estimatedUtilization,
+        0.1
+    );
+    assert.equal(
+        "utilization" in result.performanceReporting.entries[0].meta[0],
+        false
+    );
     assert.equal(result.contractExecutor.value, "42");
     assert.equal(result.contractExecutor.isWorker, true);
     // The browser worker's ambient block time is wall time plus the host's

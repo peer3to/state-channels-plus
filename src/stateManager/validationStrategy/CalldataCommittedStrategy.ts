@@ -1,16 +1,16 @@
+import AValidationStrategy, {
+    ParticipantSnapshots
+} from "./AValidationStrategy";
+import BlockValidationStrategy from "./BlockValidationStrategy";
+import type ADiamondStateMachine from "@/ADiamondStateMachine";
+import DisputeManager from "@/disputeManager";
 import { Block } from "@/models";
+import type { QueuedBlockEntry } from "@/storage/QueueStorage";
 import { BlockValidationResult, Signature } from "@/types";
 import {
     BlockConfirmationStruct,
     MessageBlockStruct
 } from "@typechain-types/contracts/V1/types/DataTypes";
-import AValidationStrategy, {
-    ParticipantSnapshots
-} from "./AValidationStrategy";
-import type { QueuedBlockEntry } from "@/storage/QueueStorage";
-import DisputeManager from "@/disputeManager";
-import BlockValidationStrategy from "./BlockValidationStrategy";
-import type ADiamondStateMachine from "@/ADiamondStateMachine";
 
 export default class CalldataCommittedStrategy extends AValidationStrategy {
     constructor(

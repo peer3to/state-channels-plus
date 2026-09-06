@@ -2,12 +2,6 @@
 
 > **Status:** Authored implementation report.
 
-## Linked requirements
-
-| Source file                                                                                       | Specification IDs                                                                                                                                                                                                                                                                                                                        |
-| ------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| [LeaveChannelService.ts](../../../../../../../src/stateManager/membership/LeaveChannelService.ts) | [`REQ-TJOIN-7-NNGTAY`](../../../../../specification/peer-communication/targeted-channel-join.md#req-tjoin-7-nngtay), [`REQ-LIF-10-QR8NQ9`](../../../../../specification/settlement/lifecycle.md#req-lif-10-qr8nq9), [`REQ-DISPUTE-PIPE-7-76N72X`](../../../../../specification/disputes/dispute-processing.md#req-dispute-pipe-7-76n72x) |
-
 ## Responsibility and observable boundary
 
 This service owns one terminal leave operation for a state manager. It captures the participant count and
@@ -18,15 +12,39 @@ It does not author application exit calldata or dispose the outer runtime.
 
 ## Key design decisions
 
+Both membership lookups use the exact shared committed-status predicate; leave sequencing, settlement and error wrapping remain local. See [LeaveChannelService.ts](../../../../../../../src/stateManager/membership/LeaveChannelService.ts#L5).
+
 One stored promise makes leave idempotent and gates new channel work. The first `N + 1`-block or watchdog
 bound starts the existing dispute path. A dispute already active on the entry fork is awaited; after settlement,
 the operation either completes if the signer is absent or rearms on the next active fork. Disposal cancels the
 watchdog and rejects an unfinished operation.
 
+## Inputs, outputs, state, and side effects
+
+The public leave operation coordinates committed membership, outbound removal, receipt and completion. Its existing operation promise and hooks prevent duplicate work; results and status changes retain their lifecycle order.
+
+## Linked requirements
+
+| Source file                                                                                       | Specification IDs                                                                                                                                                                                                                                                                                                                        |
+| ------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| [LeaveChannelService.ts](../../../../../../../src/stateManager/membership/LeaveChannelService.ts) | [`REQ-TJOIN-7-NNGTAY`](../../../../../specification/peer-communication/targeted-channel-join.md#req-tjoin-7-nngtay), [`REQ-LIF-10-QR8NQ9`](../../../../../specification/settlement/lifecycle.md#req-lif-10-qr8nq9), [`REQ-DISPUTE-PIPE-7-76N72X`](../../../../../specification/disputes/dispute-processing.md#req-dispute-pipe-7-76n72x) |
+
+## Assumptions, dependencies, trust boundaries, and limits
+
+Only pending and participating states count as committed membership. The extracted status predicate does not change snapshot membership, channel pins or receipt/abort behavior.
+
 ## Specification adherence
 
 The service covers the local state-machine part of terminal leave. Snapshot posting, dispute construction,
 chain observation, port transport, and outer disposal remain with their existing owners.
+
+## Specification contradictions
+
+None demonstrated.
+
+## Missing behavior
+
+None demonstrated.
 
 ## Conformance traceability
 
@@ -35,7 +53,7 @@ chain observation, port transport, and outer disposal remain with their existing
 | [`REQ-TJOIN-7-NNGTAY`](../../../../../specification/peer-communication/targeted-channel-join.md#req-tjoin-7-nngtay)  | Covered               | **Here:** one stored operation, fixed `N`, hook substitution, block and clock bounds, self-removal, dispute wait, and settled-removal completion. **Other files:** signer, host, instance, membership, snapshot, and event owners complete the route.                                                                                                                                                                                                                                                                                                                                                                                                                                                                        | None.            |
 | [`REQ-LIF-10-QR8NQ9`](../../../../../specification/settlement/lifecycle.md#req-lif-10-qr8nq9)                        | Covered               | **Here:** resolution requires `SYNCED`, local absence, and either chain participant absence or an observed reduced-fork settlement carrying removal. **Other files:** snapshot posting or dispute reduction establishes the settled state; the outer instance disposes afterward.                                                                                                                                                                                                                                                                                                                                                                                                                                            | None.            |
 | [`REQ-DISPUTE-PIPE-7-76N72X`](../../../../../specification/disputes/dispute-processing.md#req-dispute-pipe-7-76n72x) | Covered               | **Here:** self-removal is set before dispute construction, and an already active dispute is awaited before next-fork retry. **Other files:** canonical inbound replay and fraud-proof validation own join-before-removal ordering; the join-race and force-join E2E reports map all three required permutations.                                                                                                                                                                                                                                                                                                                                                                                                             | None.            |
-| [`REQ-DISPUTE-PIPE-8-BVR8XV`](../../../../../specification/disputes/dispute-processing.md#req-dispute-pipe-8-bvr8xv) | Covered               | **Here:** [source](../../../../../../../src/stateManager/membership/LeaveChannelService.ts#L147) observes the block-bound fallback as detached work and reports failure to the leave operation while releasing the state mutex. **Other files:** [DisputeManager.ts](../../disputeManager/DisputeManager.ts.md) (dispute admission, rollback and construction), [StateManager.ts](../StateManager.ts.md) (shared state ordering), [BlockProductionService.ts](../block/BlockProductionService.ts.md) (authoring and signed storage), [BlockCommitService.ts](../block/BlockCommitService.ts.md) (counter-signing and committed storage), [ValidationService.ts](../ingest/ValidationService.ts.md) (live-arrival rejection). | —                |
+| [`REQ-DISPUTE-PIPE-8-BVR8XV`](../../../../../specification/disputes/dispute-processing.md#req-dispute-pipe-8-bvr8xv) | Covered               | **Here:** [source](../../../../../../../src/stateManager/membership/LeaveChannelService.ts#L143) observes the block-bound fallback as detached work and reports failure to the leave operation while releasing the state mutex. **Other files:** [DisputeManager.ts](../../disputeManager/DisputeManager.ts.md) (dispute admission, rollback and construction), [StateManager.ts](../StateManager.ts.md) (shared state ordering), [BlockProductionService.ts](../block/BlockProductionService.ts.md) (authoring and signed storage), [BlockCommitService.ts](../block/BlockCommitService.ts.md) (counter-signing and committed storage), [ValidationService.ts](../ingest/ValidationService.ts.md) (live-arrival rejection). | —                |
 
 ## Component test obligations
 
@@ -43,7 +61,7 @@ chain observation, port transport, and outer disposal remain with their existing
 | ----------------------------------------------------------------------------------------------- | ---------------------------- | -------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | <a id="unit-test-leave-channel-service-1-cx6qh9"></a>`UNIT-TEST-LEAVE-CHANNEL-SERVICE-1-CX6QH9` | Terminal leave state machine | Enter through `P2pInstance.leaveChannel` or the internal signer route from every commitment state. | Hook substitution, fixed bounds, self-removal dispute input, settled removal, and one terminal disposal are exact; no cross-channel work starts. | <a id="unit-test-leave-channel-service-1-cx6qh9.p1"></a>`UNIT-TEST-LEAVE-CHANNEL-SERVICE-1-CX6QH9.P1` — immediate non-committed leave; <a id="unit-test-leave-channel-service-1-cx6qh9.p2"></a>`UNIT-TEST-LEAVE-CHANNEL-SERVICE-1-CX6QH9.P2` — authored exit; <a id="unit-test-leave-channel-service-1-cx6qh9.p3"></a>`UNIT-TEST-LEAVE-CHANNEL-SERVICE-1-CX6QH9.P3` — pending promotion; <a id="unit-test-leave-channel-service-1-cx6qh9.p4"></a>`UNIT-TEST-LEAVE-CHANNEL-SERVICE-1-CX6QH9.P4` — fixed block bound; <a id="unit-test-leave-channel-service-1-cx6qh9.p5"></a>`UNIT-TEST-LEAVE-CHANNEL-SERVICE-1-CX6QH9.P5` — zero-block watchdog; <a id="unit-test-leave-channel-service-1-cx6qh9.p6"></a>`UNIT-TEST-LEAVE-CHANNEL-SERVICE-1-CX6QH9.P6` — existing dispute wait and next-fork retry. |
 
-## Related reports
+## Related source reports
 
 - [MembershipService.ts](./MembershipService.ts.md)
 - [StateManager.ts](../StateManager.ts.md)

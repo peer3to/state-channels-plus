@@ -1,8 +1,8 @@
 // @spec-test-coverage-ignore: host-side lifecycle staging used by mapped tests
+import type { LifecycleService } from "./LifecycleService";
 import ARpcMethods from "@/rpc/ARpcMethods";
 import type ATransport from "@/transport/ATransport";
 import type { ChannelId } from "@/types/types";
-import type { LifecycleService } from "./LifecycleService";
 
 /** Private lifecycle staging endpoints for the test harness. */
 export class LifecycleRpcMethods extends ARpcMethods {

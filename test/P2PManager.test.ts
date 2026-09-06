@@ -1,16 +1,15 @@
-import { expect } from "chai";
-import { ethers, Wallet } from "ethers";
-
-import { P2PManagerFixture } from "@test/fixtures/P2PManagerFixture";
 import { Status } from "@/types";
 import { channelIdToTargetedJoinTopic, sleep } from "@/utils";
-import { waitFor } from "@test/utils/waitFor";
-import { slotAccountIndex } from "@test/harness/core/slotAccounts";
 
 import {
     assertLateSyncResultAfterAbortChangesNothing,
     withFreshInitialSyncObserver
 } from "@test/fixtures/AbortDuringInitialSyncStaging";
+import { P2PManagerFixture } from "@test/fixtures/P2PManagerFixture";
+import { slotAccountIndex } from "@test/harness/core/slotAccounts";
+import { waitFor } from "@test/utils/waitFor";
+import { expect } from "chai";
+import { ethers, Wallet } from "ethers";
 
 describe("P2PManager", function () {
     let fixture: P2PManagerFixture | undefined;
@@ -23,6 +22,20 @@ describe("P2PManager", function () {
     afterEach(async function () {
         await fixture?.cleanup();
         fixture = undefined;
+    });
+
+    it("prefers a transport address over its registered profile address", async function () {
+        const profileAddress = Wallet.createRandom().address;
+        const transportAddress = Wallet.createRandom().address;
+        const result = await fixture!
+            .control()
+            .p2pManagerProbe.probeConnectedPeerPrecedence(
+                profileAddress,
+                transportAddress
+            )
+            .request();
+        expect(result).to.include(transportAddress);
+        expect(result).not.to.include(profileAddress);
     });
 
     it("applies the frame-size, response, envelope, and service gates in order", async function () {

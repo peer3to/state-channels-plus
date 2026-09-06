@@ -1,17 +1,17 @@
 // @spec-test-coverage-ignore: harness helper restored to its existing readiness ordering
-import { PeerTestHarness } from "@test/fixtures/PeerTestHarness";
-import type { HarnessControlRpc } from "@test/fixtures/customRpc/harnessControl/HarnessControlRpc";
-import { Logger, sleep } from "@/utils";
-import { ForkId } from "@/types/types";
-import { BytesLike } from "ethers";
-import { OpenChannelStruct } from "@typechain-types/contracts/V1/types/DataTypes";
-import { Codec, SignatureUtils, Type } from "@/utils";
-import Clock from "@/Clock";
-import { createOpenChannelTestObject } from "@test/test_utils/testHelpers";
 import { NetworkController } from "../NetworkController";
-import { HarnessOptions } from "@test/harness/core/types";
+import Clock from "@/Clock";
 import { TimeConfig } from "@/types";
+import { ForkId } from "@/types/types";
+import { Codec, SignatureUtils, Type } from "@/utils";
+import { Logger, sleep } from "@/utils";
+import type { HarnessControlRpc } from "@test/fixtures/customRpc/harnessControl/HarnessControlRpc";
+import { PeerTestHarness } from "@test/fixtures/PeerTestHarness";
 import { resolveTestTimeConfig } from "@test/harness/core/testTimeConfig";
+import { HarnessOptions } from "@test/harness/core/types";
+import { createOpenChannelTestObject } from "@test/test_utils/testHelpers";
+import { OpenChannelStruct } from "@typechain-types/contracts/V1/types/DataTypes";
+import { BytesLike } from "ethers";
 
 /**
  * Handles channel-related operations: open channel and bootstrap.

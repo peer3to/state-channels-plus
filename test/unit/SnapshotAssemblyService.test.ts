@@ -1,9 +1,9 @@
-import { expect } from "chai";
-import { addressesEqual, Codec, Type, hash } from "@/utils";
-import { StateSnapshot } from "@/models";
-import { MathTestSession as TestSession } from "@test/harness";
 import * as factory from "../factory";
 import { hash as randomHash } from "../factory";
+import { StateSnapshot } from "@/models";
+import { addressesEqual, Codec, Type, hash } from "@/utils";
+import { MathTestSession as TestSession } from "@test/harness";
+import { expect } from "chai";
 
 // assembly is driven through real authored blocks: the resulting snapshot is
 // read back and compared against the previous one. inbound/outbound branches

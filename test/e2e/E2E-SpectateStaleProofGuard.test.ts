@@ -1,7 +1,7 @@
-import { MathTestSession as TestSession } from "@test/harness";
-import { expect } from "chai";
-import { waitFor } from "@test/utils/waitFor";
 import { Status } from "@/types";
+import { MathTestSession as TestSession } from "@test/harness";
+import { waitFor } from "@test/utils/waitFor";
+import { expect } from "chai";
 
 describe("E2E: Spectate stale-proof guard", function () {
     it("aborts sync when on-chain snapshot is more advanced than what participant proved", async function () {

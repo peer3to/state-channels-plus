@@ -5,8 +5,9 @@ import fs from "fs";
 import path from "path";
 
 const {
-    WorkerScheduler
-} = require("../../scripts/e2e-parallel/shared/workerScheduler.js");
+    DEFAULTS: SERVER_DEFAULTS,
+    parseServerArgs
+} = require("../../scripts/e2e-parallel/distributed/serverArgParser.js");
 const {
     runScheduler
 } = require("../../scripts/e2e-parallel/local/scheduler.js");
@@ -14,6 +15,9 @@ const {
     AccountPartitionPool,
     accountPartitionFor
 } = require("../../scripts/e2e-parallel/shared/accountPartitionPool.js");
+const {
+    getErrorLogPath
+} = require("../../scripts/e2e-parallel/shared/logging.js");
 const {
     resetResourceGateWarnings,
     ResourceGate,
@@ -27,12 +31,8 @@ const {
     TaskResourcePool
 } = require("../../scripts/e2e-parallel/shared/taskResources.js");
 const {
-    DEFAULTS: SERVER_DEFAULTS,
-    parseServerArgs
-} = require("../../scripts/e2e-parallel/distributed/serverArgParser.js");
-const {
-    getErrorLogPath
-} = require("../../scripts/e2e-parallel/shared/logging.js");
+    WorkerScheduler
+} = require("../../scripts/e2e-parallel/shared/workerScheduler.js");
 
 describe("distributed worker scheduler", function () {
     it("uses parallel-runner defaults and accepts server-local short overrides", function () {

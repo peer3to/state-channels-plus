@@ -1,10 +1,10 @@
 // @spec-test-coverage-ignore: shared harness peer-state query actions exercised by the mapped test declarations that call them
-import { PeerTestHarness } from "@test/fixtures/PeerTestHarness";
-import type { HarnessControlRpc } from "@test/fixtures/customRpc/harnessControl/HarnessControlRpc";
-import type { TestPeer } from "@test/harness/core/types";
-import { Codec, Logger, Type } from "@/utils";
-import { ForkId, Hash } from "@/types/types";
 import { StateSnapshot } from "@/models";
+import { ForkId, Hash } from "@/types/types";
+import { Codec, Logger, Type } from "@/utils";
+import type { HarnessControlRpc } from "@test/fixtures/customRpc/harnessControl/HarnessControlRpc";
+import { PeerTestHarness } from "@test/fixtures/PeerTestHarness";
+import type { TestPeer } from "@test/harness/core/types";
 import type { DisputeStruct } from "@typechain-types/contracts/V1/types/DisputeTypes";
 
 /**

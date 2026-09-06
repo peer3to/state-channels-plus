@@ -1,38 +1,28 @@
 // @spec-test-coverage-ignore: developer test-orchestration tooling; not protocol behavior, no specification or implementation IDs apply
+import { TestIsolatedRuntimeBackend } from "../fixtures/distributed/isolatedRuntimeBackend";
+import { LeasePoolHarness } from "../fixtures/distributed/leasePool";
+import {
+    createLocalDhtNetwork,
+    createSocketPair,
+    TEST_DISTRIBUTED_CONNECTION_TIMEOUT_MS
+} from "../fixtures/distributed/testTransport";
+import { waitFor } from "../utils/waitFor";
 import { expect } from "chai";
 import crypto from "crypto";
 import fs from "fs";
 import os from "os";
 import path from "path";
 import WebSocket from "ws";
-import { waitFor } from "../utils/waitFor";
-import { LeasePoolHarness } from "../fixtures/distributed/leasePool";
-import { TestIsolatedRuntimeBackend } from "../fixtures/distributed/isolatedRuntimeBackend";
-import {
-    createLocalDhtNetwork,
-    createSocketPair,
-    TEST_DISTRIBUTED_CONNECTION_TIMEOUT_MS
-} from "../fixtures/distributed/testTransport";
 
-const {
-    DISTRIBUTED_PROTOCOL_VERSION,
-    ProtocolPeer
-} = require("../../scripts/e2e-parallel/distributed/protocol.js");
-const {
-    derivePoolKeys,
-    authenticateClient,
-    authenticateServer
-} = require("../../scripts/e2e-parallel/distributed/authentication.js");
 const {
     receiveBundle,
     sendBundle
 } = require("../../scripts/e2e-parallel/distributed/artifactTransfer.js");
 const {
-    extractRuntimeBundle
-} = require("../../scripts/e2e-parallel/distributed/runtimeExtractor.js");
-const {
-    createPool
-} = require("../../scripts/e2e-parallel/distributed/poolTransport.js");
+    derivePoolKeys,
+    authenticateClient,
+    authenticateServer
+} = require("../../scripts/e2e-parallel/distributed/authentication.js");
 const {
     closeStream,
     connectionHash
@@ -40,6 +30,16 @@ const {
 const {
     runDistributed
 } = require("../../scripts/e2e-parallel/distributed/orchestrator.js");
+const {
+    createPool
+} = require("../../scripts/e2e-parallel/distributed/poolTransport.js");
+const {
+    DISTRIBUTED_PROTOCOL_VERSION,
+    ProtocolPeer
+} = require("../../scripts/e2e-parallel/distributed/protocol.js");
+const {
+    extractRuntimeBundle
+} = require("../../scripts/e2e-parallel/distributed/runtimeExtractor.js");
 const { runTask } = require("../../scripts/e2e-parallel/shared/runTask.js");
 const { startDiscoveryRegistry } = require("../utils/nodeInfra.js");
 

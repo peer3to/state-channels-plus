@@ -1,16 +1,15 @@
 // @spec-test-coverage-ignore: Node test-worker entry exercised by the mapped watchdog test declarations
-import { BroadcastChannel, parentPort, workerData } from "node:worker_threads";
-
-import { onUnhandledWorkerError } from "@/evm/p2pRuntime/node/P2pRuntimeWorkerRuntime";
-import type {
-    WorkerHostMessage,
-    WorkerRequestMessage
-} from "@/evm/contractExecutor/worker/protocol";
 import {
     startWatchdogContractExecutorWorker,
     type WatchdogArmMessage,
     type WatchdogWorkerMode
 } from "../watchdogContractExecutorWorkerCore";
+import type {
+    WorkerHostMessage,
+    WorkerRequestMessage
+} from "@/evm/contractExecutor/worker/protocol";
+import { onUnhandledWorkerError } from "@/evm/p2pRuntime/node/P2pRuntimeWorkerRuntime";
+import { BroadcastChannel, parentPort, workerData } from "node:worker_threads";
 
 /**
  * Construction-time selection carried in `workerData`. `prefunnel` fails at

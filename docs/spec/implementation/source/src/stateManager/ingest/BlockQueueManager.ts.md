@@ -27,6 +27,8 @@ eligible height on the current fork, one coordinate at a time).
 
 ## Key design decisions
 
+Queue channel identity uses the common conversion. QueuedBlockEntry attribution, scheduling and recovery remain unchanged. See [BlockQueueManager.ts](../../../../../../../src/stateManager/ingest/BlockQueueManager.ts#L19).
+
 1. **Fixed entry lifetime from first sight** — duplicates and restores never extend it, so junk cannot live forever by re-delivery ([`REQ-BLOCK-PIPE-5-WJ31RG`](../../../../../specification/block-progression/block-processing.md#req-block-pipe-5-wj31rg)).
 2. **The lifetime expiry is the only sync-probe site** — arrival-time probing punished honest peers before the convergence window; known-stale forks drop silently for the same reason.
    A probe decides the source's fate: `sync` excludes a source that fails to prove, and the queue excludes a source whose proven lineage does not carry the probed block (the sync landed on the source's latest fork and the block is neither stored there nor re-queued for execution by the sync's replay, whose execution is deferred) — that source supplied junk ([`REQ-BLOCK-PIPE-4-CF52J6`](../../../../../specification/block-progression/block-processing.md#req-block-pipe-4-cf52j6)). A source whose lineage carries the block stays; a block on any other fork after the sync is inconclusive and its source stays. Probes wait behind a sync already in flight toward the source (`SpectateService.syncAfterInFlight`), since that sync need not cover the block, so a `false` answer always means the source was cut. Probes are observed detached work with no await after the sync, so none can reject.
@@ -95,3 +97,5 @@ Exact test evidence is mapped against these IDs in the verification test reports
 ## Related source reports
 
 - [QueueStorage](../../storage/QueueStorage.ts.md), [StateManager](../StateManager.ts.md), [SpectateService](../../rpc/services/spectate/SpectateService.ts.md) (probe target).
+
+Shared operation owners: [errorMessage.ts.md](../../utils/errorMessage.ts.md), [channelKey.ts.md](../../utils/channelKey.ts.md).

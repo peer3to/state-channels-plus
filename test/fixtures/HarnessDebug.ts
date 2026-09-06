@@ -1,5 +1,5 @@
-import type { PeerTestHarness } from "./PeerTestHarness";
 import type { HarnessControlRpc } from "./customRpc/harnessControl/HarnessControlRpc";
+import type { PeerTestHarness } from "./PeerTestHarness";
 
 export class HarnessDebug<
     TCustomRpc extends HarnessControlRpc = HarnessControlRpc

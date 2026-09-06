@@ -1,19 +1,19 @@
-import type {
-    MessageBlockStruct,
-    SnapshotDataStruct
-} from "@typechain-types/contracts/V1/types/DataTypes";
-import type { DisputeStruct } from "@typechain-types/contracts/V1/types/DisputeTypes";
-
-import Clock from "@/Clock";
-import type { ReduceData } from "@/types";
-import type { Bytes, ForkId, Timestamp } from "@/types/types";
-import { DetachedPromises, Logger } from "@/utils";
-
 import ReductionComputationService, {
     type ReductionComputation
 } from "./ReductionComputationService";
 import ReductionExecutor from "./ReductionExecutor";
 import type StateManager from "../StateManager";
+import Clock from "@/Clock";
+import type { ReduceData } from "@/types";
+import type { Bytes, ForkId, Timestamp } from "@/types/types";
+import { DetachedPromises, Logger } from "@/utils";
+import { errorMessage } from "@/utils/errorMessage";
+
+import type {
+    MessageBlockStruct,
+    SnapshotDataStruct
+} from "@typechain-types/contracts/V1/types/DataTypes";
+import type { DisputeStruct } from "@typechain-types/contracts/V1/types/DisputeTypes";
 
 type ReductionTimeout = {
     handle: ReturnType<typeof setTimeout>;
@@ -365,7 +365,7 @@ export default class ReductionManager {
         if (completion.settled) return;
         completion.settled = true;
         this.logger.error("Fatal reduction error", {
-            error: error instanceof Error ? error.message : String(error)
+            error: errorMessage(error)
         });
         // Reject before the abort: disposal settles only pending completions,
         // so the caller sees the original error rather than a cancellation.

@@ -23,6 +23,8 @@ Browser logger implementation (console adapters).
 
 ## Key design decisions
 
+Sample reporting delegates to the shared reporter with estimated utilization and long-task fields. Browser scheduling, stop order and error construction remain local. See [BrowserLogger.ts](../../../../../../../../src/utils/logging/browser/BrowserLogger.ts#L1).
+
 1. **Same loop shape as the Node monitor.** The real browser source collects timer-drift delay samples and long-task durations between reports; a test can inject a scripted source. Past the threshold the monitor stops itself and throws the unchanged message with typed `eventLoopDelay` data (`runtime: "browser"`, estimated utilization, long-task fields).
 
 ## Inputs, outputs, state, and side effects
@@ -78,3 +80,5 @@ Exact test evidence is mapped against these IDs in the verification test reports
 ## Related source reports
 
 - The platform-pair counterpart's report.
+
+Shared operation owners: [performanceMonitorInternal.ts.md](../performanceMonitorInternal.ts.md).

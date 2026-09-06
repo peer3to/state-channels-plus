@@ -1,7 +1,11 @@
-import ARpcService from "@/rpc/ARpcService";
-import { Address, Bytes, ChannelId, Hash, ForkId } from "@/types/types";
+import SpectateServiceRpcMethods from "./SpectateRpcMethods";
 import { Block, StateSnapshot } from "@/models";
+import type P2PManager from "@/P2PManager";
+import ARpcService from "@/rpc/ARpcService";
+import { HandshakeCompletedGuard } from "@/rpc/guards";
 import ATransport from "@/transport/ATransport";
+import { DisputeWindowVerification, SyncPayload } from "@/types";
+import { Address, Bytes, ChannelId, Hash, ForkId } from "@/types/types";
 import {
     Codec,
     getChecksumAddress,
@@ -9,13 +13,10 @@ import {
     tryDecodeCustomError,
     Type
 } from "@/utils";
-import { ethers } from "ethers";
-import { StateProofStruct } from "@typechain-types/contracts/V1/types/ProofTypes";
+import { errorMessage } from "@/utils/errorMessage";
 import { StateSnapshotStruct } from "@typechain-types/contracts/V1/types/DataTypes";
-import SpectateServiceRpcMethods from "./SpectateRpcMethods";
-import type P2PManager from "@/P2PManager";
-import { HandshakeCompletedGuard } from "@/rpc/guards";
-import { DisputeWindowVerification, SyncPayload } from "@/types";
+import { StateProofStruct } from "@typechain-types/contracts/V1/types/ProofTypes";
+import { ethers } from "ethers";
 
 export interface SyncRequest {
     channelId: ChannelId;
@@ -128,7 +129,7 @@ class SpectateService extends ARpcService<SpectateServiceRpcMethods> {
         } catch (error) {
             this.logger.debug("spectateSync - failed", {
                 peerAddress: normalizedPeerAddress,
-                error: error instanceof Error ? error.message : String(error)
+                error: errorMessage(error)
             });
             this.p2pManager.disconnectAndBlacklistPeerByEvmAddress(
                 normalizedPeerAddress

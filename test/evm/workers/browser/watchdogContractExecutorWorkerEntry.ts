@@ -1,14 +1,14 @@
 // @spec-test-coverage-ignore: browser test-worker entry exercised by the browser worker gate
-import { onUnhandledWorkerError } from "@/evm/p2pRuntime/browser/P2pRuntimeWorkerRuntime";
-import type {
-    WorkerHostMessage,
-    WorkerRequestMessage
-} from "@/evm/contractExecutor/worker/protocol";
 import {
     startWatchdogContractExecutorWorker,
     type WatchdogArmMessage,
     type WatchdogWorkerMode
 } from "../watchdogContractExecutorWorkerCore";
+import type {
+    WorkerHostMessage,
+    WorkerRequestMessage
+} from "@/evm/contractExecutor/worker/protocol";
+import { onUnhandledWorkerError } from "@/evm/p2pRuntime/browser/P2pRuntimeWorkerRuntime";
 
 // Construction-time selection rides in the worker name as JSON.
 const selection = JSON.parse(self.name || "{}") as {

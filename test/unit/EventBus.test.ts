@@ -1,10 +1,10 @@
-import { expect } from "chai";
 import { attachContractEvents, EventBus } from "@/events/EventBus";
 import {
     ADDITION_EVENT_ABI as ADDITION_ABI,
     createEventContract as createContract,
     EVENT_FIXTURE_ADDRESS as ADDRESS
 } from "@test/fixtures/eventFixtures";
+import { expect } from "chai";
 
 // Real onTurn argument shape: (address, p2pTime, agreementTime,
 // chainFallbackTime, turnStartedAtBlockTimestamp).

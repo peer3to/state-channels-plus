@@ -1,6 +1,6 @@
-import { ethers } from "ethers";
-import { MathTestSession as TestSession } from "@test/harness";
 import { Codec, Type } from "@/utils";
+import { MathTestSession as TestSession } from "@test/harness";
+import { ethers } from "ethers";
 
 // Specific protocol-gap regression: an attacker authors a block H beyond the honest
 // peers' tip and suppresses its broadcast, then files a self-removal dispute whose

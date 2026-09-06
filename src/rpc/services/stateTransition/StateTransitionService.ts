@@ -1,8 +1,8 @@
-import ARpcService from "@/rpc/ARpcService";
-import type P2PManager from "@/P2PManager";
 import StateTransitionRpcMethods from "./StateTransitionRpcMethods";
-import { ATransport } from "@/transport";
+import type P2PManager from "@/P2PManager";
+import ARpcService from "@/rpc/ARpcService";
 import { HandshakeCompletedGuard } from "@/rpc/guards";
+import { ATransport } from "@/transport";
 
 class StateTransitionService extends ARpcService<StateTransitionRpcMethods> {
     constructor(p2pManager: P2PManager) {

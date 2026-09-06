@@ -23,6 +23,8 @@ The main-thread client: the application-facing typed surface sending requests to
 
 ## Key design decisions
 
+Error text delegates to the dependency-free errorMessage helper. Existing catch policy, stack fields, log messages and error propagation remain at this call site. See [P2pRuntimeClient.ts](../../../../../../../src/evm/p2pRuntime/P2pRuntimeClient.ts#L1).
+
 1. **The client is a proxy, never an owner** — node state lives host-side; the client correlates and forwards.
 2. **Manager addresses use `connectStateChannelManager`.** The client merges the SDK ABI first and
    the serialized consumer ABI second. SDK definitions win collisions, while consumer-only calls,
@@ -88,3 +90,5 @@ The existing client request registry carries the timeout-free leave response and
 still owns port and worker teardown. This contributes to [`REQ-TJOIN-7-NNGTAY`](../../../../../specification/peer-communication/targeted-channel-join.md#req-tjoin-7-nngtay).
 
 - [P2pRuntimeHost](./P2pRuntimeHost.ts.md).
+
+Shared operation owners: [errorMessage.ts.md](../../utils/errorMessage.ts.md).

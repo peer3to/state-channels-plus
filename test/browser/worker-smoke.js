@@ -76,3 +76,42 @@ globalThis.runContractExecutorWorkerClockBrowserSmoke = async () => {
         await executor.dispose();
     }
 };
+
+// Exercise the shared reporter with a browser-only long-task threshold input.
+globalThis.runBrowserPerformanceReportingSmoke = async () => {
+    const { BrowserLogger } = await import(
+        "../../src/utils/logging/browser/BrowserLogger.ts"
+    );
+    const { LogStore } = await import("../../src/utils/logging/logStore.ts");
+    const { reportPerformanceSample } = await import(
+        "../../src/utils/logging/performanceMonitorInternal.ts"
+    );
+    const store = new LogStore(1024 * 1024, true);
+    const logger = new BrowserLogger(
+        {},
+        {},
+        "verbose",
+        store,
+        { attachErrorListener: false },
+        true
+    );
+    try {
+        const details = reportPerformanceSample(
+            logger,
+            {
+                dMean: 1,
+                d50: 1,
+                d90: 1,
+                d99: 1,
+                dMax: 1,
+                utilization: 0.1,
+                longTaskMax: 201
+            },
+            { delayWarnThresholdMs: 100, delayErrorThresholdMs: 200 },
+            "browser"
+        );
+        return { details, entries: store.getAllLogs() };
+    } finally {
+        logger.dispose();
+    }
+};

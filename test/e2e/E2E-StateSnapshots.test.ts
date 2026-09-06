@@ -1,7 +1,7 @@
-import { MathTestSession as TestSession } from "@test/harness";
-import { waitFor } from "@test/utils/waitFor";
 import { StateSnapshot } from "@/models";
 import { DisputeFraudProofType } from "@/types/sol-enums";
+import { MathTestSession as TestSession } from "@test/harness";
+import { waitFor } from "@test/utils/waitFor";
 import { expect } from "chai";
 
 /**

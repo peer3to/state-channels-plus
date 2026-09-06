@@ -1,16 +1,17 @@
-import { PeerTestHarness } from "@test/fixtures/PeerTestHarness";
-import type { HarnessControlRpc } from "@test/fixtures/customRpc/harnessControl/HarnessControlRpc";
-import { EventSpies } from "../core/types";
-import Clock from "@/Clock";
-import { Logger, sleep } from "@/utils";
-import { Status } from "@/types";
-import { Hash } from "@/types/types";
+// @spec-test-coverage-ignore: shared harness support; executable evidence belongs to its calling test declarations
 import {
     evidencePeriodWaitMs,
     participantTimeoutWaitMs,
     protocolEventTimeoutMs,
     resolveTestTimeConfig
 } from "../core/testTimeConfig";
+import { EventSpies } from "../core/types";
+import Clock from "@/Clock";
+import { Status } from "@/types";
+import { Hash } from "@/types/types";
+import { Logger, sleep } from "@/utils";
+import type { HarnessControlRpc } from "@test/fixtures/customRpc/harnessControl/HarnessControlRpc";
+import { PeerTestHarness } from "@test/fixtures/PeerTestHarness";
 
 /**
  * EventActions handles all event spy management and queries.
@@ -167,6 +168,10 @@ export class EventActions<
             );
         }
         return gap;
+    }
+
+    hostExecTimeoutMs(): number {
+        return this.protocolEventTimeoutMs({ withFirstBlockGrace: true }) * 2;
     }
 
     protocolEventTimeoutMs({

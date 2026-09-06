@@ -1,14 +1,13 @@
-import { MathStateMachine } from "@typechain-types";
-
-import { DEFAULT_MATH_HARNESS_DEPLOYMENT } from "@test/harness/core/defaultMathHarnessDeployment";
-import { MathTransitionActions } from "@test/harness/actions/math/MathTransitionActions";
+import type { HarnessControlRpc } from "./customRpc/harnessControl/HarnessControlRpc";
+import PeerTestHarness from "./PeerTestHarness";
+import { MathByzantineActions } from "@test/harness/actions/math/MathByzantineActions";
+import { MathDisputeOrchestrator } from "@test/harness/actions/math/MathDisputeOrchestrator";
 import { MathJoinActions } from "@test/harness/actions/math/MathJoinActions";
 import { MathLifecycleActions } from "@test/harness/actions/math/MathLifecycleActions";
 import { MathScenarioActions } from "@test/harness/actions/math/MathScenarioActions";
-import { MathByzantineActions } from "@test/harness/actions/math/MathByzantineActions";
-import { MathDisputeOrchestrator } from "@test/harness/actions/math/MathDisputeOrchestrator";
-import PeerTestHarness from "./PeerTestHarness";
-import type { HarnessControlRpc } from "./customRpc/harnessControl/HarnessControlRpc";
+import { MathTransitionActions } from "@test/harness/actions/math/MathTransitionActions";
+import { DEFAULT_MATH_HARNESS_DEPLOYMENT } from "@test/harness/core/defaultMathHarnessDeployment";
+import { MathStateMachine } from "@typechain-types";
 
 export class MathPeerTestHarness extends PeerTestHarness<
     HarnessControlRpc,

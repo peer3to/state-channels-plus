@@ -1,11 +1,11 @@
 // @spec-test-coverage-ignore: harness network setup exercised by owning mapped test declarations
+import type { NetworkService } from "./NetworkService";
+import type { ConnectToChannelOptions } from "@/evm/signer/ConnectToChannelOptions";
 import ARpcMethods from "@/rpc/ARpcMethods";
 import type ATransport from "@/transport/ATransport";
-import { DetachedPromises } from "@/utils";
 import type { Address, ChannelId } from "@/types/types";
-import type { ConnectToChannelOptions } from "@/evm/signer/ConnectToChannelOptions";
+import { DetachedPromises } from "@/utils";
 import { Codec, Type } from "@/utils";
-import type { NetworkService } from "./NetworkService";
 
 export type HarnessConnectToChannelOptions = Omit<
     ConnectToChannelOptions,

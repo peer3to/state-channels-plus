@@ -1,5 +1,5 @@
-import { createContractExecutorWorkerHost } from "../worker/ContractExecutorWorkerHostCore";
 import { onUnhandledWorkerError } from "../../p2pRuntime/browser/P2pRuntimeWorkerRuntime";
+import { createContractExecutorWorkerHost } from "../worker/ContractExecutorWorkerHostCore";
 import type {
     WorkerHostMessage,
     WorkerRequestMessage

@@ -7,6 +7,8 @@
 > review, plus open security design items that gate the P2P security model. Sibling documents:
 > [trust-model.md](../specification/security/trust-model.md), [data-availability.md](../specification/security/data-availability.md).
 
+The shared frame decoder keeps the size gate before parsing and response-first classification for dual-shaped input. Lobby policy callbacks run after the same malformed-input and reservation checks. Negotiation preserves raw nonce/challenge comparison and malformed-address failure. No authorization, punishment, timeout or signed-attempt release policy changes; implementation-only coercion helpers do not broaden trust. The review follow-up changes the bytes32 type assertion and import order without adding a trust-boundary branch.
+
 ## 1. Purpose
 
 The implemented fraud-proof list

@@ -1,15 +1,15 @@
-import { expect } from "chai";
-import { ethers } from "ethers";
-import { Codec, Type } from "@/utils";
 import { Block } from "@/models";
+import { Status } from "@/types";
 import { FraudProofType, toSolidityFraudProofType } from "@/types/sol-enums";
+import type { Address } from "@/types/types";
+import { Codec, Type } from "@/utils";
+import * as factory from "@test/factory";
 import {
     MathTestSession as TestSession,
     MIN_TEST_TIME_CONFIG
 } from "@test/harness";
-import * as factory from "@test/factory";
-import type { Address } from "@/types/types";
-import { Status } from "@/types";
+import { expect } from "chai";
+import { ethers } from "ethers";
 
 // crafted confirmations run through validateBlockConfirmation host-side via
 // stub.runBlockValidation (record-only side effects). asserts input -> result
@@ -96,7 +96,7 @@ describe("Unit: ValidationService", function () {
 
             const r = await h
                 .control(spectator)
-                .stub.runBlockValidation(encoded)
+                .validation.runBlockValidation(encoded)
                 .request();
 
             expect(r.resultName).to.equal("NOT_READY");
@@ -124,7 +124,7 @@ describe("Unit: ValidationService", function () {
 
             const r = await h
                 .control(observer)
-                .stub.runBlockValidation(encoded)
+                .validation.runBlockValidation(encoded)
                 .request();
 
             expect(r.resultName).to.equal("DISCONNECT");
@@ -150,7 +150,7 @@ describe("Unit: ValidationService", function () {
 
             const r = await h
                 .control(observer)
-                .stub.runBlockValidation(encoded)
+                .validation.runBlockValidation(encoded)
                 .request();
 
             expect(r.resultName).to.equal("DISCONNECT");
@@ -182,7 +182,7 @@ describe("Unit: ValidationService", function () {
 
             const r = await h
                 .control(observer)
-                .stub.runBlockValidation(encoded)
+                .validation.runBlockValidation(encoded)
                 .request();
 
             // not a peer fault -> restored for a timeout sync, no dispute
@@ -213,7 +213,7 @@ describe("Unit: ValidationService", function () {
 
             const r = await h
                 .control(observer)
-                .stub.runBlockValidation(encoded)
+                .validation.runBlockValidation(encoded)
                 .request();
 
             expect(r.resultName).to.equal("DISCONNECT");
@@ -242,7 +242,7 @@ describe("Unit: ValidationService", function () {
 
             const r = await h
                 .control(observer)
-                .stub.runBlockValidation(encoded)
+                .validation.runBlockValidation(encoded)
                 .request();
 
             // genesis snapshot present -> real fraud proof + dispute on the fork
@@ -283,7 +283,7 @@ describe("Unit: ValidationService", function () {
 
             const r = await h
                 .control(observer)
-                .stub.runBlockValidation(encoded)
+                .validation.runBlockValidation(encoded)
                 .request();
 
             expect(r.resultName).to.equal("DISPUTE");
@@ -310,7 +310,7 @@ describe("Unit: ValidationService", function () {
 
             const r = await h
                 .control(observer)
-                .stub.runBlockValidation(encodedBlockConfirmation, {
+                .validation.runBlockValidation(encodedBlockConfirmation, {
                     senderAddress: relayer.address
                 })
                 .request();
@@ -350,7 +350,7 @@ describe("Unit: ValidationService", function () {
 
             const r = await h
                 .control(spectator)
-                .stub.runBlockValidation(
+                .validation.runBlockValidation(
                     Codec.encode(
                         blockConfirmation,
                         Type.BlockConfirmation
@@ -421,7 +421,7 @@ describe("Unit: ValidationService", function () {
 
             const r = await h
                 .control(observer)
-                .stub.runBlockValidation(encoded)
+                .validation.runBlockValidation(encoded)
                 .request();
 
             // the chain accepted the author -> a later guard is what stops it
@@ -471,7 +471,7 @@ describe("Unit: ValidationService", function () {
 
             const r = await h
                 .control(observer)
-                .stub.runBlockValidation(encoded)
+                .validation.runBlockValidation(encoded)
                 .request();
 
             // pending participants are merged into the on-chain union
@@ -509,7 +509,7 @@ describe("Unit: ValidationService", function () {
 
             const r = await h
                 .control(observer)
-                .stub.runBlockValidation(encoded)
+                .validation.runBlockValidation(encoded)
                 .request();
 
             expect(r.resultName).to.equal("DISPUTE");
@@ -543,7 +543,7 @@ describe("Unit: ValidationService", function () {
 
             const r = await h
                 .control(observer)
-                .stub.runBlockValidation(encoded)
+                .validation.runBlockValidation(encoded)
                 .request();
 
             expect(r.resultName).to.equal("DISPUTE");
@@ -578,7 +578,7 @@ describe("Unit: ValidationService", function () {
 
             const r = await h
                 .control(observer)
-                .stub.runBlockValidation(encoded)
+                .validation.runBlockValidation(encoded)
                 .request();
 
             expect(r.resultName).to.equal("DISPUTE");
@@ -605,7 +605,7 @@ describe("Unit: ValidationService", function () {
 
             const r = await h
                 .control(observer)
-                .stub.runBlockValidation(stored!.encodedBlockConfirmation)
+                .validation.runBlockValidation(stored!.encodedBlockConfirmation)
                 .request();
 
             expect(r.resultName).to.equal("DISPUTE");
@@ -638,7 +638,7 @@ describe("Unit: ValidationService", function () {
 
             const r = await h
                 .control(observer)
-                .stub.runBlockValidation(encoded)
+                .validation.runBlockValidation(encoded)
                 .request();
 
             expect(r.resultName).to.equal("DISCONNECT");
@@ -679,7 +679,7 @@ describe("Unit: ValidationService", function () {
 
             const r = await h
                 .control(observer)
-                .stub.runBlockValidation(encoded)
+                .validation.runBlockValidation(encoded)
                 .request();
 
             expect(r.resultName).to.equal("DISPUTE");
@@ -718,7 +718,7 @@ describe("Unit: ValidationService", function () {
 
             const r = await h
                 .control(observer)
-                .stub.runBlockValidation(encoded)
+                .validation.runBlockValidation(encoded)
                 .request();
 
             expect(r.resultName).to.equal("DISPUTE");
@@ -755,7 +755,7 @@ describe("Unit: ValidationService", function () {
 
             const r = await h
                 .control(observer)
-                .stub.runBlockValidation(encoded)
+                .validation.runBlockValidation(encoded)
                 .request();
 
             expect(r.resultName).to.equal("SUCCESS");
@@ -797,7 +797,7 @@ describe("Unit: ValidationService", function () {
 
             const r = await h
                 .control(observer)
-                .stub.runBlockValidation(encoded)
+                .validation.runBlockValidation(encoded)
                 .request();
 
             expect(r.resultName).to.equal("DISPUTE");
@@ -834,15 +834,20 @@ describe("Unit: ValidationService", function () {
 
             const live = await h
                 .control(observer)
-                .stub.runBlockValidation(authored.encodedBlockConfirmation)
+                .validation.runBlockValidation(
+                    authored.encodedBlockConfirmation
+                )
                 .request();
             expect(live.resultName).to.equal("NOT_ENOUGH_TIME");
 
             const replayed = await h
                 .control(observer)
-                .stub.runBlockValidation(authored.encodedBlockConfirmation, {
-                    replayedFromProof: true
-                })
+                .validation.runBlockValidation(
+                    authored.encodedBlockConfirmation,
+                    {
+                        replayedFromProof: true
+                    }
+                )
                 .request();
             expect(replayed.resultName).to.equal("SUCCESS");
             expect(replayed.firedHooks).to.deep.equal([]);
@@ -864,7 +869,10 @@ describe("Unit: ValidationService", function () {
             const deadline = genesisTimestamp! + HEIGHT_ZERO_POST_WINDOW;
             await h
                 .control(observer)
-                .stub.stageBlockCalldata(authored.encodedSignedBlock, deadline)
+                .validation.stageBlockCalldata(
+                    authored.encodedSignedBlock,
+                    deadline
+                )
                 .request();
 
             // leave the subjective window, so only the ON_TIME early return
@@ -879,7 +887,9 @@ describe("Unit: ValidationService", function () {
 
             const r = await h
                 .control(observer)
-                .stub.runBlockValidation(authored.encodedBlockConfirmation)
+                .validation.runBlockValidation(
+                    authored.encodedBlockConfirmation
+                )
                 .request();
 
             expect(r.resultName).to.equal("SUCCESS");
@@ -903,7 +913,7 @@ describe("Unit: ValidationService", function () {
             const deadline = genesisTimestamp! + HEIGHT_ZERO_POST_WINDOW;
             await h
                 .control(observer)
-                .stub.stageBlockCalldata(
+                .validation.stageBlockCalldata(
                     authored.encodedSignedBlock,
                     deadline + 1
                 )
@@ -911,7 +921,9 @@ describe("Unit: ValidationService", function () {
 
             const r = await h
                 .control(observer)
-                .stub.runBlockValidation(authored.encodedBlockConfirmation)
+                .validation.runBlockValidation(
+                    authored.encodedBlockConfirmation
+                )
                 .request();
 
             expect(r.resultName).to.equal("DISPUTE");
@@ -940,7 +952,9 @@ describe("Unit: ValidationService", function () {
 
             await h
                 .control(leader)
-                .stub.postBlockCalldataOnChain(authored.encodedSignedBlock)
+                .validation.postBlockCalldataOnChain(
+                    authored.encodedSignedBlock
+                )
                 .request();
 
             await h
@@ -957,7 +971,9 @@ describe("Unit: ValidationService", function () {
 
             const r = await h
                 .control(observer)
-                .stub.runBlockValidation(authored.encodedBlockConfirmation)
+                .validation.runBlockValidation(
+                    authored.encodedBlockConfirmation
+                )
                 .request();
 
             // no cached timestamp -> validation asked EventSyncService, which
@@ -1004,12 +1020,17 @@ describe("Unit: ValidationService", function () {
 
             await h
                 .control(observer)
-                .stub.stageBlockCalldata(authored.encodedSignedBlock, postedAt)
+                .validation.stageBlockCalldata(
+                    authored.encodedSignedBlock,
+                    postedAt
+                )
                 .request();
 
             const r = await h
                 .control(observer)
-                .stub.runBlockValidation(authored.encodedBlockConfirmation)
+                .validation.runBlockValidation(
+                    authored.encodedBlockConfirmation
+                )
                 .request();
 
             expect(r.resultName).to.equal("DISPUTE");
@@ -1040,7 +1061,9 @@ describe("Unit: ValidationService", function () {
 
             const r = await h
                 .control(observer)
-                .stub.runBlockValidation(authored.encodedBlockConfirmation)
+                .validation.runBlockValidation(
+                    authored.encodedBlockConfirmation
+                )
                 .request();
 
             expect(r.resultName).to.equal("NOT_ENOUGH_TIME");
@@ -1067,9 +1090,12 @@ describe("Unit: ValidationService", function () {
             // audits old blocks long after they were produced
             const r = await h
                 .control(observer)
-                .stub.runBlockValidation(authored.encodedBlockConfirmation, {
-                    strategy: "dispute"
-                })
+                .validation.runBlockValidation(
+                    authored.encodedBlockConfirmation,
+                    {
+                        strategy: "dispute"
+                    }
+                )
                 .request();
 
             expect(r.resultName).to.equal("SUCCESS");
@@ -1110,7 +1136,7 @@ describe("Unit: ValidationService", function () {
 
             const r = await h
                 .control(observer)
-                .stub.runBlockValidation(encoded)
+                .validation.runBlockValidation(encoded)
                 .request();
 
             expect(r.resultName).to.equal("SUCCESS");
@@ -1130,7 +1156,9 @@ describe("Unit: ValidationService", function () {
 
             const r = await h
                 .control(observer)
-                .stub.runBlockValidation(authored!.encodedBlockConfirmation)
+                .validation.runBlockValidation(
+                    authored!.encodedBlockConfirmation
+                )
                 .request();
 
             expect(r.resultName).to.equal("SUCCESS");
@@ -1208,7 +1236,7 @@ describe("Unit: ValidationService", function () {
 
             const r = await h
                 .control(observer)
-                .stub.runBlockValidation(encoded)
+                .validation.runBlockValidation(encoded)
                 .request();
 
             // sourceless entry -> requeue for the timeout sync, not a disconnect
@@ -1229,7 +1257,7 @@ describe("Unit: ValidationService", function () {
             const localOnlyForkId = factory.hash();
             const r = await h
                 .control(observer)
-                .stub.probeIsDisputedFork(localOnlyForkId, true)
+                .validation.probeIsDisputedFork(localOnlyForkId, true)
                 .request();
 
             expect(r.disputed).to.equal(true);
@@ -1245,10 +1273,9 @@ describe("Unit: ValidationService", function () {
             await h.lifecycle.start(3, 2);
             // the observer never files its own dispute, so only the contract
             // can tell it the fork is dead
-            await h
-                .control(h.getPeer(observerIndex))
-                .stub.stubSuppressDisputeInitiation()
-                .request();
+            await h.dispute.suppressDisputeInitiation([
+                h.getPeer(observerIndex).index
+            ]);
             await h.byzantine.submitDoubleSignBlock(byzantineIndex);
             // only the other honest peer files one - the observer is suppressed
             await h.assert.dispute.committedWait({
@@ -1272,7 +1299,7 @@ describe("Unit: ValidationService", function () {
 
             const r = await h
                 .control(observer)
-                .stub.probeIsDisputedFork(forkId, false)
+                .validation.probeIsDisputedFork(forkId, false)
                 .request();
 
             expect(r.disputed).to.equal(true);
@@ -1319,7 +1346,7 @@ describe("Unit: ValidationService", function () {
 
             const r = await h
                 .control(observer)
-                .stub.runBlockValidation(encoded, {
+                .validation.runBlockValidation(encoded, {
                     senderAddress: supplier.address as Address
                 })
                 .request();
@@ -1363,7 +1390,7 @@ describe("Unit: ValidationService", function () {
 
             const r = await h
                 .control(observer)
-                .stub.runBlockValidation(encoded, {
+                .validation.runBlockValidation(encoded, {
                     senderAddress: unacknowledgedSupplier
                 })
                 .request();
@@ -1401,7 +1428,7 @@ describe("Unit: ValidationService", function () {
             );
             const { hash: parentHash } = await h
                 .control(observer)
-                .stub.storeBlockFixture(encodedParent)
+                .validation.storeBlockFixture(encodedParent)
                 .request();
 
             const encoded = await factory.buildAndEncodeBlock(observer.signer, {
@@ -1415,7 +1442,7 @@ describe("Unit: ValidationService", function () {
 
             const error = await h
                 .control(observer)
-                .stub.runBlockValidation(encoded, { strategy: "dispute" })
+                .validation.runBlockValidation(encoded, { strategy: "dispute" })
                 .request()
                 .then(
                     () => null,
@@ -1442,7 +1469,7 @@ describe("Unit: ValidationService", function () {
             });
             const { hash: snapshotHash } = await h
                 .control(observer)
-                .stub.storeStateSnapshotFixture(
+                .validation.storeStateSnapshotFixture(
                     Codec.encode(
                         snapshot.toStruct(),
                         Type.StateSnapshot
@@ -1464,7 +1491,7 @@ describe("Unit: ValidationService", function () {
             );
             const { hash: parentHash } = await h
                 .control(observer)
-                .stub.storeBlockFixture(encodedParent)
+                .validation.storeBlockFixture(encodedParent)
                 .request();
 
             const encoded = await factory.buildAndEncodeBlock(observer.signer, {
@@ -1478,7 +1505,7 @@ describe("Unit: ValidationService", function () {
 
             const error = await h
                 .control(observer)
-                .stub.runBlockValidation(encoded, { strategy: "dispute" })
+                .validation.runBlockValidation(encoded, { strategy: "dispute" })
                 .request()
                 .then(
                     () => null,
@@ -1529,7 +1556,7 @@ describe("Unit: ValidationService", function () {
 
             const r = await h
                 .control(observer)
-                .stub.runBlockValidation(encoded, { strategy: "dispute" })
+                .validation.runBlockValidation(encoded, { strategy: "dispute" })
                 .request();
 
             // the hook throws on this strategy, so reaching a later guard is
@@ -1563,7 +1590,7 @@ describe("Unit: ValidationService", function () {
 
             const active = await h
                 .control(observer)
-                .stub.runBlockValidation(encoded)
+                .validation.runBlockValidation(encoded)
                 .request();
             expect(active.firedHooks).to.include(
                 "blockIsNotNextAndIsInTheFuture"
@@ -1571,7 +1598,7 @@ describe("Unit: ValidationService", function () {
 
             const r = await h
                 .control(observer)
-                .stub.runBlockValidation(encoded, { strategy: "dispute" })
+                .validation.runBlockValidation(encoded, { strategy: "dispute" })
                 .request();
 
             // dispute replay walks a proof's blocks, so height ordering against
@@ -1595,9 +1622,12 @@ describe("Unit: ValidationService", function () {
 
             const r = await h
                 .control(observer)
-                .stub.runBlockValidation(authored!.encodedBlockConfirmation, {
-                    strategy: "dispute"
-                })
+                .validation.runBlockValidation(
+                    authored!.encodedBlockConfirmation,
+                    {
+                        strategy: "dispute"
+                    }
+                )
                 .request();
 
             expect(r.resultName).to.equal("SUCCESS");
@@ -1632,7 +1662,7 @@ describe("Unit: ValidationService", function () {
 
             const r = await h
                 .control(observer)
-                .stub.runBlockValidation(encoded, { strategy: "dispute" })
+                .validation.runBlockValidation(encoded, { strategy: "dispute" })
                 .request();
 
             // reaching the leader check at all means the previous snapshot and
@@ -1687,9 +1717,12 @@ describe("Unit: ValidationService", function () {
             // wrongLeader and the leader check flags the block instead
             const r = await h
                 .control(observer)
-                .stub.runBlockValidation(authored!.encodedBlockConfirmation, {
-                    strategy: "dispute"
-                })
+                .validation.runBlockValidation(
+                    authored!.encodedBlockConfirmation,
+                    {
+                        strategy: "dispute"
+                    }
+                )
                 .request();
 
             expect(r.resultName).to.equal("SUCCESS");
@@ -1728,7 +1761,7 @@ describe("Unit: ValidationService", function () {
             // before: the height is unreachable -> deferred, no punishment
             const beforeAdvance = await h
                 .control(observer)
-                .stub.runBlockValidation(encoded)
+                .validation.runBlockValidation(encoded)
                 .request();
 
             expect(beforeAdvance.resultName).to.equal("NOT_READY");
@@ -1752,7 +1785,7 @@ describe("Unit: ValidationService", function () {
             // after: the same bytes are now judged on linkage instead
             const afterAdvance = await h
                 .control(observer)
-                .stub.runBlockValidation(encoded)
+                .validation.runBlockValidation(encoded)
                 .request();
 
             expect(afterAdvance.resultName).to.equal("DISCONNECT");
@@ -1794,7 +1827,7 @@ describe("Unit: ValidationService", function () {
                 Array.from({ length: probeCount }, () =>
                     h
                         .control(observer)
-                        .stub.runBlockValidation(encoded)
+                        .validation.runBlockValidation(encoded)
                         .request()
                 )
             );

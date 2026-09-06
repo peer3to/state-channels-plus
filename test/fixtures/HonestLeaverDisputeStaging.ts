@@ -1,9 +1,9 @@
 // @spec-test-coverage-ignore: shared honest-leaver overlap and admitted-signature staging
-import { expect } from "chai";
+import type { MathPeerTestHarness } from "./MathPeerTestHarness";
 import { DisputeFraudProofType } from "@/types/sol-enums";
 import { addressesEqual } from "@/utils";
 import { waitFor } from "@test/utils/waitFor";
-import type { MathPeerTestHarness } from "./MathPeerTestHarness";
+import { expect } from "chai";
 
 export async function assertHonestLeaverDisputeOrdering(
     h: MathPeerTestHarness,

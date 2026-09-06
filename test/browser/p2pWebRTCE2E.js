@@ -1,16 +1,16 @@
 // @spec-test-coverage-ignore: browser page driver for the WebRTC E2E run; evidence is mapped from run-p2p-webrtc-e2e.mjs
-import { ethers, NonceManager, ContractFactory } from "ethers";
-
-import { EvmStateMachine } from "@/evm";
+import MathConsumerFacetArtifact from "../../artifacts/contracts/V1/examples/MathStateMachine/MathConsumerFacet.sol/MathConsumerFacet.json";
+import MathStateMachineArtifact from "../../artifacts/contracts/V1/examples/MathStateMachine/MathStateMachine.sol/MathStateMachine.json";
+import { deployFullStack } from "../../scripts/V1/deploy";
 import Clock from "@/Clock";
+import { EvmStateMachine } from "@/evm";
+
 import { installWebRTCMainThreadBridge } from "@/rpc/services/WebRTCSetup/connection/WebRTCMainThreadBridge";
 import { Status } from "@/types";
-import { MathStateMachine__factory } from "@typechain-types";
-import { connectStateChannelManager } from "@/utils/stateChannelManager";
 import { Codec, SignatureUtils, Type } from "@/utils";
-import { deployFullStack } from "../../scripts/V1/deploy";
-import MathStateMachineArtifact from "../../artifacts/contracts/V1/examples/MathStateMachine/MathStateMachine.sol/MathStateMachine.json";
-import MathConsumerFacetArtifact from "../../artifacts/contracts/V1/examples/MathStateMachine/MathConsumerFacet.sol/MathConsumerFacet.json";
+import { connectStateChannelManager } from "@/utils/stateChannelManager";
+import { MathStateMachine__factory } from "@typechain-types";
+import { ethers, NonceManager, ContractFactory } from "ethers";
 
 /**
  * Browser e2e: two REAL p2pSetup peers connect over WebRTC.

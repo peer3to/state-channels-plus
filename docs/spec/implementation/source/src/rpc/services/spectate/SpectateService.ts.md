@@ -26,6 +26,8 @@ response-age field or second RTT gate exists.
 
 ## Key design decisions
 
+Error text delegates to the dependency-free errorMessage helper. Existing catch policy, stack fields, log messages and error propagation remain at this call site. See [SpectateService.ts](../../../../../../../../src/rpc/services/spectate/SpectateService.ts#L16).
+
 1. **Nothing trusted on receipt.** Every payload element is re-established against the requester's own chain reads and the mirrored canonical predicates — the file is the reference implementation of [`INV-SYNC-1-XCQZ28`](../../../../../../specification/peer-communication/synchronization.md#inv-sync-1-xcqz28).
 2. **Validated against the requester's own request.** The request lives in the `sync` closure; the responder's echo is never consulted ([`INV-SYNC-2-AT3RXE`](../../../../../../specification/peer-communication/synchronization.md#inv-sync-2-at3rxe)).
 3. **Read-only trust establishment.** All contract checks are local-mirror or simulated calls; no step transacts ([`INV-SYNC-4-Z6HER7`](../../../../../../specification/peer-communication/synchronization.md#inv-sync-4-z6her7), [`REQ-MIRROR-1-XCY9CB`](../../../../../../specification/enforcement/local-mirror.md#req-mirror-1-xcy9cb)).
@@ -133,3 +135,5 @@ One `sync` method accepts optional fork, height, and timeout arguments. The defa
 agreement window; `P2PManager` supplies two windows for initial loading. The service returns a Boolean.
 `P2PManager` owns initial-load abort, while `BlockQueueManager` owns exact-recovery failure. The sync
 service owns no participant selection, responder-readiness queue, or lifecycle transition.
+
+Shared operation owners: [errorMessage.ts.md](../../../utils/errorMessage.ts.md).

@@ -1,7 +1,6 @@
-import { expect } from "chai";
-import { Buffer } from "buffer";
-
 import { P2PManagerFixture } from "@test/fixtures/P2PManagerFixture";
+import { Buffer } from "buffer";
+import { expect } from "chai";
 
 describe("Holepunch topic lifecycle", function () {
     let fixture: P2PManagerFixture;
@@ -13,6 +12,18 @@ describe("Holepunch topic lifecycle", function () {
 
     afterEach(async function () {
         await fixture.cleanup();
+    });
+
+    it("reannounces duplicate topics in their insertion order", async function () {
+        const result = await fixture
+            .control()
+            .p2pManagerProbe.probeHolepunchRejoinAfterLeave(true)
+            .request();
+        expect(result.joinCalls.map((call) => call.topicHex)).to.deep.equal(
+            ["topic-b", "topic-b", "topic-c"].map((topic) =>
+                Buffer.from(topic).toString("hex")
+            )
+        );
     });
 
     it("records a joined Buffer topic with server and client discovery enabled", async function () {

@@ -1,68 +1,15 @@
-import { expect } from "chai";
-import { ForkId } from "@/types/types";
 import { Status } from "@/types";
+import { ForkId } from "@/types/types";
 import { hash as randomHash } from "@test/factory";
 import { MathTestSession as TestSession } from "@test/harness";
 import { waitFor } from "@test/utils/waitFor";
+import { expect } from "chai";
 
 describe("Unit: ReductionExecutor", function () {
     // a reduce whose inbound run this peer cannot walk yields no reduce data.
     // that outcome must reschedule, never reach ReductionManager.failCompletion
     // (which answers with abort() and strands the peer for good)
     describe("reduce data unavailable", function () {
-        /**
-         * A committed settled-path dispute whose reduce moves the inbound head
-         * past `laggingIndex`'s store. Its handler is held, so nothing - the
-         * on-demand recovery included - can close the gap until release.
-         */
-        const stageDisputeOverHeldInboundGap = async (
-            h: ReturnType<typeof TestSession.getHarness>,
-            laggingIndex: number
-        ) => {
-            await h.setup(3, {
-                timeConfig: {
-                    p2pTime: 2,
-                    agreementTime: 8,
-                    chainFallbackTime: 4,
-                    evidenceTime: 4
-                }
-            });
-            await h.lifecycle.openChannel();
-            const forkId = h.activeForkId!;
-            await h.transition.advanceState({
-                count: 2,
-                waitForFinalization: true
-            });
-            await h.assert.sync.peersInSyncWait();
-
-            const held = await h.rpcStub.holdInboundMessageEvents(laggingIndex);
-            const observers = h.peers
-                .map((peer) => peer.index)
-                .filter((index) => index !== laggingIndex);
-            // a top-up of an existing participant keeps the head
-            // final-by-everyone -> the settled path posts no auditing data, so
-            // nothing back-fills the block this peer never received
-            await h.join.forceInboundJoinWait({
-                participant: h.getPeer(observers[0]).address,
-                observePeerIndices: observers
-            });
-
-            h.event.resetEventSpies();
-            h.contextApi.captureOriginalFork();
-
-            const offenderIndex = (await h.query.getNextPeerToWrite()).index;
-            const disputerIndex = observers.find(
-                (index) => index !== offenderIndex
-            )!;
-            await h.byzantine.submitInvalidStateTransitionBlock(offenderIndex);
-            await h.assert.dispute.initiatedAndCommitedWait({
-                peersIndices: [disputerIndex],
-                expectedCount: 1,
-                initiatedWithAuditingData: false
-            });
-            return { forkId, held, disputerIndex };
-        };
-
         it("no reduce data → the attempt reschedules, the peer keeps participating, a later attempt completes", async function () {
             const h = TestSession.getHarness();
             // The staging's offender is the next writer after two blocks,
@@ -72,10 +19,10 @@ describe("Unit: ReductionExecutor", function () {
             // kept reducing after disposal, which the terminal reduction
             // owner no longer allows.
             const laggingIndex = 1;
-            const { forkId, held } = await stageDisputeOverHeldInboundGap(
-                h,
-                laggingIndex
-            );
+            const { forkId, held } =
+                await h.scenario.stageDisputeOverHeldInboundGap({
+                    laggingIndex: laggingIndex
+                });
             const scheduled =
                 await h.rpcStub.recordScheduledTasks(laggingIndex);
 
@@ -115,10 +62,7 @@ describe("Unit: ReductionExecutor", function () {
                 },
                 { forkId },
                 {
-                    timeoutMs:
-                        h.event.protocolEventTimeoutMs({
-                            withFirstBlockGrace: true
-                        }) * 2
+                    timeoutMs: h.event.hostExecTimeoutMs()
                 }
             );
 
@@ -157,14 +101,16 @@ describe("Unit: ReductionExecutor", function () {
             const h = TestSession.getHarness();
             const laggingIndex = 2;
             const { held, disputerIndex } =
-                await stageDisputeOverHeldInboundGap(h, laggingIndex);
+                await h.scenario.stageDisputeOverHeldInboundGap({
+                    laggingIndex: laggingIndex
+                });
 
             // a reduced fork id that matches nothing locally: with reduce data
             // the peer would challenge it, without reduce data it must not
             const claimedReducedForkId = randomHash() as ForkId;
             const lagging = await h
                 .control(h.getPeer(laggingIndex))
-                .stub.probeDisputeReductionChallenge(claimedReducedForkId)
+                .validation.probeDisputeReductionChallenge(claimedReducedForkId)
                 .request();
 
             expect(lagging.threw).to.equal(null);
@@ -176,7 +122,7 @@ describe("Unit: ReductionExecutor", function () {
             // claim, so the probe really does observe challenges
             const healthy = await h
                 .control(h.getPeer(disputerIndex))
-                .stub.probeDisputeReductionChallenge(claimedReducedForkId)
+                .validation.probeDisputeReductionChallenge(claimedReducedForkId)
                 .request();
             expect(healthy.isValid).to.equal(false);
             expect(healthy.challengeCalls).to.equal(1);
@@ -233,10 +179,7 @@ describe("Unit: ReductionExecutor", function () {
                 },
                 { forkId },
                 {
-                    timeoutMs:
-                        h.event.protocolEventTimeoutMs({
-                            withFirstBlockGrace: true
-                        }) * 2
+                    timeoutMs: h.event.hostExecTimeoutMs()
                 }
             );
 
@@ -355,7 +298,7 @@ describe("Unit: ReductionExecutor", function () {
             const blinded = await h.rpcStub.failChainLogQueries(observerIndex);
             const probe = await h
                 .control(h.getPeer(observerIndex))
-                .stub.probeDisputeReductionChallenge(claimedReducedForkId)
+                .validation.probeDisputeReductionChallenge(claimedReducedForkId)
                 .request();
             await blinded.restore();
 

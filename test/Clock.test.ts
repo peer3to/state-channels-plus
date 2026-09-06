@@ -1,8 +1,7 @@
+import Clock from "@/Clock";
 import { expect } from "chai";
 import { BrowserProvider } from "ethers";
 import { ethers, network } from "hardhat";
-
-import Clock from "@/Clock";
 
 // A second real ethers provider over the same in-process hardhat network:
 // distinct instance, live chain reads, no mocking.

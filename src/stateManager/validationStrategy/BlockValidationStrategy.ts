@@ -1,23 +1,23 @@
-import { Block } from "@/models";
-import { BlockValidationResult, Signature } from "@/types";
-import {
-    BlockConfirmationStruct,
-    MessageBlockStruct
-} from "@typechain-types/contracts/V1/types/DataTypes";
 import AValidationStrategy, {
     ParticipantSnapshots
 } from "./AValidationStrategy";
+import type BlockQueueManager from "../ingest/BlockQueueManager";
+import FraudProofService from "../utils/FraudProofService";
+import type ADiamondStateMachine from "@/ADiamondStateMachine";
+import DisputeManager from "@/disputeManager";
+import { Block } from "@/models";
+import type P2PManager from "@/P2PManager";
+import Storage from "@/storage";
 import {
     sourcePeersAndAuthor,
     type QueuedBlockEntry
 } from "@/storage/QueueStorage";
-import FraudProofService from "../utils/FraudProofService";
-import Storage from "@/storage";
-import type P2PManager from "@/P2PManager";
-import type BlockQueueManager from "../ingest/BlockQueueManager";
-import DisputeManager from "@/disputeManager";
+import { BlockValidationResult, Signature } from "@/types";
 import { Logger } from "@/utils";
-import type ADiamondStateMachine from "@/ADiamondStateMachine";
+import {
+    BlockConfirmationStruct,
+    MessageBlockStruct
+} from "@typechain-types/contracts/V1/types/DataTypes";
 
 export default class BlockValidationStrategy extends AValidationStrategy {
     readonly fraudProofService: FraudProofService;

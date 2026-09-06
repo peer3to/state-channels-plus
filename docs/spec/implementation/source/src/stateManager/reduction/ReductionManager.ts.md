@@ -25,6 +25,10 @@ genesis under the execution boundary, and channel restart on the reduced fork.
 
 ## Key design decisions
 
+computeReduction remains live through EventHandler. getCompletedReduction remains private and the harness query reads it by bracket access; it is a retained test-only production query.
+
+Error text delegates to the dependency-free errorMessage helper. Existing catch policy, stack fields, log messages and error propagation remain at this call site. See [ReductionManager.ts](../../../../../../../src/stateManager/reduction/ReductionManager.ts#L1).
+
 1. **One normal reduction completion per fork.** Final-dispute completion and ordinary attempts share the operation. Sync-payload verification is separate: after installing a different fork it cancels only the old pending operation with `undefined`, never supplies the sync result. [`settleForkLeft`](../../../../../../../src/stateManager/reduction/ReductionManager.ts#L93) cancels its timer and removes the pending entry while preserving an already-completed result. `tryReduce` rechecks the fork after its admission read; obsolete scheduling is ignored, and `completeWithGenesis` cannot create or await an orphan for an old fork. See [`REQ-DISPUTE-PIPE-4-3YVDSA`](../../../../../specification/disputes/dispute-processing.md#req-dispute-pipe-4-3yvdsa).
 2. **The manager is the terminal owner.** `dispose` sets a disposed flag, cancels scheduled timers, and settles every pending completion once with `undefined`; settled results stay unchanged and disposal itself never rejects, so no detached error reaches the drain. The shared completion is the caller boundary: `tryReduce` returns it as soon as it exists and drives the executor attempt as observed detached work behind it, so disposal settles every caller without waiting for the attempt's provider or VM calls to return. A fatal attempt error rejects the completion exactly once, before the abort, and the promise carries a handled branch so a rejection nobody awaits never becomes an orphan. Afterwards `schedule` returns, `tryReduce` returns `undefined`, `getOrCreateCompletion` hands out an already-settled `undefined` completion instead of inserting into the map, and `completeWithGenesis` returns `false`. The completion type is `CompletedReduction | undefined` and every caller handles the disposed result ([`REQ-DISPUTE-PIPE-3-PHE3SQ`](../../../../../specification/disputes/dispute-processing.md#req-dispute-pipe-3-phe3sq)).
 3. **Genesis application is staged under the state mutex.** `completeWithGenesis` delegates to `StateApplicationService.unsafeApplyReductionGenesis` with a `shouldCommit` predicate (`!disposed && !stateManager.isDisposed`) evaluated after the VM reads and before any storage, fork, status, timer, or hook mutation; a `false` result installs nothing.
@@ -84,3 +88,5 @@ Exact test evidence is mapped against these IDs in the verification test reports
 ## Related source reports
 
 - [ReductionExecutor](./ReductionExecutor.ts.md), [StateManager](../StateManager.ts.md), [EventHandler](../../eventHandlers/EventHandler.ts.md).
+
+Shared operation owners: [errorMessage.ts.md](../../utils/errorMessage.ts.md).

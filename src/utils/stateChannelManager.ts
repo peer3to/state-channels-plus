@@ -1,10 +1,10 @@
-import { ContractRunner, ethers, Fragment, InterfaceAbi } from "ethers";
+import { mergeAbis } from "@/utils/contractAbi";
+import { errorAbis } from "@/utils/GeneratedArtifacts";
 import {
     StateChannelManagerInterface,
     StateChannelManagerInterface__factory
 } from "@typechain-types";
-import { errorAbis } from "@/utils/GeneratedArtifacts";
-import { mergeAbis } from "@/utils/contractAbi";
+import { ContractRunner, ethers, Fragment, InterfaceAbi } from "ethers";
 
 /** Public manager ABI: interface calls/events plus every reachable custom error. */
 export const stateChannelManagerAbi: Fragment[] = mergeAbis(

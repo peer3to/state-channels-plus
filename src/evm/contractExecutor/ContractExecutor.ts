@@ -1,14 +1,14 @@
-import { EVM } from "@ethereumjs/evm";
-import { Address as EthjsAddress } from "@ethereumjs/util";
-import { ethers } from "ethers";
-import type { Address, Bytes } from "@/types/types";
-import type { Logger } from "@/utils";
-import { Mutex, toEthereumJsEvmAddress, tryDecodeCustomError } from "@/utils";
 import AContractExecutor, {
     type ContractExecutionLog,
     type ContractExecutionResult
 } from "./AContractExecutor";
+import type { Address, Bytes } from "@/types/types";
+import type { Logger } from "@/utils";
+import { Mutex, toEthereumJsEvmAddress, tryDecodeCustomError } from "@/utils";
 import { LoggerUtils } from "@/utils/LoggerUtils";
+import { EVM } from "@ethereumjs/evm";
+import { Address as EthjsAddress } from "@ethereumjs/util";
+import { ethers } from "ethers";
 
 // Jumpdest scan cost: profiling showed Interpreter._getValidJumpDests
 // re-scanning the full contract bytecode on EVERY message call at ~25% of all

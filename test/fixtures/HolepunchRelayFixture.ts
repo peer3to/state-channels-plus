@@ -1,8 +1,8 @@
 // @spec-test-coverage-ignore: typed WebSocket boundary for HolepunchRelay component tests
-import sinon from "sinon";
 
 import HolepunchRelay from "@/HolepunchRelay";
 import { createLogger } from "@/utils";
+import sinon from "sinon";
 
 type WebSocketListener = (event: unknown) => void;
 

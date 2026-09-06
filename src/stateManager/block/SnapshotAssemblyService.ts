@@ -1,3 +1,9 @@
+import type StateManager from "../StateManager";
+import { BlockCoordinates, StateSnapshot } from "@/models";
+
+import { Address, Bytes, Hash, Timestamp } from "@/types/types";
+import { Codec, Type, difference, hash, Logger } from "@/utils";
+import { LoggerUtils } from "@/utils/LoggerUtils";
 import {
     BalanceStruct,
     MessageBlockStruct,
@@ -5,13 +11,6 @@ import {
     StateSnapshotStruct,
     TransactionStruct
 } from "@typechain-types/contracts/V1/types/DataTypes";
-
-import { BlockCoordinates, StateSnapshot } from "@/models";
-import { Address, Bytes, Hash, Timestamp } from "@/types/types";
-import { Codec, Type, difference, hash, Logger } from "@/utils";
-import { LoggerUtils } from "@/utils/LoggerUtils";
-
-import type StateManager from "../StateManager";
 
 // diff of the participant set across one block: who a transition removed and added
 export type ParticipantChanges = {

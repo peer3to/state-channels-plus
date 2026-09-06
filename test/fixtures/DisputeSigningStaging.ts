@@ -1,9 +1,9 @@
 // @spec-test-coverage-ignore: shared staging for the mapped dispute signing cases
-import { expect } from "chai";
-import { Codec, Type } from "@/utils";
-import type { MathPeerTestHarness } from "./MathPeerTestHarness";
 import type { BlockWorkHoldPoint } from "./customRpc/harnessControl/services/stub/StubService";
+import type { MathPeerTestHarness } from "./MathPeerTestHarness";
+import { Codec, Type } from "@/utils";
 import { waitFor } from "@test/utils/waitFor";
+import { expect } from "chai";
 
 export async function assertAdmittedBlockPrecedesDispute(
     h: MathPeerTestHarness,

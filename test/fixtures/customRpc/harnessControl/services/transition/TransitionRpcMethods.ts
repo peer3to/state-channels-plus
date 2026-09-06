@@ -1,11 +1,11 @@
 // @spec-test-coverage-ignore: transition fixture support exercised by owning mapped tests
+import type { TransitionService } from "./TransitionService";
+import { Block } from "@/models";
 import ARpcMethods from "@/rpc/ARpcMethods";
+import type { IngestBlockConfirmationOptions } from "@/stateManager/ingest/BlockQueueManager";
 import type ATransport from "@/transport/ATransport";
 import type { ForkId } from "@/types/types";
-import type { IngestBlockConfirmationOptions } from "@/stateManager/ingest/BlockQueueManager";
-import { Block } from "@/models";
 import { Codec, Type } from "@/utils";
-import type { TransitionService } from "./TransitionService";
 
 /**
  * Serializable projection of `prepareUpdateSnapshotSameFork`. Snapshots carry

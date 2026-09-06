@@ -1,15 +1,15 @@
 // @spec-test-coverage-ignore: shared math transition actions exercised by owning mapped test declarations
-import { DetachedPromises } from "@/utils";
 import { Status } from "@/types";
-import { MathStateMachine } from "@typechain-types";
+import { DetachedPromises } from "@/utils";
+import type { HarnessControlRpc } from "@test/fixtures/customRpc/harnessControl/HarnessControlRpc";
 import {
     AdvanceStateBaseOptions,
     TransitionActions,
     TransitionOptions,
     KeepAuthoringOptions
 } from "@test/harness/actions/TransitionActions";
+import { MathStateMachine } from "@typechain-types";
 import { MathPeerTestHarness } from "test-harness";
-import type { HarnessControlRpc } from "@test/fixtures/customRpc/harnessControl/HarnessControlRpc";
 
 type MathAdvanceStateOptions = AdvanceStateBaseOptions & {
     txFn?: (contract: MathStateMachine) => Promise<any>;

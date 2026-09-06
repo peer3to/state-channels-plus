@@ -1,15 +1,15 @@
 // @spec-test-coverage-ignore: shared initial-sync staging exercised by mapped P2PManager declarations
-import { expect } from "chai";
 
 import { Status } from "@/types";
-import type { PeerTestHarness } from "@test/fixtures/PeerTestHarness";
-import type HarnessControlRpc from "@test/fixtures/customRpc/harnessControl/HarnessControlRpc";
-import type { MathStateMachine } from "@typechain-types";
-
-import type { TestPeer } from "@test/harness/core/types";
-import { slotAccountIndex } from "@test/harness/core/slotAccounts";
-import { waitFor } from "@test/utils/waitFor";
 import { sleep } from "@/utils";
+import type HarnessControlRpc from "@test/fixtures/customRpc/harnessControl/HarnessControlRpc";
+import type { PeerTestHarness } from "@test/fixtures/PeerTestHarness";
+
+import { slotAccountIndex } from "@test/harness/core/slotAccounts";
+import type { TestPeer } from "@test/harness/core/types";
+import { waitFor } from "@test/utils/waitFor";
+import type { MathStateMachine } from "@typechain-types";
+import { expect } from "chai";
 
 /** Keep the participants authoring through a fresh observer's spawn and test body. */
 export async function withFreshInitialSyncObserver<

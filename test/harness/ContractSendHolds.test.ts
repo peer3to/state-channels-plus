@@ -1,6 +1,6 @@
 // @spec-test-coverage-ignore: contract-send hold composition is test infrastructure
-import { expect } from "chai";
 import { MathTestSession as TestSession } from "@test/harness";
+import { expect } from "chai";
 
 describe("contract send holds", function () {
     it("preserves simulation and the outer submission recorder through snapshot-send release", async function () {

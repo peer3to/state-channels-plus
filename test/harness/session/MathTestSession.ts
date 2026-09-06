@@ -1,5 +1,5 @@
-import MathPeerTestHarness from "../../fixtures/MathPeerTestHarness";
 import { TestSession } from "./TestSession";
+import MathPeerTestHarness from "../../fixtures/MathPeerTestHarness";
 
 export class MathTestSession extends TestSession {
     protected static override createHarness(): MathPeerTestHarness {

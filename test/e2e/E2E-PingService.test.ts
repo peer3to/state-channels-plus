@@ -1,8 +1,7 @@
-import { expect } from "chai";
-
+import { Status } from "@/types";
 import { PingPongE2EFixture } from "@test/fixtures/PingPongE2EFixture";
 import { waitFor } from "@test/utils/waitFor";
-import { Status } from "@/types";
+import { expect } from "chai";
 
 describe("E2E: PingPongService (custom RPC)", function () {
     let fixture: PingPongE2EFixture;

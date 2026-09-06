@@ -1,13 +1,13 @@
 // @spec-test-coverage-ignore: worker-side raw-RPC support for mapped lobby E2E declarations
-import { ethers } from "ethers";
 
-import ARpcService from "@/rpc/ARpcService";
+import ByzantineRpcMethods from "./ByzantineRpcMethods";
 import type P2PManager from "@/P2PManager";
+import ARpcService from "@/rpc/ARpcService";
+import type Rpc from "@/rpc/Rpc";
 import type ATransport from "@/transport/ATransport";
 import type { ForkId, Hash } from "@/types/types";
-import ByzantineRpcMethods from "./ByzantineRpcMethods";
-import type Rpc from "@/rpc/Rpc";
 import { getChecksumAddress } from "@/utils";
+import { ethers } from "ethers";
 
 export type LobbyRawMethod = "advertise" | "pick" | "commit";
 export type NegotiationRawMethod = "exchangeTerms" | "openProposal" | "abort";

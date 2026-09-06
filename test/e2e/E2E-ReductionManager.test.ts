@@ -1,6 +1,3 @@
-import { expect } from "chai";
-import { id } from "ethers";
-
 import { Status } from "@/types";
 import type { ForkId } from "@/types/types";
 import {
@@ -9,6 +6,8 @@ import {
     type MathPeerTestHarness
 } from "@test/harness";
 import { waitFor } from "@test/utils/waitFor";
+import { expect } from "chai";
+import { id } from "ethers";
 
 describe("E2E: ReductionManager", function () {
     describe("ordinary reduction submission outcomes", function () {
@@ -194,12 +193,9 @@ describe("E2E: ReductionManager", function () {
         const targetPeer = h.getPeer(0);
         const sourceForkId = h.activeForkId!;
 
-        for (const peer of h.peers) {
-            await h
-                .control(peer)
-                .stub.stubSuppressDisputeInitiation()
-                .request();
-        }
+        await h.dispute.suppressDisputeInitiation(
+            h.peers.map((peer) => peer.index)
+        );
 
         await h.tamper.postTamperedDispute(2, (dispute) => {
             dispute.outputSnapshotDataHash = id(

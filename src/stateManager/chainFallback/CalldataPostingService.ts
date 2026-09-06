@@ -1,6 +1,6 @@
-import { TransactionResponse } from "ethers";
-
+import type StateManager from "../StateManager";
 import Clock from "@/Clock";
+
 import { timeoutWaitTime } from "@/types";
 import { Hash } from "@/types/types";
 import { DetachedPromises, Logger } from "@/utils";
@@ -9,8 +9,7 @@ import {
     tryHandleEvmError
 } from "@/utils/evmErrorHandler";
 import { LoggerUtils } from "@/utils/LoggerUtils";
-
-import type StateManager from "../StateManager";
+import { TransactionResponse } from "ethers";
 
 /**
  * Posts my authored block's calldata on-chain when not everyone signed it, so

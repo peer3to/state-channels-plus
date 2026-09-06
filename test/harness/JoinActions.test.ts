@@ -1,12 +1,12 @@
 // @spec-test-coverage-ignore: harness helper contract test; the helper is test infrastructure with no specification or implementation IDs
-import { expect } from "chai";
 
-import { sleep } from "@/utils";
 import { Status } from "@/types";
+import { sleep } from "@/utils";
 import {
     MathTestSession as TestSession,
     resolveTestTimeConfig
 } from "@test/harness";
+import { expect } from "chai";
 
 describe("JoinActions spectator spawn helper", function () {
     it("counts a slow authoring completion inside the next keep-alive window", async function () {

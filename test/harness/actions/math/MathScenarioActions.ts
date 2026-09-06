@@ -1,16 +1,18 @@
 // @spec-test-coverage-ignore: shared math scenario setup exercised by owning mapped test declarations
-import { Logger, sleep } from "@/utils";
-import { ForkId, Hash } from "@/types/types";
 import { Status, TimeConfig } from "@/types";
+import { ForkId, Hash } from "@/types/types";
+import { Logger, sleep } from "@/utils";
+import type { HarnessControlRpc } from "@test/fixtures/customRpc/harnessControl/HarnessControlRpc";
+import { ScenarioActions } from "@test/harness/actions/ScenarioActions";
+import { INBOUND_GAP_TIME_CONFIG } from "@test/harness/core/testTimeConfig";
 import {
     CreateAndResolveDisputeResult,
     HarnessOptions,
     TestPeer
 } from "@test/harness/core/types";
-import { ScenarioActions } from "@test/harness/actions/ScenarioActions";
-import { MathPeerTestHarness } from "test-harness";
 import type { MathStateMachine } from "@typechain-types";
-import type { HarnessControlRpc } from "@test/fixtures/customRpc/harnessControl/HarnessControlRpc";
+import { expect } from "chai";
+import { MathPeerTestHarness } from "test-harness";
 
 type MathTestPeer = TestPeer<HarnessControlRpc, MathStateMachine>;
 
@@ -22,6 +24,127 @@ export class MathScenarioActions extends ScenarioActions {
 
     constructor(harness: MathPeerTestHarness, logger: Logger) {
         super(harness, logger);
+    }
+
+    /**
+     * A committed settled-path dispute whose reduce moves the inbound head
+     * past `laggingIndex`'s store. Its handler is held, so nothing - the
+     * on-demand recovery included - can close the gap until release.
+     */
+
+    async stageDisputeOverHeldInboundGap({
+        laggingIndex
+    }: {
+        laggingIndex: number;
+    }) {
+        await this.harness.setup(3, {
+            timeConfig: INBOUND_GAP_TIME_CONFIG
+        });
+        await this.harness.lifecycle.openChannel();
+        const forkId = this.harness.activeForkId!;
+        await this.harness.transition.advanceState({
+            count: 2,
+            waitForFinalization: true
+        });
+        await this.harness.assert.sync.peersInSyncWait();
+
+        const held =
+            await this.harness.rpcStub.holdInboundMessageEvents(laggingIndex);
+        const observers = this.harness.peers
+            .map((peer) => peer.index)
+            .filter((index) => index !== laggingIndex);
+        // a top-up of an existing participant keeps the head
+        // final-by-everyone -> the settled path posts no auditing data, so
+        // nothing back-fills the block this peer never received
+        await this.topUpAndObserve(observers);
+
+        this.harness.event.resetEventSpies();
+        this.harness.contextApi.captureOriginalFork();
+
+        const offenderIndex = (await this.harness.query.getNextPeerToWrite())
+            .index;
+        const disputerIndex = observers.find(
+            (index) => index !== offenderIndex
+        )!;
+        await this.harness.byzantine.submitInvalidStateTransitionBlock(
+            offenderIndex
+        );
+        await this.harness.assert.dispute.initiatedAndCommitedWait({
+            peersIndices: [disputerIndex],
+            expectedCount: 1,
+            initiatedWithAuditingData: false
+        });
+        return { forkId, held, disputerIndex };
+    }
+
+    /**
+     * A committed settled-path dispute on a fork whose chain inbound
+     * head sits above `laggingIndex`'s store: the top-up of an existing
+     * participant keeps the head final-by-everyone, so no auditing data
+     * is posted and nothing back-fills the missing block.
+     */
+
+    async stageCommittedDisputeOverInboundGap({
+        laggingIndex
+    }: {
+        laggingIndex: number;
+    }) {
+        const observers = this.harness.peers
+            .map((peer) => peer.index)
+            .filter((index) => index !== laggingIndex);
+        await this.topUpAndObserve(observers);
+        const offenderIndex = (await this.harness.query.getNextPeerToWrite())
+            .index;
+        const disputerIndex = observers.find(
+            (index) => index !== offenderIndex
+        )!;
+        await this.harness.byzantine.submitInvalidStateTransitionBlock(
+            offenderIndex
+        );
+        await this.harness.assert.dispute.initiatedAndCommitedWait({
+            peersIndices: [disputerIndex],
+            expectedCount: 1,
+            initiatedWithAuditingData: false
+        });
+        return { forkId: this.harness.activeForkId!, disputerIndex };
+    }
+
+    /**
+     * 3 peers, two finalized transitions, then a top-up of an existing
+     * participant: block turns and the final-by-everyone head stay intact, so
+     * disputes take the settled path, and the chain's inbound head ends up above
+     * the snapshot every dispute pins. Returns the head the disputes will name.
+     */
+
+    async stageInboundGap({
+        laggingIndex,
+        observePeerIndices
+    }: {
+        laggingIndex: number;
+        observePeerIndices: number[];
+    }) {
+        await this.topUpAndObserve(observePeerIndices);
+
+        const inboundHeadHash = (await this.harness
+            .control(this.harness.getPeer(observePeerIndices[0]))
+            .query.getLatestInboundMessageHash()
+            .request()) as Hash;
+        // premise - the lagging peer holds no block at the inbound head the
+        // other peers' disputes name
+        expect(
+            await this.harness
+                .control(this.harness.getPeer(laggingIndex))
+                .query.getInboundMessageBlock(inboundHeadHash)
+                .request(),
+            "lagging peer must not hold the inbound head"
+        ).to.equal(null);
+        return inboundHeadHash;
+    }
+    private async topUpAndObserve(observePeerIndices: number[]): Promise<void> {
+        await this.harness.join.forceInboundJoinWait({
+            participant: this.harness.getPeer(observePeerIndices[0]).address,
+            observePeerIndices
+        });
     }
 
     async disputeWithReduction(options: {
@@ -769,7 +892,7 @@ export class MathScenarioActions extends ScenarioActions {
         await sleep((options.timeConfig.p2pTime + 2) * 1000);
         const { onChainTimestamp: parentPostTimestamp } = await h
             .control(parentAuthor)
-            .stub.postBlockCalldataOnChain(previous.encodedSignedBlock)
+            .validation.postBlockCalldataOnChain(previous.encodedSignedBlock)
             .request();
         if (parentPostTimestamp <= previous.timestamp) {
             throw new Error(

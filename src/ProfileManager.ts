@@ -1,9 +1,9 @@
-import ATransport from "@/transport/ATransport";
-import { TransportType } from "@/transport/TransportType";
-import PeerProfile, { BannablePeerInfo } from "@/PeerProfile";
 import { Address } from "./types/types";
 import { getChecksumAddress } from "./utils";
 import { LoggerUtils } from "./utils/LoggerUtils";
+import PeerProfile, { BannablePeerInfo } from "@/PeerProfile";
+import ATransport from "@/transport/ATransport";
+import { TransportType } from "@/transport/TransportType";
 
 // ProfileManager alone owns explicit bans, upgrade bans, and fallback release.
 // An explicit blacklist always wins over transport fallback.

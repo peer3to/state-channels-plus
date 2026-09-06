@@ -1,11 +1,11 @@
-import type { BusKind } from "@/events/EventBus";
+import type { SerializedTransactionRequest } from "../chainSignerSerialization";
 import type {
     DistributiveOmit,
     RuntimeRequest,
     SerializedError,
     SetupPayload
 } from "../types";
-import type { SerializedTransactionRequest } from "../chainSignerSerialization";
+import type { BusKind } from "@/events/EventBus";
 import type { ConnectToChannelOptions } from "@/evm/signer/ConnectToChannelOptions";
 
 export type JoinLobbyWireOptions = {

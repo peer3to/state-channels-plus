@@ -1,26 +1,8 @@
-import { ethers } from "ethers";
-import type {
-    StateChannelManagerInterface,
-    AStateMachine as AStateMachineContract
-} from "@typechain-types";
-
-import { createLogger, Logger } from "@/utils";
-import { createConfig, Config } from "@/utils/config";
-import type MainRpcService from "@/rpc/MainRpcService";
-import type { CustomRpcManifest } from "@/rpc/registry";
-import type { LocalStateMachineDeployer } from "scripts/V1/deploy";
-import {
-    createRuntimeChannel,
-    createTransferableChannel
-} from "@platform/p2pRuntimeChannel";
-import { createP2pRuntimeWorker as createProductionP2pRuntimeWorker } from "@platform/p2pRuntimeWorkerRuntime";
-
 import type { EvmCustomPrecompileManifest } from "../EvmFactory";
 import P2pInstance from "../P2pInstance";
-import DeploymentBridgeSigner from "../signer/DeploymentBridgeSigner";
 import type { HostHandlerExecutionContext } from "./HostHandlerExecutionContext";
-import { startP2pRuntimeHost, type HostContext } from "./P2pRuntimeHost";
 import P2pRuntimeClient from "./P2pRuntimeClient";
+import { startP2pRuntimeHost, type HostContext } from "./P2pRuntimeHost";
 import type {
     P2pRuntimeWorker,
     RuntimePort,
@@ -28,6 +10,22 @@ import type {
     SetupPayload,
     WorkerBootstrapMessage
 } from "./types";
+import DeploymentBridgeSigner from "../signer/DeploymentBridgeSigner";
+import type MainRpcService from "@/rpc/MainRpcService";
+import type { CustomRpcManifest } from "@/rpc/registry";
+import { createLogger, Logger } from "@/utils";
+import { createConfig, Config } from "@/utils/config";
+import {
+    createRuntimeChannel,
+    createTransferableChannel
+} from "@platform/p2pRuntimeChannel";
+import { createP2pRuntimeWorker as createProductionP2pRuntimeWorker } from "@platform/p2pRuntimeWorkerRuntime";
+import type {
+    StateChannelManagerInterface,
+    AStateMachine as AStateMachineContract
+} from "@typechain-types";
+import { ethers } from "ethers";
+import type { LocalStateMachineDeployer } from "scripts/V1/deploy";
 
 /** Public options of `EvmStateMachine.p2pSetup`, unchanged. */
 export type P2pSetupOptions = {

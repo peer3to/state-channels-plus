@@ -1,14 +1,12 @@
-import { ethers } from "ethers";
-
-import type { TimeoutStruct } from "@typechain-types/contracts/V1/types/DisputeTypes";
-
+import type StateManager from "../StateManager";
 import Clock from "@/Clock";
+
 import { timeoutWaitTime as timeoutWaitTimeSeconds } from "@/types";
 import { Address, BlockHeight, Bytes, ForkId, Timestamp } from "@/types/types";
 import { Logger } from "@/utils";
 import { LoggerUtils } from "@/utils/LoggerUtils";
-
-import type StateManager from "../StateManager";
+import type { TimeoutStruct } from "@typechain-types/contracts/V1/types/DisputeTypes";
+import { ethers } from "ethers";
 
 /**
  * Owns the participant-timeout check: schedules it, decides whether the

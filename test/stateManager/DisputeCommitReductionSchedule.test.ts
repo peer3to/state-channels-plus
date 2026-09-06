@@ -1,6 +1,6 @@
-import { expect } from "chai";
 import { MathTestSession as TestSession } from "@test/harness";
 import { waitFor } from "@test/utils/waitFor";
+import { expect } from "chai";
 
 /**
  * A committed dispute must schedule the fork's reduction even when the node

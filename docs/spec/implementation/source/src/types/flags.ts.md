@@ -24,6 +24,8 @@ short lifecycle meaning here, so state holders and consumers do not repeat a sec
 
 ## Key design decisions
 
+The shared predicate means only PENDING_PARTICIPANT or PARTICIPATING. It does not define synced, engaged, finalized or source-specific status policies. See [flags.ts](../../../../../../src/types/flags.ts#L26).
+
 `Status` is listed in lifecycle order. `DISCOVERING` is the only active caller-topic state and has no
 selected channel ID; later members describe targeted or open-channel progress.
 
@@ -74,8 +76,9 @@ Gap column. Audit state is file-level (Status header), never a row status.
 
 Exact test evidence is mapped against these IDs in the verification test reports.
 
-| Unit test ID | Obligation | Public entry and setup | Oracle and forbidden effects | Required permutations |
-| ------------ | ---------- | ---------------------- | ---------------------------- | --------------------- |
+| Unit test ID                                                      | Obligation                           | Public entry and setup                                                                                                            | Oracle and forbidden effects                                                                                 | Required permutations                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
+| ----------------------------------------------------------------- | ------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| <a id="unit-test-flags-32-1zfqy7"></a>`UNIT-TEST-FLAGS-32-1ZFQY7` | Committed participant classification | Call the predicate for every current status and an unknown numeric value; only pending participant and participating return true. | Each variation below states its observable result; preserve all unrelated stored state and lifecycle policy. | <a id="unit-test-flags-32-1zfqy7.p1"></a>`UNIT-TEST-FLAGS-32-1ZFQY7.P1` — classifies PENDING_PARTICIPANT; <a id="unit-test-flags-32-1zfqy7.p2"></a>`UNIT-TEST-FLAGS-32-1ZFQY7.P2` — classifies PARTICIPATING; <a id="unit-test-flags-32-1zfqy7.p3"></a>`UNIT-TEST-FLAGS-32-1ZFQY7.P3` — classifies DISCOVERING; <a id="unit-test-flags-32-1zfqy7.p4"></a>`UNIT-TEST-FLAGS-32-1ZFQY7.P4` — classifies NOT_OPENED; <a id="unit-test-flags-32-1zfqy7.p5"></a>`UNIT-TEST-FLAGS-32-1ZFQY7.P5` — classifies OPENED; <a id="unit-test-flags-32-1zfqy7.p6"></a>`UNIT-TEST-FLAGS-32-1ZFQY7.P6` — classifies SYNCED; <a id="unit-test-flags-32-1zfqy7.p7"></a>`UNIT-TEST-FLAGS-32-1ZFQY7.P7` — rejects an unknown numeric status |
 
 ## Related source reports
 

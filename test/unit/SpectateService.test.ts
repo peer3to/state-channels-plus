@@ -1,12 +1,12 @@
-import { expect } from "chai";
-import { MathTestSession as TestSession } from "@test/harness";
 import StateSnapshot from "@/models/StateSnapshot";
+import type { SyncRequest } from "@/rpc/services/spectate/SpectateService";
 import { Status } from "@/types";
 import { Codec, Type } from "@/utils";
-import type { SyncRequest } from "@/rpc/services/spectate/SpectateService";
-import { ethers } from "ethers";
 import { TargetedChannelJoinFixture } from "@test/fixtures/TargetedChannelJoinFixture";
+import { MathTestSession as TestSession } from "@test/harness";
 import { waitFor } from "@test/utils/waitFor";
+import { expect } from "chai";
+import { ethers } from "ethers";
 
 describe("Unit: SpectateService", function () {
     describe("sync request policy", function () {
