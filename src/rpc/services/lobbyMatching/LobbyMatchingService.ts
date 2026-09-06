@@ -61,6 +61,8 @@ export default class LobbyMatchingService extends ARpcService<LobbyMatchingRpcMe
     private readonly sessionTransports = new Map<ATransport, () => void>();
     /** Selected transports promoted for negotiation and closed on retry. */
     private readonly handedOffTransports = new Set<ATransport>();
+    /** Peers whose reconnects this session banned; lifted when the topic is left. */
+    private readonly reconnectBannedPeers = new Set<Address>();
     /** Selected profile that may add replacement transports during handoff. */
     private handedOffPeerAddress?: Address;
     private activeTopic?: string;
@@ -244,7 +246,7 @@ export default class LobbyMatchingService extends ARpcService<LobbyMatchingRpcMe
         const count = (this.rejectedRpcCounts.get(transport) ?? 0) + 1;
         this.rejectedRpcCounts.set(transport, count);
         if (count > MAX_REJECTED_RPCS_PER_TRANSPORT) {
-            this.p2pManager.disconnectAndBlacklistPeer(transport);
+            this.disconnectForSession(transport);
         }
     }
 
@@ -717,15 +719,22 @@ export default class LobbyMatchingService extends ARpcService<LobbyMatchingRpcMe
         this.matchResolve = undefined;
         this.unsubscribeTargetOpened?.();
         this.unsubscribeTargetOpened = undefined;
+        // Leave the topic before closing its transports: a close while the
+        // topic is still observed queues a redial. Reconnect bans this
+        // session placed lift with the topic; nothing was excluded.
+        if (topic) {
+            await this.p2pManager.leaveDiscoveryKey(topic);
+            for (const address of this.reconnectBannedPeers) {
+                this.p2pManager.allowReconnect(address);
+            }
+            this.reconnectBannedPeers.clear();
+        }
         this.disconnectSessionTransports();
         if (!options.preserveHandedOffTransports) {
             this.disconnectHandedOffTransports();
         } else {
             this.handedOffTransports.clear();
             this.handedOffPeerAddress = undefined;
-        }
-        if (topic) {
-            await this.p2pManager.leaveDiscoveryKey(topic);
         }
         if (
             String(this.p2pManager.stateManager.channelId) === ZeroHash &&
@@ -794,12 +803,38 @@ export default class LobbyMatchingService extends ARpcService<LobbyMatchingRpcMe
             const address = this.peerAddress(transport);
             unsubscribe();
             this.sessionTransports.delete(transport);
-            if (address === peerAddress && !transport.isClosed) {
+            if (address === peerAddress) {
+                // A closed transport of the selected peer is dropped, never
+                // reconnect-banned: negotiation still needs that peer.
+                if (transport.isClosed) {
+                    this.p2pManager.disconnectConnection(transport);
+                    continue;
+                }
                 this.handedOffTransports.add(transport);
             } else {
-                this.p2pManager.disconnectConnection(transport);
+                this.disconnectForSession(transport);
             }
         }
+    }
+
+    /**
+     * Close a lobby transport this session no longer wants. The peer still
+     * observes the topic, so a plain close only pauses it: discovery re-dials,
+     * the handshake reruns, and the same rejection repeats. Ban its reconnects
+     * for the rest of the session instead; cleanup lifts the ban when the
+     * topic is left. This is not an exclusion. The selected peer is never
+     * banned: negotiation still needs to reach it.
+     */
+    private disconnectForSession(transport: ATransport): void {
+        const address = this.peerAddress(transport);
+        if (
+            address &&
+            address !== this.handedOffPeerAddress &&
+            this.p2pManager.banReconnect(address)
+        ) {
+            this.reconnectBannedPeers.add(address);
+        }
+        this.p2pManager.disconnectConnection(transport);
     }
 
     private disconnectSessionTransports(): void {

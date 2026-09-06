@@ -532,7 +532,7 @@ export async function startP2pRuntimeHost<
                         requireP2pSigner().setIsLeader(request.value);
                         break;
                     case "disconnectFromPeers":
-                        requireP2pSigner().disconnectFromPeers();
+                        await requireP2pSigner().disconnectFromPeers();
                         break;
                     case "hostRpc":
                         if (!runtimeHandle)

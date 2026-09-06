@@ -209,37 +209,87 @@ class ProfileManager {
         if (!profile) return false;
 
         profile.unblacklist();
-        const hasLiveWebRtc = profile
-            .getLiveTransports()
-            .some(
-                (transport) => transport.transportType === TransportType.WEBRTC
-            );
-        if (!hasLiveWebRtc) {
-            profile.getHolepunchPeerInfo()?.ban(false);
-        }
+        // A live WebRTC route keeps the Holepunch handle banned: that ban
+        // belongs to the upgrade policy, and its own close path releases it.
+        if (this.hasLiveWebRtcTransport(profile)) return true;
+        this.restoreHolepunchReachability(profile);
         return true;
+    }
+
+    /**
+     * Ban reconnects from an identity without excluding it. Hyperswarm keeps
+     * re-dialing a peer that shares an observed topic until its peer info is
+     * banned; a plain close only pauses it. `allowReconnect` lifts the ban.
+     */
+    public banReconnect(evmAddress: Address): boolean {
+        const profile = this.getProfileByEvmAddress(evmAddress);
+        if (!profile) return false;
+        profile.banReconnect();
+        profile.getHolepunchPeerInfo()?.ban(true);
+        return true;
+    }
+
+    public allowReconnect(evmAddress: Address): boolean {
+        const profile = this.getProfileByEvmAddress(evmAddress);
+        if (!profile) return false;
+        profile.allowReconnect();
+        // A live WebRTC route keeps the Holepunch handle banned: that ban
+        // belongs to the upgrade policy, and its own close path releases it.
+        if (this.hasLiveWebRtcTransport(profile)) return true;
+        this.restoreHolepunchReachability(profile);
+        return true;
+    }
+
+    public isReconnectBanned(evmAddress: Address): boolean {
+        return (
+            this.getProfileByEvmAddress(evmAddress)?.isReconnectBanned ?? false
+        );
+    }
+
+    /** Ban the discovery handle one transport arrived on. */
+    public banTransportReconnect(transport: ATransport): void {
+        this.getProfileByTransport(transport)
+            ?.getHolepunchPeerInfo()
+            ?.ban(true);
     }
 
     public releaseHolepunchBanOnWebRtcClose(transport: ATransport): void {
         if (transport.transportType !== TransportType.WEBRTC) return;
         const profile = this.getProfileByTransport(transport);
-        if (
-            !profile ||
-            !profile.isPreferredTransport(transport) ||
-            profile.isBlackListed
-        ) {
-            return;
-        }
+        if (!profile || !profile.isPreferredTransport(transport)) return;
+        if (this.isDiscoveryBanHeld(profile)) return;
         transport.p2pManager.logger.debug(
             "Releasing Holepunch upgrade ban after WebRTC close",
             LoggerUtils.getTransportMetadata(transport)
         );
-        profile.getHolepunchPeerInfo()?.ban(false);
+        this.restoreHolepunchReachability(profile);
     }
 
     private blacklistProfile(profile: PeerProfile): void {
         profile.blacklist();
         profile.getHolepunchPeerInfo()?.ban(true);
+    }
+
+    /**
+     * Lift the discovery ban only while nothing keeps the identity out: not a
+     * blacklist and not a reconnect ban.
+     */
+    private restoreHolepunchReachability(profile: PeerProfile): void {
+        if (this.isDiscoveryBanHeld(profile)) return;
+        profile.getHolepunchPeerInfo()?.ban(false);
+    }
+
+    /** True while a blacklist or a reconnect ban keeps the identity out. */
+    private isDiscoveryBanHeld(profile: PeerProfile): boolean {
+        return profile.isBlackListed || profile.isReconnectBanned;
+    }
+
+    private hasLiveWebRtcTransport(profile: PeerProfile): boolean {
+        return profile
+            .getLiveTransports()
+            .some(
+                (transport) => transport.transportType === TransportType.WEBRTC
+            );
     }
 
     private applyUpgradeBanPolicy(
@@ -253,10 +303,9 @@ class ProfileManager {
         ) {
             if (
                 oldTransport.transportType === TransportType.WEBRTC &&
-                newTransport.transportType === TransportType.HOLEPUNCH &&
-                !profile.isBlackListed
+                newTransport.transportType === TransportType.HOLEPUNCH
             ) {
-                profile.getHolepunchPeerInfo()?.ban(false);
+                this.restoreHolepunchReachability(profile);
             }
             return;
         }

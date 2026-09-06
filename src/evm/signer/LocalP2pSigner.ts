@@ -380,7 +380,12 @@ class LocalP2pSigner<TCustomRpc extends MainRpcService = MainRpcService>
         );
     }
 
-    public disconnectFromPeers() {
+    /**
+     * Leave every observed discovery key, then close every connection. A
+     * close alone is a pause: discovery re-dials peers that share a key.
+     */
+    public async disconnectFromPeers(): Promise<void> {
+        await this.p2pManager.leaveAllDiscoveryKeys();
         this.p2pManager.disconnectAll();
     }
 

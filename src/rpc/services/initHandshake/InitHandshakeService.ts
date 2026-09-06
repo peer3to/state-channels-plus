@@ -211,8 +211,14 @@ class InitHandshakeService extends ARpcService<InitHandshakeRpcMethods> {
             rttSeconds: rtt,
             signerAddress
         });
-        // Check if this peer is blacklisted
-        if (this.p2pManager.isBlacklisted(signerAddress)) {
+        // Check if this peer is blacklisted or has reconnects banned
+        const isBlacklisted = this.p2pManager.isBlacklisted(signerAddress);
+        const refusal = isBlacklisted
+            ? "response signer is blacklisted"
+            : this.p2pManager.isReconnectBanned(signerAddress)
+              ? "response signer has reconnects banned"
+              : undefined;
+        if (refusal) {
             LoggerUtils.logInitHandshakeMessage(this.logger, transport, {
                 direction: "local",
                 message: "rejected",
@@ -222,8 +228,14 @@ class InitHandshakeService extends ARpcService<InitHandshakeRpcMethods> {
                 preferredTransport,
                 rttSeconds: rtt,
                 signerAddress,
-                reason: "response signer is blacklisted"
+                reason: refusal
             });
+            // The blacklist banned the identity's own discovery handle. A peer
+            // that rotates its discovery key arrives on a fresh handle, so an
+            // excluded identity bans the handle it came in on as well.
+            if (isBlacklisted) {
+                this.p2pManager.profileManager.banTransportReconnect(transport);
+            }
             this.p2pManager.disconnectConnection(transport);
             return;
         }

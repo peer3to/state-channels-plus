@@ -152,7 +152,8 @@ describe("LobbyMatchingService", function () {
         expect(afterBound.reserved).to.equal(false);
         expect(afterBound.matching).to.equal(true);
         expect(result.abusiveTransportClosed).to.equal(true);
-        expect(result.abusivePeerBlacklisted).to.equal(true);
+        expect(result.abusivePeerReconnectBanned).to.equal(true);
+        expect(result.abusivePeerBlacklisted).to.equal(false);
     });
 
     it("settles cancellation when the selected peer disconnects during commit", async function () {

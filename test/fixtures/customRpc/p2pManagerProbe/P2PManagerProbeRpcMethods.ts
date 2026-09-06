@@ -22,6 +22,9 @@ import type {
     UpgradeBanPolicyProbe,
     UnblacklistBanPolicyProbe,
     UnblacklistBanPolicyScenario,
+    ReconnectBanProbe,
+    ReconnectBanPrecedenceProbe,
+    ReconnectBanWebRtcCloseProbe,
     HolepunchTopicProbe,
     HandshakeFailureProbe,
     LateHandshakeProbe,
@@ -240,6 +243,25 @@ export class P2PManagerProbeRpcMethods extends ARpcMethods<
         address: string
     ): Promise<RelayAdmissionProbe> {
         return this.service.probeWebRtcCloseAcceptsHolepunch(address);
+    }
+
+    public probeReconnectBan(
+        address: string,
+        unknownAddress: string
+    ): ReconnectBanProbe {
+        return this.service.probeReconnectBan(address, unknownAddress);
+    }
+
+    public probeReconnectBanPrecedence(
+        address: string
+    ): ReconnectBanPrecedenceProbe {
+        return this.service.probeReconnectBanPrecedence(address);
+    }
+
+    public probeReconnectBanWebRtcClose(
+        address: string
+    ): ReconnectBanWebRtcCloseProbe {
+        return this.service.probeReconnectBanWebRtcClose(address);
     }
 
     public probeBlacklistRejectsHolepunch(

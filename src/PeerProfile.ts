@@ -20,6 +20,9 @@ class PeerProfile {
     hpAddress: string | undefined;
     isLeader: boolean;
     isBlackListed: boolean;
+    // A reconnect ban keeps discovery from re-dialing or accepting this
+    // identity without excluding it; a blacklist implies it.
+    isReconnectBanned: boolean;
     private readonly liveTransports = new Set<ATransport>();
     private readonly disconnectedListeners =
         new Set<ProfileDisconnectedListener>();
@@ -40,6 +43,7 @@ class PeerProfile {
         this.hpAddress = hpAddress;
         this.isLeader = false;
         this.isBlackListed = false;
+        this.isReconnectBanned = false;
     }
 
     public blacklist() {
@@ -55,6 +59,12 @@ class PeerProfile {
             LoggerUtils.getPeerProfileMetadata(this)
         );
         this.isBlackListed = false;
+    }
+    public banReconnect() {
+        this.isReconnectBanned = true;
+    }
+    public allowReconnect() {
+        this.isReconnectBanned = false;
     }
     public getTransport() {
         if (this.transport && !this.transport.isClosed) return this.transport;
@@ -113,6 +123,7 @@ class PeerProfile {
         const peerInfo = profile.takeHolepunchPeerInfo();
         if (peerInfo) this.setHolepunchPeerInfo(peerInfo);
         if (profile.isBlackListed) this.blacklist();
+        if (profile.isReconnectBanned) this.banReconnect();
     }
     public setHolepunchPeerInfo(peerInfo: BannablePeerInfo) {
         this.holepunchPeerInfo = peerInfo;

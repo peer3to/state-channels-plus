@@ -1052,6 +1052,8 @@ export class LocalDiscoveryServer {
         const connectionKey: PeerConnectionKey = `${myPeerPort}->${peerPort}`;
         const retryCount = this._peerRetryCount.get(connectionKey) || 0;
         if (!session) return;
+        // Hyperswarm never dials a banned peer info; mirror that here so a
+        // blacklist or reconnect ban stops the local redial loop the same way.
         const skipReason = this._cleanupRequested
             ? "cleanup-requested"
             : p2pManager.isDisposed
@@ -1062,7 +1064,9 @@ export class LocalDiscoveryServer {
                   ? "peer-connected"
                   : p2pManager.isBlacklisted(peerAddress as Address)
                     ? "blacklisted"
-                    : undefined;
+                    : p2pManager.isReconnectBanned(peerAddress as Address)
+                      ? "reconnect-banned"
+                      : undefined;
         if (skipReason) {
             // A skipped retry is the end of the road for this key: no
             // announcement follows it, so the reason must be visible.

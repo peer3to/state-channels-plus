@@ -78,6 +78,16 @@ export class NetworkRpcMethods extends ARpcMethods {
         return this.service.getTransportToken(evmAddress);
     }
 
+    /** Ban reconnects from `evmAddress` through the real soft-ban owner. */
+    public banReconnect(evmAddress: Address): boolean {
+        return this.p2pManager.banReconnect(evmAddress);
+    }
+
+    /** Lift a reconnect ban placed on `evmAddress`. */
+    public allowReconnect(evmAddress: Address): boolean {
+        return this.p2pManager.allowReconnect(evmAddress);
+    }
+
     /** Close one transport without changing policy. Used by discovery probes. */
     public closePeerTransportByAddress(evmAddress: Address): boolean {
         const target = String(evmAddress).toLowerCase();

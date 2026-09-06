@@ -21,6 +21,7 @@ import { DebugProxy, getChecksumAddress, LocalDiscoveryServer } from "@/utils";
 import type { Logger } from "@/utils";
 import { requireBytes32 } from "@/utils/bytes32";
 import { config, isNodeRuntime } from "@/utils/config";
+import type { DiscoveryKey } from "@/utils/discoveryKey";
 import { errorMessage } from "@/utils/errorMessage";
 import { LoggerUtils } from "@/utils/LoggerUtils";
 import { Buffer } from "buffer";
@@ -70,6 +71,9 @@ class P2PManager<TCustomRpc extends MainRpcService = MainRpcService>
     // Bounds the wait for the first cooperating participant handshake. An
     // observer that never reaches a sync request must not wait forever.
     private initialSyncDeadline?: ReturnType<typeof setTimeout>;
+    // Discovery keys this runtime observes. Discovery re-dials every peer that
+    // shares one, so leaving them is what makes a disconnect stick.
+    private readonly joinedDiscoveryKeys = new Set<DiscoveryKey>();
 
     constructor(
         stateManager: StateManager<TCustomRpc>,
@@ -437,6 +441,7 @@ class P2PManager<TCustomRpc extends MainRpcService = MainRpcService>
             const topic = Buffer.from(normalizedKey.slice(2), "hex");
             await this.holepunch.join(topic);
         }
+        this.joinedDiscoveryKeys.add(normalizedKey);
 
         if (!initialSync) return;
         // The status may have left OPENED during the discovery join (chain
@@ -510,6 +515,7 @@ class P2PManager<TCustomRpc extends MainRpcService = MainRpcService>
     public async leaveDiscoveryKey(discoveryKey: string): Promise<void> {
         requireBytes32(discoveryKey, "Discovery key must be exactly 32 bytes");
         const normalizedKey = ethers.hexlify(discoveryKey);
+        this.joinedDiscoveryKeys.delete(normalizedKey);
         if (config.DEBUG_LOCAL_TRANSPORT) {
             await LocalDiscoveryServer.leave(normalizedKey, this.self);
             return;
@@ -517,6 +523,18 @@ class P2PManager<TCustomRpc extends MainRpcService = MainRpcService>
         const topic = Buffer.from(normalizedKey.slice(2), "hex");
         await this.holepunch.leave(topic);
     }
+
+    /** Stop observing every discovery key; no peer is re-dialed afterwards. */
+    public async leaveAllDiscoveryKeys(): Promise<void> {
+        for (const discoveryKey of [...this.joinedDiscoveryKeys]) {
+            await this.leaveDiscoveryKey(discoveryKey);
+        }
+    }
+
+    public getJoinedDiscoveryKeys(): DiscoveryKey[] {
+        return [...this.joinedDiscoveryKeys];
+    }
+
     public addConnection(transport: ATransport) {
         // Do not revive a transport that closed while handshake work was pending.
         if (transport.isClosed) return;
@@ -582,6 +600,23 @@ class P2PManager<TCustomRpc extends MainRpcService = MainRpcService>
             this.profileManager.getProfileByEvmAddress(evmAddress)
                 ?.isBlackListed || false
         );
+    }
+
+    /**
+     * Soft ban: discovery stops dialing and accepting this identity until
+     * `allowReconnect`, and the handshake refuses it meanwhile. It is not an
+     * exclusion; use the blacklist for a proven violation.
+     */
+    public banReconnect(evmAddress: Address): boolean {
+        return this.profileManager.banReconnect(evmAddress);
+    }
+
+    public allowReconnect(evmAddress: Address): boolean {
+        return this.profileManager.allowReconnect(evmAddress);
+    }
+
+    public isReconnectBanned(evmAddress: Address): boolean {
+        return this.profileManager.isReconnectBanned(evmAddress);
     }
 
     public disconnectAll() {

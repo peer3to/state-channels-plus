@@ -10,6 +10,7 @@ import type { Address, ForkId, Hash, BlockHeight } from "@/types/types";
 import { Codec, Type, hash } from "@/utils";
 import { getChecksumAddress } from "@/utils/address";
 import { config } from "@/utils/config";
+import type { DiscoveryKey } from "@/utils/discoveryKey";
 import { ethers } from "ethers";
 
 /** Serializable inputs needed to assemble a block on top of a fork's head. */
@@ -358,6 +359,11 @@ export class QueryRpcMethods extends ARpcMethods {
         return this.p2pManager.isBlacklisted(evmAddress);
     }
 
+    /** Whether this peer bans reconnects from `evmAddress` without excluding it. */
+    public isReconnectBanned(evmAddress: Address): boolean {
+        return this.p2pManager.isReconnectBanned(evmAddress);
+    }
+
     /** Whether the block confirmation queue holds an entry for `blockHash`. */
     public isBlockQueued(blockHash: Hash): boolean {
         return (
@@ -667,6 +673,11 @@ export class QueryRpcMethods extends ARpcMethods {
 
     public getOpenConnectionCount(): number {
         return this.p2pManager.openConnections.length;
+    }
+
+    /** Discovery keys this peer currently observes. */
+    public getJoinedDiscoveryKeys(): DiscoveryKey[] {
+        return this.p2pManager.getJoinedDiscoveryKeys();
     }
 
     /** EVM addresses of the peers this peer currently has open connections to. */

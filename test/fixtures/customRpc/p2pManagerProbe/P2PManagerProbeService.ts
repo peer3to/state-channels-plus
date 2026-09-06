@@ -196,6 +196,7 @@ export type LobbyRecoveryProbe = {
     matchingAfterFinalLoss: boolean;
     disconnectedPeerBlacklisted: boolean;
     abusiveTransportClosed: boolean;
+    abusivePeerReconnectBanned: boolean;
     abusivePeerBlacklisted: boolean;
 };
 
@@ -419,6 +420,28 @@ export type UnblacklistBanPolicyProbe = {
     profileBlacklistedAfterBlacklist: boolean;
     profileBlacklistedAfterUnblacklist: boolean;
     banCalls: boolean[];
+};
+
+export type ReconnectBanProbe = {
+    banned: boolean;
+    banCallsAfterBan: boolean[];
+    reconnectBannedAfterBan: boolean;
+    blacklistedAfterBan: boolean;
+    banCallsAfterAllow: boolean[];
+    reconnectBannedAfterAllow: boolean;
+    unknownPeerBanned: boolean;
+};
+
+export type ReconnectBanPrecedenceProbe = {
+    banCallsAfterBlacklistThenAllow: boolean[];
+    blacklistedAfterAllow: boolean;
+    reconnectBannedAfterAllow: boolean;
+};
+
+export type ReconnectBanWebRtcCloseProbe = {
+    banCallsAfterUpgrade: boolean[];
+    banCallsAfterCurrentClose: boolean[];
+    reconnectBannedAfterClose: boolean;
 };
 
 export type RelayAdmissionProbe = {
@@ -1576,6 +1599,66 @@ export class P2PManagerProbeService extends ARpcService<
         };
     }
 
+    public probeReconnectBan(
+        address: string,
+        unknownAddress: string
+    ): ReconnectBanProbe {
+        const { peerInfo } = this.registeredHolepunchTransport(address);
+        const banned = this.p2pManager.banReconnect(address);
+        const banCallsAfterBan = [...peerInfo.banCalls];
+        const reconnectBannedAfterBan =
+            this.p2pManager.isReconnectBanned(address);
+        const blacklistedAfterBan = this.p2pManager.isBlacklisted(address);
+        this.p2pManager.allowReconnect(address);
+        return {
+            banned,
+            banCallsAfterBan,
+            reconnectBannedAfterBan,
+            blacklistedAfterBan,
+            banCallsAfterAllow: [...peerInfo.banCalls],
+            reconnectBannedAfterAllow:
+                this.p2pManager.isReconnectBanned(address),
+            unknownPeerBanned: this.p2pManager.banReconnect(
+                getChecksumAddress(unknownAddress)
+            )
+        };
+    }
+
+    public probeReconnectBanPrecedence(
+        address: string
+    ): ReconnectBanPrecedenceProbe {
+        const { peerInfo } = this.registeredHolepunchTransport(address);
+        this.p2pManager.banReconnect(address);
+        this.p2pManager.disconnectAndBlacklistPeerByEvmAddress(address);
+        this.p2pManager.allowReconnect(address);
+        return {
+            banCallsAfterBlacklistThenAllow: [...peerInfo.banCalls],
+            blacklistedAfterAllow: this.p2pManager.isBlacklisted(address),
+            reconnectBannedAfterAllow:
+                this.p2pManager.isReconnectBanned(address)
+        };
+    }
+
+    public probeReconnectBanWebRtcClose(
+        address: string
+    ): ReconnectBanWebRtcCloseProbe {
+        const { peerInfo } = this.registeredHolepunchTransport(address);
+        this.p2pManager.banReconnect(address);
+        const webRTC = new WebRTCTransport(
+            new RecordingWebRTCDataChannel(),
+            this.p2pManager
+        );
+        this.authenticateTransport(webRTC, address);
+        const banCallsAfterUpgrade = [...peerInfo.banCalls];
+        this.p2pManager.disconnectConnection(webRTC);
+        return {
+            banCallsAfterUpgrade,
+            banCallsAfterCurrentClose: [...peerInfo.banCalls],
+            reconnectBannedAfterClose:
+                this.p2pManager.isReconnectBanned(address)
+        };
+    }
+
     public probeUpgradeBanPolicy(address: string): UpgradeBanPolicyProbe {
         const { peerInfo } = this.registeredHolepunchTransport(address);
         const firstWebRTC = new WebRTCTransport(
@@ -2454,6 +2537,8 @@ export class P2PManagerProbeService extends ARpcService<
             matchingAfterFinalLoss: afterLoss.matching,
             disconnectedPeerBlacklisted: blacklistedAtLoss,
             abusiveTransportClosed: abusive.isClosed,
+            abusivePeerReconnectBanned:
+                this.p2pManager.isReconnectBanned(abusiveAddress),
             abusivePeerBlacklisted: abusiveProfile.isBlackListed
         };
     }
@@ -2737,13 +2822,16 @@ export class P2PManagerProbeService extends ARpcService<
                 roleDurationMinMs: 5000,
                 roleDurationMaxMs: 5000
             });
+            // The local signer address is random per run, and the role is
+            // bootstrapped by address order, so both lobby peers must sort
+            // above it for this peer to become the advertiser.
             const silentAddress = getChecksumAddress(
-                "0xfffffffffffffffffffffffffffffffffffffffd"
+                "0xfffffffffffffffffffffffffffffffffffffffe"
             );
             const silent = this.transport(silentAddress);
             const silentProfile = this.registerProfile(silent, silentAddress);
             const expiryObserverAddress = getChecksumAddress(
-                "0xcccccccccccccccccccccccccccccccccccccccc"
+                "0xfffffffffffffffffffffffffffffffffffffffd"
             );
             const expiryObserver = this.transport(expiryObserverAddress);
             this.registerProfile(expiryObserver, expiryObserverAddress);

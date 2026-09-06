@@ -1,6 +1,7 @@
 import { TransportType } from "@/transport";
 import { P2PManagerFixture } from "@test/fixtures/P2PManagerFixture";
 import { expect } from "chai";
+import { Wallet } from "ethers";
 
 describe("ProfileManager Holepunch ban policy", function () {
     let fixture: P2PManagerFixture;
@@ -173,6 +174,49 @@ describe("ProfileManager Holepunch ban policy", function () {
         expect(result.handshakeCompleted).to.equal(true);
         expect(result.disconnectionHookCalls).to.equal(0);
         expect(result.usableTrafficSent).to.equal(true);
+    });
+
+    it("bans reconnects without blacklisting and lifts the ban on allow", async function () {
+        const result = await fixture
+            .control()
+            .p2pManagerProbe.probeReconnectBan(
+                fixture.address(1),
+                Wallet.createRandom().address
+            )
+            .request();
+
+        expect(result.banned).to.equal(true);
+        expect(result.banCallsAfterBan).to.deep.equal([true]);
+        expect(result.reconnectBannedAfterBan).to.equal(true);
+        expect(result.blacklistedAfterBan).to.equal(false);
+        expect(result.banCallsAfterAllow).to.deep.equal([true, false]);
+        expect(result.reconnectBannedAfterAllow).to.equal(false);
+        expect(result.unknownPeerBanned).to.equal(false);
+    });
+
+    it("keeps an explicit blacklist banned when a reconnect ban is lifted", async function () {
+        const result = await fixture
+            .control()
+            .p2pManagerProbe.probeReconnectBanPrecedence(fixture.address(1))
+            .request();
+
+        expect(result.banCallsAfterBlacklistThenAllow).to.deep.equal([
+            true,
+            true
+        ]);
+        expect(result.blacklistedAfterAllow).to.equal(true);
+        expect(result.reconnectBannedAfterAllow).to.equal(false);
+    });
+
+    it("does not release a reconnect ban when the current WebRTC transport closes", async function () {
+        const result = await fixture
+            .control()
+            .p2pManagerProbe.probeReconnectBanWebRtcClose(fixture.address(1))
+            .request();
+
+        expect(result.banCallsAfterUpgrade).to.deep.equal([true, true]);
+        expect(result.banCallsAfterCurrentClose).to.deep.equal([true, true]);
+        expect(result.reconnectBannedAfterClose).to.equal(true);
     });
 
     it("rejects and bans a later Holepunch fallback for an excluded identity", async function () {
