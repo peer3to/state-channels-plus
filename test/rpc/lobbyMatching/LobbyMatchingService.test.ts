@@ -445,4 +445,18 @@ describe("LobbyMatchingService", function () {
         expect(result.responseStatus).to.equal("rejected");
         expect(result.requesterBlacklisted).to.equal(false);
     });
+
+    it("bans reconnects of a peer that authenticates after the handoff", async function () {
+        const result = await fixture
+            .control()
+            .p2pManagerProbe.probeLateJoinerAfterHandoff()
+            .request();
+
+        expect(result.commitAcknowledged).to.equal(true);
+        expect(result.lateJoinerTransportClosed).to.equal(true);
+        expect(result.lateJoinerReconnectBanned).to.equal(true);
+        expect(result.lateJoinerBlacklisted).to.equal(false);
+        expect(result.selectedPeerReconnectBanned).to.equal(false);
+        expect(result.lateJoinerReconnectBannedAfterComplete).to.equal(false);
+    });
 });

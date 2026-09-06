@@ -35,6 +35,7 @@ import type {
     LobbyRecoveryProbe,
     LobbyRecoveryBoundProbe,
     LobbyCommitCancellationProbe,
+    LateJoinerHandoffProbe,
     LobbySessionCleanupProbe,
     MatchedNegotiationAdmissionProbe,
     InvalidNegotiationAmountProbe,
@@ -339,6 +340,10 @@ export class P2PManagerProbeRpcMethods extends ARpcMethods<
 
     public probeLobbyProtocol(): Promise<LobbyProtocolProbe> {
         return this.service.probeLobbyProtocol();
+    }
+
+    public probeLateJoinerAfterHandoff(): Promise<LateJoinerHandoffProbe> {
+        return this.service.probeLateJoinerAfterHandoff();
     }
 
     public probeLobbyRecovery(): Promise<LobbyRecoveryProbe> {

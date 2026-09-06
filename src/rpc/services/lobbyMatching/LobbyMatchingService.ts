@@ -265,7 +265,11 @@ export default class LobbyMatchingService extends ARpcService<LobbyMatchingRpcMe
             return;
         }
         if (!this.activeTopic || !this.matchResolve) {
-            this.p2pManager.disconnectConnection(transport);
+            // While the topic is still observed (handoff phase), a plain close
+            // only pauses the peer: it redials and reruns the handshake. Once
+            // the topic is left, nothing redials it.
+            if (this.activeTopic) this.disconnectForSession(transport);
+            else this.p2pManager.disconnectConnection(transport);
             return;
         }
         if (!this.sessionTransports.has(transport)) {

@@ -219,6 +219,15 @@ export type LobbyCommitCancellationProbe = {
     peerBlacklisted: boolean;
 };
 
+export type LateJoinerHandoffProbe = {
+    commitAcknowledged: boolean;
+    lateJoinerTransportClosed: boolean;
+    lateJoinerReconnectBanned: boolean;
+    lateJoinerBlacklisted: boolean;
+    selectedPeerReconnectBanned: boolean;
+    lateJoinerReconnectBannedAfterComplete: boolean;
+};
+
 export type LobbyBootstrapValidationProbe = {
     bothNoneRole: string;
     bothNoneExpectedRole: string;
@@ -2678,6 +2687,71 @@ export class P2PManagerProbeService extends ARpcService<
         };
         await service.dispose();
         return result;
+    }
+
+    public async probeLateJoinerAfterHandoff(): Promise<LateJoinerHandoffProbe> {
+        const service = this.p2pManager.localRpc.lobbyMatchingService;
+        const topic = `0x${"71".repeat(32)}`;
+        // The local signer address is random per run, so the lobby peer must
+        // sort above it for this peer to bootstrap as the advertiser.
+        const selectorAddress = getChecksumAddress(
+            "0xffffffffffffffffffffffffffffffffffffffff"
+        );
+        const selector = this.transport(selectorAddress);
+        this.registerProfile(selector, selectorAddress);
+        void service.match(topic);
+        await Promise.resolve();
+        service.onAuthenticatedTransport(selector);
+        service.receiveAvailability(selector, {
+            topic,
+            role: "none",
+            roleEpoch: 0,
+            available: false
+        });
+        const attemptNonce = `0x${"72".repeat(32)}`;
+        const selectorChallenge = `0x${"73".repeat(32)}`;
+        const pick = service.receivePick(
+            selector,
+            attemptNonce,
+            1,
+            selectorChallenge
+        );
+        if (pick.status !== "accepted") {
+            throw new Error("Expected advertiser reservation");
+        }
+        // Committing hands the selected peer off; the topic stays observed.
+        const commitStatus = service.receiveCommit(
+            selector,
+            attemptNonce,
+            1,
+            selectorChallenge,
+            pick.advertiserChallenge
+        ).status;
+
+        const lateAddress = getChecksumAddress(
+            "0xfffffffffffffffffffffffffffffffffffffffe"
+        );
+        const late = this.transport(lateAddress);
+        this.registerProfile(late, lateAddress);
+        service.onAuthenticatedTransport(late);
+        const lateJoinerTransportClosed = late.isClosed;
+        const lateJoinerReconnectBanned =
+            this.p2pManager.isReconnectBanned(lateAddress);
+        const lateJoinerBlacklisted =
+            this.p2pManager.isBlacklisted(lateAddress);
+        const selectedPeerReconnectBanned =
+            this.p2pManager.isReconnectBanned(selectorAddress);
+        // Leaving the topic is the cleanup that lifts session reconnect bans.
+        await service.completeLobby(topic);
+        return {
+            commitAcknowledged: commitStatus === "acknowledged",
+            lateJoinerTransportClosed,
+            lateJoinerReconnectBanned,
+            lateJoinerBlacklisted,
+            selectedPeerReconnectBanned,
+            lateJoinerReconnectBannedAfterComplete:
+                this.p2pManager.isReconnectBanned(lateAddress)
+        };
     }
 
     public async probeLobbyBootstrapAndValidation(): Promise<LobbyBootstrapValidationProbe> {
