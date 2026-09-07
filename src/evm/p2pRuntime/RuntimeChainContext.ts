@@ -1,6 +1,5 @@
-import { Provider, Signer, Wallet, WebSocketProvider } from "ethers";
-
 import type { Config } from "@/utils/config";
+import { Provider, Signer, Wallet, WebSocketProvider } from "ethers";
 
 export interface RuntimeChainContext {
     provider: Provider;

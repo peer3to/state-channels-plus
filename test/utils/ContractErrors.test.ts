@@ -1,17 +1,17 @@
-import { expect } from "chai";
-import { ethers, ZeroAddress, ZeroHash } from "ethers";
 import {
     CustomEvmError,
     tryDecodeCustomError,
     tryHandleEvmError
 } from "@/utils/evmErrorHandler";
-import { ethers as hre } from "hardhat";
-import { deployMathChannelProxyFixture } from "@test/test_utils/testHelpers";
-import * as factory from "@test/factory";
-import { StateChannelManagerInterface } from "@typechain-types";
 import { artifacts, errorAbis } from "@/utils/GeneratedArtifacts";
-import { HardhatEthersSigner } from "@nomicfoundation/hardhat-ethers/signers";
 import { routedFacets } from "@/utils/routedFacets";
+import { HardhatEthersSigner } from "@nomicfoundation/hardhat-ethers/signers";
+import * as factory from "@test/factory";
+import { deployMathChannelProxyFixture } from "@test/test_utils/testHelpers";
+import { StateChannelManagerInterface } from "@typechain-types";
+import { expect } from "chai";
+import { ethers, ZeroAddress, ZeroHash } from "ethers";
+import { ethers as hre } from "hardhat";
 
 describe("artifacts loading", () => {
     it("should load all required facet artifacts", () => {

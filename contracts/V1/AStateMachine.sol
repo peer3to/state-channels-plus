@@ -127,7 +127,11 @@ abstract contract AStateMachine {
         _nonReentrant
         returns (bool, ExitChannel memory exitChannel)
     {
-        return _removeParticipant(adr);
+        (bool success, ExitChannel memory removedExit) = _removeParticipant(adr);
+        if (success) {
+            _addExitChannel(removedExit);
+        }
+        return (success, removedExit);
     }
 
     // Implementations must reject a transaction whose participant is not

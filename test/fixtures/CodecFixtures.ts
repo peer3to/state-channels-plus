@@ -1,9 +1,8 @@
 // @spec-test-coverage-ignore: shared factory-built Codec inputs; no executable test behavior
+import * as factory from "../factory";
+import { Codec, Type } from "@/utils/Codec";
 import { expect } from "chai";
 import { ethers } from "ethers";
-
-import { Codec, Type } from "@/utils/Codec";
-import * as factory from "../factory";
 
 const snapshot = () => factory.stateSnapshot().toStruct();
 const signedDispute = () => ({

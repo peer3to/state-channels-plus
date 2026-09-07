@@ -1,6 +1,6 @@
+import IsForkDisputedService from "./IsForkDisputedService";
 import ARpcMethods from "@/rpc/ARpcMethods";
 import { ATransport } from "@/transport";
-import IsForkDisputedService from "./IsForkDisputedService";
 import { ChannelId, ForkId } from "@/types/types";
 
 class IsForkDisputedRpcMethods extends ARpcMethods {

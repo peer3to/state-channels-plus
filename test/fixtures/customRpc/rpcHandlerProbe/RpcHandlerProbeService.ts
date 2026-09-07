@@ -1,13 +1,13 @@
 // @spec-test-coverage-ignore: worker-side support service for the mapped RpcHandler integration cases
+import type { PingPongRpc } from "../PingPongRpcManifest";
+import { RpcHandlerProbeRpcMethods } from "./RpcHandlerProbeRpcMethods";
 import type P2PManager from "@/P2PManager";
-import type ATransport from "@/transport/ATransport";
-import { isTransport } from "@/transport/ATransport";
-import type { Address } from "@/types";
 import ARpcService from "@/rpc/ARpcService";
 import type { RpcResponse } from "@/rpc/Rpc";
 import { deserializeRpcResponse, MAX_RPC_FRAME_BYTES } from "@/rpc/Rpc";
-import type { PingPongRpc } from "../PingPongRpcManifest";
-import { RpcHandlerProbeRpcMethods } from "./RpcHandlerProbeRpcMethods";
+import type ATransport from "@/transport/ATransport";
+import { isTransport } from "@/transport/ATransport";
+import type { Address } from "@/types";
 
 export class RpcHandlerProbeService extends ARpcService<
     RpcHandlerProbeRpcMethods,

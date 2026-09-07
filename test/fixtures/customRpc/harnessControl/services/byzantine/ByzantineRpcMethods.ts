@@ -1,17 +1,23 @@
-import { ethers } from "ethers";
+// @spec-test-coverage-ignore: authenticated raw-RPC controls exercised by mapped lobby E2E declarations
 
-import ARpcMethods from "@/rpc/ARpcMethods";
-import type ATransport from "@/transport/ATransport";
-import Block from "@/models/Block";
+import type {
+    ByzantineService,
+    LobbyRawMethod,
+    NegotiationRawMethod
+} from "./ByzantineService";
 import Clock from "@/Clock";
-import { Codec, Type, hash } from "@/utils";
+import Block from "@/models/Block";
+import ARpcMethods from "@/rpc/ARpcMethods";
+import type Rpc from "@/rpc/Rpc";
+import type ATransport from "@/transport/ATransport";
 import type { Bytes, ForkId, Hash, BlockHeight } from "@/types/types";
+import { Codec, Type, hash } from "@/utils";
 import type {
     BlockStruct,
     SignedBlockStruct,
     TransactionStruct
 } from "@typechain-types/contracts/V1/types/DataTypes";
-import type { ByzantineService } from "./ByzantineService";
+import { ethers } from "ethers";
 
 /**
  * Byzantine block-submission faults, executed host-side. Only public endpoints
@@ -185,6 +191,32 @@ export class ByzantineRpcMethods extends ARpcMethods {
         await tx.wait();
 
         return { encodedBlock: encodedBlock as string };
+    }
+
+    public sendRawLobbyRpc(
+        targetEvmAddress: string,
+        method: LobbyRawMethod,
+        params: Rpc["params"]
+    ): boolean {
+        return this.service.sendRawRpc(
+            targetEvmAddress,
+            "lobbyMatchingService",
+            method,
+            params
+        );
+    }
+
+    public sendRawNegotiationRpc(
+        targetEvmAddress: string,
+        method: NegotiationRawMethod,
+        params: Rpc["params"]
+    ): boolean {
+        return this.service.sendRawRpc(
+            targetEvmAddress,
+            "openChannelNegotiationService",
+            method,
+            params
+        );
     }
 }
 

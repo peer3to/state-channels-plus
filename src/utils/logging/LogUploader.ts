@@ -1,19 +1,19 @@
-import axios from "axios";
-import { compressToBase64, encodeLogs } from "./logEncoder";
-import { LogStore } from "./logStore";
-import {
-    type ExclusiveLoggerContext,
-    type SharedLoggerContext,
-    Logger
-} from "./Logger";
-import { ethers } from "ethers";
-import { retry } from "../retry";
 import { sleep } from "..";
 import {
     getAxiosFailureSummary,
     getAxiosRetrySummary,
     sanitizeAxiosErrorForLogging
 } from "./axiosErrorUtils";
+import { compressToBase64, encodeLogs } from "./logEncoder";
+import {
+    type ExclusiveLoggerContext,
+    type SharedLoggerContext,
+    Logger
+} from "./Logger";
+import { LogStore } from "./logStore";
+import { retry } from "../retry";
+import axios from "axios";
+import { ethers } from "ethers";
 
 export type LogUploaderOptions = {
     logUploader?: LogUploader;

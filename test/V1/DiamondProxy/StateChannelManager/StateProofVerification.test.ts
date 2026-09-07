@@ -1,18 +1,17 @@
-import { expect } from "chai";
-import { ethers } from "hardhat";
-
 import { Codec, Type } from "@/utils";
 import { deployMathChannelProxyFixture } from "@test/test_utils/testHelpers";
 import { StateChannelManagerInterface } from "@typechain-types";
+import {
+    SnapshotDataStruct,
+    StateSnapshotStruct
+} from "@typechain-types/contracts/V1/types/DataTypes";
 import {
     DisputeAuditingDataStruct,
     DisputeStruct,
     MilestoneProofStruct
 } from "@typechain-types/contracts/V1/types/DisputeTypes";
-import {
-    SnapshotDataStruct,
-    StateSnapshotStruct
-} from "@typechain-types/contracts/V1/types/DataTypes";
+import { expect } from "chai";
+import { ethers } from "hardhat";
 
 describe("StateChannelManagerProxy.verifyStateProof", function () {
     let mathChannelManager: StateChannelManagerInterface;
@@ -144,6 +143,7 @@ function buildGenesisDispute(): {
                     previousBlockProducerPostedCalldata: false,
                     participantSignatureOnPreviousBlock: "0x"
                 },
+                requireExistingDisputeWindow: false,
                 selfRemoval: false
             },
             postedAuditingData: true,

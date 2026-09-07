@@ -1,21 +1,21 @@
-import { expect } from "chai";
-import { ZeroHash } from "ethers";
-import { Codec, hash, Type } from "@/utils";
-import { DisputeFraudProofType } from "@/types/sol-enums";
-import { Hash } from "@/types/types";
 import Block from "@/models/Block";
 import StateSnapshot from "@/models/StateSnapshot";
+import { timeoutWaitTime } from "@/types";
+import { DisputeFraudProofType } from "@/types/sol-enums";
+import { Hash } from "@/types/types";
+import { Codec, hash, Type } from "@/utils";
 import {
     hash as randomHash,
     randomAddress,
     blockStructWithTransactionHeader
 } from "@test/factory";
-import { timeoutWaitTime } from "@/types";
 import {
     MathTestSession as TestSession,
     resolveTestTimeConfig
 } from "@test/harness";
 import { DisputeTampering } from "@test/harness/actions/DisputeTamperingActions";
+import { expect } from "chai";
+import { ZeroHash } from "ethers";
 
 // the auditor's contract: verdict + the exact stored fraud proof. the
 // kill/counter-dispute/slash cascades stay owned by test/e2e/disputeValidation.
@@ -156,6 +156,8 @@ describe("Unit: DisputeValidationService", function () {
             await h.scenario.preDisputeSetupCalldataPath();
             const { dispute, auditingData } =
                 await h.dispute.fetchConstructedDispute(0);
+            // Conditional admission supplies a reason, never an exception to proof validation.
+            dispute.input.requireExistingDisputeWindow = true;
             expect(dispute.postedAuditingData).to.equal(true);
 
             const confirmations =
@@ -335,6 +337,8 @@ describe("Unit: DisputeValidationService", function () {
             await h.scenario.preDisputeSetupCalldataPath();
             const { dispute, auditingData } =
                 await h.dispute.fetchConstructedDispute(0);
+            // Conditional admission supplies a reason, never an exception to proof validation.
+            dispute.input.requireExistingDisputeWindow = true;
             expect(dispute.postedAuditingData).to.equal(true);
 
             const bc =
@@ -368,6 +372,8 @@ describe("Unit: DisputeValidationService", function () {
             await h.scenario.preDisputeSetupCalldataPath();
             const { dispute, auditingData } =
                 await h.dispute.fetchConstructedDispute(0);
+            // Conditional admission supplies a reason, never an exception to proof validation.
+            dispute.input.requireExistingDisputeWindow = true;
             expect(dispute.postedAuditingData).to.equal(true);
 
             auditingData.latestStateSnapshot.timestamp =
@@ -807,6 +813,7 @@ describe("Unit: DisputeValidationService", function () {
             const h = TestSession.getHarness();
             await h.lifecycle.start(3, 0); // empty proof -> genesis snapshot branch
             const { dispute } = await h.dispute.fetchConstructedDispute(0);
+            dispute.input.requireExistingDisputeWindow = false;
             // no reason stated -> the audited path ends in InvalidDisputeReason
             const audited = await h.dispute.auditDispute(1, dispute);
             expect(audited).to.include({ outcome: "returned", isValid: false });
@@ -844,10 +851,7 @@ describe("Unit: DisputeValidationService", function () {
                     Codec.encode(dispute, Type.Dispute) as string
                 )
                 .request({
-                    timeoutMs:
-                        h.event.protocolEventTimeoutMs({
-                            withFirstBlockGrace: true
-                        }) * 2
+                    timeoutMs: h.event.hostExecTimeoutMs()
                 });
             expect(sources).to.deep.equal({ local: false, rpc: true });
 
@@ -914,10 +918,26 @@ describe("Unit: DisputeValidationService", function () {
             );
         });
 
+        it("requireExistingDisputeWindow true with no other reason -> valid without a fraud proof", async function () {
+            const h = TestSession.getHarness();
+            await h.lifecycle.start(3, 3);
+            const { dispute } = await h.dispute.fetchConstructedDispute(0);
+            expect(dispute.input.timeout.participant).to.equal(
+                "0x0000000000000000000000000000000000000000"
+            );
+            expect(dispute.input.onChainSlashes).to.have.length(0);
+            expect(dispute.input.selfRemoval).to.equal(false);
+            dispute.input.requireExistingDisputeWindow = true;
+            const run = await h.dispute.auditDispute(1, dispute);
+            expect(run).to.include({ outcome: "returned", isValid: true });
+            expect(run.disputeFraudProofCount).to.equal(0);
+        });
+
         it("timeout.participant = 0 AND onChainSlashes = [] AND selfRemoval false -> false + InvalidDisputeReason", async function () {
             const h = TestSession.getHarness();
             await h.lifecycle.start(3, 3);
             const { dispute } = await h.dispute.fetchConstructedDispute(0);
+            dispute.input.requireExistingDisputeWindow = false;
             // premise: nothing states a reason
             expect(dispute.input.timeout.participant).to.equal(
                 "0x0000000000000000000000000000000000000000"
@@ -1378,7 +1398,7 @@ describe("Unit: DisputeValidationService", function () {
             await Promise.all(
                 [0, 1, 2, 3].map((i) => h.rpcStub.suppressTimeoutCheck(i))
             );
-            await h.network.disconnectPeer(3);
+            await h.network.blacklistAndDisconnectPeer(3);
             await h.transition.advanceState({
                 count: 1,
                 waitForPeers: [0, 1, 2],
@@ -1491,7 +1511,7 @@ describe("Unit: DisputeValidationService", function () {
             await Promise.all(
                 [0, 1, 2, 3].map((i) => h.rpcStub.suppressTimeoutCheck(i))
             );
-            await h.network.disconnectPeer(3);
+            await h.network.blacklistAndDisconnectPeer(3);
             await h.transition.advanceState({
                 count: 1,
                 waitForPeers: [0, 1, 2],
@@ -1558,7 +1578,7 @@ describe("Unit: DisputeValidationService", function () {
             await Promise.all(
                 [0, 1, 2, 3].map((i) => h.rpcStub.suppressTimeoutCheck(i))
             );
-            await h.network.disconnectPeer(3);
+            await h.network.blacklistAndDisconnectPeer(3);
             await h.transition.advanceState({
                 count: 1,
                 waitForPeers: [0, 1, 2],
@@ -1603,7 +1623,7 @@ describe("Unit: DisputeValidationService", function () {
             await h.control(h.getPeer(1)).stub.stubCalldataPosting().request();
             await h
                 .control(h.getPeer(1))
-                .stub.stageBlockCalldata(block1!.encodedSignedBlock, 1)
+                .validation.stageBlockCalldata(block1!.encodedSignedBlock, 1)
                 .request();
             // only the block author may post its calldata on-chain
             const block1Author = h.peers.find(
@@ -1611,7 +1631,7 @@ describe("Unit: DisputeValidationService", function () {
             )!;
             await h
                 .control(block1Author)
-                .stub.postBlockCalldataOnChain(block1!.encodedSignedBlock)
+                .validation.postBlockCalldataOnChain(block1!.encodedSignedBlock)
                 .request();
 
             const run = await h.dispute.auditDispute(1, dispute);

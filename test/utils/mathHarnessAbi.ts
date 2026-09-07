@@ -1,6 +1,6 @@
-import { ethers } from "ethers";
-import type { BalanceStruct } from "@typechain-types/contracts/V1/types/DataTypes";
 import { ExitChannelEthersType } from "@/types/ethers";
+import type { BalanceStruct } from "@typechain-types/contracts/V1/types/DataTypes";
+import { ethers } from "ethers";
 
 export const MathStateEthersType = `tuple(
     uint256 number,

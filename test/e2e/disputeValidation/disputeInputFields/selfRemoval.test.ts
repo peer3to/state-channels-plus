@@ -1,5 +1,6 @@
 import { DisputeFraudProofType } from "@/types/sol-enums";
 import { addressesEqual } from "@/utils";
+import { assertHonestLeaverDisputeOrdering } from "@test/fixtures/HonestLeaverDisputeStaging";
 import {
     DisputeTampering,
     MathTestSession as TestSession
@@ -17,47 +18,84 @@ describe("E2E: dispute validation / disputeInputFields / selfRemoval", function 
         const leaverIndex = 1;
         const leaverAddress = h.getPeer(leaverIndex).address;
         const disputedForkId = h.activeForkId!;
-
-        // forceExit yields a valid self-removal dispute; post untampered.
-        await h
-            .control(h.getPeer(leaverIndex))
-            .dispute.setForceExit(true)
-            .request();
-        // Voluntary exit: skip sync barrier, don't mark malicious.
-        h.context.leftChannelPeerIndices = [
-            ...h.context.leftChannelPeerIndices,
-            leaverIndex
-        ];
-
-        await h.tamper.postTamperedDispute(leaverIndex, () => {}, {
-            forkId: disputedForkId,
-            markMalicious: false
-        });
-
-        const remainingPeerIndices = h
-            .getActiveHonestPeers()
-            .map((p) => p.index);
-
-        // One dispute commits on-chain.
-        await h.assert.dispute.committedWait({
-            peersIndices: remainingPeerIndices,
-            expectedCount: 1
-        });
-
-        // Nobody should kill a valid self-removal dispute.
-        await h.event.waitWhileEventCountsStayAtMost(
-            "onDisputeKilled",
-            [...remainingPeerIndices, leaverIndex],
-            { durationMs: 4000 }
+        const beforeSnapshot = await h.channelManager.getStateSnapshot(
+            h.channelId
         );
 
-        await h.dispute.resolveDisputeWait({
-            forkId: disputedForkId,
-            assertMaliciousRemoved: false,
-            honestPeerIndices: remainingPeerIndices
-        });
+        // forceExit yields a valid self-removal dispute; post untampered.
+        // Voluntary exit: skip sync barrier, don't mark malicious.
 
-        await h.assert.sync.participantCount({ expectedCount: 2 });
+        // The dispute is posted on the leaver's behalf, so its runtime never
+        // records that it disputed; on the commit it would re-upload the same
+        // evidence as an improvement, and that upload lands after the
+        // evidence period on a loaded host. The runtime does not initiate
+        // for the whole case: the commit event reaches it after the post,
+        // so a restore right after the commit still lets that upload out.
+        await h.dispute.suppressDisputeInitiation([
+            h.getPeer(leaverIndex).index
+        ]);
+        try {
+            // One dispute commits on-chain.
+            const remainingPeerIndices =
+                await h.dispute.selfRemoveViaDisputeWait({
+                    leaverIndex,
+                    forkId: disputedForkId
+                });
+
+            // Nobody should kill a valid self-removal dispute.
+            await h.event.waitWhileEventCountsStayAtMost(
+                "onDisputeKilled",
+                [...remainingPeerIndices, leaverIndex],
+                { durationMs: 4000 }
+            );
+
+            await h.dispute.resolveDisputeWait({
+                forkId: disputedForkId,
+                assertMaliciousRemoved: false,
+                honestPeerIndices: remainingPeerIndices
+            });
+
+            await h.assert.sync.participantCount({ expectedCount: 2 });
+            const exits = await h.execOnHost(
+                h.getPeer(remainingPeerIndices[0]),
+                async (sm, { leaver }) => {
+                    const messages =
+                        sm.storage.outboundMessages.getLatestMessageBlock()
+                            ?.messages ?? [];
+                    return messages
+                        .filter((message) => message.participant === leaver)
+                        .map((message) => String(message.balance.amount));
+                },
+                { leaver: leaverAddress }
+            );
+            expect(exits.length).to.equal(1);
+            // Local fork adoption can precede the chain reduction receipt.
+            // Snapshot submission is only available after that result is committed.
+            await h.event.waitForEventCounts(
+                "onDisputeReducedResultCommitted",
+                remainingPeerIndices.map((peerId) => ({
+                    peerId,
+                    expectedCount: 1
+                })),
+                h.event.protocolEventTimeoutMs(),
+                { mode: "atLeast" }
+            );
+            await h.transition.postSnapshotWait({
+                peerIndex: remainingPeerIndices[0]
+            });
+            const afterSnapshot = await h.channelManager.getStateSnapshot(
+                h.channelId
+            );
+            expect(
+                afterSnapshot.snapshotData.totalWithdrawals.amount -
+                    beforeSnapshot.snapshotData.totalWithdrawals.amount
+            ).to.equal(BigInt(exits[0]));
+        } finally {
+            await h
+                .control(h.getPeer(leaverIndex))
+                .stub.restoreDisputeInitiation()
+                .request();
+        }
 
         for (const peer of h.getActiveHonestPeers()) {
             const participants = await h
@@ -71,11 +109,20 @@ describe("E2E: dispute validation / disputeInputFields / selfRemoval", function 
         }
     });
 
+    it("an honest leaver re-joined before its exit post → its self-removal dispute is its last signed state; no stale proof, no slash", async function () {
+        await assertHonestLeaverDisputeOrdering(
+            TestSession.getHarness(),
+            false
+        );
+    });
+
+    it("an honest leaver's fallback waits for an admitted incoming signature before capturing its dispute", async function () {
+        await assertHonestLeaverDisputeOrdering(TestSession.getHarness(), true);
+    });
+
     it("dispute.input.selfRemoval flipped without recomputing outputSnapshotDataHash → DisputeInvalidOutputState", async function () {
         const h = TestSession.getHarness();
-        await h.scenario.preDisputeSetup({
-            timeConfig: { evidenceTime: 6 }
-        });
+        await h.scenario.preDisputeSetup();
         const forkId = h.activeForkId!;
 
         // Tamper helper flipSelfRemovalWithoutOutputRecompute flips

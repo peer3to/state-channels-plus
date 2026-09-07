@@ -1,16 +1,19 @@
+import type { ParticipantChanges } from "../block/SnapshotAssemblyService";
+import type StateManager from "../StateManager";
+import Clock from "@/Clock";
+
+import { Block, StateSnapshot } from "@/models";
+import { Status } from "@/types";
+import { isCommittedParticipantStatus } from "@/types/flags";
+import { Address, ChannelId, ForkId, Hash } from "@/types/types";
+import { addressesEqual, Logger, union } from "@/utils";
+import { errorMessage } from "@/utils/errorMessage";
+import { tryDecodeCustomError } from "@/utils/evmErrorHandler";
 import type {
     JoinChannelConfirmationStruct,
     MessageBlockStruct
 } from "@typechain-types/contracts/V1/types/DataTypes";
-
-import { Block, StateSnapshot } from "@/models";
-import type { ParticipantChanges } from "../block/SnapshotAssemblyService";
-import { Status } from "@/types";
-import { Address, ChannelId, ForkId, Hash } from "@/types/types";
-import { Logger, union } from "@/utils";
-import { tryDecodeCustomError } from "@/utils/evmErrorHandler";
-
-import type StateManager from "../StateManager";
+import { isError } from "ethers";
 
 /**
  * The membership domain: the channel's participant union (on-chain current +
@@ -41,6 +44,29 @@ export default class MembershipService {
         ].map(String) as Address[];
     }
 
+    public includesSigner(participants: readonly Address[]): boolean {
+        return participants.some((participant) =>
+            addressesEqual(participant, this.stateManager.signerAddress)
+        );
+    }
+
+    public async isSignerOnChain(): Promise<boolean> {
+        return this.includesSigner(await this.getOnChainParticipantUnion());
+    }
+
+    public async isSignerInLocalState(): Promise<boolean> {
+        return this.includesSigner(
+            await this.stateManager.getParticipantsCurrent()
+        );
+    }
+
+    public async startSelfRemovalDispute(forkId: ForkId): Promise<boolean> {
+        const sm = this.stateManager;
+        sm.storage.forceExit.setForceExit(true);
+        await sm.disputeManager.dispute(forkId);
+        return sm.storage.disputes.didIDispute(forkId);
+    }
+
     public async getOnChainThresholdSet(
         channelId: ChannelId = this.stateManager.channelId
     ): Promise<Address[]> {
@@ -55,7 +81,7 @@ export default class MembershipService {
         confirmation: JoinChannelConfirmationStruct,
         expectedSnapshotHash: Hash,
         expectedForkId: ForkId
-    ): Promise<void> {
+    ): Promise<boolean> {
         const sm = this.stateManager;
         if (sm.status !== Status.SYNCED) {
             throw new Error(
@@ -63,17 +89,16 @@ export default class MembershipService {
             );
         }
 
-        sm.setStatus(Status.PENDING_PARTICIPANT);
-        this.logger.info(
-            "joinChannel - promoted to PENDING_PARTICIPANT on broadcast"
-        );
-
         const joinSubmissionHeight =
             sm.storage.blocks.getNextBlockHeight(sm.forkId) - 1;
         sm.storage.forceJoin.setJoinSubmissionBlockHeight(joinSubmissionHeight);
         this.logger.info(
             "joinChannel - recorded force join submission height",
             { joinSubmissionHeight }
+        );
+        sm.setStatus(Status.PENDING_PARTICIPANT);
+        this.logger.info(
+            "joinChannel - promoted to PENDING_PARTICIPANT before submission"
         );
 
         try {
@@ -83,19 +108,51 @@ export default class MembershipService {
                 expectedForkId
             );
             await tx.wait();
-
-            // The join is now on chain, so peers that deferred a promotion
-            // decision about us can resolve it. Only we know this moment,
-            // and the peers that need it are precisely the ones whose own
-            // state is not changing - see P2PManager.announceChannelMembership.
-            sm.p2pManager.announceChannelMembership();
+            return true;
         } catch (error) {
             const custom = tryDecodeCustomError(error);
-            if (custom?.name === "ErrorJoinChannelParticipantAlreadyExists") {
+            if (
+                custom?.name === "ErrorJoinChannelParticipantAlreadyExists" &&
+                sm.storage.forceJoin.getJoinSubmissionBlockHeight() !==
+                    undefined
+            ) {
                 this.logger.warn(
                     "joinChannel - participant already exists; preserving pending join state"
                 );
-                throw custom;
+                return true;
+            }
+
+            const failedReceipt =
+                isError(error, "CALL_EXCEPTION") &&
+                error.receipt !== null &&
+                error.receipt !== undefined &&
+                Number(error.receipt.status) === 0;
+            const commitmentRuledOut = custom !== null || failedReceipt;
+            if (!commitmentRuledOut) {
+                try {
+                    const participantUnion =
+                        await this.getOnChainParticipantUnion();
+                    if (this.includesSigner(participantUnion)) {
+                        this.logger.warn(
+                            "joinChannel - submission outcome was uncertain but on-chain membership is present"
+                        );
+                        return true;
+                    }
+                } catch (reconciliationError) {
+                    this.logger.warn(
+                        "joinChannel - failed to reconcile uncertain submission",
+                        {
+                            error: errorMessage(reconciliationError)
+                        }
+                    );
+                }
+                this.logger.warn(
+                    "joinChannel - submission outcome uncertain; preserving pending state",
+                    {
+                        error: errorMessage(error)
+                    }
+                );
+                return false;
             }
 
             sm.setStatus(Status.SYNCED);
@@ -113,15 +170,13 @@ export default class MembershipService {
                             args: custom.errorDescription.args
                         }
                     );
-                    // TODO: support concurrent joins by collecting safe extra signatures before submission.
-                    // Rethrown as CustomEvmError
                     sm.abort();
-                    throw custom;
+                    return false;
             }
             this.logger.warn("joinChannel - tx failed, reverting to SYNCED", {
-                error: error instanceof Error ? error.message : String(error)
+                error: errorMessage(error)
             });
-            throw error;
+            return false;
         }
     }
 
@@ -129,12 +184,9 @@ export default class MembershipService {
         confirmation: JoinChannelConfirmationStruct,
         expectedSnapshotHash: Hash,
         expectedForkId: ForkId
-    ): Promise<void> {
+    ): Promise<boolean> {
         const sm = this.stateManager;
-        if (
-            sm.status !== Status.PARTICIPATING &&
-            sm.status !== Status.PENDING_PARTICIPANT
-        ) {
+        if (!isCommittedParticipantStatus(sm.status)) {
             throw new Error(
                 `topUpBalance requires PARTICIPATING or PENDING_PARTICIPANT status, got ${Status[sm.status]}`
             );
@@ -147,6 +199,7 @@ export default class MembershipService {
                 expectedForkId
             );
             await tx.wait();
+            return true;
         } catch (error) {
             const custom = tryDecodeCustomError(error);
             if (custom) {
@@ -154,9 +207,9 @@ export default class MembershipService {
                     name: custom.name,
                     args: custom.errorDescription.args
                 });
-                throw custom;
+                return false;
             }
-            throw error;
+            return false;
         }
     }
 
@@ -171,12 +224,91 @@ export default class MembershipService {
         if (joinSubmissionHeight === undefined) return;
         const N = participants.length + 1;
         const fireOnBlockHeight = joinSubmissionHeight + N;
-        if (block.height !== fireOnBlockHeight) return;
+        if (
+            block.height < fireOnBlockHeight ||
+            sm.storage.forceJoin.hasDisputeStarted()
+        )
+            return;
+
+        let onChainParticipantUnion: Address[];
+        try {
+            onChainParticipantUnion = await this.getOnChainParticipantUnion();
+        } catch (error) {
+            this.logger.warn(
+                "Force join dispute deferred: on-chain membership could not be read",
+                {
+                    forkId: sm.forkId,
+                    blockHeight: block.height,
+                    error: errorMessage(error)
+                }
+            );
+            return;
+        }
+        if (!this.includesSigner(onChainParticipantUnion)) {
+            this.logger.info(
+                "Force join dispute deferred: local pending membership is not on chain",
+                { forkId: sm.forkId, blockHeight: block.height }
+            );
+            return;
+        }
+
+        let disputeWindowCreationTimestamp: number;
+        try {
+            disputeWindowCreationTimestamp = Number(
+                await sm.diamondStateMachine.localDiamondContract.getDisputeWindowCreationTimestamp(
+                    sm.channelId,
+                    sm.forkId
+                )
+            );
+        } catch (error) {
+            this.logger.warn(
+                "Force join dispute deferred: dispute window could not be read",
+                {
+                    forkId: sm.forkId,
+                    blockHeight: block.height,
+                    error: errorMessage(error)
+                }
+            );
+            return;
+        }
+        if (disputeWindowCreationTimestamp !== 0) {
+            let chainTimestamp: number;
+            try {
+                chainTimestamp = (await Clock.getBlockchainTime()).timestamp;
+            } catch (error) {
+                this.logger.warn(
+                    "Force join dispute deferred: chain time could not be read",
+                    {
+                        forkId: sm.forkId,
+                        blockHeight: block.height,
+                        error: errorMessage(error)
+                    }
+                );
+                return;
+            }
+            if (
+                chainTimestamp >=
+                disputeWindowCreationTimestamp + sm.timeConfig.evidenceTime
+            ) {
+                this.logger.info(
+                    "Force join dispute deferred: dispute evidence window expired",
+                    {
+                        forkId: sm.forkId,
+                        blockHeight: block.height,
+                        disputeWindowCreationTimestamp,
+                        chainTimestamp
+                    }
+                );
+                return;
+            }
+        }
+
+        sm.storage.forceJoin.setDisputeStarted();
         this.logger.info(
             "Force join dispute triggered: N turns passed without inclusion",
             { N, forkId: sm.forkId, blockHeight: block.height }
         );
-        await sm.disputeManager.dispute(sm.forkId);
+        sm.disputeManager.requestDispute(sm.forkId);
     }
 
     public async startMaybeExitOnChain(
@@ -210,19 +342,45 @@ export default class MembershipService {
                         { blockHeight: block.height, forkId: block.forkId }
                     );
                     try {
-                        await sm.snapshotUpdateService.postStateSnapshot(
+                        await sm.snapshotUpdateService.postStateSnapshotWait(
                             block.forkId
                         );
                     } catch (error) {
                         this.logger.error(
                             `startMaybeExitOnChain - failed to post state snapshot`,
                             {
-                                error:
-                                    error instanceof Error
-                                        ? error.message
-                                        : String(error)
+                                error: errorMessage(error)
                             }
                         );
+                        try {
+                            if (
+                                !(await this.startSelfRemovalDispute(
+                                    block.forkId
+                                ))
+                            ) {
+                                this.logger.warn(
+                                    "Self-removal dispute did not start",
+                                    { forkId: block.forkId }
+                                );
+                                sm.leaveChannelService.onExitFallbackFailed(
+                                    block.forkId,
+                                    new Error(
+                                        "Terminal channel leave failed to start a dispute"
+                                    )
+                                );
+                            }
+                        } catch (disputeError) {
+                            this.logger.error(
+                                "startMaybeExitOnChain - failed to create self-removal dispute after snapshot failure",
+                                {
+                                    error: errorMessage(disputeError)
+                                }
+                            );
+                            sm.leaveChannelService.onExitFallbackFailed(
+                                block.forkId,
+                                disputeError
+                            );
+                        }
                     }
                 } else {
                     // Slow path: not everyone signed - create a self-removal dispute
@@ -234,17 +392,32 @@ export default class MembershipService {
                         }
                     );
                     try {
-                        sm.storage.forceExit.setForceExit(true);
-                        await sm.disputeManager.dispute(persistedBlock.forkId);
+                        if (
+                            !(await this.startSelfRemovalDispute(
+                                persistedBlock.forkId
+                            ))
+                        ) {
+                            this.logger.warn(
+                                "Self-removal dispute did not start",
+                                { forkId: persistedBlock.forkId }
+                            );
+                            sm.leaveChannelService.onExitFallbackFailed(
+                                persistedBlock.forkId,
+                                new Error(
+                                    "Terminal channel leave failed to start a dispute"
+                                )
+                            );
+                        }
                     } catch (error) {
                         this.logger.error(
                             `startMaybeExitOnChain - failed to create self-removal dispute`,
                             {
-                                error:
-                                    error instanceof Error
-                                        ? error.message
-                                        : String(error)
+                                error: errorMessage(error)
                             }
+                        );
+                        sm.leaveChannelService.onExitFallbackFailed(
+                            persistedBlock.forkId,
+                            error
                         );
                     }
                 }

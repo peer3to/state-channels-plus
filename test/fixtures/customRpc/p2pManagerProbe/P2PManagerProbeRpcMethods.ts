@@ -1,7 +1,4 @@
 // @spec-test-coverage-ignore: loopback endpoints for mapped P2PManager component cases
-import type P2PManager from "@/P2PManager";
-import ARpcMethods from "@/rpc/ARpcMethods";
-import type ATransport from "@/transport/ATransport";
 import type { PingPongRpc } from "../PingPongRpcManifest";
 import type {
     DispatchHeadProbe,
@@ -19,8 +16,37 @@ import type {
     DisconnectCleanupProbe,
     TransportRetirementProbe,
     BulkPenaltyProbe,
-    ConnectedPeerFallbackProbe
+    ConnectedPeerFallbackProbe,
+    BanPolicyProbe,
+    RelayAdmissionProbe,
+    UpgradeBanPolicyProbe,
+    UnblacklistBanPolicyProbe,
+    UnblacklistBanPolicyScenario,
+    HolepunchTopicProbe,
+    HandshakeFailureProbe,
+    LateHandshakeProbe,
+    ReplacementHandshakeProbe,
+    ProfileDisconnectLifecycleProbe,
+    LobbyProtocolProbe,
+    LobbyRecoveryProbe,
+    LobbyRecoveryBoundProbe,
+    LobbyCommitCancellationProbe,
+    LobbySessionCleanupProbe,
+    MatchedNegotiationAdmissionProbe,
+    InvalidNegotiationAmountProbe,
+    NegotiationFailureProbe,
+    NegotiationFailureScenario,
+    SignedAttemptObservationProbe,
+    TargetedNegotiationRaceProbe,
+    LobbyBootstrapValidationProbe,
+    LobbyRoleTimerProbe,
+    LobbyRetryEpochProbe,
+    LobbyExhaustionTimerProbe,
+    LobbyLatePickProbe
 } from "./P2PManagerProbeService";
+import type P2PManager from "@/P2PManager";
+import ARpcMethods from "@/rpc/ARpcMethods";
+import type ATransport from "@/transport/ATransport";
 
 export class P2PManagerProbeRpcMethods extends ARpcMethods<
     P2PManager<PingPongRpc>
@@ -119,6 +145,34 @@ export class P2PManagerProbeRpcMethods extends ARpcMethods<
         return this.service.probeBulkPenalty(firstAddress, secondAddress);
     }
 
+    public probeConnectedPeerPrecedence(
+        profileAddress: string,
+        transportAddress: string
+    ) {
+        return this.service.probeConnectedPeerPrecedence(
+            profileAddress,
+            transportAddress
+        );
+    }
+
+    public probeLobbyFilterOrder(peerAddress: string) {
+        return this.service.probeLobbyFilterOrder(peerAddress);
+    }
+
+    public probeLobbyFilterBoundary(
+        peerAddress: string,
+        mode: "self" | "unknown" | "throw"
+    ) {
+        return this.service.probeLobbyFilterBoundary(peerAddress, mode);
+    }
+
+    public probeCommitmentComparison(
+        peerAddress: string,
+        mismatch: "selector" | "advertiser" | "absent" | "malformed"
+    ) {
+        return this.service.probeCommitmentComparison(peerAddress, mismatch);
+    }
+
     public probeConnectedPeerFallback(
         address: string
     ): ConnectedPeerFallbackProbe {
@@ -151,5 +205,164 @@ export class P2PManagerProbeRpcMethods extends ARpcMethods<
             secondAddress,
             missingAddress
         );
+    }
+
+    public probeUnauthenticatedBlacklist(): BanPolicyProbe {
+        return this.service.probeUnauthenticatedBlacklist();
+    }
+
+    public probeUnauthenticatedClose(): BanPolicyProbe {
+        return this.service.probeUnauthenticatedClose();
+    }
+
+    public probeUpgradeBanPolicy(address: string): UpgradeBanPolicyProbe {
+        return this.service.probeUpgradeBanPolicy(address);
+    }
+
+    public probeExplicitBlacklist(address: string): BanPolicyProbe {
+        return this.service.probeExplicitBlacklist(address);
+    }
+
+    public probeUnblacklistBanPolicy(
+        address: string,
+        scenario: UnblacklistBanPolicyScenario
+    ): UnblacklistBanPolicyProbe {
+        return this.service.probeUnblacklistBanPolicy(address, scenario);
+    }
+
+    public probeHealthyWebRtcRejectsHolepunch(
+        address: string
+    ): Promise<RelayAdmissionProbe> {
+        return this.service.probeHealthyWebRtcRejectsHolepunch(address);
+    }
+
+    public probeWebRtcCloseAcceptsHolepunch(
+        address: string
+    ): Promise<RelayAdmissionProbe> {
+        return this.service.probeWebRtcCloseAcceptsHolepunch(address);
+    }
+
+    public probeBlacklistRejectsHolepunch(
+        address: string
+    ): Promise<RelayAdmissionProbe> {
+        return this.service.probeBlacklistRejectsHolepunch(address);
+    }
+
+    public probeHolepunchJoinAndEqualLeave(): Promise<HolepunchTopicProbe> {
+        return this.service.probeHolepunchJoinAndEqualLeave();
+    }
+
+    public probeHolepunchDuplicateLeave(): Promise<HolepunchTopicProbe> {
+        return this.service.probeHolepunchDuplicateLeave();
+    }
+
+    public probeHolepunchAbsentLeave(): Promise<HolepunchTopicProbe> {
+        return this.service.probeHolepunchAbsentLeave();
+    }
+
+    public probeHolepunchLeaveBeforeSwarm(): Promise<HolepunchTopicProbe> {
+        return this.service.probeHolepunchLeaveBeforeSwarm();
+    }
+
+    public probeHolepunchRejoinAfterLeave(
+        duplicate = false
+    ): Promise<HolepunchTopicProbe> {
+        return this.service.probeHolepunchRejoinAfterLeave(duplicate);
+    }
+
+    public probeHandshakeParticipantReadFailure(
+        address: string
+    ): Promise<HandshakeFailureProbe> {
+        return this.service.probeHandshakeParticipantReadFailure(address);
+    }
+
+    public probeMissingHandshake(address: string): Promise<LateHandshakeProbe> {
+        return this.service.probeMissingHandshake(address);
+    }
+
+    public probeClosedHandshake(address: string): Promise<LateHandshakeProbe> {
+        return this.service.probeClosedHandshake(address);
+    }
+
+    public probeDisposedHandshake(
+        address: string
+    ): Promise<LateHandshakeProbe> {
+        return this.service.probeDisposedHandshake(address);
+    }
+
+    public probeReplacementHandshake(
+        address: string
+    ): Promise<ReplacementHandshakeProbe> {
+        return this.service.probeReplacementHandshake(address);
+    }
+
+    public probeProfileDisconnectLifecycle(
+        address: string
+    ): ProfileDisconnectLifecycleProbe {
+        return this.service.probeProfileDisconnectLifecycle(address);
+    }
+
+    public probeLobbyProtocol(): Promise<LobbyProtocolProbe> {
+        return this.service.probeLobbyProtocol();
+    }
+
+    public probeLobbyRecovery(): Promise<LobbyRecoveryProbe> {
+        return this.service.probeLobbyRecovery();
+    }
+
+    public probeLobbyRecoveryBound(): LobbyRecoveryBoundProbe {
+        return this.service.probeLobbyRecoveryBound();
+    }
+
+    public probeLobbyCommitCancellation(): Promise<LobbyCommitCancellationProbe> {
+        return this.service.probeLobbyCommitCancellation();
+    }
+
+    public probeLobbyBootstrapAndValidation(): Promise<LobbyBootstrapValidationProbe> {
+        return this.service.probeLobbyBootstrapAndValidation();
+    }
+
+    public probeLobbyRoleTimers(): Promise<LobbyRoleTimerProbe> {
+        return this.service.probeLobbyRoleTimers();
+    }
+
+    public probeLobbySessionCleanup(): Promise<LobbySessionCleanupProbe> {
+        return this.service.probeLobbySessionCleanup();
+    }
+
+    public probeLobbyRetryEpoch(): Promise<LobbyRetryEpochProbe> {
+        return this.service.probeLobbyRetryEpoch();
+    }
+
+    public probeLobbyExhaustionTimer(): Promise<LobbyExhaustionTimerProbe> {
+        return this.service.probeLobbyExhaustionTimer();
+    }
+
+    public probeLobbyLatePick(): Promise<LobbyLatePickProbe> {
+        return this.service.probeLobbyLatePick();
+    }
+
+    public probeMatchedNegotiationAdmission(): Promise<MatchedNegotiationAdmissionProbe> {
+        return this.service.probeMatchedNegotiationAdmission();
+    }
+
+    public probeInvalidNegotiationAmount(
+        zeroBalance = false
+    ): Promise<InvalidNegotiationAmountProbe> {
+        return this.service.probeInvalidNegotiationAmount(zeroBalance);
+    }
+
+    public probeNegotiationFailure(
+        scenario: NegotiationFailureScenario
+    ): Promise<Partial<NegotiationFailureProbe>> {
+        return this.service.probeNegotiationFailure(scenario);
+    }
+
+    public probeSignedAttemptObservation(): Promise<SignedAttemptObservationProbe> {
+        return this.service.probeSignedAttemptObservation();
+    }
+
+    public probeTargetedNegotiationRaces(): Promise<TargetedNegotiationRaceProbe> {
+        return this.service.probeTargetedNegotiationRaces();
     }
 }

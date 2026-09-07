@@ -1,17 +1,20 @@
-import type ATransport from "@/transport/ATransport";
+import JoinChannelRpcMethods from "./JoinChannelRpcMethods";
+import Clock from "@/Clock";
+import StateSnapshot from "@/models/StateSnapshot";
+import type P2PManager from "@/P2PManager";
 import ARpcService from "@/rpc/ARpcService";
 import { HandshakeCompletedGuard } from "@/rpc/guards";
-import type P2PManager from "@/P2PManager";
+import type ATransport from "@/transport/ATransport";
+import type { ChannelId, ForkId, Hash, Signature } from "@/types/types";
+import { addressesEqual, Codec, SignatureUtils, Type } from "@/utils";
 import type {
+    BalanceStruct,
     JoinChannelConfirmationStruct,
     JoinChannelStruct,
     SignedJoinChannelStruct
 } from "@typechain-types/contracts/V1/types/DataTypes";
-import type { ChannelId, ForkId, Hash, Signature } from "@/types/types";
-import { addressesEqual, Codec, SignatureUtils, Type } from "@/utils";
-import StateSnapshot from "@/models/StateSnapshot";
-import Clock from "@/Clock";
-import JoinChannelRpcMethods from "./JoinChannelRpcMethods";
+
+export const DEFAULT_JOIN_CHANNEL_DEADLINE_SECONDS = 120;
 
 export type PreparedJoinChannelConfirmation = {
     confirmation: JoinChannelConfirmationStruct;
@@ -34,32 +37,18 @@ export default class JoinChannelService extends ARpcService<JoinChannelRpcMethod
         return new JoinChannelRpcMethods(transport, this);
     }
 
-    /**
-     * Handles a peer's "my join landed" announcement. All this does is ask
-     * `P2PManager` to take its deferred promotion decisions again - the
-     * announcement itself proves nothing, and the re-check reads the
-     * on-chain participant union as usual.
-     *
-     * Ignores an announcement naming a channel that isn't ours: a peer
-     * joining some other channel changes nothing about who belongs in this
-     * one, and acting on it would spend a chain read per unrelated join.
-     */
-    public handleMembershipAnnouncement(
-        transport: ATransport,
-        channelId: ChannelId
-    ): void {
-        const ourChannelId = this.p2pManager.stateManager.channelId;
-        if (String(channelId) !== String(ourChannelId)) {
-            this.logger.debug(
-                "Ignoring membership announcement for another channel",
-                { announced: String(channelId), peerAddress: transport.peerAddress }
-            );
-            return;
-        }
-        this.logger.debug("Peer announced its channel membership", {
-            peerAddress: transport.peerAddress
+    public async prepareJoinChannelConfirmation(
+        balance: BalanceStruct
+    ): Promise<PreparedJoinChannelConfirmation> {
+        const chainTime = await Clock.getBlockchainTime();
+        return this.collectJoinChannelConfirmation({
+            channelId: this.p2pManager.stateManager.channelId,
+            participant: this.p2pManager.stateManager.signerAddress,
+            balance,
+            deadlineTimestamp: BigInt(
+                chainTime.timestamp + DEFAULT_JOIN_CHANNEL_DEADLINE_SECONDS
+            )
         });
-        void this.p2pManager.reevaluatePendingChannelMembership();
     }
 
     public async collectJoinChannelConfirmation(
@@ -92,18 +81,10 @@ export default class JoinChannelService extends ARpcService<JoinChannelRpcMethod
             );
         const localAddress = String(sm.signerAddress);
 
-        for (const participant of thresholdParticipants) {
-            if (
-                !addressesEqual(participant, localAddress) &&
-                !this.p2pManager.profileManager.getTransportByEvmAddress(
-                    participant
-                )
-            ) {
-                throw new Error(
-                    `collectJoinChannelConfirmation: no transport for threshold participant ${participant}`
-                );
-            }
-        }
+        await this.waitForThresholdReachability(
+            thresholdParticipants.map(String),
+            localAddress
+        );
 
         const chainTime = await Clock.getBlockchainTime();
         const remainingSeconds =
@@ -219,14 +200,20 @@ export default class JoinChannelService extends ARpcService<JoinChannelRpcMethod
         if (String(snapshot.hash) !== String(expectedSnapshotHash)) {
             throw new Error("requestJoinSignature: snapshot mismatch");
         }
-        if (
-            !thresholdParticipants.some((participant) =>
-                addressesEqual(participant, sm.signerAddress)
-            )
-        ) {
+        if (!sm.membershipService.includesSigner(thresholdParticipants)) {
             throw new Error(
                 "requestJoinSignature: local signer not in threshold"
             );
+        }
+
+        try {
+            await sm.diamondStateMachine.requirePositiveBalance(
+                joinChannel.balance,
+                "join balance"
+            );
+        } catch (error) {
+            this.p2pManager.disconnectAndBlacklistPeerByEvmAddress(peerAddress);
+            throw error;
         }
 
         // TODO: add a configurable admission filter, including optional snapshot-scoped consent.
@@ -235,5 +222,54 @@ export default class JoinChannelService extends ARpcService<JoinChannelRpcMethod
             sm.signer
         );
         return { signature: String(signature) };
+    }
+
+    private async waitForThresholdReachability(
+        thresholdParticipants: string[],
+        localAddress: string
+    ): Promise<void> {
+        const isReady = () =>
+            thresholdParticipants.every(
+                (participant) =>
+                    addressesEqual(participant, localAddress) ||
+                    !!this.p2pManager.profileManager.getTransportByEvmAddress(
+                        participant
+                    )
+            );
+        if (isReady()) return;
+
+        await new Promise<void>((resolve, reject) => {
+            let settled = false;
+            const unsubscribe = this.p2pManager.stateManager.events.on(
+                "p2pEventHooks",
+                "handshakeCompleted",
+                () => {
+                    if (settled || !isReady()) return;
+                    settled = true;
+                    unsubscribe();
+                    this.p2pManager.stateManager.timeoutManager.cancelTask(
+                        timeout
+                    );
+                    resolve();
+                }
+            );
+            const timeout =
+                this.p2pManager.stateManager.timeoutManager.scheduleTask(
+                    () => {
+                        if (settled) return;
+                        settled = true;
+                        unsubscribe();
+                        reject(
+                            new Error(
+                                "collectJoinChannelConfirmation: threshold participant unavailable"
+                            )
+                        );
+                    },
+                    this.p2pManager.stateManager.timeConfig.agreementTime *
+                        2 *
+                        1000,
+                    "join threshold participant reachability"
+                );
+        });
     }
 }

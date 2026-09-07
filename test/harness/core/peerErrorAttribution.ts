@@ -1,7 +1,6 @@
-import { AsyncLocalStorage } from "node:async_hooks";
-
-import { DetachedPromises, maybeStampErrorWithPeerAddress } from "@/utils";
 import type { HostHandlerExecutionContext } from "@/evm/p2pRuntime/HostHandlerExecutionContext";
+import { DetachedPromises, maybeStampErrorWithPeerAddress } from "@/utils";
+import { AsyncLocalStorage } from "node:async_hooks";
 
 /**
  * Tags all of one inline peer's work with its EVM address.

@@ -1,17 +1,17 @@
-import { ethers, TransactionResponse } from "ethers";
-
-import type { MessageBlockStruct } from "@typechain-types/contracts/V1/types/DataTypes";
-import type { MilestoneProofStruct } from "@typechain-types/contracts/V1/types/ProofTypes";
-
+import type StateManager from "../StateManager";
 import { StateSnapshot } from "@/models";
+
 import type { ForkId } from "@/types/types";
 import { DetachedPromises, Logger } from "@/utils";
+import { errorMessage } from "@/utils/errorMessage";
 import {
     tryDecodeCustomError,
     tryHandleEvmError
 } from "@/utils/evmErrorHandler";
 import { LoggerUtils } from "@/utils/LoggerUtils";
-import type StateManager from "../StateManager";
+import type { MessageBlockStruct } from "@typechain-types/contracts/V1/types/DataTypes";
+import type { MilestoneProofStruct } from "@typechain-types/contracts/V1/types/ProofTypes";
+import { ethers, TransactionResponse } from "ethers";
 
 type SnapshotSubmission = {
     expectedSnapshot: StateSnapshot;
@@ -54,7 +54,7 @@ export default class SnapshotUpdateService {
         return submission.expectedSnapshot;
     }
 
-    private async postStateSnapshotWait(
+    public async postStateSnapshotWait(
         forkId: ForkId
     ): Promise<StateSnapshot | undefined> {
         const submission = await this.submitStateSnapshot(forkId);
@@ -175,8 +175,7 @@ export default class SnapshotUpdateService {
                 const custom = tryDecodeCustomError(error);
                 this.logger.error("Error posting state snapshot", {
                     custom,
-                    error:
-                        error instanceof Error ? error.message : String(error)
+                    error: errorMessage(error)
                 });
                 throw error;
             });
@@ -348,7 +347,7 @@ export default class SnapshotUpdateService {
             };
         } catch (error) {
             this.logger.error("Error preparing update state snapshot fork", {
-                error: error instanceof Error ? error.message : String(error)
+                error: errorMessage(error)
             });
             throw error;
         }
@@ -575,8 +574,7 @@ export default class SnapshotUpdateService {
             this.logger.error(
                 "Error preparing update snapshot for the same fork",
                 {
-                    error:
-                        error instanceof Error ? error.message : String(error)
+                    error: errorMessage(error)
                 }
             );
             throw error;

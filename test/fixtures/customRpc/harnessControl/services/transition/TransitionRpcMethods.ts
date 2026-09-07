@@ -1,10 +1,11 @@
+// @spec-test-coverage-ignore: transition fixture support exercised by owning mapped tests
+import type { TransitionService } from "./TransitionService";
+import { Block } from "@/models";
 import ARpcMethods from "@/rpc/ARpcMethods";
+import type { IngestBlockConfirmationOptions } from "@/stateManager/ingest/BlockQueueManager";
 import type ATransport from "@/transport/ATransport";
 import type { ForkId } from "@/types/types";
-import type { IngestBlockConfirmationOptions } from "@/stateManager/ingest/BlockQueueManager";
-import { Block } from "@/models";
 import { Codec, Type } from "@/utils";
-import type { TransitionService } from "./TransitionService";
 
 /**
  * Serializable projection of `prepareUpdateSnapshotSameFork`. Snapshots carry
@@ -54,9 +55,9 @@ export class TransitionRpcMethods extends ARpcMethods {
         forkId: ForkId
     ): Promise<{ encodedSnapshot: string } | null> {
         const struct = (
-            await this.service.sm.snapshotUpdateService[
-                "postStateSnapshotWait"
-            ](forkId)
+            await this.service.sm.snapshotUpdateService.postStateSnapshotWait(
+                forkId
+            )
         )?.toStruct();
         return struct
             ? {
@@ -95,9 +96,12 @@ export class TransitionRpcMethods extends ARpcMethods {
         encodedBlockConfirmation: string,
         options?: IngestBlockConfirmationOptions
     ): Promise<boolean> {
-        return await this.service.sm.blockQueueManager.ingestBlockConfirmation(
-            Codec.decode(encodedBlockConfirmation, Type.BlockConfirmation),
-            options
+        const queue = this.service.sm.blockQueueManager;
+        return await this.service.stub.controlIngestContext.run(true, () =>
+            queue.ingestBlockConfirmation(
+                Codec.decode(encodedBlockConfirmation, Type.BlockConfirmation),
+                options
+            )
         );
     }
 

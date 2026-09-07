@@ -1,7 +1,7 @@
-import type P2PManager from "@/P2PManager";
 import ATransport from "./ATransport";
-import WebSocket from "ws";
 import { TransportType } from "./TransportType";
+import type P2PManager from "@/P2PManager";
+import WebSocket from "ws";
 
 class LocalTransport extends ATransport {
     transportType = TransportType.HOLEPUNCH; // not holepunch, but probably doesn't matter for testing
@@ -29,10 +29,6 @@ class LocalTransport extends ATransport {
     }
     _send(serializedRPC: string): void {
         this.ws.send(serializedRPC);
-    }
-    onMessage(data: any): void {
-        const serializedRPC = data.toString();
-        this.p2pManager.onRpc(serializedRPC, this);
     }
     _close(): void {
         if (this.ws && this.ws.readyState === this.ws.OPEN) {

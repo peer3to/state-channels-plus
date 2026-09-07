@@ -1,11 +1,12 @@
-import Rpc from "./Rpc";
-import type ATransport from "@/transport/ATransport";
 import ARpcMethods from "./ARpcMethods";
+import Rpc, { RPC_GUARD_REJECTION_ERROR } from "./Rpc";
+import type { RpcResponse } from "./Rpc";
 import type P2PManager from "@/P2PManager";
-import { Logger } from "@/utils";
 import type { AGuard } from "@/rpc/guards/AGuard";
 import { runGuards } from "@/rpc/guards/runGuards";
-import type { RpcResponse } from "./Rpc";
+import type ATransport from "@/transport/ATransport";
+import { Logger } from "@/utils";
+import { errorMessage } from "@/utils/errorMessage";
 
 type RpcEndpoint = (...params: Rpc["params"]) => unknown;
 
@@ -52,15 +53,20 @@ abstract class ARpcService<
         response: RpcResponse,
         transport: ATransport
     ): void {
+        const responseTransport = transport.peerAddress
+            ? (this.p2pManager.profileManager.getTransportByEvmAddress(
+                  transport.peerAddress
+              ) ?? transport)
+            : transport;
         try {
-            transport.sendRpcResponse(response);
+            responseTransport.sendRpcResponse(response);
         } catch (e: unknown) {
             this.logger.error("Failed to send RPC response", {
                 method: rpc.method,
-                error: e instanceof Error ? e.message : String(e),
+                error: errorMessage(e),
                 stack: e instanceof Error ? e.stack : undefined
             });
-            this.p2pManager.disconnectConnection(transport);
+            this.p2pManager.disconnectConnection(responseTransport);
         }
     }
 
@@ -69,14 +75,17 @@ abstract class ARpcService<
             const guardsPassed = runGuards(this.guards, rpc, transport);
             if (!guardsPassed) {
                 // Guard failure means we consumed the rpc but refused to process it.
-                if (rpc.requestId !== undefined) {
+                const suppressResponse = this.guards.some((guard) =>
+                    guard.suppressesFailureResponse(rpc, transport)
+                );
+                if (rpc.requestId !== undefined && !suppressResponse) {
                     this.sendRpcResponseSafely(
                         rpc,
                         {
                             rpcResponse: true,
                             requestId: rpc.requestId,
                             ok: false,
-                            error: "RPC request rejected by guard"
+                            error: RPC_GUARD_REJECTION_ERROR
                         },
                         transport
                     );
@@ -110,14 +119,14 @@ abstract class ARpcService<
                 } catch (e: unknown) {
                     this.logger.error("Unhandled async RPC request exception", {
                         method: rpc.method,
-                        error: e instanceof Error ? e.message : String(e),
+                        error: errorMessage(e),
                         stack: e instanceof Error ? e.stack : undefined
                     });
                     response = {
                         rpcResponse: true,
                         requestId,
                         ok: false,
-                        error: e instanceof Error ? e.message : String(e)
+                        error: errorMessage(e)
                     };
                 }
                 this.sendRpcResponseSafely(rpc, response, transport);
@@ -131,7 +140,7 @@ abstract class ARpcService<
             ).catch((e: unknown) => {
                 this.logger.error("Unhandled async RPC handler exception", {
                     method: rpc.method,
-                    error: e instanceof Error ? e.message : String(e),
+                    error: errorMessage(e),
                     stack: e instanceof Error ? e.stack : undefined
                 });
                 this.p2pManager.disconnectConnection(transport);
@@ -139,7 +148,7 @@ abstract class ARpcService<
         } catch (e) {
             this.logger.error("Unhandled RPC handler exception", {
                 method: rpc.method,
-                error: e instanceof Error ? e.message : String(e),
+                error: errorMessage(e),
                 stack: e instanceof Error ? e.stack : undefined
             });
             return false;

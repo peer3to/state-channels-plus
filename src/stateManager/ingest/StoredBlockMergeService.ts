@@ -1,12 +1,11 @@
+import type StateManager from "../StateManager";
+import type AValidationStrategy from "../validationStrategy/AValidationStrategy";
 import type { QueuedBlockEntry } from "@/storage/QueueStorage";
 import { BlockValidationResult } from "@/types";
 import { Address } from "@/types/types";
 import { difference, getChecksumAddress, isSubset, Logger } from "@/utils";
 import { LoggerUtils } from "@/utils/LoggerUtils";
 import P2pEventHooksUtils from "@/utils/P2pEventHooksUtils";
-
-import type StateManager from "../StateManager";
-import type AValidationStrategy from "../validationStrategy/AValidationStrategy";
 
 /**
  * Merges an incoming confirmation into a block we already store: accumulates

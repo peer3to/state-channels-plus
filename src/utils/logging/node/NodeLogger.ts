@@ -1,17 +1,67 @@
+import { config, isNodeRuntime } from "../../config";
+import { formatTimeFromSeconds } from "../formatUtils";
 import {
     LogEntry,
     Logger,
     ExclusiveLoggerContext,
     LogLevel,
-    SharedLoggerContext,
-    LoggerPerformanceMonitorOptions
+    SharedLoggerContext
 } from "../Logger";
+import type { LogStore } from "../logStore";
+import type {
+    EventLoopDelayDetails,
+    PerformanceMonitorInternalOptions,
+    PerformanceSampleSource
+} from "../performanceMonitorInternal";
+import { reportPerformanceSample } from "../performanceMonitorInternal";
 import { NodeLogUploader } from "./NodeLogUploader";
 import type { LogUploaderOptions } from "../LogUploader";
-import type { LogStore } from "../logStore";
 import { Colors } from "./colors";
-import { config, isNodeRuntime } from "../../config";
-import { formatTimeFromSeconds } from "../formatUtils";
+import { errorMessage } from "@/utils/errorMessage";
+
+/**
+ * The real Node sample source: the perf_hooks delay histogram plus event-loop
+ * utilization, read once per reporting interval.
+ */
+async function createNodeSampleSource(
+    sampleIntervalMs: number
+): Promise<PerformanceSampleSource> {
+    const { monitorEventLoopDelay, performance } = await import(
+        "node:perf_hooks"
+    );
+    const h = monitorEventLoopDelay({ resolution: sampleIntervalMs });
+    let last = performance.eventLoopUtilization();
+
+    const toMs = (nanoseconds: number) => {
+        const ms = nanoseconds / 1e6;
+        return Number.isFinite(ms) ? ms : 0;
+    };
+
+    return {
+        start() {
+            h.enable();
+            last = performance.eventLoopUtilization();
+        },
+        sample() {
+            const elu = performance.eventLoopUtilization(last);
+            last = performance.eventLoopUtilization();
+            return {
+                dMean: toMs(h.mean),
+                d50: toMs(h.percentile(50)),
+                d90: toMs(h.percentile(90)),
+                d99: toMs(h.percentile(99)),
+                dMax: toMs(h.max),
+                utilization: elu.utilization
+            };
+        },
+        reset() {
+            h.reset();
+        },
+        stop() {
+            h.disable();
+        }
+    };
+}
 
 export class NodeLogger extends Logger {
     private excludedTags: Set<string>;
@@ -121,151 +171,103 @@ export class NodeLogger extends Logger {
             level !== "debug" &&
             level !== "verbose" // don't use groups for debug/verbose since group labels are always INFO...
         ) {
-            // eslint-disable-next-line no-console
             console.groupCollapsed(formattedMessage);
-            // eslint-disable-next-line no-console
+
             console.log(formattedMeta);
-            // eslint-disable-next-line no-console
+
             console.log(logEntry.stack);
-            // eslint-disable-next-line no-console
+
             console.groupEnd();
             return;
         }
 
         // Fallback when groups are not supported
-        // eslint-disable-next-line no-console
+
         console.log(formattedMessage, formattedMeta, logEntry.stack);
     }
 
     protected createPerformanceMonitor(
-        options: LoggerPerformanceMonitorOptions
+        options: PerformanceMonitorInternalOptions
     ): () => void {
         let stopped = false;
         let stopMonitor: (() => void) | undefined;
 
-        const getDelayErrorThresholdMs = () => {
-            if (options.delayErrorThresholdMs !== undefined) {
-                return options.delayErrorThresholdMs;
-            }
-            return (
-                (config.EVENT_LOOP_DELAY_ERROR_THRESHOLD_SECONDS || 0) * 1000
-            );
+        const intervalMs = options.intervalMs ?? 1000;
+        const sampleIntervalMs = options.sampleIntervalMs ?? 10;
+
+        // Report the running event-loop-delay peak for this thread to the
+        // parallel test runner (a ##E2E_TIMING## marker on stdout, which
+        // it prints per test). Emit on each increase because SDK/VM worker
+        // threads may exit before the next sample. Enabled whenever the event-loop
+        // monitor threshold is configured (tests only), so production is
+        // unaffected.
+        const emitTiming = config.EVENT_LOOP_DELAY_ERROR_THRESHOLD_SECONDS > 0;
+        const elThread = options.threadLabel ?? "main";
+        let peakMs = 0;
+
+        // The sampling interval is installed once the source exists: at once
+        // for an injected source, after the perf_hooks import for the real one.
+        const start = (source: PerformanceSampleSource) => {
+            if (stopped) return;
+            source.start();
+            const timer = setInterval(() => {
+                if (stopped) return;
+                const { dMean, d50, d90, d99, dMax, utilization } =
+                    source.sample();
+
+                if (emitTiming && dMax > peakMs) {
+                    peakMs = dMax;
+                    // Worker process.stdout is forwarded to the parent's,
+                    // which the runner captures for this test.
+                    process.stdout.write(
+                        `##E2E_TIMING## ${JSON.stringify({
+                            maxEventLoopDelayMs: Math.round(peakMs),
+                            elThread
+                        })}\n`
+                    );
+                }
+                const details = reportPerformanceSample(
+                    this,
+                    { dMean, d50, d90, d99, dMax, utilization },
+                    options,
+                    "node"
+                );
+                if (details) {
+                    const { delayErrorThresholdMs } = details;
+                    stopped = true;
+                    stopMonitor?.();
+                    const error = new Error(
+                        `Event loop delay ${dMax}ms exceeded configured threshold ${delayErrorThresholdMs}ms`
+                    );
+                    (
+                        error as Error & {
+                            eventLoopDelay?: EventLoopDelayDetails;
+                        }
+                    ).eventLoopDelay = details;
+                    throw error;
+                }
+                source.reset();
+            }, intervalMs);
+
+            stopMonitor = () => {
+                clearInterval(timer);
+                source.stop();
+            };
+            options.onStarted?.();
         };
 
-        void import("node:perf_hooks")
-            .then(({ monitorEventLoopDelay, performance }) => {
-                if (stopped) return;
-
-                const intervalMs = options.intervalMs ?? 1000;
-                const sampleIntervalMs = options.sampleIntervalMs ?? 10;
-                const delayWarnThresholdMs =
-                    options.delayWarnThresholdMs ?? 200;
-                const utilizationWarnThreshold =
-                    options.utilizationWarnThreshold ?? 0.8;
-                const h = monitorEventLoopDelay({
-                    resolution: sampleIntervalMs
-                });
-                h.enable();
-                let last = performance.eventLoopUtilization();
-
-                // Report the running event-loop-delay peak for this thread to the
-                // parallel test runner (a ##E2E_TIMING## marker on stdout, which
-                // it prints per test). Emit on each increase because SDK/VM worker
-                // threads may exit before the next sample. Enabled whenever the event-loop
-                // monitor threshold is configured (tests only), so production is
-                // unaffected.
-                const emitTiming =
-                    config.EVENT_LOOP_DELAY_ERROR_THRESHOLD_SECONDS > 0;
-                const elThread = options.threadLabel ?? "main";
-                let peakMs = 0;
-
-                const toMs = (nanoseconds: number) => {
-                    const ms = nanoseconds / 1e6;
-                    return Number.isFinite(ms) ? ms : 0;
-                };
-
-                const timer = setInterval(() => {
+        if (options.sampleSource) {
+            start(options.sampleSource);
+        } else {
+            void createNodeSampleSource(sampleIntervalMs)
+                .then(start)
+                .catch((error) => {
                     if (stopped) return;
-                    const elu = performance.eventLoopUtilization(last);
-                    last = performance.eventLoopUtilization();
-                    const dMean = toMs(h.mean);
-                    const d50 = toMs(h.percentile(50));
-                    const d90 = toMs(h.percentile(90));
-                    const d99 = toMs(h.percentile(99));
-                    const dMax = toMs(h.max);
-
-                    if (emitTiming && dMax > peakMs) {
-                        peakMs = dMax;
-                        // Worker process.stdout is forwarded to the parent's,
-                        // which the runner captures for this test.
-                        process.stdout.write(
-                            `##E2E_TIMING## ${JSON.stringify({
-                                maxEventLoopDelayMs: Math.round(peakMs),
-                                elThread
-                            })}\n`
-                        );
-                    }
-                    const utilization = elu.utilization;
-                    const shouldWarn =
-                        utilization > utilizationWarnThreshold ||
-                        dMean > delayWarnThresholdMs ||
-                        d50 > delayWarnThresholdMs ||
-                        d90 > delayWarnThresholdMs ||
-                        d99 > delayWarnThresholdMs ||
-                        dMax > delayWarnThresholdMs;
-                    const logFn = shouldWarn
-                        ? this.warn.bind(this)
-                        : this.verbose.bind(this);
-                    logFn(
-                        `Event Loop mean delay: ${dMean}ms, max: ${dMax}ms, utilization: ${utilization}`,
-                        {
-                            runtime: "node",
-                            dMean,
-                            d50,
-                            d90,
-                            d99,
-                            dMax,
-                            utilization
-                        }
-                    );
-                    const delayErrorThresholdMs = getDelayErrorThresholdMs();
-                    if (
-                        delayErrorThresholdMs > 0 &&
-                        dMax > delayErrorThresholdMs
-                    ) {
-                        const details = {
-                            runtime: "node",
-                            dMean,
-                            d50,
-                            d90,
-                            d99,
-                            dMax,
-                            utilization,
-                            delayErrorThresholdMs
-                        };
-                        stopped = true;
-                        stopMonitor?.();
-                        const error = new Error(
-                            `Event loop delay ${dMax}ms exceeded configured threshold ${delayErrorThresholdMs}ms`
-                        );
-                        (error as any).eventLoopDelay = details;
-                        throw error;
-                    }
-                    h.reset();
-                }, intervalMs);
-
-                stopMonitor = () => {
-                    clearInterval(timer);
-                    h.disable();
-                };
-            })
-            .catch((error) => {
-                if (stopped) return;
-                this.warn("Event loop performance monitoring unavailable", {
-                    error:
-                        error instanceof Error ? error.message : String(error)
+                    this.warn("Event loop performance monitoring unavailable", {
+                        error: errorMessage(error)
+                    });
                 });
-            });
+        }
 
         return () => {
             stopped = true;

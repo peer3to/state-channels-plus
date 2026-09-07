@@ -1,10 +1,9 @@
+import HostNonceManager from "@/evm/signer/HostNonceManager";
 import { expect } from "chai";
 import type { TransactionResponse } from "ethers";
 import { ethers } from "hardhat";
 import assert from "node:assert/strict";
 import sinon from "sinon";
-
-import HostNonceManager from "@/evm/signer/HostNonceManager";
 
 describe("HostNonceManager", () => {
     it("reuses a failed middle nonce without colliding with concurrent sends", async () => {

@@ -96,6 +96,7 @@ contract StateSnapshotFacet is StateChannelCommon {
 
         // Check if channel should be closed (0 participants remaining)
         if (newSnapshot.snapshotData.participants.length == 0) {
+            _removeOpenChannel(channelId);
             // Clear storage when channel is closed (0 participants)
             _clearStorage(channelId, newSnapshot.snapshotData.latestInboundMessageBlockHash);
             // Clear the state snapshot
@@ -119,8 +120,9 @@ contract StateSnapshotFacet is StateChannelCommon {
         StateSnapshot[] memory milestoneSnapshots,
         StateSnapshot memory thresholdStateSnapshot
     ) internal returns (bool) {
-        bool isValid = StateChannelManagerInterface(address(this))
-            .verifyMilestones(forkId, milestoneProofs, milestoneSnapshots, thresholdStateSnapshot);
+        bool isValid = StateChannelManagerInterface(address(this)).verifyMilestones(
+            forkId, milestoneProofs, milestoneSnapshots, thresholdStateSnapshot
+        );
         return isValid;
     }
 

@@ -1,5 +1,3 @@
-import { expect } from "chai";
-import { ContractFactory } from "ethers";
 import {
     assertArtifactRuntimeSize,
     assertDeploymentInitcodeSize,
@@ -14,6 +12,8 @@ import {
     contractSizeExemptions,
     productionSizeViolations
 } from "@test/fixtures/ContractSizeFixture";
+import { expect } from "chai";
+import { ContractFactory } from "ethers";
 
 function bytes(length: number): string {
     return `0x${"00".repeat(length)}`;

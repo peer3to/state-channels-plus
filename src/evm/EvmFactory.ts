@@ -1,11 +1,11 @@
-import { EVM, EVMOpts } from "@ethereumjs/evm";
-import type { ExecResult, PrecompileInput } from "@ethereumjs/evm";
-import { Address } from "@ethereumjs/util";
 import { CONSOLE_ADDRESS, createConsolePrecompile } from "./ConsolePrecompile";
 import type { Logger } from "@/utils";
 import { toEthereumJsEvmAddress } from "@/utils";
-import { importModuleFromManifest } from "@platform/moduleLoader";
+import { EVM, EVMOpts } from "@ethereumjs/evm";
+import type { ExecResult, PrecompileInput } from "@ethereumjs/evm";
+import { Address } from "@ethereumjs/util";
 import { installEvmJumpdestCache } from "@platform/evmJumpdestCache";
+import { importModuleFromManifest } from "@platform/moduleLoader";
 
 export type EvmCustomPrecompileManifest<TOptions = unknown> = {
     address: Address | string;

@@ -1,21 +1,21 @@
-import { expect } from "chai";
-import { ErrorFragment, ethers, InterfaceAbi } from "ethers";
-import {
-    StateChannelManagerInterface__factory,
-    StateChannelManagerProxy__factory
-} from "@typechain-types";
 import {
     connectStateChannelManager,
     mergeStateChannelManagerAbi,
     stateChannelManagerAbi
 } from "@/utils/stateChannelManager";
+import * as factory from "@test/factory";
 import {
     duplicateFragmentKeys,
     expectCompleteFragmentKeys,
     expectedManagerErrorKeys,
     fragmentKeysOfType
 } from "@test/fixtures/ContractAbiFixture";
-import * as factory from "@test/factory";
+import {
+    StateChannelManagerInterface__factory,
+    StateChannelManagerProxy__factory
+} from "@typechain-types";
+import { expect } from "chai";
+import { ErrorFragment, ethers, InterfaceAbi } from "ethers";
 
 const MANAGER_ADDRESS = "0x0000000000000000000000000000000000000001";
 

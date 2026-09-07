@@ -1,12 +1,12 @@
-import { Codec, Type } from "@/utils";
+import { hexString } from "../../factory";
 import {
     DisputeFraudProofType,
     toSolidityDisputeFraudProofType
 } from "@/types/sol-enums";
-import { DisputeStruct } from "@typechain-types/contracts/V1/types/DisputeTypes";
+import { Codec, Type } from "@/utils";
 import { MathTestSession as TestSession } from "@test/harness";
+import { DisputeStruct } from "@typechain-types/contracts/V1/types/DisputeTypes";
 import { expect } from "chai";
-import { hexString } from "../../factory";
 
 describe("E2E: dispute validation / DisputeInvalidStateProof genesis linkage", function () {
     it("unlinked genesisStateSnapshotData against a valid genesis dispute → submitter slashed, honest disputer survives", async function () {

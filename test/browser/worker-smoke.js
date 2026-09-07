@@ -1,8 +1,12 @@
+// @spec-test-coverage-ignore: browser page script for the worker smokes; evidence is mapped from run-worker-contract-executor.mjs
 import { Buffer } from "buffer";
 import { ethers } from "ethers";
 
 globalThis.Buffer ||= Buffer;
 globalThis.window ||= globalThis;
+
+// Registers the watchdog smoke on the same page.
+import "./worker-watchdog.js";
 
 const { default: WorkerContractExecutor } = await import(
     "../../src/evm/contractExecutor/WorkerContractExecutor.ts"
@@ -35,5 +39,79 @@ globalThis.runContractExecutorWorkerBrowserSmoke = async () => {
         };
     } finally {
         await executor.dispose();
+    }
+};
+
+// Runtime code: TIMESTAMP, MSTORE at 0, RETURN 32 bytes; the init code
+// returns those nine bytes.
+const TIMESTAMP_INIT_CODE = "0x684260005260206000f3600052600960" + "17f3";
+
+// The browser worker builds the host's clock perception from the adjustment
+// it receives at initialization: block.timestamp is wall time plus that
+// adjustment, and it advances.
+globalThis.runContractExecutorWorkerClockBrowserSmoke = async () => {
+    const adjustmentSeconds = 600;
+    const executor = await WorkerContractExecutor.create(
+        [],
+        undefined,
+        {},
+        adjustmentSeconds
+    );
+    try {
+        const deployed = await executor.deploy(TIMESTAMP_INIT_CODE);
+        const address = String(deployed.createdAddress);
+        const read = async () =>
+            Number(
+                BigInt((await executor.executeCall("0x", address)).returnValue)
+            );
+        const first = await read();
+        const wallFirst = Math.floor(Date.now() / 1000);
+        await new Promise((resolve) => setTimeout(resolve, 1100));
+        const second = await read();
+        return {
+            firstOffset: first - wallFirst,
+            advanced: second > first
+        };
+    } finally {
+        await executor.dispose();
+    }
+};
+
+// Exercise the shared reporter with a browser-only long-task threshold input.
+globalThis.runBrowserPerformanceReportingSmoke = async () => {
+    const { BrowserLogger } = await import(
+        "../../src/utils/logging/browser/BrowserLogger.ts"
+    );
+    const { LogStore } = await import("../../src/utils/logging/logStore.ts");
+    const { reportPerformanceSample } = await import(
+        "../../src/utils/logging/performanceMonitorInternal.ts"
+    );
+    const store = new LogStore(1024 * 1024, true);
+    const logger = new BrowserLogger(
+        {},
+        {},
+        "verbose",
+        store,
+        { attachErrorListener: false },
+        true
+    );
+    try {
+        const details = reportPerformanceSample(
+            logger,
+            {
+                dMean: 1,
+                d50: 1,
+                d90: 1,
+                d99: 1,
+                dMax: 1,
+                utilization: 0.1,
+                longTaskMax: 201
+            },
+            { delayWarnThresholdMs: 100, delayErrorThresholdMs: 200 },
+            "browser"
+        );
+        return { details, entries: store.getAllLogs() };
+    } finally {
+        logger.dispose();
     }
 };

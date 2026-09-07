@@ -1,17 +1,16 @@
-import type { MessageBlockStruct } from "@typechain-types/contracts/V1/types/DataTypes";
-
+import type { ParticipantChanges } from "./SnapshotAssemblyService";
+import type StateManager from "../StateManager";
+import type AValidationStrategy from "../validationStrategy/AValidationStrategy";
+import DisputeValidationStrategy from "../validationStrategy/DisputeValidationStrategy";
 import Clock from "@/Clock";
 import { Block, StateSnapshot } from "@/models";
-import type { ParticipantChanges } from "./SnapshotAssemblyService";
 import { Status, timeoutWaitTime } from "@/types";
 import { Bytes } from "@/types/types";
 import { Logger } from "@/utils";
 import { LoggerUtils } from "@/utils/LoggerUtils";
 import P2pEventHooksUtils from "@/utils/P2pEventHooksUtils";
 
-import type StateManager from "../StateManager";
-import type AValidationStrategy from "../validationStrategy/AValidationStrategy";
-import DisputeValidationStrategy from "../validationStrategy/DisputeValidationStrategy";
+import type { MessageBlockStruct } from "@typechain-types/contracts/V1/types/DataTypes";
 
 /**
  * Commits a validated block: persists the snapshot, state and block, signs and
@@ -132,6 +131,11 @@ export default class BlockCommitService {
             options?.outboundMessageBlock
         );
 
+        await sm.leaveChannelService.onBlockCommitted(
+            block,
+            participantChanges
+        );
+
         // step 9 - success callback
         successCallback();
 
@@ -145,7 +149,8 @@ export default class BlockCommitService {
             currentTimestamp: Clock.getTimeInSeconds(),
             timeConfig: sm.timeConfig,
             p2pEventHooks: sm.p2pEventHooks,
-            logger: this.logger
+            logger: this.logger,
+            leaveChannelService: sm.leaveChannelService
         });
 
         // step 11 - maybe post block on chain
@@ -173,6 +178,9 @@ export default class BlockCommitService {
 
     private async shouldSignBlock(block: Block): Promise<boolean> {
         const sm = this.stateManager;
+        // Never counter-sign on a fork we are disputing: the signature would
+        // postdate our dispute and make it stale.
+        if (sm.storage.disputes.didIDispute(block.forkId)) return false;
         if (sm.p2pManager.isBlacklisted(block.author)) return false;
         if (sm.status !== Status.PARTICIPATING) return false;
         // Sign only blocks whose previous/resulting participant union contains

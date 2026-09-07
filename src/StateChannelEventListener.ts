@@ -1,14 +1,14 @@
-import { StateChannelManagerInterface } from "@typechain-types";
-import { Filter, Log } from "ethers";
-
 import EventSyncService from "@/stateManager/eventSync/EventSyncService";
 import { ChannelId } from "@/types/types";
 import { DetachedPromises, Logger } from "@/utils";
+import { ChannelKey, channelKey as toChannelKey } from "@/utils/channelKey";
+import { StateChannelManagerInterface } from "@typechain-types";
+import { Filter, Log } from "ethers";
 
 class StateChannelEventListener {
     private static readonly DISPOSE_TIMEOUT_MS = 30000;
     private readonly logger: Logger;
-    private currentChannelKey?: string;
+    private currentChannelKey?: ChannelKey;
     private filter?: Filter;
     private listener?: (log: Log) => void;
     private generation = 0;
@@ -24,7 +24,7 @@ class StateChannelEventListener {
 
     async setChannelId(channelId: ChannelId): Promise<void> {
         if (this.disposed) return;
-        const channelKey = String(channelId).toLowerCase();
+        const channelKey = toChannelKey(channelId);
         if (channelKey === this.currentChannelKey && this.listener) return;
         await this.removeListener();
         this.eventSyncService.setChannelId(channelId);
@@ -45,6 +45,13 @@ class StateChannelEventListener {
         this.filter = filter;
         this.listener = listener;
         await this.getProvider().on(filter, listener);
+    }
+
+    async clearChannelId(): Promise<void> {
+        if (this.disposed) return;
+        this.generation += 1;
+        await this.removeListener();
+        this.currentChannelKey = undefined;
     }
 
     async dispose(): Promise<void> {

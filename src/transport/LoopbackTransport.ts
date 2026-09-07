@@ -1,6 +1,6 @@
-import type P2PManager from "@/P2PManager";
 import ATransport from "./ATransport";
 import { TransportType } from "./TransportType";
+import type P2PManager from "@/P2PManager";
 
 /**
  * In-process transport that delivers RPCs back to the same {@link P2PManager}.

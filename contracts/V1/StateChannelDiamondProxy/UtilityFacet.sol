@@ -333,6 +333,22 @@ contract UtilityFacet is UtilityFacetInterface, StateChannelCommon {
         return _getStateSnapshot(channelId);
     }
 
+    function getOpenChannelCount() public view returns (uint256) {
+        return openChannelIds.length;
+    }
+
+    function getOpenChannelIds(uint256 offset, uint256 limit) public view returns (bytes32[] memory channelIds) {
+        uint256 count = openChannelIds.length;
+        if (offset >= count || limit == 0) return new bytes32[](0);
+
+        uint256 available = count - offset;
+        uint256 pageLength = limit < available ? limit : available;
+        channelIds = new bytes32[](pageLength);
+        for (uint256 i = 0; i < pageLength; i++) {
+            channelIds[i] = openChannelIds[offset + i];
+        }
+    }
+
     function getChannelBalance(bytes32 channelId) public view returns (ChannelBalance memory) {
         return _getChannelBalance(channelId);
     }

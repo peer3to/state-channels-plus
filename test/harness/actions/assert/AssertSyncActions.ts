@@ -1,9 +1,10 @@
-import type { ForkId, Hash } from "@/types/types";
-import { expect } from "chai";
-import { PeerTestHarness } from "@test/fixtures/PeerTestHarness";
-import type { HarnessControlRpc } from "@test/fixtures/customRpc/harnessControl/HarnessControlRpc";
-import { ZeroHash } from "ethers";
+// @spec-test-coverage-ignore: shared sync assertion exercised by owning mapped test declarations
 import StateSnapshot from "@/models/StateSnapshot";
+import type { ForkId, Hash } from "@/types/types";
+import type { HarnessControlRpc } from "@test/fixtures/customRpc/harnessControl/HarnessControlRpc";
+import { PeerTestHarness } from "@test/fixtures/PeerTestHarness";
+import { expect } from "chai";
+import { ZeroHash } from "ethers";
 
 export class AssertSyncActions<
     TCustomRpc extends HarnessControlRpc = HarnessControlRpc
@@ -38,26 +39,12 @@ export class AssertSyncActions<
             waitForFinalization: effectiveWaitForFinaliztion
         });
 
-        const firstPeerIndex = peers[0].index;
-        const firstPeerState =
-            await this.harness.query.getLatestStateMachineStateHash(
-                firstPeerIndex
-            );
-
-        for (let i = 1; i < peers.length; i++) {
-            const peerIndex = peers[i].index;
-            const peerState =
-                await this.harness.query.getLatestStateMachineStateHash(
-                    peerIndex
-                );
-
-            expect(peerState).to.deep.equal(
-                firstPeerState,
-                `Peer ${peerIndex} state does not match Peer ${firstPeerIndex}`
-            );
-        }
-
+        // The coordinator already required one stored state on every peer.
         if (expectedStateMachineStateHash !== undefined) {
+            const firstPeerState =
+                await this.harness.query.getLatestStateMachineStateHash(
+                    peers[0].index
+                );
             expect(firstPeerState).to.deep.equal(
                 expectedStateMachineStateHash,
                 "State does not match expected state"

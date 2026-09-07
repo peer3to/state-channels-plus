@@ -81,3 +81,9 @@ Exact test evidence is mapped against these IDs in the verification test reports
 ## Related source reports
 
 - [registry](./registry.ts.md), [moduleLoader](../utils/moduleLoader/).
+
+## Host-local matching extension
+
+The manifest resolves a module and export on the runtime host. A custom root may install a local
+`shouldMatchPeer` function while construction runs. Only module identity and ordinary serializable app
+options cross the runtime port; the function and generic policy data do not.

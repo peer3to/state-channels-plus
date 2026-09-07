@@ -26,6 +26,8 @@ mismatch, inbound-hash validity).
 
 ## Key design decisions
 
+Dispute-fraud targets use the same bounded current eligibility as ordinary fraud proofs. Historical proof validation keeps its historical membership walk; eligibility is not inferred from old joins outside the current boundary. See [DisputeFraudProofFacet.sol](../../../../../../../contracts/V1/StateChannelDiamondProxy/DisputeFraudProofFacet.sol#L32).
+
 1. **Kill is the only commitment-removal path**, pairing with the window bookkeeping's swap-removal — the order perturbation input to [`OQ-4-JGDCNX`](../../../../../verification/open-questions.md#oq-4-jgdcnx) originates here.
 2. **Typed self-calls go through the manager interface, not the proxy contract.** The three
    operations this facet reaches on `address(this)` — the dispute-window creation timestamp

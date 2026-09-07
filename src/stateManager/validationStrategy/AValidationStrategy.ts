@@ -1,11 +1,11 @@
+import type ADiamondStateMachine from "@/ADiamondStateMachine";
 import { Block, StateSnapshot } from "@/models";
+import type { QueuedBlockEntry } from "@/storage/QueueStorage";
 import { BlockValidationResult, Signature } from "@/types";
 import {
     BlockConfirmationStruct,
     MessageBlockStruct
 } from "@typechain-types/contracts/V1/types/DataTypes";
-import type { QueuedBlockEntry } from "@/storage/QueueStorage";
-import type ADiamondStateMachine from "@/ADiamondStateMachine";
 
 export type ParticipantSnapshots = {
     previous: StateSnapshot;

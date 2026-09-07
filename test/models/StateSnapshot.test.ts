@@ -1,10 +1,10 @@
-import { expect } from "chai";
-import { describe, it, beforeEach } from "mocha";
-import { ethers } from "hardhat";
-import StateSnapshot from "@/models/StateSnapshot";
-import { StateSnapshotStruct } from "@typechain-types/contracts/V1/types/DataTypes";
-import { Codec, Type } from "@/utils";
 import { stateSnapshot as stateSnapshotFactory } from "../factory";
+import StateSnapshot from "@/models/StateSnapshot";
+import { Codec, Type } from "@/utils";
+import { StateSnapshotStruct } from "@typechain-types/contracts/V1/types/DataTypes";
+import { expect } from "chai";
+import { ethers } from "hardhat";
+import { describe, it, beforeEach } from "mocha";
 
 describe("StateSnapshot Model", () => {
     let stateSnapshotStruct: StateSnapshotStruct;

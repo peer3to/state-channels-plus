@@ -1,12 +1,12 @@
 // @spec-test-coverage-ignore: host-side support service for the mapped ATransport component cases
-import type P2PManager from "@/P2PManager";
-import type Rpc from "@/rpc/Rpc";
-import type { RpcResponse } from "@/rpc/Rpc";
-import ARpcService from "@/rpc/ARpcService";
-import ATransport from "@/transport/ATransport";
-import { TransportType } from "@/transport/TransportType";
 import type { PingPongRpc } from "../PingPongRpcManifest";
 import { ATransportProbeRpcMethods } from "./ATransportProbeRpcMethods";
+import type P2PManager from "@/P2PManager";
+import ARpcService from "@/rpc/ARpcService";
+import type Rpc from "@/rpc/Rpc";
+import type { RpcResponse } from "@/rpc/Rpc";
+import ATransport from "@/transport/ATransport";
+import { TransportType } from "@/transport/TransportType";
 
 export type ATransportIdentityProbe = {
     sameReferenceWithoutAddress: boolean;
@@ -70,6 +70,41 @@ export class ATransportProbeService extends ARpcService<
 
     public createRPCMethods(transport: ATransport): ATransportProbeRpcMethods {
         return new ATransportProbeRpcMethods(transport, this);
+    }
+
+    public probeMessageConversion() {
+        const transport = new RecordingTransport(this.p2pManager);
+        const original = this.p2pManager.onRpc;
+        const frames: string[] = [];
+        let correctReceiver = true;
+        this.p2pManager.onRpc = function (frame, source) {
+            frames.push(frame);
+            correctReceiver =
+                correctReceiver &&
+                this === transport.p2pManager &&
+                source === transport;
+        };
+        try {
+            ATransport.prototype.onMessage.call(transport, "string-frame");
+            ATransport.prototype.onMessage.call(
+                transport,
+                Buffer.from("buffer-frame")
+            );
+            const conversionError = new Error("conversion failed");
+            let sameError = false;
+            try {
+                ATransport.prototype.onMessage.call(transport, {
+                    toString() {
+                        throw conversionError;
+                    }
+                });
+            } catch (error) {
+                sameError = error === conversionError;
+            }
+            return { frames, correctReceiver, sameError };
+        } finally {
+            this.p2pManager.onRpc = original;
+        }
     }
 
     public probeIdentity(

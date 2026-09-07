@@ -24,6 +24,7 @@ export * from "./localDiamond";
 export * from "./contractAbi";
 export * from "./contractSize";
 export * from "./stateChannelManager";
+export * from "./discoveryKey";
 
 export function sleep(ms: number): Promise<void> {
     return new Promise((resolve) => setTimeout(resolve, ms));

@@ -9,6 +9,12 @@ import {
 } from "@/evm";
 import P2pEventHooks from "@/P2pEventHooks";
 import P2PManager from "@/P2PManager";
+
+import ARpcMethods from "@/rpc/ARpcMethods";
+import ARpcService from "@/rpc/ARpcService";
+import { HandshakeCompletedGuard } from "@/rpc/guards";
+import MainRpcService from "@/rpc/MainRpcService";
+import { ATransport } from "@/transport";
 import {
     Codec,
     DeployUtils,
@@ -17,12 +23,6 @@ import {
     config,
     getChecksumAddress
 } from "@/utils";
-
-import ARpcMethods from "@/rpc/ARpcMethods";
-import ARpcService from "@/rpc/ARpcService";
-import MainRpcService from "@/rpc/MainRpcService";
-import { HandshakeCompletedGuard } from "@/rpc/guards";
-import { ATransport } from "@/transport";
 export * from "@/rpc/services";
 export type { CustomRpcConstructor } from "@/rpc";
 
@@ -82,6 +82,7 @@ export {
 export { startP2pRuntimeWorker } from "@/evm/p2pRuntime/worker/startP2pRuntimeWorker";
 export { default as ClientP2pSigner } from "@/evm/signer/ClientP2pSigner";
 export { default as ClientChainSigner } from "@/evm/signer/ClientChainSigner";
+export type { ConnectToChannelOptions } from "@/evm/signer/ConnectToChannelOptions";
 export type {
     P2pRuntimeWorker,
     SetupPayload,

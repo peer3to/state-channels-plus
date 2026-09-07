@@ -12,6 +12,7 @@ _Pending authoring: shared responsibility, design decisions, assumptions, cross-
 - [initHandshake/](./initHandshake/README.md)
 - [isForkDisputedService/](./isForkDisputedService/README.md)
 - [joinChannel/](./joinChannel/README.md)
+- [lobbyMatching/](./lobbyMatching/README.md)
 - [openChannelNegotiation/](./openChannelNegotiation/README.md)
 - [spectate/](./spectate/README.md)
 - [stateTransition/](./stateTransition/README.md)

@@ -4,4 +4,3 @@ export { default as LocalTransport } from "./LocalTransport";
 export { default as LoopbackTransport } from "./LoopbackTransport";
 export { default as ATransport } from "./ATransport";
 export * from "./TransportType";
-export * from "./BannablePeerInfo";

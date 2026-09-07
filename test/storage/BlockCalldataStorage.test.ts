@@ -1,7 +1,6 @@
-import { expect } from "chai";
-
-import { BlockCalldataStorage } from "@/storage/BlockCalldataStorage";
 import * as factory from "../factory";
+import { BlockCalldataStorage } from "@/storage/BlockCalldataStorage";
+import { expect } from "chai";
 
 describe("BlockCalldataStorage", function () {
     it("returns calldata only for the exact signed block hash", function () {

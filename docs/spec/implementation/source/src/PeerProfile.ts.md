@@ -19,12 +19,23 @@
 
 ## Responsibility and observable boundary
 
-The per-peer identity record: address, `isHandshakeCompleted`, current transport — the object the
-handshake guard reads and finalization writes.
+The per-peer record created with each transport: optional identity, blacklist flag, the set of
+live transports, preferred transport, disconnect subscribers, and the Holepunch ban handle that
+survives replacement. Exact-transport authentication remains on `ATransport.peerAddress`.
 
 ## Key design decisions
 
-1. **Completion is a written fact, not an inference** — exactly one writer (handshake finalization).
+Profile logs cover explicit bans, clearing bans, authentication, transport attachment and detachment, and last-transport loss. The profile retains its owner logger after all transports close. See [PeerProfile.ts](../../../../../src/PeerProfile.ts#L45).
+
+1. **The ban handle belongs to the profile from transport creation.** Authentication adds the
+   verified address and identity index without introducing a second handle store; `ProfileManager`
+   remains the only ban-policy owner.
+2. **Disconnection means loss of the profile, not one pipe.** `onDisconnected` fires once only on
+   the transition from at least one live transport to none. Authentication rebinding transfers the
+   live transport and subscriptions to the identity profile.
+3. **The live set is observable inside the runtime.** `getLiveTransports` lets the lobby take
+   ownership of every transport for an authenticated profile, so none can remain in the ordinary
+   connection set while that profile is only a discovery candidate.
 
 ## Inputs, outputs, state, and side effects
 
@@ -40,9 +51,9 @@ handshake guard reads and finalization writes.
 A file may contribute to several requirements; this report describes the contribution and never
 claims complete conformance for a requirement that depends on other files.
 
-| Source file                                         | Specification IDs                                                                               |
-| --------------------------------------------------- | ----------------------------------------------------------------------------------------------- |
-| [PeerProfile.ts](../../../../../src/PeerProfile.ts) | [`REQ-AUTH-3-ZV74KB`](../../../specification/peer-communication/handshake.md#req-auth-3-zv74kb) |
+| Source file                                         | Specification IDs                                                                                                                                                                                      |
+| --------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| [PeerProfile.ts](../../../../../src/PeerProfile.ts) | [`REQ-AUTH-3-ZV74KB`](../../../specification/peer-communication/handshake.md#req-auth-3-zv74kb), [`REQ-UPG-4-M2XDBA`](../../../specification/peer-communication/transport-upgrade.md#req-upg-4-m2xdba) |
 
 ## Assumptions, dependencies, trust boundaries, and limits
 
@@ -66,8 +77,10 @@ Status enum: `Covered` | `Partial` | `Contradicts` | `Missing`. Evidence cells a
 **Here:** / **Other files:** so each row is auditable from its links alone; genuine gaps go in the
 Gap column. Audit state is file-level (Status header), never a row status.
 
-| Requirement / invariant | Implementation status | Evidence | Gap / divergence |
-| ----------------------- | --------------------- | -------- | ---------------- |
+| Requirement / invariant                                                                                | Implementation status | Evidence                                                                                                                                                                                                                                          | Gap / divergence |
+| ------------------------------------------------------------------------------------------------------ | --------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------- |
+| [`REQ-UPG-4-M2XDBA`](../../../specification/peer-communication/transport-upgrade.md#req-upg-4-m2xdba)  | Covered               | **Here:** the bootstrap handle is attached before authentication and remains on the profile across transport replacement. **Other files:** [ProfileManager](./ProfileManager.ts.md) authenticates and indexes the profile and applies ban policy. | None.            |
+| [`REQ-LOBBY-8-31BE0F`](../../../specification/peer-communication/lobby-matching.md#req-lobby-8-31be0f) | Covered               | **Here:** live-set transitions and `onDisconnected`; **Other files:** ProfileManager transfers lifecycle ownership and LobbyMatchingService releases work on the callback.                                                                        | None.            |
 
 ## Component test obligations
 

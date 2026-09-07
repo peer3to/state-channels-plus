@@ -1,8 +1,7 @@
+import SpectateService, { type SyncRequest } from "./SpectateService";
 import ARpcMethods from "@/rpc/ARpcMethods";
 import { ATransport } from "@/transport";
-import SpectateService, { SyncRequest } from "./SpectateService";
 import { Bytes } from "@/types";
-import Clock from "@/Clock";
 import { Codec, Type } from "@/utils";
 
 class SpectateServiceRpcMethods extends ARpcMethods {
@@ -31,13 +30,6 @@ class SpectateServiceRpcMethods extends ARpcMethods {
             this.service.p2pManager.disconnectAndBlacklistPeer(senderTransport);
             throw new Error("onSpectateRequest - missing peer address");
         }
-
-        const localTime = Clock.getTimeInSeconds();
-
-        this.service.logger.debug(
-            `onSpectateRequest - localTime: ${localTime}, remoteTime: ${syncRequest.initTime}`
-        );
-
         // Generate payload to prove the latest possible snapshot
         // (but don't send it on-chain - send it to the spectator)
         const syncPayload = await this.service.generateSyncPayload(
@@ -54,13 +46,6 @@ class SpectateServiceRpcMethods extends ARpcMethods {
             );
             throw new Error("onSpectateRequest - no sync payload to prove");
         }
-
-        // Accepting the spectate request establishes the spectate
-        // relationship: this peer isn't a dispute participant, but it now
-        // needs our block broadcasts to keep following the channel, so
-        // promote it into `openConnections` here, on acceptance, rather than
-        // at handshake time.
-        this.service.p2pManager.addConnection(senderTransport);
 
         this.service.logger.debug(`onSpectateRequest - done`);
         return {
