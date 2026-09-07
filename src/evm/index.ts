@@ -1,20 +1,16 @@
+import { CONSOLE_ADDRESS, createConsolePrecompile } from "./ConsolePrecompile";
 import {
     AContractExecutor,
     ContractExecutor,
     createContractExecutorFactory
 } from "./contractExecutor";
-import P2pInstance from "./P2pInstance";
-import LocalP2pSigner from "./signer/LocalP2pSigner";
-import LocalContractExecutorSigner from "./signer/LocalContractExecutorSigner";
-import ClientChainSigner from "./signer/ClientChainSigner";
-import EvmDiamondStateMachine from "./EvmDiamondStateMachine";
-import createEvm from "./EvmFactory";
-import { CONSOLE_ADDRESS, createConsolePrecompile } from "./ConsolePrecompile";
 import type {
     ContractExecutionLog,
     ContractExecutionResult
 } from "./contractExecutor";
 import type { ContractExecutorFactoryOptions } from "./contractExecutor";
+import EvmDiamondStateMachine from "./EvmDiamondStateMachine";
+import createEvm from "./EvmFactory";
 import type {
     EvmCustomPrecompile,
     EvmCustomPrecompileFactory,
@@ -22,6 +18,11 @@ import type {
     EvmFactoryOptions,
     EvmNativeCustomPrecompile
 } from "./EvmFactory";
+import P2pInstance from "./P2pInstance";
+import ClientChainSigner from "./signer/ClientChainSigner";
+import type { ConnectToChannelOptions } from "./signer/ConnectToChannelOptions";
+import LocalContractExecutorSigner from "./signer/LocalContractExecutorSigner";
+import LocalP2pSigner from "./signer/LocalP2pSigner";
 import type { LocalStateMachineDeployer } from "../../scripts/V1/deploy";
 
 export {
@@ -47,5 +48,6 @@ export type {
     EvmCustomPrecompileManifest,
     EvmFactoryOptions,
     EvmNativeCustomPrecompile,
-    LocalStateMachineDeployer
+    LocalStateMachineDeployer,
+    ConnectToChannelOptions
 };

@@ -1,13 +1,77 @@
-import { expect } from "chai";
-import assert from "node:assert/strict";
-
 import Clock from "@/Clock";
 import StateSnapshot from "@/models/StateSnapshot";
 import { Status } from "@/types";
 import { Codec, SignatureUtils, sleep, Type } from "@/utils";
 import { MathTestSession as TestSession } from "@test/harness";
+import { expect } from "chai";
+import assert from "node:assert/strict";
 
 describe("JoinChannel signature requests", function () {
+    it("rejects a signed zero balance and blacklists the requesting joiner", async function () {
+        const h = TestSession.getHarness();
+        await h.lifecycle.start(2, 0);
+        const joiner = await h.join.addSpectatorWait();
+        const snapshot = StateSnapshot.from(
+            await h.channelManager.getStateSnapshot(h.channelId)
+        );
+        const chainTime = await Clock.getBlockchainTime();
+        const signed = await SignatureUtils.signJoinChannel(
+            {
+                participant: joiner.address,
+                channelId: h.channelId,
+                balance: { amount: 0n, data: "0x1234" },
+                deadlineTimestamp: BigInt(chainTime.timestamp + 120)
+            },
+            joiner.signer
+        );
+        const encodedSignedJoinChannel = String(
+            Codec.encode(
+                {
+                    encodedJoinChannel: String(signed.encoded),
+                    signature: String(signed.signature)
+                },
+                Type.SignedJoinChannel
+            )
+        );
+        const result = await h.execOnHost(
+            h.getPeer(0),
+            async (sm, args) => {
+                const transport =
+                    sm.p2pManager.profileManager.getTransportByEvmAddress(
+                        args.joiner
+                    );
+                if (!transport) throw new Error("Expected connected joiner");
+                let message = "";
+                try {
+                    await sm.p2pManager.localRpc.joinChannelService.signJoinRequest(
+                        transport,
+                        args.encodedSignedJoinChannel,
+                        args.snapshotHash,
+                        args.forkId
+                    );
+                } catch (error) {
+                    message =
+                        error instanceof Error ? error.message : String(error);
+                }
+                return {
+                    message,
+                    blacklisted: sm.p2pManager.isBlacklisted(args.joiner)
+                };
+            },
+            {
+                encodedSignedJoinChannel,
+                snapshotHash: snapshot.hash,
+                forkId: snapshot.forkID,
+                joiner: joiner.address
+            }
+        );
+        expect(result.message).to.equal(
+            "join balance must be greater than zero"
+        );
+        const blacklisted = result.blacklisted;
+        expect(blacklisted).to.equal(true);
+    });
+
     it("excludes an on-chain-slashed participant from collection", async function () {
         const h = TestSession.getHarness();
         const { killer, spammer, spectator } =
@@ -27,10 +91,7 @@ describe("JoinChannel signature requests", function () {
             },
             {},
             {
-                timeoutMs:
-                    h.event.protocolEventTimeoutMs({
-                        withFirstBlockGrace: true
-                    }) * 2
+                timeoutMs: h.event.hostExecTimeoutMs()
             }
         );
         expect(await h.query.onChainSlashedParticipants()).to.include(
@@ -72,6 +133,8 @@ describe("JoinChannel signature requests", function () {
     it("rejects collector identity and deadline failures before requesting signatures", async function () {
         const h = TestSession.getHarness();
         await h.lifecycle.start(2, 1);
+        // Spawn-only, classified (plan 30 item 5): the join-signature flow needs a
+        // synced joiner before any transition; nothing authors while it syncs.
         const joiner = await h.join.addSpectatorWait();
         await h.assert.sync.peersInSyncWait();
 
@@ -114,7 +177,7 @@ describe("JoinChannel signature requests", function () {
         }
     });
 
-    it("validates requests, signs exact joins, and fails fast when a threshold transport is missing", async function () {
+    it("validates requests, signs exact joins, and waits through reachability grace for a missing threshold transport", async function () {
         const h = TestSession.getHarness();
         // Spectating is asynchronous to the channel: spawn both spectators
         // detached and await SYNCED only where the assertions below need
@@ -122,8 +185,12 @@ describe("JoinChannel signature requests", function () {
         // so nothing blocks an author's window; producing a block up front
         // instead would cap the next block's timestamp at prev + p2pTime and
         // this setup phase would make peer 0 reject it as stale
-        // (|now - blockTs| > agreementTime) and dispute.
-        await h.lifecycle.start(2, 0);
+        // (|now - blockTs| > agreementTime) and dispute. The whole body
+        // therefore runs before the first block, whose window is only
+        // evidenceTime + p2pTime after genesis; on a loaded farm two spawns
+        // and the grace waits outlast the default, so this channel models a
+        // long p2p window and keeps the agreement window the grace uses.
+        await h.lifecycle.start(2, 0, { timeConfig: { p2pTime: 30 } });
         const joiner = await h.join.addSpectatorDetached();
         const nonUnionSigner = await h.join.addSpectatorDetached();
         await h.event.waitUntilPeerStatus(joiner.index, Status.SYNCED);
@@ -476,14 +543,20 @@ describe("JoinChannel signature requests", function () {
                     .request()
             )
         );
+        const agreementTime = h.options.timeConfig?.agreementTime;
+        if (!agreementTime) {
+            throw new Error("Expected a resolved agreementTime");
+        }
         const startedAt = Date.now();
         await assert.rejects(
             joiner.p2pInstance.p2pSigner.collectJoinChannelConfirmation(
                 joinChannel
             ),
-            /no transport for threshold participant/
+            /threshold participant unavailable/
         );
-        expect(Date.now() - startedAt).to.be.lessThan(1000);
+        expect(Date.now() - startedAt).to.be.greaterThanOrEqual(
+            agreementTime * 2 * 1000 - 250
+        );
         const requestCountsAfterPreflight = await Promise.all(
             [0, 1].map((peerIndex) =>
                 h
@@ -511,6 +584,8 @@ describe("JoinChannel signature requests", function () {
     it("rejects erroring, wrong-signer, and deadline-silent threshold members", async function () {
         const h = TestSession.getHarness();
         await h.lifecycle.start(2, 1);
+        // Spawn-only, classified (plan 30 item 5): the join-signature flow needs a
+        // synced joiner before any transition; nothing authors while it syncs.
         const joiner = await h.join.addSpectatorWait();
         await h.assert.sync.peersInSyncWait();
         const responder = h.getPeer(0);

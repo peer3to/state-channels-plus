@@ -21,7 +21,7 @@ Code (paths relative to this file; repo root = `../../../../../`):
 - [src/rpc/services/WebRTCSetup/connection/](../../../../../../../src/rpc/services/WebRTCSetup/connection)
   (`WebRTCConnectionFactory`, `LocalWebRTCConnectionFactory`, worker-bridge factory, provider)
 - [src/transport/WebRTCTransport.ts](../../../../../../../src/transport/WebRTCTransport.ts#L1)
-- callers / consumers: [src/rpc/services/initHandshake/InitHandshakeService.ts](../../../../../../../src/rpc/services/initHandshake/InitHandshakeService.ts#L2)
+- callers / consumers: [src/rpc/services/initHandshake/InitHandshakeService.ts](../../../../../../../src/rpc/services/initHandshake/InitHandshakeService.ts#L4)
   (`initiateWebRTC` trigger), [src/P2PManager.ts](../../../../../../../src/P2PManager.ts#L1),
   [src/ProfileManager.ts](../../../../../../../src/ProfileManager.ts#L1)
 
@@ -52,7 +52,7 @@ Position: strictly **after** authentication. The service carries a `HandshakeCom
 ([`WebRTCSetupService` constructor](../../../../../../../src/rpc/services/WebRTCSetup/WebRTCSetupService.ts#L1)
 line 45), so every remote signaling method is refused unless the sender transport already maps to a
 completed `PeerProfile`. The upgrade is _initiated_ from
-[`InitHandshakeService.maybeFinalizeHandshakeOnceFromTransport`](../../../../../../../src/rpc/services/initHandshake/InitHandshakeService.ts#L238):
+[`InitHandshakeService.maybeFinalizeHandshakeOnceFromTransport`](../../../../../../../src/rpc/services/initHandshake/InitHandshakeService.ts#L237):
 when either side prefers WebRTC, the current transport is not already WebRTC, and
 `localAddress < completedPeerAddress` (a deterministic single-offerer tiebreak that avoids offer glare),
 the lower-addressed peer calls `initiateWebRTC(transport)`.
@@ -82,7 +82,7 @@ cleanup hook tied to `disconnectConnection`.
 ## 3. Algorithm, per public method
 
 Three public `RpcMethods`, all **one-way (fire-and-forget)** signaling
-([`WebRTCSetupRpcMethods`](../../../../../../../src/rpc/services/WebRTCSetup/WebRTCSetupRpcMethods.ts#L6)).
+([`WebRTCSetupRpcMethods`](../../../../../../../src/rpc/services/WebRTCSetup/WebRTCSetupRpcMethods.ts#L5)).
 Params are `JSON.parse`d raw — **not** `Codec`-decoded — and handed to the WebRTC stack. Every method
 is wrapped in a try/catch whose only action is a log (`logger.verbose`/`error`): **silent ignore**.
 
@@ -279,8 +279,8 @@ _Non-normative._
 
 | Requirement / invariant                                  | Statement                                                                                              | Implementation status | Implementation evidence                                                                                                                                                                                                                                                            | Gap / divergence |
 | -------------------------------------------------------- | ------------------------------------------------------------------------------------------------------ | --------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------- |
-| [`INV-WRTC-1-FZ9RBH`](webrtc-setup.md#inv-wrtc-1-fz9rbh) | Connection key comes from the authenticated transport, never the payload.                              | Covered               | [WebRTCSetupRpcMethods](../../../../../../../src/rpc/services/WebRTCSetup/WebRTCSetupRpcMethods.ts#L6) (`senderTransport.peerAddress`), [WebRTCSetupService.normalizePeerAddress/findWebRTCTransport](../../../../../../../src/rpc/services/WebRTCSetup/WebRTCSetupService.ts#L20) | None.            |
+| [`INV-WRTC-1-FZ9RBH`](webrtc-setup.md#inv-wrtc-1-fz9rbh) | Connection key comes from the authenticated transport, never the payload.                              | Covered               | [WebRTCSetupRpcMethods](../../../../../../../src/rpc/services/WebRTCSetup/WebRTCSetupRpcMethods.ts#L5) (`senderTransport.peerAddress`), [WebRTCSetupService.normalizePeerAddress/findWebRTCTransport](../../../../../../../src/rpc/services/WebRTCSetup/WebRTCSetupService.ts#L20) | None.            |
 | [`INV-WRTC-2-691KC5`](webrtc-setup.md#inv-wrtc-2-691kc5) | One-way signaling methods reachable only behind `HandshakeCompletedGuard`.                             | Covered               | [WebRTCSetupService constructor](../../../../../../../src/rpc/services/WebRTCSetup/WebRTCSetupService.ts#L1) (`this.guards`), [HandshakeCompletedGuard](../../../../../../../src/rpc/guards/HandshakeCompletedGuard.ts#L41)                                                        | None.            |
-| [`INV-WRTC-3-9GBJGJ`](webrtc-setup.md#inv-wrtc-3-9gbjgj) | Handlers silent-ignore all failures; no throw, no disconnect from the service.                         | Covered               | [WebRTCSetupRpcMethods](../../../../../../../src/rpc/services/WebRTCSetup/WebRTCSetupRpcMethods.ts#L6) (try/catch → log)                                                                                                                                                           | None.            |
-| [`INV-WRTC-4-Z0MAZF`](webrtc-setup.md#inv-wrtc-4-z0mazf) | Single offerer via `localAddress < completedPeerAddress`.                                              | Covered               | [InitHandshakeService.maybeFinalizeHandshakeOnceFromTransport](../../../../../../../src/rpc/services/initHandshake/InitHandshakeService.ts#L238)                                                                                                                                   | None.            |
-| [`REQ-WRTC-1-B12MMP`](webrtc-setup.md#req-wrtc-1-b12mmp) | Signaling payloads are untrusted; SDP/ICE parsing safety is a documented WebRTC-dependency assumption. | Covered               | [WebRTCSetupRpcMethods](../../../../../../../src/rpc/services/WebRTCSetup/WebRTCSetupRpcMethods.ts#L6) (`JSON.parse` → stack), [connection/](../../../../../../../src/rpc/services/WebRTCSetup/connection)                                                                         | None.            |
+| [`INV-WRTC-3-9GBJGJ`](webrtc-setup.md#inv-wrtc-3-9gbjgj) | Handlers silent-ignore all failures; no throw, no disconnect from the service.                         | Covered               | [WebRTCSetupRpcMethods](../../../../../../../src/rpc/services/WebRTCSetup/WebRTCSetupRpcMethods.ts#L5) (try/catch → log)                                                                                                                                                           | None.            |
+| [`INV-WRTC-4-Z0MAZF`](webrtc-setup.md#inv-wrtc-4-z0mazf) | Single offerer via `localAddress < completedPeerAddress`.                                              | Covered               | [InitHandshakeService.maybeFinalizeHandshakeOnceFromTransport](../../../../../../../src/rpc/services/initHandshake/InitHandshakeService.ts#L237)                                                                                                                                   | None.            |
+| [`REQ-WRTC-1-B12MMP`](webrtc-setup.md#req-wrtc-1-b12mmp) | Signaling payloads are untrusted; SDP/ICE parsing safety is a documented WebRTC-dependency assumption. | Covered               | [WebRTCSetupRpcMethods](../../../../../../../src/rpc/services/WebRTCSetup/WebRTCSetupRpcMethods.ts#L5) (`JSON.parse` → stack), [connection/](../../../../../../../src/rpc/services/WebRTCSetup/connection)                                                                         | None.            |

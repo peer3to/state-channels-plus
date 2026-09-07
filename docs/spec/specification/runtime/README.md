@@ -36,9 +36,15 @@ operational limits. It hosts every other system without changing their observabl
   active lobby; it may be clean with no ID or hold one concrete pre-open target. `DISCOVERING`
   means one active caller-supplied lobby topic and no selected channel;
   `OPENED` means the selected channel is open on-chain but not locally synchronized; `SYNCED`
-  means synchronized without a participant role; `PENDING_PARTICIPANT` means an on-chain join is
-  waiting for state inclusion; and `PARTICIPATING` means synchronized with an active participant
-  role. Discovery and every selected-channel role are mutually exclusive.
+  means synchronized and listed on-chain neither as a participant nor as a pending participant;
+  `PENDING_PARTICIPANT` means an on-chain join is waiting for state inclusion; and `PARTICIPATING`
+  means synchronized with an active participant role. Discovery and every selected-channel role
+  are mutually exclusive. Status reflects the on-chain view protectively: the higher role wins and a
+  lower one is assigned only when it is certain. `PENDING_PARTICIPANT` is taken optimistically at
+  join initiation before the chain reflects it, because it is the more protective state; `SYNCED`
+  is deferred until the node has observed that the chain lists it in neither set — a locally
+  applied state that drops the signer (a reduced fork it computed itself) keeps the current status
+  until the chain's snapshot confirms the removal.
 - **Lobby control.** `joinLobby(topic, options)` is indefinite while matching unless the caller supplies
   a positive finite `matchTimeoutMs`. `leaveLobby(topic)` returns true only when it cancels active matching;
   after commitment it returns false and the host-owned negotiation continues to its chain-observed outcome.

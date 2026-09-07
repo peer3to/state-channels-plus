@@ -1,6 +1,5 @@
-import { expect } from "chai";
-
 import { HandshakeCompletedGuardFixture } from "@test/fixtures/HandshakeCompletedGuardFixture";
+import { expect } from "chai";
 
 describe("HandshakeCompletedGuard", function () {
     let fixture: HandshakeCompletedGuardFixture;

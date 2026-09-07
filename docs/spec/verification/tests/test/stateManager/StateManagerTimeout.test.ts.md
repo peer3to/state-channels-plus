@@ -11,7 +11,7 @@
 ## Overview
 
 The suite drives `StateManager` timeout scheduling through the full harness runtime: it stages a
-pre-dispute setup with a short `evidenceTime`, marks a peer AFK, posts a tampered dispute from
+pre-dispute setup with a short `evidenceTime`, marks a peer AFK, posts a valid self-removal dispute from
 another peer, and waits until the dispute is committed on chain. The oracle is the window-age
 guard on timeout submission: because the committed dispute window predates the timeout's
 deadline, the observing peer must not submit a timeout — after sleeping almost the whole evidence
@@ -28,4 +28,4 @@ report but are kept here.
 
 | Test declaration                                                                                                                                                                         | Covers                                                                                                                                             |
 | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------- |
-| [`StateManager timeout > does not submit a timeout when the existing dispute window predates its deadline`](../../../../../../test/stateManager/StateManagerTimeout.test.ts#L7) (line 7) | [`UNIT-TEST-STATE-MANAGER-3-32QM46.P4`](../../../../implementation/source/src/stateManager/StateManager.ts.md#unit-test-state-manager-3-32qm46.p4) |
+| [`StateManager timeout > does not submit a timeout when the existing dispute window predates its deadline`](../../../../../../test/stateManager/StateManagerTimeout.test.ts#L6) (line 6) | [`UNIT-TEST-STATE-MANAGER-3-32QM46.P4`](../../../../implementation/source/src/stateManager/StateManager.ts.md#unit-test-state-manager-3-32qm46.p4) |

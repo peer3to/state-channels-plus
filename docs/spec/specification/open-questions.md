@@ -24,12 +24,12 @@ Existing `OQ-*` IDs are preserved; new questions use the layer-scoped namespace 
 | [`OQ-6-4JPNE5`](open-questions.md#oq-6-4jpne5)                       | P2P gossip rate-limiting policy                                                                                                                             | Specification analysis | [security/trust-model.md](./security/trust-model.md)                                                                                                   | Open                              |
 | [`OQ-7-M5G9M3`](open-questions.md#oq-7-m5g9m3)                       | Whether adjudication requires a self-call-only authorization boundary                                                                                       | Specification analysis | [security/trust-model.md](./security/trust-model.md)                                                                                                   | Open                              |
 | [`OQ-8-PEYAAQ`](open-questions.md#oq-8-peyaaq)                       | Clock-skew and bias values to be validated empirically                                                                                                      | Specification analysis | [protocol/time.md](./protocol-model/time.md)                                                                                                           | Open                              |
-| [`OQ-9-XR1MFS`](open-questions.md#oq-9-xr1mfs)                       | Timeout precedence edge rules: same-fork definition, height comparison, evidence timing                                                                     | Specification analysis | [protocol/disputes.md](./disputes/disputes.md)                                                                                                         | Resolved (implementation pending) |
-| [`OQ-10-04YNC4`](open-questions.md#oq-10-04ync4)                     | Spectate/join failure-point details: deadlines, refunds, forced-inclusion proof                                                                             | Specification analysis | [protocol/cross-layer-messages.md](./settlement/cross-layer-messages.md)                                                                               | Open                              |
+| [`OQ-9-XR1MFS`](open-questions.md#oq-9-xr1mfs)                       | Timeout precedence edge rules: same-fork definition, height comparison, evidence timing                                                                     | Specification analysis | [protocol/disputes.md](./disputes/disputes.md)                                                                                                         | Resolved                          |
+| [`OQ-10-04YNC4`](open-questions.md#oq-10-04ync4)                     | Spectate/join failure-point details: deadlines, refunds, forced-inclusion proof                                                                             | Specification analysis | [protocol/cross-layer-messages.md](./settlement/cross-layer-messages.md)                                                                               | Partially resolved                |
 | [`OQ-11-38S3SE`](open-questions.md#oq-11-38s3se)                     | Channel-balance invariant: definition per balance model and check points                                                                                    | Specification analysis | [protocol/cross-layer-messages.md](./settlement/cross-layer-messages.md), [concepts/state-machines.md](./protocol-model/state-machines.md)             | Open                              |
 | [`OQ-12-B45Q7N`](open-questions.md#oq-12-b45q7n)                     | Book-like overview vs. tree as the authoritative reference                                                                                                  | Specification analysis | [README.md](../README.md), [governance.md](../governance.md)                                                                                           | Provisionally resolved            |
 | [`OQ-16-6AVF5B`](open-questions.md#oq-16-6avf5b)                     | Slash-set lifetime: cleared on channel-storage clear, questioned in code                                                                                    | Code                   | [protocol/fraud-proofs.md](./disputes/fraud-proofs.md)                                                                                                 | Open                              |
-| [`OQ-18-2NK97T`](open-questions.md#oq-18-2nk97t)                     | Whether removal and slashing use the same canonical exit-recording behavior                                                                                 | Specification analysis | [concepts/state-machines.md](./protocol-model/state-machines.md)                                                                                       | Resolved (implementation pending) |
+| [`OQ-18-2NK97T`](open-questions.md#oq-18-2nk97t)                     | Whether removal and slashing use the same canonical exit-recording behavior                                                                                 | Specification analysis | [concepts/state-machines.md](./protocol-model/state-machines.md)                                                                                       | Resolved (implemented 2026-09-07) |
 | [`OQ-20-Z9361V`](open-questions.md#oq-20-z9361v)                     | Outbound stream is not yet general-purpose; withdraw failure wedges snapshot advance; residual funds on close                                               | Code                   | [protocol/cross-layer-messages.md](./settlement/cross-layer-messages.md)                                                                               | Open                              |
 | [`OQ-26-XH59SP`](open-questions.md#oq-26-xh59sp)                     | Whether every adjudication path generically enforces next-author authorization                                                                              | Specification analysis | [concepts/state-machines.md](./protocol-model/state-machines.md)                                                                                       | Open                              |
 | [`OQ-27-GT4W09`](open-questions.md#oq-27-gt4w09)                     | Reducer eligibility check is disabled in `reduceAndFinalize` — anyone can reduce                                                                            | Code                   | [protocol/disputes.md](./disputes/disputes.md)                                                                                                         | Open                              |
@@ -240,6 +240,13 @@ failure**, including plain timeouts and transport errors — conflating unavaila
 Byzantine behavior, contrary to the fault taxonomy in
 [security/trust-model.md](./security/trust-model.md).
 
+**Partially resolved (2026-08-31):** initial channel load now selects one authenticated peer and uses
+two independent local agreement windows; selected-peer failure aborts the uncommitted runtime without
+fallback. First-join and top-up deadlines are assigned internally, and `PENDING_PARTICIPANT` is set only
+after the membership receipt succeeds. Accepted pending or participating state is preserved after later
+operational failure. Refund/exit behavior for a deposit that is never included, and the full forced-inclusion
+proof contract, remain open.
+
 <a id="oq-11-38s3se"></a>
 
 ## OQ-11-38S3SE — Channel-balance invariant definition
@@ -273,20 +280,7 @@ window. Define the slash set's ownership and lifetime rules. See
 
 ## OQ-18-2NK97T — Exit-recording asymmetry between slash and remove
 
-The external `slashParticipant` wrapper appends the resulting `ExitChannel` to the machine's
-outbound buffer; `removeParticipant` returns it without appending (the dispute pipeline
-compensates by using return values). Inert today, but which layer owns recording the exit message
-should be decided deliberately. See [concepts/state-machines.md](./protocol-model/state-machines.md)
-§6.4.
-
-**Resolved (2026-08-10):** the wrappers MUST be symmetric — both record the exit through
-`_addExitChannel`. The only intended difference between removal and slashing lives in the hooks'
-balance semantics: `_removeParticipant` is the less aggressive path and may return the
-participant's full held balance; `_slashParticipant` applies the application-defined penalty.
-Recorded normatively as [`REQ-SM-8-8CHSQ8`](protocol-model/state-machines.md#req-sm-8-8chsq8) in
-[concepts/state-machines.md](./protocol-model/state-machines.md). The implementation change
-(`removeParticipant` also calling `_addExitChannel` on success) is pending; until it lands the
-Current: notes in the affected documents stand.
+**Resolved and implemented (2026-09-07):** both external wrappers record one exit through `_addExitChannel` when their hook succeeds. The hooks retain their own balance semantics. The dispute consumer uses returned exits and does not consume the machine buffer; the next SDK state transition clears that buffer before executing. Absent and repeated targets add no exit. See [`REQ-SM-8-8CHSQ8`](protocol-model/state-machines.md#req-sm-8-8chsq8) and [`REQ-SM-10-JD8TSF`](protocol-model/state-machines.md#req-sm-10-jd8tsf).
 
 <a id="oq-20-z9361v"></a>
 

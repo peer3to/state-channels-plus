@@ -1,12 +1,10 @@
-import { ethers, ZeroHash } from "ethers";
-
+import { ForkId, Bytes, Hash } from "@/types/types";
 import type { Logger } from "@/utils";
+import { Codec, hash, Type } from "@/utils";
+import type MathPeerTestHarness from "@test/fixtures/MathPeerTestHarness";
 import { ByzantineActions } from "@test/harness/actions/ByzantineActions";
 import type { ForgeSubmitterSnapshotMutate } from "@test/harness/actions/DisputeTamperingActions";
 import type { TestPeer } from "@test/harness/core/types";
-import type MathPeerTestHarness from "@test/fixtures/MathPeerTestHarness";
-import { ForkId, Bytes, Hash } from "@/types/types";
-import { Codec, hash, Type } from "@/utils";
 import type { MathStateMachine } from "@typechain-types";
 import {
     BlockStruct,
@@ -15,6 +13,7 @@ import {
     MessageStruct,
     BalanceStruct
 } from "@typechain-types/contracts/V1/types/DataTypes";
+import { ethers, ZeroHash } from "ethers";
 
 /** Serializable result of a relocated, host-signed Byzantine block submission. */
 export type SubmittedBlock = { hash: string; height: number };

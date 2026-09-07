@@ -1,11 +1,10 @@
-import { expect } from "chai";
-import { Codec, Type } from "@/utils";
-import type { BlockHeight, ForkId } from "@/types/types";
-import { MathTestSession as TestSession } from "@test/harness";
 import { hash as randomHash, randomAddress } from "../factory";
+import type { BlockHeight, ForkId } from "@/types/types";
+import { Codec, Type } from "@/utils";
+import { MathTestSession as TestSession } from "@test/harness";
 import { waitFor } from "@test/utils/waitFor";
+import { expect } from "chai";
 import { ZeroHash } from "ethers";
-import { Status } from "@/types";
 
 describe("Unit: AgreementManager", function () {
     describe("getLatestSignedBlockByParticipant", function () {
@@ -39,7 +38,7 @@ describe("Unit: AgreementManager", function () {
             const h = TestSession.getHarness();
 
             await h.lifecycle.start(4, 1); // peer 3 signs block 0, then...
-            await h.network.disconnectPeer(3);
+            await h.network.blacklistAndDisconnectPeer(3);
             await h.transition.advanceState({
                 count: 2, // blocks 1..2 land without peer 3's signature
                 waitForPeers: [0, 1, 2]
@@ -123,7 +122,7 @@ describe("Unit: AgreementManager", function () {
         it("a block missing a participant's signature → false", async function () {
             const h = TestSession.getHarness();
             await h.lifecycle.start(4, 1);
-            await h.network.disconnectPeer(3);
+            await h.network.blacklistAndDisconnectPeer(3);
             await h.transition.advanceState({
                 count: 1, // block 1 lands without peer 3's signature
                 waitForPeers: [0, 1, 2],
@@ -171,7 +170,7 @@ describe("Unit: AgreementManager", function () {
             const h = TestSession.getHarness();
             await h.lifecycle.start(3, 0);
 
-            await h.network.disconnectPeer(2);
+            await h.network.blacklistAndDisconnectPeer(2);
             await h.transition.advanceState({
                 count: 2,
                 waitForPeers: [0, 1]
@@ -263,9 +262,11 @@ describe("Unit: AgreementManager", function () {
             await h.lifecycle.start(2, 0);
 
             // a spectator joins -> the set grows to 3 at block 2
-            const spectator = await h.join.addSpectatorDetached();
-            await h.transition.advanceState({ count: 2, waitForPeers: [0, 1] });
-            await h.event.waitUntilPeerStatus(spectator.index, Status.SYNCED);
+            const { peer: spectator } = await h.join.addSpectatorAuthoring({
+                authoringPeerIndices: [0, 1],
+                minimumBlocks: 2,
+                maximumBlocks: 20
+            });
             await h.assert.sync.peersInSyncWait({ peerIndices: [0, 1, 2] });
 
             await h.join.joinChannelWait({ joiner: spectator });
@@ -341,9 +342,11 @@ describe("Unit: AgreementManager", function () {
             const h = TestSession.getHarness();
             await h.lifecycle.start(2, 0);
 
-            const spectator = await h.join.addSpectatorDetached();
-            await h.transition.advanceState({ count: 2, waitForPeers: [0, 1] });
-            await h.event.waitUntilPeerStatus(spectator.index, Status.SYNCED);
+            const { peer: spectator } = await h.join.addSpectatorAuthoring({
+                authoringPeerIndices: [0, 1],
+                minimumBlocks: 2,
+                maximumBlocks: 20
+            });
             await h.assert.sync.peersInSyncWait({ peerIndices: [0, 1, 2] });
 
             await h.byzantine.stubBroadcast(spectator.index);
@@ -576,7 +579,7 @@ describe("Unit: AgreementManager", function () {
             await h.lifecycle.start(3, 0);
 
             // peer 2 disconnected before any block -> nothing ever finalizes
-            await h.network.disconnectPeer(2);
+            await h.network.blacklistAndDisconnectPeer(2);
             await h.transition.advanceState({
                 count: 2, // blocks 0..1 land unfinalized
                 waitForPeers: [0, 1]
@@ -640,7 +643,7 @@ describe("Unit: AgreementManager", function () {
             const h = TestSession.getHarness();
             await h.lifecycle.start(3, 0);
 
-            await h.network.disconnectPeer(2); // no finality -> signedBlocks carrier
+            await h.network.blacklistAndDisconnectPeer(2); // no finality -> signedBlocks carrier
             await h.transition.advanceState({
                 count: 2, // latest = block 1
                 waitForPeers: [0, 1]
@@ -708,7 +711,7 @@ describe("Unit: AgreementManager", function () {
             await h.lifecycle.start(4, 0, {
                 timeConfig: { chainFallbackTime: 60 }
             });
-            await h.network.disconnectPeer(3);
+            await h.network.blacklistAndDisconnectPeer(3);
             await h.transition.advanceState({
                 count: 3,
                 waitForPeers: [0, 1, 2]
@@ -718,7 +721,9 @@ describe("Unit: AgreementManager", function () {
             // d returns and syncs. d now holds:  [a] -> [b] -> [c]
             // (d sometimes also countersigns a synced block - varies per run,
             // harmless: d only ever signs the latest block)
-            await h.network.connectPeers([3]);
+            // Peer 3↔peers 0/1/2 is reopened after peer 3 missed three
+            // blocks so it can sync for the virtual-voting assertion.
+            await h.network.reconnectPeers([3]);
             await waitFor(
                 async () =>
                     (await h
@@ -872,39 +877,6 @@ describe("Unit: AgreementManager", function () {
         // the reduce applies the chain's inbound run, which a peer whose
         // InboundMessagesProcessed log never landed cannot walk
         describe("inbound run the reduce applied", function () {
-            /**
-             * A committed settled-path dispute on a fork whose chain inbound
-             * head sits above `laggingIndex`'s store: the top-up of an existing
-             * participant keeps the head final-by-everyone, so no auditing data
-             * is posted and nothing back-fills the missing block.
-             */
-            const stageCommittedDisputeOverInboundGap = async (
-                h: ReturnType<typeof TestSession.getHarness>,
-                laggingIndex: number
-            ) => {
-                const observers = h.peers
-                    .map((peer) => peer.index)
-                    .filter((index) => index !== laggingIndex);
-                await h.join.forceInboundJoinWait({
-                    participant: h.getPeer(observers[0]).address,
-                    observePeerIndices: observers
-                });
-                const offenderIndex = (await h.query.getNextPeerToWrite())
-                    .index;
-                const disputerIndex = observers.find(
-                    (index) => index !== offenderIndex
-                )!;
-                await h.byzantine.submitInvalidStateTransitionBlock(
-                    offenderIndex
-                );
-                await h.assert.dispute.initiatedAndCommitedWait({
-                    peersIndices: [disputerIndex],
-                    expectedCount: 1,
-                    initiatedWithAuditingData: false
-                });
-                return { forkId: h.activeForkId!, disputerIndex };
-            };
-
             /** reduce.staticCall over the window, then getReduceData for it. */
             const readReduceData = (
                 h: ReturnType<typeof TestSession.getHarness>,
@@ -949,10 +921,7 @@ describe("Unit: AgreementManager", function () {
                     },
                     { forkId },
                     {
-                        timeoutMs:
-                            h.event.protocolEventTimeoutMs({
-                                withFirstBlockGrace: true
-                            }) * 2
+                        timeoutMs: h.event.hostExecTimeoutMs()
                     }
                 );
 
@@ -967,10 +936,10 @@ describe("Unit: AgreementManager", function () {
                 await h.assert.sync.peersInSyncWait();
                 const lagging = 2;
                 const held = await h.rpcStub.holdInboundMessageEvents(lagging);
-                const { forkId } = await stageCommittedDisputeOverInboundGap(
-                    h,
-                    lagging
-                );
+                const { forkId } =
+                    await h.scenario.stageCommittedDisputeOverInboundGap({
+                        laggingIndex: lagging
+                    });
 
                 const r = await readReduceData(h, lagging, forkId);
 
@@ -992,7 +961,9 @@ describe("Unit: AgreementManager", function () {
                 const lagging = 2;
                 const dropped = await h.rpcStub.dropInboundMessageLogs(lagging);
                 const { forkId, disputerIndex } =
-                    await stageCommittedDisputeOverInboundGap(h, lagging);
+                    await h.scenario.stageCommittedDisputeOverInboundGap({
+                        laggingIndex: lagging
+                    });
                 await dropped.waitUntilDropped();
 
                 const lagged = await readReduceData(h, lagging, forkId);

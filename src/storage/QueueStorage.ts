@@ -1,6 +1,7 @@
+import { coordinateKey, CoordinateKey } from "./keys";
+import Clock from "@/Clock";
 import { Block } from "@/models";
 import { Address, BlockHeight, ForkId, Hash, Signature } from "@/types/types";
-import Clock from "@/Clock";
 
 export type QueueBlockOptions = {
     senderAddress?: Address;
@@ -32,7 +33,7 @@ export class QueueStorage {
     private queuedBlocks: Map<Hash, QueuedBlockEntry> = new Map();
 
     // Secondary index for efficient queries by coordinates
-    private blocksByCoordinates: Map<string, Set<Hash>> = new Map();
+    private blocksByCoordinates: Map<CoordinateKey, Set<Hash>> = new Map();
 
     /**
      * Build a standalone entry for a block copy — the unit of work the
@@ -62,8 +63,7 @@ export class QueueStorage {
                 block.allSignatures,
                 options?.senderAddress
             );
-            existingEntry.block.expandSignatures(block.confirmationSignatures);
-            this.mergeOnChainTimestamp(existingEntry.block, block);
+            existingEntry.block.mergeFrom(block);
             this.queuedBlocks.set(block.hash, existingEntry);
             return block.hash;
         }
@@ -79,8 +79,8 @@ export class QueueStorage {
 
     /** Try to dequeue confirmations for a specific fork/height */
     tryDequeueAt(forkId: ForkId, height: BlockHeight): QueuedBlockEntry[] {
-        const coordinateKey = this.coordinatesToKey(forkId, height);
-        const hashSet = this.blocksByCoordinates.get(coordinateKey);
+        const key = coordinateKey(forkId, height);
+        const hashSet = this.blocksByCoordinates.get(key);
 
         if (!hashSet) {
             return [];
@@ -88,7 +88,7 @@ export class QueueStorage {
 
         const entries = this.dequeueHashes(hashSet);
 
-        this.blocksByCoordinates.delete(coordinateKey);
+        this.blocksByCoordinates.delete(key);
 
         return entries;
     }
@@ -153,8 +153,7 @@ export class QueueStorage {
             return;
         }
 
-        existing.block.expandSignatures(entry.block.confirmationSignatures);
-        this.mergeOnChainTimestamp(existing.block, entry.block);
+        existing.block.mergeFrom(entry.block);
         existing.firstSeenAt = Math.min(
             existing.firstSeenAt,
             entry.firstSeenAt
@@ -174,14 +173,11 @@ export class QueueStorage {
         if (!entry) return undefined;
 
         this.queuedBlocks.delete(blockHash);
-        const coordinateKey = this.coordinatesToKey(
-            entry.block.forkId,
-            entry.block.height
-        );
-        const hashes = this.blocksByCoordinates.get(coordinateKey);
+        const key = coordinateKey(entry.block.forkId, entry.block.height);
+        const hashes = this.blocksByCoordinates.get(key);
         hashes?.delete(blockHash);
         if (hashes?.size === 0) {
-            this.blocksByCoordinates.delete(coordinateKey);
+            this.blocksByCoordinates.delete(key);
         }
         return entry;
     }
@@ -205,21 +201,17 @@ export class QueueStorage {
     // PRIVATE HELPERS
     // ====================================
 
-    private coordinatesToKey(forkId: ForkId, height: BlockHeight): string {
-        return `${forkId}:${height}`;
-    }
-
     private addHashToCoordinateIndex(
         hash: Hash,
         forkId: ForkId,
         height: BlockHeight
     ): void {
-        const coordinateKey = this.coordinatesToKey(forkId, height);
+        const key = coordinateKey(forkId, height);
 
-        if (!this.blocksByCoordinates.has(coordinateKey)) {
-            this.blocksByCoordinates.set(coordinateKey, new Set());
+        if (!this.blocksByCoordinates.has(key)) {
+            this.blocksByCoordinates.set(key, new Set());
         }
-        this.blocksByCoordinates.get(coordinateKey)!.add(hash);
+        this.blocksByCoordinates.get(key)!.add(hash);
     }
 
     private dequeueHashes(hashSet: Set<Hash>): QueuedBlockEntry[] {
@@ -282,13 +274,6 @@ export class QueueStorage {
             return;
         }
         peers.add(peer);
-    }
-
-    private mergeOnChainTimestamp(existing: Block, incoming: Block): void {
-        const incomingTimestamp = incoming.onChainTimestamp;
-        if (incomingTimestamp === undefined) return;
-
-        existing.onChainTimestamp = incomingTimestamp;
     }
 
     private keyToCoordinates(key: string): {

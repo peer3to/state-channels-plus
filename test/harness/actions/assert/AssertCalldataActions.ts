@@ -1,5 +1,5 @@
-import { PeerTestHarness } from "@test/fixtures/PeerTestHarness";
 import type { HarnessControlRpc } from "@test/fixtures/customRpc/harnessControl/HarnessControlRpc";
+import { PeerTestHarness } from "@test/fixtures/PeerTestHarness";
 
 export class AssertCalldataActions<
     TCustomRpc extends HarnessControlRpc = HarnessControlRpc

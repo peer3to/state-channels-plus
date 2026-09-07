@@ -1,5 +1,5 @@
-import type { Worker } from "node:worker_threads";
 import { config } from "@/utils/config";
+import type { Worker } from "node:worker_threads";
 
 // Measure how long an SDK worker takes to come up, to see how much of test
 // startup is worker boot and whether the .ts path is using fast swc transpile vs
@@ -32,7 +32,7 @@ export function instrumentWorkerStartup(
         } catch {
             // stdout may be closed during teardown — ignore.
         }
-        // eslint-disable-next-line no-console
+
         console.error(
             `[worker:${kind}] ready ${readyMs}ms = online ${onlineMs}ms + load ${loadMs}ms (${transpiler})`
         );

@@ -1,11 +1,11 @@
-import ARpcMethods from "@/rpc/ARpcMethods";
-import type ATransport from "@/transport/ATransport";
 import type LobbyMatchingService from "./LobbyMatchingService";
 import type {
     LobbyAvailability,
     LobbyCommitResult,
     LobbyPickResult
 } from "./LobbyMatchingTypes";
+import ARpcMethods from "@/rpc/ARpcMethods";
+import type ATransport from "@/transport/ATransport";
 
 export default class LobbyMatchingRpcMethods extends ARpcMethods {
     constructor(
@@ -29,6 +29,7 @@ export default class LobbyMatchingRpcMethods extends ARpcMethods {
         });
     }
 
+    // topic stays positional because LobbyRpcAdmissionGuard reads rpc.params[0].
     public pick(
         topic: string,
         attemptNonce: string,
@@ -43,6 +44,7 @@ export default class LobbyMatchingRpcMethods extends ARpcMethods {
         );
     }
 
+    // topic stays positional because LobbyRpcAdmissionGuard reads rpc.params[0].
     public commit(
         topic: string,
         attemptNonce: string,

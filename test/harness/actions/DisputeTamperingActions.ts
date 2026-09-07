@@ -1,6 +1,12 @@
-import { PeerTestHarness } from "@test/fixtures/PeerTestHarness";
-import type { HarnessControlRpc } from "@test/fixtures/customRpc/harnessControl/HarnessControlRpc";
+// @spec-test-coverage-ignore: shared tampering staging exercised by mapped dispute-validation cases
+import Block from "@/models/Block";
+import StateSnapshot from "@/models/StateSnapshot";
 import type StateManager from "@/stateManager/StateManager";
+import {
+    DisputeFraudProofType,
+    toSolidityDisputeFraudProofType
+} from "@/types/sol-enums";
+import { ForkId, Address, Hash, Timestamp } from "@/types/types";
 import {
     Logger,
     SignatureUtils,
@@ -10,26 +16,21 @@ import {
     addressesEqual
 } from "@/utils";
 import type { DisputeFraudStruct } from "@/utils/Codec";
-import {
-    DisputeFraudProofType,
-    toSolidityDisputeFraudProofType
-} from "@/types/sol-enums";
-import { DisputeFraudProofStruct } from "@typechain-types/contracts/V1/types/ProofTypes";
-import { ForkId, Address, Hash, Timestamp } from "@/types/types";
-import StateSnapshot from "@/models/StateSnapshot";
-import Block from "@/models/Block";
-import { BytesLike, Signer, ZeroAddress } from "ethers";
-import {
-    DisputeStruct,
-    DisputeConfirmationStruct,
-    DisputeAuditingDataStruct
-} from "@typechain-types/contracts/V1/types/DisputeTypes";
+import type { HarnessControlRpc } from "@test/fixtures/customRpc/harnessControl/HarnessControlRpc";
+import type { DisputeTamperStrategy } from "@test/fixtures/customRpc/harnessControl/services/dispute/tamperStrategies";
+import { PeerTestHarness } from "@test/fixtures/PeerTestHarness";
 import type {
     BlockStruct,
     SnapshotDataStruct,
     MessageBlockStruct
 } from "@typechain-types/contracts/V1/types/DataTypes";
-import type { DisputeTamperStrategy } from "@test/fixtures/customRpc/harnessControl/services/dispute/tamperStrategies";
+import {
+    DisputeStruct,
+    DisputeConfirmationStruct,
+    DisputeAuditingDataStruct
+} from "@typechain-types/contracts/V1/types/DisputeTypes";
+import { DisputeFraudProofStruct } from "@typechain-types/contracts/V1/types/ProofTypes";
+import { BytesLike, Signer, ZeroAddress } from "ethers";
 
 export type DisputeTamper = (
     dispute: DisputeStruct,
@@ -216,6 +217,9 @@ export class DisputeTamperingActions<
                 targetForkId
             );
 
+        // A malicious direct upload may open its own window. A test that
+        // targets conditional admission can explicitly set true in its hook.
+        if (markMalicious) dispute.input.requireExistingDisputeWindow = false;
         await tamper(dispute, disputeConfirmation, auditingData);
         await this.resignDispute(peer.signer, dispute, disputeConfirmation);
 

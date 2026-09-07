@@ -1,7 +1,6 @@
+import { createConfig } from "@/utils/config";
 import { expect } from "chai";
 import sinon from "sinon";
-
-import { createConfig } from "@/utils/config";
 
 const ENV_KEYS = [
     "HOLEPUNCH_RELAYER_URLS",

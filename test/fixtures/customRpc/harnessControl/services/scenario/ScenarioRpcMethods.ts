@@ -1,9 +1,8 @@
-import { ethers } from "ethers";
-
-import ARpcMethods from "@/rpc/ARpcMethods";
-import * as eventBusModule from "@/events/EventBus";
-import type ATransport from "@/transport/ATransport";
 import type { ScenarioService } from "./ScenarioService";
+import * as eventBusModule from "@/events/EventBus";
+import ARpcMethods from "@/rpc/ARpcMethods";
+import type ATransport from "@/transport/ATransport";
+import { ethers } from "ethers";
 
 /**
  * Modules handed to an exec body: `new Function` rebuilds the body without

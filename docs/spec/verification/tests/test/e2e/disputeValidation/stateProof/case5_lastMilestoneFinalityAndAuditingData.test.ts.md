@@ -13,9 +13,10 @@ A single case for the no-auditing-data admission rule. After a voluntary leave a
 transition give the fork milestone structure, `stubConstructDispute` forces peer 2's dispute
 to claim `postedAuditingData = false` while the proof's last milestone lacks threshold
 finality; peer 1's invalid state-transition block provides the dispute trigger. The oracle:
-all peers observe `onDisputeKilled`, honest peers store a
+peer 0's independent dispute initiation is suppressed so the auditors spend the window on the
+claim under test; all peers observe `onDisputeKilled`, honest peers store a
 `DisputeLastMilestoneNotFinalAndNoAuditingData` dispute fraud proof, and the dispute window
-resolves. This is the canonical, chain-checkable branch of the without-posted-data rule — an
+resolves after peer 0 resumes normal dispute submission following the kill. This is the canonical, chain-checkable branch of the without-posted-data rule — an
 upload whose last anchor is not provably final must post its data, so auditors kill rather
 than abstain; the unjudgeable/abstention branch and calldata-path verification are out of
 scope. After the permutation atomization the case carries the mirrored

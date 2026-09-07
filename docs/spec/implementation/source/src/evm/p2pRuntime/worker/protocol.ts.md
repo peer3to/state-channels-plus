@@ -77,4 +77,15 @@ Exact test evidence is mapped against these IDs in the verification test reports
 
 ## Related source reports
 
+## Terminal leave request
+
+The worker union contains `leaveChannel` and no longer contains `setChannelId`. This makes leave serializable
+without exposing channel relabelling and contributes to [`REQ-TJOIN-6-0HEVYH`](../../../../../../specification/peer-communication/targeted-channel-join.md#req-tjoin-6-0hevyh) and [`REQ-TJOIN-7-NNGTAY`](../../../../../../specification/peer-communication/targeted-channel-join.md#req-tjoin-7-nngtay).
+
 - [P2pRuntimeHost](../P2pRuntimeHost.ts.md).
+
+## Targeted connect wire contract
+
+The existing connect request has one optional serializable option field carrying `autoOpen`, `shouldJoin`,
+`encodedBalance`, and `timeoutMs`. A separate `cancelConnectToChannel` discriminant carries `channelId`.
+Both responses remain bare Booleans. No targeted join, deadline, peer policy, or function field exists.

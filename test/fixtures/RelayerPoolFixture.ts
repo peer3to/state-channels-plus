@@ -1,8 +1,8 @@
 // @spec-test-coverage-ignore: deterministic timing for RelayerPool component tests
-import sinon from "sinon";
 
 import { RelayerPool } from "@/transport/relay/RelayerPool";
 import { createLogger } from "@/utils";
+import sinon from "sinon";
 
 export class RelayerPoolFixture {
     private sandbox = sinon.createSandbox();

@@ -1,7 +1,6 @@
+import InitHandshakeService from "@/rpc/services/initHandshake/InitHandshakeService";
 import { expect } from "chai";
 import { ethers } from "ethers";
-
-import InitHandshakeService from "@/rpc/services/initHandshake/InitHandshakeService";
 
 /**
  * Regression: the init-handshake response endpoint must not be usable as a

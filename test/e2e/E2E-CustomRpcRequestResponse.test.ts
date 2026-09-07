@@ -1,3 +1,32 @@
+import MathConsumerFacetArtifact from "../../artifacts/contracts/V1/examples/MathStateMachine/MathConsumerFacet.sol/MathConsumerFacet.json";
+import MathStateMachineArtifact from "../../artifacts/contracts/V1/examples/MathStateMachine/MathStateMachine.sol/MathStateMachine.json";
+import { deployFullStack } from "../../scripts/V1/deploy";
+import { EvmStateMachine } from "@/evm";
+import type P2pInstance from "@/evm/P2pInstance";
+import { Codec, LocalDiscoveryServer, SignatureUtils, Type } from "@/utils";
+import { connectStateChannelManager } from "@/utils/stateChannelManager";
+import type {
+    PingPongRpc,
+    SumResponse
+} from "@test/fixtures/customRpc/PingPongRpcManifest";
+import {
+    slotAccountIndex,
+    slotDeployerIndex
+} from "@test/harness/core/slotAccounts";
+import { protocolEventTimeoutMs } from "@test/harness/core/testTimeConfig";
+import {
+    createJoinChannelTestObject,
+    createOpenChannelTestObject
+} from "@test/test_utils/testHelpers";
+import {
+    startDiscoveryRegistry,
+    startHardhatNode,
+    waitForHardhatNode,
+    type DiscoveryHandle,
+    type NodeHandle
+} from "@test/utils/nodeInfra";
+import { waitFor } from "@test/utils/waitFor";
+import { MathStateMachine, MathStateMachine__factory } from "@typechain-types";
 import { expect } from "chai";
 import {
     BytesLike,
@@ -7,36 +36,6 @@ import {
     ethers
 } from "ethers";
 import path from "node:path";
-
-import { EvmStateMachine } from "@/evm";
-import type P2pInstance from "@/evm/P2pInstance";
-import { Codec, LocalDiscoveryServer, SignatureUtils, Type } from "@/utils";
-import {
-    createJoinChannelTestObject,
-    createOpenChannelTestObject
-} from "@test/test_utils/testHelpers";
-import { waitFor } from "@test/utils/waitFor";
-import {
-    slotAccountIndex,
-    slotDeployerIndex
-} from "@test/harness/core/slotAccounts";
-import { protocolEventTimeoutMs } from "@test/harness/core/testTimeConfig";
-import MathStateMachineArtifact from "../../artifacts/contracts/V1/examples/MathStateMachine/MathStateMachine.sol/MathStateMachine.json";
-import MathConsumerFacetArtifact from "../../artifacts/contracts/V1/examples/MathStateMachine/MathConsumerFacet.sol/MathConsumerFacet.json";
-import { deployFullStack } from "../../scripts/V1/deploy";
-import { MathStateMachine, MathStateMachine__factory } from "@typechain-types";
-import { connectStateChannelManager } from "@/utils/stateChannelManager";
-import type {
-    PingPongRpc,
-    SumResponse
-} from "@test/fixtures/customRpc/PingPongRpcManifest";
-import {
-    startDiscoveryRegistry,
-    startHardhatNode,
-    waitForHardhatNode,
-    type DiscoveryHandle,
-    type NodeHandle
-} from "@test/utils/nodeInfra";
 
 let hardhatNodeUrl = process.env.HARDHAT_NODE_URL;
 let localDiscoveryRegistryUrl = process.env.LOCAL_DISCOVERY_REGISTRY_URL;
@@ -229,8 +228,8 @@ describe("E2E: custom RPC request/response over the runtime port", function () {
         );
 
         const channelId = ethers.hexlify(openChannel.channelId);
-        await peer0.hostRpc.network.connectToChannel(channelId).request();
-        await peer1.hostRpc.network.connectToChannel(channelId).request();
+        await peer0.hostRpc.network.joinSelectedKey(channelId).request();
+        await peer1.hostRpc.network.joinSelectedKey(channelId).request();
 
         const channelManager = connectStateChannelManager(
             scmDeployment.address,
@@ -241,6 +240,9 @@ describe("E2E: custom RPC request/response over the runtime port", function () {
             signatures
         });
         await openTx.wait();
+
+        await peer0.hostRpc.network.connectToChannel(channelId).request();
+        await peer1.hostRpc.network.connectToChannel(channelId).request();
 
         // Wait until both peers report a completed handshake to each other.
         await waitFor(
@@ -306,5 +308,10 @@ describe("E2E: custom RPC request/response over the runtime port", function () {
         expect((requestError as Error).message).to.include(
             "intentional-request-failure"
         );
+
+        expect([
+            ...(await peer0.quiesce()),
+            ...(await peer1.quiesce())
+        ]).to.deep.equal([]);
     });
 });

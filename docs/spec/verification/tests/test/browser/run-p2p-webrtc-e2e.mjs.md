@@ -33,6 +33,12 @@ test ID may be assigned to at most one test across the whole tree; static analys
 duplicate assignments, and tests with no assigned ID are listed in the verification-coverage
 report but are kept here.
 
-| Test declaration                                                                                          | Covers |
-| --------------------------------------------------------------------------------------------------------- | ------ |
-| [`package script test:browser:webrtc`](../../../../../../test/browser/run-p2p-webrtc-e2e.mjs#L1) (line 1) | —      |
+| Test declaration                                                                                          | Covers                                                                                                                                                                        |
+| --------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| [`package script test:browser:webrtc`](../../../../../../test/browser/run-p2p-webrtc-e2e.mjs#L1) (line 1) | [`INTEGRATION-TEST-BROWSER-P2P-RUNTIME-1-E8W0M2.P1`](../../../../implementation/source/src/evm/p2pRuntime/browser/README.md#integration-test-browser-p2p-runtime-1-e8w0m2.p1) |
+
+The browser runner now opens the existing-channel fixture on chain before connection. Workers report one
+serializable `{ type: "connectResult", result, status }` message per peer. The runner asserts observer `true`
+at `SYNCED` and targeted `{ autoOpen: true, shouldJoin: true, balance }` success at pending or participating,
+including nonempty balance data and upgraded traffic. This is browser-worker API evidence, not runtime-port
+structured-clone evidence.

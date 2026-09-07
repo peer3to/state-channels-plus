@@ -28,8 +28,8 @@ report but are kept here.
 
 | Test declaration                                                                                                                                                          | Covers |
 | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------ |
-| [`applyNodeGlobalsShim > fills in a full process shim when none exists`](../../../../../../test/evm/nodeGlobalsShim.test.ts#L17) (line 17)                                | —      |
-| [`applyNodeGlobalsShim > patches missing fields on a partial process without clobbering existing ones`](../../../../../../test/evm/nodeGlobalsShim.test.ts#L29) (line 29) | —      |
-| [`applyNodeGlobalsShim > does not overwrite an existing nextTick`](../../../../../../test/evm/nodeGlobalsShim.test.ts#L43) (line 43)                                      | —      |
-| [`applyNodeGlobalsShim > does not identify a real Node process as a browser`](../../../../../../test/evm/nodeGlobalsShim.test.ts#L52) (line 52)                           | —      |
-| [`applyNodeGlobalsShim > schedules the callback asynchronously via the shimmed nextTick`](../../../../../../test/evm/nodeGlobalsShim.test.ts#L62) (line 62)               | —      |
+| [`applyNodeGlobalsShim > fills in a full process shim when none exists`](../../../../../../test/evm/nodeGlobalsShim.test.ts#L16) (line 16)                                | —      |
+| [`applyNodeGlobalsShim > patches missing fields on a partial process without clobbering existing ones`](../../../../../../test/evm/nodeGlobalsShim.test.ts#L28) (line 28) | —      |
+| [`applyNodeGlobalsShim > does not overwrite an existing nextTick`](../../../../../../test/evm/nodeGlobalsShim.test.ts#L42) (line 42)                                      | —      |
+| [`applyNodeGlobalsShim > does not identify a real Node process as a browser`](../../../../../../test/evm/nodeGlobalsShim.test.ts#L51) (line 51)                           | —      |
+| [`applyNodeGlobalsShim > schedules the callback asynchronously via the shimmed nextTick`](../../../../../../test/evm/nodeGlobalsShim.test.ts#L61) (line 61)               | —      |

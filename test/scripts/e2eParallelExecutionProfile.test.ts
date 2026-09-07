@@ -1,7 +1,7 @@
 // @spec-test-coverage-ignore: developer test-orchestration tooling; not protocol behavior, no specification or implementation IDs apply
-import { expect } from "chai";
-import { LeasePoolHarness } from "../fixtures/distributed/leasePool";
 import { TestIsolatedRuntimeBackend } from "../fixtures/distributed/isolatedRuntimeBackend";
+import { LeasePoolHarness } from "../fixtures/distributed/leasePool";
+import { expect } from "chai";
 
 const {
     resolveExecutionProfile

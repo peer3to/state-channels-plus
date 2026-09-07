@@ -1,7 +1,7 @@
-import { ethers, type BytesLike } from "ethers";
+import type { LobbyMatch } from "@/rpc/services/lobbyMatching/LobbyMatchingTypes";
 import { getChecksumAddress } from "@/utils";
 import type { OpenChannelStruct } from "@typechain-types/contracts/V1/types/DataTypes";
-import type { LobbyMatch } from "@/rpc/services/lobbyMatching/LobbyMatchingTypes";
+import { ethers, type BytesLike } from "ethers";
 
 export type Address = string;
 

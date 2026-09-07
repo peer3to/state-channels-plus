@@ -1,15 +1,25 @@
 import { Logger } from "@/utils";
 
-// Full-pool failures use capped exponential backoff to avoid a reconnect loop.
+// Base/cap for exponential backoff applied when a full round of relayers
+// has just been exhausted (all configured relayers failed since the last
+// success), so a fully-down network doesn't tight-loop hammering reconnects.
 const BACKOFF_BASE_MS = 1000;
 const BACKOFF_CAP_MS = 30000;
-// Failover jitter spreads clients that lose the same relay at once.
+// Upper bound for the randomized delay before retrying after a single
+// relayer failure, so many clients failing over at the same instant don't
+// all pile onto the next relayer at once (thundering herd).
 const FAILOVER_JITTER_MAX_MS = 250;
 
 export class RelayerPool {
     private readonly urls: string[];
     private readonly logger: Logger;
+    // Relayers that failed since the last successful connection. Never
+    // mutates urls - this is purely an exclusion filter that gets
+    // reset once every configured relayer has failed (retry the pool) or
+    // once a connection succeeds.
     private excludedRelayers: Set<string> = new Set();
+    // Number of consecutive full-round exhaustions (every relayer excluded)
+    // since the last successful connection. Drives the backoff delay.
     private backoffAttempt = 0;
     private pendingRetry: ReturnType<typeof setTimeout> | undefined;
 
@@ -38,10 +48,15 @@ export class RelayerPool {
             excludedCount: this.excludedRelayers.size,
             total: this.urls.length
         });
+        // Branch immediately so a pool-exhausting failure schedules only the
+        // exhaustion backoff, never the failover jitter as well - one timer
+        // owner per failure, not two stacked delays.
         if (this.isExhausted) {
             this.scheduleRetryAfterExhaustion(retry);
             return;
         }
+        // Randomized delay so many clients failing over off the same
+        // relayer at once don't all hit the next relayer simultaneously.
         const delayMs = Math.random() * FAILOVER_JITTER_MAX_MS;
         this.scheduleRetry(retry, delayMs);
     }
@@ -56,7 +71,8 @@ export class RelayerPool {
         }
     }
 
-    // Empty configuration is not exhaustion; there was no failed round.
+    // True once every configured relayer has failed since the last success
+    // (or since the last reset). Never true when urls is empty.
     get isExhausted(): boolean {
         return (
             this.urls.length > 0 &&
@@ -69,6 +85,9 @@ export class RelayerPool {
             BACKOFF_BASE_MS * 2 ** this.backoffAttempt,
             BACKOFF_CAP_MS
         );
+        // Full jitter (AWS-style): pick uniformly in [0, cappedBackoff] rather
+        // than retrying at the deterministic cappedBackoff mark, so clients
+        // that exhaust the pool at the same moment don't retry in lockstep.
         const delayMs = Math.random() * cappedBackoffMs;
         this.backoffAttempt++;
         this.logger.warn(

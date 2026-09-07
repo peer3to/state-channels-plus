@@ -171,24 +171,9 @@ success — a `false` return reverts the manager with
 | `setState(bytes) external _nonReentrant`                                                | Calls `_setState`. The manager's precursor to every re-execution.                                                      |
 | `joinChannel(JoinChannel) external _nonReentrant returns (bool)`                        | Calls `_joinChannel` directly (used by `applyJoinChannelToStateMachine`).                                              |
 | `slashParticipant(address) external _nonReentrant returns (bool, ExitChannel)`          | Calls `_slashParticipant`; on success **also** appends the `ExitChannel` to `_outboundMessages` via `_addExitChannel`. |
-| `removeParticipant(address) external virtual _nonReentrant returns (bool, ExitChannel)` | Calls `_removeParticipant`; does **not** append to `_outboundMessages`.                                                |
+| `removeParticipant(address) external virtual _nonReentrant returns (bool, ExitChannel)` | Calls `_removeParticipant`; on success appends the exit through `_addExitChannel`.                                     |
 
-Observed fact: the slash and remove wrappers are asymmetric — `slashParticipant`
-([AStateMachine.sol:116](../../../../../../contracts/V1/AStateMachine.sol#L116)) pushes the exit into
-the machine's outbound buffer via `_addExitChannel`, `removeParticipant`
-([AStateMachine.sol:124](../../../../../../contracts/V1/AStateMachine.sol#L124)) does not. The
-manager's dispute pipeline ignores the buffer in both cases (it builds the outbound message
-block from the returned `ExitChannel`s in
-[`DisputeVerificationFacet._applySlashesToStateMachine` / `_removeParticipantsFromStateMachine`](../../../../../../contracts/V1/StateChannelDiamondProxy/DisputeVerificationFacet.sol#L1)),
-so the pushed message is currently inert leftover state on the shared implementation instance.
-
-**Decided (2026-08-10, [`OQ-18-2NK97T`](../../../../specification/open-questions.md#oq-18-2nk97t)):** the wrappers MUST be symmetric — both
-record the exit through `_addExitChannel`. The only intended difference between removal and
-slashing is hook-level balance semantics: removal is the less aggressive path and may return the
-participant's full held balance; slashing applies the application's penalty. `removeParticipant`
-is to be brought in line ([`REQ-SM-8-8CHSQ8`](../../../../specification/protocol-model/state-machines.md#req-sm-8-8chsq8) in
-[../concepts/state-machines.md](../../../../specification/protocol-model/state-machines.md)); the table above documents
-current behavior until then.
+Both wrappers return and record a successful exit through `_addExitChannel`. This implements [`REQ-SM-8-8CHSQ8`](../../../../specification/protocol-model/state-machines.md#req-sm-8-8chsq8) and closes [`OQ-18-2NK97T`](../../../../specification/open-questions.md#oq-18-2nk97t). Application hooks retain their balance semantics. The dispute pipeline builds its outbound block from returned exits and does not read the buffer. The SDK clears the buffer before its next state transition, preventing duplicate delivery. Absent or repeated targets add no exit under [`REQ-SM-10-JD8TSF`](../../../../specification/protocol-model/state-machines.md#req-sm-10-jd8tsf).
 
 ### 3.4 `getOutboundMessages() public view returns (Message[] memory)`
 
@@ -338,8 +323,6 @@ _Non-normative._
   `msg.data`, …) in contracts extending `AStateMachine`; at minimum a review checklist.
 - A differential test harness that runs the same transitions off-chain and via
   `executeStateTransition` and asserts byte-identical results.
-- Implement the decided `removeParticipant` symmetry fix (§3.3, [`REQ-SM-8-8CHSQ8`](../../../../specification/protocol-model/state-machines.md#req-sm-8-8chsq8)): both wrappers record
-  the exit via `_addExitChannel`; hooks differ only in balance semantics.
 - Resolve the consumer-facet reachability question (§7) — framework guard vs. documented
   integrator obligation.
 - Remove the dead `_stateChannelManager` field, or wire it and define its purpose.

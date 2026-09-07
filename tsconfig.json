@@ -46,7 +46,8 @@
         "src/evm/contractExecutor/browser",
         "src/evm/p2pRuntime/browser",
         "src/utils/browser",
-        "src/utils/logging/browser"
+        "src/utils/logging/browser",
+        "test/evm/workers/browser"
     ],
     "ts-node": {
         "require": ["tsconfig-paths/register"],

@@ -1,7 +1,7 @@
-import { MathTestSession as TestSession } from "@test/harness";
-import { expect } from "chai";
-import { waitFor } from "@test/utils/waitFor";
 import { Status } from "@/types";
+import { MathTestSession as TestSession } from "@test/harness";
+import { waitFor } from "@test/utils/waitFor";
+import { expect } from "chai";
 
 describe("E2E: Spectate stale-proof guard", function () {
     it("aborts sync when on-chain snapshot is more advanced than what participant proved", async function () {
@@ -17,21 +17,26 @@ describe("E2E: Spectate stale-proof guard", function () {
         });
 
         await h.transition.advanceState({
-            count: 4,
+            count: 2,
             waitForFinalization: true
         });
-        await h.transition.postSnapshotWait();
-
         const staleBlockHeight = 1;
 
         // Stub both participants to respond with a stale proof regardless of what
         // was actually requested by the spectator.
         await h.rpcStub.stubSpectateStaleProof([0, 1], staleBlockHeight);
+        await h.transition.advanceState({
+            count: 2,
+            waitForFinalization: true
+        });
+        await h.transition.postSnapshotWait();
 
         // addPeerWait throws if the spectator doesn't reach SYNCED within the timeout.
         // With stale proofs, the guard aborts every sync attempt, so SYNCED is never reached.
         let threwTimeout = false;
         try {
+            // Spawn-only, classified (plan 30 item 5): the sync is meant to fail and no
+            // transition is scheduled while it runs, so the idle fork is by design.
             await h.join.addSpectatorWait({ statusTimeoutMs: 5000 });
         } catch (e: any) {
             threwTimeout = true;
@@ -41,6 +46,9 @@ describe("E2E: Spectate stale-proof guard", function () {
             true,
             "Spectator should not have reached SYNCED with stale proofs"
         );
+        await TestSession.settleDetached({
+            expectedErrorIncludes: "connectToChannel failed"
+        });
 
         const spectator = h.getPeer(2);
         expect(
@@ -67,6 +75,8 @@ describe("E2E: Spectate stale-proof guard", function () {
 
         let threwTimeout = false;
         try {
+            // Spawn-only, classified (plan 30 item 5): the sync is meant to fail and no
+            // transition is scheduled while it runs, so the idle fork is by design.
             await h.join.addSpectatorWait({ statusTimeoutMs: 5000 });
         } catch {
             threwTimeout = true;
@@ -76,6 +86,9 @@ describe("E2E: Spectate stale-proof guard", function () {
             true,
             "Spectator should not have reached SYNCED with junk payloads"
         );
+        await TestSession.settleDetached({
+            expectedErrorIncludes: "connectToChannel failed"
+        });
 
         const spectator = h.getPeer(2);
         expect(
@@ -86,11 +99,8 @@ describe("E2E: Spectate stale-proof guard", function () {
         );
     });
 
-    // A4: an exact target BEHIND the on-chain snapshot on the same fork is
-    // rejected by the same-fork stale-proof bound — the height-0 pin does not
-    // weaken it. A participant requester (not a spectator) means the abort
-    // blacklists the responder rather than node-aborting.
-    it("blacklists the responder when a participant requests a target behind the on-chain snapshot", async function () {
+    // A participant must blacklist a responder that supplies a real but stale proof.
+    it("blacklists the responder when a participant receives a proof behind the on-chain snapshot", async function () {
         const h = TestSession.getHarness();
         await h.lifecycle.start(2, 0, {
             timeConfig: {
@@ -101,20 +111,20 @@ describe("E2E: Spectate stale-proof guard", function () {
             }
         });
 
-        // Advance and post an on-chain snapshot so the chain sits ahead of the
-        // old target we will request below.
         await h.transition.advanceState({
-            count: 4,
+            count: 2,
+            waitForFinalization: true
+        });
+        const requester = h.getPeer(1);
+        const responder = h.getPeer(0);
+        const forkId = h.activeForkId!;
+        const staleHeight = 1;
+        await h.rpcStub.stubSpectateStaleProof([responder.index], staleHeight);
+        await h.transition.advanceState({
+            count: 2,
             waitForFinalization: true
         });
         await h.transition.postSnapshotWait();
-
-        const requesterIndex = 1;
-        const responderIndex = 0;
-        const requester = h.getPeer(requesterIndex);
-        const responder = h.getPeer(responderIndex);
-        const forkId = h.activeForkId!;
-        const staleHeight = 1; // behind the posted on-chain snapshot
 
         // The requester is an active participant, so a verification abort
         // blacklists the responder (rather than aborting the node).

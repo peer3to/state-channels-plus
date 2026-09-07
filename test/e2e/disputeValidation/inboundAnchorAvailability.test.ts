@@ -1,8 +1,7 @@
-import { expect } from "chai";
-import { ZeroHash } from "ethers";
-
 import { DisputeFraudProofType } from "@/types/sol-enums";
 import { MathTestSession as TestSession } from "@test/harness";
+import { expect } from "chai";
+import { ZeroHash } from "ethers";
 
 describe("E2E: dispute validation / inbound anchor availability", function () {
     it("a posted snapshot with a behind inbound anchor creates the matching fraud proof", async function () {

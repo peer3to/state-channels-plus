@@ -21,10 +21,6 @@ export function isWorkerRuntime(): boolean {
     );
 }
 
-export function hasLocalRTCPeerConnection(): boolean {
-    return !!getGlobalWebRTCProvider();
-}
-
 /**
  * True when this runtime is a worker that cannot negotiate WebRTC itself and so
  * must drive an `RTCPeerConnection` on the real main thread over a bridge port.
@@ -46,20 +42,15 @@ export async function loadWebRTCProvider(): Promise<WebRTCProvider> {
     const globalProvider = getGlobalWebRTCProvider();
     if (globalProvider) return globalProvider;
 
-    try {
-        // @ts-expect-error - get-webrtc does not ship TypeScript declarations.
-        const imported = await import("get-webrtc");
-        const provider = (imported.default ??
-            imported) as Partial<WebRTCProvider>;
-        if (typeof provider.RTCPeerConnection === "function") {
-            return {
-                RTCPeerConnection:
-                    provider.RTCPeerConnection as WebRTCProvider["RTCPeerConnection"],
-                RTCIceCandidate: provider.RTCIceCandidate
-            };
-        }
-    } catch (error) {
-        throw error;
+    // @ts-expect-error - get-webrtc does not ship TypeScript declarations.
+    const imported = await import("get-webrtc");
+    const provider = (imported.default ?? imported) as Partial<WebRTCProvider>;
+    if (typeof provider.RTCPeerConnection === "function") {
+        return {
+            RTCPeerConnection:
+                provider.RTCPeerConnection as WebRTCProvider["RTCPeerConnection"],
+            RTCIceCandidate: provider.RTCIceCandidate
+        };
     }
 
     throw new Error("RTCPeerConnection is unavailable in this runtime");

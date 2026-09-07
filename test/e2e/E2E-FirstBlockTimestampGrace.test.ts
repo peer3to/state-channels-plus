@@ -228,9 +228,12 @@ describe("E2E: First block timestamp grace", function () {
         expect(
             Clock.getTimeInSeconds(),
             "setup consumed the height-0 grace window"
-        ).to.be.lessThan(graceParticipantDeadline - 1);
-        // past the normal deadline, one second before the grace deadline: no dispute yet
-        await h.event.waitUntilTimestamp(graceParticipantDeadline - 1);
+        ).to.be.lessThan(graceParticipantDeadline - 2);
+        // Past the normal deadline, two seconds before the grace deadline: no
+        // dispute yet. The peers' clocks follow chain time and can sit a
+        // second ahead of the harness clock, so the checkpoint keeps that
+        // second of margin.
+        await h.event.waitUntilTimestamp(graceParticipantDeadline - 2);
         await h.assert.dispute.didNotInitiate({ peers: [0, 1, 2] });
 
         await h.assert.dispute.initiatedWait({

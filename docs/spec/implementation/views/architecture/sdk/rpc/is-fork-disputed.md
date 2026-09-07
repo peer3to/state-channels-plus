@@ -11,9 +11,9 @@
 > The off-chain dispute flow around it: [../dispute-pipeline.md](../dispute-pipeline.md).
 
 Implementation:
-[`IsForkDisputedService`](../../../../../../../src/rpc/services/isForkDisputedService/IsForkDisputedService.ts#L8),
+[`IsForkDisputedService`](../../../../../../../src/rpc/services/isForkDisputedService/IsForkDisputedService.ts#L9),
 [`IsForkDisputedRpcMethods`](../../../../../../../src/rpc/services/isForkDisputedService/IsForkDisputedRpcMethods.ts#L6).
-Trigger: [`EventHandler.handleDisputeCommitted`](../../../../../../../src/eventHandlers/EventHandler.ts#L300).
+Trigger: [`EventHandler.handleDisputeCommitted`](../../../../../../../src/eventHandlers/EventHandler.ts#L299).
 Evidence consumer:
 [`BlockValidationStrategy.blockForkIsDisputed`](../../../../../../../src/stateManager/validationStrategy/BlockValidationStrategy.ts#L220).
 
@@ -58,7 +58,7 @@ sequenceDiagram
 
 The round is **relevance-gated**: it fires only when the disputed fork is the node's current
 fork, or the dispute is final and the node has a pending reduction operation for that fork
-([`handleDisputeCommitted`](../../../../../../../src/eventHandlers/EventHandler.ts#L300)); late non-final
+([`handleDisputeCommitted`](../../../../../../../src/eventHandlers/EventHandler.ts#L299)); late non-final
 events for already-resolved forks do not restart it. Dispute-event ordering and
 kill/counter-dispute sequencing around this trigger have known lifecycle races —
 [`OQ-25-E09XFR`](../../../../open-questions.md#oq-25-e09xfr).

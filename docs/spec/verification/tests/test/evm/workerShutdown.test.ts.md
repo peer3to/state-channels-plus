@@ -27,7 +27,7 @@ report but are kept here.
 
 | Test declaration                                                                                                                              | Covers |
 | --------------------------------------------------------------------------------------------------------------------------------------------- | ------ |
-| [`workerShutdown > resolves once the worker drains its loop and exits`](../../../../../../test/evm/workerShutdown.test.ts#L18) (line 18)      | —      |
-| [`workerShutdown > resolves immediately for an already-exited worker`](../../../../../../test/evm/workerShutdown.test.ts#L28) (line 28)       | —      |
-| [`workerShutdown > waits for a slow drain instead of abandoning the worker`](../../../../../../test/evm/workerShutdown.test.ts#L41) (line 41) | —      |
-| [`workerShutdown > completes concurrent shutdowns independently`](../../../../../../test/evm/workerShutdown.test.ts#L59) (line 59)            | —      |
+| [`workerShutdown > resolves once the worker drains its loop and exits`](../../../../../../test/evm/workerShutdown.test.ts#L17) (line 17)      | —      |
+| [`workerShutdown > resolves immediately for an already-exited worker`](../../../../../../test/evm/workerShutdown.test.ts#L27) (line 27)       | —      |
+| [`workerShutdown > waits for a slow drain instead of abandoning the worker`](../../../../../../test/evm/workerShutdown.test.ts#L40) (line 40) | —      |
+| [`workerShutdown > completes concurrent shutdowns independently`](../../../../../../test/evm/workerShutdown.test.ts#L58) (line 58)            | —      |

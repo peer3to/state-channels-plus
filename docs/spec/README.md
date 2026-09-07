@@ -182,7 +182,7 @@ maintained references. An ID is immutable until deletion, so surviving children 
 and deleted children leave gaps. Git history preserves deleted identities and wording.
 
 A genuinely out-of-scope test or test-support file may use
-`// @spec-test-coverage-ignore: <reason>` in its first ten lines.
+`// @spec-test-coverage-ignore: <reason>` in its first ten lines. The impact tool accounts for Markdown paths under `test/` automatically; executable support files still require a mapping or this marker.
 
 ## 6. Open questions and findings
 

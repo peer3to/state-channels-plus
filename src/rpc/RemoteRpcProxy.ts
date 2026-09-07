@@ -1,7 +1,7 @@
+import RpcMethodsProxy, { RpcHandleMethods } from "./RpcHandleProxy";
 import type ARpcService from "@/rpc/ARpcService";
 import type MainRpcService from "@/rpc/MainRpcService";
 import { hasRpcService } from "@/utils/ObjectChecks";
-import RpcMethodsProxy, { RpcHandleMethods } from "./RpcHandleProxy";
 
 type RemoteRpcServices<T extends object> = {
     [K in keyof T as T[K] extends ARpcService<any, any>

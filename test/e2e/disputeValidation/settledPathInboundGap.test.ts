@@ -1,9 +1,9 @@
-import { expect } from "chai";
-
 import { Status } from "@/types";
 import { Hash } from "@/types/types";
 import { MathTestSession as TestSession } from "@test/harness";
 import { DisputeTampering } from "@test/harness/actions/DisputeTamperingActions";
+import { INBOUND_GAP_TIME_CONFIG } from "@test/harness/core/testTimeConfig";
+import { expect } from "chai";
 
 // On the settled path (postedAuditingData = false) the disputer posts no
 // auditing data, so every auditor rebuilds it from its own inbound store. An
@@ -14,44 +14,7 @@ import { DisputeTampering } from "@test/harness/actions/DisputeTamperingActions"
 // on demand, and a gap that survives recovery is an abstain, never a throw.
 
 describe("E2E: dispute validation / inbound run gap", function () {
-    const TIME_CONFIG = {
-        p2pTime: 2,
-        agreementTime: 8,
-        chainFallbackTime: 4,
-        evidenceTime: 4
-    };
-
-    /**
-     * 3 peers, two finalized transitions, then a top-up of an existing
-     * participant: block turns and the final-by-everyone head stay intact, so
-     * disputes take the settled path, and the chain's inbound head ends up above
-     * the snapshot every dispute pins. Returns the head the disputes will name.
-     */
-    const stageInboundGap = async (
-        h: ReturnType<typeof TestSession.getHarness>,
-        laggingIndex: number,
-        observePeerIndices: number[]
-    ): Promise<Hash> => {
-        await h.join.forceInboundJoinWait({
-            participant: h.getPeer(observePeerIndices[0]).address,
-            observePeerIndices
-        });
-
-        const inboundHeadHash = (await h
-            .control(h.getPeer(observePeerIndices[0]))
-            .query.getLatestInboundMessageHash()
-            .request()) as Hash;
-        // premise - the lagging peer holds no block at the inbound head the
-        // other peers' disputes name
-        expect(
-            await h
-                .control(h.getPeer(laggingIndex))
-                .query.getInboundMessageBlock(inboundHeadHash)
-                .request(),
-            "lagging peer must not hold the inbound head"
-        ).to.equal(null);
-        return inboundHeadHash;
-    };
+    const TIME_CONFIG = INBOUND_GAP_TIME_CONFIG;
 
     /** No peer may answer a gap with a fraud proof - it is nobody's fraud. */
     const expectNoDisputeFraudProofs = async (
@@ -87,10 +50,10 @@ describe("E2E: dispute validation / inbound run gap", function () {
         // the delivery is lost, not the handler: an explicit query of the same
         // log still applies it, so on-demand recovery can heal this gap
         const dropped = await h.rpcStub.dropInboundMessageLogs(laggingIndex);
-        const inboundHeadHash = await stageInboundGap(h, laggingIndex, [
-            disputerIndex,
-            offenderIndex
-        ]);
+        const inboundHeadHash = await h.scenario.stageInboundGap({
+            laggingIndex: laggingIndex,
+            observePeerIndices: [disputerIndex, offenderIndex]
+        });
         await dropped.waitUntilDropped();
 
         h.event.resetEventSpies();
@@ -156,7 +119,10 @@ describe("E2E: dispute validation / inbound run gap", function () {
         // the handler itself is held, so recovery re-dispatches into the same
         // hold and cannot heal the gap -> the audit must abstain
         const held = await h.rpcStub.holdInboundMessageEvents(laggingIndex);
-        await stageInboundGap(h, laggingIndex, [disputerIndex, offenderIndex]);
+        await h.scenario.stageInboundGap({
+            laggingIndex: laggingIndex,
+            observePeerIndices: [disputerIndex, offenderIndex]
+        });
 
         h.event.resetEventSpies();
         h.contextApi.captureOriginalFork();
@@ -227,10 +193,10 @@ describe("E2E: dispute validation / inbound run gap", function () {
             .filter((index) => index !== maliciousPeerIndex);
 
         const held = await h.rpcStub.holdInboundMessageEvents(laggingIndex);
-        await stageInboundGap(h, laggingIndex, [
-            finalAuthorIndex,
-            maliciousPeerIndex
-        ]);
+        await h.scenario.stageInboundGap({
+            laggingIndex: laggingIndex,
+            observePeerIndices: [finalAuthorIndex, maliciousPeerIndex]
+        });
 
         h.event.resetEventSpies();
         h.contextApi.captureOriginalFork();

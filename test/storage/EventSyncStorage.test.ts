@@ -1,8 +1,7 @@
-import { expect } from "chai";
-import { ethers } from "ethers";
-
 import { EventSyncStorage } from "@/storage/EventSyncStorage";
 import { ChannelId } from "@/types/types";
+import { expect } from "chai";
+import { ethers } from "ethers";
 
 describe("EventSyncStorage", () => {
     it("stores independent monotonic watermarks per normalized channel", () => {

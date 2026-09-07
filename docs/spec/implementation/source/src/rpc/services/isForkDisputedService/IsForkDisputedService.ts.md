@@ -25,6 +25,8 @@ the requester; answered on the responder), and the exclusion consequence for ref
 
 ## Key design decisions
 
+Error text delegates to the dependency-free errorMessage helper. Existing catch policy, stack fields, log messages and error propagation remain at this call site. See [IsForkDisputedService.ts](../../../../../../../../src/rpc/services/isForkDisputedService/IsForkDisputedService.ts#L7).
+
 1. **Identity-keyed records survive churn.** Both sides key by peer address, not transport, so the knowledge record outlives reconnects ([`REQ-DACK-2-MJZENJ`](../../../../../../specification/peer-communication/dispute-acknowledgment.md#req-dack-2-mjzenj)).
 2. **Responder verifies before confirming** — local dispute knowledge with a chain fallback, so an honest lagging responder can still answer truthfully.
 
@@ -85,3 +87,5 @@ Exact test evidence is mapped against these IDs in the verification test reports
 ## Related source reports
 
 - [IsForkDisputedRpcMethods](./IsForkDisputedRpcMethods.ts.md), [EventHandler](../../../eventHandlers/EventHandler.ts.md) (trigger), [BlockValidationStrategy](../../../stateManager/validationStrategy/BlockValidationStrategy.ts.md) (consumer).
+
+Shared operation owners: [errorMessage.ts.md](../../../utils/errorMessage.ts.md).

@@ -1,23 +1,33 @@
-import { ethers, Signer, TransactionResponse } from "ethers";
-
-import {
-    TransactionStruct,
-    JoinChannelConfirmationStruct,
-    JoinChannelStruct
-} from "@typechain-types/contracts/V1/types/DataTypes";
+import type { ConnectToChannelOptions } from "./ConnectToChannelOptions";
+import NoopEventProvider from "./NoopEventProvider";
 import Clock from "@/Clock";
 import type P2PManager from "@/P2PManager";
 import MainRpcService from "@/rpc/MainRpcService";
-import { Address, Bytes } from "@/types/types";
-import { Status } from "@/types";
-import { channelIdToDiscoveryKey, type Logger } from "@/utils";
-import type { ForkId, Hash } from "@/types/types";
 import type {
     LobbyJoinOptions,
     LobbyJoinResult,
     PreparedJoinChannelConfirmation
 } from "@/rpc/services";
-import NoopEventProvider from "./NoopEventProvider";
+import { validateMatchTimeout } from "@/rpc/services/lobbyMatching/LobbyMatchingValidation";
+import { DEFAULT_JOIN_AMOUNT } from "@/rpc/services/openChannelNegotiation/OpenChannelNegotiationHelpers";
+import { Status } from "@/types";
+import { isCommittedParticipantStatus } from "@/types/flags";
+import { Address, Bytes } from "@/types/types";
+import type { ForkId, Hash } from "@/types/types";
+import {
+    channelIdToDiscoveryKey,
+    channelIdToTargetedJoinTopic,
+    type Logger
+} from "@/utils";
+import { requireBytes32 } from "@/utils/bytes32";
+import { errorMessage } from "@/utils/errorMessage";
+import {
+    BalanceStruct,
+    TransactionStruct,
+    JoinChannelConfirmationStruct,
+    JoinChannelStruct
+} from "@typechain-types/contracts/V1/types/DataTypes";
+import { ethers, Signer, TransactionResponse } from "ethers";
 
 /**
  * Signer used by the live p2p runtime state manager for channel-scoped
@@ -138,10 +148,6 @@ class LocalP2pSigner<TCustomRpc extends MainRpcService = MainRpcService>
         return this.signer.signTypedData(domain, types, value);
     }
 
-    async setChannelId(channelId: Bytes): Promise<void> {
-        await this.p2pManager.stateManager.setChannelId(channelId);
-    }
-
     public setIsLeader(value: boolean) {
         this.isLeader = value;
     }
@@ -150,60 +156,172 @@ class LocalP2pSigner<TCustomRpc extends MainRpcService = MainRpcService>
         return this.isLeader;
     }
 
-    public async connectToChannel(channelId: Bytes) {
-        if (
-            this.p2pManager.stateManager.status === Status.DISCOVERING ||
-            this.p2pManager.localRpc.lobbyMatchingService.rendezvousTopic
-        ) {
-            throw new Error(
-                "Leave the active lobby before connecting to a channel"
+    public async connectToChannel(
+        channelId: Bytes,
+        options: ConnectToChannelOptions | null = {}
+    ): Promise<boolean> {
+        options ??= {};
+        const normalizedChannelId = ethers.hexlify(channelId);
+        if (!ethers.isHexString(normalizedChannelId, 32))
+            throw new Error("Channel ID must be exactly 32 bytes");
+        const stateManager = this.p2pManager.stateManager;
+        stateManager.leaveChannelService.assertOperationAllowed(
+            "connectToChannel"
+        );
+        let openedGenesis = false;
+
+        if (String(stateManager.channelId) !== normalizedChannelId) {
+            if (String(stateManager.channelId) !== ethers.ZeroHash) {
+                throw new Error(
+                    `This P2P runtime already owns channel ${stateManager.channelId}; leave it and create a new runtime before selecting ${normalizedChannelId}`
+                );
+            }
+            await stateManager.setChannelId(normalizedChannelId);
+        }
+
+        await stateManager.refreshOpenedStatusFromChain();
+        if (stateManager.status === Status.NOT_OPENED) {
+            if (!options.autoOpen) return false;
+            const matching = this.p2pManager.localRpc.lobbyMatchingService;
+            const topic = channelIdToTargetedJoinTopic(normalizedChannelId);
+            const match = await matching.match(
+                topic,
+                options.timeoutMs,
+                normalizedChannelId
+            );
+            if (!match) {
+                if (!matching.takeObservedTargetOpen(normalizedChannelId))
+                    return false;
+            } else {
+                await stateManager.refreshOpenedStatusFromChain();
+                if (stateManager.status === Status.NOT_OPENED) {
+                    const outcome =
+                        await this.p2pManager.localRpc.openChannelNegotiationService.initMatchedNegotiation(
+                            match,
+                            {
+                                mode: "targeted",
+                                channelId: normalizedChannelId,
+                                balance:
+                                    options.balance ?? this.defaultBalance()
+                            }
+                        );
+                    if (outcome.status === "opened") {
+                        openedGenesis = true;
+                        await matching.completeLobby(topic);
+                    } else if (outcome.status === "observed-target-open") {
+                        await matching.releaseNegotiationHandoff(topic);
+                    } else {
+                        await matching.releaseNegotiationHandoff(topic);
+                        return false;
+                    }
+                } else {
+                    await matching.releaseNegotiationHandoff(topic);
+                }
+            }
+        }
+
+        await stateManager.refreshOpenedStatusFromChain();
+        if (stateManager.status === Status.NOT_OPENED) return false;
+        await this.p2pManager.joinDiscoveryKey(
+            channelIdToDiscoveryKey(normalizedChannelId)
+        );
+        if (!options.shouldJoin) {
+            return (
+                stateManager.status === Status.SYNCED ||
+                stateManager.status === Status.PARTICIPATING
             );
         }
-        await this.setChannelId(channelId);
-
-        // Update status to NOT_OPENED/OPENED as soon as we know the channelId.
-        await this.p2pManager.stateManager.refreshOpenedStatusFromChain();
-
-        return this.p2pManager.joinDiscoveryKey(
-            channelIdToDiscoveryKey(channelId.toString())
+        if (isCommittedParticipantStatus(stateManager.status)) {
+            if (openedGenesis) return true;
+            if (!options.balance) return true;
+            const prepared =
+                await this.p2pManager.localRpc.joinChannelService.prepareJoinChannelConfirmation(
+                    options.balance
+                );
+            return stateManager.membershipService.topUpBalance(
+                prepared.confirmation,
+                prepared.expectedSnapshotHash,
+                prepared.expectedForkId
+            );
+        }
+        if (stateManager.status !== Status.SYNCED) return false;
+        const prepared =
+            await this.p2pManager.localRpc.joinChannelService.prepareJoinChannelConfirmation(
+                options.balance ?? this.defaultBalance()
+            );
+        return stateManager.membershipService.joinChannel(
+            prepared.confirmation,
+            prepared.expectedSnapshotHash,
+            prepared.expectedForkId
         );
+    }
+
+    public cancelConnectToChannel(channelId: Bytes): Promise<boolean> {
+        return this.p2pManager.localRpc.lobbyMatchingService.cancelMatching(
+            channelIdToTargetedJoinTopic(ethers.hexlify(channelId))
+        );
+    }
+
+    /**
+     * Internal route for `P2pInstance.leaveChannel`.
+     * Direct callers wait for settled removal but do not dispose the runtime.
+     */
+    public leaveChannel(): Promise<void> {
+        return this.p2pManager.stateManager.leaveChannelService.leaveChannel();
     }
 
     public async joinLobby(
         lobbyTopic: string,
         options: LobbyJoinOptions = {}
     ): Promise<LobbyJoinResult | undefined> {
+        this.p2pManager.stateManager.leaveChannelService.assertOperationAllowed(
+            "joinLobby"
+        );
+        requireBytes32(lobbyTopic, "Rendezvous topic must be exactly 32 bytes");
+        validateMatchTimeout(options.matchTimeoutMs);
+        const balance = options.balance ?? this.defaultBalance();
+        await this.p2pManager.stateManager.diamondStateMachine.requirePositiveBalance(
+            balance,
+            "Balance"
+        );
         if (
-            this.p2pManager.isDisposed ||
-            this.p2pManager.stateManager.isDisposed
+            String(this.p2pManager.stateManager.channelId) !== ethers.ZeroHash
         ) {
-            throw new Error("Cannot enter discovery after runtime disposal");
+            throw new Error("Ordinary discovery requires no selected channel");
         }
-        if (
-            options.amount !== undefined &&
-            (!Number.isSafeInteger(options.amount) || options.amount < 0)
-        ) {
-            throw new Error("Invalid local opening amount");
-        }
+        this.p2pManager.stateManager.setStatus(Status.DISCOVERING);
+        return this.runLobbyJoin(lobbyTopic, {
+            balance,
+            matchTimeoutMs: options.matchTimeoutMs
+        });
+    }
+
+    private async runLobbyJoin(
+        lobbyTopic: string,
+        options: LobbyJoinOptions
+    ): Promise<LobbyJoinResult | undefined> {
         const matching = this.p2pManager.localRpc.lobbyMatchingService;
         const negotiation =
             this.p2pManager.localRpc.openChannelNegotiationService;
         let match = await matching.match(lobbyTopic, options.matchTimeoutMs);
         while (match) {
             try {
-                await negotiation.initMatchedNegotiation(match, options);
-                const outcome = await negotiation.waitForOutcome(
-                    match.attemptNonce
+                const outcome = await negotiation.initMatchedNegotiation(
+                    match,
+                    {
+                        mode: "ordinary",
+                        balance: options.balance
+                    }
                 );
                 if (outcome.status === "opened") {
                     await matching.completeLobby(lobbyTopic);
                     return outcome.result;
                 }
                 if (outcome.status === "cancelled") return undefined;
+                await matching.releaseNegotiationHandoff(lobbyTopic);
             } catch (error) {
                 this.logger.warn("Matched lobby negotiation failed to start", {
-                    error:
-                        error instanceof Error ? error.message : String(error)
+                    error: errorMessage(error)
                 });
                 await matching.releaseNegotiationHandoff(lobbyTopic);
             }
@@ -216,7 +334,7 @@ class LocalP2pSigner<TCustomRpc extends MainRpcService = MainRpcService>
     }
 
     public leaveLobby(lobbyTopic: string): Promise<boolean> {
-        return this.p2pManager.localRpc.lobbyMatchingService.leaveLobby(
+        return this.p2pManager.localRpc.lobbyMatchingService.cancelMatching(
             lobbyTopic
         );
     }
@@ -225,7 +343,10 @@ class LocalP2pSigner<TCustomRpc extends MainRpcService = MainRpcService>
         confirmation: JoinChannelConfirmationStruct,
         expectedSnapshotHash: Hash,
         expectedForkId: ForkId
-    ): Promise<void> {
+    ): Promise<boolean> {
+        this.p2pManager.stateManager.leaveChannelService.assertOperationAllowed(
+            "joinChannel"
+        );
         return this.p2pManager.stateManager.membershipService.joinChannel(
             confirmation,
             expectedSnapshotHash,
@@ -237,7 +358,10 @@ class LocalP2pSigner<TCustomRpc extends MainRpcService = MainRpcService>
         confirmation: JoinChannelConfirmationStruct,
         expectedSnapshotHash: Hash,
         expectedForkId: ForkId
-    ): Promise<void> {
+    ): Promise<boolean> {
+        this.p2pManager.stateManager.leaveChannelService.assertOperationAllowed(
+            "topUpBalance"
+        );
         return this.p2pManager.stateManager.membershipService.topUpBalance(
             confirmation,
             expectedSnapshotHash,
@@ -248,6 +372,9 @@ class LocalP2pSigner<TCustomRpc extends MainRpcService = MainRpcService>
     public collectJoinChannelConfirmation(
         joinChannel: JoinChannelStruct
     ): Promise<PreparedJoinChannelConfirmation> {
+        this.p2pManager.stateManager.leaveChannelService.assertOperationAllowed(
+            "collectJoinChannelConfirmation"
+        );
         return this.p2pManager.localRpc.joinChannelService.collectJoinChannelConfirmation(
             joinChannel
         );
@@ -259,6 +386,10 @@ class LocalP2pSigner<TCustomRpc extends MainRpcService = MainRpcService>
 
     public async getChannelStatus(): Promise<Status> {
         return this.p2pManager.stateManager.status;
+    }
+
+    private defaultBalance(): BalanceStruct {
+        return { amount: BigInt(DEFAULT_JOIN_AMOUNT), data: "0x" };
     }
 }
 

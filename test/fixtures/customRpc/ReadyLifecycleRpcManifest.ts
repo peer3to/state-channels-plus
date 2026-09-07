@@ -1,7 +1,7 @@
 // @spec-test-coverage-ignore: Runtime lifecycle fixture exercised by owning E2E declarations.
-import type P2PManager from "@/P2PManager";
 import { HarnessControlRpc } from "./harnessControl/HarnessControlRpc";
 import { MutexProbeService } from "./mutexProbe/MutexProbeService";
+import type P2PManager from "@/P2PManager";
 
 export type ReadyLifecycleRpcOptions = {
     delayMs?: number;

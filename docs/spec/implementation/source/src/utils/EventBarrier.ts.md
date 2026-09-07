@@ -23,6 +23,8 @@ Awaitable signal barrier (used for handshake-completion waits) with timeout and 
 
 ## Key design decisions
 
+Error text delegates to the dependency-free errorMessage helper. Existing catch policy, stack fields, log messages and error propagation remain at this call site. See [EventBarrier.ts](../../../../../../src/utils/EventBarrier.ts#L1).
+
 _None — the file is declarative/mechanical; behavior-shaping decisions live with its consumers._
 
 ## Inputs, outputs, state, and side effects
@@ -78,3 +80,5 @@ Exact test evidence is mapped against these IDs in the verification test reports
 ## Related source reports
 
 - Consumers per the views.
+
+Shared operation owners: [errorMessage.ts.md](errorMessage.ts.md).

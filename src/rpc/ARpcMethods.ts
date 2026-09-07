@@ -1,5 +1,5 @@
-import { ATransport } from "@/transport";
 import type P2PManager from "@/P2PManager";
+import { ATransport } from "@/transport";
 
 abstract class ARpcMethods<TP2PManager extends P2PManager = P2PManager> {
     senderTransport: ATransport;

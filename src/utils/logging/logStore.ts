@@ -1,5 +1,5 @@
-import { LogEntry } from "./Logger";
 import { encodeLogEntry } from "./logEncoder";
+import { LogEntry } from "./Logger";
 
 // Shared log storage helper (instance-based)
 export class LogStore {

@@ -1,3 +1,5 @@
+import type { CreateLoggerOptions } from "./createLoggerTypes";
+import { decodeLogs, decompressFromBase64 } from "./logEncoder";
 import type {
     ExclusiveLoggerContext,
     SharedLoggerContext,
@@ -5,8 +7,6 @@ import type {
     LoggerPerformanceMonitorOptions,
     Logger
 } from "./Logger";
-import { decodeLogs, decompressFromBase64 } from "./logEncoder";
-import type { CreateLoggerOptions } from "./createLoggerTypes";
 export { createLogger } from "@platform/createLogger";
 
 export type {

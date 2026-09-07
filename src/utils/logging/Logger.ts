@@ -1,9 +1,10 @@
-import { Address } from "@/types/types";
-import Clock from "@/Clock";
-import type { LogUploader } from "./LogUploader";
 import type { LogStore } from "./logStore";
-import { LoggerUtils } from "../LoggerUtils";
+import type { LogUploader } from "./LogUploader";
+import type { PerformanceMonitorInternalOptions } from "./performanceMonitorInternal";
 import { DetachedPromises } from "../DetachedPromises";
+import { LoggerUtils } from "../LoggerUtils";
+import Clock from "@/Clock";
+import { Address } from "@/types/types";
 
 // The context exclusive to each logger
 export type ExclusiveLoggerContext = {
@@ -165,7 +166,7 @@ export abstract class Logger {
     }
 
     public startPerformanceMonitoring(
-        options: LoggerPerformanceMonitorOptions = {}
+        options: PerformanceMonitorInternalOptions = {}
     ): void {
         this.stopPerformanceMonitoring();
         this.performanceMonitorStop = this.createPerformanceMonitor(options);
@@ -199,7 +200,7 @@ export abstract class Logger {
     protected abstract createChild(context: ExclusiveLoggerContext): Logger;
     protected abstract write(logEntry: LogEntry): void;
     protected abstract createPerformanceMonitor(
-        options: LoggerPerformanceMonitorOptions
+        options: PerformanceMonitorInternalOptions
     ): () => void;
     public abstract group(label?: string): void;
     public abstract groupEnd(): void;

@@ -1,10 +1,10 @@
-import { Signer, Wallet } from "ethers";
-
-import ARpcService from "@/rpc/ARpcService";
+import SignerRpcMethods from "./SignerRpcMethods";
 import type P2PManager from "@/P2PManager";
+import ARpcService from "@/rpc/ARpcService";
+
 import type ATransport from "@/transport/ATransport";
 import { addressesEqual } from "@/utils";
-import SignerRpcMethods from "./SignerRpcMethods";
+import { Signer, Wallet } from "ethers";
 
 /**
  * Holds peer private keys so the host can re-sign blocks/disputes authored by

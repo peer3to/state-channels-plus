@@ -1,7 +1,6 @@
 // @spec-test-coverage-ignore: shared proxy inputs and call recording; no executable test behavior
-import { EventEmitter } from "events";
-
 import { AbiCoder } from "ethers";
+import { EventEmitter } from "events";
 
 type ContractMethod = ((...args: unknown[]) => unknown) & {
     staticCall: (...args: unknown[]) => unknown;

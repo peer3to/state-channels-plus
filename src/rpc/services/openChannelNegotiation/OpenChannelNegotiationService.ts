@@ -1,14 +1,27 @@
-import { ethers, ZeroHash } from "ethers";
-
+import {
+    DEFAULT_JOIN_AMOUNT,
+    OPEN_CHANNEL_DEADLINE_SECONDS,
+    compareAddresses,
+    deriveNegotiatedChannelId,
+    getOpenChannelProposalMismatch,
+    type Address
+} from "./OpenChannelNegotiationHelpers";
+import OpenChannelNegotiationRpcMethods, {
+    type OpenChannelNegotiationP2PManager
+} from "./OpenChannelNegotiationRpcMethods";
 import Clock from "@/Clock";
-import type { OpenChannelStruct } from "@typechain-types/contracts/V1/types/DataTypes";
+
 import ARpcService from "@/rpc/ARpcService";
-import type Rpc from "@/rpc/Rpc";
 import {
     DeferredAdmissionGuard,
     HandshakeCompletedGuard,
     type DeferredAdmissionPolicy
 } from "@/rpc/guards";
+import type Rpc from "@/rpc/Rpc";
+import type {
+    LobbyMatch,
+    LobbyJoinResult
+} from "@/rpc/services/lobbyMatching/LobbyMatchingTypes";
 import type ATransport from "@/transport/ATransport";
 import { Status } from "@/types";
 import {
@@ -20,34 +33,30 @@ import {
     getChecksumAddress,
     tryDecodeCustomError
 } from "@/utils";
-import type { LobbyMatch } from "@/rpc/services/lobbyMatching/LobbyMatchingTypes";
+import { requireBytes32 } from "@/utils/bytes32";
+import { errorMessage } from "@/utils/errorMessage";
 import type {
-    LobbyJoinOptions,
-    LobbyJoinResult
-} from "@/rpc/services/lobbyMatching/LobbyMatchingTypes";
-
-import OpenChannelNegotiationRpcMethods, {
-    type OpenChannelNegotiationP2PManager
-} from "./OpenChannelNegotiationRpcMethods";
-import {
-    DEFAULT_JOIN_AMOUNT,
-    OPEN_CHANNEL_DEADLINE_SECONDS,
-    compareAddresses,
-    deriveNegotiatedChannelId,
-    getOpenChannelProposalMismatch,
-    type Address
-} from "./OpenChannelNegotiationHelpers";
+    BalanceStruct,
+    OpenChannelStruct
+} from "@typechain-types/contracts/V1/types/DataTypes";
+import { ethers, ZeroHash } from "ethers";
 
 type MatchedAttempt = LobbyMatch & {
+    mode: NegotiationMode;
     channelId: string;
     peerAddress: Address;
-    theirAmount?: number;
+    myBalance: BalanceStruct;
+    theirBalance?: BalanceStruct;
     acceptedProposal?: {
         encodedOpenChannel: string;
         lowerSignature: string;
         higherSignature: string;
     };
     localOpeningSignatureIssued: boolean;
+    proposalRequestInFlight: boolean;
+    openingSubmissionStarted: boolean;
+    observedOpenHandoff: boolean;
+    classifyObservedOpening?: Promise<void>;
     timeoutHandle?: ReturnType<typeof setTimeout>;
     unsubscribeDisconnected?: () => void;
     unsubscribeChannelOpened?: () => void;
@@ -57,10 +66,19 @@ type MatchedAttempt = LobbyMatch & {
 
 export type NegotiationOutcome =
     | { status: "opened"; result: LobbyJoinResult }
-    | { status: "retry" | "cancelled" };
+    | { status: "observed-target-open"; channelId: string }
+    | { status: "retry" | "targeted-failed" | "cancelled" };
+
+export type NegotiationMode = "ordinary" | "targeted";
+
+export type MatchedNegotiationOptions = {
+    mode?: NegotiationMode;
+    balance?: BalanceStruct;
+    channelId?: string;
+};
 
 export type NegotiationState = {
-    myAmount: number;
+    myBalance: BalanceStruct;
     attempt?: MatchedAttempt;
     channelOpened: boolean;
 };
@@ -78,8 +96,9 @@ class NegotiationAdmissionPolicy implements DeferredAdmissionPolicy {
     canDefer(_rpc: Rpc, transport: ATransport): boolean {
         return (
             !!transport.peerAddress &&
-            this.service.p2pManager.stateManager.status ===
-                Status.DISCOVERING &&
+            this.service.p2pManager.localRpc.lobbyMatchingService.ownsNegotiationPeer(
+                transport
+            ) &&
             !this.service.state.attempt
         );
     }
@@ -117,7 +136,7 @@ export default class OpenChannelNegotiationService extends ARpcService<
     OpenChannelNegotiationP2PManager
 > {
     public state: NegotiationState = {
-        myAmount: DEFAULT_JOIN_AMOUNT,
+        myBalance: { amount: DEFAULT_JOIN_AMOUNT, data: "0x" },
         channelOpened: false
     };
     private readonly readiness: EventBarrier;
@@ -147,27 +166,39 @@ export default class OpenChannelNegotiationService extends ARpcService<
 
     public async initMatchedNegotiation(
         match: LobbyMatch,
-        options: LobbyJoinOptions = {}
-    ): Promise<void> {
+        options: MatchedNegotiationOptions = {}
+    ): Promise<NegotiationOutcome> {
         if (this.state.attempt) {
             throw new Error("A matched negotiation is already active");
         }
         const me = this.p2pManager.stateManager.checksumSignerAddress;
         const peer = getChecksumAddress(match.peerAddress);
         if (peer === me) throw new Error("Cannot negotiate with self");
-        const amount = options.amount ?? DEFAULT_JOIN_AMOUNT;
-        if (!Number.isSafeInteger(amount) || amount < 0) {
-            throw new Error("Invalid local opening amount");
-        }
-        this.state.myAmount = amount;
-        const channelId = deriveNegotiatedChannelId(match);
+        const mode = options.mode ?? "ordinary";
+        const balance = options.balance ?? {
+            amount: DEFAULT_JOIN_AMOUNT,
+            data: "0x"
+        };
+        await this.p2pManager.stateManager.diamondStateMachine.requirePositiveBalance(
+            balance,
+            "local opening balance"
+        );
+        this.state.myBalance = balance;
+        const channelId =
+            mode === "targeted"
+                ? this.requireTargetChannelId(options.channelId)
+                : deriveNegotiatedChannelId(match);
         const [alreadyOpen] =
             await this.p2pManager.stateManager.stateChannelManagerContract.isChannelOpen(
                 channelId
             );
         if (alreadyOpen) {
+            if (mode === "targeted") {
+                return { status: "observed-target-open", channelId };
+            }
             this.p2pManager.disconnectAndBlacklistPeerByEvmAddress(peer);
-            throw new Error("Negotiated channel ID is already open");
+            await this.p2pManager.stateManager.clearChannelId();
+            return { status: "retry" };
         }
 
         const profile =
@@ -179,9 +210,14 @@ export default class OpenChannelNegotiationService extends ARpcService<
         });
         const attempt: MatchedAttempt = {
             ...match,
+            mode,
             peerAddress: peer,
             channelId,
+            myBalance: balance,
             localOpeningSignatureIssued: false,
+            proposalRequestInFlight: false,
+            openingSubmissionStarted: false,
+            observedOpenHandoff: false,
             outcomePromise,
             resolveOutcome
         };
@@ -208,39 +244,29 @@ export default class OpenChannelNegotiationService extends ARpcService<
         } else {
             this.startInitiatorDeadline(attempt);
         }
-    }
-
-    public waitForOutcome(attemptNonce: string): Promise<NegotiationOutcome> {
-        const attempt = this.state.attempt;
-        if (!attempt || attempt.attemptNonce !== attemptNonce) {
-            throw new Error("Negotiation attempt is not active");
-        }
         return attempt.outcomePromise;
     }
 
     public async dispose(): Promise<void> {
         if (!this.state.attempt) return;
-        await this.clearAttempt("runtime disposed", false, false);
+        await this.clearAttempt("runtime disposed", "cancelled");
     }
 
     private observeChannelOpened(channelId: string): void {
         const attempt = this.state.attempt;
         if (!attempt || attempt.channelId !== channelId) return;
         this.state.channelOpened = true;
-        this.completeOpenedAttempt(attempt);
+        attempt.classifyObservedOpening = this.classifyObservedOpening(attempt);
     }
 
     public isRpcAdmitted(rpc: Rpc, transport: ATransport): boolean {
-        const attempt = this.state.attempt;
-        const peer = transport.peerAddress
-            ? getChecksumAddress(transport.peerAddress)
-            : undefined;
         return (
-            !!attempt &&
-            peer === attempt.peerAddress &&
-            rpc.params[0] === attempt.attemptNonce &&
-            rpc.params[1] === attempt.selectorChallenge &&
-            rpc.params[2] === attempt.advertiserChallenge
+            this.findCommittedAttempt(
+                transport,
+                rpc.params[0],
+                rpc.params[1],
+                rpc.params[2]
+            ) !== undefined
         );
     }
 
@@ -249,29 +275,44 @@ export default class OpenChannelNegotiationService extends ARpcService<
         attemptNonce: string,
         selectorChallenge: string,
         advertiserChallenge: string,
-        amount: number
-    ): Promise<{ amount: number }> {
+        encodedBalance: string
+    ): Promise<{ encodedBalance: string }> {
         const attempt = this.requireAttempt(
             transport,
             attemptNonce,
             selectorChallenge,
             advertiserChallenge
         );
-        if (!Number.isSafeInteger(amount) || amount < 0) {
-            this.protocolFailure(attempt, "invalid opening amount");
-            throw new Error("Invalid opening amount");
+        let balance: BalanceStruct;
+        try {
+            balance = Codec.decode(encodedBalance, Type.Balance);
+            await this.p2pManager.stateManager.diamondStateMachine.requirePositiveBalance(
+                balance,
+                "remote opening balance"
+            );
+        } catch {
+            this.protocolFailure(attempt, "invalid opening balance");
+            throw new Error("Invalid opening balance");
         }
-        if (attempt.theirAmount !== undefined) {
-            if (attempt.theirAmount !== amount) {
-                this.protocolFailure(attempt, "conflicting opening amount");
-                throw new Error("Conflicting opening amount");
+        if (attempt.theirBalance !== undefined) {
+            if (!this.balancesMatch(attempt.theirBalance, balance)) {
+                this.protocolFailure(attempt, "conflicting opening balance");
+                throw new Error("Conflicting opening balance");
             }
-            return { amount: this.state.myAmount };
+            return {
+                encodedBalance: String(
+                    Codec.encode(attempt.myBalance, Type.Balance)
+                )
+            };
         }
         await this.selectAttemptChannel(attempt);
-        attempt.theirAmount = amount;
+        attempt.theirBalance = balance;
         this.clearAttemptTimeout(attempt);
-        return { amount: this.state.myAmount };
+        return {
+            encodedBalance: String(
+                Codec.encode(attempt.myBalance, Type.Balance)
+            )
+        };
     }
 
     public async acceptOpenProposal(
@@ -292,7 +333,7 @@ export default class OpenChannelNegotiationService extends ARpcService<
         const me = this.p2pManager.stateManager.checksumSignerAddress;
         if (
             compareAddresses(me, peer) < 0 ||
-            attempt.theirAmount === undefined
+            attempt.theirBalance === undefined
         ) {
             this.protocolFailure(attempt, "proposal arrived in invalid state");
             throw new Error("Proposal arrived in invalid state");
@@ -350,6 +391,12 @@ export default class OpenChannelNegotiationService extends ARpcService<
             decoded,
             this.p2pManager.stateManager.signer
         );
+        if (this.state.channelOpened) {
+            await attempt.classifyObservedOpening;
+        }
+        if (this.state.attempt !== attempt || attempt.observedOpenHandoff) {
+            return { status: "submitted" };
+        }
         attempt.localOpeningSignatureIssued = true;
         attempt.acceptedProposal = {
             encodedOpenChannel,
@@ -360,13 +407,32 @@ export default class OpenChannelNegotiationService extends ARpcService<
             attempt,
             Number(decoded.deadlineTimestamp)
         );
-        const tx = await this.submitOpening(
-            attempt,
-            encodedOpenChannel,
-            lowerSignature,
-            attempt.acceptedProposal.higherSignature
-        );
-        if (tx) DetachedPromises.collect(tx.wait());
+        attempt.openingSubmissionStarted = true;
+        try {
+            const tx = await this.submitOpening(
+                encodedOpenChannel,
+                lowerSignature,
+                attempt.acceptedProposal.higherSignature
+            );
+            if (this.state.attempt !== attempt) {
+                return { status: "submitted" };
+            }
+            DetachedPromises.collect(this.observeOpeningReceipt(attempt, tx));
+        } catch (error) {
+            const custom = tryDecodeCustomError(error);
+            if (custom?.name === "RaceConditionChannelAlreadyOpen") {
+                if (attempt.mode === "targeted") {
+                    await this.completeObservedTargetOpen(attempt);
+                } else {
+                    this.protocolFailure(
+                        attempt,
+                        "ordinary negotiated channel opened before submission"
+                    );
+                }
+            } else {
+                throw error;
+            }
+        }
         return { status: "submitted" };
     }
 
@@ -414,7 +480,7 @@ export default class OpenChannelNegotiationService extends ARpcService<
                     attempt.attemptNonce,
                     attempt.selectorChallenge,
                     attempt.advertiserChallenge,
-                    this.state.myAmount
+                    String(Codec.encode(attempt.myBalance, Type.Balance))
                 )
                 .request(attempt.peerAddress, {
                     timeoutMs:
@@ -423,7 +489,18 @@ export default class OpenChannelNegotiationService extends ARpcService<
                         1000
                 });
             if (this.state.attempt !== attempt) return;
-            attempt.theirAmount = terms.amount;
+            let theirBalance: BalanceStruct;
+            try {
+                theirBalance = Codec.decode(terms.encodedBalance, Type.Balance);
+                await this.p2pManager.stateManager.diamondStateMachine.requirePositiveBalance(
+                    theirBalance,
+                    "remote opening balance"
+                );
+            } catch {
+                this.protocolFailure(attempt, "invalid opening balance");
+                return;
+            }
+            attempt.theirBalance = theirBalance;
             const { participants, balances } =
                 this.getParticipantsAndBalances(attempt);
             const deadlineTimestamp =
@@ -442,6 +519,7 @@ export default class OpenChannelNegotiationService extends ARpcService<
             );
             attempt.localOpeningSignatureIssued = true;
             this.scheduleDeadlineObservation(attempt, deadlineTimestamp);
+            attempt.proposalRequestInFlight = true;
             await this.remoteRpc.openChannelNegotiationService
                 .openProposal(
                     attempt.attemptNonce,
@@ -456,24 +534,34 @@ export default class OpenChannelNegotiationService extends ARpcService<
                         2 *
                         1000
                 });
+            attempt.proposalRequestInFlight = false;
+            if (this.state.attempt === attempt && this.state.channelOpened) {
+                await this.classifyObservedOpening(attempt);
+            }
         } catch (error) {
+            attempt.proposalRequestInFlight = false;
             if (this.state.attempt === attempt) {
+                if (this.state.channelOpened && attempt.mode === "targeted") {
+                    await this.completeObservedTargetOpen(attempt);
+                    return;
+                }
                 if (attempt.localOpeningSignatureIssued) {
                     this.logger.warn(
                         "Opening proposal request failed after local signing; awaiting chain observation",
                         {
                             peerAddress: attempt.peerAddress,
-                            error:
-                                error instanceof Error
-                                    ? error.message
-                                    : String(error)
+                            error: errorMessage(error)
                         }
                     );
                 } else {
-                    this.protocolFailure(
-                        attempt,
-                        error instanceof Error ? error.message : String(error)
-                    );
+                    if (attempt.mode === "targeted") {
+                        await this.clearAttempt(
+                            errorMessage(error),
+                            "targeted-failed"
+                        );
+                    } else {
+                        this.protocolFailure(attempt, errorMessage(error));
+                    }
                 }
             }
         }
@@ -486,7 +574,7 @@ export default class OpenChannelNegotiationService extends ARpcService<
                 () => {
                     if (
                         this.state.attempt === attempt &&
-                        attempt.theirAmount === undefined
+                        attempt.theirBalance === undefined
                     ) {
                         this.protocolFailure(
                             attempt,
@@ -512,26 +600,17 @@ export default class OpenChannelNegotiationService extends ARpcService<
     }
 
     private async submitOpening(
-        attempt: MatchedAttempt,
         encodedOpenChannel: string,
         lowerSignature: string,
         higherSignature: string
     ) {
-        try {
-            return await this.p2pManager.stateManager.stateChannelManagerContract.open(
-                {
-                    encodedOpenChannel,
-                    signatures: [lowerSignature, higherSignature]
-                },
-                { gasLimit: 3_000_000 }
-            );
-        } catch (error) {
-            const custom = tryDecodeCustomError(error);
-            if (custom?.name === "RaceConditionChannelAlreadyOpen") {
-                return undefined;
-            }
-            throw error;
-        }
+        return this.p2pManager.stateManager.stateChannelManagerContract.open(
+            {
+                encodedOpenChannel,
+                signatures: [lowerSignature, higherSignature]
+            },
+            { gasLimit: 3_000_000 }
+        );
     }
 
     private scheduleDeadlineObservation(
@@ -552,7 +631,7 @@ export default class OpenChannelNegotiationService extends ARpcService<
                         );
                     if (isOpen) {
                         this.state.channelOpened = true;
-                        this.completeOpenedAttempt(attempt);
+                        await this.classifyObservedOpening(attempt);
                         return;
                     }
                     const me =
@@ -562,7 +641,10 @@ export default class OpenChannelNegotiationService extends ARpcService<
                             attempt.peerAddress
                         );
                     }
-                    await this.clearAttempt("opening payload expired", true);
+                    await this.clearAttempt(
+                        "opening payload expired",
+                        this.failureOutcome(attempt)
+                    );
                 },
                 delayMs,
                 "opening payload expiry observation"
@@ -571,9 +653,14 @@ export default class OpenChannelNegotiationService extends ARpcService<
 
     private onCommittedPeerDisconnected(attempt: MatchedAttempt): void {
         if (this.state.attempt !== attempt) return;
-        this.p2pManager.profileManager.blacklistPeer(attempt.peerAddress);
+        if (attempt.mode === "ordinary") {
+            this.p2pManager.profileManager.blacklistPeer(attempt.peerAddress);
+        }
         if (!attempt.localOpeningSignatureIssued) {
-            void this.clearAttempt("committed peer disconnected", true);
+            void this.clearAttempt(
+                "committed peer disconnected",
+                this.failureOutcome(attempt)
+            );
         }
     }
 
@@ -586,51 +673,48 @@ export default class OpenChannelNegotiationService extends ARpcService<
             attempt.peerAddress
         );
         if (!attempt.localOpeningSignatureIssued) {
-            void this.clearAttempt(reason, true);
+            void this.clearAttempt(reason, this.failureOutcome(attempt));
         }
+    }
+
+    private detachAttempt(attempt: MatchedAttempt): void {
+        this.clearAttemptTimeout(attempt);
+        attempt.unsubscribeDisconnected?.();
+        attempt.unsubscribeChannelOpened?.();
+        this.state.attempt = undefined;
+    }
+
+    private failureOutcome(
+        attempt: MatchedAttempt
+    ): "retry" | "targeted-failed" {
+        return attempt.mode === "targeted" ? "targeted-failed" : "retry";
     }
 
     private async clearAttempt(
         reason: string,
-        retryDiscovery: boolean,
-        restoreDiscovery = true
+        outcome: "retry" | "targeted-failed" | "cancelled"
     ): Promise<void> {
         const attempt = this.state.attempt;
         if (!attempt) return;
         this.logger.info("Negotiation attempt cleared", { reason });
-        this.clearAttemptTimeout(attempt);
-        attempt.unsubscribeDisconnected?.();
-        attempt.unsubscribeChannelOpened?.();
-        this.state.attempt = undefined;
-        await this.p2pManager.stateManager.clearChannelId();
-        if (!this.p2pManager.stateManager.isDisposed) {
-            const canRestoreDiscovery =
-                restoreDiscovery &&
-                !!this.p2pManager.localRpc.lobbyMatchingService.rendezvousTopic;
-            this.p2pManager.stateManager.setStatus(
-                canRestoreDiscovery ? Status.DISCOVERING : Status.NOT_OPENED
-            );
-        }
-        if (retryDiscovery) {
-            const topic =
-                this.p2pManager.localRpc.lobbyMatchingService.rendezvousTopic;
-            if (topic) {
-                await this.p2pManager.localRpc.lobbyMatchingService.releaseNegotiationHandoff(
-                    topic
+        this.detachAttempt(attempt);
+        if (attempt.mode === "ordinary") {
+            await this.p2pManager.stateManager.clearChannelId();
+            if (!this.p2pManager.stateManager.isDisposed) {
+                this.p2pManager.stateManager.setStatus(
+                    this.p2pManager.localRpc.lobbyMatchingService
+                        .rendezvousTopic
+                        ? Status.DISCOVERING
+                        : Status.NOT_OPENED
                 );
             }
         }
-        attempt.resolveOutcome({
-            status: retryDiscovery ? "retry" : "cancelled"
-        });
+        attempt.resolveOutcome({ status: outcome });
     }
 
     private completeOpenedAttempt(attempt: MatchedAttempt): void {
         if (this.state.attempt !== attempt) return;
-        this.clearAttemptTimeout(attempt);
-        attempt.unsubscribeDisconnected?.();
-        attempt.unsubscribeChannelOpened?.();
-        this.state.attempt = undefined;
+        this.detachAttempt(attempt);
         attempt.resolveOutcome({
             status: "opened",
             result: {
@@ -640,23 +724,126 @@ export default class OpenChannelNegotiationService extends ARpcService<
         });
     }
 
+    private async completeObservedTargetOpen(
+        attempt: MatchedAttempt
+    ): Promise<void> {
+        if (
+            this.state.attempt !== attempt ||
+            attempt.mode !== "targeted" ||
+            attempt.observedOpenHandoff
+        ) {
+            return;
+        }
+        attempt.observedOpenHandoff = true;
+        this.detachAttempt(attempt);
+        attempt.resolveOutcome({
+            status: "observed-target-open",
+            channelId: attempt.channelId
+        });
+    }
+
+    private async classifyObservedOpening(
+        attempt: MatchedAttempt
+    ): Promise<void> {
+        if (this.state.attempt !== attempt) return;
+        let participants: string[];
+        try {
+            participants = (
+                await this.p2pManager.stateManager.stateChannelManagerContract.getParticipants(
+                    attempt.channelId
+                )
+            ).map((participant) => getChecksumAddress(String(participant)));
+        } catch {
+            return;
+        }
+        if (this.state.attempt !== attempt) return;
+        const me = this.p2pManager.stateManager.checksumSignerAddress;
+        if (
+            participants.includes(me) &&
+            participants.includes(attempt.peerAddress)
+        ) {
+            this.completeOpenedAttempt(attempt);
+            return;
+        }
+        if (attempt.mode === "targeted") {
+            await this.completeObservedTargetOpen(attempt);
+            return;
+        }
+        this.protocolFailure(
+            attempt,
+            "ordinary negotiated channel opened by another participant set"
+        );
+        if (this.state.attempt === attempt) {
+            await this.clearAttempt(
+                "ordinary negotiated channel opened before completion",
+                "retry"
+            );
+        }
+    }
+
+    private async observeOpeningReceipt(
+        attempt: MatchedAttempt,
+        tx: { wait(): Promise<unknown> }
+    ): Promise<void> {
+        try {
+            await tx.wait();
+            if (this.state.attempt !== attempt) return;
+            await this.p2pManager.stateManager.refreshOpenedStatusFromChain();
+            await this.classifyObservedOpening(attempt);
+        } catch (error) {
+            if (this.state.attempt !== attempt) return;
+            if (attempt.mode === "targeted") {
+                await this.p2pManager.stateManager.refreshOpenedStatusFromChain();
+                if (this.p2pManager.stateManager.status !== Status.NOT_OPENED) {
+                    await this.completeObservedTargetOpen(attempt);
+                    return;
+                }
+                await this.clearAttempt(
+                    "targeted opening receipt failed",
+                    "targeted-failed"
+                );
+                throw error;
+            }
+            this.p2pManager.disconnectAndBlacklistPeerByEvmAddress(
+                attempt.peerAddress
+            );
+            await this.clearAttempt("ordinary opening receipt failed", "retry");
+            throw error;
+        }
+    }
+
+    private findCommittedAttempt(
+        transport: ATransport,
+        attemptNonce: unknown,
+        selectorChallenge: unknown,
+        advertiserChallenge: unknown
+    ): MatchedAttempt | undefined {
+        const attempt = this.state.attempt;
+        const peer = transport.peerAddress
+            ? getChecksumAddress(transport.peerAddress)
+            : undefined;
+        return attempt &&
+            peer === attempt.peerAddress &&
+            attemptNonce === attempt.attemptNonce &&
+            selectorChallenge === attempt.selectorChallenge &&
+            advertiserChallenge === attempt.advertiserChallenge
+            ? attempt
+            : undefined;
+    }
+
     private requireAttempt(
         transport: ATransport,
         attemptNonce: string,
         selectorChallenge: string,
         advertiserChallenge: string
     ): MatchedAttempt {
-        const attempt = this.state.attempt;
-        const peer = transport.peerAddress
-            ? getChecksumAddress(transport.peerAddress)
-            : undefined;
-        if (
-            !attempt ||
-            peer !== attempt.peerAddress ||
-            attemptNonce !== attempt.attemptNonce ||
-            selectorChallenge !== attempt.selectorChallenge ||
-            advertiserChallenge !== attempt.advertiserChallenge
-        ) {
+        const attempt = this.findCommittedAttempt(
+            transport,
+            attemptNonce,
+            selectorChallenge,
+            advertiserChallenge
+        );
+        if (!attempt) {
             throw new Error("Negotiation attempt does not match commitment");
         }
         return attempt;
@@ -671,21 +858,42 @@ export default class OpenChannelNegotiationService extends ARpcService<
         const peer = attempt.peerAddress;
         const [lower, higher] =
             compareAddresses(me, peer) < 0 ? [me, peer] : [peer, me];
-        const theirAmount = attempt.theirAmount ?? DEFAULT_JOIN_AMOUNT;
+        const theirBalance = attempt.theirBalance ?? {
+            amount: DEFAULT_JOIN_AMOUNT,
+            data: "0x"
+        };
         return {
             participants: [lower, higher],
             balances: [
-                {
-                    amount: lower === me ? this.state.myAmount : theirAmount,
-                    data: "0x"
-                },
-                {
-                    amount: higher === me ? this.state.myAmount : theirAmount,
-                    data: "0x"
-                }
+                lower === me ? attempt.myBalance : theirBalance,
+                higher === me ? attempt.myBalance : theirBalance
             ],
             lower
         };
+    }
+
+    private balancesMatch(a: BalanceStruct, b: BalanceStruct): boolean {
+        return (
+            BigInt(a.amount) === BigInt(b.amount) &&
+            ethers.hexlify(a.data) === ethers.hexlify(b.data)
+        );
+    }
+
+    private requireTargetChannelId(channelId?: string): string {
+        requireBytes32(
+            channelId,
+            "Targeted negotiation requires a bytes32 channel ID"
+        );
+        const normalized = ethers.hexlify(channelId);
+        if (
+            ethers.hexlify(String(this.p2pManager.stateManager.channelId)) !==
+            normalized
+        ) {
+            throw new Error(
+                "Targeted negotiation channel does not match selection"
+            );
+        }
+        return normalized;
     }
 
     private clearAttemptTimeout(attempt: MatchedAttempt): void {

@@ -1,8 +1,7 @@
+import type { LobbyMatch } from "@/rpc/services";
+import { deriveNegotiatedChannelId } from "@/rpc/services/openChannelNegotiation/OpenChannelNegotiationHelpers";
 import { expect } from "chai";
 import { ethers } from "ethers";
-
-import { deriveNegotiatedChannelId } from "@/rpc/services/openChannelNegotiation/OpenChannelNegotiationHelpers";
-import type { LobbyMatch } from "@/rpc/services";
 
 const selector = "0x1000000000000000000000000000000000000001";
 const advertiser = "0x2000000000000000000000000000000000000002";
