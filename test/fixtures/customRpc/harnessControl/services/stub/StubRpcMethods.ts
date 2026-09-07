@@ -1,21 +1,5 @@
 // @spec-test-coverage-ignore: RPC fixture support exercised by owning E2E declarations.
-import ARpcMethods from "@/rpc/ARpcMethods";
-import type P2PManager from "@/P2PManager";
-import type ATransport from "@/transport/ATransport";
-import { Codec, sleep, Type } from "@/utils";
-import { HandshakeCompletedGuard } from "@/rpc/guards";
-import type { Status } from "@/types";
-import type { Address } from "@/types/types";
-import type SpectateServiceRpcMethods from "@/rpc/services/spectate/SpectateRpcMethods";
-import type { SyncRequest } from "@/rpc/services/spectate/SpectateService";
-import type IsForkDisputedRpcMethods from "@/rpc/services/isForkDisputedService/IsForkDisputedRpcMethods";
-import InitHandshakeRpcMethods from "@/rpc/services/initHandshake/InitHandshakeRpcMethods";
-import type JoinChannelRpcMethods from "@/rpc/services/joinChannel/JoinChannelRpcMethods";
-import type { StateSnapshot } from "@/models";
-import type { MessageBlockStruct } from "@typechain-types/contracts/V1/types/DataTypes";
-import { encodedCustomErrorRevert } from "@test/factory";
-import type { ForkId, Hash, Timestamp } from "@/types/types";
-import type { HarnessControlRpc } from "../../HarnessControlRpc";
+import { REDUCTION_ATTEMPT_STUB_FAILURE } from "./StubService";
 import type {
     DisputeSubmissionFailureSpec,
     PausedConstructDisputeState,
@@ -24,23 +8,31 @@ import type {
     RecordedDisputeSubmission,
     RecordedFraudProofApply,
     ReductionSimulationErrorName,
-    ConcurrentCalldataRecoveryProbe,
-    CleanCommittedDivergenceProbe,
-    DisputeStrategyResultMatrix,
-    MissingParticipantSnapshotsProbe,
-    BlockValidationProbe,
-    BlockValidationProbeOptions,
-    BlockProbeOptions,
-    BlockIngestProbe,
-    BlockCalldataRecoveryProbe,
-    InboundRunRecoveryProbe,
-    ReductionChallengeProbe,
-    IsDisputedForkProbe,
     HeldLobbyReplyKind,
     HeldNegotiationReplyKind,
-    HeldMembershipReceiptKind
+    HeldMembershipReceiptKind,
+    ReductionApplicationControl,
+    ReductionAttemptHoldPoint,
+    ReductionAttemptResume,
+    DetachedCallOutcome,
+    BlockWorkHoldPoint,
+    StubService,
+    SignatureBlockMatch
 } from "./StubService";
-import type { StubService } from "./StubService";
+import type { HarnessControlRpc } from "../../HarnessControlRpc";
+import type P2PManager from "@/P2PManager";
+import ARpcMethods from "@/rpc/ARpcMethods";
+import { HandshakeCompletedGuard } from "@/rpc/guards";
+import InitHandshakeRpcMethods from "@/rpc/services/initHandshake/InitHandshakeRpcMethods";
+import type IsForkDisputedRpcMethods from "@/rpc/services/isForkDisputedService/IsForkDisputedRpcMethods";
+import type JoinChannelRpcMethods from "@/rpc/services/joinChannel/JoinChannelRpcMethods";
+import type SpectateServiceRpcMethods from "@/rpc/services/spectate/SpectateRpcMethods";
+import type { SyncRequest } from "@/rpc/services/spectate/SpectateService";
+import type ATransport from "@/transport/ATransport";
+import type { Status } from "@/types";
+import type { Address, ForkId, Hash, Timestamp } from "@/types/types";
+import { Codec, DetachedPromises, sleep, Type } from "@/utils";
+import { encodedCustomErrorRevert } from "@test/factory";
 import { protocolEventTimeoutMs } from "@test/harness/core/testTimeConfig";
 
 /**
@@ -58,6 +50,33 @@ export class StubRpcMethods extends ARpcMethods<P2PManager<HarnessControlRpc>> {
         private readonly service: StubService
     ) {
         super(transport, service.p2pManager);
+    }
+
+    public scheduleProbe(taskName: string): Promise<boolean> {
+        return this.service.scheduleProbe(taskName);
+    }
+
+    public holdBlockWork(point: BlockWorkHoldPoint): boolean {
+        if (!["authoring", "commit", "signature"].includes(point))
+            throw new Error("Invalid block-work hold point");
+        this.service.installBlockWorkHold(point);
+        return true;
+    }
+
+    public getBlockWorkHoldEntered(): number {
+        return this.service.blockWorkEntered;
+    }
+
+    public releaseBlockWorkHold(): boolean {
+        this.service.releaseBlockWorkHold();
+        return true;
+    }
+
+    public getStateMutexWaiterCount(): number {
+        const queue = Reflect.get(this.service.sm.mutex, "queue");
+        if (!Array.isArray(queue))
+            throw new Error("Expected a mutex waiter queue");
+        return queue.length;
     }
 
     /** Suppress all outbound block-confirmation broadcasts from this peer. */
@@ -163,16 +182,6 @@ export class StubRpcMethods extends ARpcMethods<P2PManager<HarnessControlRpc>> {
         return true;
     }
 
-    public restoreSelectiveDisconnect(): boolean {
-        const original = this.service.stubOriginals.get("selectiveDisconnect");
-        if (original === undefined) return false;
-        const pm = this.p2pManager;
-        pm.disconnectAndBlacklistPeerByEvmAddress =
-            original as typeof pm.disconnectAndBlacklistPeerByEvmAddress;
-        this.service.stubOriginals.delete("selectiveDisconnect");
-        return true;
-    }
-
     /**
      * Suppress this peer posting its own block on-chain (forces the on-chain
      * calldata path).
@@ -254,6 +263,80 @@ export class StubRpcMethods extends ARpcMethods<P2PManager<HarnessControlRpc>> {
     }
 
     /**
+     * Drop every block confirmation the network delivers to this peer while
+     * the harness control port still ingests. The peer stays blind to gossip
+     * with every transport live, so a sync probe toward a source can run.
+     */
+    public stubDropNetworkConfirmations(): boolean {
+        const queue = this.service.sm.blockQueueManager;
+        if (this.service.stubOriginals.has("networkConfirmations")) return true;
+        const original = queue.ingestBlockConfirmation;
+        this.service.stubOriginals.set("networkConfirmations", original);
+        const context = this.service.controlIngestContext;
+        queue.ingestBlockConfirmation = async (blockConfirmation, options) =>
+            context.getStore()
+                ? await Reflect.apply(original, queue, [
+                      blockConfirmation,
+                      options
+                  ])
+                : true;
+        return true;
+    }
+
+    /**
+     * Hold this peer's own sync at its application step, so the sync stays
+     * in flight toward its responder after the response arrived.
+     */
+    public stubHoldSpectateSyncApplication(): boolean {
+        this.restoreHoldSpectateSyncApplication();
+        const spectate = this.p2pManager.localRpc.spectateService;
+        const original = spectate.applySyncResponse;
+        this.service.stubOriginals.set("spectateSyncApplication", original);
+        const gate = this.service.createGate();
+        this.service.spectateSyncApplicationGate = gate;
+        Reflect.set(
+            spectate,
+            "applySyncResponse",
+            async (...parameters: unknown[]) => {
+                gate.entered += 1;
+                await gate.gate;
+                return Reflect.apply(original, spectate, parameters);
+            }
+        );
+        return true;
+    }
+
+    public getHeldSpectateSyncApplicationCount(): number {
+        return this.service.spectateSyncApplicationGate?.entered ?? 0;
+    }
+
+    public restoreHoldSpectateSyncApplication(): boolean {
+        const original = this.service.stubOriginals.get(
+            "spectateSyncApplication"
+        );
+        this.service.spectateSyncApplicationGate?.release();
+        this.service.spectateSyncApplicationGate = undefined;
+        if (original === undefined) return false;
+        Reflect.set(
+            this.p2pManager.localRpc.spectateService,
+            "applySyncResponse",
+            original
+        );
+        this.service.stubOriginals.delete("spectateSyncApplication");
+        return true;
+    }
+
+    public restoreDropNetworkConfirmations(): boolean {
+        const original = this.service.stubOriginals.get("networkConfirmations");
+        if (original === undefined) return false;
+        const queue = this.service.sm.blockQueueManager;
+        queue.ingestBlockConfirmation =
+            original as typeof queue.ingestBlockConfirmation;
+        this.service.stubOriginals.delete("networkConfirmations");
+        return true;
+    }
+
+    /**
      * Record the label and delay of every scheduled task; tasks whose label
      * starts with `suppressPrefix` are recorded and never run.
      */
@@ -322,6 +405,33 @@ export class StubRpcMethods extends ARpcMethods<P2PManager<HarnessControlRpc>> {
         return true;
     }
 
+    /** Make the fully-signed snapshot path fail so exit falls back to dispute. */
+    public failPostStateSnapshotWait(): boolean {
+        const snapshotUpdateService = this.service.sm.snapshotUpdateService;
+        if (!this.service.stubOriginals.has("postStateSnapshotWait")) {
+            this.service.stubOriginals.set(
+                "postStateSnapshotWait",
+                snapshotUpdateService.postStateSnapshotWait
+            );
+        }
+        snapshotUpdateService.postStateSnapshotWait = async () => {
+            throw new Error("injected state snapshot post failure");
+        };
+        return true;
+    }
+
+    public restorePostStateSnapshotWait(): boolean {
+        const original = this.service.stubOriginals.get(
+            "postStateSnapshotWait"
+        );
+        if (original === undefined) return false;
+        const snapshotUpdateService = this.service.sm.snapshotUpdateService;
+        snapshotUpdateService.postStateSnapshotWait =
+            original as typeof snapshotUpdateService.postStateSnapshotWait;
+        this.service.stubOriginals.delete("postStateSnapshotWait");
+        return true;
+    }
+
     /**
      * Wrap `unsafeSetLatestState` so it records when it fires (queried via
      * `wasUnsafeSetLatestStateCalled`) but still runs the original.
@@ -366,8 +476,27 @@ export class StubRpcMethods extends ARpcMethods<P2PManager<HarnessControlRpc>> {
      * Make `spectateService.onSpectateRequest` always answer with a proof at
      * `staleBlockHeight`, regardless of what was requested (stale-proof guard).
      */
-    public stubSpectateStaleProof(staleBlockHeight: number): boolean {
+    public async stubSpectateStaleProof(
+        staleBlockHeight: number
+    ): Promise<boolean> {
         const service = this.p2pManager.localRpc.spectateService;
+        const syncPayload = await service.generateSyncPayload(
+            this.p2pManager.stateManager.channelId,
+            undefined,
+            staleBlockHeight
+        );
+        if (!syncPayload)
+            throw new Error("stubSpectateStaleProof - no payload");
+        const snapshot =
+            syncPayload.milestoneSnapshots.at(-1) ??
+            syncPayload.latestForkGenesisSnapshot;
+        if (Number(snapshot.blockHeight) !== staleBlockHeight) {
+            throw new Error(
+                "Capture the stale proof before advancing beyond its height"
+            );
+        }
+        // Capture a real proof now; later chain progress makes it stale.
+        const encodedSyncPayload = Codec.encode(syncPayload, Type.SyncPayload);
         if (!this.service.stubOriginals.has("spectateCreateRpcMethods")) {
             this.service.stubOriginals.set(
                 "spectateCreateRpcMethods",
@@ -379,29 +508,7 @@ export class StubRpcMethods extends ARpcMethods<P2PManager<HarnessControlRpc>> {
         ) as typeof service.createRPCMethods;
         service.createRPCMethods = (transport: ATransport) => {
             const methods = original(transport);
-            methods.onSpectateRequest = async function (
-                this: SpectateServiceRpcMethods,
-                syncRequest: SyncRequest
-            ) {
-                const peerAddress = this.senderTransport.peerAddress;
-                if (!peerAddress) {
-                    throw new Error("stubSpectateStaleProof - missing peer");
-                }
-                const syncPayload = await this.service.generateSyncPayload(
-                    syncRequest.channelId,
-                    syncRequest.forkId,
-                    staleBlockHeight
-                );
-                if (!syncPayload) {
-                    throw new Error("stubSpectateStaleProof - no payload");
-                }
-                return {
-                    encodedSyncPayload: Codec.encode(
-                        syncPayload,
-                        Type.SyncPayload
-                    )
-                };
-            };
+            methods.onSpectateRequest = async () => ({ encodedSyncPayload });
             return methods;
         };
         return true;
@@ -845,38 +952,538 @@ export class StubRpcMethods extends ARpcMethods<P2PManager<HarnessControlRpc>> {
     // handler — the latter reduces on the spot once the challenge period has
     // expired), then release/replay once the race is staged.
 
-    /** Capture `reduction-*` timer tasks instead of scheduling them. */
-    public stubHoldReductionTasks(): boolean {
+    /**
+     * Capture timer tasks whose name starts with `prefix` instead of
+     * scheduling them. Holds for different prefixes chain; each is released
+     * by its own restore call.
+     */
+    public stubHoldScheduledTasks(prefix: string): boolean {
         const timeoutManager = this.service.sm.timeoutManager;
-        if (!this.service.stubOriginals.has("reductionTasks")) {
-            this.service.stubOriginals.set(
-                "reductionTasks",
-                timeoutManager.scheduleTask.bind(timeoutManager)
-            );
-        }
-        const original = this.service.stubOriginals.get(
-            "reductionTasks"
-        ) as typeof timeoutManager.scheduleTask;
+        if (this.service.heldScheduledTasks.has(prefix)) return false;
+        this.service.heldScheduledTasks.set(prefix, []);
+        if (this.service.heldScheduledTaskBase) return true;
+        // One dispatcher for every active prefix: a task is held by the first
+        // prefix it matches, everything else reaches the real scheduler.
+        const base = timeoutManager.scheduleTask.bind(timeoutManager);
+        this.service.heldScheduledTaskBase = base;
         timeoutManager.scheduleTask = (task, delayMs, taskName = "unnamed") => {
-            if (taskName.startsWith("reduction-")) {
-                this.service.heldReductionTasks.push({ taskName, task });
-                return {} as ReturnType<typeof setTimeout>;
+            for (const [held, tasks] of this.service.heldScheduledTasks) {
+                if (taskName.startsWith(held)) {
+                    tasks.push({ taskName, task });
+                    return {} as ReturnType<typeof setTimeout>;
+                }
             }
-            return original(task, delayMs, taskName);
+            return base(task, delayMs, taskName);
         };
         return true;
     }
 
+    /** Held task count for `prefix` so far. */
+    public getHeldScheduledTaskCount(prefix: string): number {
+        return this.service.heldScheduledTasks.get(prefix)?.length ?? 0;
+    }
+
+    /**
+     * Restore scheduling for `prefix`; optionally run the held tasks
+     * (fire-and-forget).
+     */
+    public restoreHeldScheduledTasks(
+        prefix: string,
+        runHeld: boolean
+    ): boolean {
+        const timeoutManager = this.service.sm.timeoutManager;
+        const held = this.service.heldScheduledTasks.get(prefix);
+        if (held === undefined) return false;
+        this.service.heldScheduledTasks.delete(prefix);
+        if (
+            this.service.heldScheduledTasks.size === 0 &&
+            this.service.heldScheduledTaskBase
+        ) {
+            timeoutManager.scheduleTask = this.service.heldScheduledTaskBase;
+            this.service.heldScheduledTaskBase = undefined;
+        }
+        if (runHeld) for (const { task } of held) void task();
+        return true;
+    }
+
+    public holdNextSignature(match?: SignatureBlockMatch): boolean {
+        this.service.holdNextSignature(match);
+        return true;
+    }
+    public getNextSignatureEntered(): number {
+        return this.service.getNextSignatureEntered();
+    }
+    public releaseNextSignature(): boolean {
+        this.service.releaseNextSignature();
+        return true;
+    }
+
+    public holdSyncReductionResult(): boolean {
+        this.service.holdSyncReductionResult();
+        return true;
+    }
+
+    public releaseSyncReductionResult(): boolean {
+        this.service.releaseSyncReductionResult();
+        return true;
+    }
+
+    public recordSyncRejections(): boolean {
+        this.service.recordSyncRejections();
+        return true;
+    }
+
+    public restoreRecordedSyncRejections(): string[] {
+        return this.service.restoreRecordedSyncRejections();
+    }
+
+    public recordSyncFinalityReads(): boolean {
+        this.service.recordSyncFinalityReads();
+        return true;
+    }
+
+    public restoreSyncFinalityReads(): boolean {
+        this.service.restoreSyncFinalityReads();
+        return true;
+    }
+
+    public getSyncReductionEntered(): number {
+        return this.service.getSyncReductionEntered();
+    }
+
+    public getSyncFinalityReadWidths(): number[] {
+        return this.service.getSyncFinalityReadWidths();
+    }
+
+    public recordChainMembershipReads(): boolean {
+        this.service.recordChainMembershipReads();
+        return true;
+    }
+
+    public getChainMembershipReadCount(): number {
+        return this.service.getChainMembershipReadCount();
+    }
+
+    public restoreChainMembershipReads(): boolean {
+        this.service.restoreChainMembershipReads();
+        return true;
+    }
+
+    public holdSyncWindowPersistence(): boolean {
+        this.service.holdSyncWindowPersistence();
+        return true;
+    }
+
+    public getSyncWindowPersistenceEntered(): number {
+        return this.service.getSyncWindowPersistenceEntered();
+    }
+
+    public releaseSyncWindowPersistence(): boolean {
+        this.service.releaseSyncWindowPersistence();
+        return true;
+    }
+
+    public recordSyncReductionWindows(): boolean {
+        this.service.recordSyncReductionWindows();
+        return true;
+    }
+
+    public getSyncReductionWindows() {
+        return this.service.getSyncReductionWindows();
+    }
+
+    public restoreSyncReductionWindows(): boolean {
+        this.service.restoreSyncReductionWindows();
+        return true;
+    }
+
+    /** Capture `reduction-*` timer tasks instead of scheduling them. */
+    public stubHoldReductionTasks(): boolean {
+        return this.stubHoldScheduledTasks("reduction-");
+    }
+
     /** Restore scheduling; optionally run the held tasks (fire-and-forget). */
     public restoreReductionTasks(runHeld: boolean): boolean {
-        const timeoutManager = this.service.sm.timeoutManager;
-        const original = this.service.stubOriginals.get("reductionTasks");
-        if (original === undefined) return false;
-        timeoutManager.scheduleTask =
-            original as typeof timeoutManager.scheduleTask;
-        this.service.stubOriginals.delete("reductionTasks");
-        const held = this.service.heldReductionTasks.splice(0);
-        if (runHeld) for (const { task } of held) void task();
+        return this.restoreHeldScheduledTasks("reduction-", runHeld);
+    }
+
+    // Reduction genesis application control: pause or fail one VM call made by
+    // the real reduction-specific application. The wrapped application raises
+    // an "active" flag for its duration so the general application path stays
+    // untouched; every other collaborator is real.
+
+    public holdReductionGenesisApplication(
+        control: ReductionApplicationControl
+    ): boolean {
+        // The control arrives as JSON over the RPC port; the discriminants
+        // are checked here, before any wrapper is restored or installed.
+        const keys =
+            typeof control === "object" && control !== null
+                ? Object.keys(control).sort()
+                : [];
+        const validAt =
+            control?.outcome === "hold"
+                ? ["setState", "getParticipants", "getNextToWrite"]
+                : control?.outcome === "reject"
+                  ? ["getParticipants", "getNextToWrite"]
+                  : [];
+        if (keys.join(",") !== "at,outcome" || !validAt.includes(control.at)) {
+            throw new Error(
+                `Invalid reduction application control: ${JSON.stringify(control)}`
+            );
+        }
+        this.service.restoreReductionApplication();
+        const sm = this.service.sm;
+        const application = sm.stateApplicationService;
+        const diamond = sm.diamondStateMachine;
+        const gate = this.service.createGate();
+        this.service.reductionApplicationGate = gate;
+        this.service.reductionApplicationControl = control;
+        this.service.reductionApplicationEntered = 0;
+
+        const originalApplication =
+            application.unsafeApplyReductionGenesis.bind(application);
+        this.service.stubOriginals.set(
+            "reductionApplication",
+            originalApplication
+        );
+        const context = this.service.reductionApplicationContext;
+        application.unsafeApplyReductionGenesis = (...parameters) =>
+            context.run(true, () => originalApplication(...parameters));
+
+        const intercept = async (at: ReductionApplicationControl["at"]) => {
+            const active = this.service.reductionApplicationControl;
+            if (!context.getStore() || !active || active.at !== at) {
+                return;
+            }
+            gate.entered += 1;
+            this.service.reductionApplicationEntered += 1;
+            if (active.outcome === "reject") {
+                // One-shot: the next call of the same read runs for real.
+                this.service.reductionApplicationControl = undefined;
+                throw new Error("Stubbed reduction genesis read failure");
+            }
+            await gate.gate;
+        };
+
+        const originalSetState = diamond.setState.bind(diamond);
+        this.service.stubOriginals.set(
+            "reductionApplicationSetState",
+            originalSetState
+        );
+        diamond.setState = async (...parameters) => {
+            const result = await originalSetState(...parameters);
+            await intercept("setState");
+            return result;
+        };
+        const originalGetParticipants = diamond.getParticipants.bind(diamond);
+        this.service.stubOriginals.set(
+            "reductionApplicationGetParticipants",
+            originalGetParticipants
+        );
+        diamond.getParticipants = async () => {
+            await intercept("getParticipants");
+            return originalGetParticipants();
+        };
+        const originalGetNextToWrite = diamond.getNextToWrite.bind(diamond);
+        this.service.stubOriginals.set(
+            "reductionApplicationGetNextToWrite",
+            originalGetNextToWrite
+        );
+        diamond.getNextToWrite = async () => {
+            await intercept("getNextToWrite");
+            return originalGetNextToWrite();
+        };
+        return true;
+    }
+
+    public getHeldReductionGenesisApplicationCount(): number {
+        return this.service.reductionApplicationEntered;
+    }
+
+    /** Whether the reduction application wrappers are currently installed. */
+    public isReductionGenesisApplicationHeld(): boolean {
+        return this.service.stubOriginals.has("reductionApplication");
+    }
+
+    public restoreReductionGenesisApplication(): boolean {
+        this.service.restoreReductionApplication();
+        return true;
+    }
+
+    /**
+     * Pause one reduction attempt after its completion exists: at the
+     * executor attempt (before any executor work) or at candidate computation
+     * (before the terminal outbound block is persisted).
+     */
+    public holdReductionAttempt(
+        at: ReductionAttemptHoldPoint,
+        resumeWith: ReductionAttemptResume = "original"
+    ): boolean {
+        this.service.restoreReductionAttempt();
+        const manager = this.service.sm.reductionManager;
+        const executor = manager["reductionExecutor"];
+        const observed = executor.tryReduce;
+        this.service.stubOriginals.set("reductionObservedAttempt", observed);
+        executor.tryReduce = async (...args) => {
+            this.service.reductionAttemptsInFlight += 1;
+            try {
+                return await observed.apply(executor, args);
+            } finally {
+                this.service.reductionAttemptsInFlight -= 1;
+            }
+        };
+        const gate = this.service.createGate();
+        this.service.reductionAttemptGate = gate;
+        const resume = async <T>(original: () => Promise<T>) => {
+            gate.entered += 1;
+            await gate.gate;
+            if (resumeWith === "throw") {
+                throw new Error(REDUCTION_ATTEMPT_STUB_FAILURE);
+            }
+            if (resumeWith === "undefined") return undefined as T;
+            return original();
+        };
+        if (at === "admission") {
+            const contract = this.service.sm.stateChannelManagerContract;
+            const original = contract.isForkDisputed;
+            this.service.stubOriginals.set("reductionAdmission", original);
+            Reflect.set(
+                contract,
+                "isForkDisputed",
+                async (...args: unknown[]) => {
+                    const result = await Reflect.apply(
+                        original,
+                        contract,
+                        args
+                    );
+                    // One pending caller is enough; sync verification retains real reads.
+                    Reflect.set(contract, "isForkDisputed", original);
+                    gate.entered += 1;
+                    await gate.gate;
+                    return result;
+                }
+            );
+            return true;
+        }
+        if (at === "attempt") {
+            const original = executor.tryReduce.bind(executor);
+            this.service.stubOriginals.set("reductionAttempt", original);
+            executor.tryReduce = (forkId) => resume(() => original(forkId));
+            return true;
+        }
+        if (at === "disputes") {
+            const original = executor.getSyncedForkDisputes.bind(executor);
+            this.service.stubOriginals.set("reductionDisputes", original);
+            executor.getSyncedForkDisputes = (forkId) =>
+                resume(() => original(forkId));
+            return true;
+        }
+        if (at === "submit") {
+            const contract = this.service.sm.stateChannelManagerContract;
+            const gasLimit = contract.getGasLimit;
+            const multicall = contract.multicall;
+            this.service.stubOriginals.set("reductionSubmitGasLimit", gasLimit);
+            this.service.stubOriginals.set(
+                "reductionSubmitMulticall",
+                multicall
+            );
+            this.service.reductionSubmitCalls = 0;
+            Reflect.set(contract, "getGasLimit", (...parameters: unknown[]) =>
+                resume(() => Reflect.apply(gasLimit, contract, parameters))
+            );
+            // Count the chain write while keeping the method's static-call
+            // and estimation faces for the simulation that precedes it.
+            const counted = (...parameters: unknown[]) => {
+                this.service.reductionSubmitCalls += 1;
+                return Reflect.apply(multicall, contract, parameters);
+            };
+            for (const key of Object.getOwnPropertyNames(multicall)) {
+                if (key in counted) continue;
+                Object.defineProperty(
+                    counted,
+                    key,
+                    Object.getOwnPropertyDescriptor(multicall, key)!
+                );
+            }
+            Reflect.set(contract, "multicall", counted);
+            return true;
+        }
+        const computation = manager["reductionComputationService"];
+        const original = computation.compute.bind(computation);
+        this.service.stubOriginals.set("reductionCompute", original);
+        computation.compute = (...parameters) =>
+            resume(() => original(...parameters));
+        return true;
+    }
+
+    /** Make this host deny its writer turn until restored (harness helper staging). */
+    public stubDenyTurn(): boolean {
+        this.restoreDenyTurn();
+        const production = this.service.sm.blockProductionService;
+        const original = production["isMyTurn"].bind(production);
+        this.service.stubOriginals.set("denyTurn", original);
+        production["isMyTurn"] = async () => false;
+        return true;
+    }
+
+    public restoreDenyTurn(): boolean {
+        const production = this.service.sm.blockProductionService;
+        const original = this.service.stubOriginals.get("denyTurn");
+        if (original) {
+            production["isMyTurn"] =
+                original as (typeof production)["isMyTurn"];
+            this.service.stubOriginals.delete("denyTurn");
+        }
+        return true;
+    }
+
+    public stubRecordForkLeave(forkId: ForkId): boolean {
+        this.service.recordForkLeave(forkId);
+        return true;
+    }
+
+    public getForkLeaveObservation(): {
+        scheduled: number;
+        cancelled: number;
+        settledStateObserved: number;
+    } {
+        return { ...this.service.forkLeaveObservation };
+    }
+
+    public restoreForkLeave(): boolean {
+        this.service.restoreForkLeave();
+        return true;
+    }
+
+    public getCollectedDetachedPromiseCount(): number {
+        return DetachedPromises.size();
+    }
+
+    public getReductionAttemptsInFlight(): number {
+        return this.service.reductionAttemptsInFlight;
+    }
+
+    public getHeldReductionAttemptCount(): number {
+        return this.service.reductionAttemptGate?.entered ?? 0;
+    }
+
+    /** Chain writes attempted by a reduction submission since the submit hold was installed. */
+    public getReductionSubmitCallCount(): number {
+        return this.service.reductionSubmitCalls;
+    }
+
+    public restoreReductionAttempt(): boolean {
+        this.service.restoreReductionAttempt();
+        return true;
+    }
+
+    /** Start a real reduction attempt host-side and keep its outcome. */
+    public startTryReduce(forkId: ForkId): boolean {
+        const outcome: DetachedCallOutcome = {
+            settled: false,
+            result: null,
+            rejected: null
+        };
+        this.service.tryReduceOutcome = outcome;
+        void this.service.sm.reductionManager.tryReduce(forkId).then(
+            (reduction) => {
+                outcome.settled = true;
+                outcome.result = reduction
+                    ? String(reduction.reducedForkId)
+                    : null;
+            },
+            (error) => {
+                outcome.settled = true;
+                outcome.rejected =
+                    error instanceof Error ? error.message : String(error);
+            }
+        );
+        return true;
+    }
+
+    public getTryReduceOutcome(): DetachedCallOutcome | null {
+        const outcome = this.service.tryReduceOutcome;
+        return outcome ? { ...outcome } : null;
+    }
+
+    /** Hold the state-manager mutex until released. */
+    public holdStateMutex(): boolean {
+        this.service.releaseStateMutex();
+        const gate = this.service.createGate();
+        this.service.stateMutexGate = gate;
+        void this.service.sm.withMutex(
+            async () => {
+                gate.entered += 1;
+                await gate.gate;
+            },
+            { taskName: "stub.holdStateMutex" }
+        );
+        return true;
+    }
+
+    public getStateMutexHeldCount(): number {
+        return this.service.stateMutexGate?.entered ?? 0;
+    }
+
+    public releaseStateMutex(): boolean {
+        this.service.releaseStateMutex();
+        return true;
+    }
+
+    /**
+     * Start a direct `completeWithGenesis` for the current fork host-side,
+     * using the fork's own genesis snapshot and state as the reduced genesis,
+     * and keep its outcome.
+     */
+    public startCompleteWithGenesis(reducedForkId: ForkId): boolean {
+        const sm = this.service.sm;
+        const genesisSnapshot =
+            sm.storage.stateSnapshots.getGenesisSnapshotByForkId(sm.forkId);
+        if (!genesisSnapshot) {
+            throw new Error("No genesis snapshot for the current fork");
+        }
+        const snapshot = genesisSnapshot.toStruct();
+        const encodedState = sm.storage.stateMachineStates.getStateMachineState(
+            snapshot.snapshotData.stateMachineStateHash as Hash
+        );
+        if (!encodedState) {
+            throw new Error("No state machine state for the current fork");
+        }
+        const outcome: DetachedCallOutcome = {
+            settled: false,
+            result: null,
+            rejected: null
+        };
+        this.service.completeWithGenesisOutcome = outcome;
+        void sm.reductionManager
+            .completeWithGenesis(sm.forkId, reducedForkId, {
+                genesisSnapshot: snapshot,
+                encodedState
+            })
+            .then(
+                (installed) => {
+                    outcome.settled = true;
+                    outcome.result = String(installed);
+                },
+                (error) => {
+                    outcome.settled = true;
+                    outcome.rejected =
+                        error instanceof Error ? error.message : String(error);
+                }
+            );
+        return true;
+    }
+
+    public getCompleteWithGenesisOutcome(): DetachedCallOutcome | null {
+        const outcome = this.service.completeWithGenesisOutcome;
+        return outcome ? { ...outcome } : null;
+    }
+
+    /** Abort the runtime on the next tick so this request still answers. */
+    public abortDetached(): boolean {
+        const sm = this.service.sm;
+        setTimeout(() => sm.abort(), 0);
         return true;
     }
 
@@ -898,20 +1505,60 @@ export class StubRpcMethods extends ARpcMethods<P2PManager<HarnessControlRpc>> {
         return true;
     }
 
-    public restoreLocalDiamondInboundMessages(): boolean {
-        const original = this.service.stubOriginals.get(
-            "localDiamondInboundMessages"
-        );
-        if (original === undefined) return false;
-        const localDiamond =
-            this.service.sm.diamondStateMachine.localDiamondContract;
-        localDiamond.onInboundMessagesProcessed =
-            original as typeof localDiamond.onInboundMessagesProcessed;
-        this.service.stubOriginals.delete("localDiamondInboundMessages");
+    /** Park the dispute audit at its on-chain-slashes query until released. */
+    /** Park every auditing-data rebuild until restored. */
+    public stubHoldAuditingDataRebuild(): boolean {
+        this.service.installAuditingDataRebuildHold();
         return true;
     }
 
-    /** Park the dispute audit at its on-chain-slashes query until released. */
+    /** Release parked rebuilds and restore the real method. */
+    public restoreAuditingDataRebuild(): boolean {
+        return this.service.releaseAuditingDataRebuildHold();
+    }
+
+    /** Resolves once a rebuild is parked at the hold; parked count. */
+    public waitForHeldAuditingDataRebuild(): Promise<number> {
+        return this.service.waitForHeldAuditingDataRebuild();
+    }
+
+    public async joinAndLeavePendingLocalDiscovery(
+        topic: string
+    ): Promise<boolean> {
+        await this.service.joinAndLeavePendingLocalDiscovery(topic);
+        return true;
+    }
+
+    public getLocalDiscoveryListenerCount(): number {
+        return this.service.getLocalDiscoveryListenerCount();
+    }
+
+    /** Broadcast a real calldata post with an expired deadline; its receipt reverts. */
+    public stubExpireCalldataPost(): boolean {
+        this.service.expireCalldataPost();
+        return true;
+    }
+
+    public restoreCalldataPost(): boolean {
+        return this.service.restoreCalldataPost();
+    }
+
+    /** Park this peer's snapshot post at its contract send until restored. */
+    public stubHoldSnapshotPostSend(): boolean {
+        this.service.installSnapshotPostSendHold();
+        return true;
+    }
+
+    /** Release the parked send and restore the real contract method. */
+    public restoreSnapshotPostSend(): boolean {
+        return this.service.releaseSnapshotPostSendHold();
+    }
+
+    /** Resolves once a post is parked at its send; parked count. */
+    public waitForHeldSnapshotPostSend(): Promise<number> {
+        return this.service.waitForHeldSnapshotPostSend();
+    }
+
     public stubHoldOnChainSlashesQuery(): boolean {
         this.service.installOnChainSlashesQueryHold();
         return true;
@@ -928,96 +1575,17 @@ export class StubRpcMethods extends ARpcMethods<P2PManager<HarnessControlRpc>> {
     }
 
     public getHeldReductionTaskCount(): number {
-        return this.service.heldReductionTasks.length;
+        return this.getHeldScheduledTaskCount("reduction-");
     }
 
     public dropHeldReductionTasks(): boolean {
-        this.service.heldReductionTasks.splice(0);
+        this.service.heldScheduledTasks.get("reduction-")?.splice(0);
         return true;
     }
 
     public cancelScheduledReductions(): boolean {
         this.service.sm.reductionManager["cancelScheduledReductions"]();
         return true;
-    }
-
-    public async probeDisputeReductionChallenge(
-        reducedForkId: ForkId
-    ): Promise<ReductionChallengeProbe> {
-        return this.service.probeDisputeReductionChallenge(reducedForkId);
-    }
-
-    public async probeInboundRunRecovery(
-        upperBlockHash: Hash,
-        options?: { failChainQueries?: boolean }
-    ): Promise<InboundRunRecoveryProbe> {
-        return this.service.probeInboundRunRecovery(upperBlockHash, options);
-    }
-
-    public async probeBlockCalldataRecovery(options?: {
-        failChainQueries?: boolean;
-    }): Promise<BlockCalldataRecoveryProbe> {
-        return this.service.probeBlockCalldataRecovery(options);
-    }
-
-    public async probeConcurrentCalldataRecovery(): Promise<ConcurrentCalldataRecoveryProbe> {
-        return this.service.probeConcurrentCalldataRecovery();
-    }
-
-    public async probeDisputeStrategyResultMatrix(): Promise<DisputeStrategyResultMatrix> {
-        return this.service.probeDisputeStrategyResultMatrix();
-    }
-
-    public async probeCleanCommittedDivergence(): Promise<CleanCommittedDivergenceProbe> {
-        return this.service.probeCleanCommittedDivergence();
-    }
-
-    public async probeMissingParticipantSnapshots(): Promise<MissingParticipantSnapshotsProbe> {
-        return this.service.probeMissingParticipantSnapshots();
-    }
-
-    public async probeAuthorGatePreviousSnapshotMember(): Promise<string> {
-        return this.service.probeAuthorGatePreviousSnapshotMember();
-    }
-
-    public async probeAuthorGateMatchingResultingSnapshot(): Promise<string> {
-        return this.service.probeAuthorGateMatchingResultingSnapshot();
-    }
-
-    public async probeAuthorGateStaleHeightSnapshot(): Promise<string> {
-        return this.service.probeAuthorGateStaleHeightSnapshot();
-    }
-
-    public async probeAuthorGateWrongForkSnapshot(): Promise<string> {
-        return this.service.probeAuthorGateWrongForkSnapshot();
-    }
-
-    public async probeAuthorGateMatchingSnapshotExcludingAuthor(): Promise<string> {
-        return this.service.probeAuthorGateMatchingSnapshotExcludingAuthor();
-    }
-
-    public async probeAuthorGateMissingSnapshotPreviousMember(): Promise<string> {
-        return this.service.probeAuthorGateMissingSnapshotPreviousMember();
-    }
-
-    public async probeAuthorGateMissingSnapshotOutsider(): Promise<string> {
-        return this.service.probeAuthorGateMissingSnapshotOutsider();
-    }
-
-    public async probeAuthorGateNoAnchorCurrentParticipant(): Promise<string> {
-        return this.service.probeAuthorGateNoAnchorCurrentParticipant();
-    }
-
-    public async probeAuthorGateNoAnchorPendingParticipant(
-        pendingParticipant: string
-    ): Promise<string> {
-        return this.service.probeAuthorGateNoAnchorPendingParticipant(
-            pendingParticipant as Address
-        );
-    }
-
-    public async probeAuthorGateNoAnchorUnknownAddress(): Promise<string> {
-        return this.service.probeAuthorGateNoAnchorUnknownAddress();
     }
 
     /** Pause a real reduction once it enters its kill-period lookup. */
@@ -1146,6 +1714,34 @@ export class StubRpcMethods extends ARpcMethods<P2PManager<HarnessControlRpc>> {
         this.service.pausedReduction = undefined;
         return restored;
     }
+    public recordLeaveWatchdog(): boolean {
+        this.service.recordLeaveWatchdog();
+        return true;
+    }
+
+    public getLeaveWatchdogObservation() {
+        return { ...this.service.leaveWatchdogObservation };
+    }
+
+    public restoreLeaveWatchdog(): boolean {
+        this.service.restoreLeaveWatchdog();
+        return true;
+    }
+
+    public recordSlashRecoveries(): boolean {
+        this.service.recordSlashRecoveries();
+        return true;
+    }
+
+    public getSlashRecoveryCount(): number {
+        return this.service.getSlashRecoveryCount();
+    }
+
+    public restoreSlashRecoveries(): boolean {
+        this.service.restoreSlashRecoveries();
+        return true;
+    }
+
     /**
      * Record `dispute()`'s upload without sending it. `holdSubmissions` parks
      * each recorded send until `releaseDisputeSubmissions`; `failure` makes the
@@ -1153,9 +1749,14 @@ export class StubRpcMethods extends ARpcMethods<P2PManager<HarnessControlRpc>> {
      */
     public stubRecordDisputeSubmissions(
         holdSubmissions: boolean,
-        failure?: DisputeSubmissionFailureSpec
+        failure?: DisputeSubmissionFailureSpec,
+        forward = false
     ): boolean {
-        this.service.installDisputeSubmissionRecorder(holdSubmissions, failure);
+        this.service.installDisputeSubmissionRecorder(
+            holdSubmissions,
+            failure,
+            forward
+        );
         return true;
     }
 
@@ -1450,24 +2051,43 @@ export class StubRpcMethods extends ARpcMethods<P2PManager<HarnessControlRpc>> {
     }
 
     /**
-     * Drop subscribed inbound logs before the scheduler records their key.
+     * Drop selected subscribed logs before the scheduler records their key.
      * Unlike `stubHoldInboundMessageEvents`, which replaces the handler, this
      * only loses the delivery - an explicit query of the same log still reaches
      * the real scheduler, so recovery can heal it. `dropCount` caps how many
      * distinct keys are lost (default: all).
      */
-    public stubDropInboundMessageLogs(dropCount?: number): boolean {
+    public stubDropEventLogs(
+        eventNames: (
+            | "InboundMessagesProcessed"
+            | "ChainSlashed"
+            | "DisputeKilled"
+        )[],
+        dropCount?: number
+    ): boolean {
+        if (
+            !Array.isArray(eventNames) ||
+            eventNames.some(
+                (name) =>
+                    ![
+                        "InboundMessagesProcessed",
+                        "ChainSlashed",
+                        "DisputeKilled"
+                    ].includes(name)
+            )
+        )
+            throw new Error("Invalid event log drop selection");
         const eventSyncService = this.service.sm.eventSyncService;
         // an omitted arg crosses the port as null -> normalize to "no limit"
-        this.service.inboundMessageLogDropLimit = dropCount ?? undefined;
-        if (!this.service.stubOriginals.has("inboundMessageLogs")) {
+        this.service.eventLogDropLimit = dropCount ?? undefined;
+        if (!this.service.stubOriginals.has("eventLogs")) {
             this.service.stubOriginals.set(
-                "inboundMessageLogs",
+                "eventLogs",
                 eventSyncService.scheduleLog.bind(eventSyncService)
             );
         }
         const original = this.service.stubOriginals.get(
-            "inboundMessageLogs"
+            "eventLogs"
         ) as typeof eventSyncService.scheduleLog;
         eventSyncService.scheduleLog = async (...args) => {
             const parsed =
@@ -1475,10 +2095,10 @@ export class StubRpcMethods extends ARpcMethods<P2PManager<HarnessControlRpc>> {
                     topics: args[0].topics,
                     data: args[0].data
                 });
-            if (parsed?.name === "InboundMessagesProcessed") {
+            if (parsed && eventNames.some((name) => name === parsed.name)) {
                 const eventKey = `${args[0].transactionHash}:${args[0].index}`;
-                const limit = this.service.inboundMessageLogDropLimit;
-                const dropped = this.service.droppedInboundMessageLogKeys;
+                const limit = this.service.eventLogDropLimit;
+                const dropped = this.service.droppedEventLogKeys;
                 if (
                     !dropped.has(eventKey) &&
                     (limit === undefined || dropped.size < limit)
@@ -1493,20 +2113,29 @@ export class StubRpcMethods extends ARpcMethods<P2PManager<HarnessControlRpc>> {
     }
 
     /** Restore scheduling. Dropped subscription payloads are recovered by query. */
-    public restoreInboundMessageLogs(): boolean {
+    public restoreEventLogs(): boolean {
         const eventSyncService = this.service.sm.eventSyncService;
-        const original = this.service.stubOriginals.get("inboundMessageLogs");
+        const original = this.service.stubOriginals.get("eventLogs");
         if (original === undefined) return false;
         eventSyncService.scheduleLog =
             original as typeof eventSyncService.scheduleLog;
-        this.service.stubOriginals.delete("inboundMessageLogs");
-        this.service.droppedInboundMessageLogKeys.clear();
-        this.service.inboundMessageLogDropLimit = undefined;
+        this.service.stubOriginals.delete("eventLogs");
+        this.service.droppedEventLogKeys.clear();
+        this.service.eventLogDropLimit = undefined;
         return true;
     }
 
-    public getDroppedInboundMessageLogCount(): number {
-        return this.service.droppedInboundMessageLogKeys.size;
+    public getDroppedEventLogCount(): number {
+        return this.service.droppedEventLogKeys.size;
+    }
+
+    public stubFailOnChainSlashesRead(): boolean {
+        this.service.failOnChainSlashesRead();
+        return true;
+    }
+
+    public restoreOnChainSlashesRead(): boolean {
+        return this.service.restoreOnChainSlashesRead();
     }
 
     /** Make every provider getLogs throw, so no recovery query can succeed. */
@@ -1820,17 +2449,6 @@ export class StubRpcMethods extends ARpcMethods<P2PManager<HarnessControlRpc>> {
         return true;
     }
 
-    public restoreReductionSimulation(): boolean {
-        const contract = this.service.sm.stateChannelManagerContract;
-        const runner = contract.runner;
-        if (!runner?.call) return false;
-        const original = this.service.stubOriginals.get("reductionSimulation");
-        if (original === undefined) return false;
-        runner.call = original as NonNullable<typeof runner.call>;
-        this.service.stubOriginals.delete("reductionSimulation");
-        return true;
-    }
-
     /** Count spectate sync requests and record their selected peer. */
     public stubRecordSpectateSync(forward: boolean): boolean {
         const spectate = this.p2pManager.localRpc.spectateService;
@@ -1871,76 +2489,6 @@ export class StubRpcMethods extends ARpcMethods<P2PManager<HarnessControlRpc>> {
         return this.service.waitForSpectateSyncCalls(count);
     }
 
-    /** Run isDisputedFork, counting local-diamond queries. */
-    public async probeIsDisputedFork(
-        forkId: ForkId,
-        markLocallyDisputed: boolean
-    ): Promise<IsDisputedForkProbe> {
-        return this.service.probeIsDisputedFork(forkId, markLocallyDisputed);
-    }
-
-    /** Store a block directly into block storage (dispute-replay fixtures). */
-    public storeBlockFixture(encodedBlockConfirmation: string): {
-        hash: string;
-    } {
-        return this.service.storeBlockFixture(encodedBlockConfirmation);
-    }
-
-    /** Store a state snapshot directly into snapshot storage. */
-    public storeStateSnapshotFixture(encodedSnapshot: string): {
-        hash: string;
-    } {
-        return this.service.storeStateSnapshotFixture(encodedSnapshot);
-    }
-
-    /** Stage on-chain calldata for a block at a chosen timestamp. */
-    public stageBlockCalldata(
-        encodedSignedBlock: string,
-        onChainTimestamp: Timestamp
-    ): boolean {
-        this.service.stageBlockCalldata(encodedSignedBlock, onChainTimestamp);
-        return true;
-    }
-
-    /** Post a block's calldata on-chain (chain-fallback path). */
-    public async postBlockCalldataOnChain(
-        encodedSignedBlock: string
-    ): Promise<{ blockNumber: number; onChainTimestamp: Timestamp }> {
-        return this.service.postBlockCalldataOnChain(encodedSignedBlock);
-    }
-
-    public async runBlockValidation(
-        encodedBlockConfirmation: string,
-        options?: BlockValidationProbeOptions
-    ): Promise<BlockValidationProbe> {
-        return this.service.runBlockValidation(
-            encodedBlockConfirmation,
-            options
-        );
-    }
-
-    public async runBlockIngest(
-        encodedBlockConfirmation: string,
-        options?: BlockProbeOptions
-    ): Promise<BlockIngestProbe> {
-        return this.service.runBlockIngest(encodedBlockConfirmation, options);
-    }
-
-    public async runStoredBlockMerge(
-        encodedBlockConfirmation: string,
-        options?: {
-            strategy?: "active" | "dispute" | "spectating" | "calldata";
-        }
-    ): Promise<{
-        result: number | null;
-        persistedSignatures: string[] | null;
-    }> {
-        return this.service.runStoredBlockMerge(
-            encodedBlockConfirmation,
-            options
-        );
-    }
-
     /** Staging: force this peer's session status (fault injection). */
     public setPeerStatus(status: Status): boolean {
         this.service.sm.setStatus(status);
@@ -1954,10 +2502,6 @@ export class StubRpcMethods extends ARpcMethods<P2PManager<HarnessControlRpc>> {
 
     public releaseLobbyReply(): number {
         return this.service.releaseLobbyReply();
-    }
-
-    public getHeldLobbyReplyCount(): number {
-        return this.service.getHeldLobbyReplyCount();
     }
 
     public holdNegotiationReply(kind: HeldNegotiationReplyKind): boolean {
@@ -1991,8 +2535,8 @@ export class StubRpcMethods extends ARpcMethods<P2PManager<HarnessControlRpc>> {
         return true;
     }
 
-    public holdSpectateResponses(): boolean {
-        this.service.holdSpectateResponses();
+    public holdSpectateResponses(fail = false): boolean {
+        this.service.holdSpectateResponses(fail);
         return true;
     }
 
@@ -2027,6 +2571,55 @@ export class StubRpcMethods extends ARpcMethods<P2PManager<HarnessControlRpc>> {
 
     public holdMembershipSubmission(kind: HeldMembershipReceiptKind): boolean {
         this.service.holdMembershipSubmission(kind);
+        return true;
+    }
+
+    public holdQueueProbe(): boolean {
+        this.service.holdQueueProbe();
+        return true;
+    }
+    public getQueueProbeObservation() {
+        return this.service.getQueueProbeObservation();
+    }
+    public releaseQueueProbe(): boolean {
+        this.service.releaseQueueProbe();
+        return true;
+    }
+
+    public async startTimeoutConstruction(writer: string): Promise<boolean> {
+        return this.service.startTimeoutConstruction(writer);
+    }
+
+    public holdTimeoutBuild(): boolean {
+        this.service.holdTimeoutBuild();
+        return true;
+    }
+
+    public getTimeoutBuildObservation(): { entered: number; stored: number } {
+        return this.service.getTimeoutBuildObservation();
+    }
+
+    public releaseTimeoutBuild(): boolean {
+        this.service.releaseTimeoutBuild();
+        return true;
+    }
+
+    public restoreTimeoutBuildRecording(): boolean {
+        this.service.restoreTimeoutBuildRecording();
+        return true;
+    }
+
+    public holdInitHandshakes(): boolean {
+        this.service.holdInitHandshakes();
+        return true;
+    }
+
+    public getHeldHandshakeCount(): number {
+        return this.service.getHeldHandshakeCount();
+    }
+
+    public releaseInitHandshakes(): boolean {
+        this.service.releaseInitHandshakes();
         return true;
     }
 

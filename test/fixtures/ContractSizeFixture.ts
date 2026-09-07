@@ -1,11 +1,11 @@
 // @spec-test-coverage-ignore: shared artifact classification; executable evidence is mapped from ContractSize.test.ts
-import { artifacts } from "hardhat";
 import {
     assertArtifactRuntimeSize,
     assertDeploymentInitcodeSize,
     ContractSizeLimitError,
     NamedContractBytecode
 } from "@/utils/contractSize";
+import { artifacts } from "hardhat";
 
 export type ContractSizeExemption = {
     fullyQualifiedName: string;

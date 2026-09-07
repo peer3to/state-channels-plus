@@ -1,7 +1,6 @@
-import { ZeroAddress } from "ethers";
-
 import { Codec, Type, hash } from "@/utils";
 import type { DisputeStruct } from "@typechain-types/contracts/V1/types/DisputeTypes";
+import { ZeroAddress } from "ethers";
 
 /**
  * Host-side, named dispute-tamper strategies. Mirrors the harness-side

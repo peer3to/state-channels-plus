@@ -1,11 +1,11 @@
 // @spec-test-coverage-ignore: harness handshake controls exercised by owning mapped test declarations
+import type { HandshakeService } from "./HandshakeService";
+import Block from "@/models/Block";
 import ARpcMethods from "@/rpc/ARpcMethods";
 import type ATransport from "@/transport/ATransport";
 import type { TransportType } from "@/transport/TransportType";
-import Block from "@/models/Block";
 import type { Address, ChannelId, ForkId, Hash } from "@/types/types";
 import { Codec, Type } from "@/utils";
-import type { HandshakeService } from "./HandshakeService";
 
 /**
  * White-box driver for the handshake / dispute-acknowledgment RPC flows,

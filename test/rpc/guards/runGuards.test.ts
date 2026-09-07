@@ -1,7 +1,6 @@
-import { expect } from "chai";
-
-import { RunGuardsFixture } from "@test/fixtures/RunGuardsFixture";
 import { runGuards } from "@/rpc/guards/runGuards";
+import { RunGuardsFixture } from "@test/fixtures/RunGuardsFixture";
+import { expect } from "chai";
 
 describe("runGuards", function () {
     it("returns false and stops when the first guard fails", function () {

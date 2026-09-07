@@ -1,10 +1,10 @@
+import { Status } from "@/types";
+import { sleep } from "@/utils";
+import { TargetedChannelJoinFixture } from "@test/fixtures/TargetedChannelJoinFixture";
+import { MathTestSession as TestSession } from "@test/harness";
+import { waitFor } from "@test/utils/waitFor";
 import { expect } from "chai";
 import { ethers } from "ethers";
-import { Status } from "@/types";
-import { MathTestSession as TestSession } from "@test/harness";
-import { TargetedChannelJoinFixture } from "@test/fixtures/TargetedChannelJoinFixture";
-import { sleep } from "@/utils";
-import { waitFor } from "@test/utils/waitFor";
 
 // membership is driven through the real signer entry points
 // (p2pSigner.joinChannel / topUpBalance) and through a real leave.
@@ -655,6 +655,10 @@ describe("Unit: MembershipService", function () {
                     }
                     return true;
                 });
+                await waitFor(
+                    async () => (await recorder.submissions()).length === 1,
+                    h.event.protocolEventTimeoutMs()
+                );
                 expect(await recorder.submissions()).to.have.length(1);
             } finally {
                 await releaseSubmission();
@@ -709,6 +713,10 @@ describe("Unit: MembershipService", function () {
                 expect(result.startedAtThreshold).to.equal(true);
                 expect(result.blockHeight).to.be.greaterThan(
                     result.participantCount + 1
+                );
+                await waitFor(
+                    async () => (await recorder.submissions()).length === 1,
+                    h.event.protocolEventTimeoutMs()
                 );
                 expect(await recorder.submissions()).to.have.length(1);
             } finally {

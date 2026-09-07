@@ -1,7 +1,6 @@
-import { expect } from "chai";
-
 import { Status } from "@/types";
 import { MathTestSession as TestSession } from "@test/harness";
+import { expect } from "chai";
 
 const AUTHOR_GATE = "blockAuthorIsNotParticipant";
 
@@ -9,63 +8,72 @@ describe("ValidationService - block author participant gate", function () {
     it("binds the author to the previous snapshot and to a coordinate-matched resulting snapshot", async function () {
         const h = TestSession.getHarness();
         await h.lifecycle.start(4, 0);
-        const joiner = await h.join.addSpectatorDetached();
-        await h.transition.advanceState({
-            waitForPeers: [0, 1, 2, 3],
+        const { peer: joiner } = await h.join.addSpectatorAuthoring({
+            authoringPeerIndices: [0, 1, 2, 3],
+            minimumBlocks: 1,
+            maximumBlocks: 20,
             waitForFinalization: true
         });
         const peer = h.control(h.getPeer(0));
 
         expect(
-            await peer.stub.probeAuthorGatePreviousSnapshotMember().request(),
+            await peer.validation
+                .probeAuthorGatePreviousSnapshotMember()
+                .request(),
             "author listed in the previous snapshot is accepted"
         ).to.not.equal(AUTHOR_GATE);
 
         expect(
-            await peer.stub
+            await peer.validation
                 .probeAuthorGateMatchingResultingSnapshot()
                 .request(),
             "author in a resulting snapshot bound to the block's own coordinates is accepted"
         ).to.not.equal(AUTHOR_GATE);
 
         expect(
-            await peer.stub.probeAuthorGateStaleHeightSnapshot().request(),
+            await peer.validation
+                .probeAuthorGateStaleHeightSnapshot()
+                .request(),
             "author whose only snapshot is from a different height is rejected"
         ).to.equal(AUTHOR_GATE);
 
         expect(
-            await peer.stub.probeAuthorGateWrongForkSnapshot().request(),
+            await peer.validation.probeAuthorGateWrongForkSnapshot().request(),
             "author whose only snapshot is from a different fork is rejected"
         ).to.equal(AUTHOR_GATE);
 
         expect(
-            await peer.stub
+            await peer.validation
                 .probeAuthorGateMatchingSnapshotExcludingAuthor()
                 .request(),
             "author absent from a coordinate-matched snapshot is rejected"
         ).to.equal(AUTHOR_GATE);
 
         expect(
-            await peer.stub
+            await peer.validation
                 .probeAuthorGateMissingSnapshotPreviousMember()
                 .request(),
             "missing declared snapshot falls back to the previous snapshot, which lists the author"
         ).to.not.equal(AUTHOR_GATE);
 
         expect(
-            await peer.stub.probeAuthorGateMissingSnapshotOutsider().request(),
+            await peer.validation
+                .probeAuthorGateMissingSnapshotOutsider()
+                .request(),
             "missing declared snapshot rejects an author the previous snapshot omits"
         ).to.equal(AUTHOR_GATE);
 
         expect(
-            await peer.stub
+            await peer.validation
                 .probeAuthorGateNoAnchorCurrentParticipant()
                 .request(),
             "with no local anchor, a current on-chain participant is accepted"
         ).to.not.equal(AUTHOR_GATE);
 
         expect(
-            await peer.stub.probeAuthorGateNoAnchorUnknownAddress().request(),
+            await peer.validation
+                .probeAuthorGateNoAnchorUnknownAddress()
+                .request(),
             "with no local anchor, an unrelated address is rejected"
         ).to.equal(AUTHOR_GATE);
 
@@ -86,7 +94,7 @@ describe("ValidationService - block author participant gate", function () {
         ).to.not.include(joiner.address.toLowerCase());
 
         expect(
-            await peer.stub
+            await peer.validation
                 .probeAuthorGateNoAnchorPendingParticipant(joiner.address)
                 .request(),
             "with no local anchor, a pending on-chain participant is accepted via the current+pending union"

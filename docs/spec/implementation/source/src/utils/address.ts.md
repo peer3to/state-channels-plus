@@ -23,6 +23,8 @@ Address normalization helpers (checksum casing).
 
 ## Key design decisions
 
+The normalizer returns the ChecksumAddress alias so maps can state their key domain. See [address.ts](../../../../../../src/utils/address.ts#L14).
+
 _None — the file is declarative/mechanical; behavior-shaping decisions live with its consumers._
 
 ## Inputs, outputs, state, and side effects

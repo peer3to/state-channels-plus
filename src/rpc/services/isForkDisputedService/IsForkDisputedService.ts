@@ -1,9 +1,10 @@
+import IsForkDisputedRpcMethods from "./IsForkDisputedRpcMethods";
+import type P2PManager from "@/P2PManager";
 import ARpcService from "@/rpc/ARpcService";
 import { HandshakeCompletedGuard } from "@/rpc/guards";
-import { ChannelId, ForkId } from "@/types/types";
 import ATransport from "@/transport/ATransport";
-import type P2PManager from "@/P2PManager";
-import IsForkDisputedRpcMethods from "./IsForkDisputedRpcMethods";
+import { ChannelId, ForkId } from "@/types/types";
+import { errorMessage } from "@/utils/errorMessage";
 
 class IsForkDisputedService extends ARpcService<IsForkDisputedRpcMethods> {
     // Track acknowledged disputed forks
@@ -86,10 +87,7 @@ class IsForkDisputedService extends ARpcService<IsForkDisputedRpcMethods> {
                         `Dispute acknowledgment request failed for fork ${forkId}, disconnecting`,
                         {
                             peerAddress,
-                            error:
-                                error instanceof Error
-                                    ? error.message
-                                    : String(error)
+                            error: errorMessage(error)
                         }
                     );
                     this.p2pManager.disconnectAndBlacklistPeerByEvmAddress(

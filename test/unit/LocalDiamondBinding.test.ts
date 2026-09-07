@@ -1,9 +1,3 @@
-import { expect } from "chai";
-import { ethers } from "ethers";
-import {
-    LocalDiamond__factory,
-    StateChannelManagerInterface__factory
-} from "@typechain-types";
 import { connectLocalDiamond, localDiamondAbi } from "@/utils/localDiamond";
 import { stateChannelManagerAbi } from "@/utils/stateChannelManager";
 import {
@@ -12,6 +6,12 @@ import {
     fragmentKeys,
     fragmentKeysOfType
 } from "@test/fixtures/ContractAbiFixture";
+import {
+    LocalDiamond__factory,
+    StateChannelManagerInterface__factory
+} from "@typechain-types";
+import { expect } from "chai";
+import { ethers } from "ethers";
 
 // The mirror is never called here: these cases are about the ABI the binding
 // carries, so any address is a valid placeholder for the binding itself.

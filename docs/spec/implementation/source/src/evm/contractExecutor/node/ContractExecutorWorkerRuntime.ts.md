@@ -23,7 +23,8 @@ Node worker runtime bootstrap (limits, shutdown wiring).
 
 ## Key design decisions
 
-_None — the file is declarative/mechanical; behavior-shaping decisions live with its consumers._
+1. **Any exit the executor did not request is fatal, code 0 included.** A worker that ends on its own cannot serve pending requests, so `exit` reports an error unless `shutdown` was called; an `error` event before the exit is reported first and the executor keeps that first cause.
+2. **Entry path is a parameter.** `createContractExecutorWorkerFromPath(workerPath, onMessage, onError, workerData?)` spawns any entry; the platform `createContractExecutorWorker` resolves the production entry and delegates to it. Tests load a scripted entry this way.
 
 ## Inputs, outputs, state, and side effects
 
@@ -72,8 +73,9 @@ Gap column. Audit state is file-level (Status header), never a row status.
 
 Exact test evidence is mapped against these IDs in the verification test reports.
 
-| Unit test ID | Obligation | Public entry and setup | Oracle and forbidden effects | Required permutations |
-| ------------ | ---------- | ---------------------- | ---------------------------- | --------------------- |
+| Unit test ID                                                                                                          | Obligation            | Public entry and setup                                                                      | Oracle and forbidden effects                                                                                    | Required permutations                                                                                                                                                                                                                 |
+| --------------------------------------------------------------------------------------------------------------------- | --------------------- | ------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| <a id="unit-test-contract-executor-worker-runtime-1-2zbbhr"></a>`UNIT-TEST-CONTRACT-EXECUTOR-WORKER-RUNTIME-1-2ZBBHR` | Fatal worker boundary | Spawn a scripted entry through `createContractExecutorWorkerFromPath` and observe `onError` | Every load-time error and every unrequested exit is reported, in order; the first error is the executor's cause | <a id="unit-test-contract-executor-worker-runtime-1-2zbbhr.p1"></a>`UNIT-TEST-CONTRACT-EXECUTOR-WORKER-RUNTIME-1-2ZBBHR.P1` — a load-time throw is reported as `error` and the exit that follows it as `exited with 1`, in that order |
 
 ## Related source reports
 

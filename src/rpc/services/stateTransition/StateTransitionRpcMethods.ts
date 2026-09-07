@@ -1,6 +1,6 @@
+import StateTransitionService from "./StateTransitionService";
 import ARpcMethods from "@/rpc/ARpcMethods";
 import { ATransport } from "@/transport";
-import StateTransitionService from "./StateTransitionService";
 import { BlockConfirmationStruct } from "@typechain-types/contracts/V1/types/DataTypes";
 
 class StateTransitionRpcMethods extends ARpcMethods {

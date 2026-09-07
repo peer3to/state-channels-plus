@@ -1,11 +1,11 @@
-import { expect } from "chai";
-import { describe, it, beforeEach } from "mocha";
-import { ethers } from "hardhat";
-import { StateMachineStateStorage } from "@/storage/StateMachineStateStorage";
-import Storage from "@/storage";
-import { Hash, Bytes, ForkId } from "@/types/types";
-import { StateSnapshot } from "@/models";
 import * as factory from "../factory";
+import { StateSnapshot } from "@/models";
+import Storage from "@/storage";
+import { StateMachineStateStorage } from "@/storage/StateMachineStateStorage";
+import { Hash, Bytes, ForkId } from "@/types/types";
+import { expect } from "chai";
+import { ethers } from "hardhat";
+import { describe, it, beforeEach } from "mocha";
 
 describe("StateMachineStateStorage", () => {
     let storage: StateMachineStateStorage;

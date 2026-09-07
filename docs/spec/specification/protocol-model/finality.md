@@ -74,6 +74,12 @@ flowchart LR
 ## 5. Leader election
 
 **<a id="req-fin-5-dh29vz"></a>`REQ-FIN-5-DH29VZ`.** Block authoring is deterministic: `getNextToWrite()` — a pure function of the
+channel state at one coordinate `{forkId, height}` — names the only author of the next block. Every honest
+peer replicates that state and derives the same author: two honest peers holding the same `{forkId, height}`
+MUST name the same next writer. Honest peers can name different writers only while they hold different
+heights of a fork (one has applied a block the other has not yet received); that is replication lag, not a
+second writer. A peer whose local state lags stamps a candidate at a height that is not its slot; such a
+candidate is never a valid block and is dropped before signing (block-processing rule 7).
 
 **[`REQ-FIN-6-YZWJX2`](finality.md#req-fin-6-yzwjx2) (SHOULD).** The recommended policy is **round-robin** over the participant set, as a
 function of channel state (e.g.

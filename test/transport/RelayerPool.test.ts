@@ -1,6 +1,5 @@
-import { expect } from "chai";
-
 import { RelayerPoolFixture } from "@test/fixtures/RelayerPoolFixture";
+import { expect } from "chai";
 
 describe("RelayerPool", function () {
     let fixture: RelayerPoolFixture;

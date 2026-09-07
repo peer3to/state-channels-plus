@@ -1,7 +1,6 @@
-import { expect } from "chai";
-
 import { MathTestSession as TestSession } from "@test/harness";
 import { waitFor } from "@test/utils/waitFor";
+import { expect } from "chai";
 
 /**
  * A contract event emitted by the host EVM must reach a subscriber on the

@@ -1,8 +1,8 @@
-import ARpcMethods from "@/rpc/ARpcMethods";
-import type ATransport from "@/transport/ATransport";
-import type P2PManager from "@/P2PManager";
-import type MainRpcService from "@/rpc/MainRpcService";
 import type OpenChannelNegotiationService from "./OpenChannelNegotiationService";
+import type P2PManager from "@/P2PManager";
+import ARpcMethods from "@/rpc/ARpcMethods";
+import type MainRpcService from "@/rpc/MainRpcService";
+import type ATransport from "@/transport/ATransport";
 
 export type OpenChannelNegotiationCustomRpc = MainRpcService & {
     openChannelNegotiationService: OpenChannelNegotiationService;

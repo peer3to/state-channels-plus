@@ -1,12 +1,12 @@
+import InitHandshakeService, {
+    HandshakeResponse
+} from "./InitHandshakeService";
 import Clock from "@/Clock";
 import ARpcMethods from "@/rpc/ARpcMethods";
 import { ATransport } from "@/transport";
 import { Hash, Timestamp } from "@/types/types";
-import { ethers } from "ethers";
-import InitHandshakeService, {
-    HandshakeResponse
-} from "./InitHandshakeService";
 import { LoggerUtils } from "@/utils/LoggerUtils";
+import { ethers } from "ethers";
 
 class InitHandshakeRpcMethods extends ARpcMethods {
     service: InitHandshakeService;

@@ -1,3 +1,20 @@
+import type { ConnectToChannelOptions } from "./ConnectToChannelOptions";
+import NoopEventProvider from "./NoopEventProvider";
+import type { RuntimeRequester } from "../p2pRuntime/types";
+import type {
+    LobbyJoinOptions,
+    LobbyJoinResult,
+    PreparedJoinChannelConfirmation
+} from "@/rpc/services";
+import type { Status } from "@/types";
+
+import type { Address, Bytes, ForkId, Hash } from "@/types/types";
+import { Codec, Type } from "@/utils";
+import { requireBytes32 } from "@/utils/bytes32";
+import type {
+    JoinChannelConfirmationStruct,
+    JoinChannelStruct
+} from "@typechain-types/contracts/V1/types/DataTypes";
 import {
     ethers,
     Signer,
@@ -8,22 +25,6 @@ import {
     TypedDataDomain,
     TypedDataField
 } from "ethers";
-
-import type {
-    JoinChannelConfirmationStruct,
-    JoinChannelStruct
-} from "@typechain-types/contracts/V1/types/DataTypes";
-import type { Status } from "@/types";
-import type { Address, Bytes, ForkId, Hash } from "@/types/types";
-import type { RuntimeRequester } from "../p2pRuntime/types";
-import NoopEventProvider from "./NoopEventProvider";
-import { Codec, Type } from "@/utils";
-import type {
-    LobbyJoinOptions,
-    LobbyJoinResult,
-    PreparedJoinChannelConfirmation
-} from "@/rpc/services";
-import type { ConnectToChannelOptions } from "./ConnectToChannelOptions";
 
 const UNSUPPORTED =
     "Operation not supported by the p2p runtime client signer. " +
@@ -123,13 +124,6 @@ class ClientP2pSigner implements Signer {
         });
     }
 
-    async setChannelId(channelId: Bytes): Promise<void> {
-        await this.client.request<void>({
-            type: "setChannelId",
-            channelId: channelId.toString()
-        });
-    }
-
     setIsLeader(value: boolean): void {
         this.isLeader = value;
         void this.client.request<void>({ type: "setIsLeader", value });
@@ -147,9 +141,10 @@ class ClientP2pSigner implements Signer {
         let encodedBalance: string | undefined;
         try {
             normalizedChannelId = ethers.hexlify(channelId);
-            if (!ethers.isHexString(normalizedChannelId, 32)) {
-                throw new Error("Channel ID must be exactly 32 bytes");
-            }
+            requireBytes32(
+                normalizedChannelId,
+                "Channel ID must be exactly 32 bytes"
+            );
             this.validateConnectOptions(options);
             encodedBalance =
                 options.balance === undefined
@@ -184,9 +179,10 @@ class ClientP2pSigner implements Signer {
         let normalizedChannelId: string;
         try {
             normalizedChannelId = ethers.hexlify(channelId);
-            if (!ethers.isHexString(normalizedChannelId, 32)) {
-                throw new Error("Channel ID must be exactly 32 bytes");
-            }
+            requireBytes32(
+                normalizedChannelId,
+                "Channel ID must be exactly 32 bytes"
+            );
         } catch (error) {
             return Promise.reject(error);
         }
@@ -195,6 +191,17 @@ class ClientP2pSigner implements Signer {
                 type: "cancelConnectToChannel",
                 channelId: normalizedChannelId
             },
+            { timeoutMs: null }
+        );
+    }
+
+    /**
+     * Internal route for `P2pInstance.leaveChannel`.
+     * Direct callers wait for settled removal but do not dispose the runtime.
+     */
+    leaveChannel(): Promise<void> {
+        return this.client.request<void>(
+            { type: "leaveChannel" },
             { timeoutMs: null }
         );
     }

@@ -1,10 +1,12 @@
-// @spec-test-coverage-ignore: shared lobby query actions exercised by owning mapped E2E declarations
-import { PeerTestHarness } from "@test/fixtures/PeerTestHarness";
-import type { HarnessControlRpc } from "@test/fixtures/customRpc/harnessControl/HarnessControlRpc";
-import { Logger } from "@/utils";
-import { ForkId, Address } from "@/types/types";
-import { hash as fakeHash } from "@test/factory";
 import Clock from "@/Clock";
+import { ForkId, Address } from "@/types/types";
+import { Logger } from "@/utils";
+import { hash as fakeHash } from "@test/factory";
+import type { HarnessControlRpc } from "@test/fixtures/customRpc/harnessControl/HarnessControlRpc";
+import { PeerTestHarness } from "@test/fixtures/PeerTestHarness";
+import { waitFor } from "@test/utils/waitFor";
+import { ethers } from "ethers";
+// @spec-test-coverage-ignore: shared lobby query actions exercised by owning mapped E2E declarations
 
 /**
  * Actions for RPC service testing.
@@ -168,22 +170,46 @@ export class RPCActions<
             .request();
     }
 
-    async connectPeers(peerIndices: number[]): Promise<void> {
-        await this.harness.network.connectPeers(peerIndices);
-    }
-
-    async joinLobby(
-        peerIndices: number[],
-        rendezvousTopic: string
-    ): Promise<void> {
-        await this.harness.network.joinLobby(peerIndices, rendezvousTopic);
-    }
-
-    async leaveLobby(
-        peerIndices: number[],
-        rendezvousTopic: string
-    ): Promise<void> {
-        await this.harness.network.leaveLobby(peerIndices, rendezvousTopic);
+    /**
+     * The channel id of the pairing `higherIndex` recovers with
+     * `partnerIndex`. The pairing shows up either as the in-flight
+     * negotiation attempt or, on a host where the open lands inside one
+     * poll interval, only as the opened channel: the attempt is cleared once
+     * the opening receipt is observed.
+     */
+    async recoveredPairingChannelIdWait(
+        higherIndex: number,
+        partnerIndex: number
+    ): Promise<string> {
+        let channelId = ethers.ZeroHash;
+        const partner = this.harness
+            .getPeer(partnerIndex)
+            .address.toLowerCase();
+        await waitFor(
+            async () => {
+                const control = this.harness.control(
+                    this.harness.getPeer(higherIndex)
+                );
+                const attempt = await control.query
+                    .getNegotiationAttempt()
+                    .request();
+                if (attempt?.peerAddress.toLowerCase() === partner) {
+                    channelId = attempt.channelId;
+                    return true;
+                }
+                const opened = await control.query.getChannelId().request();
+                if (opened !== ethers.ZeroHash) {
+                    channelId = opened;
+                    return true;
+                }
+                return false;
+            },
+            this.harness.event.protocolEventTimeoutMs({
+                withFirstBlockGrace: true
+            }),
+            200
+        );
+        return channelId;
     }
 
     async newPeerJoins(options: {

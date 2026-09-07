@@ -1,16 +1,13 @@
-import { ethers } from "ethers";
-
+import type StateManager from "../StateManager";
+import type { ReduceData } from "@/types";
+import type { Bytes, ForkId } from "@/types/types";
+import { Codec, Type } from "@/utils";
 import type {
     MessageBlockStruct,
     SnapshotDataStruct
 } from "@typechain-types/contracts/V1/types/DataTypes";
 import type { DisputeStruct } from "@typechain-types/contracts/V1/types/DisputeTypes";
-
-import type { ReduceData } from "@/types";
-import type { Bytes, ForkId } from "@/types/types";
-import { Codec, Type } from "@/utils";
-
-import type StateManager from "../StateManager";
+import { ethers } from "ethers";
 
 export type ReductionComputation = {
     reduceData: ReduceData;

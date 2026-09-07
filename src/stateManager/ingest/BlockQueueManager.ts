@@ -1,4 +1,11 @@
+import type StateManager from "../StateManager";
+import type AValidationStrategy from "../validationStrategy/AValidationStrategy";
+import Clock from "@/Clock";
 import { Block } from "@/models";
+import {
+    sourcePeersAndAuthor,
+    type QueuedBlockEntry
+} from "@/storage/QueueStorage";
 import { BlockValidationResult, TimeConfig } from "@/types";
 import {
     Address,
@@ -9,18 +16,12 @@ import {
     Timestamp
 } from "@/types/types";
 import { DetachedPromises, Logger } from "@/utils";
+import { channelKey } from "@/utils/channelKey";
+import { errorMessage } from "@/utils/errorMessage";
 import { LoggerUtils } from "@/utils/LoggerUtils";
 import P2pEventHooksUtils from "@/utils/P2pEventHooksUtils";
 import { TimeoutManager } from "@/utils/TimeoutManager";
-import Clock from "@/Clock";
-import {
-    sourcePeersAndAuthor,
-    type QueuedBlockEntry
-} from "@/storage/QueueStorage";
 import type { BlockConfirmationStruct } from "@typechain-types/contracts/V1/types/DataTypes";
-
-import type StateManager from "../StateManager";
-import type AValidationStrategy from "../validationStrategy/AValidationStrategy";
 
 export type IngestBlockConfirmationOptions = {
     onChainTimestamp?: Timestamp;
@@ -362,7 +363,7 @@ export default class BlockQueueManager {
         } catch (error) {
             this.logger.error("runForkRecovery - local reduction failed", {
                 forkId: String(forkId),
-                error: error instanceof Error ? error.message : String(error)
+                error: errorMessage(error)
             });
             throw error;
         } finally {
@@ -418,7 +419,8 @@ export default class BlockQueueManager {
                 return;
             }
             // Unknown fork (not disputed, no local genesis for it): ask the
-            // suppliers to prove it once; a failed sync punishes them. This is
+            // suppliers to prove it once; a failed sync punishes them, and so
+            // does a proven lineage that does not carry the block. This is
             // the sole sync-probe site now that arrival-time sync is gone.
             this.logger.verbose(
                 "queueTimeout - unknown fork, requesting sync from suppliers",
@@ -430,7 +432,7 @@ export default class BlockQueueManager {
                     )
                 }
             );
-            this.requestSync(entry);
+            this.probeSources(entry);
             return;
         }
 
@@ -444,10 +446,11 @@ export default class BlockQueueManager {
         }
 
         // Still in the future after the agreement window: discard (already
-        // dequeued) and ask the suppliers to sync us up - junk must not
-        // accumulate. A block posted as calldata can always be re-read from
-        // the chain if it turns out to be needed.
-        this.requestSync(entry);
+        // dequeued) and ask the suppliers to prove it. An honest supplier's
+        // lineage carries the block and syncs us up; one that does not
+        // supplied junk and is excluded. A block posted as calldata can
+        // always be re-read from the chain if it turns out to be needed.
+        this.probeSources(entry);
     }
 
     private disconnectEntrySources(entry: QueuedBlockEntry): void {
@@ -568,23 +571,68 @@ export default class BlockQueueManager {
         this.timeoutHandles.delete(blockHash);
     }
 
-    private requestSync(entry: QueuedBlockEntry): void {
-        const block = entry.block;
-
+    /**
+     * Ask every attributed source and the author to prove the block's
+     * lineage, once each. A failed probe excludes the peer inside `sync`. A
+     * probe that succeeds without that lineage carrying the block proves the
+     * peer supplied junk: it is excluded here. Probes are observed detached
+     * work; nothing after the sync awaits, so a probe cannot reject.
+     */
+    private probeSources(entry: QueuedBlockEntry): void {
         for (const peer of sourcePeersAndAuthor(entry)) {
-            void this.stateManager.p2pManager.localRpc.spectateService.sync(
+            DetachedPromises.collect(this.probeSource(peer, entry));
+        }
+    }
+
+    private async probeSource(
+        peer: Address,
+        entry: QueuedBlockEntry
+    ): Promise<void> {
+        const block = entry.block;
+        // Waits behind any sync already in flight toward the peer, which need
+        // not cover this block; `false` then always means the peer was cut.
+        const synced =
+            await this.stateManager.p2pManager.localRpc.spectateService.syncAfterInFlight(
                 peer,
                 block.channelId,
                 block.forkId,
                 block.height
             );
+        if (!synced || this.stateManager.isDisposed) return;
+        if (!this.isBlockUnbackedByLineage(block)) return;
+        this.logger.verbose(
+            "queueTimeout - source proved a lineage that does not carry the block, excluding",
+            {
+                peer: String(peer),
+                block: LoggerUtils.getBlockMetadata(
+                    block,
+                    this.stateManager.storage
+                )
+            }
+        );
+        this.stateManager.p2pManager.disconnectAndBlacklistPeers([peer]);
+    }
+
+    /**
+     * A successful probe lands on the responder's latest fork, the only one
+     * it proves, and replays that lineage's unfinalized blocks through the
+     * ingest, whose execution is deferred. A block the lineage carries is
+     * therefore stored or queued for execution by the replay; a block that is
+     * neither is junk. A block on any other fork is inconclusive and its
+     * source is kept.
+     */
+    private isBlockUnbackedByLineage(block: Block): boolean {
+        if (this.isBlockStored(block)) return false;
+        if (this.stateManager.storage.queues.getQueuedEntry(block.hash)) {
+            return false;
         }
+        return block.forkId === this.stateManager.forkId;
     }
 
     private isBlockForThisChannel(block: Block): boolean {
         return (
-            String(block.channelId).toLowerCase() ===
-            String(this.stateManager.channelId).toLowerCase()
+            channelKey(block.channelId) ===
+            channelKey(this.stateManager.channelId)
         );
     }
 

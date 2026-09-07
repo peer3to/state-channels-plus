@@ -1,6 +1,6 @@
-import { expect } from "chai";
 import { TransportType } from "@/transport/TransportType";
 import { MathTestSession as TestSession } from "@test/harness";
+import { expect } from "chai";
 
 /**
  * E2E Tests for Handshake Initialization
@@ -16,7 +16,7 @@ describe("E2E: Init Handshake", function () {
         it("should complete handshake successfully and create peer profile", async function () {
             const h = TestSession.getHarness();
             await h.lifecycle.start(3, 0, { autoConnect: false });
-            await h.rpc.connectPeers([0, 1]);
+            await h.network.connectPeers([0, 1]);
             await h.event.waitUntilEventOccurs("onConnection", 5000, [0, 1]);
             await h.rpc.newPeerJoins({
                 newPeerIndex: 2,
@@ -116,7 +116,7 @@ describe("E2E: Init Handshake", function () {
         it("should blacklist peer when handshake request time difference exceeds agreementTime", async function () {
             const h = TestSession.getHarness();
             await h.lifecycle.start(3, 0, { autoConnect: false });
-            await h.rpc.connectPeers([0, 1]);
+            await h.network.connectPeers([0, 1]);
             await h.event.waitUntilEventOccurs("onConnection", 5000, [0, 1]);
             await h.rpc.newPeerJoins({
                 newPeerIndex: 2,
@@ -143,7 +143,7 @@ describe("E2E: Init Handshake", function () {
         it("should disconnect peer that doesn't respond within agreementTime", async function () {
             const h = TestSession.getHarness();
             await h.lifecycle.start(3, 0, { autoConnect: false });
-            await h.rpc.connectPeers([0, 1]);
+            await h.network.connectPeers([0, 1]);
             await h.event.waitUntilEventOccurs("onConnection", 5000, [0, 1]);
             await h.rpc.newPeerJoins({
                 newPeerIndex: 2,
@@ -172,7 +172,7 @@ describe("E2E: Init Handshake", function () {
         it("should blacklist peer when handshake response time doesn't match init time", async function () {
             const h = TestSession.getHarness();
             await h.lifecycle.start(3, 0, { autoConnect: false });
-            await h.rpc.connectPeers([0, 1]);
+            await h.network.connectPeers([0, 1]);
             await h.event.waitUntilEventOccurs("onConnection", 5000, [0, 1]);
             await h.rpc.newPeerJoins({
                 newPeerIndex: 2,
@@ -201,7 +201,7 @@ describe("E2E: Init Handshake", function () {
         it("should blacklist peer answering with an undecodable (junk) signature", async function () {
             const h = TestSession.getHarness();
             await h.lifecycle.start(3, 0, { autoConnect: false });
-            await h.rpc.connectPeers([0, 1]);
+            await h.network.connectPeers([0, 1]);
             await h.event.waitUntilEventOccurs("onConnection", 5000, [0, 1]);
             await h.rpc.newPeerJoins({
                 newPeerIndex: 2,

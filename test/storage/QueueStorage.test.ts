@@ -1,16 +1,16 @@
-import { expect } from "chai";
-import { describe, it, before, beforeEach } from "mocha";
-import { ethers } from "hardhat";
+import * as factory from "../factory";
+import Clock from "@/Clock";
+import { Block } from "@/models";
+import Storage from "@/storage";
 import { QueueStorage } from "@/storage/QueueStorage";
+import { ForkId, BlockHeight, Hash } from "@/types/types";
 import {
     BlockConfirmationStruct,
     SignedBlockStruct
 } from "@typechain-types/contracts/V1/types/DataTypes";
-import { ForkId, BlockHeight, Hash } from "@/types/types";
-import * as factory from "../factory";
-import { Block } from "@/models";
-import Storage from "@/storage";
-import Clock from "@/Clock";
+import { expect } from "chai";
+import { ethers } from "hardhat";
+import { describe, it, before, beforeEach } from "mocha";
 
 const sig = () => ethers.hexlify(ethers.randomBytes(65));
 
@@ -37,6 +37,40 @@ describe("QueueStorage", () => {
         const { forkId, height } = mockBlock.coordinates;
         mockForkId = forkId;
         mockHeight = height;
+    });
+
+    it("restoring a copy without time preserves the queued timestamp", () => {
+        storage.queueBlock(Block.fromBlockConfirmation(mockBlockConfirmation));
+        const [entry] = storage.tryDequeueAt(mockForkId, mockHeight);
+        storage.queueBlock(
+            Block.fromBlockConfirmation(mockBlockConfirmation, 17)
+        );
+        storage.restoreEntry(entry);
+        expect(
+            storage.getQueuedEntry(mockBlock.hash)?.block.onChainTimestamp
+        ).to.equal(17);
+    });
+    it("restoring a copy with zero time replaces the queued timestamp", () => {
+        storage.queueBlock(
+            Block.fromBlockConfirmation(mockBlockConfirmation, 0)
+        );
+        const [entry] = storage.tryDequeueAt(mockForkId, mockHeight);
+        storage.queueBlock(
+            Block.fromBlockConfirmation(mockBlockConfirmation, 17)
+        );
+        storage.restoreEntry(entry);
+        expect(
+            storage.getQueuedEntry(mockBlock.hash)?.block.onChainTimestamp
+        ).to.equal(0);
+    });
+
+    it("duplicate queue insertion preserves time when the incoming copy has none", () => {
+        storage.queueBlock(
+            Block.fromBlockConfirmation(mockBlockConfirmation, 17)
+        );
+        storage.queueBlock(Block.fromBlockConfirmation(mockBlockConfirmation));
+        const entry = storage.tryDequeueAt(mockForkId, mockHeight);
+        expect(entry[0]?.block.onChainTimestamp).to.equal(17);
     });
 
     describe("Queue Operations", () => {

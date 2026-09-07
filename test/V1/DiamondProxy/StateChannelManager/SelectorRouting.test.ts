@@ -1,10 +1,3 @@
-import { expect } from "chai";
-import { ethers } from "hardhat";
-
-import {
-    deployMathChannelProxyFixture,
-    DeployedFacetAddresses
-} from "@test/test_utils/testHelpers";
 import {
     diamondCallableFunctions,
     diamondFunctionLabel,
@@ -17,9 +10,15 @@ import {
     proxyShadowedRoutedFunctions
 } from "@test/fixtures/ProxySelectorRoutingFixture";
 import {
+    deployMathChannelProxyFixture,
+    DeployedFacetAddresses
+} from "@test/test_utils/testHelpers";
+import {
     StateChannelManagerInterface,
     StateChannelManagerProxy__factory
 } from "@typechain-types";
+import { expect } from "chai";
+import { ethers } from "hardhat";
 
 describe("StateChannelManagerProxy selector routing", function () {
     let diamond: StateChannelManagerInterface;

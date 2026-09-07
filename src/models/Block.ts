@@ -1,11 +1,5 @@
-import { Signer, ethers } from "ethers";
-import {
-    BlockStruct,
-    SignedBlockStruct,
-    BlockConfirmationStruct,
-    MessageBlockStruct
-} from "@typechain-types/contracts/V1/types/DataTypes";
 import { Codec, Type } from "../utils/Codec";
+import { recoverSigner } from "@/cache";
 import {
     ForkId,
     BlockHeight,
@@ -18,9 +12,15 @@ import {
 } from "@/types/types";
 
 import { getChecksumAddress } from "@/utils/address";
-import { SignatureUtils } from "@/utils/SignatureUtils";
 import { isSubset, union } from "@/utils/set";
-import { recoverSigner } from "@/cache";
+import { SignatureUtils } from "@/utils/SignatureUtils";
+import {
+    BlockStruct,
+    SignedBlockStruct,
+    BlockConfirmationStruct,
+    MessageBlockStruct
+} from "@typechain-types/contracts/V1/types/DataTypes";
+import { Signer, ethers } from "ethers";
 
 export type BlockCoordinates = {
     forkId: ForkId;
@@ -241,6 +241,13 @@ export default class Block {
             this._confirmationSignatures.add(signature);
         }
         return this;
+    }
+
+    /** Merge another copy after the caller has established the same block identity. */
+    mergeFrom(incoming: Block): void {
+        this.expandSignatures(incoming.confirmationSignatures);
+        const timestamp = incoming.onChainTimestamp;
+        if (timestamp !== undefined) this.onChainTimestamp = timestamp;
     }
 
     /** Drop confirmation signatures (the author's original signature is kept). */

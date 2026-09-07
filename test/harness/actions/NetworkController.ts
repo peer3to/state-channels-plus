@@ -1,8 +1,9 @@
 // @spec-test-coverage-ignore: shared lobby transport actions exercised by owning mapped E2E declarations
-import { PeerTestHarness } from "@test/fixtures/PeerTestHarness";
-import type { HarnessControlRpc } from "@test/fixtures/customRpc/harnessControl/HarnessControlRpc";
-import { Codec, Logger, Type } from "@/utils";
 import type { ConnectToChannelOptions } from "@/evm/signer/ConnectToChannelOptions";
+import { compareAddresses } from "@/rpc/services/openChannelNegotiation/OpenChannelNegotiationHelpers";
+import { Codec, Logger, Type } from "@/utils";
+import type { HarnessControlRpc } from "@test/fixtures/customRpc/harnessControl/HarnessControlRpc";
+import { PeerTestHarness } from "@test/fixtures/PeerTestHarness";
 
 /**
  * Handles network connectivity and P2P connections between peers.
@@ -19,6 +20,15 @@ export class NetworkController<
         private harness: PeerTestHarness<TCustomRpc>,
         private logger: Logger
     ) {}
+
+    lobbyRoleIndices(): [advertiserIndex: number, selectorIndex: number] {
+        return compareAddresses(
+            this.harness.peers[0].address,
+            this.harness.peers[1].address
+        ) < 0
+            ? [0, 1]
+            : [1, 0];
+    }
 
     /**
      * Connect all peers to each other via P2P
@@ -73,6 +83,18 @@ export class NetworkController<
         options?: ConnectToChannelOptions
     ): Promise<void> {
         const peers = this.harness.getFilteredPeers(peerIndices);
+        // Isolation can stop discovery's retry loop. Restart this observation
+        // explicitly; joining an already observed topic is idempotent.
+        await Promise.all(
+            peers.map((peer) =>
+                this.harness
+                    .control(peer)
+                    .network.leaveSelectedKey(
+                        this.harness.channelId!.toString()
+                    )
+                    .request()
+            )
+        );
         await Promise.all(
             peers.flatMap((peer) =>
                 this.harness.peers

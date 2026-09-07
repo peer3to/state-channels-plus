@@ -1,8 +1,7 @@
 // @spec-test-coverage-ignore: shared hook wiring exercised by mapped TestSession and full-flow tests
-import { DetachedPromises, maybeStampErrorWithPeerAddress } from "@/utils";
-
-import { PeerIdentityExecutionContext } from "../core/peerErrorAttribution";
 import { TestSession } from "./TestSession";
+import { PeerIdentityExecutionContext } from "../core/peerErrorAttribution";
+import { DetachedPromises, maybeStampErrorWithPeerAddress } from "@/utils";
 
 type TestSessionClass = typeof TestSession;
 
@@ -20,6 +19,7 @@ function hookTrace(message: string): void {
 declare global {
     // eslint-disable-next-line no-var
     var __peer3SessionHooksRegistered__: boolean | undefined;
+
     // eslint-disable-next-line no-var
     var __peer3UnhandledRejectionHookRegistered__: boolean | undefined;
 }

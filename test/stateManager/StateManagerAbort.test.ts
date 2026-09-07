@@ -1,7 +1,6 @@
-import { expect } from "chai";
-
 import { Status } from "@/types";
 import { MathTestSession as TestSession } from "@test/harness";
+import { expect } from "chai";
 
 describe("StateManager abort", function () {
     it("cancels session-owned timeout work", async function () {

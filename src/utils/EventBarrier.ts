@@ -1,4 +1,5 @@
 import { Logger } from "./logging";
+import { errorMessage } from "@/utils/errorMessage";
 
 export type EventBarrierOptions = {
     timeoutMs?: number;
@@ -167,8 +168,7 @@ export class EventBarrier {
                         waiter.resolve();
                     }
                 } catch (err) {
-                    const message =
-                        err instanceof Error ? err.message : String(err);
+                    const message = errorMessage(err);
                     waiter.reject(
                         this.createErrorWithCapturedStack(
                             `EventBarrier condition evaluation failed: ${message}`,
@@ -193,8 +193,7 @@ export class EventBarrier {
                         waiter.resolve();
                     }
                 } catch (err) {
-                    const message =
-                        err instanceof Error ? err.message : String(err);
+                    const message = errorMessage(err);
                     const wrappedError = this.createErrorWithCapturedStack(
                         `EventBarrier condition evaluation failed: ${message}`,
                         err,

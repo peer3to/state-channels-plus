@@ -1,3 +1,5 @@
+import { Mutex } from "@/utils";
+import type { Logger } from "@/utils/logging/Logger";
 import {
     AbstractSigner,
     Provider,
@@ -7,9 +9,6 @@ import {
     assert,
     keccak256
 } from "ethers";
-
-import { Mutex } from "@/utils";
-import type { Logger } from "@/utils/logging/Logger";
 
 /** Host-bound nonce owner for every real-chain transaction sent by one peer. */
 class HostNonceManager extends AbstractSigner {

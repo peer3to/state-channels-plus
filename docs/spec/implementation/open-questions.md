@@ -33,8 +33,11 @@ Existing `OQ-*` IDs are preserved; new questions use the layer-scoped namespace 
 The targeted opening handoff relies on Hyperswarm's one-live-connection-per-unique-peer behavior when the
 same peer moves from the domain-separated matching topic to the raw channel topic. Current automated tests
 force `DEBUG_LOCAL_TRANSPORT`; they prove that a transient duplicate authenticates safely and one transport
-retires, but they do not prove normal Hyperswarm deduplication. This is an accepted production assumption and
-verification gap. It does not authorize a second preservation mechanism or local discovery changes.
+retires, but they do not prove normal Hyperswarm deduplication. The local discovery backend now enforces the
+same one-live-connection-per-peer rule across every observed topic
+([`UNIT-TEST-LOCAL-DISCOVERY-SERVER-1-1W1GY5.P8`](source/src/utils/node/LocalDiscoveryServer.ts.md#unit-test-local-discovery-server-1-1w1gy5.p8)),
+so the local mirror is covered; the production Hyperswarm behavior remains an accepted assumption and
+verification gap. It does not authorize a second preservation mechanism.
 
 <a id="oq-13-fe5ct4"></a>
 
@@ -251,3 +254,29 @@ Today the blast radius is bounded only by production `p2pSetup` registering the 
 them from the published artifact ([`REQ-RUN-10-FSD184`](views/architecture/sdk/runtime-and-concurrency.md#req-run-10-fsd184)'s intended rule), or accept "test peers only run on
 closed networks" as an explicit, documented limitation. See
 [sdk/runtime-and-concurrency.md](./views/architecture/sdk/runtime-and-concurrency.md) §11.4. This is a production gate.
+
+<a id="oq-impl-sync-1-hjc60d"></a>
+
+## OQ-IMPL-SYNC-1-HJC60D — Reuse verified sync reductions without losing chain calldata
+
+Status: Open, non-blocking performance follow-up. Current behavior retained by Luka on 2026-09-07.
+
+Each sync currently establishes its own chain-finality decisions and builds its own complete
+snapshot-update simulation. This deliberately keeps calldata inclusion independent of another
+sync's local verification progress. A matching locally proven successor is reusable evidence,
+but it does not prove that the chain has executed the reduction. See the
+[SpectateService report](./source/src/rpc/services/spectate/SpectateService.ts.md#key-design-decisions).
+
+Design a way to reuse already verified reductions and fetched chain windows without repeating
+unnecessary proof work or chain reads. Keep local proof validity separate from the reductions
+still required by the chain simulation. The design must identify the proof inputs and chain
+anchor, validate the expected successor fork, define invalidation when those inputs change,
+and handle concurrent verification and a reduction landing during sync. Each request must retain
+all required calldata even when it reuses a proof; reuse must not create false rejections or
+blacklist an honest responder.
+
+Candidate validation: concurrent requests share a matching proof; changed inputs prevent reuse;
+a locally complete but chain-unreduced window retains reduction calldata; an already-final chain
+window omits it; and a reduction landing between observations still permits the valid simulation.
+Measure avoided computation and chain calls against the current behavior. No cache, reuse
+algorithm, or implementation change is selected by this question.

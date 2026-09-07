@@ -9,6 +9,8 @@ an engineer-reviewed report assigns it the test IDs it covers in full. Current s
 [generated/verification-coverage.md](../generated/verification-coverage.md); this document explains **why the
 scores are what they are** and which lever moves each one.
 
+The simplification coverage uses real pre-deployment ports, authenticated host probes, factory-built blocks, actual provider loading and real logger stores. The full distributed gate passed all 1,987 runnable cases; Node and browser typechecks and both real browser gates passed. The review follow-up passed all 1,987 cases again in run-1653 after the separate import-order cleanup; the focused dependency/storage/manager run passed 125 cases. Existing skipped cases and unassigned specification permutations remain gaps, not evidence. New declarations have exact component permutations; moved declarations retain their existing claims only where the actual oracle still matches.
+
 ## Contents
 
 - [Current state](#current-state)

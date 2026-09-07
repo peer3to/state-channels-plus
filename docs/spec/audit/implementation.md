@@ -3,6 +3,8 @@
 > **Agent assessment:** In progress.
 > **Engineer disposition:** Pending.
 
+The simplification review fixes narrow bytes32 inputs through an assertion signature and remove the remaining queue-key forwarding method. The separate import-order change preserves all non-import executable statements, all imported bindings, and side-effect import boundaries. Runtime initialization order is checked by the distributed and browser gates; TypeScript suppression comments remain attached to their original imports.
+
 Post-handshake connection ownership is now centralized in `P2PManager`. Local channel status is
 the only admission input: every completed live transport is promoted, while `OPENED` alone performs
 the participant read and sync. Join and spectate RPC paths provide no alternate promotion or
@@ -74,6 +76,8 @@ records the complete method, listener, event-log, query, and passthrough boundar
 the structural Result predicate.
 
 Other specification-mirrored implementation subjects, exhaustive source inventories, conformance decisions, and unit variants remain visible in generated coverage.
+
+Balance validation, byte/key conversion, same-block copy merge, frame classification and log reporting have single owners. Extraction retains input/error order, raw commitment comparisons, timestamp-defined checks, response precedence and platform timer lifetime. Existing strategy instanceof checks remain. The deleted connectivity utility had no reachable consumer; each of its five data-type IDs retains other source contributors.
 
 ## Targeted pre-open channel join assessment — 2026-08-31
 

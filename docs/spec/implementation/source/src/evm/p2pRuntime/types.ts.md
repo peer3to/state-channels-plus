@@ -25,6 +25,7 @@ The runtime port protocol types.
 
 1. `SerializedContract.abiJson` carries application ABI metadata across the port. For the manager,
    both runtime sides merge it after the SDK-owned ABI so consumer extensions remain available.
+2. `SerializedError.eventLoopDelay` carries the watchdog's structured sample (`EventLoopDelayDetails`) across the port; structured cloning an `Error` keeps only its standard slots, so the codec projects it explicitly.
 
 ## Inputs, outputs, state, and side effects
 

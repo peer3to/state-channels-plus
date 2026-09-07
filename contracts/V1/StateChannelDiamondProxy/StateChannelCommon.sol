@@ -112,9 +112,16 @@ contract StateChannelCommon is StateChannelManagerStorage, StateChannelManagerEv
         return stateSnapshots[channelId].snapshotData.participants;
     }
 
+    /// Joiners whose JOIN the current snapshot has not consumed yet: the walk
+    /// from the channel's inbound head stops at the snapshot's own inbound
+    /// hash. An unbounded walk counted every JOIN ever recorded, including
+    /// the original participants' open joins, so a leaver stayed "pending"
+    /// forever and a slashed joiner stayed eligible.
     function _getPendingParticipants(bytes32 channelId) internal view virtual returns (address[] memory) {
         address[] memory pendingParticipants = _derivePendingParticipantsFromInboundHash(
-            channelId, channelBalances[channelId].latestInboundMessageBlockHash, bytes32(0)
+            channelId,
+            channelBalances[channelId].latestInboundMessageBlockHash,
+            stateSnapshots[channelId].snapshotData.latestInboundMessageBlockHash
         );
         return pendingParticipants;
     }
@@ -156,17 +163,18 @@ contract StateChannelCommon is StateChannelManagerStorage, StateChannelManagerEv
     {
         address[] memory snapshotParticipants = _getSnapshotParticipants(channelId);
         return _deriveEligibleParticipantsFromInboundHashAndSnapshotParticipants(
-            channelId, latestInboundMessageBlockHash, snapshotParticipants
+            channelId, latestInboundMessageBlockHash, snapshotParticipants, bytes32(0)
         );
     }
 
     function _deriveEligibleParticipantsFromInboundHashAndSnapshotParticipants(
         bytes32 channelId,
         bytes32 latestInboundMessageBlockHash,
-        address[] memory snapshotParticipants
+        address[] memory snapshotParticipants,
+        bytes32 lowerInboundHash
     ) internal view returns (address[] memory eligibleParticipants) {
         address[] memory pendingParticipants =
-            _derivePendingParticipantsFromInboundHash(channelId, latestInboundMessageBlockHash, bytes32(0));
+            _derivePendingParticipantsFromInboundHash(channelId, latestInboundMessageBlockHash, lowerInboundHash);
 
         address[] memory participants = UtilityFacetInterface(utilityFacetAddress).concatAddressArraysNoDuplicates(
             snapshotParticipants, pendingParticipants
@@ -588,8 +596,11 @@ contract StateChannelCommon is StateChannelManagerStorage, StateChannelManagerEv
     }
 
     function _canParticipateInDisputes(bytes32 channelId, address participant) internal view virtual returns (bool) {
-        address[] memory eligibleParticipants = _deriveEligibleParticipantsFromInboundHash(
-            channelId, channelBalances[channelId].latestInboundMessageBlockHash
+        address[] memory eligibleParticipants = _deriveEligibleParticipantsFromInboundHashAndSnapshotParticipants(
+            channelId,
+            channelBalances[channelId].latestInboundMessageBlockHash,
+            _getSnapshotParticipants(channelId),
+            stateSnapshots[channelId].snapshotData.latestInboundMessageBlockHash
         );
         return UtilityFacetInterface(utilityFacetAddress).isAddressInArray(eligibleParticipants, participant);
     }

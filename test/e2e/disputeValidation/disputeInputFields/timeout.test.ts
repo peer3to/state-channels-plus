@@ -6,8 +6,10 @@ import { expect } from "chai";
 
 // Invalid-dispute scenarios require upload -> audit -> kill to fit inside the
 // evidence window. With one-second interval mining, the three-second minimum
-// has no scheduling margin for those two sequential on-chain transactions.
-const INVALID_DISPUTE_EVIDENCE_TIME = 5;
+// has no scheduling margin for those two sequential on-chain transactions,
+// and on a loaded farm the event delivery plus the audit's chain reads alone
+// have taken five seconds, so the window keeps a few seconds of headroom.
+const INVALID_DISPUTE_EVIDENCE_TIME = 8;
 
 describe("E2E: dispute validation / disputeInputFields / timeout", function () {
     it("dispute.input.timeout.blockHeight != stateProof.latest + 1 → TimeoutNotLinkedToLatestState", async function () {
@@ -63,6 +65,16 @@ describe("E2E: dispute validation / disputeInputFields / timeout", function () {
         await h.tamper.stubConstructDispute(
             0,
             (dispute, _sm, args) => {
+                // A dispute built to answer another peer's commit before this
+                // peer recorded its own timeout carries an empty timeout;
+                // naming a participant there is killed for linkage, not for
+                // the participant. Tamper only a real timeout.
+                if (
+                    dispute.input.timeout.participant ===
+                    "0x0000000000000000000000000000000000000000"
+                ) {
+                    return;
+                }
                 //  blame peer 1
                 dispute.input.timeout.participant =
                     args.blamedAddress as string;
@@ -96,6 +108,8 @@ describe("E2E: dispute validation / disputeInputFields / timeout", function () {
             const forkId = h.activeForkId!;
             h.contextApi.markAfkPeer({ afkPeerIndex: 2 });
 
+            // The opener needs its own reason before a dispute window exists.
+            await h.control(h.getPeer(0)).dispute.setForceExit(true).request();
             await h.tamper.postTamperedDispute(0, () => {}, {
                 markMalicious: false
             });

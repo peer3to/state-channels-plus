@@ -1,6 +1,3 @@
-import { PeerTestHarness } from "@test/fixtures/PeerTestHarness";
-import type { HarnessControlRpc } from "@test/fixtures/customRpc/harnessControl/HarnessControlRpc";
-import { Logger } from "@/utils";
 import {
     AssertCalldataActions,
     AssertDisputeActions,
@@ -9,6 +6,9 @@ import {
     AssertSyncActions
 } from ".";
 import { AssertStorageActions } from "./AssertStorageActions";
+import { Logger } from "@/utils";
+import type { HarnessControlRpc } from "@test/fixtures/customRpc/harnessControl/HarnessControlRpc";
+import { PeerTestHarness } from "@test/fixtures/PeerTestHarness";
 
 export class AssertActions<
     TCustomRpc extends HarnessControlRpc = HarnessControlRpc

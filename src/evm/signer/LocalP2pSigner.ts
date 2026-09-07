@@ -1,30 +1,33 @@
-import { ethers, Signer, TransactionResponse } from "ethers";
-
+import type { ConnectToChannelOptions } from "./ConnectToChannelOptions";
+import NoopEventProvider from "./NoopEventProvider";
+import Clock from "@/Clock";
+import type P2PManager from "@/P2PManager";
+import MainRpcService from "@/rpc/MainRpcService";
+import type {
+    LobbyJoinOptions,
+    LobbyJoinResult,
+    PreparedJoinChannelConfirmation
+} from "@/rpc/services";
+import { validateMatchTimeout } from "@/rpc/services/lobbyMatching/LobbyMatchingValidation";
+import { DEFAULT_JOIN_AMOUNT } from "@/rpc/services/openChannelNegotiation/OpenChannelNegotiationHelpers";
+import { Status } from "@/types";
+import { isCommittedParticipantStatus } from "@/types/flags";
+import { Address, Bytes } from "@/types/types";
+import type { ForkId, Hash } from "@/types/types";
+import {
+    channelIdToDiscoveryKey,
+    channelIdToTargetedJoinTopic,
+    type Logger
+} from "@/utils";
+import { requireBytes32 } from "@/utils/bytes32";
+import { errorMessage } from "@/utils/errorMessage";
 import {
     BalanceStruct,
     TransactionStruct,
     JoinChannelConfirmationStruct,
     JoinChannelStruct
 } from "@typechain-types/contracts/V1/types/DataTypes";
-import Clock from "@/Clock";
-import type P2PManager from "@/P2PManager";
-import MainRpcService from "@/rpc/MainRpcService";
-import { Address, Bytes } from "@/types/types";
-import { Status } from "@/types";
-import {
-    channelIdToDiscoveryKey,
-    channelIdToTargetedJoinTopic,
-    type Logger
-} from "@/utils";
-import type { ForkId, Hash } from "@/types/types";
-import type {
-    LobbyJoinOptions,
-    LobbyJoinResult,
-    PreparedJoinChannelConfirmation
-} from "@/rpc/services";
-import NoopEventProvider from "./NoopEventProvider";
-import type { ConnectToChannelOptions } from "./ConnectToChannelOptions";
-import { DEFAULT_JOIN_AMOUNT } from "@/rpc/services/openChannelNegotiation/OpenChannelNegotiationHelpers";
+import { ethers, Signer, TransactionResponse } from "ethers";
 
 /**
  * Signer used by the live p2p runtime state manager for channel-scoped
@@ -145,10 +148,6 @@ class LocalP2pSigner<TCustomRpc extends MainRpcService = MainRpcService>
         return this.signer.signTypedData(domain, types, value);
     }
 
-    async setChannelId(channelId: Bytes): Promise<void> {
-        await this.p2pManager.stateManager.setChannelId(channelId);
-    }
-
     public setIsLeader(value: boolean) {
         this.isLeader = value;
     }
@@ -166,11 +165,17 @@ class LocalP2pSigner<TCustomRpc extends MainRpcService = MainRpcService>
         if (!ethers.isHexString(normalizedChannelId, 32))
             throw new Error("Channel ID must be exactly 32 bytes");
         const stateManager = this.p2pManager.stateManager;
+        stateManager.leaveChannelService.assertOperationAllowed(
+            "connectToChannel"
+        );
         let openedGenesis = false;
 
         if (String(stateManager.channelId) !== normalizedChannelId) {
-            if (String(stateManager.channelId) !== ethers.ZeroHash)
-                await stateManager.clearChannelId();
+            if (String(stateManager.channelId) !== ethers.ZeroHash) {
+                throw new Error(
+                    `This P2P runtime already owns channel ${stateManager.channelId}; leave it and create a new runtime before selecting ${normalizedChannelId}`
+                );
+            }
             await stateManager.setChannelId(normalizedChannelId);
         }
 
@@ -226,10 +231,7 @@ class LocalP2pSigner<TCustomRpc extends MainRpcService = MainRpcService>
                 stateManager.status === Status.PARTICIPATING
             );
         }
-        if (
-            stateManager.status === Status.PENDING_PARTICIPANT ||
-            stateManager.status === Status.PARTICIPATING
-        ) {
+        if (isCommittedParticipantStatus(stateManager.status)) {
             if (openedGenesis) return true;
             if (!options.balance) return true;
             const prepared =
@@ -260,23 +262,28 @@ class LocalP2pSigner<TCustomRpc extends MainRpcService = MainRpcService>
         );
     }
 
+    /**
+     * Internal route for `P2pInstance.leaveChannel`.
+     * Direct callers wait for settled removal but do not dispose the runtime.
+     */
+    public leaveChannel(): Promise<void> {
+        return this.p2pManager.stateManager.leaveChannelService.leaveChannel();
+    }
+
     public async joinLobby(
         lobbyTopic: string,
         options: LobbyJoinOptions = {}
     ): Promise<LobbyJoinResult | undefined> {
-        if (!ethers.isHexString(lobbyTopic, 32)) {
-            throw new Error("Rendezvous topic must be exactly 32 bytes");
-        }
-        if (
-            options.matchTimeoutMs !== undefined &&
-            options.matchTimeoutMs !== null &&
-            (!Number.isSafeInteger(options.matchTimeoutMs) ||
-                options.matchTimeoutMs <= 0)
-        ) {
-            throw new Error("Lobby match timeout must be a positive integer");
-        }
+        this.p2pManager.stateManager.leaveChannelService.assertOperationAllowed(
+            "joinLobby"
+        );
+        requireBytes32(lobbyTopic, "Rendezvous topic must be exactly 32 bytes");
+        validateMatchTimeout(options.matchTimeoutMs);
         const balance = options.balance ?? this.defaultBalance();
-        await this.requirePositiveBalance(balance);
+        await this.p2pManager.stateManager.diamondStateMachine.requirePositiveBalance(
+            balance,
+            "Balance"
+        );
         if (
             String(this.p2pManager.stateManager.channelId) !== ethers.ZeroHash
         ) {
@@ -314,8 +321,7 @@ class LocalP2pSigner<TCustomRpc extends MainRpcService = MainRpcService>
                 await matching.releaseNegotiationHandoff(lobbyTopic);
             } catch (error) {
                 this.logger.warn("Matched lobby negotiation failed to start", {
-                    error:
-                        error instanceof Error ? error.message : String(error)
+                    error: errorMessage(error)
                 });
                 await matching.releaseNegotiationHandoff(lobbyTopic);
             }
@@ -338,6 +344,9 @@ class LocalP2pSigner<TCustomRpc extends MainRpcService = MainRpcService>
         expectedSnapshotHash: Hash,
         expectedForkId: ForkId
     ): Promise<boolean> {
+        this.p2pManager.stateManager.leaveChannelService.assertOperationAllowed(
+            "joinChannel"
+        );
         return this.p2pManager.stateManager.membershipService.joinChannel(
             confirmation,
             expectedSnapshotHash,
@@ -350,6 +359,9 @@ class LocalP2pSigner<TCustomRpc extends MainRpcService = MainRpcService>
         expectedSnapshotHash: Hash,
         expectedForkId: ForkId
     ): Promise<boolean> {
+        this.p2pManager.stateManager.leaveChannelService.assertOperationAllowed(
+            "topUpBalance"
+        );
         return this.p2pManager.stateManager.membershipService.topUpBalance(
             confirmation,
             expectedSnapshotHash,
@@ -360,6 +372,9 @@ class LocalP2pSigner<TCustomRpc extends MainRpcService = MainRpcService>
     public collectJoinChannelConfirmation(
         joinChannel: JoinChannelStruct
     ): Promise<PreparedJoinChannelConfirmation> {
+        this.p2pManager.stateManager.leaveChannelService.assertOperationAllowed(
+            "collectJoinChannelConfirmation"
+        );
         return this.p2pManager.localRpc.joinChannelService.collectJoinChannelConfirmation(
             joinChannel
         );
@@ -375,21 +390,6 @@ class LocalP2pSigner<TCustomRpc extends MainRpcService = MainRpcService>
 
     private defaultBalance(): BalanceStruct {
         return { amount: BigInt(DEFAULT_JOIN_AMOUNT), data: "0x" };
-    }
-
-    private async requirePositiveBalance(
-        balance: BalanceStruct
-    ): Promise<void> {
-        const zeroBalance =
-            await this.p2pManager.stateManager.diamondStateMachine.getZeroBalance();
-        if (
-            !(await this.p2pManager.stateManager.diamondStateMachine.isBalanceLesserThan(
-                zeroBalance,
-                balance
-            ))
-        ) {
-            throw new Error("Balance must be greater than zero");
-        }
     }
 }
 

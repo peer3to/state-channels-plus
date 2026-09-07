@@ -1,6 +1,6 @@
 // @spec-test-coverage-ignore: concrete guard collaborators for runGuards component tests
-import type ARpcService from "@/rpc/ARpcService";
 import type ARpcMethods from "@/rpc/ARpcMethods";
+import type ARpcService from "@/rpc/ARpcService";
 import { AGuard } from "@/rpc/guards/AGuard";
 import type Rpc from "@/rpc/Rpc";
 import type ATransport from "@/transport/ATransport";

@@ -1,7 +1,6 @@
+import { RpcHandlerFixture } from "@test/fixtures/RpcHandlerFixture";
 import { expect } from "chai";
 import { Wallet } from "ethers";
-
-import { RpcHandlerFixture } from "@test/fixtures/RpcHandlerFixture";
 
 describe("RpcHandler", function () {
     let fixture: RpcHandlerFixture | undefined;

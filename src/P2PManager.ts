@@ -1,28 +1,30 @@
-import IOnMessage from "@/IOnMessage";
-import type StateManager from "@/stateManager";
-import Rpc, {
-    deserializeRpc,
-    deserializeRpcResponse,
-    MAX_RPC_FRAME_BYTES,
-    RpcResponse
-} from "@/rpc/Rpc";
-import MainRpcService from "@/rpc/MainRpcService";
-import { P2pSigner } from "@/evm";
-import { ATransport, LoopbackTransport, TransportType } from "@/transport";
-import ProfileManager from "@/ProfileManager";
-import Holepunch from "@/Holepunch";
-import { ethers } from "ethers";
-import { DebugProxy, getChecksumAddress, LocalDiscoveryServer } from "@/utils";
-import type { Logger } from "@/utils";
-import { Buffer } from "buffer";
-import { config, isNodeRuntime } from "@/utils/config";
-import { Status } from "@/types";
+import type { CustomRpcConstructor } from "./rpc/registry";
+import RemoteRpcProxy, { RemoteRpcProxyType } from "./rpc/RemoteRpcProxy";
 import { Address } from "./types/types";
 import { hasRpcService } from "./utils/ObjectChecks";
+import { P2pSigner } from "@/evm";
+import Holepunch from "@/Holepunch";
+import IOnMessage from "@/IOnMessage";
+import ProfileManager from "@/ProfileManager";
 import type ARpcService from "@/rpc/ARpcService";
-import RemoteRpcProxy, { RemoteRpcProxyType } from "./rpc/RemoteRpcProxy";
-import type { CustomRpcConstructor } from "./rpc/registry";
+import MainRpcService from "@/rpc/MainRpcService";
+import Rpc, {
+    MAX_RPC_FRAME_BYTES,
+    RpcResponse,
+    deserializeRpcFrame
+} from "@/rpc/Rpc";
+import type StateManager from "@/stateManager";
+import { ATransport, LoopbackTransport, TransportType } from "@/transport";
+import { Status } from "@/types";
+import { isEngagedStatus } from "@/types/flags";
+import { DebugProxy, getChecksumAddress, LocalDiscoveryServer } from "@/utils";
+import type { Logger } from "@/utils";
+import { requireBytes32 } from "@/utils/bytes32";
+import { config, isNodeRuntime } from "@/utils/config";
+import { errorMessage } from "@/utils/errorMessage";
 import { LoggerUtils } from "@/utils/LoggerUtils";
+import { Buffer } from "buffer";
+import { ethers } from "ethers";
 
 class P2PManager<TCustomRpc extends MainRpcService = MainRpcService>
     implements IOnMessage
@@ -53,9 +55,21 @@ class P2PManager<TCustomRpc extends MainRpcService = MainRpcService>
     >();
     private disposalPromise?: Promise<void>;
     private readonly unsubscribeHandshakeCompleted: () => void;
+    // Settle the initial-sync wait when the runtime leaves OPENED for any
+    // reason other than the sync request itself: chain genesis moves the
+    // status, and an abort keeps OPENED but announces itself through its hook.
+    private readonly unsubscribeStatusChanged: () => void;
+    private readonly unsubscribeAbort: () => void;
     private initialSyncStarted = false;
+    private initialSyncSettled = false;
+    // Remembered so a wait created after settlement (abort before the
+    // discovery join) resolves at once instead of never.
+    private initialSyncOutcome = false;
     private initialSyncPromise?: Promise<boolean>;
     private resolveInitialSync?: (success: boolean) => void;
+    // Bounds the wait for the first cooperating participant handshake. An
+    // observer that never reaches a sync request must not wait forever.
+    private initialSyncDeadline?: ReturnType<typeof setTimeout>;
 
     constructor(
         stateManager: StateManager<TCustomRpc>,
@@ -93,6 +107,24 @@ class P2PManager<TCustomRpc extends MainRpcService = MainRpcService>
         this.loopbackTransport = new LoopbackTransport(this.self);
         this.holepunch = new Holepunch(this.self);
 
+        this.unsubscribeStatusChanged = this.stateManager.events.on(
+            "p2pEventHooks",
+            "onStatusChanged",
+            (oldStatus, newStatus) => {
+                if (
+                    oldStatus !== Status.OPENED ||
+                    newStatus === Status.OPENED
+                ) {
+                    return;
+                }
+                this.settleInitialSync(isEngagedStatus(newStatus));
+            }
+        );
+        this.unsubscribeAbort = this.stateManager.events.on(
+            "p2pEventHooks",
+            "onAbort",
+            () => this.settleInitialSync(false)
+        );
         this.unsubscribeHandshakeCompleted = this.stateManager.events.on(
             "p2pEventHooks",
             "handshakeCompleted",
@@ -109,7 +141,9 @@ class P2PManager<TCustomRpc extends MainRpcService = MainRpcService>
         }
 
         this.unsubscribeHandshakeCompleted();
-        this.resolveInitialSync?.(false);
+        this.unsubscribeStatusChanged();
+        this.unsubscribeAbort();
+        this.settleInitialSync(false);
         this.disconnectAll();
         this.disposalPromise = this.holepunch.dispose();
         return this.disposalPromise;
@@ -175,10 +209,7 @@ class P2PManager<TCustomRpc extends MainRpcService = MainRpcService>
                     "Skipping sync after handshake because the participant read failed",
                     {
                         peerAddress,
-                        error:
-                            error instanceof Error
-                                ? error.message
-                                : String(error)
+                        error: errorMessage(error)
                     }
                 );
             }
@@ -192,6 +223,7 @@ class P2PManager<TCustomRpc extends MainRpcService = MainRpcService>
     ): Promise<void> {
         if (this.initialSyncStarted) return;
         this.initialSyncStarted = true;
+        this.cancelInitialSyncDeadline();
         const stateManager = this.stateManager;
         const success = await this.localRpc.spectateService.sync(
             peerAddress,
@@ -200,14 +232,24 @@ class P2PManager<TCustomRpc extends MainRpcService = MainRpcService>
             undefined,
             stateManager.timeConfig.agreementTime * 2 * 1000
         );
-        if (
-            !success &&
-            !stateManager.isDisposed &&
-            stateManager.status !== Status.PENDING_PARTICIPANT &&
-            stateManager.status !== Status.PARTICIPATING
-        ) {
+        // A result that lands after the chain already supplied the state is
+        // stale: the wait settled through the status hook and a late false
+        // must not abort an already synced runtime.
+        if (this.initialSyncSettled || stateManager.status !== Status.OPENED) {
+            this.settleInitialSync(success);
+            return;
+        }
+        if (!success && !stateManager.isDisposed) {
             stateManager.abort();
         }
+        this.settleInitialSync(success);
+    }
+
+    private settleInitialSync(success: boolean): void {
+        this.cancelInitialSyncDeadline();
+        if (this.initialSyncSettled) return;
+        this.initialSyncSettled = true;
+        this.initialSyncOutcome = success;
         this.resolveInitialSync?.(success);
     }
 
@@ -335,12 +377,12 @@ class P2PManager<TCustomRpc extends MainRpcService = MainRpcService>
                 this.disconnectAndBlacklistPeer(transport);
                 return;
             }
-            const response = deserializeRpcResponse(serializedRpc);
-            if (response) {
-                this.handleRpcResponse(response, transport);
+            const frame = deserializeRpcFrame(serializedRpc);
+            if (frame?.kind === "response") {
+                this.handleRpcResponse(frame.response, transport);
                 return;
             }
-            const rpc = deserializeRpc(serializedRpc);
+            const rpc = frame?.rpc;
             this.logger.verbose("onRpc", {
                 rpc: rpc ? LoggerUtils.getRpcLogMetadata(rpc) : undefined,
                 transportType: TransportType[transport.transportType],
@@ -365,7 +407,7 @@ class P2PManager<TCustomRpc extends MainRpcService = MainRpcService>
         } catch (e) {
             this.disconnectConnection(transport);
             this.logger.error("onRpc - error handling RPC frame", {
-                error: e instanceof Error ? e.message : String(e),
+                error: errorMessage(e),
                 stack: e instanceof Error ? e.stack : undefined,
                 transportType: TransportType[transport.transportType],
                 peerAddress: transport.peerAddress
@@ -373,9 +415,7 @@ class P2PManager<TCustomRpc extends MainRpcService = MainRpcService>
         }
     }
     public async joinDiscoveryKey(discoveryKey: string): Promise<void> {
-        if (!ethers.isHexString(discoveryKey, 32)) {
-            throw new Error("Discovery key must be exactly 32 bytes");
-        }
+        requireBytes32(discoveryKey, "Discovery key must be exactly 32 bytes");
         const normalizedKey = ethers.hexlify(discoveryKey);
         const waitForInitialSync = this.stateManager.status === Status.OPENED;
         const initialSync = waitForInitialSync
@@ -399,15 +439,66 @@ class P2PManager<TCustomRpc extends MainRpcService = MainRpcService>
         }
 
         if (!initialSync) return;
+        // The status may have left OPENED during the discovery join (chain
+        // genesis, abort). Nothing later would settle the wait, so settle now.
+        if (this.stateManager.isDisposed) {
+            this.settleInitialSync(false);
+            return;
+        }
+        if (this.stateManager.status !== Status.OPENED) {
+            this.settleInitialSync(isEngagedStatus(this.stateManager.status));
+            return;
+        }
         for (const transport of [...this.openConnections]) {
             if (transport.peerAddress && !transport.isClosed) {
                 void this.onHandshakeCompleted(transport.peerAddress);
             }
         }
+        this.armInitialSyncDeadline();
         await initialSync;
     }
 
+    /**
+     * The initial sync request carries its own two-window timeout. This bound
+     * covers the phase before that request exists: if no participant completes
+     * a handshake within the same two windows, the observer stops waiting and
+     * aborts, exactly as a timed-out sync request would.
+     */
+    private armInitialSyncDeadline(): void {
+        this.cancelInitialSyncDeadline();
+        if (this.initialSyncStarted) return;
+        const stateManager = this.stateManager;
+        this.initialSyncDeadline = stateManager.timeoutManager.scheduleTask(
+            () => {
+                this.initialSyncDeadline = undefined;
+                if (this.initialSyncStarted || stateManager.isDisposed) return;
+                if (stateManager.status !== Status.OPENED) {
+                    this.settleInitialSync(
+                        isEngagedStatus(this.stateManager.status)
+                    );
+                    return;
+                }
+                this.logger.warn(
+                    "No participant completed a handshake within the initial sync window; aborting"
+                );
+                stateManager.abort();
+                this.settleInitialSync(false);
+            },
+            stateManager.timeConfig.agreementTime * 2 * 1000,
+            "P2PManager - initial sync participant deadline"
+        );
+    }
+
+    private cancelInitialSyncDeadline(): void {
+        if (!this.initialSyncDeadline) return;
+        this.stateManager.timeoutManager.cancelTask(this.initialSyncDeadline);
+        this.initialSyncDeadline = undefined;
+    }
+
     private getInitialSyncPromise(): Promise<boolean> {
+        if (this.initialSyncSettled) {
+            return Promise.resolve(this.initialSyncOutcome);
+        }
         if (!this.initialSyncPromise) {
             this.initialSyncPromise = new Promise<boolean>((resolve) => {
                 this.resolveInitialSync = resolve;
@@ -417,9 +508,7 @@ class P2PManager<TCustomRpc extends MainRpcService = MainRpcService>
     }
 
     public async leaveDiscoveryKey(discoveryKey: string): Promise<void> {
-        if (!ethers.isHexString(discoveryKey, 32)) {
-            throw new Error("Discovery key must be exactly 32 bytes");
-        }
+        requireBytes32(discoveryKey, "Discovery key must be exactly 32 bytes");
         const normalizedKey = ethers.hexlify(discoveryKey);
         if (config.DEBUG_LOCAL_TRANSPORT) {
             await LocalDiscoveryServer.leave(normalizedKey, this.self);
@@ -461,6 +550,10 @@ class P2PManager<TCustomRpc extends MainRpcService = MainRpcService>
     }
 
     public disconnectAndBlacklistPeer(transport: ATransport) {
+        this.logger.warn(
+            "Disconnecting and blacklisting peer transport",
+            LoggerUtils.getTransportMetadata(transport)
+        );
         const transportToDisconnect = transport.peerAddress
             ? this.profileManager.blacklistPeer(transport.peerAddress)
             : this.profileManager.blacklistPeer(transport);
@@ -471,6 +564,9 @@ class P2PManager<TCustomRpc extends MainRpcService = MainRpcService>
     }
 
     public disconnectAndBlacklistPeerByEvmAddress(evmAddress: Address) {
+        this.logger.warn("Disconnecting and blacklisting peer address", {
+            peerAddress: evmAddress
+        });
         const transport = this.profileManager.blacklistPeer(evmAddress);
         if (transport) this.disconnectConnection(transport);
     }
@@ -496,24 +592,11 @@ class P2PManager<TCustomRpc extends MainRpcService = MainRpcService>
 
     /**
      * Returns a snapshot of currently connected peer identities (EVM addresses).
+     * Resolve transport addresses first, falling back to their registered profiles.
      */
     public getConnectedPeers(): Set<Address> {
         const addresses = new Set<Address>();
-        this.collectPeerAddresses(this.openConnections, addresses);
-        return addresses;
-    }
-
-    /**
-     * Resolves each transport's peer address (transport first, falling back to
-     * its `ProfileManager` profile) into `addresses`. One owner so the
-     * promoted-only and handshake-completed views can never disagree on how an
-     * address is resolved or normalized.
-     */
-    private collectPeerAddresses(
-        transports: Iterable<ATransport>,
-        addresses: Set<Address>
-    ): void {
-        for (const transport of transports) {
+        for (const transport of this.openConnections) {
             const fromTransport = transport.peerAddress;
             if (fromTransport) {
                 // Boundary: transport.peerAddress can originate outside ethers.
@@ -528,6 +611,7 @@ class P2PManager<TCustomRpc extends MainRpcService = MainRpcService>
                 addresses.add(fromProfile.toString());
             }
         }
+        return addresses;
     }
 }
 

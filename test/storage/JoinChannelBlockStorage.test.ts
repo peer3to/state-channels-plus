@@ -1,11 +1,11 @@
-import { expect } from "chai";
-import { describe, it, beforeEach } from "mocha";
-import { ethers } from "hardhat";
 import * as factory from "../factory";
 import { MessageBlockStorage } from "@/storage/MessageBlockStorage";
 import { Hash } from "@/types/types";
 import { Codec, hash, Type } from "@/utils";
 import { MessageBlockStruct } from "@typechain-types/contracts/V1/types/DataTypes";
+import { expect } from "chai";
+import { ethers } from "hardhat";
+import { describe, it, beforeEach } from "mocha";
 describe("MessageBlockStorage - inbound blocks", () => {
     let storage: MessageBlockStorage;
     let mockMessageBlock: MessageBlockStruct;

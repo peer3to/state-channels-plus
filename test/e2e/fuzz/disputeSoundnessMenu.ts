@@ -1,5 +1,5 @@
-import type MathPeerTestHarness from "@test/fixtures/MathPeerTestHarness";
 import type { FuzzAction } from "./FuzzAction";
+import type MathPeerTestHarness from "@test/fixtures/MathPeerTestHarness";
 
 // a channel must never be reduced below this many participants (never reduce to 1)
 const MIN_PARTICIPANTS = 2;
@@ -68,6 +68,7 @@ export const DISPUTE_SOUNDNESS_MENU: FuzzAction[] = [
             const attacker = (await h.query.getNextPeerToWrite()).index;
             h.event.resetEventSpies();
             await attack.corrupt(h, attacker);
+
             // eslint-disable-next-line no-console
             console.log(
                 `[fuzz]   attack=${attack.name} attacker=peer${attacker}`

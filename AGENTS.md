@@ -51,8 +51,12 @@ uncertain, and leave final fingerprint approval to the engineer.
 
 `yarn test:parallel:distributed` is the canonical full test gate and runs all
 Mocha tests across the configured distributed workers; pass `--e2e-only` to
-limit discovery to `test/e2e`. Use `yarn test:parallel` for focused local runs
-when needed. The legacy in-process `yarn test` command is only for rare focused
+limit discovery to `test/e2e`. Always use the distributed runner, also for
+focused subsets and repeated loops (`--grep <regexp>` works there too); it is
+the only runner that reproduces farm load. Use the local `yarn test:parallel`
+only for a small focused selection of about ten tests or fewer; anything larger
+on the local runner wastes the distributed infrastructure and takes far longer.
+The legacy in-process `yarn test` command is only for rare focused
 compatibility checks. The parallel runner writes each run to a fresh
 `./logs/run-N/` (N
 auto-increments) and never touches earlier `run-*` dirs — error logs persist
@@ -174,6 +178,18 @@ Applies to `src/stateManager/validationStrategy/*` and their call sites
 methods }`. Never interleave a field declaration between methods. When adding a
   new field, put it with the other fields at the top of the class (keep any
   explanatory comment with it), not next to the method that happens to use it.
+
+### Import order
+
+- Run `yarn lint:imports` to check source and test imports. Use
+  `yarn lint:imports:fix src test` for the mechanical fix. The shared
+  `import/order` rule sorts module paths alphabetically, ignoring case, in one
+  group; named members and existing blank lines keep their formatting.
+- Keep side-effect imports in place and keep TypeScript suppression comments
+  attached to their original import. Check both TypeScript builds after sorting.
+- Generated artifacts and Solidity enums are excluded. Keep repo-wide ordering
+  changes separate from behavior changes. lint-staged applies the rule to staged
+  files, and CI checks it before running the distributed suite.
 
 ### Comments
 

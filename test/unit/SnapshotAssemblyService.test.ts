@@ -1,9 +1,9 @@
-import { expect } from "chai";
-import { addressesEqual, Codec, Type, hash } from "@/utils";
-import { StateSnapshot } from "@/models";
-import { MathTestSession as TestSession } from "@test/harness";
 import * as factory from "../factory";
 import { hash as randomHash } from "../factory";
+import { StateSnapshot } from "@/models";
+import { addressesEqual, Codec, Type, hash } from "@/utils";
+import { MathTestSession as TestSession } from "@test/harness";
+import { expect } from "chai";
 
 // assembly is driven through real authored blocks: the resulting snapshot is
 // read back and compared against the previous one. inbound/outbound branches
@@ -385,7 +385,15 @@ describe("Unit: SnapshotAssemblyService", function () {
                 }
             });
             const forkId = h.activeForkId!;
-            const joiner = await h.join.addSpectatorWait();
+            // The assembly under test starts after the join; the channel keeps
+            // authoring while the joiner syncs, so the writer slot never idles
+            // into a timeout dispute that would refuse the join.
+            const { peer: joiner } = await h.join.addSpectatorAuthoring({
+                authoringPeerIndices: [0, 1],
+                minimumBlocks: 1,
+                maximumBlocks: 20,
+                waitForFinalization: true
+            });
             await h.assert.sync.peersInSyncWait();
             await h.join.joinChannelWait({ joiner });
 

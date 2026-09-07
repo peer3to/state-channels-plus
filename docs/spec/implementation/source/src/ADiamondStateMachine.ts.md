@@ -25,6 +25,8 @@ executors implement.
 
 ## Key design decisions
 
+Positive balance uses the application's zero balance and comparison methods in one operation. Callers pass their existing labels and retain their own failure handling. See [ADiamondStateMachine.ts](../../../../../src/ADiamondStateMachine.ts#L55).
+
 1. **One handle for all mirrored evaluation** — services depend on this abstraction, not on a concrete VM.
 
 ## Inputs, outputs, state, and side effects

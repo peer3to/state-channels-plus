@@ -1,7 +1,6 @@
+import { createWorkerShutdown } from "@/evm/node/workerShutdown";
 import { expect } from "chai";
 import { Worker } from "node:worker_threads";
-
-import { createWorkerShutdown } from "@/evm/node/workerShutdown";
 
 /** Worker that closes its port on request, draining its loop naturally. */
 function createDrainingWorker(): Worker {

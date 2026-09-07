@@ -1,12 +1,10 @@
-import { expect } from "chai";
-import { ethers } from "ethers";
-
-import { Status } from "@/types";
 import { TransportType } from "@/transport/TransportType";
-import { compareAddresses } from "@/rpc/services/openChannelNegotiation/OpenChannelNegotiationHelpers";
+import { Status } from "@/types";
 import { sleep } from "@/utils";
 import { MathTestSession as TestSession } from "@test/harness";
 import { waitFor } from "@test/utils/waitFor";
+import { expect } from "chai";
+import { ethers } from "ethers";
 
 describe("E2E: lobby matching", function () {
     it("matches two authenticated peers, derives one ID, and opens one channel", async function () {
@@ -23,31 +21,43 @@ describe("E2E: lobby matching", function () {
             h.peers.map((peer) => h.provider.getTransactionCount(peer.address))
         );
 
-        await h.rpc.joinLobby([0, 1], topic);
-
+        // Both attempts are read while the terms exchange is parked.
         let attempts: Array<{
             peerAddress: string;
             channelId: string;
             attemptNonce: string;
             localOpeningSignatureIssued: boolean;
         }> = [];
-        await waitFor(
+        await h.rpcStub.withHeldNegotiationReplies(
+            [0, 1],
+            "exchangeTerms",
             async () => {
-                const values = await Promise.all(
-                    h.peers.map((peer) =>
-                        h.control(peer).query.getNegotiationAttempt().request()
-                    )
+                await h.network.joinLobby([0, 1], topic);
+                await waitFor(
+                    async () => {
+                        const values = await Promise.all(
+                            h.peers.map((peer) =>
+                                h
+                                    .control(peer)
+                                    .query.getNegotiationAttempt()
+                                    .request()
+                            )
+                        );
+                        if (values.every(Boolean)) {
+                            attempts = values.filter(
+                                (value): value is NonNullable<typeof value> =>
+                                    !!value
+                            );
+                            return true;
+                        }
+                        return false;
+                    },
+                    h.event.protocolEventTimeoutMs({
+                        withFirstBlockGrace: true
+                    }),
+                    200
                 );
-                if (values.every(Boolean)) {
-                    attempts = values.filter(
-                        (value): value is NonNullable<typeof value> => !!value
-                    );
-                    return true;
-                }
-                return false;
-            },
-            h.event.protocolEventTimeoutMs({ withFirstBlockGrace: true }),
-            200
+            }
         );
 
         let channelIds: string[] = [];
@@ -85,10 +95,7 @@ describe("E2E: lobby matching", function () {
         expect(registry).to.include(channelIds[0]);
         expect(new Set(registry).size).to.equal(registry.length);
         expect(attempts).to.have.length(2);
-        const lowerIndex =
-            compareAddresses(h.peers[0].address, h.peers[1].address) < 0
-                ? 0
-                : 1;
+        const lowerIndex = h.network.lobbyRoleIndices()[0];
         let transactionCountsAfter: number[] = [];
         const higherIndex = 1 - lowerIndex;
         await waitFor(
@@ -150,10 +157,42 @@ describe("E2E: lobby matching", function () {
         const firstTopic = ethers.id("e2e-lobby-isolation-first");
         const secondTopic = ethers.id("e2e-lobby-isolation-second");
 
-        await Promise.all([
-            h.rpc.joinLobby([0, 1], firstTopic),
-            h.rpc.joinLobby([2, 3], secondTopic)
-        ]);
+        // The pairings are read while the terms exchanges are parked.
+        let firstPeer: { peerAddress: string } | null = null;
+        let thirdPeer: { peerAddress: string } | null = null;
+        await h.rpcStub.withHeldNegotiationReplies(
+            h.peers.map((peer) => peer.index),
+            "exchangeTerms",
+            async () => {
+                await Promise.all([
+                    h.network.joinLobby([0, 1], firstTopic),
+                    h.network.joinLobby([2, 3], secondTopic)
+                ]);
+                await waitFor(
+                    async () => {
+                        firstPeer = await h
+                            .control(h.peers[0])
+                            .query.getNegotiationAttempt()
+                            .request();
+                        thirdPeer = await h
+                            .control(h.peers[2])
+                            .query.getNegotiationAttempt()
+                            .request();
+                        return firstPeer !== null && thirdPeer !== null;
+                    },
+                    h.event.protocolEventTimeoutMs({
+                        withFirstBlockGrace: true
+                    }),
+                    200
+                );
+            }
+        );
+        expect(firstPeer!.peerAddress.toLowerCase()).to.equal(
+            h.peers[1].address.toLowerCase()
+        );
+        expect(thirdPeer!.peerAddress.toLowerCase()).to.equal(
+            h.peers[3].address.toLowerCase()
+        );
 
         let ids: string[] = [];
         await waitFor(
@@ -172,20 +211,6 @@ describe("E2E: lobby matching", function () {
         expect(ids[0]).to.equal(ids[1]);
         expect(ids[2]).to.equal(ids[3]);
         expect(ids[0]).not.to.equal(ids[2]);
-        const firstPeer = await h
-            .control(h.peers[0])
-            .query.getNegotiationAttempt()
-            .request();
-        const thirdPeer = await h
-            .control(h.peers[2])
-            .query.getNegotiationAttempt()
-            .request();
-        expect(firstPeer?.peerAddress.toLowerCase()).to.equal(
-            h.peers[1].address.toLowerCase()
-        );
-        expect(thirdPeer?.peerAddress.toLowerCase()).to.equal(
-            h.peers[3].address.toLowerCase()
-        );
     });
 
     it("converges four peers on one topic into two exclusive pairs", async function () {
@@ -193,7 +218,7 @@ describe("E2E: lobby matching", function () {
         await h.setup(4, { autoConnect: false });
         const topic = ethers.id("e2e-lobby-four-peer-convergence");
 
-        await h.rpc.joinLobby([0, 1, 2, 3], topic);
+        await h.network.joinLobby([0, 1, 2, 3], topic);
 
         let ids: string[] = [];
         await waitFor(
@@ -252,10 +277,7 @@ describe("E2E: lobby matching", function () {
         const h = TestSession.getHarness();
         await h.setup(3, { autoConnect: false });
         const topic = ethers.id("e2e-lobby-silent-pick-recovery");
-        const [lowerIndex, higherIndex] =
-            compareAddresses(h.peers[0].address, h.peers[1].address) < 0
-                ? [0, 1]
-                : [1, 0];
+        const [lowerIndex, higherIndex] = h.network.lobbyRoleIndices();
         const releaseReply = await h.rpcStub.holdLobbyReply(lowerIndex, "pick");
         const restoreDurations = await Promise.all(
             [0, 1, 2].map((index) =>
@@ -264,7 +286,7 @@ describe("E2E: lobby matching", function () {
         );
 
         try {
-            await h.rpc.joinLobby([lowerIndex, higherIndex], topic);
+            await h.network.joinLobby([lowerIndex, higherIndex], topic);
             await waitFor(
                 () =>
                     h
@@ -275,33 +297,15 @@ describe("E2E: lobby matching", function () {
                 200
             );
 
-            await h.rpc.joinLobby([2], topic);
-            await waitFor(
-                async () => {
-                    const recoveredAttempt = await h
-                        .control(h.peers[higherIndex])
-                        .query.getNegotiationAttempt()
-                        .request();
-                    return (
-                        recoveredAttempt?.peerAddress.toLowerCase() ===
-                        h.peers[2].address.toLowerCase()
-                    );
-                },
-                h.event.protocolEventTimeoutMs({
-                    withFirstBlockGrace: true
-                }),
-                200
-            );
-            const recoveredAttempt = await h
-                .control(h.peers[higherIndex])
-                .query.getNegotiationAttempt()
-                .request();
-            expect(recoveredAttempt?.channelId).not.to.equal(ethers.ZeroHash);
+            await h.network.joinLobby([2], topic);
+            const recoveredChannelId =
+                await h.rpc.recoveredPairingChannelIdWait(higherIndex, 2);
+            expect(recoveredChannelId).not.to.equal(ethers.ZeroHash);
             await waitFor(
                 () =>
                     h
                         .control(h.peers[2])
-                        .query.isChannelOpen(recoveredAttempt!.channelId)
+                        .query.isChannelOpen(recoveredChannelId)
                         .request(),
                 h.event.protocolEventTimeoutMs({
                     withFirstBlockGrace: true
@@ -310,7 +314,7 @@ describe("E2E: lobby matching", function () {
             );
         } finally {
             await releaseReply();
-            await h.rpc.leaveLobby([0, 1, 2], topic);
+            await h.network.leaveLobby([0, 1, 2], topic);
             await Promise.all(restoreDurations.map((restore) => restore()));
         }
     });
@@ -319,10 +323,7 @@ describe("E2E: lobby matching", function () {
         const h = TestSession.getHarness();
         await h.setup(3, { autoConnect: false });
         const topic = ethers.id("e2e-lobby-final-profile-loss");
-        const [lowerIndex, higherIndex] =
-            compareAddresses(h.peers[0].address, h.peers[1].address) < 0
-                ? [0, 1]
-                : [1, 0];
+        const [lowerIndex, higherIndex] = h.network.lobbyRoleIndices();
         const releaseReply = await h.rpcStub.holdLobbyReply(lowerIndex, "pick");
         let replyReleased = false;
         const restoreDurations = await Promise.all(
@@ -332,7 +333,7 @@ describe("E2E: lobby matching", function () {
         );
 
         try {
-            await h.rpc.joinLobby([lowerIndex, higherIndex], topic);
+            await h.network.joinLobby([lowerIndex, higherIndex], topic);
             await waitFor(
                 async () =>
                     (
@@ -374,35 +375,17 @@ describe("E2E: lobby matching", function () {
             ).to.equal(false);
             await releaseReply();
             replyReleased = true;
-            await h.rpc.leaveLobby([lowerIndex], topic);
+            await h.network.leaveLobby([lowerIndex], topic);
 
-            await h.rpc.joinLobby([2], topic);
-            await waitFor(
-                async () => {
-                    const attempt = await h
-                        .control(h.peers[higherIndex])
-                        .query.getNegotiationAttempt()
-                        .request();
-                    return (
-                        attempt?.peerAddress.toLowerCase() ===
-                        h.peers[2].address.toLowerCase()
-                    );
-                },
-                h.event.protocolEventTimeoutMs({
-                    withFirstBlockGrace: true
-                }),
-                200
-            );
-            const recoveredAttempt = await h
-                .control(h.peers[higherIndex])
-                .query.getNegotiationAttempt()
-                .request();
-            expect(recoveredAttempt?.channelId).not.to.equal(ethers.ZeroHash);
+            await h.network.joinLobby([2], topic);
+            const recoveredChannelId =
+                await h.rpc.recoveredPairingChannelIdWait(higherIndex, 2);
+            expect(recoveredChannelId).not.to.equal(ethers.ZeroHash);
             await waitFor(
                 () =>
                     h
                         .control(h.peers[2])
-                        .query.isChannelOpen(recoveredAttempt!.channelId)
+                        .query.isChannelOpen(recoveredChannelId)
                         .request(),
                 h.event.protocolEventTimeoutMs({
                     withFirstBlockGrace: true
@@ -411,7 +394,7 @@ describe("E2E: lobby matching", function () {
             );
         } finally {
             if (!replyReleased) await releaseReply();
-            await h.rpc.leaveLobby([higherIndex, 2], topic);
+            await h.network.leaveLobby([higherIndex, 2], topic);
             await Promise.all(restoreDurations.map((restore) => restore()));
         }
     });
@@ -420,10 +403,7 @@ describe("E2E: lobby matching", function () {
         const h = TestSession.getHarness();
         await h.setup(3, { autoConnect: false });
         const topic = ethers.id("e2e-lobby-silent-commit-recovery");
-        const [advertiserIndex, selectorIndex] =
-            compareAddresses(h.peers[0].address, h.peers[1].address) < 0
-                ? [0, 1]
-                : [1, 0];
+        const [advertiserIndex, selectorIndex] = h.network.lobbyRoleIndices();
         const releaseReply = await h.rpcStub.holdLobbyReply(
             advertiserIndex,
             "commit"
@@ -435,7 +415,7 @@ describe("E2E: lobby matching", function () {
         );
 
         try {
-            await h.rpc.joinLobby([advertiserIndex, selectorIndex], topic);
+            await h.network.joinLobby([advertiserIndex, selectorIndex], topic);
             await waitFor(
                 async () =>
                     (await h
@@ -476,7 +456,128 @@ describe("E2E: lobby matching", function () {
             );
         } finally {
             await releaseReply();
-            await h.rpc.leaveLobby([0, 1, 2], topic);
+            await h.network.leaveLobby([0, 1, 2], topic);
+            await Promise.all(restoreDurations.map((restore) => restore()));
+        }
+    });
+
+    it("blacklists both sides when the advertiser bound fires before the selector bound", async function () {
+        const h = TestSession.getHarness();
+        await h.setup(3, { autoConnect: false });
+        const topic = ethers.id("e2e-lobby-advertiser-bound-first");
+        const [advertiserIndex, selectorIndex] = h.network.lobbyRoleIndices();
+        const releaseReply = await h.rpcStub.holdLobbyReply(
+            advertiserIndex,
+            "commit"
+        );
+        // The selector's own commit timeout never fires: its blacklist can only
+        // come from the commit rejecting when the advertiser closes the
+        // transport at its reservation bound.
+        const selectorTimeout = await h.rpcStub.holdScheduledTasks(
+            selectorIndex,
+            "rpcRequest:lobbyMatchingService.commit"
+        );
+        const restoreDurations = await Promise.all(
+            [0, 1, 2].map((index) =>
+                h.rpcStub.overrideLobbyRoleDuration(index, 20_000)
+            )
+        );
+
+        try {
+            await h.network.joinLobby([advertiserIndex, selectorIndex], topic);
+            await waitFor(
+                async () =>
+                    await h
+                        .control(h.peers[advertiserIndex])
+                        .query.isBlacklisted(h.peers[selectorIndex].address)
+                        .request(),
+                h.event.protocolEventTimeoutMs(),
+                200
+            );
+            await waitFor(
+                async () =>
+                    await h
+                        .control(h.peers[selectorIndex])
+                        .query.isBlacklisted(h.peers[advertiserIndex].address)
+                        .request(),
+                h.event.protocolEventTimeoutMs(),
+                50
+            );
+            expect(await selectorTimeout.heldCount()).to.equal(1);
+            await releaseReply();
+            expect(
+                await h
+                    .control(h.peers[selectorIndex])
+                    .query.getNegotiationAttempt()
+                    .request()
+            ).to.equal(null);
+        } finally {
+            await selectorTimeout.release(false);
+            await h.network.leaveLobby([0, 1, 2], topic);
+            await Promise.all(restoreDurations.map((restore) => restore()));
+        }
+    });
+
+    it("blacklists both sides when the selector bound fires before the advertiser bound", async function () {
+        const h = TestSession.getHarness();
+        await h.setup(3, { autoConnect: false });
+        const topic = ethers.id("e2e-lobby-selector-bound-first");
+        const [advertiserIndex, selectorIndex] = h.network.lobbyRoleIndices();
+        const releaseReply = await h.rpcStub.holdLobbyReply(
+            advertiserIndex,
+            "commit"
+        );
+        // The advertiser's reservation bound is held, so the selector's commit
+        // timeout fires first and closes the transport. The reservation must
+        // survive that loss and blacklist when its bound is released.
+        const advertiserExpiry = await h.rpcStub.holdScheduledTasks(
+            advertiserIndex,
+            "lobby advertiser reservation expiry"
+        );
+        const restoreDurations = await Promise.all(
+            [0, 1, 2].map((index) =>
+                h.rpcStub.overrideLobbyRoleDuration(index, 20_000)
+            )
+        );
+
+        try {
+            await h.network.joinLobby([advertiserIndex, selectorIndex], topic);
+            await waitFor(
+                async () =>
+                    await h
+                        .control(h.peers[selectorIndex])
+                        .query.isBlacklisted(h.peers[advertiserIndex].address)
+                        .request(),
+                h.event.protocolEventTimeoutMs(),
+                200
+            );
+            expect(await advertiserExpiry.heldCount()).to.equal(1);
+            expect(
+                await h
+                    .control(h.peers[advertiserIndex])
+                    .query.isBlacklisted(h.peers[selectorIndex].address)
+                    .request()
+            ).to.equal(false);
+            await advertiserExpiry.release(true);
+            await waitFor(
+                async () =>
+                    await h
+                        .control(h.peers[advertiserIndex])
+                        .query.isBlacklisted(h.peers[selectorIndex].address)
+                        .request(),
+                h.event.protocolEventTimeoutMs(),
+                50
+            );
+            await releaseReply();
+            expect(
+                await h
+                    .control(h.peers[selectorIndex])
+                    .query.getNegotiationAttempt()
+                    .request()
+            ).to.equal(null);
+        } finally {
+            await advertiserExpiry.release(false);
+            await h.network.leaveLobby([0, 1, 2], topic);
             await Promise.all(restoreDurations.map((restore) => restore()));
         }
     });
@@ -485,13 +586,16 @@ describe("E2E: lobby matching", function () {
         const h = TestSession.getHarness();
         await h.setup(2, { autoConnect: false });
         const topic = ethers.id("e2e-lobby-transport-upgrade");
-        const [advertiserIndex, selectorIndex] =
-            compareAddresses(h.peers[0].address, h.peers[1].address) < 0
-                ? [0, 1]
-                : [1, 0];
+        const [advertiserIndex, selectorIndex] = h.network.lobbyRoleIndices();
         const releasePick = await h.rpcStub.holdLobbyReply(
             advertiserIndex,
             "pick"
+        );
+        // Keep the deliberately held pick pending while the real transport
+        // upgrades. RPC-expiry liability is covered by the bound-order cases.
+        const pickTimeout = await h.rpcStub.holdScheduledTasks(
+            selectorIndex,
+            "rpcRequest:lobbyMatchingService.pick"
         );
         const restoreDurations = await Promise.all(
             [0, 1].map((index) =>
@@ -500,7 +604,7 @@ describe("E2E: lobby matching", function () {
         );
 
         try {
-            await h.rpc.joinLobby([advertiserIndex, selectorIndex], topic);
+            await h.network.joinLobby([advertiserIndex, selectorIndex], topic);
             await waitFor(
                 async () =>
                     (
@@ -561,6 +665,7 @@ describe("E2E: lobby matching", function () {
                     .request()
             ).to.equal(false);
 
+            expect(await pickTimeout.heldCount()).to.equal(1);
             await releasePick();
             let channelId = ethers.ZeroHash;
             await waitFor(
@@ -585,7 +690,8 @@ describe("E2E: lobby matching", function () {
             );
         } finally {
             await releasePick();
-            await h.rpc.leaveLobby([0, 1], topic);
+            await pickTimeout.release(false);
+            await h.network.leaveLobby([0, 1], topic);
             await Promise.all(restoreDurations.map((restore) => restore()));
         }
     });
@@ -599,7 +705,7 @@ describe("E2E: lobby matching", function () {
         );
 
         try {
-            await h.rpc.joinLobby([0, 1], topic);
+            await h.network.joinLobby([0, 1], topic);
             await waitFor(
                 async () => {
                     const [heldCounts, availability] = await Promise.all([
@@ -729,7 +835,7 @@ describe("E2E: lobby matching", function () {
             ).to.deep.equal([false, false]);
         } finally {
             await Promise.all(releaseMatched.map((release) => release()));
-            await h.rpc.leaveLobby([0, 1], topic);
+            await h.network.leaveLobby([0, 1], topic);
         }
     });
 
@@ -737,10 +843,7 @@ describe("E2E: lobby matching", function () {
         const h = TestSession.getHarness();
         await h.setup(3, { autoConnect: false });
         const topic = ethers.id("e2e-lobby-raw-rpc-validation");
-        const [advertiserIndex, selectorIndex] =
-            compareAddresses(h.peers[0].address, h.peers[1].address) < 0
-                ? [0, 1]
-                : [1, 0];
+        const [advertiserIndex, selectorIndex] = h.network.lobbyRoleIndices();
         const releaseCommit = await h.rpcStub.holdLobbyReply(
             advertiserIndex,
             "commit"
@@ -752,7 +855,7 @@ describe("E2E: lobby matching", function () {
         );
 
         try {
-            await h.rpc.joinLobby([advertiserIndex, selectorIndex], topic);
+            await h.network.joinLobby([advertiserIndex, selectorIndex], topic);
             let advertiserAvailability: {
                 role: string;
                 roleEpoch: number;
@@ -769,7 +872,7 @@ describe("E2E: lobby matching", function () {
                 h.event.protocolEventTimeoutMs(),
                 200
             );
-            await h.rpc.joinLobby([2], topic);
+            await h.network.joinLobby([2], topic);
             await waitFor(
                 async () =>
                     (
@@ -877,7 +980,7 @@ describe("E2E: lobby matching", function () {
             ).to.equal(false);
         } finally {
             await releaseCommit();
-            await h.rpc.leaveLobby([0, 1, 2], topic);
+            await h.network.leaveLobby([0, 1, 2], topic);
             await Promise.all(restoreDurations.map((restore) => restore()));
         }
     });
@@ -886,17 +989,14 @@ describe("E2E: lobby matching", function () {
         const h = TestSession.getHarness();
         await h.setup(2, { autoConnect: false });
         const topic = ethers.id("e2e-lobby-deferred-negotiation");
-        const higherIndex =
-            compareAddresses(h.peers[0].address, h.peers[1].address) > 0
-                ? 0
-                : 1;
+        const higherIndex = h.network.lobbyRoleIndices()[1];
         const releaseMatched =
             await h.rpcStub.holdMatchedNegotiation(higherIndex);
         const releaseSetChannelId =
             await h.rpcStub.holdSetChannelId(higherIndex);
 
         try {
-            await h.rpc.joinLobby([0, 1], topic);
+            await h.network.joinLobby([0, 1], topic);
             await waitFor(
                 async () =>
                     (await h
@@ -957,7 +1057,7 @@ describe("E2E: lobby matching", function () {
         } finally {
             await releaseMatched();
             await releaseSetChannelId();
-            await h.rpc.leaveLobby([0, 1], topic);
+            await h.network.leaveLobby([0, 1], topic);
         }
     });
 

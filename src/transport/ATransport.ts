@@ -1,13 +1,13 @@
-import type P2PManager from "@/P2PManager";
 import { TransportType } from "./TransportType";
+import type P2PManager from "@/P2PManager";
 import Rpc, {
     RpcResponse,
     serializeRpc,
     serializeRpcResponse
 } from "@/rpc/Rpc";
-import { LoggerUtils } from "@/utils/LoggerUtils";
-import { getChecksumAddress } from "@/utils/address";
 import { Address } from "@/types";
+import { getChecksumAddress } from "@/utils/address";
+import { LoggerUtils } from "@/utils/LoggerUtils";
 import { hasMethod, hasProperty } from "@/utils/ObjectChecks";
 
 abstract class ATransport {
@@ -42,7 +42,10 @@ abstract class ATransport {
     }
 
     abstract _send(serializedRPC: string): void;
-    abstract onMessage(data: any): void;
+    onMessage(data: any): void {
+        const serializedRPC = data.toString();
+        this.p2pManager.onRpc(serializedRPC, this);
+    }
     protected abstract _close(): void;
 
     /**

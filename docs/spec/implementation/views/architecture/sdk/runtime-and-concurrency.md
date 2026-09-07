@@ -71,7 +71,7 @@ cases**. The consequences are the whole point of the design:
 - Callers keep **no separate inline and worker implementations**. The same
   [`P2pRuntimeClient`](../../../../../../src/evm/p2pRuntime/P2pRuntimeClient.ts#L88) drives
   the host over whichever port it is handed; the same
-  [`startP2pRuntimeHost`](../../../../../../src/evm/p2pRuntime/P2pRuntimeHost.ts#L200) runs
+  [`startP2pRuntimeHost`](../../../../../../src/evm/p2pRuntime/P2pRuntimeHost.ts#L199) runs
   the graph regardless of which side of the boundary it is on.
 - A component **can move into a worker when profiling shows a real limit**,
   without changing its higher-level communication contract. The move is a
@@ -114,11 +114,11 @@ Three execution contexts, connected only by serialized ports:
    only client-realm proxy objects: the two client signers, a main-thread
    contract mirror, and the client `EventBus`. It owns **no node state**.
 2. **SDK runtime host.** Built by
-   [`startP2pRuntimeHost`](../../../../../../src/evm/p2pRuntime/P2pRuntimeHost.ts#L200). It
+   [`startP2pRuntimeHost`](../../../../../../src/evm/p2pRuntime/P2pRuntimeHost.ts#L199). It
    **owns the node state** (`StateManager` and everything it owns — managers,
    storage, RPC services, transports, event listener), **owns the signing key**,
    and **owns the chain nonce** (built on its own provider/wallet in
-   [`RuntimeChainContext`](../../../../../../src/evm/p2pRuntime/RuntimeChainContext.ts#L5),
+   [`RuntimeChainContext`](../../../../../../src/evm/p2pRuntime/RuntimeChainContext.ts#L4),
    wrapped in `HostNonceManager`; cross-ref [architecture.md](./architecture.md)
    [`REQ-SDK-1-JKC9W7`](architecture.md#req-sdk-1-jkc9w7) / [`INV-SDK-2-NH0YGE`](architecture.md#inv-sdk-2-nh0yge)). The client realm holds only proxy signers that forward
    over the port — **the private key never crosses a boundary** ([`INV-RUN-4-4M27AP`](runtime-and-concurrency.md#inv-run-4-4m27ap)).
@@ -194,7 +194,7 @@ and the **diamond** instance embedded in the `LocalDiamond` for dispute replay.
 That split is a _logical_ separation to keep dispute replay from corrupting live
 state. It is **orthogonal to the thread boundary**: both instances and the
 `LocalDiamond` live behind the _same_ contract executor
-([`buildRuntime`](../../../../../../src/evm/p2pRuntime/P2pRuntimeHost.ts#L328) passes one
+([`buildRuntime`](../../../../../../src/evm/p2pRuntime/P2pRuntimeHost.ts#L327) passes one
 `contractExecutor` and both addresses to
 `createStandaloneFromLocalStateMachineWithExecutor`). `VM_DEDICATED_THREAD` moves
 the **whole EVM** — both instances — behind the executor worker; it never moves
@@ -227,7 +227,7 @@ deliberately does not.
 ### 3.2 Ordering & correlation ([`INV-RUN-2-AF430Q`](runtime-and-concurrency.md#inv-run-2-af430q), [`REQ-RUN-5-DC7M8E`](runtime-and-concurrency.md#req-run-5-dc7m8e))
 
 - **One handler per port.** `onMessage` registers a single dispatch function
-  ([`P2pRuntimeHost`](../../../../../../src/evm/p2pRuntime/P2pRuntimeHost.ts#L263)
+  ([`P2pRuntimeHost`](../../../../../../src/evm/p2pRuntime/P2pRuntimeHost.ts#L262)
   `onPortMessage`, [`P2pRuntimeClient`](../../../../../../src/evm/p2pRuntime/P2pRuntimeClient.ts#L88)
   `handleMessage`). There is no second listener that could race it.
 - **Correlation ids.** Every client→host request carries a `requestId` — a
@@ -266,7 +266,10 @@ and precompiles before admission. A hook rejection disposes the partial graph
 and preserves the hook error. The client's `ready` promise is the single
 readiness signal; a host construction or hook failure settles it rejected
 (§3.4). Each isolated context starts its own event-loop monitor after its local
-ready work completes and uses the configured fatal-delay guard. The test harness starts its main-thread monitor after all
+ready work completes and uses the configured delay guard. A trip, like any error caught outside a
+request in the sdk or contract-executor worker, is reported to the application as one detached
+runtime error (`hostError`) and the worker keeps serving; an exit the runtime did not request is
+fatal for that worker. The test harness starts its main-thread monitor after all
 initial peer setup calls finish. A peer added later starts independently and
 does not change existing peers' monitors.
 In worker mode a single
@@ -287,7 +290,7 @@ the worker before the request protocol begins
 - **Host construction failure** posts a `hostError` and closes the port; the
   client's unsettled `ready` rejects and all pending requests reject
   (`dispatchHostError`). A provider-creation failure before the graph exists is
-  handled the same way ([`startP2pRuntimeHost`](../../../../../../src/evm/p2pRuntime/P2pRuntimeHost.ts#L200)
+  handled the same way ([`startP2pRuntimeHost`](../../../../../../src/evm/p2pRuntime/P2pRuntimeHost.ts#L199)
   early `catch`).
 - **Autonomous host errors** (a worker `unhandledRejection`/`uncaughtException`
   not tied to a request) are funnelled over the port as `hostError`
@@ -378,7 +381,7 @@ layer and the model §44's future work builds on (§7).
 The port abstraction is uniform, but one host capability is not portable: an
 `RTCPeerConnection` cannot be driven from inside a worker. When the host runs in
 a worker that cannot negotiate WebRTC itself
-([`doesWorkerNeedMainThreadBridge`](../../../../../../src/rpc/services/WebRTCSetup/connection/WebRTCProvider.ts#L35)),
+([`doesWorkerNeedMainThreadBridge`](../../../../../../src/rpc/services/WebRTCSetup/connection/WebRTCProvider.ts#L31)),
 the host mints a second `MessageChannel`, **transfers its main-thread end back to
 the client** as a `webRTCBridgePort` message, and registers the worker end with
 [`WorkerBridgeWebRTCConnectionFactory`](../../../../../../src/rpc/services/WebRTCSetup/connection/WorkerBridgeWebRTCConnectionFactory.ts#L255).
@@ -763,3 +766,9 @@ in scope for the criterion but currently unexercised.
 ### 11.7 Verification
 
 ## Implementation traceability
+
+## Shared operation ownership
+
+The runtime host shares the signer readiness check while keeping hostRpc and deployment dispatch separate. Performance reporting is shared; Node and browser retain their own sample sources, timer lifetime and throw/stop order.
+
+[P2pRuntimeHost.ts.md](../../../source/src/evm/p2pRuntime/P2pRuntimeHost.ts.md), [performanceMonitorInternal.ts.md](../../../source/src/utils/logging/performanceMonitorInternal.ts.md).

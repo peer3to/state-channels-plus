@@ -1,17 +1,17 @@
 // @spec-test-coverage-ignore: developer test-orchestration tooling; not protocol behavior, no specification or implementation IDs apply
+import { LeasePoolHarness } from "../fixtures/distributed/leasePool";
 import { expect } from "chai";
 import fs from "fs";
 import os from "os";
 import path from "path";
-import { LeasePoolHarness } from "../fixtures/distributed/leasePool";
 
-const {
-    AuthorizationStore
-} = require("../../scripts/e2e-parallel/distributed/authorizationStore.js");
 const {
     WorkerAuditLog,
     sanitizeRecord
 } = require("../../scripts/e2e-parallel/distributed/auditLog.js");
+const {
+    AuthorizationStore
+} = require("../../scripts/e2e-parallel/distributed/authorizationStore.js");
 const {
     loadOrchestratorKeyPair
 } = require("../../scripts/e2e-parallel/distributed/orchestratorIdentity.js");

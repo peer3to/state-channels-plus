@@ -1,3 +1,4 @@
+import { Status } from "@/types";
 import { Codec, Type, hash, tryDecodeCustomError } from "@/utils";
 import { MathTestSession as TestSession } from "@test/harness";
 import {
@@ -7,14 +8,13 @@ import {
     encodeMathState,
     type MathStateDecoded
 } from "@test/utils/mathHarnessAbi";
-import { Status } from "@/types";
-import { expect } from "chai";
 import { waitFor } from "@test/utils/waitFor";
 import type {
     MessageBlockStruct,
     BalanceStruct,
     SnapshotDataStruct
 } from "@typechain-types/contracts/V1/types/DataTypes";
+import { expect } from "chai";
 
 describe("E2E: Malicious updateSnapshot", function () {
     it("colluded over-withdrawal → updateStateSnapshotSameFork reverts with CantWithdrawMoreThanDeposits", async function () {
@@ -251,12 +251,16 @@ describe("E2E: Malicious updateSnapshot", function () {
             )
         );
 
-        // Add the spectator without waiting for sync so we can install the
-        // abort-recording stub host-side before sync starts. Re-fetch via
-        // getPeer to recover the harness's typed peer handle.
-        const added = await h.join.addSpectator();
+        // Spawn-only, classified: the participants no longer agree with the
+        // chain after the colluded snapshot, so no block may be authored
+        // here. Install the abort-recording stub on the created, still
+        // disconnected spectator so it is in place before the first sync
+        // request can run. Re-fetch via getPeer to recover the harness's
+        // typed peer handle.
+        const added = await h.join.createSpectatorPeer();
+        await h.control(added).stub.stubRecordAbort().request();
+        await h.join.connectSpectator(added);
         const spectator = h.getPeer(added.index);
-        await h.control(spectator).stub.stubRecordAbort().request();
 
         // Wait for abort.
         await waitFor(

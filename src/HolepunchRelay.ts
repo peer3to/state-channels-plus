@@ -1,11 +1,11 @@
-//@ts-ignore
-import Hyperswarm from "hyperswarm";
+import { RelayerPool } from "@/transport/relay/RelayerPool";
+import { Logger } from "@/utils";
 //@ts-ignore
 import DHT from "@hyperswarm/dht-relay";
 //@ts-ignore
 import Stream from "@hyperswarm/dht-relay/ws";
-import { Logger } from "@/utils";
-import { RelayerPool } from "@/transport/relay/RelayerPool";
+//@ts-ignore
+import Hyperswarm from "hyperswarm";
 
 class HolepunchRelay {
     relayerUrls: string[];

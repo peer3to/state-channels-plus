@@ -28,4 +28,4 @@ report but are kept here.
 
 | Test declaration                                                                                                                                     | Covers |
 | ---------------------------------------------------------------------------------------------------------------------------------------------------- | ------ |
-| [`E2E: worker shutdown > drains and tears down multiple threaded peers promptly`](../../../../../../test/e2e/E2E-WorkerShutdown.test.ts#L6) (line 6) | —      |
+| [`E2E: worker shutdown > drains and tears down multiple threaded peers promptly`](../../../../../../test/e2e/E2E-WorkerShutdown.test.ts#L5) (line 5) | —      |
