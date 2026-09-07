@@ -1,14 +1,14 @@
 // @spec-test-coverage-ignore: test-only spectate controls exercised by mapped targeted-channel cases
-import { ZeroHash } from "ethers";
-
-import ARpcMethods from "@/rpc/ARpcMethods";
-import type P2PManager from "@/P2PManager";
-import type ATransport from "@/transport/ATransport";
-import { Codec, Type } from "@/utils";
-import Block from "@/models/Block";
-import type { Address, ChannelId, ForkId } from "@/types/types";
-import type { HarnessControlRpc } from "../../HarnessControlRpc";
 import type { SpectateControlService } from "./SpectateControlService";
+import type { HarnessControlRpc } from "../../HarnessControlRpc";
+import Block from "@/models/Block";
+import type P2PManager from "@/P2PManager";
+import ARpcMethods from "@/rpc/ARpcMethods";
+
+import type ATransport from "@/transport/ATransport";
+import type { Address, ChannelId, ForkId } from "@/types/types";
+import { Codec, Type } from "@/utils";
+import { ZeroHash } from "ethers";
 
 /**
  * Spectator-flow endpoints, executed host-side. `SyncPayload` carries model

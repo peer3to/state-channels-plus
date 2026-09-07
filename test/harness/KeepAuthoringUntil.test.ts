@@ -1,7 +1,6 @@
 // @spec-test-coverage-ignore: harness helper contract test; the helper is test infrastructure with no specification or implementation IDs
-import { expect } from "chai";
-
 import { MathTestSession as TestSession } from "@test/harness";
+import { expect } from "chai";
 
 describe("keepAuthoringUntil helper", function () {
     it("ends in its diagnostic when the next writer stays excluded", async function () {

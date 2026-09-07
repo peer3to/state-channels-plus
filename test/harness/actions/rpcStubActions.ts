@@ -1,25 +1,23 @@
 // @spec-test-coverage-ignore: restorable timing controls exercised by mapped lobby and negotiation tests
-import { Logger } from "@/utils";
-import type { ForkId } from "@/types/types";
 import type { Status } from "@/types";
-import { PeerTestHarness } from "@test/fixtures/PeerTestHarness";
+import type { ForkId } from "@/types/types";
+import { Logger } from "@/utils";
 import type { HarnessControlRpc } from "@test/fixtures/customRpc/harnessControl/HarnessControlRpc";
 import type {
     BlockWorkHoldPoint,
     DisputeSubmissionFailureSpec,
     RecordedDisputeSubmission,
     RecordedFraudProofApply,
-    ReductionSimulationErrorName
-} from "@test/fixtures/customRpc/harnessControl/services/stub/StubService";
-import { waitFor } from "@test/utils/waitFor";
-import type {
+    ReductionSimulationErrorName,
     HeldLobbyReplyKind,
-    HeldNegotiationReplyKind,
     HeldMembershipReceiptKind,
+    HeldNegotiationReplyKind,
     ReductionApplicationControl,
     ReductionAttemptHoldPoint,
     ReductionAttemptResume
 } from "@test/fixtures/customRpc/harnessControl/services/stub/StubService";
+import { PeerTestHarness } from "@test/fixtures/PeerTestHarness";
+import { waitFor } from "@test/utils/waitFor";
 
 /**
  * RPC-method stubs that wrap a service's `createRPCMethods` host-side.
@@ -37,6 +35,10 @@ export class RpcStubActions<
         private harness: PeerTestHarness<TCustomRpc>,
         private logger: Logger
     ) {}
+
+    private peerStub(peerIndex: number) {
+        return this.harness.control(this.harness.getPeer(peerIndex)).stub;
+    }
 
     async holdLobbyReply(
         peerIndex: number,
@@ -61,14 +63,14 @@ export class RpcStubActions<
         heldCount: () => Promise<number>;
         release: (runHeld: boolean) => Promise<void>;
     }> {
-        const ctl = () => this.harness.control(this.harness.getPeer(peerIndex));
-        await ctl().stub.stubHoldScheduledTasks(prefix).request();
+        const ctl = () => this.peerStub(peerIndex);
+        await ctl().stubHoldScheduledTasks(prefix).request();
         return {
             heldCount: async () =>
-                await ctl().stub.getHeldScheduledTaskCount(prefix).request(),
+                await ctl().getHeldScheduledTaskCount(prefix).request(),
             release: async (runHeld: boolean) => {
                 await ctl()
-                    .stub.restoreHeldScheduledTasks(prefix, runHeld)
+                    .restoreHeldScheduledTasks(prefix, runHeld)
                     .request();
             }
         };
@@ -86,15 +88,13 @@ export class RpcStubActions<
         entered: () => Promise<number>;
         release: () => Promise<void>;
     }> {
-        const ctl = () => this.harness.control(this.harness.getPeer(peerIndex));
-        await ctl().stub.holdReductionGenesisApplication(control).request();
+        const ctl = () => this.peerStub(peerIndex);
+        await ctl().holdReductionGenesisApplication(control).request();
         return {
             entered: async () =>
-                await ctl()
-                    .stub.getHeldReductionGenesisApplicationCount()
-                    .request(),
+                await ctl().getHeldReductionGenesisApplicationCount().request(),
             release: async () => {
-                await ctl().stub.restoreReductionGenesisApplication().request();
+                await ctl().restoreReductionGenesisApplication().request();
             }
         };
     }
@@ -135,13 +135,13 @@ export class RpcStubActions<
         entered: () => Promise<number>;
         release: () => Promise<void>;
     }> {
-        const ctl = () => this.harness.control(this.harness.getPeer(peerIndex));
-        await ctl().stub.holdReductionAttempt(at, resumeWith).request();
+        const ctl = () => this.peerStub(peerIndex);
+        await ctl().holdReductionAttempt(at, resumeWith).request();
         return {
             entered: async () =>
-                await ctl().stub.getHeldReductionAttemptCount().request(),
+                await ctl().getHeldReductionAttemptCount().request(),
             release: async () => {
-                await ctl().stub.restoreReductionAttempt().request();
+                await ctl().restoreReductionAttempt().request();
             }
         };
     }
@@ -151,13 +151,12 @@ export class RpcStubActions<
         entered: () => Promise<number>;
         release: () => Promise<void>;
     }> {
-        const ctl = () => this.harness.control(this.harness.getPeer(peerIndex));
-        await ctl().stub.holdStateMutex().request();
+        const ctl = () => this.peerStub(peerIndex);
+        await ctl().holdStateMutex().request();
         return {
-            entered: async () =>
-                await ctl().stub.getStateMutexHeldCount().request(),
+            entered: async () => await ctl().getStateMutexHeldCount().request(),
             release: async () => {
-                await ctl().stub.releaseStateMutex().request();
+                await ctl().releaseStateMutex().request();
             }
         };
     }
@@ -585,8 +584,7 @@ export class RpcStubActions<
             keepTasksHeld?: boolean;
         }) => Promise<void>;
     }> {
-        const ctl = () =>
-            this.harness.control(this.harness.getPeer(peerIndex)).stub;
+        const ctl = () => this.peerStub(peerIndex);
         await ctl().stubHoldReductionTasks().request();
         await ctl().stubHoldSnapshotUpdatedEvents().request();
         await ctl().stubHoldReducedCommitEvents().request();
@@ -623,8 +621,7 @@ export class RpcStubActions<
     async failChainLogQueries(peerIndex: number): Promise<{
         restore: () => Promise<void>;
     }> {
-        const ctl = () =>
-            this.harness.control(this.harness.getPeer(peerIndex)).stub;
+        const ctl = () => this.peerStub(peerIndex);
         await ctl().stubFailChainLogQueries().request();
         this.logger.debug(`Failing chain log queries on peer ${peerIndex}`);
         return {
@@ -643,8 +640,7 @@ export class RpcStubActions<
         handlerCalls: () => Promise<number>;
         restore: () => Promise<void>;
     }> {
-        const ctl = () =>
-            this.harness.control(this.harness.getPeer(peerIndex)).stub;
+        const ctl = () => this.peerStub(peerIndex);
         await ctl().stubFailDisputeCommittedHandler().request();
         this.logger.debug(`Failing onDisputeCommitted on peer ${peerIndex}`);
         return {
@@ -673,8 +669,7 @@ export class RpcStubActions<
         /** Restore the handler; held events replay unless `replay: false`. */
         release: (options?: { replay?: boolean }) => Promise<void>;
     }> {
-        const ctl = () =>
-            this.harness.control(this.harness.getPeer(peerIndex)).stub;
+        const ctl = () => this.peerStub(peerIndex);
         await ctl().stubHoldInboundMessageEvents().request();
         this.logger.debug(
             `Holding InboundMessagesProcessed on peer ${peerIndex}`
@@ -734,8 +729,7 @@ export class RpcStubActions<
         /** Stop dropping; already-dropped logs stay recoverable by query. */
         release: () => Promise<void>;
     }> {
-        const ctl = () =>
-            this.harness.control(this.harness.getPeer(peerIndex)).stub;
+        const ctl = () => this.peerStub(peerIndex);
         await ctl().stubDropEventLogs(eventNames, options.dropCount).request();
         this.logger.debug(`Dropping selected event logs on peer ${peerIndex}`, {
             eventNames,
@@ -790,8 +784,7 @@ export class RpcStubActions<
         release: () => Promise<void>;
         restore: () => Promise<void>;
     }> {
-        const ctl = () =>
-            this.harness.control(this.harness.getPeer(peerIndex)).stub;
+        const ctl = () => this.peerStub(peerIndex);
         await ctl()
             .stubRecordDisputeSubmissions(
                 options.hold ?? false,
@@ -835,8 +828,7 @@ export class RpcStubActions<
         release: () => Promise<void>;
         restore: () => Promise<void>;
     }> {
-        const ctl = () =>
-            this.harness.control(this.harness.getPeer(peerIndex)).stub;
+        const ctl = () => this.peerStub(peerIndex);
         await ctl()
             .stubRecordDisputeFraudProofApplies(
                 options.hold ?? false,
@@ -871,8 +863,7 @@ export class RpcStubActions<
         waitUntilHeld: (timeoutMs?: number) => Promise<number>;
         release: () => Promise<void>;
     }> {
-        const ctl = () =>
-            this.harness.control(this.harness.getPeer(peerIndex)).stub;
+        const ctl = () => this.peerStub(peerIndex);
         await ctl().stubHoldAuditingDataRebuild().request();
         return {
             waitUntilHeld: (
@@ -893,8 +884,7 @@ export class RpcStubActions<
         waitUntilHeld: (timeoutMs?: number) => Promise<number>;
         release: () => Promise<void>;
     }> {
-        const ctl = () =>
-            this.harness.control(this.harness.getPeer(peerIndex)).stub;
+        const ctl = () => this.peerStub(peerIndex);
         await ctl().stubHoldSnapshotPostSend().request();
         return {
             waitUntilHeld: (
@@ -930,8 +920,7 @@ export class RpcStubActions<
         waitUntilSkipped: (timeoutMs?: number) => Promise<void>;
         restore: () => Promise<void>;
     }> {
-        const ctl = () =>
-            this.harness.control(this.harness.getPeer(peerIndex)).stub;
+        const ctl = () => this.peerStub(peerIndex);
         await ctl().stubSuppressDisputeKill().request();
         const skippedCount = () =>
             ctl().getSuppressedDisputeKillCount().request();
@@ -946,7 +935,7 @@ export class RpcStubActions<
         };
     }
 
-    async disputeMutexWaiterCount(peerIndex: number): Promise<number> {
+    private async disputeMutexWaiterCount(peerIndex: number): Promise<number> {
         return await this.harness
             .control(this.harness.getPeer(peerIndex))
             .stub.getDisputeMutexWaiterCount()
@@ -978,8 +967,7 @@ export class RpcStubActions<
         parkedCount: () => Promise<number>;
         release: () => Promise<void>;
     }> {
-        const ctl = () =>
-            this.harness.control(this.harness.getPeer(peerIndex)).stub;
+        const ctl = () => this.peerStub(peerIndex);
         await ctl().stubPauseConstructDisputeAtStateProof(forkId).request();
         this.logger.debug(
             `Holding constructDispute at the state proof read on peer ${peerIndex}`
@@ -1082,15 +1070,13 @@ export class RpcStubActions<
         entered: () => Promise<number>;
         release: () => Promise<void>;
     }> {
-        const ctl = () => this.harness.control(this.harness.getPeer(peerIndex));
-        await ctl().stub.stubHoldSpectateSyncApplication().request();
+        const ctl = () => this.peerStub(peerIndex);
+        await ctl().stubHoldSpectateSyncApplication().request();
         return {
             entered: async () =>
-                await ctl()
-                    .stub.getHeldSpectateSyncApplicationCount()
-                    .request(),
+                await ctl().getHeldSpectateSyncApplicationCount().request(),
             release: async () => {
-                await ctl().stub.restoreHoldSpectateSyncApplication().request();
+                await ctl().restoreHoldSpectateSyncApplication().request();
             }
         };
     }
@@ -1126,8 +1112,7 @@ export class RpcStubActions<
         tasks: () => Promise<{ taskName: string; delayMs: number }[]>;
         restore: () => Promise<void>;
     }> {
-        const ctl = () =>
-            this.harness.control(this.harness.getPeer(peerIndex)).stub;
+        const ctl = () => this.peerStub(peerIndex);
         await ctl().stubRecordScheduledTasks(options.suppressPrefix).request();
         return {
             tasks: async () =>

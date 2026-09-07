@@ -1,6 +1,5 @@
-import { expect } from "chai";
-
 import { ARpcServiceFixture } from "@test/fixtures/ARpcServiceFixture";
+import { expect } from "chai";
 
 describe("ARpcService", function () {
     let fixture: ARpcServiceFixture;

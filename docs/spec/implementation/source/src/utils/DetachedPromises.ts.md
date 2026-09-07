@@ -25,6 +25,8 @@ work.
 
 ## Key design decisions
 
+`observe` collects the original promise and attaches one error route. The drain retains the original rejection even when the route rejects or settles a caller-owned operation. If the route throws, the untracked catch promise becomes an unhandled rejection. `DisputeManager.requestDispute` uses this deliberately to reach the runtime error funnel; other callers must handle or route the error. See [DetachedPromises.ts](../../../../../../src/utils/DetachedPromises.ts#L28).
+
 1. **Detached ≠ forgotten:** disposal can await the registry, keeping lifecycle convergence honest.
 2. **A drain timeout is diagnostic:** expiry reports unresolved origins and leaves the underlying promises
    untouched.
@@ -76,8 +78,9 @@ Gap column. Audit state is file-level (Status header), never a row status.
 
 Exact test evidence is mapped against these IDs in the verification test reports.
 
-| Unit test ID | Obligation | Public entry and setup | Oracle and forbidden effects | Required permutations |
-| ------------ | ---------- | ---------------------- | ---------------------------- | --------------------- |
+| Unit test ID                                                                          | Obligation                    | Public entry and setup                                                                    | Oracle and forbidden effects                               | Required permutations                                                                                                                                                                                                                                                                                                 |
+| ------------------------------------------------------------------------------------- | ----------------------------- | ----------------------------------------------------------------------------------------- | ---------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| <a id="unit-test-detached-observe-1-vs9s55"></a>`UNIT-TEST-DETACHED-OBSERVE-1-VS9S55` | Observable operation outcomes | Use the real component and its normal collaborators, controlling only the named boundary. | The stated result holds without the forbidden side effect. | <a id="unit-test-detached-observe-1-vs9s55.p1"></a>`UNIT-TEST-DETACHED-OBSERVE-1-VS9S55.P1` — collects fulfilled work without calling the error route; <a id="unit-test-detached-observe-1-vs9s55.p2"></a>`UNIT-TEST-DETACHED-OBSERVE-1-VS9S55.P2` — routes the original rejection once and preserves it in the drain |
 
 ## Related source reports
 

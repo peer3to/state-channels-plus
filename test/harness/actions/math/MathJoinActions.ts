@@ -1,17 +1,17 @@
 // @spec-test-coverage-ignore: shared math join setup exercised by owning mapped test declarations
-import { ethers, type Signer } from "ethers";
 
+import Clock from "@/Clock";
+import type { PreparedJoinChannelConfirmation } from "@/rpc/services";
+import type { Hash } from "@/types/types";
+import { addressesEqual, DetachedPromises } from "@/utils";
+import type { MathPeerTestHarness } from "@test/fixtures/MathPeerTestHarness";
 import {
     JoinActions,
     type AddSpectatorAuthoringOptions,
     type AddSpectatorAuthoringResult
 } from "@test/harness/actions/JoinActions";
-import type { MathPeerTestHarness } from "@test/fixtures/MathPeerTestHarness";
-import type { Hash } from "@/types/types";
-import { addressesEqual, DetachedPromises } from "@/utils";
 import { TestPeer } from "@test/harness/core/types";
-import Clock from "@/Clock";
-import type { PreparedJoinChannelConfirmation } from "@/rpc/services";
+import { ethers, type Signer } from "ethers";
 
 export type ForceInboundJoinOptions = {
     deposit?: bigint;

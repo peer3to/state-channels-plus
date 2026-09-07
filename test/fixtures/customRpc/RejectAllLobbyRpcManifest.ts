@@ -1,7 +1,7 @@
 // @spec-test-coverage-ignore: Test-only manifest exercised by runtime-port and targeted E2E declarations.
+import { HarnessControlRpc } from "./harnessControl/HarnessControlRpc";
 import type P2PManager from "@/P2PManager";
 import { LobbyMatchingService } from "@/rpc/services";
-import { HarnessControlRpc } from "./harnessControl/HarnessControlRpc";
 
 export class RejectAllLobbyRpc extends HarnessControlRpc {
     constructor(p2pManager: P2PManager<RejectAllLobbyRpc>) {

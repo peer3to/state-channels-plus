@@ -1,11 +1,10 @@
-import { ethers } from "ethers";
-
+import type { SerializedError } from "./types";
 import {
     getErrorPeerAddress,
     maybeStampErrorWithPeerAddress
 } from "@/utils/errorPeerAddress";
 import type { EventLoopDelayDetails } from "@/utils/logging/performanceMonitorInternal";
-import type { SerializedError } from "./types";
+import { ethers } from "ethers";
 
 /**
  * The one error codec for every isolation boundary: the contract-executor
@@ -16,6 +15,11 @@ import type { SerializedError } from "./types";
  * after it.
  */
 
+/**
+ * Pull a contract revert's ABI-encoded data off an error, checking the same
+ * nested shapes `tryDecodeCustomError` reads. Preserving this across the port is
+ * what lets the client decode custom errors (the raw `.data` is otherwise lost).
+ */
 function extractRevertData(error: unknown): string | undefined {
     if (typeof error !== "object" || error === null) return undefined;
     const e = error as {

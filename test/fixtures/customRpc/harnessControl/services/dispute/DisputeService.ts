@@ -1,27 +1,16 @@
-import { BytesLike, Wallet, ZeroAddress, ZeroHash } from "ethers";
-
-import ARpcService from "@/rpc/ARpcService";
-import type P2PManager from "@/P2PManager";
-import type ATransport from "@/transport/ATransport";
+import DisputeRpcMethods from "./DisputeRpcMethods";
+import type { SignerService } from "../signer/SignerService";
 import Clock from "@/Clock";
-import { SignatureUtils, Codec, Type, hash as keccakHash } from "@/utils";
+
+import type { ConstructDisputeResult } from "@/disputeManager/DisputeManager";
 import Block from "@/models/Block";
 import StateSnapshot from "@/models/StateSnapshot";
-import type { Address, Bytes, ForkId, Hash } from "@/types/types";
-import type {
-    DisputeStruct,
-    DisputeConfirmationStruct,
-    DisputeAuditingDataStruct
-} from "@typechain-types/contracts/V1/types/DisputeTypes";
-import type { StateProofStruct } from "@typechain-types/contracts/V1/types/ProofTypes";
-import type {
-    BlockConfirmationStruct,
-    BlockStruct,
-    SignedBlockStruct,
-    TransactionHeaderStruct
-} from "@typechain-types/contracts/V1/types/DataTypes";
-import type { ConstructDisputeResult } from "@/disputeManager/DisputeManager";
+import type P2PManager from "@/P2PManager";
+import ARpcService from "@/rpc/ARpcService";
+import type ATransport from "@/transport/ATransport";
 import { DisputeFraudProofType } from "@/types/sol-enums";
+import type { Address, Bytes, ForkId, Hash } from "@/types/types";
+import { SignatureUtils, Codec, Type, hash as keccakHash } from "@/utils";
 import {
     hash as randomHashFactory,
     blockStructWithTransactionHeader as factoryBlockStructWithHeader
@@ -30,8 +19,19 @@ import {
     expectSignedBlocksOnlyStateProof as assertSignedBlocksOnly,
     expectMilestonesOnlyStateProof as assertMilestonesOnly
 } from "@test/harness/actions/assert/expectDisputeInput";
-import type { SignerService } from "../signer/SignerService";
-import DisputeRpcMethods from "./DisputeRpcMethods";
+import type {
+    BlockConfirmationStruct,
+    BlockStruct,
+    SignedBlockStruct,
+    TransactionHeaderStruct
+} from "@typechain-types/contracts/V1/types/DataTypes";
+import type {
+    DisputeStruct,
+    DisputeConfirmationStruct,
+    DisputeAuditingDataStruct
+} from "@typechain-types/contracts/V1/types/DisputeTypes";
+import type { StateProofStruct } from "@typechain-types/contracts/V1/types/ProofTypes";
+import { BytesLike, Wallet, ZeroAddress, ZeroHash } from "ethers";
 
 type BlockTransform = (bs: BlockStruct) => BlockStruct;
 

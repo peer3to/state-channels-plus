@@ -6,8 +6,8 @@ import {
     toSolidityFraudProofType
 } from "@/types/sol-enums";
 import { DetachedPromises } from "@/utils";
-import PeerTestHarness from "@test/fixtures/PeerTestHarness";
 import type { HarnessControlRpc } from "@test/fixtures/customRpc/harnessControl/HarnessControlRpc";
+import PeerTestHarness from "@test/fixtures/PeerTestHarness";
 
 export class AssertStorageActions<
     TCustomRpc extends HarnessControlRpc = HarnessControlRpc

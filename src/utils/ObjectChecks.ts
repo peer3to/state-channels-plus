@@ -1,5 +1,5 @@
-import type { Result } from "ethers";
 import type ARpcService from "@/rpc/ARpcService";
+import type { Result } from "ethers";
 
 /**
  * Prototype-aware property check for public structural contracts.

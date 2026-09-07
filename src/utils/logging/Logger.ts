@@ -1,9 +1,10 @@
-import { Address } from "@/types/types";
-import Clock from "@/Clock";
-import type { LogUploader } from "./LogUploader";
 import type { LogStore } from "./logStore";
-import { LoggerUtils } from "../LoggerUtils";
+import type { LogUploader } from "./LogUploader";
+import type { PerformanceMonitorInternalOptions } from "./performanceMonitorInternal";
 import { DetachedPromises } from "../DetachedPromises";
+import { LoggerUtils } from "../LoggerUtils";
+import Clock from "@/Clock";
+import { Address } from "@/types/types";
 
 // The context exclusive to each logger
 export type ExclusiveLoggerContext = {
@@ -34,8 +35,6 @@ export type LoggerDestroyOptions = {
     cascadeChildren?: boolean;
     cascadeParent?: boolean;
 };
-
-import type { PerformanceMonitorInternalOptions } from "./performanceMonitorInternal";
 
 export type LoggerPerformanceMonitorOptions = {
     intervalMs?: number;

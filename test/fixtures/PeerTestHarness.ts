@@ -1,85 +1,86 @@
 // @spec-test-coverage-ignore: shared test harness exercised by owning mapped test declarations
-import { NonceManager, Signer, ethers } from "ethers";
-import * as sinon from "sinon";
-import * as dotenv from "dotenv";
+
+import testConfig from "../peer3.test.config";
+import HarnessControlRpc from "./customRpc/harnessControl/HarnessControlRpc";
+
+import { HarnessDebug } from "./HarnessDebug";
+import {
+    deployFacets,
+    type LocalStateMachineDeployer
+} from "../../scripts/V1/deploy";
+import { resolveOrDeployShared } from "../harness/core/deploymentCache";
 // Shared with the parallel runner: start a hardhat node / discovery registry
 // child process → URL. Same common infra the runner uses to provision slots
 // (typed via nodeInfra.d.ts).
-import { startHardhatNode, startDiscoveryRegistry } from "../utils/nodeInfra";
+import { startDiscoveryRegistry, startHardhatNode } from "../utils/nodeInfra";
+import { EVENT_HANDLER_HOOK_NAMES } from "@/eventHandlers/EventHandlerHooks";
+import type { BusEventMaps } from "@/events/EventBus";
+import { EvmStateMachine } from "@/evm";
+import P2pEventHooks from "@/P2pEventHooks";
+import type { CustomRpcManifest } from "@/rpc/registry";
+import type { RemoteRpcProxyType } from "@/rpc/RemoteRpcProxy";
+import type { RpcRequestOptions } from "@/rpc/RpcHandler";
+import type StateManager from "@/stateManager/StateManager";
+import { TimeConfig } from "@/types";
+import { Address, ChannelId, ForkId, Hash } from "@/types/types";
+import {
+    EventBarrier,
+    LocalDiscoveryServer,
+    Logger,
+    createEthersResultProxy,
+    createLogger,
+    getErrorPeerAddress,
+    maybeStampErrorWithPeerAddress
+} from "@/utils";
+import { Config, config, createConfig } from "@/utils/config";
+import { LogLevel } from "@/utils/logging/Logger";
+import { connectStateChannelManager } from "@/utils/stateChannelManager";
+import type { HostExecModules } from "@test/fixtures/customRpc/harnessControl/services/scenario/ScenarioRpcMethods";
+import { AssertActions } from "@test/harness/actions/assert/AssertActions";
+import { ByzantineActions } from "@test/harness/actions/ByzantineActions";
+import { ContextActions } from "@test/harness/actions/ContextActions";
+import { DisputeOrchestrator } from "@test/harness/actions/DisputeOrchestrator";
+import { DisputeTamperingActions } from "@test/harness/actions/DisputeTamperingActions";
+import { EventActions } from "@test/harness/actions/EventActions";
+import { JoinActions } from "@test/harness/actions/JoinActions";
+import { LifecycleActions } from "@test/harness/actions/lifecycle/LifecycleActions";
+import { NetworkController } from "@test/harness/actions/NetworkController";
+import { RPCActions } from "@test/harness/actions/RPCActions";
+import { RpcStubActions } from "@test/harness/actions/rpcStubActions";
+import { ScenarioActions } from "@test/harness/actions/ScenarioActions";
+import { StateQueryActions } from "@test/harness/actions/StateQueryActions";
+import { TransitionActions } from "@test/harness/actions/TransitionActions";
+import { PeerIdentityExecutionContext } from "@test/harness/core/peerErrorAttribution";
+import {
+    slotAccountIndex,
+    slotDeployerIndex
+} from "@test/harness/core/slotAccounts";
+import { resolveTestTimeConfig } from "@test/harness/core/testTimeConfig";
+import {
+    EventSpies,
+    HarnessConstructorOptions,
+    HarnessContext,
+    HarnessDeploymentConfig,
+    HarnessOptions,
+    TestPeer
+} from "@test/harness/core/types";
+import SyncCoordinator from "@test/utils/SyncCoordinator";
+import {
+    AStateMachine as AStateMachineContract,
+    StateChannelManagerInterface
+} from "@typechain-types";
+import { DisputeStruct } from "@typechain-types/contracts/V1/types/DisputeTypes";
+import * as dotenv from "dotenv";
+import { NonceManager, Signer, ethers } from "ethers";
+import { createHash } from "node:crypto";
+import path from "node:path";
+import { setImmediate } from "node:timers";
+import * as sinon from "sinon";
 
 // Matches hardhat.config.ts accounts.mnemonic so account N derives the same
 // address whether the chain is in-process, a slot node, or a harness-started one.
 const HARDHAT_MNEMONIC =
     "test test test test test test test test test test test junk";
-
-import { setImmediate } from "node:timers";
-import { EvmStateMachine } from "@/evm";
-import P2pEventHooks from "@/P2pEventHooks";
-import {
-    AStateMachine as AStateMachineContract,
-    StateChannelManagerInterface
-} from "@typechain-types";
-import { connectStateChannelManager } from "@/utils/stateChannelManager";
-import { ForkId, ChannelId, Address, Hash } from "@/types/types";
-import { TimeConfig } from "@/types";
-import { resolveTestTimeConfig } from "@test/harness/core/testTimeConfig";
-
-import {
-    createLogger,
-    LocalDiscoveryServer,
-    Logger,
-    EventBarrier,
-    createEthersResultProxy,
-    getErrorPeerAddress,
-    maybeStampErrorWithPeerAddress
-} from "@/utils";
-import { PeerIdentityExecutionContext } from "@test/harness/core/peerErrorAttribution";
-import { DisputeStruct } from "@typechain-types/contracts/V1/types/DisputeTypes";
-import { createConfig, Config, config } from "@/utils/config";
-import testConfig from "../peer3.test.config";
-import { type LocalStateMachineDeployer } from "../../scripts/V1/deploy";
-import SyncCoordinator from "@test/utils/SyncCoordinator";
-import type { RemoteRpcProxyType } from "@/rpc/RemoteRpcProxy";
-import type { RpcRequestOptions } from "@/rpc/RpcHandler";
-import path from "node:path";
-import { createHash } from "node:crypto";
-import { deployFacets } from "../../scripts/V1/deploy";
-import { resolveOrDeployShared } from "../harness/core/deploymentCache";
-import HarnessControlRpc from "./customRpc/harnessControl/HarnessControlRpc";
-import type { CustomRpcManifest } from "@/rpc/registry";
-import type StateManager from "@/stateManager/StateManager";
-import { EVENT_HANDLER_HOOK_NAMES } from "@/eventHandlers/EventHandlerHooks";
-import type { BusEventMaps } from "@/events/EventBus";
-import type { HostExecModules } from "@test/fixtures/customRpc/harnessControl/services/scenario/ScenarioRpcMethods";
-
-import { LifecycleActions } from "@test/harness/actions/lifecycle/LifecycleActions";
-import { JoinActions } from "@test/harness/actions/JoinActions";
-import { TransitionActions } from "@test/harness/actions/TransitionActions";
-import { NetworkController } from "@test/harness/actions/NetworkController";
-import { AssertActions } from "@test/harness/actions/assert/AssertActions";
-import { ByzantineActions } from "@test/harness/actions/ByzantineActions";
-import { EventActions } from "@test/harness/actions/EventActions";
-import { StateQueryActions } from "@test/harness/actions/StateQueryActions";
-import { DisputeOrchestrator } from "@test/harness/actions/DisputeOrchestrator";
-import { DisputeTamperingActions } from "@test/harness/actions/DisputeTamperingActions";
-import { RPCActions } from "@test/harness/actions/RPCActions";
-import { RpcStubActions } from "@test/harness/actions/rpcStubActions";
-import { ContextActions } from "@test/harness/actions/ContextActions";
-import { ScenarioActions } from "@test/harness/actions/ScenarioActions";
-import {
-    HarnessConstructorOptions,
-    HarnessDeploymentConfig,
-    HarnessContext,
-    TestPeer,
-    EventSpies,
-    HarnessOptions
-} from "@test/harness/core/types";
-import {
-    slotAccountIndex,
-    slotDeployerIndex
-} from "@test/harness/core/slotAccounts";
-import { HarnessDebug } from "./HarnessDebug";
-import { LogLevel } from "@/utils/logging/Logger";
 
 const DEFAULT_HARNESS_DISPUTE_EXECUTION_GAS_LIMIT = 3_000_000;
 
@@ -143,7 +144,7 @@ export class PeerTestHarness<
     /**
      * Per-peer fork-id cache. The live fork id lives host-side behind the
      * runtime port, so it cannot be read synchronously. The cache is refreshed
-     * by {@link refreshForkIds} (after channel open/join, transitions, disputes)
+     * by {@link peerForkIds} (after channel open/join, transitions, disputes)
      * and opportunistically from forwarded event-handler invocations.
      */
     private forkIdCache = new Map<number, ForkId>();
@@ -191,26 +192,6 @@ export class PeerTestHarness<
                     .request()) as ForkId;
                 this.forkIdCache.set(peer.index, forkId);
                 return forkId;
-            })
-        );
-    }
-
-    /** Refresh the fork-id cache for all peers (or a subset) from the host. */
-    public async refreshForkIds(peerIndices?: number[]): Promise<void> {
-        const peers =
-            peerIndices === undefined
-                ? this.peers
-                : peerIndices.map((i) => this.peers[i]).filter(Boolean);
-        await Promise.all(
-            peers.map(async (peer) => {
-                try {
-                    const forkId = await this.control(peer)
-                        .query.getForkId()
-                        .request();
-                    this.forkIdCache.set(peer.index, forkId as ForkId);
-                } catch {
-                    // Peer may not be ready (pre-handshake); leave cache as-is.
-                }
             })
         );
     }
@@ -585,6 +566,7 @@ export class PeerTestHarness<
             // P2pEventHooks spies
             onConnection: sinon.spy(),
             onTurn: sinon.spy(),
+            onLeaveTurn: sinon.spy(),
             onSetState: sinon.spy(),
             onAbort: sinon.spy(),
             onStatusChanged: sinon.spy(),
@@ -622,6 +604,10 @@ export class PeerTestHarness<
                     component: "P2pEventHooks"
                 });
                 void this.disconnectionBarrier.signal();
+                void this.eventCountsBarrier.signal();
+            },
+            onLeaveTurn: () => {
+                eventSpies.onLeaveTurn?.();
                 void this.eventCountsBarrier.signal();
             },
             onTurn: (

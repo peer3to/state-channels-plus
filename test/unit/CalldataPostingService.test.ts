@@ -1,6 +1,6 @@
-import { expect } from "chai";
-import { MathTestSession as TestSession } from "@test/harness";
 import { hash as randomHash } from "../factory";
+import { MathTestSession as TestSession } from "@test/harness";
+import { expect } from "chai";
 
 // maybePostBlockOnChain is called directly on the author, so the decision
 // (post or stand down) is observed without waiting out agreementTime.

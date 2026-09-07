@@ -1,22 +1,22 @@
 // @spec-test-coverage-ignore: shared dispute staging and resolution helper exercised by owning mapped test declarations
-import { PeerTestHarness } from "@test/fixtures/PeerTestHarness";
-import type { HarnessControlRpc } from "@test/fixtures/customRpc/harnessControl/HarnessControlRpc";
+import type { FinalDisputeResolution } from "./DisputeTamperingActions";
 import { CreateAndResolveDisputeResult } from "../core/types";
-import { Codec, Logger, Type } from "@/utils";
-import { ForkId } from "@/types/types";
-import { ZeroHash } from "ethers";
 import { Status } from "@/types";
 import { FraudProofType } from "@/types/sol-enums";
+import { ForkId } from "@/types/types";
+import { Codec, Logger, Type } from "@/utils";
+import type { HarnessControlRpc } from "@test/fixtures/customRpc/harnessControl/HarnessControlRpc";
+import type {
+    DisputeValidationRun,
+    PersistDisputeDataProjection
+} from "@test/fixtures/customRpc/harnessControl/services/dispute/DisputeService";
+import { PeerTestHarness } from "@test/fixtures/PeerTestHarness";
 import type {
     DisputeAuditingDataStruct,
     DisputeConfirmationStruct,
     DisputeStruct
 } from "@typechain-types/contracts/V1/types/DisputeTypes";
-import type {
-    DisputeValidationRun,
-    PersistDisputeDataProjection
-} from "@test/fixtures/customRpc/harnessControl/services/dispute/DisputeService";
-import type { FinalDisputeResolution } from "./DisputeTamperingActions";
+import { ZeroHash } from "ethers";
 
 export type SubmittedFinalDispute = {
     forkId: ForkId;
@@ -172,12 +172,9 @@ export class DisputeOrchestrator<
         const honestPeers = this.harness.peers.filter(
             (peer) => peer.index !== options.maliciousPeerIndex
         );
-        for (const peer of honestPeers) {
-            await this.harness
-                .control(peer)
-                .stub.stubSuppressDisputeInitiation()
-                .request();
-        }
+        await this.suppressDisputeInitiation(
+            honestPeers.map((peer) => peer.index)
+        );
         try {
             await this.harness.byzantine.submitDoubleSignBlock(
                 options.maliciousPeerIndex,
@@ -229,10 +226,7 @@ export class DisputeOrchestrator<
     }): Promise<ForkId> {
         const forkId = options.forkId ?? this.harness.activeForkId!;
         const excludedPeer = this.harness.getPeer(options.excludedPeerIndex);
-        await this.harness
-            .control(excludedPeer)
-            .stub.stubSuppressDisputeInitiation()
-            .request();
+        await this.suppressDisputeInitiation([excludedPeer.index]);
         try {
             await this.harness.byzantine.submitDoubleSignBlock(
                 options.maliciousPeerIndex,
@@ -264,10 +258,7 @@ export class DisputeOrchestrator<
         finalAuthorPeerIndex: number;
     }): Promise<SubmittedFinalDispute> {
         const finalAuthor = this.harness.getPeer(options.finalAuthorPeerIndex);
-        await this.harness
-            .control(finalAuthor)
-            .stub.stubSuppressDisputeInitiation()
-            .request();
+        await this.suppressDisputeInitiation([finalAuthor.index]);
         try {
             return await this.postFinalDispute(
                 options.forkId,
@@ -591,6 +582,46 @@ export class DisputeOrchestrator<
             dispute: posted.dispute,
             disputeConfirmation: posted.disputeConfirmation
         };
+    }
+
+    public async selfRemoveViaDisputeWait({
+        leaverIndex,
+        forkId
+    }: {
+        leaverIndex: number;
+        forkId?: ForkId;
+    }): Promise<number[]> {
+        await this.harness
+            .control(this.harness.getPeer(leaverIndex))
+            .dispute.setForceExit(true)
+            .request();
+        this.harness.context.leftChannelPeerIndices = [
+            ...this.harness.context.leftChannelPeerIndices,
+            leaverIndex
+        ];
+        await this.harness.tamper.postTamperedDispute(leaverIndex, () => {}, {
+            ...(forkId === undefined ? {} : { forkId }),
+            markMalicious: false
+        });
+        const remainingPeerIndices = this.harness
+            .getActiveHonestPeers()
+            .map((p) => p.index);
+        await this.harness.assert.dispute.committedWait({
+            peersIndices: remainingPeerIndices,
+            expectedCount: 1
+        });
+        return remainingPeerIndices;
+    }
+
+    public async suppressDisputeInitiation(
+        peerIndices: number[]
+    ): Promise<void> {
+        for (const index of peerIndices) {
+            await this.harness
+                .control(this.harness.getPeer(index))
+                .stub.stubSuppressDisputeInitiation()
+                .request();
+        }
     }
 
     /** Restore dispute initiation on the peers a final-dispute staging suppressed. */

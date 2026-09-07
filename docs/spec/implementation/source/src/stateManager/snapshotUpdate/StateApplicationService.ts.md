@@ -35,11 +35,41 @@ reduction work without borrowing any result from synchronization. The reduction-
 path keeps its own completion and actual result. The settlement follow-up still runs after the state
 and participation status are applied.
 
+## Key design decisions
+
+Reduction application accepts the prepared genesis snapshot without rebuilding it. Ordinary reductions obtain it from `ReductionManager.prepareReducedGenesis`; final disputes supply their own snapshot with the dispute-creation timestamp. The prepare, commit guard and follow-up order are unchanged.
+
+Signer membership reads delegate to MembershipService; this file carries no duplicate address comparison. See [StateApplicationService.ts](../../../../../../../src/stateManager/snapshotUpdate/StateApplicationService.ts#L158).
+
+The on-chain signer lookup delegates to the membership union predicate and retains the existing local short-circuit. See [StateApplicationService.ts](../../../../../../../src/stateManager/snapshotUpdate/StateApplicationService.ts#L158).
+
+Error text delegates to the dependency-free errorMessage helper. Existing catch policy, stack fields, log messages and error propagation remain at this call site. See [StateApplicationService.ts](../../../../../../../src/stateManager/snapshotUpdate/StateApplicationService.ts#L1).
+
+## Inputs, outputs, state, and side effects
+
+Accepts the prepared snapshot/application inputs and applies them to the live state manager through the existing ordered update flow. Failure reporting uses the same error text and preserves its original error and stack handling.
+
 ## Linked requirements
 
 | Source file                                                                                                   | Specification IDs                                                                                                                                                                                                                                                                                                                                               |
 | ------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | [StateApplicationService.ts](../../../../../../../src/stateManager/snapshotUpdate/StateApplicationService.ts) | [`REQ-TJOIN-3-DCZKS6`](../../../../../specification/peer-communication/targeted-channel-join.md#req-tjoin-3-dczks6), [`REQ-DISPUTE-PIPE-3-PHE3SQ`](../../../../../specification/disputes/dispute-processing.md#req-dispute-pipe-3-phe3sq), [`REQ-DISPUTE-PIPE-4-3YVDSA`](../../../../../specification/disputes/dispute-processing.md#req-dispute-pipe-4-3yvdsa) |
+
+## Assumptions, dependencies, trust boundaries, and limits
+
+Snapshot validation and preparation happen in their owning services. This change only shares error text coercion; it changes no snapshot acceptance or mutation ordering.
+
+## Specification adherence
+
+The source contribution is limited to the linked requirements and operation described above; surrounding policy remains in the related owners.
+
+## Specification contradictions
+
+None demonstrated.
+
+## Missing behavior
+
+None demonstrated.
 
 ## Conformance traceability
 
@@ -53,13 +83,6 @@ and participation status are applied.
 | ------------------------------------------------------------------------------------------------------- | ------------------------------ | ---------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | <a id="unit-test-state-application-service-1-b8v3dr"></a>`UNIT-TEST-STATE-APPLICATION-SERVICE-1-B8V3DR` | Canonical snapshot application | Apply genesis and participant/non-participant snapshots through the existing owner | Storage, active fork, and local status update atomically before readiness is reported; the reduction path commits nothing when `shouldCommit` is false or a read rejects | <a id="unit-test-state-application-service-1-b8v3dr.p1"></a>`UNIT-TEST-STATE-APPLICATION-SERVICE-1-B8V3DR.P1` — genesis height-zero storage and active fork; <a id="unit-test-state-application-service-1-b8v3dr.p2"></a>`UNIT-TEST-STATE-APPLICATION-SERVICE-1-B8V3DR.P2` — participant status; <a id="unit-test-state-application-service-1-b8v3dr.p3"></a>`UNIT-TEST-STATE-APPLICATION-SERVICE-1-B8V3DR.P3` — observer status; <a id="unit-test-state-application-service-1-b8v3dr.p4"></a>`UNIT-TEST-STATE-APPLICATION-SERVICE-1-B8V3DR.P4` — disposal while the reduction application is held at `setState` commits nothing; <a id="unit-test-state-application-service-1-b8v3dr.p5"></a>`UNIT-TEST-STATE-APPLICATION-SERVICE-1-B8V3DR.P5` — disposal while the reduction application is held at `getParticipants` commits nothing; <a id="unit-test-state-application-service-1-b8v3dr.p6"></a>`UNIT-TEST-STATE-APPLICATION-SERVICE-1-B8V3DR.P6` — disposal while the reduction application is held at `getNextToWrite` commits nothing; <a id="unit-test-state-application-service-1-b8v3dr.p7"></a>`UNIT-TEST-STATE-APPLICATION-SERVICE-1-B8V3DR.P7` — a `getParticipants` rejection after the canonical `setState` aborts the state manager without committing; <a id="unit-test-state-application-service-1-b8v3dr.p8"></a>`UNIT-TEST-STATE-APPLICATION-SERVICE-1-B8V3DR.P8` — a `getNextToWrite` rejection after the canonical `setState` aborts the state manager without committing; <a id="unit-test-state-application-service-1-b8v3dr.p9"></a>`UNIT-TEST-STATE-APPLICATION-SERVICE-1-B8V3DR.P9` — a reduced genesis that drops the signer keeps the status while the chain still lists it, and `SYNCED` follows the chain's snapshot |
 
-## Verification
+## Related source reports
 
-State-application tests cover atomic genesis application and participant/observer status derivation. Peer
-authentication and responder readiness are covered at the P2P and spectate boundaries. The reduction
-application permutations are driven through `ReductionManager` with the harness hold and one-shot reject
-controls on the three state-machine calls.
-
-# Terminal leave contribution
-
-Applied settled state rechecks terminal leave after participant status and fork state are authoritative. This contributes to [`REQ-LIF-10-QR8NQ9`](../../../../../specification/settlement/lifecycle.md#req-lif-10-qr8nq9).
+[errorMessage.ts.md](../../utils/errorMessage.ts.md)

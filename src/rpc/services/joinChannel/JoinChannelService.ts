@@ -1,18 +1,18 @@
-import type ATransport from "@/transport/ATransport";
+import JoinChannelRpcMethods from "./JoinChannelRpcMethods";
+import Clock from "@/Clock";
+import StateSnapshot from "@/models/StateSnapshot";
+import type P2PManager from "@/P2PManager";
 import ARpcService from "@/rpc/ARpcService";
 import { HandshakeCompletedGuard } from "@/rpc/guards";
-import type P2PManager from "@/P2PManager";
+import type ATransport from "@/transport/ATransport";
+import type { ChannelId, ForkId, Hash, Signature } from "@/types/types";
+import { addressesEqual, Codec, SignatureUtils, Type } from "@/utils";
 import type {
     BalanceStruct,
     JoinChannelConfirmationStruct,
     JoinChannelStruct,
     SignedJoinChannelStruct
 } from "@typechain-types/contracts/V1/types/DataTypes";
-import type { ChannelId, ForkId, Hash, Signature } from "@/types/types";
-import { addressesEqual, Codec, SignatureUtils, Type } from "@/utils";
-import StateSnapshot from "@/models/StateSnapshot";
-import Clock from "@/Clock";
-import JoinChannelRpcMethods from "./JoinChannelRpcMethods";
 
 export const DEFAULT_JOIN_CHANNEL_DEADLINE_SECONDS = 120;
 
@@ -200,26 +200,17 @@ export default class JoinChannelService extends ARpcService<JoinChannelRpcMethod
         if (String(snapshot.hash) !== String(expectedSnapshotHash)) {
             throw new Error("requestJoinSignature: snapshot mismatch");
         }
-        if (
-            !thresholdParticipants.some((participant) =>
-                addressesEqual(participant, sm.signerAddress)
-            )
-        ) {
+        if (!sm.membershipService.includesSigner(thresholdParticipants)) {
             throw new Error(
                 "requestJoinSignature: local signer not in threshold"
             );
         }
 
         try {
-            const zeroBalance = await sm.diamondStateMachine.getZeroBalance();
-            if (
-                !(await sm.diamondStateMachine.isBalanceLesserThan(
-                    zeroBalance,
-                    joinChannel.balance
-                ))
-            ) {
-                throw new Error("join balance must be greater than zero");
-            }
+            await sm.diamondStateMachine.requirePositiveBalance(
+                joinChannel.balance,
+                "join balance"
+            );
         } catch (error) {
             this.p2pManager.disconnectAndBlacklistPeerByEvmAddress(peerAddress);
             throw error;

@@ -1,9 +1,9 @@
 // @spec-test-coverage-ignore: shared reduction disposal staging exercised by the mapped ReductionManager test declarations
-import { expect } from "chai";
 
 import { Status } from "@/types";
 import type { MathPeerTestHarness } from "@test/fixtures/MathPeerTestHarness";
 import { waitFor } from "@test/utils/waitFor";
+import { expect } from "chai";
 
 /**
  * Stage a reducible disputed fork on peer 0, hold the reduction genesis
@@ -138,12 +138,9 @@ async function stageDisposalFork(h: MathPeerTestHarness) {
         beforeDispute: async () => {
             // One real dispute supplies the reduction input. Other uploads
             // are unrelated to disposal and can outlive this short window.
-            for (const peerIndex of [1, 2, 3]) {
-                await h
-                    .control(h.getPeer(peerIndex))
-                    .stub.stubSuppressDisputeInitiation()
-                    .request();
-            }
+            await h.dispute.suppressDisputeInitiation(
+                [1, 2, 3].map((peerIndex) => h.getPeer(peerIndex).index)
+            );
         }
     });
 }

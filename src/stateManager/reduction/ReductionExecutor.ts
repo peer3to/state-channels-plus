@@ -1,12 +1,12 @@
-import { TransactionResponse } from "ethers";
-
-import type { DisputeStruct } from "@typechain-types/contracts/V1/types/DisputeTypes";
-
+import type ReductionComputationService from "./ReductionComputationService";
+import type { ReductionComputation } from "./ReductionComputationService";
+import type StateManager from "../StateManager";
 import Clock from "@/Clock";
 import { StateSnapshot } from "@/models";
 import { Status } from "@/types";
 import type { ForkId, Timestamp } from "@/types/types";
 import { DetachedPromises, Logger, Mutex } from "@/utils";
+import { errorMessage } from "@/utils/errorMessage";
 import {
     type CustomEvmError,
     type RaceConditionErrorHandlers,
@@ -16,9 +16,8 @@ import {
 } from "@/utils/evmErrorHandler";
 import { LoggerUtils } from "@/utils/LoggerUtils";
 
-import type ReductionComputationService from "./ReductionComputationService";
-import type { ReductionComputation } from "./ReductionComputationService";
-import type StateManager from "../StateManager";
+import type { DisputeStruct } from "@typechain-types/contracts/V1/types/DisputeTypes";
+import { TransactionResponse } from "ethers";
 
 type KillPeriodObservation = {
     windowExists: boolean;
@@ -249,9 +248,7 @@ export default class ReductionExecutor {
      * disposed. Either way this attempt stands down without writing anything.
      */
     private isStale(forkId: ForkId): boolean {
-        return (
-            forkId !== this.stateManager.forkId || this.stateManager.isDisposed
-        );
+        return !this.stateManager.isActiveFork(forkId);
     }
 
     private async complete(
@@ -265,9 +262,9 @@ export default class ReductionExecutor {
                 forkId,
                 candidate.reducedForkId,
                 {
-                    snapshotData: candidate.reducedSnapshotData,
+                    genesisSnapshot:
+                        candidate.reducedGenesisSnapshot.toStruct(),
                     encodedState: candidate.reducedEncodedStateMachineState,
-                    genesisTimestamp: candidate.genesisTimestamp,
                     outboundMessageBlock: candidate.reducedOutboundMessageBlock
                 }
             );
@@ -309,28 +306,11 @@ export default class ReductionExecutor {
             // before anything is persisted.
             if (this.isStale(forkId)) return undefined;
             if (!computation) return undefined;
-            const {
-                reducedSnapshotData,
-                reducedOutboundMessageBlock,
-                reducedForkId
-            } = computation;
-
-            // The fork-update calldata walks the outbound-message chain from
-            // the current on-chain snapshot through the newly reduced output.
-            // Persist the deterministic terminal block before building that
-            // range; setGenesisState will persist the same block idempotently.
-            if (reducedOutboundMessageBlock) {
-                this.stateManager.storage.outboundMessages.store(
-                    reducedOutboundMessageBlock,
-                    { justPersist: true }
+            const { genesisSnapshot: reducedGenesisSnapshot } =
+                this.stateManager.reductionManager.prepareReducedGenesis(
+                    computation,
+                    genesisTimestamp
                 );
-            }
-            const reducedGenesisSnapshot = StateSnapshot.from({
-                forkId: reducedForkId,
-                blockHeight: 0,
-                timestamp: genesisTimestamp,
-                snapshotData: reducedSnapshotData
-            });
 
             return {
                 ...computation,
@@ -343,7 +323,7 @@ export default class ReductionExecutor {
                 customError: LoggerUtils.getCustomEvmErrorMetadata(
                     tryDecodeCustomError(error)
                 ),
-                error: error instanceof Error ? error.message : String(error)
+                error: errorMessage(error)
             });
             throw error;
         }
@@ -518,7 +498,7 @@ export default class ReductionExecutor {
     }
 
     /** The reduced fork the chain records for `forkId`, or the zero hash. */
-    private async readReducedForkOnChain(forkId: ForkId): Promise<string> {
+    private async readReducedForkOnChain(forkId: ForkId): Promise<ForkId> {
         const reducedResult =
             await this.stateManager.stateChannelManagerContract.getReducedResult(
                 this.stateManager.channelId,

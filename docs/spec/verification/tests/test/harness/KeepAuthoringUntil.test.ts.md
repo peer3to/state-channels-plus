@@ -21,6 +21,6 @@ report but are kept here.
 
 | Test declaration                                                                                                                                                             | Covers |
 | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------ |
-| [`keepAuthoringUntil helper > ends in its diagnostic when the next writer stays excluded`](../../../../../../test/harness/KeepAuthoringUntil.test.ts#L7) (line 7)            | —      |
-| [`keepAuthoringUntil helper > ends in its diagnostic when no host confirms the next writer's turn`](../../../../../../test/harness/KeepAuthoringUntil.test.ts#L33) (line 33) | —      |
-| [`keepAuthoringUntil helper > counts authored blocks toward the same bound`](../../../../../../test/harness/KeepAuthoringUntil.test.ts#L64) (line 64)                        | —      |
+| [`keepAuthoringUntil helper > ends in its diagnostic when the next writer stays excluded`](../../../../../../test/harness/KeepAuthoringUntil.test.ts#L6) (line 6)            | —      |
+| [`keepAuthoringUntil helper > ends in its diagnostic when no host confirms the next writer's turn`](../../../../../../test/harness/KeepAuthoringUntil.test.ts#L32) (line 32) | —      |
+| [`keepAuthoringUntil helper > counts authored blocks toward the same bound`](../../../../../../test/harness/KeepAuthoringUntil.test.ts#L63) (line 63)                        | —      |

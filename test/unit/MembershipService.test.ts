@@ -1,10 +1,10 @@
+import { Status } from "@/types";
+import { sleep } from "@/utils";
+import { TargetedChannelJoinFixture } from "@test/fixtures/TargetedChannelJoinFixture";
+import { MathTestSession as TestSession } from "@test/harness";
+import { waitFor } from "@test/utils/waitFor";
 import { expect } from "chai";
 import { ethers } from "ethers";
-import { Status } from "@/types";
-import { MathTestSession as TestSession } from "@test/harness";
-import { TargetedChannelJoinFixture } from "@test/fixtures/TargetedChannelJoinFixture";
-import { sleep } from "@/utils";
-import { waitFor } from "@test/utils/waitFor";
 
 // membership is driven through the real signer entry points
 // (p2pSigner.joinChannel / topUpBalance) and through a real leave.

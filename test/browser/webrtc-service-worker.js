@@ -1,6 +1,6 @@
 // @spec-test-coverage-ignore: browser worker script for the WebRTC worker smokes; evidence is mapped from run-worker-contract-executor.mjs
-import WebRTCSetupService from "../../src/rpc/services/WebRTCSetup/WebRTCSetupService.ts";
 import WorkerBridgeWebRTCConnectionFactory from "../../src/rpc/services/WebRTCSetup/connection/WorkerBridgeWebRTCConnectionFactory.ts";
+import WebRTCSetupService from "../../src/rpc/services/WebRTCSetup/WebRTCSetupService.ts";
 import { TransportType } from "../../src/transport/TransportType.ts";
 
 // Force the SDK down the main-thread bridge path even in browsers that expose

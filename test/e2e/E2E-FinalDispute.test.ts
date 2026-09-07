@@ -1,8 +1,7 @@
-import { MathTestSession as TestSession } from "@test/harness";
-import { expect } from "chai";
-
 import { Status } from "@/types";
+import { MathTestSession as TestSession } from "@test/harness";
 import { waitFor } from "@test/utils/waitFor";
+import { expect } from "chai";
 
 describe("E2E: final dispute resolution", function () {
     it("threshold-final dispute installs its exact output and can post the next snapshot", async function () {
@@ -79,10 +78,9 @@ describe("E2E: final dispute resolution", function () {
         const h = TestSession.getHarness();
         await h.scenario.preDisputeSetup({
             peerCount: 4,
-            timeConfig: { evidenceTime: 3 },
             // Keep the leave watchdog out of the way: the leave must settle
             // through its exit turn on the reduced fork, not a fallback dispute.
-            configOverrides: { LEAVE_CHANNEL_WATCHDOG_MS: 60_000 }
+            timeConfig: { evidenceTime: 3 }
         });
         const maliciousPeerIndex = 1;
         const leaver = h.getPeer(2);

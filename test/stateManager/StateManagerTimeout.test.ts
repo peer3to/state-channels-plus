@@ -1,7 +1,6 @@
-import { expect } from "chai";
-
 import { sleep } from "@/utils";
 import { MathTestSession as TestSession } from "@test/harness";
+import { expect } from "chai";
 
 describe("StateManager timeout", function () {
     it("does not submit a timeout when the existing dispute window predates its deadline", async function () {

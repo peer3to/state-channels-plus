@@ -1,5 +1,5 @@
-import { StateProofStruct } from "@typechain-types/contracts/V1/types/DisputeTypes";
 import Block from "./Block";
+import { StateProofStruct } from "@typechain-types/contracts/V1/types/DisputeTypes";
 
 export default class StateProof {
     readonly milestones: { blocks: Block[] }[];

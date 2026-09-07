@@ -1,5 +1,5 @@
-import { MathTestSession as TestSession } from "@test/harness";
 import { hash as randomHash } from "@test/factory";
+import { MathTestSession as TestSession } from "@test/harness";
 import { expectDecodedError } from "@test/test_utils/customErrorAssertions";
 import { expect } from "chai";
 

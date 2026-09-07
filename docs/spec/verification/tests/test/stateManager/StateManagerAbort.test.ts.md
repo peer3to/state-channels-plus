@@ -27,4 +27,4 @@ report but are kept here.
 
 | Test declaration                                                                                                                       | Covers |
 | -------------------------------------------------------------------------------------------------------------------------------------- | ------ |
-| [`StateManager abort > cancels session-owned timeout work`](../../../../../../test/stateManager/StateManagerAbort.test.ts#L7) (line 7) | —      |
+| [`StateManager abort > cancels session-owned timeout work`](../../../../../../test/stateManager/StateManagerAbort.test.ts#L6) (line 6) | —      |

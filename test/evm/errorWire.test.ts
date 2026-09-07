@@ -1,6 +1,12 @@
-import { expect } from "chai";
-
 import { deserializeError, serializeError } from "@/evm/p2pRuntime/errorWire";
+import {
+    getErrorPeerAddress,
+    maybeStampErrorWithPeerAddress
+} from "@/utils/errorPeerAddress";
+import { tryDecodeCustomError } from "@/utils/evmErrorHandler";
+import { encodedCustomErrorRevert } from "@test/factory";
+import { expect } from "chai";
+import { ethers } from "ethers";
 
 describe("errorWire", function () {
     it("keeps the original error when its metadata toJSON throws", function () {
@@ -45,5 +51,51 @@ describe("errorWire", function () {
         const serialized = serializeError(error);
         expect(serialized.message).to.equal("Event loop delay");
         expect(serialized.eventLoopDelay).to.equal(undefined);
+    });
+
+    it("round-trips a thrown string", function () {
+        expect(
+            deserializeError(serializeError("upload failed")).message
+        ).to.equal("upload failed");
+    });
+
+    it("restores nested info.error.data as a decodable revert", function () {
+        const data = encodedCustomErrorRevert(
+            "RaceConditionDisputeEvidencePeriodExpired"
+        );
+        const decoded = deserializeError(
+            serializeError({ info: { error: { data } } })
+        );
+        expect(tryDecodeCustomError(decoded)?.name).to.equal(
+            "RaceConditionDisputeEvidencePeriodExpired"
+        );
+    });
+
+    it("restores VM return bytes as a decodable revert", function () {
+        const data = encodedCustomErrorRevert(
+            "RaceConditionDisputeEvidencePeriodExpired"
+        );
+        const decoded = deserializeError(
+            serializeError({
+                execResult: { returnValue: ethers.getBytes(data) }
+            })
+        );
+        expect(tryDecodeCustomError(decoded)?.name).to.equal(
+            "RaceConditionDisputeEvidencePeriodExpired"
+        );
+    });
+
+    it("preserves the custom error name and originating peer", function () {
+        const error = tryDecodeCustomError({
+            data: encodedCustomErrorRevert(
+                "RaceConditionDisputeEvidencePeriodExpired"
+            )
+        })!;
+        const peer = ethers.Wallet.createRandom().address;
+        maybeStampErrorWithPeerAddress(error, peer);
+        const decoded = deserializeError(serializeError(error));
+        expect(decoded.name).to.equal(error.name);
+        expect(getErrorPeerAddress(decoded)).to.equal(peer);
+        expect(tryDecodeCustomError(decoded)?.name).to.equal(error.name);
     });
 });

@@ -9,9 +9,9 @@ Publishes a stored block when its participant set has not supplied every signatu
 
 ## Key design decisions
 
-1. Read the stored block and current signatures at [entry](../../../../../../../src/stateManager/chainFallback/CalldataPostingService.ts#L29), so an absent or fully signed block causes no post.
-2. Derive the deadline from the previous relevant timestamp and the protocol timeout at [the post](../../../../../../../src/stateManager/chainFallback/CalldataPostingService.ts#L50).
-3. Collect the complete operation after [receipt recovery](../../../../../../../src/stateManager/chainFallback/CalldataPostingService.ts#L67). The raw receipt is awaited within that operation; collecting it separately would report a handled deadline refusal as an unhandled failure.
+1. Read the stored block and current signatures at [entry](../../../../../../../src/stateManager/chainFallback/CalldataPostingService.ts#L28), so an absent or fully signed block causes no post.
+2. Derive the deadline from the previous relevant timestamp and the protocol timeout at [the post](../../../../../../../src/stateManager/chainFallback/CalldataPostingService.ts#L49).
+3. Collect the complete operation after [receipt recovery](../../../../../../../src/stateManager/chainFallback/CalldataPostingService.ts#L66). The raw receipt is awaited within that operation; collecting it separately would report a handled deadline refusal as an unhandled failure.
 
 ## Inputs, outputs, state, and side effects
 
@@ -45,7 +45,7 @@ None demonstrated.
 
 | Requirement / invariant                                                                         | Implementation status | Evidence                                                                                                                                                                                                                                                                                                              | Gap / divergence |
 | ----------------------------------------------------------------------------------------------- | --------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------- |
-| [`REQ-DA-1-NVV85Z`](../../../../../specification/security/data-availability.md#req-da-1-nvv85z) | Covered               | **Here:** [postBlockCalldata](../../../../../../../src/stateManager/chainFallback/CalldataPostingService.ts#L71) publishes the signed block. **Other files:** the [block confirmation pipeline](../../../../views/architecture/sdk/block-confirmation-pipeline.md) describes contract commitment and recovery owners. | None.            |
+| [`REQ-DA-1-NVV85Z`](../../../../../specification/security/data-availability.md#req-da-1-nvv85z) | Covered               | **Here:** [postBlockCalldata](../../../../../../../src/stateManager/chainFallback/CalldataPostingService.ts#L70) publishes the signed block. **Other files:** the [block confirmation pipeline](../../../../views/architecture/sdk/block-confirmation-pipeline.md) describes contract commitment and recovery owners. | None.            |
 
 ## Component test obligations
 

@@ -1,13 +1,12 @@
-import { expect } from "chai";
-import { ethers } from "hardhat";
-
-import { SignatureUtils } from "@/utils";
 import type { Bytes } from "@/types/types";
+import { SignatureUtils } from "@/utils";
 import {
     createOpenChannelTestObject,
     deployMathChannelProxyFixture,
     getSigners
 } from "@test/test_utils/testHelpers";
+import { expect } from "chai";
+import { ethers } from "hardhat";
 
 describe("open-channel registry events", function () {
     it("reconstructs the opened set from ChannelOpened events and matches the paged registry", async function () {

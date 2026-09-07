@@ -1,19 +1,4 @@
 // @spec-test-coverage-ignore: RPC fixture support exercised by owning E2E declarations.
-import ARpcMethods from "@/rpc/ARpcMethods";
-import type P2PManager from "@/P2PManager";
-import type ATransport from "@/transport/ATransport";
-import { Codec, DetachedPromises, sleep, Type } from "@/utils";
-import { HandshakeCompletedGuard } from "@/rpc/guards";
-import type { Status } from "@/types";
-import type { Address } from "@/types/types";
-import type SpectateServiceRpcMethods from "@/rpc/services/spectate/SpectateRpcMethods";
-import type { SyncRequest } from "@/rpc/services/spectate/SpectateService";
-import type IsForkDisputedRpcMethods from "@/rpc/services/isForkDisputedService/IsForkDisputedRpcMethods";
-import InitHandshakeRpcMethods from "@/rpc/services/initHandshake/InitHandshakeRpcMethods";
-import type JoinChannelRpcMethods from "@/rpc/services/joinChannel/JoinChannelRpcMethods";
-import { encodedCustomErrorRevert } from "@test/factory";
-import type { ForkId, Hash, Timestamp } from "@/types/types";
-import type { HarnessControlRpc } from "../../HarnessControlRpc";
 import { REDUCTION_ATTEMPT_STUB_FAILURE } from "./StubService";
 import type {
     DisputeSubmissionFailureSpec,
@@ -23,27 +8,31 @@ import type {
     RecordedDisputeSubmission,
     RecordedFraudProofApply,
     ReductionSimulationErrorName,
-    ConcurrentCalldataRecoveryProbe,
-    CleanCommittedDivergenceProbe,
-    DisputeStrategyResultMatrix,
-    MissingParticipantSnapshotsProbe,
-    BlockValidationProbe,
-    BlockValidationProbeOptions,
-    BlockProbeOptions,
-    BlockIngestProbe,
-    BlockCalldataRecoveryProbe,
-    InboundRunRecoveryProbe,
-    ReductionChallengeProbe,
-    IsDisputedForkProbe,
     HeldLobbyReplyKind,
     HeldNegotiationReplyKind,
     HeldMembershipReceiptKind,
     ReductionApplicationControl,
     ReductionAttemptHoldPoint,
     ReductionAttemptResume,
-    DetachedCallOutcome
+    DetachedCallOutcome,
+    BlockWorkHoldPoint,
+    StubService,
+    SignatureBlockMatch
 } from "./StubService";
-import type { BlockWorkHoldPoint, StubService } from "./StubService";
+import type { HarnessControlRpc } from "../../HarnessControlRpc";
+import type P2PManager from "@/P2PManager";
+import ARpcMethods from "@/rpc/ARpcMethods";
+import { HandshakeCompletedGuard } from "@/rpc/guards";
+import InitHandshakeRpcMethods from "@/rpc/services/initHandshake/InitHandshakeRpcMethods";
+import type IsForkDisputedRpcMethods from "@/rpc/services/isForkDisputedService/IsForkDisputedRpcMethods";
+import type JoinChannelRpcMethods from "@/rpc/services/joinChannel/JoinChannelRpcMethods";
+import type SpectateServiceRpcMethods from "@/rpc/services/spectate/SpectateRpcMethods";
+import type { SyncRequest } from "@/rpc/services/spectate/SpectateService";
+import type ATransport from "@/transport/ATransport";
+import type { Status } from "@/types";
+import type { Address, ForkId, Hash, Timestamp } from "@/types/types";
+import { Codec, DetachedPromises, sleep, Type } from "@/utils";
+import { encodedCustomErrorRevert } from "@test/factory";
 import { protocolEventTimeoutMs } from "@test/harness/core/testTimeConfig";
 
 /**
@@ -61,6 +50,10 @@ export class StubRpcMethods extends ARpcMethods<P2PManager<HarnessControlRpc>> {
         private readonly service: StubService
     ) {
         super(transport, service.p2pManager);
+    }
+
+    public scheduleProbe(taskName: string): Promise<boolean> {
+        return this.service.scheduleProbe(taskName);
     }
 
     public holdBlockWork(point: BlockWorkHoldPoint): boolean {
@@ -186,16 +179,6 @@ export class StubRpcMethods extends ARpcMethods<P2PManager<HarnessControlRpc>> {
             if (String(addr).toLowerCase() === allowed) return;
             return original.call(pm, addr);
         };
-        return true;
-    }
-
-    public restoreSelectiveDisconnect(): boolean {
-        const original = this.service.stubOriginals.get("selectiveDisconnect");
-        if (original === undefined) return false;
-        const pm = this.p2pManager;
-        pm.disconnectAndBlacklistPeerByEvmAddress =
-            original as typeof pm.disconnectAndBlacklistPeerByEvmAddress;
-        this.service.stubOriginals.delete("selectiveDisconnect");
         return true;
     }
 
@@ -493,8 +476,27 @@ export class StubRpcMethods extends ARpcMethods<P2PManager<HarnessControlRpc>> {
      * Make `spectateService.onSpectateRequest` always answer with a proof at
      * `staleBlockHeight`, regardless of what was requested (stale-proof guard).
      */
-    public stubSpectateStaleProof(staleBlockHeight: number): boolean {
+    public async stubSpectateStaleProof(
+        staleBlockHeight: number
+    ): Promise<boolean> {
         const service = this.p2pManager.localRpc.spectateService;
+        const syncPayload = await service.generateSyncPayload(
+            this.p2pManager.stateManager.channelId,
+            undefined,
+            staleBlockHeight
+        );
+        if (!syncPayload)
+            throw new Error("stubSpectateStaleProof - no payload");
+        const snapshot =
+            syncPayload.milestoneSnapshots.at(-1) ??
+            syncPayload.latestForkGenesisSnapshot;
+        if (Number(snapshot.blockHeight) !== staleBlockHeight) {
+            throw new Error(
+                "Capture the stale proof before advancing beyond its height"
+            );
+        }
+        // Capture a real proof now; later chain progress makes it stale.
+        const encodedSyncPayload = Codec.encode(syncPayload, Type.SyncPayload);
         if (!this.service.stubOriginals.has("spectateCreateRpcMethods")) {
             this.service.stubOriginals.set(
                 "spectateCreateRpcMethods",
@@ -506,29 +508,7 @@ export class StubRpcMethods extends ARpcMethods<P2PManager<HarnessControlRpc>> {
         ) as typeof service.createRPCMethods;
         service.createRPCMethods = (transport: ATransport) => {
             const methods = original(transport);
-            methods.onSpectateRequest = async function (
-                this: SpectateServiceRpcMethods,
-                syncRequest: SyncRequest
-            ) {
-                const peerAddress = this.senderTransport.peerAddress;
-                if (!peerAddress) {
-                    throw new Error("stubSpectateStaleProof - missing peer");
-                }
-                const syncPayload = await this.service.generateSyncPayload(
-                    syncRequest.channelId,
-                    syncRequest.forkId,
-                    staleBlockHeight
-                );
-                if (!syncPayload) {
-                    throw new Error("stubSpectateStaleProof - no payload");
-                }
-                return {
-                    encodedSyncPayload: Codec.encode(
-                        syncPayload,
-                        Type.SyncPayload
-                    )
-                };
-            };
+            methods.onSpectateRequest = async () => ({ encodedSyncPayload });
             return methods;
         };
         return true;
@@ -1026,6 +1006,97 @@ export class StubRpcMethods extends ARpcMethods<P2PManager<HarnessControlRpc>> {
         return true;
     }
 
+    public holdNextSignature(match?: SignatureBlockMatch): boolean {
+        this.service.holdNextSignature(match);
+        return true;
+    }
+    public getNextSignatureEntered(): number {
+        return this.service.getNextSignatureEntered();
+    }
+    public releaseNextSignature(): boolean {
+        this.service.releaseNextSignature();
+        return true;
+    }
+
+    public holdSyncReductionResult(): boolean {
+        this.service.holdSyncReductionResult();
+        return true;
+    }
+
+    public releaseSyncReductionResult(): boolean {
+        this.service.releaseSyncReductionResult();
+        return true;
+    }
+
+    public recordSyncRejections(): boolean {
+        this.service.recordSyncRejections();
+        return true;
+    }
+
+    public restoreRecordedSyncRejections(): string[] {
+        return this.service.restoreRecordedSyncRejections();
+    }
+
+    public recordSyncFinalityReads(): boolean {
+        this.service.recordSyncFinalityReads();
+        return true;
+    }
+
+    public restoreSyncFinalityReads(): boolean {
+        this.service.restoreSyncFinalityReads();
+        return true;
+    }
+
+    public getSyncReductionEntered(): number {
+        return this.service.getSyncReductionEntered();
+    }
+
+    public getSyncFinalityReadWidths(): number[] {
+        return this.service.getSyncFinalityReadWidths();
+    }
+
+    public recordChainMembershipReads(): boolean {
+        this.service.recordChainMembershipReads();
+        return true;
+    }
+
+    public getChainMembershipReadCount(): number {
+        return this.service.getChainMembershipReadCount();
+    }
+
+    public restoreChainMembershipReads(): boolean {
+        this.service.restoreChainMembershipReads();
+        return true;
+    }
+
+    public holdSyncWindowPersistence(): boolean {
+        this.service.holdSyncWindowPersistence();
+        return true;
+    }
+
+    public getSyncWindowPersistenceEntered(): number {
+        return this.service.getSyncWindowPersistenceEntered();
+    }
+
+    public releaseSyncWindowPersistence(): boolean {
+        this.service.releaseSyncWindowPersistence();
+        return true;
+    }
+
+    public recordSyncReductionWindows(): boolean {
+        this.service.recordSyncReductionWindows();
+        return true;
+    }
+
+    public getSyncReductionWindows() {
+        return this.service.getSyncReductionWindows();
+    }
+
+    public restoreSyncReductionWindows(): boolean {
+        this.service.restoreSyncReductionWindows();
+        return true;
+    }
+
     /** Capture `reduction-*` timer tasks instead of scheduling them. */
     public stubHoldReductionTasks(): boolean {
         return this.stubHoldScheduledTasks("reduction-");
@@ -1387,9 +1458,8 @@ export class StubRpcMethods extends ARpcMethods<P2PManager<HarnessControlRpc>> {
         this.service.completeWithGenesisOutcome = outcome;
         void sm.reductionManager
             .completeWithGenesis(sm.forkId, reducedForkId, {
-                snapshotData: snapshot.snapshotData,
-                encodedState,
-                genesisTimestamp: Number(snapshot.timestamp)
+                genesisSnapshot: snapshot,
+                encodedState
             })
             .then(
                 (installed) => {
@@ -1432,19 +1502,6 @@ export class StubRpcMethods extends ARpcMethods<P2PManager<HarnessControlRpc>> {
         }
         localDiamond.onInboundMessagesProcessed = (async () =>
             undefined) as unknown as typeof localDiamond.onInboundMessagesProcessed;
-        return true;
-    }
-
-    public restoreLocalDiamondInboundMessages(): boolean {
-        const original = this.service.stubOriginals.get(
-            "localDiamondInboundMessages"
-        );
-        if (original === undefined) return false;
-        const localDiamond =
-            this.service.sm.diamondStateMachine.localDiamondContract;
-        localDiamond.onInboundMessagesProcessed =
-            original as typeof localDiamond.onInboundMessagesProcessed;
-        this.service.stubOriginals.delete("localDiamondInboundMessages");
         return true;
     }
 
@@ -1529,85 +1586,6 @@ export class StubRpcMethods extends ARpcMethods<P2PManager<HarnessControlRpc>> {
     public cancelScheduledReductions(): boolean {
         this.service.sm.reductionManager["cancelScheduledReductions"]();
         return true;
-    }
-
-    public async probeDisputeReductionChallenge(
-        reducedForkId: ForkId
-    ): Promise<ReductionChallengeProbe> {
-        return this.service.probeDisputeReductionChallenge(reducedForkId);
-    }
-
-    public async probeInboundRunRecovery(
-        upperBlockHash: Hash,
-        options?: { failChainQueries?: boolean }
-    ): Promise<InboundRunRecoveryProbe> {
-        return this.service.probeInboundRunRecovery(upperBlockHash, options);
-    }
-
-    public async probeBlockCalldataRecovery(options?: {
-        failChainQueries?: boolean;
-    }): Promise<BlockCalldataRecoveryProbe> {
-        return this.service.probeBlockCalldataRecovery(options);
-    }
-
-    public async probeConcurrentCalldataRecovery(): Promise<ConcurrentCalldataRecoveryProbe> {
-        return this.service.probeConcurrentCalldataRecovery();
-    }
-
-    public async probeDisputeStrategyResultMatrix(): Promise<DisputeStrategyResultMatrix> {
-        return this.service.probeDisputeStrategyResultMatrix();
-    }
-
-    public async probeCleanCommittedDivergence(): Promise<CleanCommittedDivergenceProbe> {
-        return this.service.probeCleanCommittedDivergence();
-    }
-
-    public async probeMissingParticipantSnapshots(): Promise<MissingParticipantSnapshotsProbe> {
-        return this.service.probeMissingParticipantSnapshots();
-    }
-
-    public async probeAuthorGatePreviousSnapshotMember(): Promise<string> {
-        return this.service.probeAuthorGatePreviousSnapshotMember();
-    }
-
-    public async probeAuthorGateMatchingResultingSnapshot(): Promise<string> {
-        return this.service.probeAuthorGateMatchingResultingSnapshot();
-    }
-
-    public async probeAuthorGateStaleHeightSnapshot(): Promise<string> {
-        return this.service.probeAuthorGateStaleHeightSnapshot();
-    }
-
-    public async probeAuthorGateWrongForkSnapshot(): Promise<string> {
-        return this.service.probeAuthorGateWrongForkSnapshot();
-    }
-
-    public async probeAuthorGateMatchingSnapshotExcludingAuthor(): Promise<string> {
-        return this.service.probeAuthorGateMatchingSnapshotExcludingAuthor();
-    }
-
-    public async probeAuthorGateMissingSnapshotPreviousMember(): Promise<string> {
-        return this.service.probeAuthorGateMissingSnapshotPreviousMember();
-    }
-
-    public async probeAuthorGateMissingSnapshotOutsider(): Promise<string> {
-        return this.service.probeAuthorGateMissingSnapshotOutsider();
-    }
-
-    public async probeAuthorGateNoAnchorCurrentParticipant(): Promise<string> {
-        return this.service.probeAuthorGateNoAnchorCurrentParticipant();
-    }
-
-    public async probeAuthorGateNoAnchorPendingParticipant(
-        pendingParticipant: string
-    ): Promise<string> {
-        return this.service.probeAuthorGateNoAnchorPendingParticipant(
-            pendingParticipant as Address
-        );
-    }
-
-    public async probeAuthorGateNoAnchorUnknownAddress(): Promise<string> {
-        return this.service.probeAuthorGateNoAnchorUnknownAddress();
     }
 
     /** Pause a real reduction once it enters its kill-period lookup. */
@@ -1736,6 +1714,34 @@ export class StubRpcMethods extends ARpcMethods<P2PManager<HarnessControlRpc>> {
         this.service.pausedReduction = undefined;
         return restored;
     }
+    public recordLeaveWatchdog(): boolean {
+        this.service.recordLeaveWatchdog();
+        return true;
+    }
+
+    public getLeaveWatchdogObservation() {
+        return { ...this.service.leaveWatchdogObservation };
+    }
+
+    public restoreLeaveWatchdog(): boolean {
+        this.service.restoreLeaveWatchdog();
+        return true;
+    }
+
+    public recordSlashRecoveries(): boolean {
+        this.service.recordSlashRecoveries();
+        return true;
+    }
+
+    public getSlashRecoveryCount(): number {
+        return this.service.getSlashRecoveryCount();
+    }
+
+    public restoreSlashRecoveries(): boolean {
+        this.service.restoreSlashRecoveries();
+        return true;
+    }
+
     /**
      * Record `dispute()`'s upload without sending it. `holdSubmissions` parks
      * each recorded send until `releaseDisputeSubmissions`; `failure` makes the
@@ -2443,17 +2449,6 @@ export class StubRpcMethods extends ARpcMethods<P2PManager<HarnessControlRpc>> {
         return true;
     }
 
-    public restoreReductionSimulation(): boolean {
-        const contract = this.service.sm.stateChannelManagerContract;
-        const runner = contract.runner;
-        if (!runner?.call) return false;
-        const original = this.service.stubOriginals.get("reductionSimulation");
-        if (original === undefined) return false;
-        runner.call = original as NonNullable<typeof runner.call>;
-        this.service.stubOriginals.delete("reductionSimulation");
-        return true;
-    }
-
     /** Count spectate sync requests and record their selected peer. */
     public stubRecordSpectateSync(forward: boolean): boolean {
         const spectate = this.p2pManager.localRpc.spectateService;
@@ -2494,76 +2489,6 @@ export class StubRpcMethods extends ARpcMethods<P2PManager<HarnessControlRpc>> {
         return this.service.waitForSpectateSyncCalls(count);
     }
 
-    /** Run isDisputedFork, counting local-diamond queries. */
-    public async probeIsDisputedFork(
-        forkId: ForkId,
-        markLocallyDisputed: boolean
-    ): Promise<IsDisputedForkProbe> {
-        return this.service.probeIsDisputedFork(forkId, markLocallyDisputed);
-    }
-
-    /** Store a block directly into block storage (dispute-replay fixtures). */
-    public storeBlockFixture(encodedBlockConfirmation: string): {
-        hash: string;
-    } {
-        return this.service.storeBlockFixture(encodedBlockConfirmation);
-    }
-
-    /** Store a state snapshot directly into snapshot storage. */
-    public storeStateSnapshotFixture(encodedSnapshot: string): {
-        hash: string;
-    } {
-        return this.service.storeStateSnapshotFixture(encodedSnapshot);
-    }
-
-    /** Stage on-chain calldata for a block at a chosen timestamp. */
-    public stageBlockCalldata(
-        encodedSignedBlock: string,
-        onChainTimestamp: Timestamp
-    ): boolean {
-        this.service.stageBlockCalldata(encodedSignedBlock, onChainTimestamp);
-        return true;
-    }
-
-    /** Post a block's calldata on-chain (chain-fallback path). */
-    public async postBlockCalldataOnChain(
-        encodedSignedBlock: string
-    ): Promise<{ blockNumber: number; onChainTimestamp: Timestamp }> {
-        return this.service.postBlockCalldataOnChain(encodedSignedBlock);
-    }
-
-    public async runBlockValidation(
-        encodedBlockConfirmation: string,
-        options?: BlockValidationProbeOptions
-    ): Promise<BlockValidationProbe> {
-        return this.service.runBlockValidation(
-            encodedBlockConfirmation,
-            options
-        );
-    }
-
-    public async runBlockIngest(
-        encodedBlockConfirmation: string,
-        options?: BlockProbeOptions
-    ): Promise<BlockIngestProbe> {
-        return this.service.runBlockIngest(encodedBlockConfirmation, options);
-    }
-
-    public async runStoredBlockMerge(
-        encodedBlockConfirmation: string,
-        options?: {
-            strategy?: "active" | "dispute" | "spectating" | "calldata";
-        }
-    ): Promise<{
-        result: number | null;
-        persistedSignatures: string[] | null;
-    }> {
-        return this.service.runStoredBlockMerge(
-            encodedBlockConfirmation,
-            options
-        );
-    }
-
     /** Staging: force this peer's session status (fault injection). */
     public setPeerStatus(status: Status): boolean {
         this.service.sm.setStatus(status);
@@ -2577,10 +2502,6 @@ export class StubRpcMethods extends ARpcMethods<P2PManager<HarnessControlRpc>> {
 
     public releaseLobbyReply(): number {
         return this.service.releaseLobbyReply();
-    }
-
-    public getHeldLobbyReplyCount(): number {
-        return this.service.getHeldLobbyReplyCount();
     }
 
     public holdNegotiationReply(kind: HeldNegotiationReplyKind): boolean {
@@ -2650,6 +2571,55 @@ export class StubRpcMethods extends ARpcMethods<P2PManager<HarnessControlRpc>> {
 
     public holdMembershipSubmission(kind: HeldMembershipReceiptKind): boolean {
         this.service.holdMembershipSubmission(kind);
+        return true;
+    }
+
+    public holdQueueProbe(): boolean {
+        this.service.holdQueueProbe();
+        return true;
+    }
+    public getQueueProbeObservation() {
+        return this.service.getQueueProbeObservation();
+    }
+    public releaseQueueProbe(): boolean {
+        this.service.releaseQueueProbe();
+        return true;
+    }
+
+    public async startTimeoutConstruction(writer: string): Promise<boolean> {
+        return this.service.startTimeoutConstruction(writer);
+    }
+
+    public holdTimeoutBuild(): boolean {
+        this.service.holdTimeoutBuild();
+        return true;
+    }
+
+    public getTimeoutBuildObservation(): { entered: number; stored: number } {
+        return this.service.getTimeoutBuildObservation();
+    }
+
+    public releaseTimeoutBuild(): boolean {
+        this.service.releaseTimeoutBuild();
+        return true;
+    }
+
+    public restoreTimeoutBuildRecording(): boolean {
+        this.service.restoreTimeoutBuildRecording();
+        return true;
+    }
+
+    public holdInitHandshakes(): boolean {
+        this.service.holdInitHandshakes();
+        return true;
+    }
+
+    public getHeldHandshakeCount(): number {
+        return this.service.getHeldHandshakeCount();
+    }
+
+    public releaseInitHandshakes(): boolean {
+        this.service.releaseInitHandshakes();
         return true;
     }
 

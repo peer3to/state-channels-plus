@@ -1,15 +1,15 @@
-import { expect } from "chai";
-import { describe, it, beforeEach } from "mocha";
-import { ethers } from "hardhat";
-import { BlockStorage } from "@/storage/BlockStorage";
+import * as factory from "../factory";
+import { Block } from "@/models";
 import Storage, { SortOrder } from "@/storage";
+import { BlockStorage } from "@/storage/BlockStorage";
+import { Hash, ForkId, BlockHeight } from "@/types/types";
 import {
     BlockConfirmationStruct,
     SignedBlockStruct
 } from "@typechain-types/contracts/V1/types/DataTypes";
-import { Hash, ForkId, BlockHeight } from "@/types/types";
-import * as factory from "../factory";
-import { Block } from "@/models";
+import { expect } from "chai";
+import { ethers } from "hardhat";
+import { describe, it, beforeEach } from "mocha";
 
 const sig = () => ethers.hexlify(ethers.randomBytes(65));
 
@@ -35,6 +35,72 @@ describe("BlockStorage", () => {
         const { forkId, height } = mockBlock.coordinates;
         mockForkId = forkId;
         mockHeight = height;
+    });
+
+    it("sets a zero timestamp through the hash overload", () => {
+        storage.storeBlock(mockBlock);
+        expect(storage.setOnChainTimestamp(mockBlockHash, 0)).to.equal(true);
+        expect(
+            storage.getBlock(mockForkId, mockHeight)?.onChainTimestamp
+        ).to.equal(0);
+    });
+    it("sets a timestamp through the coordinate overload", () => {
+        storage.storeBlock(mockBlock);
+        expect(
+            storage.setOnChainTimestamp(mockForkId, mockHeight, 17)
+        ).to.equal(true);
+        expect(storage.getBlock(mockBlockHash)?.onChainTimestamp).to.equal(17);
+    });
+    it("returns false for absent timestamp targets in both overloads", () => {
+        expect(storage.setOnChainTimestamp(mockBlockHash, 17)).to.equal(false);
+        expect(
+            storage.setOnChainTimestamp(mockForkId, mockHeight, 17)
+        ).to.equal(false);
+    });
+    it("updates timestamp and signatures through explicit storage keys", () => {
+        const hash = ethers.id("override-storage-key");
+        const coordinates = {
+            forkId: ethers.id("override-fork"),
+            height: mockHeight + 1
+        };
+        storage.storeBlock(mockBlock, { hash, coordinates });
+        expect(
+            storage.setOnChainTimestamp(
+                coordinates.forkId,
+                coordinates.height,
+                0
+            )
+        ).to.equal(true);
+        expect(storage.getBlock(hash)?.onChainTimestamp).to.equal(0);
+        const signature = sig();
+        expect(
+            storage
+                .insertSignature(signature, hash)
+                ?.confirmationSignatures.has(signature)
+        ).to.equal(true);
+    });
+
+    it("mergeFrom preserves a defined timestamp when the incoming copy has none", () => {
+        const block = Block.fromBlockConfirmation(mockBlockConfirmation, 17);
+        block.mergeFrom(Block.fromBlockConfirmation(mockBlockConfirmation));
+        expect(block.onChainTimestamp).to.equal(17);
+        expect([...block.confirmationSignatures]).to.deep.equal([
+            ...new Set(mockBlockConfirmation.signatures)
+        ]);
+    });
+
+    it("mergeFrom accepts a zero timestamp from the incoming copy", () => {
+        const block = Block.fromBlockConfirmation(mockBlockConfirmation, 17);
+        block.mergeFrom(Block.fromBlockConfirmation(mockBlockConfirmation, 0));
+        expect(block.onChainTimestamp).to.equal(0);
+    });
+
+    it("duplicate storage insertion keeps time when the incoming copy has none", () => {
+        storage.storeBlock(
+            Block.fromBlockConfirmation(mockBlockConfirmation, 17)
+        );
+        storage.storeBlock(Block.fromBlockConfirmation(mockBlockConfirmation));
+        expect(storage.getBlock(mockBlockHash)?.onChainTimestamp).to.equal(17);
     });
 
     describe("CREATE - storeBlockConfirmation()", () => {

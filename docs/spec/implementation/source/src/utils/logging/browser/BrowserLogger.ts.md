@@ -23,6 +23,8 @@ Browser logger implementation (console adapters).
 
 ## Key design decisions
 
+Sample reporting delegates to the shared reporter with estimated utilization and long-task fields. Browser scheduling, stop order and error construction remain local. See [BrowserLogger.ts](../../../../../../../../src/utils/logging/browser/BrowserLogger.ts#L1).
+
 1. **Same loop shape as the Node monitor.** The real browser source collects timer-drift delay samples and long-task durations between reports; a test can inject a scripted source. Past the threshold the monitor stops itself and throws the unchanged message with typed `eventLoopDelay` data (`runtime: "browser"`, estimated utilization, long-task fields).
 
 ## Inputs, outputs, state, and side effects
@@ -72,9 +74,12 @@ Gap column. Audit state is file-level (Status header), never a row status.
 
 Exact test evidence is mapped against these IDs in the verification test reports.
 
-| Unit test ID | Obligation | Public entry and setup | Oracle and forbidden effects | Required permutations |
-| ------------ | ---------- | ---------------------- | ---------------------------- | --------------------- |
+| Unit test ID                                                                      | Obligation                 | Public entry and setup                 | Oracle and forbidden effects                            | Required permutations                                                                                                                                                                               |
+| --------------------------------------------------------------------------------- | -------------------------- | -------------------------------------- | ------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| <a id="unit-test-browser-logger-1-6fct8f"></a>`UNIT-TEST-BROWSER-LOGGER-1-6FCT8F` | Browser logger integration | Use the real browser logger and store. | The recorded warning retains browser-specific metadata. | <a id="unit-test-browser-logger-1-6fct8f.p1"></a>`UNIT-TEST-BROWSER-LOGGER-1-6FCT8F.P1` — browser logger stores long-task warning metadata with estimated utilization and no Node utilization field |
 
 ## Related source reports
 
 - The platform-pair counterpart's report.
+
+Shared operation owners: [performanceMonitorInternal.ts.md](../performanceMonitorInternal.ts.md).

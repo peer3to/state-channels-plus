@@ -1,9 +1,9 @@
 // @spec-test-coverage-ignore: transition fixture support exercised by owning mapped tests
-import ARpcService from "@/rpc/ARpcService";
-import type P2PManager from "@/P2PManager";
-import type ATransport from "@/transport/ATransport";
 import TransitionRpcMethods from "./TransitionRpcMethods";
 import type { StubService } from "../stub/StubService";
+import type P2PManager from "@/P2PManager";
+import ARpcService from "@/rpc/ARpcService";
+import type ATransport from "@/transport/ATransport";
 
 /**
  * State-transition operations the harness drives on a peer (snapshot posting,

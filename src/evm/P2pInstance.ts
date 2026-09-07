@@ -1,19 +1,19 @@
-import { AStateMachine } from "@typechain-types";
+import { createHostRpc } from "./p2pRuntime/ClientHostRpc";
+import type P2pRuntimeClient from "./p2pRuntime/P2pRuntimeClient";
+import type ClientChainSigner from "./signer/ClientChainSigner";
+import type ClientP2pSigner from "./signer/ClientP2pSigner";
+import type { EventBus } from "@/events/EventBus";
 import MainRpcService from "@/rpc/MainRpcService";
 import type { RemoteRpcProxyType } from "@/rpc/RemoteRpcProxy";
-import { Logger } from "@/utils";
-import type StateManager from "@/stateManager/StateManager";
-import type ClientP2pSigner from "./signer/ClientP2pSigner";
-import type ClientChainSigner from "./signer/ClientChainSigner";
-import type { StateChannelManagerInterface } from "@typechain-types";
-import type P2pRuntimeClient from "./p2pRuntime/P2pRuntimeClient";
-import type { EventBus } from "@/events/EventBus";
-import { createHostRpc } from "./p2pRuntime/ClientHostRpc";
 import {
     installWebRTCMainThreadBridge,
     type WebRTCMainThreadBridgeHandle
 } from "@/rpc/services/WebRTCSetup/connection/WebRTCMainThreadBridge";
 import { isWorkerRuntime } from "@/rpc/services/WebRTCSetup/connection/WebRTCProvider";
+import type StateManager from "@/stateManager/StateManager";
+import { Logger } from "@/utils";
+import type { StateChannelManagerInterface } from "@typechain-types";
+import { AStateMachine } from "@typechain-types";
 
 export default class P2pInstance<
     T extends AStateMachine,

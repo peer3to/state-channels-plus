@@ -1,13 +1,11 @@
-import { ethers } from "ethers";
+import ADiamondStateMachine from "../ADiamondStateMachine";
 import AgreementManager from "../agreementManager";
-import { StateChannelManagerInterface } from "@typechain-types";
-import {
-    DisputeConfirmationStruct,
-    DisputeStruct,
-    DisputeAuditingDataStruct,
-    DisputeInputStruct
-} from "@typechain-types/contracts/V1/types/DisputeTypes";
-import { FraudProofStruct } from "@typechain-types/contracts/V1/types/ProofTypes";
+import { StateSnapshot } from "../models";
+import { Address, ChannelId, ForkId, Hash } from "../types/types";
+import P2pEventHooks from "@/P2pEventHooks";
+import type EventSyncService from "@/stateManager/eventSync/EventSyncService";
+import type StateManager from "@/stateManager/StateManager";
+import Storage from "@/storage";
 import {
     DebugProxy,
     DetachedPromises,
@@ -22,24 +20,24 @@ import {
     tryDecodeCustomError,
     tryHandleEvmError
 } from "@/utils";
-import { LoggerUtils } from "@/utils/LoggerUtils";
-import P2pEventHooks from "@/P2pEventHooks";
-import { Address, ChannelId, ForkId, Hash } from "../types/types";
-import { StateSnapshot } from "../models";
-import Storage from "@/storage";
-import ADiamondStateMachine from "../ADiamondStateMachine";
-import {
-    StateProofStruct,
-    TimeoutStruct
-} from "@typechain-types/contracts/V1/types/DisputeTypes";
-import { BytesLike } from "ethers";
 import { config } from "@/utils/config";
+import { errorMessage } from "@/utils/errorMessage";
+import { LoggerUtils } from "@/utils/LoggerUtils";
+import { StateChannelManagerInterface } from "@typechain-types";
 import {
     MessageBlockStruct,
     SnapshotDataStruct
 } from "@typechain-types/contracts/V1/types/DataTypes";
-import type StateManager from "@/stateManager/StateManager";
-import type EventSyncService from "@/stateManager/eventSync/EventSyncService";
+import {
+    DisputeConfirmationStruct,
+    DisputeStruct,
+    DisputeAuditingDataStruct,
+    DisputeInputStruct,
+    StateProofStruct,
+    TimeoutStruct
+} from "@typechain-types/contracts/V1/types/DisputeTypes";
+import { FraudProofStruct } from "@typechain-types/contracts/V1/types/ProofTypes";
+import { ethers, BytesLike } from "ethers";
 
 export type ConstructDisputeResult = {
     dispute: DisputeStruct;
@@ -120,11 +118,7 @@ class DisputeManager {
             // this peer from signing newer state until upload fails or settles.
             const admitted = await this.stateManager.withMutex(
                 () => {
-                    if (
-                        this.stateManager.isDisposed ||
-                        this.stateManager.forkId !== forkId
-                    )
-                        return false;
+                    if (!this.stateManager.isActiveFork(forkId)) return false;
                     this.storage.disputes.storeDisputedFork(forkId, true);
                     return true;
                 },
@@ -252,8 +246,7 @@ class DisputeManager {
                     forkId,
                     channelId: this.channelId,
                     signerAddress: this.signerAddress,
-                    error:
-                        error instanceof Error ? error.message : String(error),
+                    error: errorMessage(error),
                     customErrorHandles: success
                 });
 
@@ -292,8 +285,7 @@ class DisputeManager {
     /** Block-pipeline callers must release the state mutex before construction. */
     public requestDispute(forkId: ForkId): void {
         const attempt = this.dispute(forkId);
-        DetachedPromises.collect(attempt);
-        void attempt.catch((error) => {
+        DetachedPromises.observe(attempt, (error) => {
             // The detached branch reaches the owning context's existing error
             // funnel even when a diagnostic collector observes the original.
             throw error;
@@ -372,8 +364,7 @@ class DisputeManager {
                 this.logger.error(`❌ Error killing dispute ${formattedHash}`, {
                     disputeMeta,
                     custom,
-                    error:
-                        error instanceof Error ? error.message : String(error)
+                    error: errorMessage(error)
                 });
             }
         }
@@ -411,8 +402,7 @@ class DisputeManager {
                     forkId,
                     channelId: this.channelId,
                     latestBlockHeight,
-                    error:
-                        error instanceof Error ? error.message : String(error)
+                    error: errorMessage(error)
                 }
             );
             throw error;

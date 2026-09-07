@@ -25,6 +25,8 @@ address-to-live-transport resolution, and all Holepunch ban/unban policy.
 
 ## Key design decisions
 
+Registration, authentication refusals, transport retirement and upgrade-ban release use the existing owner logger and shared metadata. Replacing a transport still attaches the replacement before retiring the old transport. See [ProfileManager.ts](../../../../../src/ProfileManager.ts#L19).
+
 1. **Identity outlives connection.** Profiles and exclusion state key by normalized address ([`REQ-ID-2-F3Y8J4`](../../../specification/protocol-model/identity.md#req-id-2-f3y8j4)); `updateTransport` keeps profile object identity across upgrades ([`REQ-UPG-2-WH7BC7`](../../../specification/peer-communication/transport-upgrade.md#req-upg-2-wh7bc7)).
 2. **Removal is transport-specific.** Every live transport attaches to its profile. Removing one
    pipe promotes another live fallback when available and emits profile loss only after the last

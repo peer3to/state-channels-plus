@@ -1,10 +1,10 @@
 // @spec-test-coverage-ignore: shared sync-wait utility exercised by owning mapped test declarations
+import type { RemoteRpcProxyType } from "@/rpc/RemoteRpcProxy";
 import { ForkId } from "@/types/types";
 import { Logger, EventBarrier } from "@/utils";
 import type { EventBarrierCapturedError } from "@/utils/EventBarrier";
-import type { TestPeer } from "@test/harness/core/types";
 import type { HarnessControlRpc } from "@test/fixtures/customRpc/harnessControl/HarnessControlRpc";
-import type { RemoteRpcProxyType } from "@/rpc/RemoteRpcProxy";
+import type { TestPeer } from "@test/harness/core/types";
 
 /** Resolves a peer's typed harness-control RPC proxy (the harness's `control`). */
 type ControlFn<TCustomRpc extends HarnessControlRpc> = (

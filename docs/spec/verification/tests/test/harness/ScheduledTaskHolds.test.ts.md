@@ -19,6 +19,6 @@ test ID may be assigned to at most one test across the whole tree; static analys
 duplicate assignments, and tests with no assigned ID are listed in the verification-coverage
 report but are kept here.
 
-| Test declaration                                                                                                                                                        | Covers |
-| ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------ |
-| [`scheduled task holds > keeps the newer prefix held when the older prefix is restored first`](../../../../../../test/harness/ScheduledTaskHolds.test.ts#L30) (line 30) | —      |
+| Test declaration                                                                                                                                                      | Covers |
+| --------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------ |
+| [`scheduled task holds > keeps the newer prefix held when the older prefix is restored first`](../../../../../../test/harness/ScheduledTaskHolds.test.ts#L6) (line 6) | —      |

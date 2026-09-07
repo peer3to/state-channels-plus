@@ -1,7 +1,6 @@
-import { expect } from "chai";
-
 import { Status } from "@/types";
 import { P2PManagerFixture } from "@test/fixtures/P2PManagerFixture";
+import { expect } from "chai";
 
 describe("InitHandshake lifecycle routing", function () {
     let fixture: P2PManagerFixture;

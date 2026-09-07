@@ -1,4 +1,3 @@
-import { ReduceOutputStruct } from "@typechain-types/contracts/V1/types/DisputeTypes";
 import {
     BlockConfirmationEthersType,
     SignedBlockEthersType,
@@ -14,6 +13,7 @@ import {
     MessageBlockStruct,
     StateSnapshotStruct
 } from "@typechain-types/contracts/V1/types/DataTypes";
+import { ReduceOutputStruct } from "@typechain-types/contracts/V1/types/DisputeTypes";
 
 export const MilestoneProofEthersType = `tuple(
     ${BlockConfirmationEthersType}[] blockConfirmations

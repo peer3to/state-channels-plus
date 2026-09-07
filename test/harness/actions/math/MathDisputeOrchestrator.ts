@@ -1,8 +1,8 @@
 import { ForkId } from "@/types/types";
 
+import type { HarnessControlRpc } from "@test/fixtures/customRpc/harnessControl/HarnessControlRpc";
 import { DisputeOrchestrator } from "@test/harness/actions/DisputeOrchestrator";
 import type { CreateAndResolveDisputeResult } from "@test/harness/core/types";
-import type { HarnessControlRpc } from "@test/fixtures/customRpc/harnessControl/HarnessControlRpc";
 import { MathPeerTestHarness } from "test-harness";
 
 export class MathDisputeOrchestrator extends DisputeOrchestrator {

@@ -1,15 +1,15 @@
 // @spec-test-coverage-ignore: shared transition actions exercised by owning mapped test declarations
-import { PeerTestHarness } from "@test/fixtures/PeerTestHarness";
-import type { TestPeer } from "@test/harness/core/types";
-import { Codec, Logger, sleep, Type } from "@/utils";
-import { AStateMachine as AStateMachineContract } from "@typechain-types/index";
-import type { HarnessControlRpc } from "@test/fixtures/customRpc/harnessControl/HarnessControlRpc";
 import { Block, StateSnapshot } from "@/models";
 import type { IngestBlockConfirmationOptions } from "@/stateManager/ingest/BlockQueueManager";
-import type { BlockConfirmationStruct } from "@typechain-types/contracts/V1/types/DataTypes";
-import type { ForkId } from "@/types/types";
-import { resolveTestTimeConfig } from "@test/harness/core/testTimeConfig";
 import { Status } from "@/types";
+import type { ForkId } from "@/types/types";
+import { Codec, Logger, sleep, Type } from "@/utils";
+import type { HarnessControlRpc } from "@test/fixtures/customRpc/harnessControl/HarnessControlRpc";
+import { PeerTestHarness } from "@test/fixtures/PeerTestHarness";
+import { resolveTestTimeConfig } from "@test/harness/core/testTimeConfig";
+import type { TestPeer } from "@test/harness/core/types";
+import type { BlockConfirmationStruct } from "@typechain-types/contracts/V1/types/DataTypes";
+import { AStateMachine as AStateMachineContract } from "@typechain-types/index";
 
 export type TransitionOptions = {
     waitForSync?: boolean;
@@ -516,7 +516,7 @@ export class TransitionActions<
         const { peerIndex, confirmation, strategy } = options;
         return await this.harness
             .control(this.harness.getPeer(peerIndex))
-            .stub.runStoredBlockMerge(
+            .validation.runStoredBlockMerge(
                 Codec.encode(
                     confirmation as BlockConfirmationStruct,
                     Type.BlockConfirmation

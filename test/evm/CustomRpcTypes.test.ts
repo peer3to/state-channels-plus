@@ -1,10 +1,9 @@
-import { expect } from "chai";
-
+import type P2PManager from "@/P2PManager";
 import ARpcMethods from "@/rpc/ARpcMethods";
 import ARpcService from "@/rpc/ARpcService";
 import MainRpcService from "@/rpc/MainRpcService";
-import type P2PManager from "@/P2PManager";
 import type ATransport from "@/transport/ATransport";
+import { expect } from "chai";
 
 type PingRpcOptions = {
     prefix: string;

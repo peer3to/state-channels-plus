@@ -1,7 +1,3 @@
-import type P2PManager from "@/P2PManager";
-import { DebugProxy } from "@/utils";
-
-import { config } from "@/utils/config";
 import {
     InitHandshakeService,
     StateTransitionService,
@@ -12,6 +8,10 @@ import {
     LobbyMatchingService,
     OpenChannelNegotiationService
 } from "./services";
+import type P2PManager from "@/P2PManager";
+import { DebugProxy } from "@/utils";
+
+import { config } from "@/utils/config";
 
 class MainRpcService {
     p2pManager: P2PManager;

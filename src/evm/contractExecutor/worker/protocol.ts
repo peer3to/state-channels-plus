@@ -1,6 +1,6 @@
 import type { ContractExecutionResult } from "../AContractExecutor";
-import type { Config } from "@/utils/config";
 import type { SerializedError } from "@/evm/p2pRuntime/types";
+import type { Config } from "@/utils/config";
 
 export type WorkerCustomPrecompile = {
     address: string;
@@ -59,12 +59,7 @@ export type WorkerErrorResponseMessage = {
     type: "response";
     requestId: number;
     ok: false;
-    error: {
-        message: string;
-        data?: string;
-        name?: string;
-        stack?: string;
-    };
+    error: SerializedError;
 };
 
 /**

@@ -1,13 +1,13 @@
-import { expect } from "chai";
-import { waitFor } from "@test/utils/waitFor";
+import * as factory from "../factory";
+import type { Address, ForkId, Hash } from "@/types/types";
 import { Codec, Type } from "@/utils";
 import {
     MathPeerTestHarness,
     MathTestSession as TestSession
 } from "@test/harness";
-import * as factory from "../factory";
-import type { Address, ForkId, Hash } from "@/types/types";
+import { waitFor } from "@test/utils/waitFor";
 import type { MessageBlockStruct } from "@typechain-types/contracts/V1/types/DataTypes";
+import { expect } from "chai";
 
 // the pipeline is entered the way production does: through the queue
 // (transition.ingestBlockConfirmation) or, for callers with no transport, by
@@ -522,7 +522,7 @@ describe("Unit: BlockIngestService", function () {
                 .request();
             const probe = await h
                 .control(observer)
-                .stub.runBlockIngest(encoded)
+                .validation.runBlockIngest(encoded)
                 .request();
             const turnAfter = await h
                 .control(observer)
@@ -604,15 +604,19 @@ describe("Unit: BlockIngestService", function () {
                 }
             );
 
-            const probe = await h
-                .control(observer)
-                .stub.runBlockIngest(encoded)
-                .request();
+            for (const strategy of ["active", "spectating"] as const) {
+                const probe = await h
+                    .control(observer)
+                    .validation.runBlockIngest(encoded, { strategy })
+                    .request();
 
-            expect(probe.keepConnection).to.equal(false);
-            expect(probe.firedHooks).to.include(
-                "forgedInboundMessageBlockDetected"
-            );
+                expect(probe.keepConnection).to.equal(false);
+                expect(probe.firedHooks).to.include(
+                    "forgedInboundMessageBlockDetected"
+                );
+                expect(probe.disputedForkIds).to.deep.equal([forkId]);
+                expect(probe.fraudProofType).to.not.equal(null);
+            }
         });
 
         it("a rejected block carrying a real inbound run → the run is not stored, the head stays put", async function () {
@@ -672,7 +676,7 @@ describe("Unit: BlockIngestService", function () {
 
             const probe = await h
                 .control(observer)
-                .stub.runBlockIngest(encoded)
+                .validation.runBlockIngest(encoded)
                 .request();
             const headAfter = await h
                 .control(observer)

@@ -1,7 +1,6 @@
 // @spec-test-coverage-ignore: harness-only detached-error attribution regression; no protocol behavior is specified here
-import { expect } from "chai";
-
 import { MathTestSession as TestSession } from "@test/harness";
+import { expect } from "chai";
 
 describe("E2E: Byzantine error attribution", function () {
     it("suppresses a stray detached error originating on a malicious peer", async function () {

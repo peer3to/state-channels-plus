@@ -1,25 +1,26 @@
-import { ethers } from "ethers";
-import type { Address, Bytes } from "@/types/types";
-import type { Logger } from "@/utils";
-import { config } from "@/utils/config";
 import type { EvmCustomPrecompileManifest } from "../EvmFactory";
 import AContractExecutor, {
     type ContractExecutionResult
 } from "./AContractExecutor";
+import type {
+    ContractExecutorWorkerErrorHandler,
+    ContractExecutorWorkerMessageHandler,
+    WorkerLike
+} from "./types";
 import type {
     ContractExecutorRequestPayload,
     WorkerCallMethod,
     WorkerCustomPrecompile,
     WorkerResponseMessage
 } from "./worker/protocol";
-import { createContractExecutorWorker } from "@platform/contractExecutorWorkerRuntime";
-import type {
-    ContractExecutorWorkerErrorHandler,
-    ContractExecutorWorkerMessageHandler,
-    WorkerLike
-} from "./types";
-import { LoggerUtils } from "@/utils/LoggerUtils";
 import { deserializeError } from "@/evm/p2pRuntime/errorWire";
+import type { Address, Bytes } from "@/types/types";
+import type { Logger } from "@/utils";
+import { config } from "@/utils/config";
+import { errorMessage } from "@/utils/errorMessage";
+import { LoggerUtils } from "@/utils/LoggerUtils";
+import { createContractExecutorWorker } from "@platform/contractExecutorWorkerRuntime";
+import { ethers } from "ethers";
 
 /**
  * Internal construction dependencies, not part of the package API. Tests
@@ -216,7 +217,23 @@ export default class WorkerContractExecutor extends AContractExecutor {
      * counts, because the worker's own exit is expected then.
      */
     private handleWorkerFailure(error: Error): void {
-        if (this.workerFailure || this.disposed) return;
+        if (this.disposed) {
+            this.logger?.debug(
+                "Ignoring worker failure after executor disposal",
+                { error: errorMessage(error) }
+            );
+            return;
+        }
+        if (this.workerFailure) {
+            this.logger?.debug(
+                "Ignoring later worker failure after first failure",
+                { error: errorMessage(error) }
+            );
+            return;
+        }
+        this.logger?.warn("Contract executor worker failed", {
+            error: errorMessage(error)
+        });
         this.workerFailure = error;
         this.rejectWorkerReady(error);
         this.rejectAll(error);
@@ -260,11 +277,7 @@ export default class WorkerContractExecutor extends AContractExecutor {
             return;
         }
 
-        const error = new Error(response.error.message);
-        error.name = response.error.name || error.name;
-        error.stack = response.error.stack || error.stack;
-        (error as any).data = response.error.data;
-        pending.reject(error);
+        pending.reject(deserializeError(response.error));
     }
 
     private trackRequest(

@@ -1,5 +1,5 @@
-import type { BalanceStruct } from "@typechain-types/contracts/V1/types/DataTypes";
 import type { Address } from "@/types/types";
+import type { BalanceStruct } from "@typechain-types/contracts/V1/types/DataTypes";
 
 export type LobbyRole = "none" | "advertiser" | "selector";
 export type RoleEpoch = number;

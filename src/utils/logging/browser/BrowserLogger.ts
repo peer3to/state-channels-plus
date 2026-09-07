@@ -1,3 +1,5 @@
+import { config } from "../../config";
+import { formatTimeFromSeconds } from "../formatUtils";
 import {
     LogEntry,
     Logger,
@@ -5,17 +7,16 @@ import {
     LogLevel,
     SharedLoggerContext
 } from "../Logger";
+import type { LogStore } from "../logStore";
 import type {
     EventLoopDelayDetails,
     PerformanceMonitorInternalOptions,
     PerformanceSampleSource
 } from "../performanceMonitorInternal";
+import { reportPerformanceSample } from "../performanceMonitorInternal";
 import { BrowserLogUploader } from "./BrowserLogUploader";
 import type { LogUploaderOptions } from "../LogUploader";
-import type { LogStore } from "../logStore";
 import { BROWSER_PEER_COLORS, BROWSER_LEVEL_CSS } from "./colors";
-import { formatTimeFromSeconds } from "../formatUtils";
-import { config } from "../../config";
 
 export class BrowserLogger extends Logger {
     constructor(
@@ -93,15 +94,13 @@ export class BrowserLogger extends Logger {
             level !== "debug" &&
             level !== "verbose" // don't use groups for debug/verbose since group labels are always INFO...
         ) {
-            // eslint-disable-next-line no-console
             console.groupCollapsed(...this.fmt(logEntry));
             if (meta.length > 0) {
-                // eslint-disable-next-line no-console
                 console[method](...meta);
             }
-            // eslint-disable-next-line no-console
+
             console[method](logEntry.stack);
-            // eslint-disable-next-line no-console
+
             console.groupEnd();
             return;
         }
@@ -119,17 +118,6 @@ export class BrowserLogger extends Logger {
     ): () => void {
         const intervalMs = options.intervalMs ?? 1000;
         const sampleIntervalMs = options.sampleIntervalMs ?? 50;
-        const delayWarnThresholdMs = options.delayWarnThresholdMs ?? 200;
-        const getDelayErrorThresholdMs = () => {
-            if (options.delayErrorThresholdMs !== undefined) {
-                return options.delayErrorThresholdMs;
-            }
-            return (
-                (config.EVENT_LOOP_DELAY_ERROR_THRESHOLD_SECONDS || 0) * 1000
-            );
-        };
-        const utilizationWarnThreshold =
-            options.utilizationWarnThreshold ?? 0.8;
 
         const source =
             options.sampleSource ??
@@ -138,59 +126,21 @@ export class BrowserLogger extends Logger {
 
         const reportTimer = setInterval(() => {
             const sample = source.sample();
-            const estimatedUtilization = sample.utilization;
-            const longTaskCount = sample.longTaskCount ?? 0;
-            const longTaskMean = sample.longTaskMean ?? 0;
-            const longTaskMax = sample.longTaskMax ?? 0;
-            const shouldWarn =
-                estimatedUtilization > utilizationWarnThreshold ||
-                sample.dMean > delayWarnThresholdMs ||
-                sample.d50 > delayWarnThresholdMs ||
-                sample.d90 > delayWarnThresholdMs ||
-                sample.d99 > delayWarnThresholdMs ||
-                sample.dMax > delayWarnThresholdMs ||
-                longTaskMax > delayWarnThresholdMs;
-            const logFn = shouldWarn
-                ? this.warn.bind(this)
-                : this.verbose.bind(this);
-            logFn(
-                `Event Loop mean delay: ${sample.dMean}ms, max: ${sample.dMax}ms, estimated utilization: ${estimatedUtilization}`,
-                {
-                    runtime: "browser",
-                    dMean: sample.dMean,
-                    d50: sample.d50,
-                    d90: sample.d90,
-                    d99: sample.d99,
-                    dMax: sample.dMax,
-                    estimatedUtilization,
-                    longTaskCount,
-                    longTaskMean,
-                    longTaskMax
-                }
+            const details = reportPerformanceSample(
+                this,
+                sample,
+                options,
+                "browser"
             );
-
-            const delayErrorThresholdMs = getDelayErrorThresholdMs();
-            const maxDelayMs = Math.max(sample.dMax, longTaskMax);
-            if (
-                delayErrorThresholdMs > 0 &&
-                maxDelayMs > delayErrorThresholdMs
-            ) {
+            if (details) {
+                const maxDelayMs = Math.max(
+                    sample.dMax,
+                    sample.longTaskMax ?? 0
+                );
+                const { delayErrorThresholdMs } = details;
                 const error = new Error(
                     `Event loop delay ${maxDelayMs}ms exceeded configured threshold ${delayErrorThresholdMs}ms`
                 );
-                const details: EventLoopDelayDetails = {
-                    runtime: "browser",
-                    dMean: sample.dMean,
-                    d50: sample.d50,
-                    d90: sample.d90,
-                    d99: sample.d99,
-                    dMax: sample.dMax,
-                    estimatedUtilization,
-                    longTaskCount,
-                    longTaskMean,
-                    longTaskMax,
-                    delayErrorThresholdMs
-                };
                 (
                     error as Error & { eventLoopDelay?: EventLoopDelayDetails }
                 ).eventLoopDelay = details;
@@ -383,7 +333,6 @@ export class BrowserLogger extends Logger {
         }
     }
     public groupEnd(): void {
-        // eslint-disable-next-line no-console
         console.groupEnd();
     }
 }

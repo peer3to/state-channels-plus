@@ -1,6 +1,6 @@
+import type { RuntimeRequester } from "./types";
 import type MainRpcService from "@/rpc/MainRpcService";
 import type { RemoteRpcProxyType } from "@/rpc/RemoteRpcProxy";
-import type { RuntimeRequester } from "./types";
 
 /**
  * Builds the client-side `hostRpc` proxy. It mirrors the host's `remoteRpc`

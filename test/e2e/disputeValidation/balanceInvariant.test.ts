@@ -1,7 +1,7 @@
-import { expect } from "chai";
-import { Codec, Type, hash } from "@/utils";
 import { DisputeFraudProofType } from "@/types/sol-enums";
+import { Codec, Type, hash } from "@/utils";
 import { MathTestSession as TestSession } from "@test/harness";
+import { expect } from "chai";
 
 describe("E2E: dispute validation / balanceInvariant", function () {
     it("an honest dispute with nonzero genesis deposits passes the local balance invariant", async function () {

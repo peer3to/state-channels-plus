@@ -1,7 +1,6 @@
-import { expect } from "chai";
-
-import { MathTestSession as TestSession } from "@test/harness";
 import { DetachedPromises } from "@/utils";
+import { MathTestSession as TestSession } from "@test/harness";
+import { expect } from "chai";
 
 describe("TestSession detached settlement", function () {
     it("retains detached errors in arrival order", async function () {

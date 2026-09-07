@@ -1,7 +1,6 @@
-import { expect } from "chai";
-
 import { TransportType } from "@/transport";
 import { P2PManagerFixture } from "@test/fixtures/P2PManagerFixture";
+import { expect } from "chai";
 
 describe("ProfileManager Holepunch ban policy", function () {
     let fixture: P2PManagerFixture;

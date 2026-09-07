@@ -37,7 +37,7 @@ authoring another block.
    `BlockCommitService.success` execute inside the same state-manager boundary.
 4. **No block on a fork this node is disputing.** After the turn check, `playTransaction` returns
    without a block when the node's own dispute marker holds for the current fork
-   ([#L49](../../../../../../../src/stateManager/block/BlockProductionService.ts#L49)); a block authored
+   ([#L47](../../../../../../../src/stateManager/block/BlockProductionService.ts#L47)); a block authored
    after the dispute started would make that dispute stale
    ([`REQ-DISPUTE-PIPE-8-BVR8XV`](../../../../../specification/disputes/dispute-processing.md#req-dispute-pipe-8-bvr8xv)).
 5. **A stale coordinate is dropped, never signed and never moved.** The signer stamps fork and height
@@ -74,8 +74,8 @@ authoring another block.
 
 ## Specification adherence
 
-- [`playTransaction`](../../../../../../../src/stateManager/block/BlockProductionService.ts#L35) acquires the state-manager mutex before checking eligibility or mutating state.
-- [`getStaleLocalBlock`](../../../../../../../src/stateManager/block/BlockProductionService.ts#L151) requires the current fork, an already-advanced height, and a stored block by the local signer before returning without a block.
+- [`playTransaction`](../../../../../../../src/stateManager/block/BlockProductionService.ts#L33) acquires the state-manager mutex before checking eligibility or mutating state.
+- [`getStaleLocalBlock`](../../../../../../../src/stateManager/block/BlockProductionService.ts#L149) requires the current fork, an already-advanced height, and a stored block by the local signer before returning without a block.
 - The ordinary writer guard remains after the race check and throws for a genuine out-of-turn submission.
 
 ## Specification contradictions
@@ -92,7 +92,7 @@ None demonstrated.
 | ----------------------------------------------------------------------------------------------------------------------- | --------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------- |
 | [`INV-BLOCK-PIPE-1-1AB2ME`](../../../../../specification/block-progression/block-processing.md#inv-block-pipe-1-1ab2me) | Covered               | **Here:** same-author candidates are serialized; a stored local winner makes its stale sibling a no-op; any candidate whose coordinate moved before serialization is a no-op; successful assembly commits once. **Other files:** `BlockCommitService` owns atomic persistence and publication.                                                                                                                                                                                                                                                                                              | None.            |
 | [`REQ-BLOCK-PIPE-6-XQ0RTT`](../../../../../specification/block-progression/block-processing.md#req-block-pipe-6-xq0rtt) | Covered               | **Here:** the service holds the state-manager mutex from current-state eligibility through commit. **Other files:** the ingest queue orders peer-supplied blocks.                                                                                                                                                                                                                                                                                                                                                                                                                           | None.            |
-| [`REQ-DISPUTE-PIPE-8-BVR8XV`](../../../../../specification/disputes/dispute-processing.md#req-dispute-pipe-8-bvr8xv)    | Covered               | **Here:** [source](../../../../../../../src/stateManager/block/BlockProductionService.ts#L35) holds the state mutex across authoring, signing, and committed storage; admission checks the dispute marker. **Other files:** [DisputeManager.ts](../../disputeManager/DisputeManager.ts.md) (dispute admission, rollback and construction), [StateManager.ts](../StateManager.ts.md) (shared state ordering), [BlockCommitService.ts](BlockCommitService.ts.md) (counter-signing and committed storage), [ValidationService.ts](../ingest/ValidationService.ts.md) (live-arrival rejection). | —                |
+| [`REQ-DISPUTE-PIPE-8-BVR8XV`](../../../../../specification/disputes/dispute-processing.md#req-dispute-pipe-8-bvr8xv)    | Covered               | **Here:** [source](../../../../../../../src/stateManager/block/BlockProductionService.ts#L33) holds the state mutex across authoring, signing, and committed storage; admission checks the dispute marker. **Other files:** [DisputeManager.ts](../../disputeManager/DisputeManager.ts.md) (dispute admission, rollback and construction), [StateManager.ts](../StateManager.ts.md) (shared state ordering), [BlockCommitService.ts](BlockCommitService.ts.md) (counter-signing and committed storage), [ValidationService.ts](../ingest/ValidationService.ts.md) (live-arrival rejection). | —                |
 
 ## Component test obligations
 

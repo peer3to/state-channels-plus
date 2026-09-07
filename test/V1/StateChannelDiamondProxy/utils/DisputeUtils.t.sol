@@ -15,24 +15,23 @@ contract DisputeUtilsTest is Test {
         StateSnapshot memory snapshot;
         input.requireExistingDisputeWindow = true;
         assertTrue(_hasDisputeReason(input, snapshot));
-        assertFalse(input.selfRemoval);
     }
 
-    function test_reason_falsePreservesTimeout() public pure {
+    function test_reason_timeoutStillCountsWhenFlagFalse() public pure {
         DisputeInput memory input;
         StateSnapshot memory snapshot;
         input.timeout.participant = address(1);
         assertTrue(_hasDisputeReason(input, snapshot));
     }
 
-    function test_reason_falsePreservesSelfRemoval() public pure {
+    function test_reason_selfRemovalStillCountsWhenFlagFalse() public pure {
         DisputeInput memory input;
         StateSnapshot memory snapshot;
         input.selfRemoval = true;
         assertTrue(_hasDisputeReason(input, snapshot));
     }
 
-    function test_reason_falsePreservesForcedInbound() public pure {
+    function test_reason_forcedInboundStillCountsWhenFlagFalse() public pure {
         DisputeInput memory input;
         StateSnapshot memory snapshot;
         input.lastInboundMessageBlockHeight = 1;

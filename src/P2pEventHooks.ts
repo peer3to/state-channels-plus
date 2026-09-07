@@ -1,6 +1,6 @@
-import { DisputeStruct } from "@typechain-types/contracts/V1/types/DisputeTypes";
 import { Status } from "./types";
 import { Address, ChannelId, ForkId, Hash } from "./types/types";
+import { DisputeStruct } from "@typechain-types/contracts/V1/types/DisputeTypes";
 
 type P2pEventHooks = {
     /** Fires after a peer's identity is verified and its profile is registered. */

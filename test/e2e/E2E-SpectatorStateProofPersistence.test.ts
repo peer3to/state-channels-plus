@@ -1,6 +1,6 @@
+import { Status } from "@/types";
 import { MathTestSession as TestSession } from "@test/harness";
 import { expect } from "chai";
-import { Status } from "@/types";
 
 describe("E2E: Join/Leave Sequence", function () {
     it("join/leave sequence and fork resolution", async function () {

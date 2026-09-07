@@ -1,6 +1,5 @@
-import { expect } from "chai";
-
 import { MathTestSession as TestSession } from "@test/harness";
+import { expect } from "chai";
 
 /**
  * Race regression: a DisputeReducedResultCommitted chain event can be
@@ -88,10 +87,7 @@ describe("Dispute reduction stale event", function () {
             (sm) => String(sm.forkId),
             {},
             {
-                timeoutMs:
-                    h.event.protocolEventTimeoutMs({
-                        withFirstBlockGrace: true
-                    }) * 2
+                timeoutMs: h.event.hostExecTimeoutMs()
             }
         );
         expect(forkAfter).to.equal(result.forkId);

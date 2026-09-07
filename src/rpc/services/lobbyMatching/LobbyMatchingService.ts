@@ -1,17 +1,4 @@
-import { ethers, ZeroHash } from "ethers";
-
-import type P2PManager from "@/P2PManager";
-import ARpcService from "@/rpc/ARpcService";
-import type Rpc from "@/rpc/Rpc";
-import { RPC_GUARD_REJECTION_ERROR } from "@/rpc/Rpc";
-import type ATransport from "@/transport/ATransport";
-import { Status } from "@/types";
-import type { Address } from "@/types/types";
-import { HandshakeCompletedGuard } from "@/rpc/guards";
-import { compareAddresses } from "@/rpc/services/openChannelNegotiation/OpenChannelNegotiationHelpers";
-
 import LobbyMatchingRpcMethods from "./LobbyMatchingRpcMethods";
-import LobbyRpcAdmissionGuard from "./LobbyRpcAdmissionGuard";
 import type {
     LobbyAvailability,
     LobbyCommitResult,
@@ -21,6 +8,20 @@ import type {
     LobbyRole,
     RoleEpoch
 } from "./LobbyMatchingTypes";
+import { validateMatchTimeout } from "./LobbyMatchingValidation";
+import LobbyRpcAdmissionGuard from "./LobbyRpcAdmissionGuard";
+import type P2PManager from "@/P2PManager";
+import ARpcService from "@/rpc/ARpcService";
+import { HandshakeCompletedGuard } from "@/rpc/guards";
+import type Rpc from "@/rpc/Rpc";
+import { RPC_GUARD_REJECTION_ERROR } from "@/rpc/Rpc";
+import { compareAddresses } from "@/rpc/services/openChannelNegotiation/OpenChannelNegotiationHelpers";
+import type ATransport from "@/transport/ATransport";
+import { Status } from "@/types";
+import type { Address } from "@/types/types";
+import { requireBytes32 } from "@/utils/bytes32";
+
+import { ethers, ZeroHash } from "ethers";
 
 type Candidate = {
     transport: ATransport;
@@ -117,7 +118,7 @@ export default class LobbyMatchingService extends ARpcService<LobbyMatchingRpcMe
         observedTargetChannelId?: string
     ): Promise<LobbyMatch | undefined> {
         const normalizedTopic = this.validateTopic(topic);
-        const normalizedTimeout = this.validateMatchTimeout(matchTimeoutMs);
+        const normalizedTimeout = validateMatchTimeout(matchTimeoutMs);
         const normalizedTarget = observedTargetChannelId
             ? this.validateTopic(observedTargetChannelId)
             : undefined;
@@ -127,7 +128,7 @@ export default class LobbyMatchingService extends ARpcService<LobbyMatchingRpcMe
                 "Lobby matching already handed off to channel negotiation"
             );
         }
-        if (this.activeTopic) await this.cleanup(true, undefined);
+        if (this.activeTopic) await this.cleanup();
         return this.startMatching(
             normalizedTopic,
             normalizedTimeout,
@@ -151,7 +152,7 @@ export default class LobbyMatchingService extends ARpcService<LobbyMatchingRpcMe
             this.pendingCancellation = { promise, resolve };
             return promise;
         }
-        await this.cleanup(true, undefined);
+        await this.cleanup();
         return true;
     }
 
@@ -165,14 +166,14 @@ export default class LobbyMatchingService extends ARpcService<LobbyMatchingRpcMe
                 this.handedOffPeerAddress
             );
         }
-        await this.cleanup(true, undefined, true);
+        await this.cleanup({ preserveHandedOffTransports: true });
     }
 
     /** Releases the selected transport after an unsigned negotiation failure. */
     public async releaseNegotiationHandoff(topic: string): Promise<void> {
         const normalizedTopic = this.validateTopic(topic);
         if (normalizedTopic !== this.activeTopic || this.matchResolve) return;
-        await this.cleanup(true, undefined);
+        await this.cleanup();
     }
 
     public get rendezvousTopic(): string | undefined {
@@ -216,7 +217,7 @@ export default class LobbyMatchingService extends ARpcService<LobbyMatchingRpcMe
     }
 
     public async dispose(): Promise<void> {
-        await this.cleanup(true, undefined);
+        await this.cleanup();
     }
 
     /** Disconnects every transport owned by matching or its selected handoff. */
@@ -292,9 +293,7 @@ export default class LobbyMatchingService extends ARpcService<LobbyMatchingRpcMe
             !Number.isSafeInteger(availability.roleEpoch) ||
             availability.roleEpoch < 0 ||
             typeof availability.available !== "boolean" ||
-            peerAddress ===
-                this.p2pManager.stateManager.checksumSignerAddress ||
-            !this.shouldMatchPeer(peerAddress)
+            !this.isMatchablePeer(peerAddress)
         ) {
             return;
         }
@@ -353,9 +352,7 @@ export default class LobbyMatchingService extends ARpcService<LobbyMatchingRpcMe
         const peerAddress = this.peerAddress(transport);
         if (
             !peerAddress ||
-            peerAddress ===
-                this.p2pManager.stateManager.checksumSignerAddress ||
-            !this.shouldMatchPeer(peerAddress) ||
+            !this.isMatchablePeer(peerAddress) ||
             this.role !== "advertiser" ||
             !Number.isSafeInteger(roleEpoch) ||
             roleEpoch !== this.roleEpoch ||
@@ -408,9 +405,7 @@ export default class LobbyMatchingService extends ARpcService<LobbyMatchingRpcMe
         if (
             !reservation ||
             !peerAddress ||
-            peerAddress ===
-                this.p2pManager.stateManager.checksumSignerAddress ||
-            !this.shouldMatchPeer(peerAddress) ||
+            !this.isMatchablePeer(peerAddress) ||
             reservation.peerAddress !== peerAddress ||
             reservation.attemptNonce !== attemptNonce ||
             reservation.roleEpoch !== roleEpoch ||
@@ -472,7 +467,7 @@ export default class LobbyMatchingService extends ARpcService<LobbyMatchingRpcMe
                             return;
                         }
                         this.observedTargetChannelId = observedTargetChannelId;
-                        void this.cleanup(true, undefined);
+                        void this.cleanup();
                     }
                 );
         }
@@ -482,7 +477,7 @@ export default class LobbyMatchingService extends ARpcService<LobbyMatchingRpcMe
         if (matchTimeoutMs !== undefined) {
             this.matchTimer =
                 this.p2pManager.stateManager.timeoutManager.scheduleTask(
-                    () => this.cleanup(true, undefined),
+                    () => this.cleanup(),
                     matchTimeoutMs,
                     "lobby match timeout"
                 );
@@ -607,7 +602,7 @@ export default class LobbyMatchingService extends ARpcService<LobbyMatchingRpcMe
             if (this.inFlightSelection !== selection) {
                 this.neutralProfileLosses.delete(peerAddress);
                 if (this.pendingCancellation) {
-                    await this.cleanup(true, undefined);
+                    await this.cleanup();
                 }
                 return;
             }
@@ -627,7 +622,7 @@ export default class LobbyMatchingService extends ARpcService<LobbyMatchingRpcMe
                 this.neutralProfileLosses.delete(peerAddress);
             }
             if (this.pendingCancellation) {
-                await this.cleanup(true, undefined);
+                await this.cleanup();
                 return;
             }
             this.applyDeferredRoleSwitch();
@@ -712,9 +707,7 @@ export default class LobbyMatchingService extends ARpcService<LobbyMatchingRpcMe
     }
 
     private async cleanup(
-        leaveTopic: boolean,
-        result: LobbyMatch | undefined,
-        preserveHandedOffTransports = false
+        options: { preserveHandedOffTransports?: boolean } = {}
     ): Promise<void> {
         const topic = this.activeTopic;
         const resolve = this.matchResolve;
@@ -725,13 +718,13 @@ export default class LobbyMatchingService extends ARpcService<LobbyMatchingRpcMe
         this.unsubscribeTargetOpened?.();
         this.unsubscribeTargetOpened = undefined;
         this.disconnectSessionTransports();
-        if (!preserveHandedOffTransports) {
+        if (!options.preserveHandedOffTransports) {
             this.disconnectHandedOffTransports();
         } else {
             this.handedOffTransports.clear();
             this.handedOffPeerAddress = undefined;
         }
-        if (leaveTopic && topic) {
+        if (topic) {
             await this.p2pManager.leaveDiscoveryKey(topic);
         }
         if (
@@ -740,8 +733,8 @@ export default class LobbyMatchingService extends ARpcService<LobbyMatchingRpcMe
         ) {
             this.p2pManager.stateManager.setStatus(Status.NOT_OPENED);
         }
-        resolve?.(result);
-        if (resolve) this.resolvePendingCancellation(result === undefined);
+        resolve?.(undefined);
+        if (resolve) this.resolvePendingCancellation(true);
     }
 
     private stopMatchingWork(): void {
@@ -850,22 +843,16 @@ export default class LobbyMatchingService extends ARpcService<LobbyMatchingRpcMe
         pending.resolve(cancelled);
     }
 
-    private validateTopic(topic: string): string {
-        if (!ethers.isHexString(topic, 32)) {
-            throw new Error("Rendezvous topic must be exactly 32 bytes");
-        }
-        return ethers.hexlify(topic);
+    private isMatchablePeer(peerAddress: Address): boolean {
+        return (
+            peerAddress !==
+                this.p2pManager.stateManager.checksumSignerAddress &&
+            this.shouldMatchPeer(peerAddress)
+        );
     }
 
-    private validateMatchTimeout(
-        matchTimeoutMs?: number | null
-    ): number | undefined {
-        if (matchTimeoutMs === undefined || matchTimeoutMs === null) {
-            return undefined;
-        }
-        if (!Number.isSafeInteger(matchTimeoutMs) || matchTimeoutMs <= 0) {
-            throw new Error("Lobby match timeout must be a positive integer");
-        }
-        return matchTimeoutMs;
+    private validateTopic(topic: string): string {
+        requireBytes32(topic, "Rendezvous topic must be exactly 32 bytes");
+        return ethers.hexlify(topic);
     }
 }

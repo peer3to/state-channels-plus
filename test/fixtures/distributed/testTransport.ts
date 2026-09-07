@@ -1,13 +1,14 @@
 // @spec-test-coverage-ignore: shared distributed test-transport fixture exercised by developer tooling tests
+import { getFreePort } from "../../utils/nodeInfra";
 import net from "net";
 
-const DHT = require("@hyperswarm/dht");
 const {
     DISCOVERY_AUTH_TIMEOUT_MS
 } = require("../../../scripts/e2e-parallel/distributed/authentication.js");
 const {
     REVERSE_DIAL_WINDOW_MS
 } = require("../../../scripts/e2e-parallel/distributed/poolTransport.js");
+const DHT = require("@hyperswarm/dht");
 
 export const TEST_DISTRIBUTED_CONNECTION_TIMEOUT_MS =
     DISCOVERY_AUTH_TIMEOUT_MS + REVERSE_DIAL_WINDOW_MS + 5_000;
@@ -28,7 +29,7 @@ export type LocalDhtNetwork = {
 export async function createLocalDhtNetwork(
     options: LocalDhtNetworkOptions = {}
 ): Promise<LocalDhtNetwork> {
-    const port = options.preferredPort ?? (await probeFreeTcpPort());
+    const port = options.preferredPort ?? (await getFreePort());
 
     // The probed port is free for TCP at probe time; another process on
     // the host (a distributed worker, another suite) can hold it as UDP by
@@ -53,19 +54,6 @@ export async function createLocalDhtNetwork(
             }),
         close: () => bootstrap.destroy({ force: true })
     };
-}
-
-async function probeFreeTcpPort(): Promise<number> {
-    const listener = net.createServer();
-    await new Promise<void>((resolve) =>
-        listener.listen(0, "127.0.0.1", resolve)
-    );
-    const address = listener.address();
-    if (!address || typeof address === "string")
-        throw new Error("Missing DHT fixture address");
-    const port = address.port;
-    await new Promise<void>((resolve) => listener.close(() => resolve()));
-    return port;
 }
 
 export async function createSocketPair(): Promise<{

@@ -1,22 +1,22 @@
+import { BlockCalldataStorage } from "./BlockCalldataStorage";
 import { BlockStorage } from "./BlockStorage";
-import { MessageBlockStorage } from "./MessageBlockStorage";
-import { StateSnapshotStorage } from "./StateSnapshotStorage";
-import { StateMachineStateStorage } from "./StateMachineStateStorage";
-import { ParticipantSetChangeStorage } from "./ParticipantSetChangeStorage";
-import { QueueStorage } from "./QueueStorage";
+import { DisputeFraudProofStorage } from "./DisputeFraudProofStorage";
 import { DisputeStorage } from "./DisputeStorage";
-import { FraudProofStorage } from "./FraudProofStorage";
-
-import { BlockCoordinates, StateSnapshot } from "@/models";
-import { deepCopyProxy } from "@/utils";
-import { ForkId, Bytes, BlockOrSnapshot, Hash } from "@/types/types";
-import { Address } from "@/types/types";
-import { TimeoutStorage } from "./TimeoutStorage";
+import { EventSyncStorage } from "./EventSyncStorage";
 import { ForceExitStorage } from "./ForceExitStorage";
 import { ForceJoinStorage } from "./ForceJoinStorage";
-import { DisputeFraudProofStorage } from "./DisputeFraudProofStorage";
-import { BlockCalldataStorage } from "./BlockCalldataStorage";
-import { EventSyncStorage } from "./EventSyncStorage";
+import { FraudProofStorage } from "./FraudProofStorage";
+import { MessageBlockStorage } from "./MessageBlockStorage";
+import { ParticipantSetChangeStorage } from "./ParticipantSetChangeStorage";
+import { QueueStorage } from "./QueueStorage";
+import { StateMachineStateStorage } from "./StateMachineStateStorage";
+import { StateSnapshotStorage } from "./StateSnapshotStorage";
+
+import { TimeoutStorage } from "./TimeoutStorage";
+import { BlockCoordinates, StateSnapshot } from "@/models";
+import { ForkId, Bytes, BlockOrSnapshot, Hash } from "@/types/types";
+import { Address } from "@/types/types";
+import { deepCopyProxy } from "@/utils";
 
 export class Storage {
     public readonly blocks: BlockStorage;

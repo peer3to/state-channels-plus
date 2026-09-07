@@ -1,4 +1,11 @@
+import type StateManager from "../StateManager";
+import type AValidationStrategy from "../validationStrategy/AValidationStrategy";
+import Clock from "@/Clock";
 import { Block } from "@/models";
+import {
+    sourcePeersAndAuthor,
+    type QueuedBlockEntry
+} from "@/storage/QueueStorage";
 import { BlockValidationResult, TimeConfig } from "@/types";
 import {
     Address,
@@ -9,18 +16,12 @@ import {
     Timestamp
 } from "@/types/types";
 import { DetachedPromises, Logger } from "@/utils";
+import { channelKey } from "@/utils/channelKey";
+import { errorMessage } from "@/utils/errorMessage";
 import { LoggerUtils } from "@/utils/LoggerUtils";
 import P2pEventHooksUtils from "@/utils/P2pEventHooksUtils";
 import { TimeoutManager } from "@/utils/TimeoutManager";
-import Clock from "@/Clock";
-import {
-    sourcePeersAndAuthor,
-    type QueuedBlockEntry
-} from "@/storage/QueueStorage";
 import type { BlockConfirmationStruct } from "@typechain-types/contracts/V1/types/DataTypes";
-
-import type StateManager from "../StateManager";
-import type AValidationStrategy from "../validationStrategy/AValidationStrategy";
 
 export type IngestBlockConfirmationOptions = {
     onChainTimestamp?: Timestamp;
@@ -362,7 +363,7 @@ export default class BlockQueueManager {
         } catch (error) {
             this.logger.error("runForkRecovery - local reduction failed", {
                 forkId: String(forkId),
-                error: error instanceof Error ? error.message : String(error)
+                error: errorMessage(error)
             });
             throw error;
         } finally {
@@ -630,8 +631,8 @@ export default class BlockQueueManager {
 
     private isBlockForThisChannel(block: Block): boolean {
         return (
-            String(block.channelId).toLowerCase() ===
-            String(this.stateManager.channelId).toLowerCase()
+            channelKey(block.channelId) ===
+            channelKey(this.stateManager.channelId)
         );
     }
 

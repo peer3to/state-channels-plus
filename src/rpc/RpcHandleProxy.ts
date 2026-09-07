@@ -1,10 +1,10 @@
 import ARpcMethods from "./ARpcMethods";
-import ARpcService from "@/rpc/ARpcService";
 import Rpc from "./Rpc";
 import RpcHandler, {
     FireAndForgetRpcHandler,
     RequestRpcHandler
 } from "./RpcHandler";
+import ARpcService from "@/rpc/ARpcService";
 
 /**
  * Picks the delivery API based on a method's return type:

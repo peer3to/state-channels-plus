@@ -1,3 +1,37 @@
+import { Codec, Type } from "./Codec";
+import { isEthersResult } from "./EthersResultProxy";
+import type { CustomEvmError } from "./evmErrorHandler";
+import { hash } from "./hash";
+import type { Logger, LogLevel } from "./logging/Logger";
+import { difference } from "./set";
+import Clock from "@/Clock";
+import { Block, StateSnapshot, StateProof } from "@/models";
+import type PeerProfile from "@/PeerProfile";
+import type Rpc from "@/rpc/Rpc";
+import type { NormalizedDisputeCommitment } from "@/stateManager/eventSync/EventSyncService";
+import Storage from "@/storage";
+import type ATransport from "@/transport/ATransport";
+import { TransportType } from "@/transport/TransportType";
+import { ReduceData, TimeConfig, BlockValidationResult } from "@/types";
+import {
+    DisputeFraudProofType,
+    FraudProofType,
+    toSolidityFraudProofType,
+    toSolidityDisputeFraudProofType
+} from "@/types/sol-enums";
+import {
+    Address,
+    BlockOrSnapshot,
+    Bytes,
+    ForkId,
+    Hash,
+    Timestamp
+} from "@/types/types";
+import {
+    MessageStruct,
+    MessageBlockStruct,
+    SnapshotDataStruct
+} from "@typechain-types/contracts/V1/types/DataTypes";
 import {
     DisputeStruct,
     TimeoutStruct,
@@ -11,32 +45,6 @@ import {
     DisputeFraudProofStruct,
     FraudProofStruct
 } from "@typechain-types/contracts/V1/types/ProofTypes";
-import { Codec, Type } from "./Codec";
-import { isEthersResult } from "./EthersResultProxy";
-import type { CustomEvmError } from "./evmErrorHandler";
-import { hash } from "./hash";
-import { difference } from "./set";
-import { Address, BlockOrSnapshot, Bytes, ForkId, Hash } from "@/types/types";
-import type { NormalizedDisputeCommitment } from "@/stateManager/eventSync/EventSyncService";
-import {
-    DisputeFraudProofType,
-    FraudProofType,
-    toSolidityFraudProofType,
-    toSolidityDisputeFraudProofType
-} from "@/types/sol-enums";
-import type { Logger, LogLevel } from "./logging/Logger";
-import { TransportType } from "@/transport/TransportType";
-import type ATransport from "@/transport/ATransport";
-import { Block, StateSnapshot, StateProof } from "@/models";
-import Storage from "@/storage";
-import {
-    MessageStruct,
-    MessageBlockStruct,
-    SnapshotDataStruct
-} from "@typechain-types/contracts/V1/types/DataTypes";
-import Clock from "@/Clock";
-import { ReduceData, TimeConfig } from "@/types";
-import type Rpc from "@/rpc/Rpc";
 import { ethers } from "ethers";
 
 export type InitHandshakeMessage =
@@ -96,6 +104,58 @@ export class LoggerUtils {
             return hashStr;
         }
         return `${hashStr.slice(0, 2 + prefixLength)}...${hashStr.slice(-suffixLength)}`;
+    }
+
+    static logTimeValidationFailed(
+        logger: Logger,
+        args: {
+            block: Block;
+            nowSeconds: number;
+            validationResult: BlockValidationResult;
+            checkType: "objective" | "subjective";
+            allowedSkewSeconds: number;
+            violatedRule: string;
+            previousTimestamp?: Timestamp;
+            previousOriginalTimestamp?: Timestamp;
+        }
+    ): void {
+        const { block, nowSeconds } = args;
+        const blockTimestamp = block.timestamp;
+        const differenceSeconds = Math.abs(nowSeconds - blockTimestamp);
+        const excessSeconds = Math.max(
+            0,
+            differenceSeconds - args.allowedSkewSeconds
+        );
+        const validationResultString = LoggerUtils.enumToString(
+            BlockValidationResult,
+            args.validationResult
+        );
+        const logData: Record<string, any> = {
+            checkType: args.checkType,
+            violatedRule: args.violatedRule,
+            validationResult: validationResultString,
+            blockHeight: block.height,
+            nowSeconds,
+            blockTimestamp,
+            differenceSeconds,
+            allowedSkewSeconds: args.allowedSkewSeconds,
+            excessSeconds
+        };
+        // Add previous timestamp context for objective checks
+        if (
+            args.checkType === "objective" &&
+            args.previousTimestamp !== undefined
+        ) {
+            logData.previousTimestamp = args.previousTimestamp;
+            if (args.previousOriginalTimestamp !== undefined) {
+                logData.previousOriginalTimestamp =
+                    args.previousOriginalTimestamp;
+            }
+        }
+        logger.warn(
+            "Time validation failed - block timestamp outside allowed window",
+            logData
+        );
     }
 
     static enumToString<T extends Record<string, string | number>>(
@@ -390,6 +450,17 @@ export class LoggerUtils {
             newTransport: this.getTransportMetadata(newTransport),
             peerAddress: this.formatHash(peerAddress)
         });
+    }
+
+    static getPeerProfileMetadata(profile: PeerProfile) {
+        return {
+            peerAddress: profile.getEvmAddress(),
+            hpAddress: profile.getHpAddress(),
+            blacklisted: profile.isBlackListed,
+            transports: profile
+                .getLiveTransports()
+                .map((transport) => this.getTransportMetadata(transport))
+        };
     }
 
     static getTransportMetadata(transport: ATransport) {

@@ -25,6 +25,8 @@ worker logging and timing plus transfer-safe custom-precompile manifests.
 
 ## Key design decisions
 
+Worker request errors carry SerializedError, matching detached reports and eliminating a second wire-error shape. See [protocol.ts](../../../../../../../../src/evm/contractExecutor/worker/protocol.ts#L2).
+
 1. **Configuration crosses explicitly** — the worker rebuilds its local logger and timing configuration instead of reading main-thread process state.
 2. **Configuration keeps one timing policy** — the receiving worker rebuilds the same configured delay threshold used by the rest of the runtime.
 3. **`init` carries the clock adjustment.** The optional `clockAdjustmentSeconds` field
@@ -47,9 +49,9 @@ worker logging and timing plus transfer-safe custom-precompile manifests.
 A file may contribute to several requirements; this report describes the contribution and never
 claims complete conformance for a requirement that depends on other files.
 
-| Source file                                                                        | Specification IDs                                                                                                                                                                                        |
-| ---------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| [protocol.ts](../../../../../../../../src/evm/contractExecutor/worker/protocol.ts) | [`REQ-RUNTIME-1-RSM6MZ`](../../../../../../specification/runtime/execution.md#req-runtime-1-rsm6mz), [`REQ-RUNTIME-3-VQXW59`](../../../../../../specification/runtime/execution.md#req-runtime-3-vqxw59) |
+| Source file                                                                        | Specification IDs                                                                                                                                                                                                                                                                                             |
+| ---------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| [protocol.ts](../../../../../../../../src/evm/contractExecutor/worker/protocol.ts) | [`REQ-RUNTIME-1-RSM6MZ`](../../../../../../specification/runtime/execution.md#req-runtime-1-rsm6mz), [`REQ-RUNTIME-3-VQXW59`](../../../../../../specification/runtime/execution.md#req-runtime-3-vqxw59), [`REQ-RUNTIME-6-6F4SSM`](../../../../../../specification/runtime/execution.md#req-runtime-6-6f4ssm) |
 
 ## Assumptions, dependencies, trust boundaries, and limits
 

@@ -1,8 +1,8 @@
 // @spec-test-coverage-ignore: shared setup for mapped targeted-channel E2E declarations
 import type { PeerTestHarness } from "./PeerTestHarness";
 import type { ConnectToChannelOptions } from "@/evm/signer/ConnectToChannelOptions";
-import type { TestPeer } from "@test/harness/core/types";
 import { slotAccountIndex } from "@test/harness/core/slotAccounts";
+import type { TestPeer } from "@test/harness/core/types";
 
 export class TargetedChannelJoinFixture {
     constructor(private readonly harness: PeerTestHarness) {}

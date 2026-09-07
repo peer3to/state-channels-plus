@@ -1,34 +1,14 @@
 // @spec-test-coverage-ignore: worker-side support service for mapped P2PManager component cases
+import type { PingPongRpc } from "../PingPongRpcManifest";
+import { P2PManagerProbeRpcMethods } from "./P2PManagerProbeRpcMethods";
+import Clock from "@/Clock";
 import type P2PManager from "@/P2PManager";
+import PeerProfile from "@/PeerProfile";
 import ARpcService from "@/rpc/ARpcService";
 import type Rpc from "@/rpc/Rpc";
 import { MAX_RPC_FRAME_BYTES } from "@/rpc/Rpc";
-import ATransport from "@/transport/ATransport";
-import { TransportType } from "@/transport/TransportType";
-import PeerProfile from "@/PeerProfile";
-import {
-    Codec,
-    DetachedPromises,
-    SignatureUtils,
-    Type,
-    getChecksumAddress
-} from "@/utils";
-import { ethers } from "ethers";
-import { Buffer } from "buffer";
-import { Status } from "@/types";
-import type { Bytes } from "@/types/types";
-import Clock from "@/Clock";
-import sinon from "sinon";
-import type { PingPongRpc } from "../PingPongRpcManifest";
-import { P2PManagerProbeRpcMethods } from "./P2PManagerProbeRpcMethods";
-import { HolepunchTransport, WebRTCTransport } from "@/transport";
-import {
-    RecordingBannablePeerInfo,
-    RecordingHolepunchSocket,
-    RecordingSwarm,
-    RecordingWebRTCDataChannel
-} from "@test/fixtures/P2PTransportFixture";
 import LobbyMatchingService from "@/rpc/services/lobbyMatching/LobbyMatchingService";
+import type { LobbyMatch } from "@/rpc/services/lobbyMatching/LobbyMatchingTypes";
 import {
     compareAddresses,
     deriveNegotiatedChannelId
@@ -38,8 +18,29 @@ import type {
     MatchedNegotiationOptions,
     NegotiationOutcome
 } from "@/rpc/services/openChannelNegotiation/OpenChannelNegotiationService";
-import type { LobbyMatch } from "@/rpc/services/lobbyMatching/LobbyMatchingTypes";
+import { HolepunchTransport, WebRTCTransport } from "@/transport";
+import ATransport from "@/transport/ATransport";
+import { TransportType } from "@/transport/TransportType";
+import { Status } from "@/types";
+import type { Address } from "@/types/types";
+import type { Bytes } from "@/types/types";
+import {
+    Codec,
+    DetachedPromises,
+    SignatureUtils,
+    Type,
+    getChecksumAddress
+} from "@/utils";
+import {
+    RecordingBannablePeerInfo,
+    RecordingHolepunchSocket,
+    RecordingSwarm,
+    RecordingWebRTCDataChannel
+} from "@test/fixtures/P2PTransportFixture";
 import { createOpenChannelTestObject } from "@test/test_utils/testHelpers";
+import { Buffer } from "buffer";
+import { ethers } from "ethers";
+import sinon from "sinon";
 
 class RecordingTransport extends ATransport {
     public transportType = TransportType.HOLEPUNCH;
@@ -490,6 +491,32 @@ export class P2PManagerProbeService extends ARpcService<
         const transport = new RecordingTransport(this.p2pManager);
         transport.peerAddress = address;
         return transport;
+    }
+
+    private registerProfile(
+        transport: ATransport,
+        address: Address
+    ): PeerProfile {
+        const profile = new PeerProfile(transport, address);
+        this.p2pManager.profileManager.registerProfile(profile);
+        return profile;
+    }
+
+    private makeMatch(
+        peerAddress: string,
+        seed: string,
+        localAddress: Address,
+        selectorSeed: string,
+        advertiserSeed: string
+    ): LobbyMatch {
+        return {
+            peerAddress: getChecksumAddress(peerAddress),
+            attemptNonce: `0x${seed.repeat(32)}`,
+            selectorAddress: getChecksumAddress(peerAddress),
+            advertiserAddress: localAddress,
+            selectorChallenge: `0x${selectorSeed.repeat(32)}`,
+            advertiserChallenge: `0x${advertiserSeed.repeat(32)}`
+        };
     }
 
     private registeredTransport(address: string): {
@@ -1103,8 +1130,7 @@ export class P2PManagerProbeService extends ARpcService<
         const address = getChecksumAddress(addressInput);
         const transport = this.transport(address);
         transport.closeError = new Error("close failed");
-        const profile = new PeerProfile(transport, address);
-        this.p2pManager.profileManager.registerProfile(profile);
+        const profile = this.registerProfile(transport, address);
         this.p2pManager.addConnection(transport);
         const request = this.beginRequest(transport, 1000);
 
@@ -1132,8 +1158,7 @@ export class P2PManagerProbeService extends ARpcService<
         const address = getChecksumAddress(addressInput);
         const oldTransport = this.transport(address);
         const replacement = this.transport(address);
-        const profile = new PeerProfile(oldTransport, address);
-        this.p2pManager.profileManager.registerProfile(profile);
+        const profile = this.registerProfile(oldTransport, address);
         this.p2pManager.addConnection(oldTransport);
         const oldRequest = this.beginRequest(oldTransport, 1000);
         const oldRequestError = oldRequest.promise.catch(
@@ -1180,10 +1205,9 @@ export class P2PManagerProbeService extends ARpcService<
         const secondAddress = getChecksumAddress(secondAddressInput);
         const first = this.transport(firstAddress);
         const second = this.transport(secondAddress);
-        const firstProfile = new PeerProfile(first, firstAddress);
-        const secondProfile = new PeerProfile(second, secondAddress);
-        this.p2pManager.profileManager.registerProfile(firstProfile);
-        this.p2pManager.profileManager.registerProfile(secondProfile);
+
+        const firstProfile = this.registerProfile(first, firstAddress);
+        const secondProfile = this.registerProfile(second, secondAddress);
         this.p2pManager.addConnection(first);
         this.p2pManager.addConnection(second);
 
@@ -1204,6 +1228,158 @@ export class P2PManagerProbeService extends ARpcService<
         };
     }
 
+    public probeConnectedPeerPrecedence(
+        profileAddress: string,
+        transportAddress: string
+    ): Address[] {
+        const transport = this.transport(profileAddress);
+        this.registerProfile(transport, getChecksumAddress(profileAddress));
+        transport.peerAddress = transportAddress;
+        this.p2pManager.addConnection(transport);
+        return [...this.p2pManager.getConnectedPeers()];
+    }
+
+    public async probeLobbyFilterOrder(peerAddress: string) {
+        let calls = 0;
+        const service = new LobbyMatchingService(this.p2pManager, {
+            shouldMatchPeer: () => {
+                calls++;
+                return false;
+            }
+        });
+        const transport = this.transport(peerAddress);
+        this.registerProfile(transport, getChecksumAddress(peerAddress));
+        const topic = ethers.id("filter-order-topic");
+        const matching = service.match(topic);
+        try {
+            await Promise.resolve();
+            service.receiveAvailability(transport, {
+                topic,
+                role: "none",
+                roleEpoch: -1,
+                available: false
+            });
+            service.receiveCommit(transport, topic, 0, topic, topic);
+            const beforeValid = calls;
+            service.receiveAvailability(transport, {
+                topic,
+                role: "none",
+                roleEpoch: 0,
+                available: false
+            });
+            const afterValid = calls;
+            const pick = service.receivePick(transport, topic, 0, topic);
+            return {
+                beforeValid,
+                afterValid,
+                afterPick: calls,
+                pick: pick.status
+            };
+        } finally {
+            await service.dispose();
+            await matching;
+        }
+    }
+
+    public async probeLobbyFilterBoundary(
+        peerAddress: string,
+        mode: "self" | "unknown" | "throw"
+    ) {
+        let calls = 0;
+        const failure = new Error("configured filter failure");
+        const service = new LobbyMatchingService(this.p2pManager, {
+            shouldMatchPeer: () => {
+                calls++;
+                throw failure;
+            }
+        });
+        const transport =
+            mode === "self"
+                ? this.p2pManager.loopbackTransport
+                : this.transport(peerAddress);
+        if (mode !== "unknown") {
+            this.registerProfile(
+                transport,
+                mode === "self"
+                    ? this.p2pManager.stateManager.checksumSignerAddress
+                    : getChecksumAddress(peerAddress)
+            );
+        }
+        const topic = ethers.id("filter-boundary-topic");
+        const matching = service.match(topic);
+        try {
+            await Promise.resolve();
+            let sameError = false;
+            try {
+                service.receiveAvailability(transport, {
+                    topic,
+                    role: "none",
+                    roleEpoch: 0,
+                    available: false
+                });
+            } catch (error) {
+                sameError = error === failure;
+            }
+            return { calls, sameError };
+        } finally {
+            await service.dispose();
+            await matching;
+        }
+    }
+
+    public async probeCommitmentComparison(
+        peerAddress: string,
+        mismatch: "selector" | "advertiser" | "absent" | "malformed"
+    ) {
+        const service = new OpenChannelNegotiationService(this.p2pManager);
+        const transport = this.transport(peerAddress);
+        const match = this.makeMatch(
+            peerAddress,
+            "31",
+            this.p2pManager.stateManager.checksumSignerAddress,
+            "32",
+            "33"
+        );
+        const rpc = {
+            service: "openChannelNegotiationService",
+            method: "exchangeTerms",
+            params: [
+                match.attemptNonce,
+                match.selectorChallenge,
+                match.advertiserChallenge
+            ]
+        };
+        if (mismatch === "absent")
+            return {
+                admitted: service.isRpcAdmitted(rpc, transport),
+                active: false,
+                threw: false
+            };
+        if (mismatch === "malformed") {
+            transport.peerAddress = "invalid-address";
+            try {
+                service.isRpcAdmitted(rpc, transport);
+                return { admitted: false, active: false, threw: false };
+            } catch {
+                return { admitted: false, active: false, threw: true };
+            }
+        }
+        this.registerProfile(transport, getChecksumAddress(peerAddress));
+        const { outcome } = await this.startNegotiation(service, match);
+        try {
+            rpc.params[mismatch === "selector" ? 1 : 2] =
+                ethers.id("wrong-challenge");
+            return {
+                admitted: service.isRpcAdmitted(rpc, transport),
+                active: !!service.state.attempt,
+                threw: false
+            };
+        } finally {
+            await service.dispose();
+            await outcome;
+        }
+    }
+
     public probeConnectedPeerFallback(
         addressInput: string
     ): ConnectedPeerFallbackProbe {
@@ -1211,8 +1387,7 @@ export class P2PManagerProbeService extends ARpcService<
         const fromProfile = this.transport();
         const duplicate = this.transport(address.toLowerCase());
         const unknown = this.transport();
-        const profile = new PeerProfile(fromProfile, address);
-        this.p2pManager.profileManager.registerProfile(profile);
+        const profile = this.registerProfile(fromProfile, address);
         fromProfile.peerAddress = undefined;
         this.p2pManager.addConnection(fromProfile);
         this.p2pManager.addConnection(duplicate);
@@ -1231,8 +1406,7 @@ export class P2PManagerProbeService extends ARpcService<
         const foreignAddress = getChecksumAddress(foreignAddressInput);
         const intended = this.transport(intendedAddress);
         const foreign = this.transport(foreignAddress);
-        const foreignProfile = new PeerProfile(foreign, foreignAddress);
-        this.p2pManager.profileManager.registerProfile(foreignProfile);
+        const foreignProfile = this.registerProfile(foreign, foreignAddress);
         this.p2pManager.addConnection(intended);
         this.p2pManager.addConnection(foreign);
         const request = this.beginRequest(intended);
@@ -1253,8 +1427,7 @@ export class P2PManagerProbeService extends ARpcService<
         const address = getChecksumAddress(addressInput);
         const original = this.transport(address);
         const replacement = this.transport(address);
-        const replacementProfile = new PeerProfile(original, address);
-        this.p2pManager.profileManager.registerProfile(replacementProfile);
+        const replacementProfile = this.registerProfile(original, address);
         this.p2pManager.addConnection(original);
         const replacementRequest = this.beginRequest(original);
         const originalAgreementTime =
@@ -1338,18 +1511,15 @@ export class P2PManagerProbeService extends ARpcService<
             String
         );
 
-        const firstProfile = new PeerProfile(first, firstAddress);
-        const secondProfile = new PeerProfile(second, secondAddress);
-        this.p2pManager.profileManager.registerProfile(firstProfile);
-        this.p2pManager.profileManager.registerProfile(secondProfile);
+        const firstProfile = this.registerProfile(first, firstAddress);
+        const secondProfile = this.registerProfile(second, secondAddress);
 
         const staleAddress = getChecksumAddress(
             "0x5400000000000000000000000000000000000001"
         );
         const current = this.transport(staleAddress);
         const stale = this.transport(staleAddress);
-        const staleAddressProfile = new PeerProfile(current, staleAddress);
-        this.p2pManager.profileManager.registerProfile(staleAddressProfile);
+        const staleAddressProfile = this.registerProfile(current, staleAddress);
         this.p2pManager.addConnection(current);
         this.p2pManager.addConnection(stale);
 
@@ -1760,7 +1930,9 @@ export class P2PManagerProbeService extends ARpcService<
         }
     }
 
-    public async probeHolepunchRejoinAfterLeave(): Promise<HolepunchTopicProbe> {
+    public async probeHolepunchRejoinAfterLeave(
+        duplicate = false
+    ): Promise<HolepunchTopicProbe> {
         const initialSwarm = new RecordingSwarm();
         const replacementSwarm = new RecordingSwarm();
         const previousSwarm = this.p2pManager.holepunch.swarm;
@@ -1772,6 +1944,8 @@ export class P2PManagerProbeService extends ARpcService<
         try {
             await this.p2pManager.holepunch.join(Buffer.from("topic-a"));
             await this.p2pManager.holepunch.join(Buffer.from("topic-b"));
+            if (duplicate)
+                await this.p2pManager.holepunch.join(Buffer.from("topic-b"));
             await this.p2pManager.holepunch.leave(Buffer.from("topic-a"));
             Object.defineProperty(globalThis, "Hyperswarm", {
                 configurable: true,
@@ -1811,8 +1985,11 @@ export class P2PManagerProbeService extends ARpcService<
         const stateManager = this.p2pManager.stateManager;
         const originalChannelId = stateManager.channelId;
         const transport = this.transport(getChecksumAddress(address));
-        const profile = new PeerProfile(transport, getChecksumAddress(address));
-        this.p2pManager.profileManager.registerProfile(profile);
+
+        const profile = this.registerProfile(
+            transport,
+            getChecksumAddress(address)
+        );
         stateManager.setStatus(Status.OPENED);
         await stateManager.setChannelId("0x12");
         const originalDebug = this.p2pManager.logger.debug.bind(
@@ -1901,8 +2078,11 @@ export class P2PManagerProbeService extends ARpcService<
     ): Promise<LateHandshakeProbe> {
         const stateManager = this.p2pManager.stateManager;
         const transport = this.transport(getChecksumAddress(address));
-        const profile = new PeerProfile(transport, getChecksumAddress(address));
-        this.p2pManager.profileManager.registerProfile(profile);
+
+        const profile = this.registerProfile(
+            transport,
+            getChecksumAddress(address)
+        );
         let hookCount = 0;
         const unsubscribeConnection = stateManager.events.on(
             "p2pEventHooks",
@@ -1932,8 +2112,11 @@ export class P2PManagerProbeService extends ARpcService<
     ): Promise<LateHandshakeProbe> {
         const stateManager = this.p2pManager.stateManager;
         const transport = this.transport(getChecksumAddress(address));
-        const profile = new PeerProfile(transport, getChecksumAddress(address));
-        this.p2pManager.profileManager.registerProfile(profile);
+
+        const profile = this.registerProfile(
+            transport,
+            getChecksumAddress(address)
+        );
         let hookCount = 0;
         const unsubscribeConnection = stateManager.events.on(
             "p2pEventHooks",
@@ -1965,8 +2148,7 @@ export class P2PManagerProbeService extends ARpcService<
         stateManager.setStatus(Status.SYNCED);
         const normalizedAddress = getChecksumAddress(address);
         const first = this.transport(normalizedAddress);
-        const profile = new PeerProfile(first, normalizedAddress);
-        this.p2pManager.profileManager.registerProfile(profile);
+        const profile = this.registerProfile(first, normalizedAddress);
         let hookCount = 0;
         let resolveConnection!: () => void;
         let connection = new Promise<void>((resolve) => {
@@ -2038,8 +2220,7 @@ export class P2PManagerProbeService extends ARpcService<
         this.p2pManager.profileManager.removeTransport(rebinding);
 
         const fallback = this.transport(normalizedAddress);
-        const profile = new PeerProfile(fallback, normalizedAddress);
-        this.p2pManager.profileManager.registerProfile(profile);
+        const profile = this.registerProfile(fallback, normalizedAddress);
         const replacement = this.transport(normalizedAddress);
         this.p2pManager.profileManager.updateTransport(
             normalizedAddress,
@@ -2085,12 +2266,8 @@ export class P2PManagerProbeService extends ARpcService<
         );
         const first = this.transport(firstAddress);
         const second = this.transport(secondAddress);
-        this.p2pManager.profileManager.registerProfile(
-            new PeerProfile(first, firstAddress)
-        );
-        this.p2pManager.profileManager.registerProfile(
-            new PeerProfile(second, secondAddress)
-        );
+        this.registerProfile(first, firstAddress);
+        this.registerProfile(second, secondAddress);
         let ordinaryHookCount = 0;
         const unsubscribeConnection = this.p2pManager.stateManager.events.on(
             "p2pEventHooks",
@@ -2233,8 +2410,7 @@ export class P2PManagerProbeService extends ARpcService<
             "0xffffffffffffffffffffffffffffffffffffffff"
         );
         const transport = this.transport(peerAddress);
-        const profile = new PeerProfile(transport, peerAddress);
-        this.p2pManager.profileManager.registerProfile(profile);
+        const profile = this.registerProfile(transport, peerAddress);
         void service.match(topic);
         await Promise.resolve();
         service.receiveAvailability(transport, {
@@ -2262,8 +2438,7 @@ export class P2PManagerProbeService extends ARpcService<
             "0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
         );
         const abusive = this.transport(abusiveAddress);
-        const abusiveProfile = new PeerProfile(abusive, abusiveAddress);
-        this.p2pManager.profileManager.registerProfile(abusiveProfile);
+        const abusiveProfile = this.registerProfile(abusive, abusiveAddress);
         const wrongTopicRpc: Rpc = {
             service: "lobbyMatchingService",
             method: "advertise",
@@ -2305,8 +2480,7 @@ export class P2PManagerProbeService extends ARpcService<
             "0xffffffffffffffffffffffffffffffffffffffff"
         );
         const transport = this.transport(peerAddress);
-        const profile = new PeerProfile(transport, peerAddress);
-        this.p2pManager.profileManager.registerProfile(profile);
+        const profile = this.registerProfile(transport, peerAddress);
         const match = service.match(topic);
         await Promise.resolve();
         service.receiveAvailability(transport, {
@@ -2386,9 +2560,7 @@ export class P2PManagerProbeService extends ARpcService<
         const service = this.p2pManager.localRpc.lobbyMatchingService;
         const firstTopic = `0x${"41".repeat(32)}`;
         const first = this.transport(peerAddress);
-        this.p2pManager.profileManager.registerProfile(
-            new PeerProfile(first, peerAddress)
-        );
+        this.registerProfile(first, peerAddress);
         void service.match(firstTopic);
         await Promise.resolve();
         service.receiveAvailability(first, {
@@ -2406,9 +2578,7 @@ export class P2PManagerProbeService extends ARpcService<
 
         const secondTopic = `0x${"42".repeat(32)}`;
         const second = this.transport(peerAddress);
-        this.p2pManager.profileManager.registerProfile(
-            new PeerProfile(second, peerAddress)
-        );
+        this.registerProfile(second, peerAddress);
         void service.match(secondTopic);
         await Promise.resolve();
         service.receiveAvailability(second, {
@@ -2450,9 +2620,7 @@ export class P2PManagerProbeService extends ARpcService<
             shouldMatchPeer: () => false
         });
         const filteredTransport = this.transport(peerAddress);
-        this.p2pManager.profileManager.registerProfile(
-            new PeerProfile(filteredTransport, peerAddress)
-        );
+        this.registerProfile(filteredTransport, peerAddress);
         void filtered.match(filteredTopic);
         await Promise.resolve();
         filtered.receiveAvailability(filteredTransport, {
@@ -2503,9 +2671,7 @@ export class P2PManagerProbeService extends ARpcService<
             const defaultTopic = `0x${"51".repeat(32)}`;
             const defaultService = new LobbyMatchingService(this.p2pManager);
             const defaultPeer = this.transport(peerAddress);
-            this.p2pManager.profileManager.registerProfile(
-                new PeerProfile(defaultPeer, peerAddress)
-            );
+            this.registerProfile(defaultPeer, peerAddress);
             void defaultService.match(defaultTopic);
             await Promise.resolve();
             defaultService.onAuthenticatedTransport(defaultPeer);
@@ -2530,9 +2696,7 @@ export class P2PManagerProbeService extends ARpcService<
                 }
             );
             const selector = this.transport(peerAddress);
-            this.p2pManager.profileManager.registerProfile(
-                new PeerProfile(selector, peerAddress)
-            );
+            this.registerProfile(selector, peerAddress);
             void configuredService.match(configuredTopic);
             await Promise.resolve();
             configuredService.onAuthenticatedTransport(selector);
@@ -2577,15 +2741,12 @@ export class P2PManagerProbeService extends ARpcService<
                 "0xfffffffffffffffffffffffffffffffffffffffd"
             );
             const silent = this.transport(silentAddress);
-            const silentProfile = new PeerProfile(silent, silentAddress);
-            this.p2pManager.profileManager.registerProfile(silentProfile);
+            const silentProfile = this.registerProfile(silent, silentAddress);
             const expiryObserverAddress = getChecksumAddress(
                 "0xcccccccccccccccccccccccccccccccccccccccc"
             );
             const expiryObserver = this.transport(expiryObserverAddress);
-            this.p2pManager.profileManager.registerProfile(
-                new PeerProfile(expiryObserver, expiryObserverAddress)
-            );
+            this.registerProfile(expiryObserver, expiryObserverAddress);
             void expiryService.match(expiryTopic);
             await Promise.resolve();
             expiryService.onAuthenticatedTransport(silent);
@@ -2649,11 +2810,9 @@ export class P2PManagerProbeService extends ARpcService<
         const firstTransport = this.transport(
             "0xffffffffffffffffffffffffffffffffffffffff"
         );
-        this.p2pManager.profileManager.registerProfile(
-            new PeerProfile(
-                firstTransport,
-                getChecksumAddress(firstTransport.peerAddress!)
-            )
+        this.registerProfile(
+            firstTransport,
+            getChecksumAddress(firstTransport.peerAddress!)
         );
         service.onAuthenticatedTransport(firstTransport);
         const defaultTimeoutScheduled = scheduledTaskNames.includes(
@@ -2665,11 +2824,9 @@ export class P2PManagerProbeService extends ARpcService<
         const secondTransport = this.transport(
             "0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
         );
-        this.p2pManager.profileManager.registerProfile(
-            new PeerProfile(
-                secondTransport,
-                getChecksumAddress(secondTransport.peerAddress!)
-            )
+        this.registerProfile(
+            secondTransport,
+            getChecksumAddress(secondTransport.peerAddress!)
         );
         service.onAuthenticatedTransport(secondTransport);
         const replacementTopicActive =
@@ -2701,11 +2858,9 @@ export class P2PManagerProbeService extends ARpcService<
         const timeoutTransport = this.transport(
             "0xdddddddddddddddddddddddddddddddddddddddd"
         );
-        this.p2pManager.profileManager.registerProfile(
-            new PeerProfile(
-                timeoutTransport,
-                getChecksumAddress(timeoutTransport.peerAddress!)
-            )
+        this.registerProfile(
+            timeoutTransport,
+            getChecksumAddress(timeoutTransport.peerAddress!)
         );
         timeoutService.onAuthenticatedTransport(timeoutTransport);
         const timeoutResult = await timeoutPromise;
@@ -2721,11 +2876,9 @@ export class P2PManagerProbeService extends ARpcService<
         const disposeTransport = this.transport(
             "0xcccccccccccccccccccccccccccccccccccccccc"
         );
-        this.p2pManager.profileManager.registerProfile(
-            new PeerProfile(
-                disposeTransport,
-                getChecksumAddress(disposeTransport.peerAddress!)
-            )
+        this.registerProfile(
+            disposeTransport,
+            getChecksumAddress(disposeTransport.peerAddress!)
         );
         disposeService.onAuthenticatedTransport(disposeTransport);
         await disposeService.dispose();
@@ -2757,9 +2910,7 @@ export class P2PManagerProbeService extends ARpcService<
             "0xffffffffffffffffffffffffffffffffffffffff"
         );
         const handoffTransport = this.transport(handoffAddress);
-        this.p2pManager.profileManager.registerProfile(
-            new PeerProfile(handoffTransport, handoffAddress)
-        );
+        this.registerProfile(handoffTransport, handoffAddress);
         cancellationService.onAuthenticatedTransport(handoffTransport);
         cancellationService.receiveAvailability(handoffTransport, {
             topic: handoffTopic,
@@ -2842,12 +2993,8 @@ export class P2PManagerProbeService extends ARpcService<
         );
         const bootstrapTransport = this.transport(bootstrapAddress);
         const sourceTransport = this.transport(sourceAddress);
-        this.p2pManager.profileManager.registerProfile(
-            new PeerProfile(bootstrapTransport, bootstrapAddress)
-        );
-        this.p2pManager.profileManager.registerProfile(
-            new PeerProfile(sourceTransport, sourceAddress)
-        );
+        this.registerProfile(bootstrapTransport, bootstrapAddress);
+        this.registerProfile(sourceTransport, sourceAddress);
 
         const observerMatch = observer.match(topic);
         const firstMatch = source.match(topic);
@@ -2926,9 +3073,7 @@ export class P2PManagerProbeService extends ARpcService<
             "0xffffffffffffffffffffffffffffffffffffffff"
         );
         const transport = this.transport(peerAddress);
-        this.p2pManager.profileManager.registerProfile(
-            new PeerProfile(transport, peerAddress)
-        );
+        this.registerProfile(transport, peerAddress);
         try {
             const match = service.match(topic);
             await Promise.resolve();
@@ -2972,18 +3117,15 @@ export class P2PManagerProbeService extends ARpcService<
             "0xffffffffffffffffffffffffffffffffffffffff"
         );
         const selector = this.transport(selectorAddress);
-        this.p2pManager.profileManager.registerProfile(
-            new PeerProfile(selector, selectorAddress)
-        );
+        this.registerProfile(selector, selectorAddress);
         const lateRequesterAddress = getChecksumAddress(
             "0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
         );
         const lateRequester = this.transport(lateRequesterAddress);
-        const lateRequesterProfile = new PeerProfile(
+        const lateRequesterProfile = this.registerProfile(
             lateRequester,
             lateRequesterAddress
         );
-        this.p2pManager.profileManager.registerProfile(lateRequesterProfile);
 
         const match = service.match(topic);
         await Promise.resolve();
@@ -3045,8 +3187,7 @@ export class P2PManagerProbeService extends ARpcService<
             "0xffffffffffffffffffffffffffffffffffffffff"
         );
         const transport = this.transport(peerAddress);
-        const profile = new PeerProfile(transport, peerAddress);
-        this.p2pManager.profileManager.registerProfile(profile);
+        const profile = this.registerProfile(transport, peerAddress);
         this.p2pManager.stateManager.setStatus(Status.DISCOVERING);
         const lobby = this.p2pManager.localRpc.lobbyMatchingService;
         const topic = `0x${"10".repeat(32)}`;
@@ -3129,14 +3270,15 @@ export class P2PManagerProbeService extends ARpcService<
         };
     }
 
-    public async probeInvalidNegotiationAmount(): Promise<InvalidNegotiationAmountProbe> {
+    public async probeInvalidNegotiationAmount(
+        zeroBalance = false
+    ): Promise<InvalidNegotiationAmountProbe> {
         const service = this.p2pManager.localRpc.openChannelNegotiationService;
         const peerAddress = getChecksumAddress(
             "0xffffffffffffffffffffffffffffffffffffffff"
         );
         const transport = this.transport(peerAddress);
-        const profile = new PeerProfile(transport, peerAddress);
-        this.p2pManager.profileManager.registerProfile(profile);
+        const profile = this.registerProfile(transport, peerAddress);
         const lobby = this.p2pManager.localRpc.lobbyMatchingService;
         const topic = `0x${"24".repeat(32)}`;
         this.p2pManager.stateManager.setStatus(Status.DISCOVERING);
@@ -3180,7 +3322,7 @@ export class P2PManagerProbeService extends ARpcService<
                 match.attemptNonce,
                 match.selectorChallenge,
                 match.advertiserChallenge,
-                "0x"
+                zeroBalance ? this.encodeBalance(0) : "0x"
             );
         } catch (caught) {
             error = caught instanceof Error ? caught.message : String(caught);
@@ -3213,14 +3355,6 @@ export class P2PManagerProbeService extends ARpcService<
         const localAddress = getChecksumAddress(
             String(this.p2pManager.stateManager.signerAddress)
         );
-        const makeMatch = (peerAddress: string, seed: string) => ({
-            peerAddress: getChecksumAddress(peerAddress),
-            attemptNonce: `0x${seed.repeat(32)}`,
-            selectorAddress: getChecksumAddress(peerAddress),
-            advertiserAddress: localAddress,
-            selectorChallenge: `0x${"a1".repeat(32)}`,
-            advertiserChallenge: `0x${"b1".repeat(32)}`
-        });
         const resetLifecycle = async () => {
             await this.p2pManager.stateManager.clearChannelId();
             this.p2pManager.stateManager.setStatus(Status.DISCOVERING);
@@ -3232,11 +3366,10 @@ export class P2PManagerProbeService extends ARpcService<
                 "0x0000000000000000000000000000000000000001"
             );
             const timeoutTransport = this.transport(timeoutPeer);
-            const timeoutProfile = new PeerProfile(
+            const timeoutProfile = this.registerProfile(
                 timeoutTransport,
                 timeoutPeer
             );
-            this.p2pManager.profileManager.registerProfile(timeoutProfile);
             const timeoutService = new OpenChannelNegotiationService(
                 this.p2pManager
             );
@@ -3250,7 +3383,13 @@ export class P2PManagerProbeService extends ARpcService<
                 }
                 return originalScheduleTask(task, delayMs, taskName);
             }) as typeof timeoutManager.scheduleTask;
-            const timeoutMatch = makeMatch(timeoutPeer, "71");
+            const timeoutMatch = this.makeMatch(
+                timeoutPeer,
+                "71",
+                localAddress,
+                "a1",
+                "b1"
+            );
             const { outcome: timeoutOutcome } = await this.startNegotiation(
                 timeoutService,
                 timeoutMatch
@@ -3285,17 +3424,25 @@ export class P2PManagerProbeService extends ARpcService<
             );
             const selectedTransport = this.transport(selectedPeer);
             const wrongTransport = this.transport(wrongPeer);
-            const selectedProfile = new PeerProfile(
+
+            const selectedProfile = this.registerProfile(
                 selectedTransport,
                 selectedPeer
             );
-            const wrongProfile = new PeerProfile(wrongTransport, wrongPeer);
-            this.p2pManager.profileManager.registerProfile(selectedProfile);
-            this.p2pManager.profileManager.registerProfile(wrongProfile);
+            const wrongProfile = this.registerProfile(
+                wrongTransport,
+                wrongPeer
+            );
             const wrongPeerService = new OpenChannelNegotiationService(
                 this.p2pManager
             );
-            const selectedMatch = makeMatch(selectedPeer, "72");
+            const selectedMatch = this.makeMatch(
+                selectedPeer,
+                "72",
+                localAddress,
+                "a1",
+                "b1"
+            );
             await this.startNegotiation(wrongPeerService, selectedMatch);
             wrongPeerService.runRPC(
                 {
@@ -3322,15 +3469,20 @@ export class P2PManagerProbeService extends ARpcService<
                 "0x0000000000000000000000000000000000000004"
             );
             const wrongAttemptTransport = this.transport(wrongAttemptPeer);
-            const wrongAttemptProfile = new PeerProfile(
+            const wrongAttemptProfile = this.registerProfile(
                 wrongAttemptTransport,
                 wrongAttemptPeer
             );
-            this.p2pManager.profileManager.registerProfile(wrongAttemptProfile);
             const wrongAttemptService = new OpenChannelNegotiationService(
                 this.p2pManager
             );
-            const wrongAttemptMatch = makeMatch(wrongAttemptPeer, "73");
+            const wrongAttemptMatch = this.makeMatch(
+                wrongAttemptPeer,
+                "73",
+                localAddress,
+                "a1",
+                "b1"
+            );
             const { outcome: wrongAttemptOutcome } =
                 await this.startNegotiation(
                     wrongAttemptService,
@@ -3367,15 +3519,20 @@ export class P2PManagerProbeService extends ARpcService<
                 "0x0000000000000000000000000000000000000005"
             );
             const duplicateTransport = this.transport(duplicatePeer);
-            const duplicateProfile = new PeerProfile(
+            const duplicateProfile = this.registerProfile(
                 duplicateTransport,
                 duplicatePeer
             );
-            this.p2pManager.profileManager.registerProfile(duplicateProfile);
             const duplicateService = new OpenChannelNegotiationService(
                 this.p2pManager
             );
-            const duplicateMatch = makeMatch(duplicatePeer, "75");
+            const duplicateMatch = this.makeMatch(
+                duplicatePeer,
+                "75",
+                localAddress,
+                "a1",
+                "b1"
+            );
             const { outcome: duplicateOutcome } = await this.startNegotiation(
                 duplicateService,
                 duplicateMatch
@@ -3419,15 +3576,20 @@ export class P2PManagerProbeService extends ARpcService<
                 "0x0000000000000000000000000000000000000006"
             );
             const malformedTransport = this.transport(malformedPeer);
-            const malformedProfile = new PeerProfile(
+            const malformedProfile = this.registerProfile(
                 malformedTransport,
                 malformedPeer
             );
-            this.p2pManager.profileManager.registerProfile(malformedProfile);
             const malformedService = new OpenChannelNegotiationService(
                 this.p2pManager
             );
-            const malformedMatch = makeMatch(malformedPeer, "76");
+            const malformedMatch = this.makeMatch(
+                malformedPeer,
+                "76",
+                localAddress,
+                "a1",
+                "b1"
+            );
             const { outcome: malformedOutcome } = await this.startNegotiation(
                 malformedService,
                 malformedMatch
@@ -3465,15 +3627,20 @@ export class P2PManagerProbeService extends ARpcService<
             const collisionWallet = ethers.Wallet.createRandom();
             const collisionPeer = getChecksumAddress(collisionWallet.address);
             const collisionTransport = this.transport(collisionPeer);
-            const collisionProfile = new PeerProfile(
+            const collisionProfile = this.registerProfile(
                 collisionTransport,
                 collisionPeer
             );
-            this.p2pManager.profileManager.registerProfile(collisionProfile);
             const collisionService = new OpenChannelNegotiationService(
                 this.p2pManager
             );
-            const collisionMatch = makeMatch(collisionPeer, "77");
+            const collisionMatch = this.makeMatch(
+                collisionPeer,
+                "77",
+                localAddress,
+                "a1",
+                "b1"
+            );
             const collisionChannelId =
                 deriveNegotiatedChannelId(collisionMatch);
             const participants =
@@ -3537,21 +3704,12 @@ export class P2PManagerProbeService extends ARpcService<
             }
             return wallet;
         };
-        const makeMatch = (peerAddress: string, seed: string) => ({
-            peerAddress: getChecksumAddress(peerAddress),
-            attemptNonce: `0x${seed.repeat(32)}`,
-            selectorAddress: getChecksumAddress(peerAddress),
-            advertiserAddress: localAddress,
-            selectorChallenge: `0x${"c1".repeat(32)}`,
-            advertiserChallenge: `0x${"d1".repeat(32)}`
-        });
 
         await resetLifecycle();
         const wallet = lowerWallet();
         const peerAddress = getChecksumAddress(wallet.address);
         const transport = this.transport(peerAddress);
-        const profile = new PeerProfile(transport, peerAddress);
-        this.p2pManager.profileManager.registerProfile(profile);
+        const profile = this.registerProfile(transport, peerAddress);
         const service = new OpenChannelNegotiationService(this.p2pManager);
         const timeoutManager = this.p2pManager.stateManager.timeoutManager;
         const originalScheduleTask =
@@ -3563,7 +3721,13 @@ export class P2PManagerProbeService extends ARpcService<
             }
             return originalScheduleTask(task, delayMs, taskName);
         }) as typeof timeoutManager.scheduleTask;
-        const match = makeMatch(peerAddress, "81");
+        const match = this.makeMatch(
+            peerAddress,
+            "81",
+            localAddress,
+            "c1",
+            "d1"
+        );
         const { outcome: serviceOutcome } = await this.startNegotiation(
             service,
             match
@@ -3646,10 +3810,15 @@ export class P2PManagerProbeService extends ARpcService<
         const lossWallet = lowerWallet();
         const lossPeer = getChecksumAddress(lossWallet.address);
         const lossTransport = this.transport(lossPeer);
-        const lossProfile = new PeerProfile(lossTransport, lossPeer);
-        this.p2pManager.profileManager.registerProfile(lossProfile);
+        const lossProfile = this.registerProfile(lossTransport, lossPeer);
         const lossService = new OpenChannelNegotiationService(this.p2pManager);
-        const lossMatch = makeMatch(lossPeer, "86");
+        const lossMatch = this.makeMatch(
+            lossPeer,
+            "86",
+            localAddress,
+            "c1",
+            "d1"
+        );
         const { outcome: lossOutcome } = await this.startNegotiation(
             lossService,
             lossMatch
@@ -3669,10 +3838,15 @@ export class P2PManagerProbeService extends ARpcService<
         }
         const higherPeer = getChecksumAddress(higherWallet.address);
         const higherTransport = this.transport(higherPeer);
-        const higherProfile = new PeerProfile(higherTransport, higherPeer);
-        this.p2pManager.profileManager.registerProfile(higherProfile);
+        const higherProfile = this.registerProfile(higherTransport, higherPeer);
         const lowerService = new OpenChannelNegotiationService(this.p2pManager);
-        const lowerMatch = makeMatch(higherPeer, "84");
+        const lowerMatch = this.makeMatch(
+            higherPeer,
+            "84",
+            localAddress,
+            "c1",
+            "d1"
+        );
         const { outcome: lowerOutcome } = await this.startNegotiation(
             lowerService,
             lowerMatch
@@ -3708,13 +3882,17 @@ export class P2PManagerProbeService extends ARpcService<
         await resetLifecycle();
         const disposePeer = getChecksumAddress(lowerWallet().address);
         const disposeTransport = this.transport(disposePeer);
-        this.p2pManager.profileManager.registerProfile(
-            new PeerProfile(disposeTransport, disposePeer)
-        );
+        this.registerProfile(disposeTransport, disposePeer);
         const disposeService = new OpenChannelNegotiationService(
             this.p2pManager
         );
-        const disposeMatch = makeMatch(disposePeer, "85");
+        const disposeMatch = this.makeMatch(
+            disposePeer,
+            "85",
+            localAddress,
+            "c1",
+            "d1"
+        );
         const { outcome: disposeOutcome } = await this.startNegotiation(
             disposeService,
             disposeMatch
@@ -3730,11 +3908,15 @@ export class P2PManagerProbeService extends ARpcService<
         const openWallet = lowerWallet();
         const openPeer = getChecksumAddress(openWallet.address);
         const openTransport = this.transport(openPeer);
-        this.p2pManager.profileManager.registerProfile(
-            new PeerProfile(openTransport, openPeer)
-        );
+        this.registerProfile(openTransport, openPeer);
         const openService = new OpenChannelNegotiationService(this.p2pManager);
-        const openMatch = makeMatch(openPeer, "82");
+        const openMatch = this.makeMatch(
+            openPeer,
+            "82",
+            localAddress,
+            "c1",
+            "d1"
+        );
         const { outcome: openOutcome } = await this.startNegotiation(
             openService,
             openMatch
@@ -3833,26 +4015,23 @@ export class P2PManagerProbeService extends ARpcService<
             }
             return wallet;
         };
-        const makeMatch = (peerAddress: string, seed: string): LobbyMatch => ({
-            peerAddress: getChecksumAddress(peerAddress),
-            attemptNonce: `0x${seed.repeat(32)}`,
-            selectorAddress: getChecksumAddress(peerAddress),
-            advertiserAddress: localAddress,
-            selectorChallenge: `0x${"e1".repeat(32)}`,
-            advertiserChallenge: `0x${"f1".repeat(32)}`
-        });
         const prepare = async (seed: string) => {
             const wallet = lowerWallet();
             const peerAddress = getChecksumAddress(wallet.address);
             const transport = this.transport(peerAddress);
-            const profile = new PeerProfile(transport, peerAddress);
-            this.p2pManager.profileManager.registerProfile(profile);
+            const profile = this.registerProfile(transport, peerAddress);
             const channelId = `0x${seed.repeat(32)}`;
             await stateManager.clearChannelId();
             await stateManager.setChannelId(channelId);
             stateManager.setStatus(Status.NOT_OPENED);
             const service = new OpenChannelNegotiationService(this.p2pManager);
-            const match = makeMatch(peerAddress, seed === "91" ? "93" : "94");
+            const match = this.makeMatch(
+                peerAddress,
+                seed === "91" ? "93" : "94",
+                localAddress,
+                "e1",
+                "f1"
+            );
             const { outcome } = await this.startNegotiation(service, match, {
                 mode: "targeted",
                 channelId,
@@ -4026,17 +4205,22 @@ export class P2PManagerProbeService extends ARpcService<
         const ordinaryWallet = lowerWallet();
         const ordinaryPeer = getChecksumAddress(ordinaryWallet.address);
         const ordinaryTransport = this.transport(ordinaryPeer);
-        const ordinaryProfile = new PeerProfile(
+        const ordinaryProfile = this.registerProfile(
             ordinaryTransport,
             ordinaryPeer
         );
-        this.p2pManager.profileManager.registerProfile(ordinaryProfile);
         await stateManager.clearChannelId();
         stateManager.setStatus(Status.DISCOVERING);
         const ordinaryService = new OpenChannelNegotiationService(
             this.p2pManager
         );
-        const ordinaryMatch = makeMatch(ordinaryPeer, "96");
+        const ordinaryMatch = this.makeMatch(
+            ordinaryPeer,
+            "96",
+            localAddress,
+            "e1",
+            "f1"
+        );
         const { outcome: ordinaryOutcome } = await this.startNegotiation(
             ordinaryService,
             ordinaryMatch

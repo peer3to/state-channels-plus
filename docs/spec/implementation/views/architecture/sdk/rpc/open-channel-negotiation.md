@@ -97,3 +97,9 @@ role-timer leases, deferred admission, derived-ID equality, proposal validation,
 submission, signed-attempt retention, and cleanup. Worker-host E2E tests call only the public signer
 operation and cover topic isolation, multi-peer convergence without honest-peer blacklists, timeout
 recovery, final profile loss, transport upgrade, channel opening, and automatic topic leave.
+
+## Shared operation ownership
+
+Positive-balance comparison belongs to the application state machine. Negotiation retains the policy for each failure, raw commitment identity checks and signed-attempt lifetime; detachment shares only the identical teardown statements.
+
+[ADiamondStateMachine.ts.md](../../../../source/src/ADiamondStateMachine.ts.md), [OpenChannelNegotiationService.ts.md](../../../../source/src/rpc/services/openChannelNegotiation/OpenChannelNegotiationService.ts.md).

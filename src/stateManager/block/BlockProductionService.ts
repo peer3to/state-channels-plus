@@ -1,5 +1,11 @@
-import { ethers } from "ethers";
+import type StateManager from "../StateManager";
+import Clock from "@/Clock";
 
+import { Block, StateSnapshot } from "@/models";
+import { firstBlockGrace } from "@/types";
+import { Hash, Timestamp } from "@/types/types";
+import { Codec, Type, hash, Logger } from "@/utils";
+import { LoggerUtils } from "@/utils/LoggerUtils";
 import {
     BlockConfirmationStruct,
     BlockStruct,
@@ -7,15 +13,7 @@ import {
     SignedBlockStruct,
     TransactionStruct
 } from "@typechain-types/contracts/V1/types/DataTypes";
-
-import Clock from "@/Clock";
-import { Block, StateSnapshot } from "@/models";
-import { firstBlockGrace } from "@/types";
-import { Hash, Timestamp } from "@/types/types";
-import { Codec, Type, hash, Logger } from "@/utils";
-import { LoggerUtils } from "@/utils/LoggerUtils";
-
-import type StateManager from "../StateManager";
+import { ethers } from "ethers";
 
 /**
  * Authors blocks: applies the transaction to the local state machine, assembles

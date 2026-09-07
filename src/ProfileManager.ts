@@ -1,9 +1,9 @@
-import ATransport from "@/transport/ATransport";
-import { TransportType } from "@/transport/TransportType";
-import PeerProfile, { BannablePeerInfo } from "@/PeerProfile";
 import { Address } from "./types/types";
 import { getChecksumAddress } from "./utils";
 import { LoggerUtils } from "./utils/LoggerUtils";
+import PeerProfile, { BannablePeerInfo } from "@/PeerProfile";
+import ATransport from "@/transport/ATransport";
+import { TransportType } from "@/transport/TransportType";
 
 // ProfileManager alone owns explicit bans, upgrade bans, and fallback release.
 // An explicit blacklist always wins over transport fallback.
@@ -20,6 +20,10 @@ class ProfileManager {
         const existingProfile = this.mapTransportToProfile.get(transport);
         if (existingProfile) return existingProfile;
 
+        transport.p2pManager.logger.debug(
+            "Registering peer transport",
+            LoggerUtils.getTransportMetadata(transport)
+        );
         const profile = new PeerProfile(transport);
         this.mapTransportToProfile.set(transport, profile);
         return profile;
@@ -50,6 +54,13 @@ class ProfileManager {
             this.mapEvmAddressToProfile.get(normalizedAddress);
         if (existingProfile) {
             if (existingProfile.isBlackListed) {
+                transport.p2pManager.logger.warn(
+                    "Rejecting transport for blacklisted profile",
+                    {
+                        ...LoggerUtils.getTransportMetadata(transport),
+                        peerAddress: normalizedAddress
+                    }
+                );
                 this.blacklistPeer(transport);
                 transport.close(true);
                 return undefined;
@@ -60,6 +71,10 @@ class ProfileManager {
                 !currentTransport.isClosed &&
                 transport.transportType === TransportType.HOLEPUNCH
             ) {
+                transport.p2pManager.logger.debug(
+                    "Rejecting Holepunch transport while WebRTC remains live",
+                    LoggerUtils.getTransportMetadata(transport)
+                );
                 transport.close(true);
                 return undefined;
             }
@@ -125,6 +140,11 @@ class ProfileManager {
     public removeTransport(transport: ATransport, isUpgraded = false) {
         const profile = this.mapTransportToProfile.get(transport);
         if (!profile) return;
+        transport.p2pManager.logger.debug("Removing peer transport", {
+            ...LoggerUtils.getTransportMetadata(transport),
+            isUpgraded,
+            profile: LoggerUtils.getPeerProfileMetadata(profile)
+        });
         this.mapTransportToProfile.delete(transport);
         profile.detachTransport(transport);
         try {
@@ -210,6 +230,10 @@ class ProfileManager {
         ) {
             return;
         }
+        transport.p2pManager.logger.debug(
+            "Releasing Holepunch upgrade ban after WebRTC close",
+            LoggerUtils.getTransportMetadata(transport)
+        );
         profile.getHolepunchPeerInfo()?.ban(false);
     }
 

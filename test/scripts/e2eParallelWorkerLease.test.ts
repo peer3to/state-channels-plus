@@ -1,27 +1,27 @@
 // @spec-test-coverage-ignore: developer test-orchestration tooling; not protocol behavior, no specification or implementation IDs apply
 import { expect } from "chai";
+import { ChildProcess, fork } from "child_process";
 import fs from "fs";
 import os from "os";
 import path from "path";
-import { ChildProcess, fork } from "child_process";
 
-const {
-    WorkerLeaseManager
-} = require("../../scripts/e2e-parallel/distributed/workerLeaseManager.js");
 const {
     LEGACY_HEARTBEAT_GRACE_MS,
     acquireHostLock,
     acquireOsFileLock
 } = require("../../scripts/e2e-parallel/distributed/hostLock.js");
 const {
-    acquireWorkspaceLock
-} = require("../../scripts/e2e-parallel/distributed/workspaceLock.js");
+    progressElapsedMs
+} = require("../../scripts/e2e-parallel/distributed/server.js");
+const {
+    WorkerLeaseManager
+} = require("../../scripts/e2e-parallel/distributed/workerLeaseManager.js");
 const {
     deriveEnvironmentKey
 } = require("../../scripts/e2e-parallel/distributed/workspaceCache.js");
 const {
-    progressElapsedMs
-} = require("../../scripts/e2e-parallel/distributed/server.js");
+    acquireWorkspaceLock
+} = require("../../scripts/e2e-parallel/distributed/workspaceLock.js");
 
 const HOST_LOCK_CHILD = path.join(__dirname, "fixtures", "hostLockChild.js");
 

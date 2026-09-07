@@ -32,6 +32,14 @@ services can observe accepted chain events there without creating another ethers
 
 ## Key design decisions
 
+Final-dispute completion supplies the prepared height-zero snapshot to `completeWithGenesis`. Its event timestamp equals the kill-period end: a threshold-final upload backdates the last evidence timestamp by `evidenceTime`, making the window expire at the upload block timestamp. Ordinary reductions obtain the kill-period end from the window observation.
+
+Pending leave delegates local signer membership to MembershipService, matching other state-application callers. See [EventHandler.ts](../../../../../../src/eventHandlers/EventHandler.ts#L177).
+
+Signer comparisons delegate to membership ownership while pending-only chain queries retain their narrower participant set. See [EventHandler.ts](../../../../../../src/eventHandlers/EventHandler.ts#L132).
+
+Only exact pending-participant/participating pairs use the shared status predicate. Synced and engaged policies remain separate. See [EventHandler.ts](../../../../../../src/eventHandlers/EventHandler.ts#L10).
+
 1. **Mirror-first, act-second** in every handler — replication is unconditional ([`REQ-MIRROR-2-E9F3TM`](../../../../specification/enforcement/local-mirror.md#req-mirror-2-e9f3tm)), decisions follow.
 2. **Kill before counter-dispute, sequentially:** the kill must mine so the replacement has its stated reason; atomic multicall folding is the flagged TODO.
 3. **Evidence improvement by comparative reduction, reduction scheduled regardless:** upload own dispute only when `reduce([ours,theirs])` differs from `reduce([theirs])`; the upload is a no-op when this node already holds a commitment in the window, and the reduction is scheduled from the commit in every case (an early return into the skipped upload stalled the window) ([`REQ-DISPUTE-PIPE-6-6FZB9M`](../../../../specification/disputes/dispute-processing.md#req-dispute-pipe-6-6fzb9m)).
@@ -105,3 +113,5 @@ Exact test evidence is mapped against these IDs in the verification test reports
 # Terminal leave contribution
 
 `StateSnapshotUpdated` accepts an otherwise unknown snapshot when it proves removal for a runtime with a pending terminal leave. It lets reduction converge instead of aborting, then rechecks leave completion after snapshot and reduced-fork event processing. The removal alone proves the signer is in neither on-chain set, so the branch assigns `SYNCED` without a pending-set read: the contract refuses a JOIN while the fork carries a dispute window, a same-fork snapshot post must consume every pending JOIN, and a reduction consumes the JOINs up to its window's expiry, so no posted snapshot can drop a signer whose JOIN is still pending ([`REQ-LIF-10-QR8NQ9.T1.P6`](../../../../specification/settlement/lifecycle.md#req-lif-10-qr8nq9.t1.p6)). This contributes to [`REQ-TJOIN-7-NNGTAY`](../../../../specification/peer-communication/targeted-channel-join.md#req-tjoin-7-nngtay) and [`REQ-LIF-10-QR8NQ9`](../../../../specification/settlement/lifecycle.md#req-lif-10-qr8nq9).
+
+Shared operation owners: [errorMessage.ts.md](../utils/errorMessage.ts.md).

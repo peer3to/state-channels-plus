@@ -1,13 +1,12 @@
-import { expect } from "chai";
-import { ethers } from "ethers";
-
-import { Codec, Type } from "@/utils/Codec";
-import { DisputeFraudProofType, FraudProofType } from "@/types/sol-enums";
 import {
     codecValues,
     codecTestAddress,
     expectCodecRoundTrip
 } from "../fixtures/CodecFixtures";
+import { DisputeFraudProofType, FraudProofType } from "@/types/sol-enums";
+import { Codec, Type } from "@/utils/Codec";
+import { expect } from "chai";
+import { ethers } from "ethers";
 
 describe("Codec", function () {
     it("the existing-window flag survives nested confirmation encoding and binds the signature", async function () {

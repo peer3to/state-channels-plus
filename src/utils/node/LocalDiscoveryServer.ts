@@ -1,10 +1,10 @@
-import WebSocket, { WebSocketServer, AddressInfo } from "ws";
 import type P2PManager from "@/P2PManager";
 import { LocalTransport } from "@/transport";
+import type { Address } from "@/types/types";
 import type { Logger } from "@/utils";
 import { addressesEqual, getChecksumAddress } from "@/utils/address";
 import { config } from "@/utils/config";
-import type { Address } from "@/types/types";
+import WebSocket, { WebSocketServer, AddressInfo } from "ws";
 
 const MAX_PORT_RETRIES = 20;
 const LOCAL_WS_HOST = "127.0.0.1";

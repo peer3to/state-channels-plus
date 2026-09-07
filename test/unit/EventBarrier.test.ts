@@ -1,9 +1,8 @@
-import { expect } from "chai";
-
 import {
     createRecordingEventBarrier,
     createTestEventBarrier as createBarrier
 } from "@test/fixtures/eventFixtures";
+import { expect } from "chai";
 
 describe("EventBarrier (component)", function () {
     it("resolves on signal when the condition turns true", async function () {

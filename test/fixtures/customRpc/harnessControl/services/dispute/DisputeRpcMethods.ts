@@ -1,24 +1,24 @@
-import { ZeroAddress } from "ethers";
-
-import ARpcMethods from "@/rpc/ARpcMethods";
-import type ATransport from "@/transport/ATransport";
-import Clock from "@/Clock";
-import { Codec, Type } from "@/utils";
-import type { ForkId, Hash } from "@/types/types";
-import type {
-    DisputeStruct,
-    DisputeConfirmationStruct,
-    DisputeAuditingDataStruct
-} from "@typechain-types/contracts/V1/types/DisputeTypes";
-import {
-    DISPUTE_TAMPER_STRATEGIES,
-    type DisputeTamperStrategy
-} from "./tamperStrategies";
 import type {
     DisputeService,
     DisputeValidationRun,
     PersistDisputeDataProjection
 } from "./DisputeService";
+import {
+    DISPUTE_TAMPER_STRATEGIES,
+    type DisputeTamperStrategy
+} from "./tamperStrategies";
+import Clock from "@/Clock";
+import ARpcMethods from "@/rpc/ARpcMethods";
+
+import type ATransport from "@/transport/ATransport";
+import type { ForkId, Hash } from "@/types/types";
+import { Codec, Type } from "@/utils";
+import type {
+    DisputeStruct,
+    DisputeConfirmationStruct,
+    DisputeAuditingDataStruct
+} from "@typechain-types/contracts/V1/types/DisputeTypes";
+import { ZeroAddress } from "ethers";
 
 /** Spec for installing a `constructDispute` tamper (named strategy or shipped body). */
 export interface ConstructDisputeStubSpec {

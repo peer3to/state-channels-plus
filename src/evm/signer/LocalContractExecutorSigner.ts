@@ -1,9 +1,9 @@
-import { ethers, Signer, TransactionResponse } from "ethers";
 import type {
     AContractExecutor,
     ContractExecutionResult
 } from "../contractExecutor";
 import { Address, Bytes } from "@/types/types";
+import { ethers, Signer, TransactionResponse } from "ethers";
 
 /**
  * Signer that executes EVM calls locally through the contract executor instead

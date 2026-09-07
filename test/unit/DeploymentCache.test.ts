@@ -1,10 +1,9 @@
+import { createLogger } from "@/utils";
+import { resolveOrDeployShared } from "@test/harness/core/deploymentCache";
 import { expect } from "chai";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
-
-import { resolveOrDeployShared } from "@test/harness/core/deploymentCache";
-import { createLogger } from "@/utils";
 
 function createTempCacheDir(): string {
     return fs.mkdtempSync(path.join(os.tmpdir(), "deploy-cache-"));

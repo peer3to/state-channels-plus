@@ -1,3 +1,4 @@
+import type { RuntimeRequester } from "../p2pRuntime/types";
 import {
     ethers,
     Signer,
@@ -6,8 +7,6 @@ import {
     Provider,
     TransactionLike
 } from "ethers";
-
-import type { RuntimeRequester } from "../p2pRuntime/types";
 
 const UNSUPPORTED = "Operation not supported by deployment bridge signer";
 

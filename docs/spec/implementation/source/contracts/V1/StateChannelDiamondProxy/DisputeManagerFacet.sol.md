@@ -25,6 +25,8 @@ with the fully-killed reopen, and the full-threshold immediate-finalization shor
 
 ## Key design decisions
 
+Window creation uses the existing predicate. The reduced-result condition is retained as defense in depth: a normally finalized window already fails the evidence deadline. See [DisputeManagerFacet.sol](../../../../../../../contracts/V1/StateChannelDiamondProxy/DisputeManagerFacet.sol#L56).
+
 1. **Commitment recorded immediately at upload** — the kill period is the challenge window over committed disputes, matching the corrected lifecycle of the disputes spec.
 
 ## Inputs, outputs, state, and side effects
@@ -41,9 +43,9 @@ with the fully-killed reopen, and the full-threshold immediate-finalization shor
 A file may contribute to several requirements; this report describes the contribution and never
 claims complete conformance for a requirement that depends on other files.
 
-| Source file                                                                                                   | Specification IDs                                                                                                                                                                                                |
-| ------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| [DisputeManagerFacet.sol](../../../../../../../contracts/V1/StateChannelDiamondProxy/DisputeManagerFacet.sol) | [`REQ-ENFDIS-1-8CSA6B`](../../../../../specification/enforcement/dispute-window.md#req-enfdis-1-8csa6b), [`REQ-ENFDIS-2-VV9FPR`](../../../../../specification/enforcement/dispute-window.md#req-enfdis-2-vv9fpr) |
+| Source file                                                                                                   | Specification IDs                                                                                                                                                                                                                                                                                                                      |
+| ------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| [DisputeManagerFacet.sol](../../../../../../../contracts/V1/StateChannelDiamondProxy/DisputeManagerFacet.sol) | [`REQ-ENFDIS-1-8CSA6B`](../../../../../specification/enforcement/dispute-window.md#req-enfdis-1-8csa6b), [`REQ-ENFDIS-2-VV9FPR`](../../../../../specification/enforcement/dispute-window.md#req-enfdis-2-vv9fpr), [`REQ-DISPUTE-PIPE-9-TDWQPV`](../../../../../specification/disputes/dispute-processing.md#req-dispute-pipe-9-tdwqpv) |
 
 Contribution in this file: [`REQ-DISPUTE-PIPE-9-TDWQPV`](../../../../../specification/disputes/dispute-processing.md#req-dispute-pipe-9-tdwqpv). The conformance rows below name this owner and the other required owners.
 

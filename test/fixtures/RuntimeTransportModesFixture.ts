@@ -1,35 +1,35 @@
 // @spec-test-coverage-ignore: Runtime transport fixture exercised by owning E2E declarations.
-import { expect } from "chai";
-import { ethers, NonceManager } from "ethers";
-
+import MathConsumerFacetArtifact from "../../artifacts/contracts/V1/examples/MathStateMachine/MathConsumerFacet.sol/MathConsumerFacet.json";
+import MathStateMachineArtifact from "../../artifacts/contracts/V1/examples/MathStateMachine/MathStateMachine.sol/MathStateMachine.json";
+import { deployFullStack } from "../../scripts/V1/deploy";
 import { EvmStateMachine } from "@/evm";
 import { createContractExecutor } from "@/evm/contractExecutor/createContractExecutor";
 import { createContractExecutorWorkerFromPath } from "@/evm/contractExecutor/node/ContractExecutorWorkerRuntime";
+import type P2pInstance from "@/evm/P2pInstance";
 import { createP2pRuntimeWorkerFromPath } from "@/evm/p2pRuntime/node/P2pRuntimeWorkerRuntime";
 import {
     setupP2pRuntime,
     type P2pSetupDependencies,
     type P2pSetupOptions
 } from "@/evm/p2pRuntime/setupP2pRuntime";
+import { connectStateChannelManager } from "@/utils/stateChannelManager";
 import type { WatchdogWorkerData } from "@test/evm/workers/node/watchdogContractExecutorWorkerEntry";
-import MathStateMachineArtifact from "../../artifacts/contracts/V1/examples/MathStateMachine/MathStateMachine.sol/MathStateMachine.json";
-import MathConsumerFacetArtifact from "../../artifacts/contracts/V1/examples/MathStateMachine/MathConsumerFacet.sol/MathConsumerFacet.json";
-import { deployFullStack } from "../../scripts/V1/deploy";
+import type { ReadyLifecycleRpc } from "@test/fixtures/customRpc/ReadyLifecycleRpcManifest";
 import {
     slotAccountIndex,
     slotDeployerIndex
 } from "@test/harness/core/slotAccounts";
-import { MathStateMachine, MathStateMachine__factory } from "@typechain-types";
-import { connectStateChannelManager } from "@/utils/stateChannelManager";
-import { ContractFactory } from "ethers";
 import {
     startHardhatNode,
     waitForHardhatNode,
     type NodeHandle
 } from "@test/utils/nodeInfra";
+import { MathStateMachine, MathStateMachine__factory } from "@typechain-types";
+import { expect } from "chai";
+import { ethers, NonceManager } from "ethers";
+
+import { ContractFactory } from "ethers";
 import path from "node:path";
-import type { ReadyLifecycleRpc } from "@test/fixtures/customRpc/ReadyLifecycleRpcManifest";
-import type P2pInstance from "@/evm/P2pInstance";
 
 let hardhatNodeUrl = process.env.HARDHAT_NODE_URL;
 const DEFAULT_HARDHAT_MNEMONIC =

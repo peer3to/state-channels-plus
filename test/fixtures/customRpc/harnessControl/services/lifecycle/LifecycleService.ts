@@ -1,8 +1,8 @@
 // @spec-test-coverage-ignore: host-side lifecycle staging used by mapped tests
-import ARpcService from "@/rpc/ARpcService";
-import type P2PManager from "@/P2PManager";
-import type ATransport from "@/transport/ATransport";
 import LifecycleRpcMethods from "./LifecycleRpcMethods";
+import type P2PManager from "@/P2PManager";
+import ARpcService from "@/rpc/ARpcService";
+import type ATransport from "@/transport/ATransport";
 import type { ChannelId } from "@/types/types";
 
 /** Private host-side lifecycle controls for external channel setup. */

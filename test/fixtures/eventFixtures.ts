@@ -1,8 +1,7 @@
-import { ethers } from "ethers";
-
-import { EventBarrier } from "@/utils/EventBarrier";
 import NoopEventProvider from "@/evm/signer/NoopEventProvider";
 import { createLogger } from "@/utils";
+import { EventBarrier } from "@/utils/EventBarrier";
+import { ethers } from "ethers";
 
 export const EVENT_FIXTURE_ADDRESS =
     "0x1111111111111111111111111111111111111111";

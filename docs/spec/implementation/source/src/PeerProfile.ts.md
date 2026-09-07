@@ -25,6 +25,8 @@ survives replacement. Exact-transport authentication remains on `ATransport.peer
 
 ## Key design decisions
 
+Profile logs cover explicit bans, clearing bans, authentication, transport attachment and detachment, and last-transport loss. The profile retains its owner logger after all transports close. See [PeerProfile.ts](../../../../../src/PeerProfile.ts#L45).
+
 1. **The ban handle belongs to the profile from transport creation.** Authentication adds the
    verified address and identity index without introducing a second handle store; `ProfileManager`
    remains the only ban-policy owner.

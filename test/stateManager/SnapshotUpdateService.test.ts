@@ -1,7 +1,6 @@
-import { expect } from "chai";
-import { resolveTestTimeConfig } from "@test/harness/core/testTimeConfig";
-
 import { MathTestSession as TestSession } from "@test/harness";
+import { resolveTestTimeConfig } from "@test/harness/core/testTimeConfig";
+import { expect } from "chai";
 
 describe("SnapshotUpdateService", function () {
     it("returns an admissible no-op when the on-chain fork is not disputed", async function () {

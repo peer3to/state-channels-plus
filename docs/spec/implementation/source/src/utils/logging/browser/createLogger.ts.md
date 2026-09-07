@@ -23,6 +23,8 @@ Browser logger factory.
 
 ## Key design decisions
 
+The shared foundation creates the store and common options; browser level selection and excluded tags stay in this factory. See [createLogger.ts](../../../../../../../../src/utils/logging/browser/createLogger.ts#L1).
+
 _None — the file is declarative/mechanical; behavior-shaping decisions live with its consumers._
 
 ## Inputs, outputs, state, and side effects

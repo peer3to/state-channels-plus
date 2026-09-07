@@ -1,13 +1,12 @@
-import { expect } from "chai";
-import { ethers } from "ethers";
-
+import type { RemoteRpcProxyType } from "@/rpc/RemoteRpcProxy";
 import { Status } from "@/types";
 import { sleep } from "@/utils";
-import { TargetedChannelJoinFixture } from "@test/fixtures/TargetedChannelJoinFixture";
-import type { RemoteRpcProxyType } from "@/rpc/RemoteRpcProxy";
 import type { PingPongRpc } from "@test/fixtures/customRpc/PingPongRpcManifest";
+import { TargetedChannelJoinFixture } from "@test/fixtures/TargetedChannelJoinFixture";
 import { MathTestSession as TestSession } from "@test/harness";
 import { waitFor } from "@test/utils/waitFor";
+import { expect } from "chai";
+import { ethers } from "ethers";
 
 const testTime = {
     agreementTime: 4,
@@ -142,7 +141,7 @@ describe("E2E: Targeted channel join", function () {
         });
         const leave = leaver.p2pInstance.leaveChannel();
         await h.transition.advanceState();
-        await waitFor(() => exit !== undefined);
+        await h.event.waitForPeers("onLeaveTurn", [leaver.index], 1);
         await exit;
         await leave;
         expect(

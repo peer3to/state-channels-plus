@@ -1,27 +1,29 @@
-import { Block } from "@/models";
-import { BlockValidationResult, Signature } from "@/types";
-import {
-    BlockConfirmationStruct,
-    MessageBlockStruct
-} from "@typechain-types/contracts/V1/types/DataTypes";
 import AValidationStrategy, {
     ParticipantSnapshots
 } from "./AValidationStrategy";
+import type BlockQueueManager from "../ingest/BlockQueueManager";
+import FraudProofService from "../utils/FraudProofService";
+import type ADiamondStateMachine from "@/ADiamondStateMachine";
+import Clock from "@/Clock";
+import DisputeManager from "@/disputeManager";
+import { Block } from "@/models";
+import type P2PManager from "@/P2PManager";
+import Storage from "@/storage";
 import {
     sourcePeersAndAuthor,
     type QueuedBlockEntry
 } from "@/storage/QueueStorage";
-import FraudProofService from "../utils/FraudProofService";
-import Storage from "@/storage";
-import type P2PManager from "@/P2PManager";
-import type BlockQueueManager from "../ingest/BlockQueueManager";
-import DisputeManager from "@/disputeManager";
+import { BlockValidationResult, Signature } from "@/types";
 import { Logger } from "@/utils";
-import type ADiamondStateMachine from "@/ADiamondStateMachine";
+import { LoggerUtils } from "@/utils/LoggerUtils";
+import {
+    BlockConfirmationStruct,
+    MessageBlockStruct
+} from "@typechain-types/contracts/V1/types/DataTypes";
 
 export default class BlockValidationStrategy extends AValidationStrategy {
     readonly fraudProofService: FraudProofService;
-    private readonly logger: Logger;
+    protected readonly logger: Logger;
     constructor(
         private readonly storage: Storage,
         private readonly p2pManager: P2PManager,
@@ -243,8 +245,7 @@ export default class BlockValidationStrategy extends AValidationStrategy {
             return BlockValidationResult.DISCONNECT;
         }
 
-        // Queue the block - will process normally
-        this.blockQueueManager.restoreQueuedEntry(entry, this);
+        // Discard the entry; disputed forks are cleared, not retried.
         return BlockValidationResult.NOT_READY;
     }
     public async blockIsNotNextAndIsInTheFuture(
@@ -282,8 +283,17 @@ export default class BlockValidationStrategy extends AValidationStrategy {
         return BlockValidationResult.DISPUTE;
     }
     public async subjectiveInvalidTimestampDetected(
-        _block: Block
+        block: Block
     ): Promise<BlockValidationResult> {
+        LoggerUtils.logTimeValidationFailed(this.logger, {
+            block,
+            nowSeconds: Clock.getTimeInSeconds(),
+            validationResult: BlockValidationResult.NOT_ENOUGH_TIME,
+            checkType: "subjective",
+            allowedSkewSeconds:
+                this.p2pManager.stateManager.timeConfig.agreementTime,
+            violatedRule: "abs(now - blockTimestamp) <= agreementTime"
+        });
         return BlockValidationResult.NOT_ENOUGH_TIME;
     }
 }

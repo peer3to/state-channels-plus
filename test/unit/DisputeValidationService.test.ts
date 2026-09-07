@@ -1,21 +1,21 @@
-import { expect } from "chai";
-import { ZeroHash } from "ethers";
-import { Codec, hash, Type } from "@/utils";
-import { DisputeFraudProofType } from "@/types/sol-enums";
-import { Hash } from "@/types/types";
 import Block from "@/models/Block";
 import StateSnapshot from "@/models/StateSnapshot";
+import { timeoutWaitTime } from "@/types";
+import { DisputeFraudProofType } from "@/types/sol-enums";
+import { Hash } from "@/types/types";
+import { Codec, hash, Type } from "@/utils";
 import {
     hash as randomHash,
     randomAddress,
     blockStructWithTransactionHeader
 } from "@test/factory";
-import { timeoutWaitTime } from "@/types";
 import {
     MathTestSession as TestSession,
     resolveTestTimeConfig
 } from "@test/harness";
 import { DisputeTampering } from "@test/harness/actions/DisputeTamperingActions";
+import { expect } from "chai";
+import { ZeroHash } from "ethers";
 
 // the auditor's contract: verdict + the exact stored fraud proof. the
 // kill/counter-dispute/slash cascades stay owned by test/e2e/disputeValidation.
@@ -851,10 +851,7 @@ describe("Unit: DisputeValidationService", function () {
                     Codec.encode(dispute, Type.Dispute) as string
                 )
                 .request({
-                    timeoutMs:
-                        h.event.protocolEventTimeoutMs({
-                            withFirstBlockGrace: true
-                        }) * 2
+                    timeoutMs: h.event.hostExecTimeoutMs()
                 });
             expect(sources).to.deep.equal({ local: false, rpc: true });
 
@@ -1626,7 +1623,7 @@ describe("Unit: DisputeValidationService", function () {
             await h.control(h.getPeer(1)).stub.stubCalldataPosting().request();
             await h
                 .control(h.getPeer(1))
-                .stub.stageBlockCalldata(block1!.encodedSignedBlock, 1)
+                .validation.stageBlockCalldata(block1!.encodedSignedBlock, 1)
                 .request();
             // only the block author may post its calldata on-chain
             const block1Author = h.peers.find(
@@ -1634,7 +1631,7 @@ describe("Unit: DisputeValidationService", function () {
             )!;
             await h
                 .control(block1Author)
-                .stub.postBlockCalldataOnChain(block1!.encodedSignedBlock)
+                .validation.postBlockCalldataOnChain(block1!.encodedSignedBlock)
                 .request();
 
             const run = await h.dispute.auditDispute(1, dispute);

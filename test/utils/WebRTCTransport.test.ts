@@ -1,8 +1,7 @@
-import { expect } from "chai";
-
 import ProfileManager from "@/ProfileManager";
-import WebRTCTransport from "@/transport/WebRTCTransport";
 import type { WebRTCDataChannelLike } from "@/rpc/services/WebRTCSetup/connection/WebRTCConnectionFactory";
+import WebRTCTransport from "@/transport/WebRTCTransport";
+import { expect } from "chai";
 
 class FakeRTCDataChannel implements WebRTCDataChannelLike {
     label = "webRTC-DataChannel";

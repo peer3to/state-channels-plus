@@ -1,22 +1,21 @@
-import { expect } from "chai";
-import { ethers } from "hardhat";
-import { EventLog } from "ethers";
-
+import StateSnapshot from "@/models/StateSnapshot";
+import { Bytes } from "@/types/types";
+import { SignatureUtils } from "@/utils";
+import { HardhatEthersSigner } from "@nomicfoundation/hardhat-ethers/signers";
 import {
     deployMathChannelProxyFixture,
     getSigners,
     createJoinChannelTestObject,
     createOpenChannelTestObject
 } from "@test/test_utils/testHelpers";
-import { SignatureUtils } from "@/utils";
-import StateSnapshot from "@/models/StateSnapshot";
 import {
     StateChannelManagerInterface,
     MathStateMachine
 } from "@typechain-types";
-import { HardhatEthersSigner } from "@nomicfoundation/hardhat-ethers/signers";
-import { Bytes } from "@/types/types";
 import { JoinChannelStruct } from "@typechain-types/contracts/V1/types/DataTypes";
+import { expect } from "chai";
+import { EventLog } from "ethers";
+import { ethers } from "hardhat";
 
 describe("StateChannelManagerProxy", function () {
     let mathChannelManager: StateChannelManagerInterface;

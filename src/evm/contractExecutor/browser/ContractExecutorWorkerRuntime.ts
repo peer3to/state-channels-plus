@@ -1,8 +1,8 @@
+import type { WorkerLike } from "../types";
 import type {
     WorkerRequestMessage,
     WorkerResponseMessage
 } from "../worker/protocol";
-import type { WorkerLike } from "../types";
 
 export type ContractExecutorWorkerMessageHandler = (
     message: WorkerResponseMessage

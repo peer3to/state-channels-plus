@@ -1,14 +1,141 @@
-import { expect } from "chai";
-import { MathTestSession as TestSession } from "@test/harness";
 import StateSnapshot from "@/models/StateSnapshot";
+import type { SyncRequest } from "@/rpc/services/spectate/SpectateService";
 import { Status } from "@/types";
 import { Codec, Type } from "@/utils";
-import type { SyncRequest } from "@/rpc/services/spectate/SpectateService";
-import { ethers } from "ethers";
+import {
+    assertConcurrentSyncWindowOverwrite,
+    assertBatchedSyncFinality,
+    assertComputedSuccessorSync,
+    assertPinnedHeight,
+    assertSyncWindowReadRace
+} from "@test/fixtures/PinnedSyncStaging";
 import { TargetedChannelJoinFixture } from "@test/fixtures/TargetedChannelJoinFixture";
+import { MathTestSession as TestSession } from "@test/harness";
 import { waitFor } from "@test/utils/waitFor";
+import { expect } from "chai";
+import { ethers } from "ethers";
 
 describe("Unit: SpectateService", function () {
+    it("concurrent source syncs accept when a second persist overwrites the first reduction", async function () {
+        await assertConcurrentSyncWindowOverwrite(TestSession.getHarness());
+    });
+    it("sync batches finality reads for two supplied windows before rejection", async function () {
+        await assertBatchedSyncFinality(TestSession.getHarness());
+    });
+    it("old-fork sync succeeds while successor installation is held without either blacklist", async function () {
+        await assertComputedSuccessorSync(TestSession.getHarness(), false);
+    });
+    it("successor sync succeeds before its genesis is installed without either blacklist", async function () {
+        await assertComputedSuccessorSync(TestSession.getHarness(), true);
+    });
+    it("pinned sync serves the exact current height", async function () {
+        await assertPinnedHeight(TestSession.getHarness(), 0);
+    });
+    it("pinned sync serves a newer proof than the requested height", async function () {
+        await assertPinnedHeight(TestSession.getHarness(), -1);
+    });
+    it("pinned sync refuses a height above the available proof", async function () {
+        await assertPinnedHeight(TestSession.getHarness(), 1);
+    });
+    it("pinned sync rejects a valid proof below the requested minimum", async function () {
+        const h = TestSession.getHarness();
+        await h.lifecycle.start(3, 0);
+        await h.transition.advanceState({
+            count: 2,
+            waitForPeers: [0, 1, 2],
+            waitForFinalization: true
+        });
+        const accepted = await h.execOnHost(
+            h.getPeer(2),
+            async (sm, { source }) => {
+                const request = { channelId: sm.channelId, forkId: sm.forkId };
+                const response = await sm.p2pManager.remoteRpc.spectateService
+                    .onSpectateRequest(request)
+                    .request(source);
+                return sm.p2pManager.localRpc.spectateService.applySyncResponse(
+                    source,
+                    {
+                        ...request,
+                        blockHeight:
+                            sm.storage.blocks.getNextBlockHeight(sm.forkId) + 1
+                    },
+                    response.encodedSyncPayload
+                );
+            },
+            { source: h.getPeer(0).address }
+        );
+        expect(accepted).to.equal(false);
+    });
+    it("concurrent proof application does not mistake local reduction for chain finality", async function () {
+        await assertSyncWindowReadRace(TestSession.getHarness(), false);
+    });
+    it("sync accepts a reduction landing after its chain window was persisted", async function () {
+        await assertSyncWindowReadRace(TestSession.getHarness(), true);
+    });
+    it("plain pinned sync accepts a proved successor of the requested fork", async function () {
+        const h = TestSession.getHarness();
+        const { sourceForkId } = await h.scenario.stageReducibleDisputedFork();
+        const source = h.getPeer(0);
+        const observer = h.getPeer(2);
+        const submit = await h.rpcStub.holdReductionAttempt(
+            source.index,
+            "submit"
+        );
+        try {
+            await h.control(source).stub.startTryReduce(sourceForkId).request();
+            await waitFor(async () => (await submit.entered()) === 1);
+            const successor = await h
+                .control(source)
+                .query.getForkId()
+                .request();
+            expect(successor).not.to.equal(sourceForkId);
+            const accepted = await h.execOnHost(
+                observer,
+                async (sm, args) =>
+                    sm.p2pManager.localRpc.spectateService.sync(
+                        args.source,
+                        sm.channelId,
+                        args.forkId,
+                        0
+                    ),
+                { source: source.address, forkId: sourceForkId }
+            );
+            expect(accepted).to.equal(true);
+            expect(
+                await h.control(observer).query.getForkId().request()
+            ).to.equal(successor);
+            expect(
+                await h
+                    .control(observer)
+                    .query.isBlacklisted(source.address)
+                    .request()
+            ).to.equal(false);
+        } finally {
+            await submit.release();
+        }
+    });
+    it("plain pinned sync refuses an unknown fork", async function () {
+        const h = TestSession.getHarness();
+        await h.lifecycle.start(3, 0);
+        const observer = h.getPeer(2);
+        const source = h.getPeer(0);
+        const before = h.activeForkId!;
+        const accepted = await h.execOnHost(
+            observer,
+            async (sm, args) =>
+                sm.p2pManager.localRpc.spectateService.sync(
+                    args.source,
+                    sm.channelId,
+                    args.forkId,
+                    0
+                ),
+            { source: source.address, forkId: ethers.id("unknown-pinned-fork") }
+        );
+        expect(accepted).to.equal(false);
+        expect(await h.control(observer).query.getForkId().request()).to.equal(
+            before
+        );
+    });
     describe("sync request policy", function () {
         const channelId = ethers.id("spectate-policy-channel");
         const initial: SyncRequest = { channelId };
@@ -414,7 +541,7 @@ describe("Unit: SpectateService", function () {
         // the chain says it is - the walk has to take the disputed flag from
         // the same place it takes the window, or it skips the walk entirely
         // and proves a fork that is disputed and already reducible on-chain.
-        it("all dispute events suppressed → still declines the disputed fork instead of proving it", async function () {
+        it("all dispute events suppressed → recovers and proves the successor fork", async function () {
             // Host-side payload generation walks chain state and recovers
             // events; on a loaded farm that outlasts the default control RPC
             // budget, so every generateSyncPayload call here carries the
@@ -464,14 +591,12 @@ describe("Unit: SpectateService", function () {
                 .spectate.generateSyncPayload(h.channelId!, forkId, 0)
                 .request({ timeoutMs: h.event.protocolEventTimeoutMs() });
 
-            // reading the flag from the chain makes the walk enter the window,
-            // recover it, reduce past this fork, and find it is not the tip it
-            // can prove -> decline. reading it from the local mirror would skip
-            // the loop and hand back a payload proving the disputed fork.
+            // Chain recovery must prove the successor even while the mirror still lacks the events.
+            expect(syncResult).to.not.be.null;
             expect(
-                syncResult,
-                "a fork the chain says is disputed must never be proved as the tip"
-            ).to.be.null;
+                Codec.decode(syncResult!.encodedSyncPayload, Type.SyncPayload)
+                    .latestForkGenesisSnapshot.forkId
+            ).to.not.equal(forkId);
 
             await race.release({
                 replayEvents: false,

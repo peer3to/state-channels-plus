@@ -21,10 +21,10 @@
 
 The client-side binding of the deployed local mirror. It publishes three things:
 `LocalDiamondContract` — the mirror as callers see it, `LocalDiamond & StateChannelManagerInterface`
-([#L23](../../../../../../src/utils/localDiamond.ts#L23)); `localDiamondAbi` — the de-duplicated
-union of both generated ABIs ([#L52](../../../../../../src/utils/localDiamond.ts#L52)); and
+([#L16](../../../../../../src/utils/localDiamond.ts#L16)); `localDiamondAbi` — the de-duplicated
+union of both generated ABIs ([#L19](../../../../../../src/utils/localDiamond.ts#L19)); and
 `connectLocalDiamond(address, runner)` — an `ethers.Contract` bound to that merged ABI
-([#L57](../../../../../../src/utils/localDiamond.ts#L57)).
+([#L24](../../../../../../src/utils/localDiamond.ts#L24)).
 
 It performs no protocol logic and reads no protocol state. Its whole job is that every predicate
 the SDK evaluates locally is reachable **on the deployed mirror**, so no caller is forced to
@@ -51,7 +51,7 @@ re-implement one in TypeScript. Every `localDiamondContract.*` call in the SDK
 3. **The intersection type is the caller-facing contract, not a re-declaration.** `LocalDiamond &
 StateChannelManagerInterface` reuses both generated typechain types instead of restating any
    signature, so a Solidity change propagates into every call site through `tsc`
-   ([#L23](../../../../../../src/utils/localDiamond.ts#L23)).
+   ([#L16](../../../../../../src/utils/localDiamond.ts#L16)).
 
 ## Inputs, outputs, state, and side effects
 
@@ -116,8 +116,8 @@ Gap column. Audit state is file-level (Status header), never a row status.
 
 | Requirement / invariant                                                                                       | Implementation status | Evidence                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            | Gap / divergence                                                                                                                                                   |
 | ------------------------------------------------------------------------------------------------------------- | --------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| [`INV-MIRROR-1-VAF778`](../../../../specification/enforcement/local-mirror.md#inv-mirror-1-vaf778)            | Partial               | **Here:** the merged ABI makes every routed predicate reachable on the mirror ([#L52](../../../../../../src/utils/localDiamond.ts#L52)), and the binding is typed by the generated contracts ([#L23](../../../../../../src/utils/localDiamond.ts#L23)). **Other files:** [LocalDiamond](../../contracts/V1/StateChannelDiamondProxy/LocalDiamond.sol.md) is the mirror; [EvmDiamondStateMachine](../evm/EvmDiamondStateMachine.ts.md) constructs it; the predicate callers are the dispute and validation services. | Reachability only — this file cannot show that callers actually use the mirror instead of a local re-implementation; that judgment stays with each calling report. |
-| [`REQ-CONTRACT-ARCH-1-9W5390`](../../../../specification/enforcement/contracts.md#req-contract-arch-1-9w5390) | Partial               | **Here:** one address exposes the union of the proxy-implemented and routed surfaces ([#L52](../../../../../../src/utils/localDiamond.ts#L52)). **Other files:** [StateChannelManagerProxy](../../contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol.md) owns the routing that makes the boundary stable; [StateChannelManagerInterface](../../contracts/V1/StateChannelManagerInterface.sol.md) declares it.                                                                                       | Local mirror only; production manager addresses use `connectStateChannelManager` from [stateChannelManager.ts](stateChannelManager.ts.md).                         |
+| [`INV-MIRROR-1-VAF778`](../../../../specification/enforcement/local-mirror.md#inv-mirror-1-vaf778)            | Partial               | **Here:** the merged ABI makes every routed predicate reachable on the mirror ([#L19](../../../../../../src/utils/localDiamond.ts#L19)), and the binding is typed by the generated contracts ([#L16](../../../../../../src/utils/localDiamond.ts#L16)). **Other files:** [LocalDiamond](../../contracts/V1/StateChannelDiamondProxy/LocalDiamond.sol.md) is the mirror; [EvmDiamondStateMachine](../evm/EvmDiamondStateMachine.ts.md) constructs it; the predicate callers are the dispute and validation services. | Reachability only — this file cannot show that callers actually use the mirror instead of a local re-implementation; that judgment stays with each calling report. |
+| [`REQ-CONTRACT-ARCH-1-9W5390`](../../../../specification/enforcement/contracts.md#req-contract-arch-1-9w5390) | Partial               | **Here:** one address exposes the union of the proxy-implemented and routed surfaces ([#L19](../../../../../../src/utils/localDiamond.ts#L19)). **Other files:** [StateChannelManagerProxy](../../contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol.md) owns the routing that makes the boundary stable; [StateChannelManagerInterface](../../contracts/V1/StateChannelManagerInterface.sol.md) declares it.                                                                                       | Local mirror only; production manager addresses use `connectStateChannelManager` from [stateChannelManager.ts](stateChannelManager.ts.md).                         |
 
 ## Component test obligations
 

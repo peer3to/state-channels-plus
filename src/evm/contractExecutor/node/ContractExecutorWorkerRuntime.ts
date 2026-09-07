@@ -1,11 +1,11 @@
-import * as path from "node:path";
-import * as fs from "node:fs";
-import { Worker } from "node:worker_threads";
 import { resolveWorkerResourceLimits } from "../../node/workerResourceLimits";
-import { instrumentWorkerStartup } from "../../node/workerStartupTiming";
 import { createWorkerShutdown } from "../../node/workerShutdown";
+import { instrumentWorkerStartup } from "../../node/workerStartupTiming";
 import type { WorkerLike } from "../types";
 import type { WorkerResponseMessage } from "../worker/protocol";
+import * as fs from "node:fs";
+import * as path from "node:path";
+import { Worker } from "node:worker_threads";
 
 export type ContractExecutorWorkerMessageHandler = (
     message: WorkerResponseMessage

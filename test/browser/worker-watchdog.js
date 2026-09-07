@@ -1,4 +1,5 @@
 // @spec-test-coverage-ignore: browser page script for the watchdog smoke; evidence is mapped from run-worker-contract-executor.mjs
+import { waitForPlain } from "../utils/waitForPlain.js";
 import { Buffer } from "buffer";
 import { ethers } from "ethers";
 
@@ -26,20 +27,6 @@ const LOG_ONLY_INIT_CODE = (() => {
         .padStart(2, "0");
     return `0x60${runtimeSize}600c60003960${runtimeSize}6000f3${runtime.slice(2)}`;
 })();
-
-function waitFor(condition, timeoutMs) {
-    const startedAt = Date.now();
-    return new Promise((resolve, reject) => {
-        const poll = () => {
-            if (condition()) return resolve();
-            if (Date.now() - startedAt > timeoutMs) {
-                return reject(new Error("Condition not met in time"));
-            }
-            setTimeout(poll, 50);
-        };
-        poll();
-    });
-}
 
 /**
  * One browser executor whose worker is the scripted watchdog entry. The
@@ -72,7 +59,7 @@ async function runMode(mode) {
         await new Promise((resolve) => setTimeout(resolve, 400));
         const reportsBeforeArm = reports.length;
         sender.postMessage({ type: "arm" });
-        await waitFor(() => reports.length >= 1, 15_000);
+        await waitForPlain(() => reports.length >= 1, 15_000, 50);
         const deployment = await executor.deploy(LOG_ONLY_INIT_CODE);
         await new Promise((resolve) => setTimeout(resolve, 200));
         const [report] = reports;

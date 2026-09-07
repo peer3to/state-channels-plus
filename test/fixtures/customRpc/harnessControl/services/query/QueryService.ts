@@ -1,13 +1,13 @@
-import ARpcService from "@/rpc/ARpcService";
-import type P2PManager from "@/P2PManager";
-import type ATransport from "@/transport/ATransport";
-import Block from "@/models/Block";
-import { Codec, Type } from "@/utils";
-import type { BlockHeight, ForkId } from "@/types/types";
 import QueryRpcMethods, {
     type BlockBundle,
     type StateProofVerification
 } from "./QueryRpcMethods";
+import Block from "@/models/Block";
+import type P2PManager from "@/P2PManager";
+import ARpcService from "@/rpc/ARpcService";
+import type ATransport from "@/transport/ATransport";
+import type { BlockHeight, ForkId } from "@/types/types";
+import { Codec, Type } from "@/utils";
 
 /**
  * Read-only peer-state queries exposed to the test harness. Accessors live here

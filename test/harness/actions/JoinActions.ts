@@ -1,8 +1,7 @@
 // @spec-test-coverage-ignore: shared join test setup exercised by owning mapped test declarations
-import { PeerTestHarness } from "@test/fixtures/PeerTestHarness";
-import type { HarnessControlRpc } from "@test/fixtures/customRpc/harnessControl/HarnessControlRpc";
-import { Signer } from "ethers";
-import { slotAccountIndex } from "@test/harness/core/slotAccounts";
+import Clock from "@/Clock";
+import StateSnapshot from "@/models/StateSnapshot";
+import type { PreparedJoinChannelConfirmation } from "@/rpc/services";
 import { Status } from "@/types";
 import {
     addressesEqual,
@@ -10,15 +9,16 @@ import {
     SignatureUtils,
     sleep
 } from "@/utils";
+import type { HarnessControlRpc } from "@test/fixtures/customRpc/harnessControl/HarnessControlRpc";
+import { PeerTestHarness } from "@test/fixtures/PeerTestHarness";
+import { slotAccountIndex } from "@test/harness/core/slotAccounts";
 import { resolveTestTimeConfig } from "@test/harness/core/testTimeConfig";
+import { TestPeer } from "@test/harness/core/types";
 import {
     JoinChannelConfirmationStruct,
     JoinChannelStruct
 } from "@typechain-types/contracts/V1/types/DataTypes";
-import Clock from "@/Clock";
-import { TestPeer } from "@test/harness/core/types";
-import StateSnapshot from "@/models/StateSnapshot";
-import type { PreparedJoinChannelConfirmation } from "@/rpc/services";
+import { Signer } from "ethers";
 
 export type AddPeerOptions = {
     signer?: Signer;

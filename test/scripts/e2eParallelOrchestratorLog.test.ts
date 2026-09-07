@@ -1,27 +1,11 @@
 // @spec-test-coverage-ignore: developer test-orchestration tooling; not protocol behavior, no specification or implementation IDs apply
 import { expect } from "chai";
 import crypto from "crypto";
+import { EventEmitter } from "events";
 import fs from "fs";
 import os from "os";
 import path from "path";
-import { EventEmitter } from "events";
 
-const {
-    OrchestratorLogStore,
-    sanitizeWorkerLabel
-} = require("../../scripts/e2e-parallel/distributed/orchestratorLogStore.js");
-const {
-    WorkerAttemptSpool
-} = require("../../scripts/e2e-parallel/distributed/workerAttemptSpool.js");
-const {
-    reduceAttemptOutput
-} = require("../../scripts/e2e-parallel/shared/taskCoordinator.js");
-const {
-    getAttemptLogPath,
-    getErrorLogPath,
-    getLogPath,
-    getStarvationLogPath
-} = require("../../scripts/e2e-parallel/shared/logging.js");
 const {
     WORKER_COLORS,
     aggregateWorkerStats,
@@ -39,12 +23,28 @@ const {
     workerFaultStatus
 } = require("../../scripts/e2e-parallel/distributed/orchestrator.js");
 const {
+    OrchestratorLogStore,
+    sanitizeWorkerLabel
+} = require("../../scripts/e2e-parallel/distributed/orchestratorLogStore.js");
+const {
+    DISTRIBUTED_PROTOCOL_VERSION
+} = require("../../scripts/e2e-parallel/distributed/protocol.js");
+const {
     acknowledgeLoglessAttempt,
     shouldTransferAttemptEvidence
 } = require("../../scripts/e2e-parallel/distributed/server.js");
 const {
-    DISTRIBUTED_PROTOCOL_VERSION
-} = require("../../scripts/e2e-parallel/distributed/protocol.js");
+    WorkerAttemptSpool
+} = require("../../scripts/e2e-parallel/distributed/workerAttemptSpool.js");
+const {
+    getAttemptLogPath,
+    getErrorLogPath,
+    getLogPath,
+    getStarvationLogPath
+} = require("../../scripts/e2e-parallel/shared/logging.js");
+const {
+    reduceAttemptOutput
+} = require("../../scripts/e2e-parallel/shared/taskCoordinator.js");
 
 describe("distributed orchestrator logs", function () {
     it("rejects an incompatible worker host before leasing it", function () {

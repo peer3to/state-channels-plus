@@ -1,11 +1,11 @@
-import { expect } from "chai";
-import { ethers } from "ethers";
 import Clock from "@/Clock";
 import { FraudProofType } from "@/types/sol-enums";
 import { Codec, Type } from "@/utils";
+import type { BlockBundle } from "@test/fixtures/customRpc/harnessControl/services/query/QueryRpcMethods";
 import { MathTestSession as TestSession, sleep } from "@test/harness";
 import { waitFor } from "@test/utils/waitFor";
-import type { BlockBundle } from "@test/fixtures/customRpc/harnessControl/services/query/QueryRpcMethods";
+import { expect } from "chai";
+import { ethers } from "ethers";
 
 /**
  * E2E Tests: Fraud Proofs — onBlockConfirmation (BlockValidationStrategy)

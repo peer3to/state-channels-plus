@@ -1,10 +1,10 @@
-import { expect } from "chai";
-import { Codec, Type } from "@/utils";
 import { Block } from "@/models";
 import { Status } from "@/types";
-import { MathTestSession as TestSession } from "@test/harness";
+import { Codec, Type } from "@/utils";
 import { sleep } from "@/utils";
+import { MathTestSession as TestSession } from "@test/harness";
 import { waitFor } from "@test/utils/waitFor";
+import { expect } from "chai";
 
 // authoring is driven through the real client entry point
 // (p2pContractInstance.add), which builds the transaction exactly as

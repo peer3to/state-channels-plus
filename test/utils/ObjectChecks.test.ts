@@ -1,5 +1,3 @@
-import { expect } from "chai";
-
 import {
     hasMethod,
     hasProperty,
@@ -15,6 +13,7 @@ import {
     createThrowingMethodAccessor,
     StructuralMethodsValue
 } from "@test/fixtures/ObjectChecksFixtures";
+import { expect } from "chai";
 
 describe("ObjectChecks", function () {
     it("recognizes own and inherited properties on object values", function () {

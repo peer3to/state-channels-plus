@@ -26,6 +26,8 @@ stays readable until the replacement has synchronized successfully.
 
 ## Key design decisions
 
+Clock exposes the runtime adjustment getter only. Test adjustment and restoration stay in the test tree; there is no public test setter. See [Clock.ts](../../../../../src/Clock.ts#L56).
+
 1. **Local wall time is adjusted from chain observations.** Consumers use the chain-derived clock,
    while `getBlockchainTime` reads the provider directly
    ([`REQ-TIME-1-FM4651`](../../../specification/protocol-model/time.md#req-time-1-fm4651)).

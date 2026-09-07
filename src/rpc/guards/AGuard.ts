@@ -1,7 +1,7 @@
+import type ARpcMethods from "@/rpc/ARpcMethods";
+import type ARpcService from "@/rpc/ARpcService";
 import type Rpc from "@/rpc/Rpc";
 import type ATransport from "@/transport/ATransport";
-import type ARpcService from "@/rpc/ARpcService";
-import type ARpcMethods from "@/rpc/ARpcMethods";
 
 /**
  * A guard runs before an RPC is consumed.

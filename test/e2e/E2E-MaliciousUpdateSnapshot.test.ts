@@ -1,3 +1,4 @@
+import { Status } from "@/types";
 import { Codec, Type, hash, tryDecodeCustomError } from "@/utils";
 import { MathTestSession as TestSession } from "@test/harness";
 import {
@@ -7,14 +8,13 @@ import {
     encodeMathState,
     type MathStateDecoded
 } from "@test/utils/mathHarnessAbi";
-import { Status } from "@/types";
-import { expect } from "chai";
 import { waitFor } from "@test/utils/waitFor";
 import type {
     MessageBlockStruct,
     BalanceStruct,
     SnapshotDataStruct
 } from "@typechain-types/contracts/V1/types/DataTypes";
+import { expect } from "chai";
 
 describe("E2E: Malicious updateSnapshot", function () {
     it("colluded over-withdrawal → updateStateSnapshotSameFork reverts with CantWithdrawMoreThanDeposits", async function () {

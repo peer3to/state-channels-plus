@@ -22,3 +22,13 @@ export enum Status {
     /** The selected channel is synced and the signer participates. */
     PARTICIPATING
 }
+
+export function isCommittedParticipantStatus(status: Status): boolean {
+    return (
+        status === Status.PENDING_PARTICIPANT || status === Status.PARTICIPATING
+    );
+}
+
+export function isEngagedStatus(status: Status): boolean {
+    return status === Status.SYNCED || isCommittedParticipantStatus(status);
+}

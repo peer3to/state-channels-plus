@@ -1,8 +1,8 @@
 import { Status } from "@/types";
 import { DisputeFraudProofType } from "@/types/sol-enums";
 import { Codec, Type, hash, addressesEqual } from "@/utils";
-import { MathTestSession as TestSession } from "@test/harness";
 import { hash as randomHash } from "@test/factory";
+import { MathTestSession as TestSession } from "@test/harness";
 import { expect } from "chai";
 
 // Trello card Case 1: stateProof = [M1, M2, M3] where M1 and M2 have different

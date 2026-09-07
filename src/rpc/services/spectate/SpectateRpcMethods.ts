@@ -1,6 +1,6 @@
+import SpectateService, { type SyncRequest } from "./SpectateService";
 import ARpcMethods from "@/rpc/ARpcMethods";
 import { ATransport } from "@/transport";
-import SpectateService, { type SyncRequest } from "./SpectateService";
 import { Bytes } from "@/types";
 import { Codec, Type } from "@/utils";
 

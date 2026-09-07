@@ -1,11 +1,11 @@
 // @spec-test-coverage-ignore: shared timeout-refusal staging exercised by ParticipantTimeoutService cases
 import { syncTargetToUnpostedReduction } from "./ReductionForkSwitchStaging";
-import { expect } from "chai";
-import { hexlify } from "ethers";
 import { timeoutWaitTime } from "@/types";
 import { Codec, Type } from "@/utils";
 import type { MathPeerTestHarness } from "@test/fixtures/MathPeerTestHarness";
 import { waitFor } from "@test/utils/waitFor";
+import { expect } from "chai";
+import { hexlify } from "ethers";
 
 export async function assertEarlyTimeoutRetry(
     h: MathPeerTestHarness,
@@ -16,10 +16,7 @@ export async function assertEarlyTimeoutRetry(
     await h.lifecycle.timeoutSetup(3);
     const peer = h.getPeer(1);
     const forkId = h.activeForkId!;
-    await h
-        .control(h.getPeer(2))
-        .stub.stubSuppressDisputeInitiation()
-        .request();
+    await h.dispute.suppressDisputeInitiation([h.getPeer(2).index]);
     const held = await h.rpcStub.holdScheduledTasks(
         1,
         "timeoutParticipantAfterEarlySubmission"
@@ -37,7 +34,7 @@ export async function assertEarlyTimeoutRetry(
     try {
         await waitFor(
             async () => (await held.heldCount()) === 1,
-            h.event.protocolEventTimeoutMs({ withFirstBlockGrace: true }) * 2
+            h.event.hostExecTimeoutMs()
         );
         expect(
             await h.execOnHost(

@@ -1,8 +1,35 @@
-import { ethers, type InterfaceAbi } from "ethers";
-
-import StateManager from "@/stateManager/StateManager";
-import EvmDiamondStateMachine from "@/evm/EvmDiamondStateMachine";
+import {
+    deserializeTransactionRequest,
+    serializeTransactionResponse
+} from "./chainSignerSerialization";
+import { serializeError } from "./errorWire";
+import { forwardEventHandlerInvocations } from "./host/EventForwarding";
+import type { HostHandlerExecutionContext } from "./HostHandlerExecutionContext";
+import {
+    createRuntimeChainContext,
+    type RuntimeChainContext
+} from "./RuntimeChainContext";
+import type {
+    HostRpcRequest,
+    RuntimeClientRequest,
+    RuntimePort,
+    SetupPayload
+} from "./types";
 import Clock from "@/Clock";
+import {
+    AContractExecutor,
+    type ContractExecutorFactoryOptions
+} from "@/evm/contractExecutor";
+import { createContractExecutor } from "@/evm/contractExecutor/createContractExecutor";
+import type { WorkerContractExecutorDependencies } from "@/evm/contractExecutor/WorkerContractExecutor";
+import EvmDiamondStateMachine from "@/evm/EvmDiamondStateMachine";
+import HostNonceManager from "@/evm/signer/HostNonceManager";
+import LocalContractExecutorSigner from "@/evm/signer/LocalContractExecutorSigner";
+import MainRpcService from "@/rpc/MainRpcService";
+import { resolveCustomRpcConstructor } from "@/rpc/resolveCustomRpcManifest";
+import { doesWorkerNeedMainThreadBridge } from "@/rpc/services/WebRTCSetup/connection/WebRTCProvider";
+import WorkerBridgeWebRTCConnectionFactory from "@/rpc/services/WebRTCSetup/connection/WorkerBridgeWebRTCConnectionFactory";
+import StateManager from "@/stateManager/StateManager";
 import Storage from "@/storage";
 import { TimeConfig } from "@/types";
 import type { ForkId, Hash } from "@/types/types";
@@ -13,41 +40,13 @@ import {
     DetachedPromises,
     Type
 } from "@/utils";
+import { LocalDiscoveryServer } from "@/utils";
 import { config, isNodeRuntime } from "@/utils/config";
 import { LoggerUtils } from "@/utils/LoggerUtils";
-import MainRpcService from "@/rpc/MainRpcService";
-import { resolveCustomRpcConstructor } from "@/rpc/resolveCustomRpcManifest";
-import LocalContractExecutorSigner from "@/evm/signer/LocalContractExecutorSigner";
-import HostNonceManager from "@/evm/signer/HostNonceManager";
-import { createContractExecutor } from "@/evm/contractExecutor/createContractExecutor";
-import {
-    AContractExecutor,
-    type ContractExecutorFactoryOptions
-} from "@/evm/contractExecutor";
-import type { WorkerContractExecutorDependencies } from "@/evm/contractExecutor/WorkerContractExecutor";
-import { serializeError } from "./errorWire";
-import WorkerBridgeWebRTCConnectionFactory from "@/rpc/services/WebRTCSetup/connection/WorkerBridgeWebRTCConnectionFactory";
-import { doesWorkerNeedMainThreadBridge } from "@/rpc/services/WebRTCSetup/connection/WebRTCProvider";
-import { forwardEventHandlerInvocations } from "./host/EventForwarding";
-import {
-    deserializeTransactionRequest,
-    serializeTransactionResponse
-} from "./chainSignerSerialization";
-import {
-    createRuntimeChainContext,
-    type RuntimeChainContext
-} from "./RuntimeChainContext";
 
-import type { HostHandlerExecutionContext } from "./HostHandlerExecutionContext";
 import type { Logger } from "@/utils/logging/Logger";
-import { LocalDiscoveryServer } from "@/utils";
 import { connectStateChannelManager } from "@/utils/stateChannelManager";
-import type {
-    HostRpcRequest,
-    RuntimeClientRequest,
-    RuntimePort,
-    SetupPayload
-} from "./types";
+import { ethers, type InterfaceAbi } from "ethers";
 
 /**
  * Fully resolved, live context required to build the runtime graph. In inline
@@ -356,6 +355,11 @@ export async function startP2pRuntimeHost<
             port.post({ type: "ready" });
         };
 
+        const requireP2pSigner = () => {
+            if (!runtimeHandle) throw new Error("Runtime is not ready");
+            return runtimeHandle.stateManager.p2pManager.p2pSigner;
+        };
+
         const handleRequest = async (
             request: RuntimeClientRequest
         ): Promise<void> => {
@@ -430,109 +434,82 @@ export async function startP2pRuntimeHost<
                         );
                         break;
                     case "sendTransaction":
-                        if (!runtimeHandle)
-                            throw new Error("Runtime is not ready");
-                        await runtimeHandle.stateManager.p2pManager.p2pSigner.sendTransaction(
-                            { data: request.data }
-                        );
+                        await requireP2pSigner().sendTransaction({
+                            data: request.data
+                        });
                         break;
                     case "callView":
-                        if (!runtimeHandle)
-                            throw new Error("Runtime is not ready");
-                        result =
-                            await runtimeHandle.stateManager.p2pManager.p2pSigner.call(
-                                { data: request.data }
-                            );
+                        result = await requireP2pSigner().call({
+                            data: request.data
+                        });
                         break;
                     case "connectToChannel":
-                        if (!runtimeHandle)
-                            throw new Error("Runtime is not ready");
-                        result =
-                            await runtimeHandle.stateManager.p2pManager.p2pSigner.connectToChannel(
-                                request.channelId,
-                                {
-                                    autoOpen: request.options?.autoOpen,
-                                    shouldJoin: request.options?.shouldJoin,
-                                    balance: request.options?.encodedBalance
-                                        ? Codec.decode(
-                                              request.options.encodedBalance,
-                                              Type.Balance
-                                          )
-                                        : undefined,
-                                    timeoutMs: request.options?.timeoutMs
-                                }
-                            );
+                        result = await requireP2pSigner().connectToChannel(
+                            request.channelId,
+                            {
+                                autoOpen: request.options?.autoOpen,
+                                shouldJoin: request.options?.shouldJoin,
+                                balance: request.options?.encodedBalance
+                                    ? Codec.decode(
+                                          request.options.encodedBalance,
+                                          Type.Balance
+                                      )
+                                    : undefined,
+                                timeoutMs: request.options?.timeoutMs
+                            }
+                        );
                         break;
                     case "cancelConnectToChannel":
-                        if (!runtimeHandle)
-                            throw new Error("Runtime is not ready");
                         result =
-                            await runtimeHandle.stateManager.p2pManager.p2pSigner.cancelConnectToChannel(
+                            await requireP2pSigner().cancelConnectToChannel(
                                 request.channelId
                             );
                         break;
                     case "leaveChannel":
-                        if (!runtimeHandle)
-                            throw new Error("Runtime is not ready");
-                        await runtimeHandle.stateManager.p2pManager.p2pSigner.leaveChannel();
+                        await requireP2pSigner().leaveChannel();
                         break;
                     case "joinLobby":
-                        if (!runtimeHandle)
-                            throw new Error("Runtime is not ready");
-                        result =
-                            await runtimeHandle.stateManager.p2pManager.p2pSigner.joinLobby(
-                                request.lobbyTopic,
-                                {
-                                    balance: request.options.encodedBalance
-                                        ? Codec.decode(
-                                              request.options.encodedBalance,
-                                              Type.Balance
-                                          )
-                                        : undefined,
-                                    matchTimeoutMs:
-                                        request.options.matchTimeoutMs
-                                }
-                            );
+                        result = await requireP2pSigner().joinLobby(
+                            request.lobbyTopic,
+                            {
+                                balance: request.options.encodedBalance
+                                    ? Codec.decode(
+                                          request.options.encodedBalance,
+                                          Type.Balance
+                                      )
+                                    : undefined,
+                                matchTimeoutMs: request.options.matchTimeoutMs
+                            }
+                        );
                         break;
                     case "leaveLobby":
-                        if (!runtimeHandle)
-                            throw new Error("Runtime is not ready");
-                        result =
-                            await runtimeHandle.stateManager.p2pManager.p2pSigner.leaveLobby(
-                                request.lobbyTopic
-                            );
+                        result = await requireP2pSigner().leaveLobby(
+                            request.lobbyTopic
+                        );
                         break;
                     case "joinChannel":
-                        if (!runtimeHandle)
-                            throw new Error("Runtime is not ready");
-                        result =
-                            await runtimeHandle.stateManager.p2pManager.p2pSigner.joinChannel(
-                                Codec.decode(
-                                    request.encodedJoinChannelConfirmation,
-                                    Type.JoinChannelConfirmation
-                                ),
-                                request.expectedSnapshotHash as Hash,
-                                request.expectedForkId as ForkId
-                            );
+                        result = await requireP2pSigner().joinChannel(
+                            Codec.decode(
+                                request.encodedJoinChannelConfirmation,
+                                Type.JoinChannelConfirmation
+                            ),
+                            request.expectedSnapshotHash as Hash,
+                            request.expectedForkId as ForkId
+                        );
                         break;
                     case "topUpBalance":
-                        if (!runtimeHandle)
-                            throw new Error("Runtime is not ready");
-                        result =
-                            await runtimeHandle.stateManager.p2pManager.p2pSigner.topUpBalance(
-                                Codec.decode(
-                                    request.encodedJoinChannelConfirmation,
-                                    Type.JoinChannelConfirmation
-                                ),
-                                request.expectedSnapshotHash as Hash,
-                                request.expectedForkId as ForkId
-                            );
+                        result = await requireP2pSigner().topUpBalance(
+                            Codec.decode(
+                                request.encodedJoinChannelConfirmation,
+                                Type.JoinChannelConfirmation
+                            ),
+                            request.expectedSnapshotHash as Hash,
+                            request.expectedForkId as ForkId
+                        );
                         break;
                     case "collectJoinChannelConfirmation": {
-                        if (!runtimeHandle)
-                            throw new Error("Runtime is not ready");
                         const prepared =
-                            await runtimeHandle.stateManager.p2pManager.p2pSigner.collectJoinChannelConfirmation(
+                            await requireP2pSigner().collectJoinChannelConfirmation(
                                 Codec.decode(
                                     request.encodedJoinChannel,
                                     Type.JoinChannel
@@ -549,22 +526,13 @@ export async function startP2pRuntimeHost<
                         break;
                     }
                     case "getChannelStatus":
-                        if (!runtimeHandle)
-                            throw new Error("Runtime is not ready");
-                        result =
-                            await runtimeHandle.stateManager.p2pManager.p2pSigner.getChannelStatus();
+                        result = await requireP2pSigner().getChannelStatus();
                         break;
                     case "setIsLeader":
-                        if (!runtimeHandle)
-                            throw new Error("Runtime is not ready");
-                        runtimeHandle.stateManager.p2pManager.p2pSigner.setIsLeader(
-                            request.value
-                        );
+                        requireP2pSigner().setIsLeader(request.value);
                         break;
                     case "disconnectFromPeers":
-                        if (!runtimeHandle)
-                            throw new Error("Runtime is not ready");
-                        runtimeHandle.stateManager.p2pManager.p2pSigner.disconnectFromPeers();
+                        requireP2pSigner().disconnectFromPeers();
                         break;
                     case "hostRpc":
                         if (!runtimeHandle)

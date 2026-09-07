@@ -1,26 +1,33 @@
-import { expect } from "chai";
-import { ethers } from "ethers";
-import { Address } from "@ethereumjs/util";
-import { randomUUID } from "node:crypto";
-import path from "node:path";
-import { BroadcastChannel, Worker } from "node:worker_threads";
-import { createContractExecutor } from "@/evm/contractExecutor/createContractExecutor";
 import {
     createContractExecutorFactory,
     type ContractExecutorFactoryOptions,
     type EvmCustomPrecompileManifest
 } from "@/evm";
+import { createContractExecutor } from "@/evm/contractExecutor/createContractExecutor";
 import { createContractExecutorWorkerFromPath } from "@/evm/contractExecutor/node/ContractExecutorWorkerRuntime";
-import type { WatchdogWorkerData } from "@test/evm/workers/node/watchdogContractExecutorWorkerEntry";
-import type { NoRouteWorkerReport } from "@test/evm/workers/node/noRouteExecutorEntry";
+import WorkerContractExecutor from "@/evm/contractExecutor/WorkerContractExecutor";
 import type { Logger } from "@/utils";
+import { sleep } from "@/utils";
+import { getErrorPeerAddress } from "@/utils/errorPeerAddress";
+import { tryDecodeCustomError } from "@/utils/evmErrorHandler";
+import { LogStore } from "@/utils/logging/logStore";
+import { NodeLogger } from "@/utils/logging/node/NodeLogger";
+import { Address } from "@ethereumjs/util";
+import { createContractExecutorWorker } from "@platform/contractExecutorWorkerRuntime";
+import type { NoRouteWorkerReport } from "@test/evm/workers/node/noRouteExecutorEntry";
+import type { WatchdogWorkerData } from "@test/evm/workers/node/watchdogContractExecutorWorkerEntry";
 import {
     WATCHDOG_WORKER_DELAY_ERROR_THRESHOLD_MS,
     WATCHDOG_WORKER_ORIGINAL_ERROR,
     WATCHDOG_WORKER_TRIPPED_DELAY_MS
 } from "@test/evm/workers/watchdogContractExecutorWorkerCore";
-import { sleep } from "@/utils";
+import { encodedCustomErrorRevert } from "@test/factory";
 import { waitFor } from "@test/utils/waitFor";
+import { expect } from "chai";
+import { ethers } from "ethers";
+import { randomUUID } from "node:crypto";
+import path from "node:path";
+import { BroadcastChannel, Worker } from "node:worker_threads";
 
 const WATCHDOG_WORKER_ENTRY = path.resolve(
     __dirname,
@@ -60,6 +67,47 @@ describe("WorkerContractExecutor", function () {
         const header = `0x60${runtimeSize}600c60003960${runtimeSize}6000f3`;
         return `${header}${runtime.slice(2)}`;
     };
+
+    it("request failure preserves nested revert data and peer metadata across the worker", async function () {
+        const peer = ethers.Wallet.createRandom().address;
+        let received: unknown;
+        const executor = await createContractExecutorFactory({
+            dedicatedThread: true,
+            customPrecompiles: [
+                {
+                    address: peer,
+                    module: path.resolve(
+                        __dirname,
+                        "../fixtures/workerRevertPrecompile.ts"
+                    ),
+                    options: {
+                        data: encodedCustomErrorRevert(
+                            "RaceConditionDisputeEvidencePeriodExpired"
+                        ),
+                        peer
+                    }
+                }
+            ]
+        });
+        try {
+            await executor.executeCall("0x", peer);
+        } catch (error) {
+            received = error;
+        } finally {
+            await executor.dispose();
+        }
+        expect(received).to.be.instanceOf(Error);
+        expect((received as Error).name).to.equal(
+            "PrecompileInitializationError"
+        );
+        expect(tryDecodeCustomError(received)?.name).to.equal(
+            "RaceConditionDisputeEvidencePeriodExpired"
+        );
+        expect(getErrorPeerAddress(received)).to.equal(peer);
+        expect((received as Error & { code?: string }).code).to.equal(
+            "CALL_EXCEPTION"
+        );
+    });
 
     it("should execute custom precompiles in worker mode", async function () {
         const customAddress = Address.fromString(
@@ -234,6 +282,63 @@ describe("WorkerContractExecutor", function () {
         }
     });
 
+    it("late worker failure after disposal leaves the pending request rejected only by disposal", async function () {
+        const logger = new NodeLogger(
+            {},
+            {},
+            "debug",
+            new LogStore(1_000_000, true),
+            { attachErrorListener: false }
+        );
+        let lateError!: (error: Error) => void;
+        let callDelivered!: () => void;
+        const delivered = new Promise<void>((resolve) => {
+            callDelivered = resolve;
+        });
+        const reports: Error[] = [];
+        const executor = await WorkerContractExecutor.create([], logger, {
+            onDetachedError: (error) => {
+                reports.push(error);
+            },
+            createWorkerRuntime: (onMessage, onError) => {
+                lateError = onError;
+                let heldRequestId: number | undefined;
+                const runtime = createContractExecutorWorker((message) => {
+                    if (
+                        message.type === "response" &&
+                        message.requestId === heldRequestId
+                    ) {
+                        callDelivered();
+                        return;
+                    }
+                    onMessage(message);
+                }, onError);
+                return {
+                    postMessage(message) {
+                        if (message.payload.type === "call")
+                            heldRequestId = message.requestId;
+                        runtime.postMessage(message);
+                    },
+                    shutdown: runtime.shutdown?.bind(runtime)
+                };
+            }
+        });
+        let rejectionCount = 0;
+        const pending = executor
+            .executeCall("0x", ethers.Wallet.createRandom().address)
+            .catch((error: Error) => {
+                rejectionCount += 1;
+                return error.message;
+            });
+        await delivered;
+        await executor.dispose();
+        expect(await pending).to.equal("Contract executor worker disposed");
+        lateError(new Error("Late worker error after shutdown"));
+        expect(rejectionCount).to.equal(1);
+        expect(reports).to.have.length(0);
+        logger.dispose();
+    });
+
     it("should dispose idempotently", async function () {
         const executor = await createContractExecutorFactory({
             dedicatedThread: true
@@ -353,6 +458,7 @@ describe("WorkerContractExecutor", function () {
                     createLogOnlyInitCode(ethers.id("ValueSet(uint256)"))
                 );
                 expect(deployment.createdAddress).to.be.a("string");
+                // Observe no duplicate report while the worker remains usable.
                 await sleep(200);
                 expect(reports.length).to.equal(1);
             } finally {
@@ -623,7 +729,6 @@ describe("WorkerContractExecutor", function () {
                 ContractExecutorFactoryOptions,
                 PrePlanShape
             > = true;
-            expect(unchanged).to.equal(true);
         });
 
         it("node runtime keeps the first error when the exit follows it", async function () {

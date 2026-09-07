@@ -1,6 +1,6 @@
-import { expect } from "chai";
 import { Status } from "@/types";
 import { MathTestSession as TestSession } from "@test/harness";
+import { expect } from "chai";
 
 // unsafeSetLatestState is driven through transition.runSetLatestState (the
 // peer's own latest snapshot/state re-applied), so every assertion is about
