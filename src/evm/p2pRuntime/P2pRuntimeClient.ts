@@ -1,13 +1,4 @@
-import { ethers, type InterfaceAbi } from "ethers";
-import { StateChannelManagerInterface } from "@typechain-types";
-
-import { maybeStampErrorWithPeerAddress } from "@/utils/errorPeerAddress";
-import type { Address } from "@/types/types";
-import { connectStateChannelManager } from "@/utils/stateChannelManager";
-import type { Logger } from "@/utils";
-import ClientP2pSigner from "../signer/ClientP2pSigner";
-import ClientChainSigner from "../signer/ClientChainSigner";
-import { attachContractEvents, EventBus } from "@/events/EventBus";
+import { deserializeError } from "./errorWire";
 import type {
     RuntimeBusEventMessage,
     RuntimeClientRequest,
@@ -19,40 +10,16 @@ import type {
     SerializedContract,
     SerializedError
 } from "./types";
-
-function restoreEthersErrorMetadata(
-    error: Error,
-    serialized: SerializedError
-): void {
-    // Error's standard fields cross the port, but ethers' enumerable metadata
-    // does not. Restore the plain fields callers use for error classification;
-    // transaction, receipt, and info remain serializable projections.
-    Object.assign(error, {
-        code: serialized.code,
-        shortMessage: serialized.shortMessage,
-        info: serialized.info,
-        action: serialized.action,
-        reason: serialized.reason,
-        transaction: serialized.transaction,
-        receipt: serialized.receipt
-    });
-}
-
-function deserializeError(serialized: SerializedError): Error {
-    const error = new Error(serialized.message);
-    error.name = serialized.name ?? error.name;
-    if (serialized.stack) error.stack = serialized.stack;
-    // Restore a contract revert's `.data` so `tryDecodeCustomError` can decode
-    // custom errors that crossed the port.
-    if (serialized.data !== undefined) {
-        (error as Error & { data?: string }).data = serialized.data;
-    }
-    restoreEthersErrorMetadata(error, serialized);
-    // Restore the originating-peer stamp (the non-enumerable in-process
-    // property doesn't survive the structured-clone hop across the port).
-    maybeStampErrorWithPeerAddress(error, serialized.peerAddress);
-    return error;
-}
+import ClientChainSigner from "../signer/ClientChainSigner";
+import ClientP2pSigner from "../signer/ClientP2pSigner";
+import { attachContractEvents, EventBus } from "@/events/EventBus";
+import type { Address } from "@/types/types";
+import type { Logger } from "@/utils";
+import { errorMessage } from "@/utils/errorMessage";
+import { maybeStampErrorWithPeerAddress } from "@/utils/errorPeerAddress";
+import { connectStateChannelManager } from "@/utils/stateChannelManager";
+import { StateChannelManagerInterface } from "@typechain-types";
+import { ethers, type InterfaceAbi } from "ethers";
 
 export interface P2pRuntimeClientOptions {
     /** Address of the signer that authors transactions in the host. */
@@ -116,7 +83,7 @@ class P2pRuntimeClient<T = ethers.Contract> {
             options.logger?.error("Event bus listener failed", {
                 kind,
                 eventName,
-                error: error instanceof Error ? error.message : String(error)
+                error: errorMessage(error)
             })
         );
         this.port = port;

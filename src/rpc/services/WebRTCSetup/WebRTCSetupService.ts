@@ -1,10 +1,3 @@
-import ARpcService from "@/rpc/ARpcService";
-import WebRTCTransport from "@/transport/WebRTCTransport";
-import type P2PManager from "@/P2PManager";
-import WebRTCSetupRpcMethods from "./WebRTCSetupRpcMethods";
-import { ATransport, TransportType } from "@/transport";
-import { HandshakeCompletedGuard } from "@/rpc/guards";
-import { getChecksumAddress } from "@/utils";
 import {
     createWebRTCConnectionFactory,
     type WebRTCConnectionCallbacks,
@@ -13,6 +6,13 @@ import {
     type WebRTCDataChannelLike,
     type WebRTCPeerAddress
 } from "./connection/WebRTCConnectionFactory";
+import WebRTCSetupRpcMethods from "./WebRTCSetupRpcMethods";
+import type P2PManager from "@/P2PManager";
+import ARpcService from "@/rpc/ARpcService";
+import { HandshakeCompletedGuard } from "@/rpc/guards";
+import { ATransport, TransportType } from "@/transport";
+import WebRTCTransport from "@/transport/WebRTCTransport";
+import { getChecksumAddress } from "@/utils";
 
 class WebRTCSetupService extends ARpcService<WebRTCSetupRpcMethods> {
     private connectionFactory?: WebRTCConnectionFactory;

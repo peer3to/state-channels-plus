@@ -1,13 +1,15 @@
-import { DetachedPromises } from "@/utils";
+// @spec-test-coverage-ignore: shared math transition actions exercised by owning mapped test declarations
 import { Status } from "@/types";
-import { MathStateMachine } from "@typechain-types";
+import { DetachedPromises } from "@/utils";
+import type { HarnessControlRpc } from "@test/fixtures/customRpc/harnessControl/HarnessControlRpc";
 import {
     AdvanceStateBaseOptions,
     TransitionActions,
-    TransitionOptions
+    TransitionOptions,
+    KeepAuthoringOptions
 } from "@test/harness/actions/TransitionActions";
+import { MathStateMachine } from "@typechain-types";
 import { MathPeerTestHarness } from "test-harness";
-import type { HarnessControlRpc } from "@test/fixtures/customRpc/harnessControl/HarnessControlRpc";
 
 type MathAdvanceStateOptions = AdvanceStateBaseOptions & {
     txFn?: (contract: MathStateMachine) => Promise<any>;
@@ -119,6 +121,52 @@ export class MathTransitionActions extends TransitionActions<
 
         await this.submit(peerObj, (contract) => contract.add(value), {
             waitForPeers
+        });
+    }
+
+    /**
+     * The generic keep-alive with the math transition (`add(1)`) as the
+     * default block content.
+     */
+    async keepAuthoringUntil(
+        options: KeepAuthoringOptions & {
+            txFn?: (contract: MathStateMachine) => Promise<any>;
+        }
+    ): Promise<number> {
+        return super.keepAuthoringUntil({
+            ...options,
+            txFn: options.txFn ?? ((contract) => contract.add(1))
+        });
+    }
+
+    /**
+     * Keep the writer slot alive until every listed peer reports `status`:
+     * a leaver settling to SYNCED once its exit snapshot is on chain, a
+     * joiner promoted to PARTICIPATING once a block carries its join. Either
+     * settles in seconds while the harness authors in milliseconds.
+     */
+    async keepAuthoringUntilPeersStatus(options: {
+        peerIndices: number[];
+        status: Status;
+        waitForPeers: number[];
+        excludePeerIndices?: number[];
+        maximumBlocks?: number;
+    }): Promise<number> {
+        const { peerIndices, status, maximumBlocks = 20, ...rest } = options;
+        const peerHasStatus = async (peerIndex: number) =>
+            (await this.harness
+                .control(this.harness.getPeer(peerIndex))
+                .query.getStatus()
+                .request()) === status;
+        return this.keepAuthoringUntil({
+            until: async () => {
+                for (const peerIndex of peerIndices) {
+                    if (!(await peerHasStatus(peerIndex))) return false;
+                }
+                return true;
+            },
+            maximumBlocks,
+            ...rest
         });
     }
 

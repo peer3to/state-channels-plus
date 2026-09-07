@@ -1,13 +1,13 @@
-import ARpcService from "@/rpc/ARpcService";
-import Clock from "@/Clock";
+// @spec-test-coverage-ignore: test-only spectate controls exercised by mapped targeted-channel cases
+import SpectateControlRpcMethods from "./SpectateControlRpcMethods";
+import type { HarnessControlRpc } from "../../HarnessControlRpc";
 import type P2PManager from "@/P2PManager";
+import ARpcService from "@/rpc/ARpcService";
 import type { SyncRequest } from "@/rpc/services/spectate/SpectateService";
 import type ATransport from "@/transport/ATransport";
+import type { SyncPayload } from "@/types/spectate";
 import type { ForkId } from "@/types/types";
 import { Codec, Type } from "@/utils";
-import type { SyncPayload } from "@/types/spectate";
-import type { HarnessControlRpc } from "../../HarnessControlRpc";
-import SpectateControlRpcMethods from "./SpectateControlRpcMethods";
 
 /**
  * Spectator-flow operations for white-box tests, executed host-side. The live
@@ -45,11 +45,10 @@ export class SpectateControlService extends ARpcService<
         return this.p2pManager.localRpc.spectateService;
     }
 
-    /** A targeted sync request for this peer's own channel, stamped now. */
+    /** An exact recovery request for this peer's own channel. */
     buildSyncRequest(forkId: ForkId, blockHeight: number): SyncRequest {
         return {
             channelId: this.sm.channelId,
-            initTime: Clock.getTimeInSeconds(),
             forkId,
             blockHeight
         };

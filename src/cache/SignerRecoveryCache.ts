@@ -1,6 +1,6 @@
-import { verifyMessage, hexlify } from "ethers";
 import { Address, Signature } from "@/types/types";
 import { config } from "@/utils/config";
+import { verifyMessage, hexlify } from "ethers";
 
 /**
  * Per-thread memo of ECDSA signer recovery, keyed by (message digest, signature).

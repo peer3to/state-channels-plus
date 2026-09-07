@@ -400,15 +400,17 @@ describe("parallel forge task discovery", function () {
         const { tasks } = discoverForgeTasks(REPO_TEST_DIR);
         expect(tasks.map((task) => task.fullTitle)).to.have.members([
             "DisputeVerificationFacetTest",
+            "DisputeWindowAdmissionTest",
             "DisputeUtilsTest",
             "FraudProofFacetTest",
             "JoinChannelFacetTest",
             "StateChannelManagerProxyDepositTest",
             "StateChannelManagerProxyOpenTest",
             "StateChannelManagerProxyRegistrationTest",
+            "StateSnapshotFacetOpenChannelRegistryTest",
             "UtilityFacetTest"
         ]);
-        expect(tasks).to.have.lengthOf(8);
+        expect(tasks).to.have.lengthOf(10);
     });
 
     it("includes a test contract declared in a .test.sol file", function () {
@@ -747,7 +749,12 @@ describe("parallel task runner classification", function () {
         try {
             fs.mkdirSync(path.dirname(cli), { recursive: true });
             fs.writeFileSync(cli, "");
-            expect(resolveProjectHardhatCli(root)).to.equal(cli);
+            // Node resolves modules to their real path; a host whose temp
+            // directory is a symlink (macOS `/tmp` → `/private/tmp`) must
+            // compare canonical paths.
+            expect(resolveProjectHardhatCli(root)).to.equal(
+                fs.realpathSync(cli)
+            );
         } finally {
             fs.rmSync(root, { recursive: true, force: true });
         }

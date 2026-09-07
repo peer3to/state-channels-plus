@@ -1,6 +1,6 @@
+import { ContractFactory } from "ethers";
 import fs from "fs";
 import path from "path";
-import { ContractFactory } from "ethers";
 
 export class DeployUtils {
     contractsPath: string;

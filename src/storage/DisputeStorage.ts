@@ -1,11 +1,11 @@
 import { ForkId, Hash } from "@/types/types";
-import { ethers } from "ethers";
+import { Codec, Type } from "@/utils";
 import {
     DisputeConfirmationStruct,
     DisputeStruct,
     SignedDisputeStruct
 } from "@typechain-types/contracts/V1/types/DisputeTypes";
-import { Codec, Type } from "@/utils";
+import { ethers } from "ethers";
 
 type StoreOptions = {
     hash?: Hash;
@@ -38,10 +38,7 @@ export class DisputeStorage {
             signatures: [] // Starts empty, ready for peer confirmations
         };
 
-        return this._storeDisputeConfirmationWithOptions(
-            disputeConfirmation,
-            options
-        );
+        return this.storeDisputeConfirmation(disputeConfirmation, options);
     }
 
     storeDisputedFork(forkId: ForkId, disputed: boolean): void {
@@ -52,44 +49,6 @@ export class DisputeStorage {
       STORE DISPUTE CONFIRMATION
     ────────────────────────────────────────────────────────────────────────────*/
     storeDisputeConfirmation(
-        disputeConfirmation: DisputeConfirmationStruct,
-        options?: StoreOptions
-    ): Hash {
-        return this._storeDisputeConfirmationWithOptions(
-            disputeConfirmation,
-            options
-        );
-    }
-
-    // ====================================
-    // READ
-    // ====================================
-
-    getDisputeConfirmation(
-        disputeHash: Hash
-    ): DisputeConfirmationStruct | undefined {
-        return this.disputes.get(disputeHash);
-    }
-
-    getDispute(disputeHash: Hash): DisputeStruct | undefined {
-        const disputeConfirmation = this.getDisputeConfirmation(disputeHash);
-        return disputeConfirmation
-            ? Codec.decode(
-                  disputeConfirmation.signedDispute.encodedDispute,
-                  Type.Dispute
-              )
-            : undefined;
-    }
-
-    didIDispute(forkId: ForkId): DidIDispute {
-        return this.disputedForks.get(forkId) ?? false;
-    }
-
-    // ====================================
-    // PRIVATE HELPERS
-    // ====================================
-
-    private _storeDisputeConfirmationWithOptions(
         disputeConfirmation: DisputeConfirmationStruct,
         options?: StoreOptions
     ): Hash {
@@ -120,4 +79,32 @@ export class DisputeStorage {
         this.disputes.set(disputeHash, disputeConfirmation);
         return disputeHash;
     }
+
+    // ====================================
+    // READ
+    // ====================================
+
+    getDisputeConfirmation(
+        disputeHash: Hash
+    ): DisputeConfirmationStruct | undefined {
+        return this.disputes.get(disputeHash);
+    }
+
+    getDispute(disputeHash: Hash): DisputeStruct | undefined {
+        const disputeConfirmation = this.getDisputeConfirmation(disputeHash);
+        return disputeConfirmation
+            ? Codec.decode(
+                  disputeConfirmation.signedDispute.encodedDispute,
+                  Type.Dispute
+              )
+            : undefined;
+    }
+
+    didIDispute(forkId: ForkId): DidIDispute {
+        return this.disputedForks.get(forkId) ?? false;
+    }
+
+    // ====================================
+    // PRIVATE HELPERS
+    // ====================================
 }

@@ -1,12 +1,12 @@
 // @spec-test-coverage-ignore: shared facet routing spec and assertion helpers; the executable evidence is mapped from SelectorRouting.test.ts
-import { expect } from "chai";
-import { ethers, FunctionFragment, InterfaceAbi } from "ethers";
+import { routedFacets } from "@/utils/routedFacets";
 import {
     StateChannelManagerInterface,
     StateChannelManagerInterface__factory,
     StateChannelManagerProxy__factory
 } from "@typechain-types";
-import { routedFacets } from "@/utils/routedFacets";
+import { expect } from "chai";
+import { ethers, FunctionFragment, InterfaceAbi } from "ethers";
 
 /** Solidity function name as written on the facet. */
 type FacetFunctionName = string;

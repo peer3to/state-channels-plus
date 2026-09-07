@@ -24,10 +24,12 @@ merging, plus the per-fork disputed/own-dispute flags.
 
 ## Key design decisions
 
+The public confirmation method owns insertion directly. storeDispute delegates to it; persistence options and confirmation merging retain their original behavior. See [DisputeStorage.ts](../../../../../../src/storage/DisputeStorage.ts#L41).
+
 1. **Merge keeps the original signed dispute.** A repeated store set-unions co-signatures while
-   the `signedDispute` itself is never replaced ([#L100](../../../../../../src/storage/DisputeStorage.ts#L100)) — evidence identity is immutable.
+   the `signedDispute` itself is never replaced ([#L59](../../../../../../src/storage/DisputeStorage.ts#L59)) — evidence identity is immutable.
 2. **Flags are explicit and default false.** `didIDispute` reads absent as `false`
-   ([#L84](../../../../../../src/storage/DisputeStorage.ts#L84)) — local knowledge, never chain truth.
+   ([#L103](../../../../../../src/storage/DisputeStorage.ts#L103)) — local knowledge, never chain truth.
 
 ## Inputs, outputs, state, and side effects
 
@@ -74,8 +76,8 @@ Gap column. Audit state is file-level (Status header), never a row status.
 
 | Requirement / invariant                                                                            | Implementation status | Evidence                                                                                                                                                                                                                                    | Gap / divergence |
 | -------------------------------------------------------------------------------------------------- | --------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------- |
-| [`REQ-DSTORE-1-5AQYJX`](../../../../specification/storage/dispute-evidence.md#req-dstore-1-5aqyjx) | Covered               | **Here:** set-union merge, empty-set creation from a bare signed dispute ([#L34](../../../../../../src/storage/DisputeStorage.ts#L34), [#L100](../../../../../../src/storage/DisputeStorage.ts#L100)).                                      | None.            |
-| [`REQ-DSTORE-2-H1DAGX`](../../../../specification/storage/dispute-evidence.md#req-dstore-2-h1dagx) | Covered               | **Here:** `storeDisputedFork`/`didIDispute` with false default ([#L47](../../../../../../src/storage/DisputeStorage.ts#L47)). **Other files:** flag lifecycle (set/rollback) is [DisputeManager](../disputeManager/DisputeManager.ts.md)'s. | None.            |
+| [`REQ-DSTORE-1-5AQYJX`](../../../../specification/storage/dispute-evidence.md#req-dstore-1-5aqyjx) | Covered               | **Here:** set-union merge, empty-set creation from a bare signed dispute ([#L34](../../../../../../src/storage/DisputeStorage.ts#L34), [#L59](../../../../../../src/storage/DisputeStorage.ts#L59)).                                        | None.            |
+| [`REQ-DSTORE-2-H1DAGX`](../../../../specification/storage/dispute-evidence.md#req-dstore-2-h1dagx) | Covered               | **Here:** `storeDisputedFork`/`didIDispute` with false default ([#L44](../../../../../../src/storage/DisputeStorage.ts#L44)). **Other files:** flag lifecycle (set/rollback) is [DisputeManager](../disputeManager/DisputeManager.ts.md)'s. | None.            |
 
 ## Component test obligations
 

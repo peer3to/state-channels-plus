@@ -1,161 +1,115 @@
-import Rpc from "@/rpc/Rpc";
-import ATransport from "@/transport/ATransport";
-import { AGuard } from "@/rpc/guards/AGuard";
-import ARpcService from "@/rpc/ARpcService";
-import ARpcMethods from "@/rpc/ARpcMethods";
+import type ARpcMethods from "@/rpc/ARpcMethods";
+import type ARpcService from "@/rpc/ARpcService";
+import {
+    DeferredAdmissionGuard,
+    type DeferredAdmissionPolicy
+} from "@/rpc/guards/DeferredAdmissionGuard";
+import type Rpc from "@/rpc/Rpc";
+import type ATransport from "@/transport/ATransport";
 
 export interface HandshakeCompletedGuardOptions {
     onFailure?: (rpc: Rpc, transport: ATransport) => void;
 }
 
-class RpcQueue {
-    private readonly queue: Rpc[] = [];
-    private waiting = false;
-
-    enqueue(rpc: Rpc): void {
-        this.queue.push(rpc);
-    }
-
-    isWaiting(): boolean {
-        return this.waiting;
-    }
-
-    markWaiting(waiting: boolean): void {
-        this.waiting = waiting;
-    }
-
-    drain(handler: (rpc: Rpc) => void): void {
-        while (this.queue.length > 0) {
-            const next = this.queue.shift();
-            if (!next) break;
-            handler(next);
-        }
-    }
-
-    clear(): void {
-        this.queue.length = 0;
-        this.waiting = false;
-    }
-}
-
-export class HandshakeCompletedGuard extends AGuard<ARpcService<ARpcMethods>> {
-    private readonly rpcQueueByTransport: WeakMap<ATransport, RpcQueue> =
-        new WeakMap();
-
+class HandshakeAdmissionPolicy implements DeferredAdmissionPolicy {
     constructor(
-        service: ARpcService<ARpcMethods>,
+        private readonly service: ARpcService<ARpcMethods>,
         private readonly options?: HandshakeCompletedGuardOptions
-    ) {
-        super(service);
+    ) {}
+
+    isReady(_rpc: Rpc, transport: ATransport): boolean {
+        return this.isLiveAuthenticatedTransport(transport);
     }
 
-    check(_rpc: Rpc, transport: ATransport): boolean {
-        const profile =
-            this.service.p2pManager.profileManager.getProfileByTransport(
+    canDefer(_rpc: Rpc, transport: ATransport): boolean {
+        return (
+            this.options?.onFailure === undefined &&
+            this.service.p2pManager.localRpc.initHandshakeService.isNegotiating(
                 transport
-            );
-        return !!profile && profile.getIsHandshakeCompleted();
+            )
+        );
     }
 
-    private getQueue(transport: ATransport): RpcQueue {
-        const existing = this.rpcQueueByTransport.get(transport);
-        if (existing) return existing;
-        const created = new RpcQueue();
-        this.rpcQueueByTransport.set(transport, created);
-        return created;
+    waitUntilReady(transport: ATransport, timeoutMs: number): Promise<boolean> {
+        return this.service.p2pManager.localRpc.initHandshakeService.waitForHandshakeCompleted(
+            transport,
+            timeoutMs
+        );
     }
 
-    onFailure(rpc: Rpc, transport: ATransport): void {
+    onRejected(rpc: Rpc, transport: ATransport): void {
         if (this.options?.onFailure) {
-            return this.options.onFailure(rpc, transport);
-        }
-        const initHandshakeService =
-            this.service.p2pManager.localRpc.initHandshakeService;
-
-        // If the handshake negotiation is in progress for this transport, wait up to
-        // agreementTime for it to complete and retry the RPC (return early via EventBarrier).
-        if (initHandshakeService.isNegotiating(transport)) {
-            const queue = this.getQueue(transport);
-            queue.enqueue(rpc);
-
-            // Only start one waiter per transport; additional RPCs enqueue behind it.
-            if (queue.isWaiting()) {
-                return;
-            }
-            queue.markWaiting(true);
-
-            const timeoutMs =
-                this.service.p2pManager.stateManager.timeConfig.agreementTime *
-                2 * // Allow 2 agreementTime intervals for the handshake to complete - less strict requirements
-                1000;
-
-            void (async () => {
-                const completed =
-                    await initHandshakeService.waitForHandshakeCompleted(
-                        transport,
-                        timeoutMs
-                    );
-
-                // Stop gating new waiters; if more RPCs arrive after this point,
-                // either handshake is complete (guard will pass) or they will enqueue
-                // and start a new waiter (in the timeout case).
-                queue.markWaiting(false);
-
-                if (completed) {
-                    // Replay in original arrival order.
-                    queue.drain((queued) => {
-                        this.service.runRPC(queued, transport);
-                    });
-                    return;
-                }
-
-                queue.clear();
-
-                // Negotiation timed out; treat as failure.
-                this.service.logger.warn(
-                    "Handshake did not complete before guarded RPC; disconnecting",
-                    {
-                        service: rpc.service,
-                        method: rpc.method,
-                        peerAddress: transport.peerAddress
-                    }
-                );
-
-                if (transport.peerAddress) {
-                    this.service.p2pManager.disconnectAndBlacklistPeerByEvmAddress(
-                        transport.peerAddress
-                    );
-                    return;
-                }
-                this.service.p2pManager.disconnectAndBlacklistPeer(transport);
-            })();
-
+            this.options.onFailure(rpc, transport);
             return;
         }
+        this.rejectUnauthenticated(rpc, transport);
+    }
 
+    onExpired(rpc: Rpc, transport: ATransport): void {
+        if (!this.isCurrentTransport(transport)) return;
+        this.service.logger.warn(
+            "Handshake did not complete before guarded RPC; disconnecting",
+            {
+                service: rpc.service,
+                method: rpc.method,
+                peerAddress: transport.peerAddress
+            }
+        );
+        this.disconnectAndBlacklist(transport);
+    }
+
+    private isCurrentTransport(transport: ATransport): boolean {
+        if (
+            this.service.p2pManager.isDisposed ||
+            this.service.p2pManager.stateManager.isDisposed ||
+            transport.isClosed
+        ) {
+            return false;
+        }
+        return (
+            this.service.p2pManager.profileManager
+                .getProfileByTransport(transport)
+                ?.hasLiveTransport(transport) ?? false
+        );
+    }
+
+    private isLiveAuthenticatedTransport(transport: ATransport): boolean {
+        return this.isCurrentTransport(transport) && !!transport.peerAddress;
+    }
+
+    private rejectUnauthenticated(rpc: Rpc, transport: ATransport): void {
+        if (transport.isClosed) return;
         const profile =
             this.service.p2pManager.profileManager.getProfileByTransport(
                 transport
             );
-        const peerAddress = profile?.evmAddress?.toString();
-
         this.service.logger.warn(
-            "No peer profile for transport; disconnecting",
+            "Unauthenticated transport attempted guarded RPC; disconnecting",
             {
-                peerAddress,
+                peerAddress: profile?.evmAddress?.toString(),
                 service: rpc.service,
                 method: rpc.method
             }
         );
+        this.disconnectAndBlacklist(transport);
+    }
 
-        // Any guarded RPC over an unverified transport is considered malicious.
+    private disconnectAndBlacklist(transport: ATransport): void {
         if (transport.peerAddress) {
             this.service.p2pManager.disconnectAndBlacklistPeerByEvmAddress(
                 transport.peerAddress
             );
             return;
         }
-
         this.service.p2pManager.disconnectAndBlacklistPeer(transport);
+    }
+}
+
+export class HandshakeCompletedGuard extends DeferredAdmissionGuard {
+    constructor(
+        service: ARpcService<ARpcMethods>,
+        options?: HandshakeCompletedGuardOptions
+    ) {
+        super(service, new HandshakeAdmissionPolicy(service, options));
     }
 }

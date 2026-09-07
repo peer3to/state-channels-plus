@@ -1,7 +1,7 @@
-import type { EventHandler } from "@/eventHandlers/EventHandler";
-import type { EventBus } from "@/events/EventBus";
-import { EVENT_HANDLER_HOOK_NAMES } from "@/eventHandlers/EventHandlerHooks";
 import type { HostHandlerExecutionContext } from "../HostHandlerExecutionContext";
+import type { EventHandler } from "@/eventHandlers/EventHandler";
+import { EVENT_HANDLER_HOOK_NAMES } from "@/eventHandlers/EventHandlerHooks";
+import type { EventBus } from "@/events/EventBus";
 
 /**
  * Wrap each forwarded `eventHandler` method in place so that, after the original

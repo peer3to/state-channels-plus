@@ -1,16 +1,17 @@
-import { PeerTestHarness } from "@test/fixtures/PeerTestHarness";
-import type { HarnessControlRpc } from "@test/fixtures/customRpc/harnessControl/HarnessControlRpc";
-import { Logger, sleep } from "@/utils";
-import { ForkId } from "@/types/types";
-import { BytesLike } from "ethers";
-import { OpenChannelStruct } from "@typechain-types/contracts/V1/types/DataTypes";
-import { Codec, SignatureUtils, Type } from "@/utils";
-import Clock from "@/Clock";
-import { createOpenChannelTestObject } from "@test/test_utils/testHelpers";
+// @spec-test-coverage-ignore: harness helper restored to its existing readiness ordering
 import { NetworkController } from "../NetworkController";
-import { HarnessOptions } from "@test/harness/core/types";
+import Clock from "@/Clock";
 import { TimeConfig } from "@/types";
+import { ForkId } from "@/types/types";
+import { Codec, SignatureUtils, Type } from "@/utils";
+import { Logger, sleep } from "@/utils";
+import type { HarnessControlRpc } from "@test/fixtures/customRpc/harnessControl/HarnessControlRpc";
+import { PeerTestHarness } from "@test/fixtures/PeerTestHarness";
 import { resolveTestTimeConfig } from "@test/harness/core/testTimeConfig";
+import { HarnessOptions } from "@test/harness/core/types";
+import { createOpenChannelTestObject } from "@test/test_utils/testHelpers";
+import { OpenChannelStruct } from "@typechain-types/contracts/V1/types/DataTypes";
+import { BytesLike } from "ethers";
 
 /**
  * Handles channel-related operations: open channel and bootstrap.
@@ -56,11 +57,13 @@ export class LifecycleActions<
                 chainFallbackTime?: number;
                 evidenceTime?: number;
             };
+            configOverrides?: HarnessOptions["configOverrides"];
         }
     ) {
         const timeConfig = resolveTestTimeConfig(options?.timeConfig);
         await this.start(peerCount, transitionCount, {
-            timeConfig
+            timeConfig,
+            configOverrides: options?.configOverrides
         });
     }
 
@@ -73,6 +76,22 @@ export class LifecycleActions<
 
         const openChannel = this.buildOpenChannelStruct();
         const signatures = await this.signOpenChannelStruct(openChannel);
+        return this.submitOpenChannel(openChannel, signatures);
+    }
+
+    async openChannelForParticipants(peerIndices: number[]): Promise<ForkId> {
+        this.logger.info("Opening channel for selected participants...");
+        await Clock.init(this.harness.peers[0].signer.provider!);
+        const participantAddresses = peerIndices.map(
+            (index) => this.harness.getPeer(index).address
+        );
+        const openChannel = this.buildOpenChannelStruct({
+            participantAddresses
+        });
+        const signatures = await this.signOpenChannelStruct(
+            openChannel,
+            peerIndices
+        );
         return this.submitOpenChannel(openChannel, signatures);
     }
 
@@ -112,28 +131,8 @@ export class LifecycleActions<
         openChannel: OpenChannelStruct,
         signatures: BytesLike[]
     ): Promise<ForkId> {
-        this.harness.setChannelId(openChannel.channelId);
+        await this.harness.setChannelId(openChannel.channelId);
         this.logger.debug(`Channel created with ID: ${openChannel.channelId}`);
-
-        // Connect peers to the channel
-        for (const peer of this.harness.peers) {
-            await peer.p2pInstance.p2pSigner.connectToChannel(
-                openChannel.channelId
-            );
-            peer.logger.verbose(
-                `Connected to channel ${openChannel.channelId}`,
-                { component: "ChannelActions" }
-            );
-        }
-
-        if (this.harness.options.autoConnect) {
-            const networkController = new NetworkController(
-                this.harness,
-                this.logger
-            );
-            await networkController.connectAllPeers();
-            await this.harness.network.waitForP2PConnections();
-        }
 
         this.logger.debug(
             "Submitting channel open transaction to blockchain..."
@@ -145,25 +144,32 @@ export class LifecycleActions<
 
         await Promise.all([tx.wait(), sleep(100)]);
 
-        const isValidForkId = (forkId: ForkId | undefined): boolean =>
-            !!forkId && forkId !== "0x00" && forkId !== "0x0";
-
-        const getPeerForkIds = () => this.harness.peerForkIds();
-
-        this.logger.debug("Waiting for fork ID to be set on all peers...");
-
-        // Wait for onSetState event on all peers (called when forkId is set)
         const eventCounts = this.harness.peers.map((_, index: number) => ({
             peerId: index,
             expectedCount: 1
         }));
-
         await this.harness.event.waitForEventCounts(
             "onSetState",
             eventCounts,
             2000,
             { mode: "atLeast" }
         );
+
+        if (this.harness.options.autoConnect) {
+            const networkController = new NetworkController(
+                this.harness,
+                this.logger
+            );
+            await networkController.connectAllPeers();
+            await this.harness.network.waitForP2PConnections();
+        }
+
+        const isValidForkId = (forkId: ForkId | undefined): boolean =>
+            !!forkId && forkId !== "0x00" && forkId !== "0x0";
+
+        const getPeerForkIds = () => this.harness.peerForkIds();
+
+        this.logger.debug("Waiting for fork ID to be set on all peers...");
 
         // Verify all peers have the same valid fork ID
         const peerForkIds = await getPeerForkIds();
@@ -187,5 +193,17 @@ export class LifecycleActions<
             `Channel opened successfully with fork ID: ${this.harness.activeForkId}`
         );
         return this.harness.activeForkId;
+    }
+
+    /**
+     * Re-deliver the selected channel's ChannelOpened log to one peer through
+     * its real event pipeline, staging "genesis arrives from the chain" for a
+     * runtime that selected the channel after it opened.
+     */
+    async applyChannelOpenedEvent(peerIndex: number): Promise<boolean> {
+        return await this.harness
+            .control(this.harness.getPeer(peerIndex))
+            .lifecycle.applyChannelOpenedEvent()
+            .request();
     }
 }

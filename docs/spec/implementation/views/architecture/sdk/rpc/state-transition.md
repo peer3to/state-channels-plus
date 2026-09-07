@@ -15,7 +15,7 @@ Implementation:
 [`StateTransitionService`](../../../../../../../src/rpc/services/stateTransition/StateTransitionService.ts#L7),
 [`StateTransitionRpcMethods`](../../../../../../../src/rpc/services/stateTransition/StateTransitionRpcMethods.ts#L6).
 Primary consumer: [`BlockQueueManager.ingestBlockConfirmation`](../../../../../../../src/stateManager/BlockQueueManager.ts#L56)
-via [`StateManager.ingestBlockConfirmation`](../../../../../../../src/stateManager/StateManager.ts#L720).
+via [`StateManager.ingestBlockConfirmation`](../../../../../../../src/stateManager/StateManager.ts#L478).
 
 ## 1. Purpose & position in the protocol
 
@@ -30,9 +30,9 @@ Position in the flow:
 
 - **Sending side** (local, typed proxy — never through this service's handler): the success path
   gossips after persistence
-  ([`StateManager.success`](../../../../../../../src/stateManager/StateManager.ts#L918) step 7, only when
+  ([`StateManager.success`](../../../../../../../src/stateManager/StateManager.ts#L478) step 7, only when
   `PARTICIPATING` and not dispute replay), the stored-merge path re-broadcasts grown signature
-  sets ([`tryMergeStoredBlockConfirmation`](../../../../../../../src/stateManager/StateManager.ts#L769) →
+  sets ([`tryMergeStoredBlockConfirmation`](../../../../../../../src/stateManager/StateManager.ts#L478) →
   `BROADCAST`), and the strategies re-broadcast on `goodNewSignaturesOnExistingBlock`
   ([`BlockValidationStrategy`](../../../../../../../src/stateManager/validationStrategy/BlockValidationStrategy.ts#L22)).
   All use `.broadcast()` — fire-and-forget to every open connection, no delivery receipt.
@@ -55,8 +55,8 @@ All state a frame touches lives downstream and is specified there:
 
 | State                                                              | Owner                                                                  | Written by                     | Spec                                                                            |
 | ------------------------------------------------------------------ | ---------------------------------------------------------------------- | ------------------------------ | ------------------------------------------------------------------------------- |
-| Queued entries, signature sets, source attribution, 128-source cap | [`QueueStorage`](../../../../../../../src/storage/QueueStorage.ts#L26) | pipeline intake                | [../block-confirmation-pipeline.md](../block-confirmation-pipeline.md) §3.1, §4 |
-| Stored blocks / merged signatures                                  | [`BlockStorage`](../../../../../../../src/storage/BlockStorage.ts#L16) | pipeline merge/success         | ibid. §4.1, §8                                                                  |
+| Queued entries, signature sets, source attribution, 128-source cap | [`QueueStorage`](../../../../../../../src/storage/QueueStorage.ts#L27) | pipeline intake                | [../block-confirmation-pipeline.md](../block-confirmation-pipeline.md) §3.1, §4 |
+| Stored blocks / merged signatures                                  | [`BlockStorage`](../../../../../../../src/storage/BlockStorage.ts#L15) | pipeline merge/success         | ibid. §4.1, §8                                                                  |
 | Peer profiles, blacklist                                           | [`ProfileManager`](../../../../../../../src/ProfileManager.ts#L7)      | this service's penalty mapping | [./README.md](./README.md) §8                                                   |
 
 Statelessness is load-bearing: the handler runs without the `StateManager` mutex
@@ -79,8 +79,9 @@ Ordered stages, with the RPC-layer / pipeline split marked:
    [`StateTransitionRpcMethods`](../../../../../../../src/rpc/services/stateTransition/StateTransitionRpcMethods.ts#L6))_:
    read `senderTransport.peerAddress` (written onto the transport by handshake completion). If
    absent — unreachable behind the guard, kept as a defensive check — `disconnectAndBlacklistPeer(transport)`
-   and return. Note this is the weak pre-profile ban: without a profile, "blacklist" degrades to
-   disconnect-only ([./README.md](./README.md) §8 open question, [`OQ-34-FY08V2`](../../../../../specification/open-questions.md#oq-34-fy08v2)).
+   and return. The addressless transport profile still records the verdict and bans its Holepunch
+   handle; durability across a new SDK handle remains open ([./README.md](./README.md) §8,
+   [`OQ-34-FY08V2`](../../../../../specification/open-questions.md#oq-34-fy08v2)).
 3. **Delegation** _(pipeline)_:
    `stateManager.ingestBlockConfirmation(blockConfirmation, { senderAddress: peerAddress })`.
    The struct is passed **raw** — no Codec decode, no shape check at the RPC layer. Everything
@@ -243,14 +244,14 @@ budget of §4.2.
 
 Consistency check against the model doc's outcome table ([./README.md](./README.md) §8):
 
-| Failure                                        | Consequence                                         | Model-doc row                                                    | Match                                                                                                      |
-| ---------------------------------------------- | --------------------------------------------------- | ---------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------- |
-| Malformed / inauthentic confirmation           | Disconnect + blacklist by address (verdict `false`) | "Block confirmation judged Byzantine (strategy verdict `false`)" | yes                                                                                                        |
-| Wrong-channel block (attributed sender)        | Disconnect + blacklist                              | same row (verdict `false`)                                       | yes                                                                                                        |
-| Duplicate / disputed-fork / unknown-fork block | Ignore or queue; connection kept                    | "invalid but tolerated" row                                      | yes                                                                                                        |
-| Missing `peerAddress` behind guard             | Disconnect + weak (pre-profile) ban                 | listed under the service bullet §7                               | yes                                                                                                        |
-| **Ingest-internal error (chain read, bug)**    | Disconnect + blacklist of the sender                | **not represented**                                              | **mismatch — the model table has no row attributing local failure to the peer; see §4.1 defect candidate** |
-| Handler throw escaping the method              | Fire-and-forget path → disconnect, no blacklist     | "Fire-and-forget handler rejects/throws"                         | yes (in practice unreachable: intake catches everything, and the two disconnect calls do not throw)        |
+| Failure                                        | Consequence                                                 | Model-doc row                                                    | Match                                                                                                      |
+| ---------------------------------------------- | ----------------------------------------------------------- | ---------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------- |
+| Malformed / inauthentic confirmation           | Disconnect + blacklist by address (verdict `false`)         | "Block confirmation judged Byzantine (strategy verdict `false`)" | yes                                                                                                        |
+| Wrong-channel block (attributed sender)        | Disconnect + blacklist                                      | same row (verdict `false`)                                       | yes                                                                                                        |
+| Duplicate / disputed-fork / unknown-fork block | Ignore or queue; connection kept                            | "invalid but tolerated" row                                      | yes                                                                                                        |
+| Missing `peerAddress` behind guard             | Disconnect + blacklist of the addressless transport profile | listed under the service bullet §7                               | yes                                                                                                        |
+| **Ingest-internal error (chain read, bug)**    | Disconnect + blacklist of the sender                        | **not represented**                                              | **mismatch — the model table has no row attributing local failure to the peer; see §4.1 defect candidate** |
+| Handler throw escaping the method              | Fire-and-forget path → disconnect, no blacklist             | "Fire-and-forget handler rejects/throws"                         | yes (in practice unreachable: intake catches everything, and the two disconnect calls do not throw)        |
 
 ## 6. Invariants
 

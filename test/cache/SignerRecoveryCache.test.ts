@@ -1,13 +1,13 @@
-import { expect } from "chai";
-import { describe, it, beforeEach } from "mocha";
-import { ethers } from "hardhat";
 import {
     recoverSigner,
     __resetSignerRecoveryCache,
     __signerRecoveryCacheSize
 } from "@/cache";
-import { config } from "@/utils/config";
 import { Signature } from "@/types/types";
+import { config } from "@/utils/config";
+import { expect } from "chai";
+import { ethers } from "hardhat";
+import { describe, it, beforeEach } from "mocha";
 
 describe("SignerRecoveryCache", () => {
     beforeEach(() => __resetSignerRecoveryCache());

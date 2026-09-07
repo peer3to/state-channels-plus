@@ -23,6 +23,8 @@ The chain-observed context: delegates to the live strategy except authenticity f
 
 ## Key design decisions
 
+The subjective hook accepts the chain-committed block after objective timestamp validation. The shared pipeline now calls the hook instead of deciding by class identity. See [CalldataCommittedStrategy.ts](../../../../../../../src/stateManager/validationStrategy/CalldataCommittedStrategy.ts#L160).
+
 1. **Delegation keeps one consequence table** — only the poster-fault difference is local.
 
 ## Inputs, outputs, state, and side effects

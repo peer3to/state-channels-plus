@@ -1,12 +1,12 @@
-import { expect } from "chai";
-
+import { deserializeRpcFrame } from "@/rpc/Rpc";
 import {
     deserializeRpc,
     deserializeRpcResponse,
+    MAX_RPC_FRAME_BYTES,
     serializeRpc,
-    serializeRpcResponse,
-    MAX_RPC_FRAME_BYTES
+    serializeRpcResponse
 } from "@/rpc/Rpc";
+import { expect } from "chai";
 
 /**
  * Regression: deserializeRpc must require `params` to be an array. The
@@ -169,5 +169,76 @@ describe("deserializeRpc - params schema", function () {
 
     it("defines the exact 16 MiB frame limit", function () {
         expect(MAX_RPC_FRAME_BYTES).to.equal(16 * 1024 * 1024);
+    });
+    it("classifies request with response-first precedence", function () {
+        const serialized = JSON.stringify({
+            service: "",
+            method: "",
+            params: [],
+            requestId: ""
+        });
+        const frame = deserializeRpcFrame(serialized);
+        expect(frame?.kind).to.equal("request");
+        expect(deserializeRpc(serialized) !== undefined).to.equal(true);
+        expect(deserializeRpcResponse(serialized) !== undefined).to.equal(
+            false
+        );
+    });
+    it("classifies response with response-first precedence", function () {
+        const serialized = JSON.stringify({
+            rpcResponse: true,
+            requestId: "",
+            ok: true,
+            result: { accepted: true }
+        });
+        const frame = deserializeRpcFrame(serialized);
+        expect(frame?.kind).to.equal("response");
+        expect(deserializeRpc(serialized) !== undefined).to.equal(false);
+        expect(deserializeRpcResponse(serialized) !== undefined).to.equal(true);
+    });
+    it("classifies dual shape with response-first precedence", function () {
+        const serialized = JSON.stringify({
+            service: "svc",
+            method: "call",
+            params: [],
+            rpcResponse: true,
+            requestId: "id",
+            ok: true
+        });
+        const frame = deserializeRpcFrame(serialized);
+        expect(frame?.kind).to.equal("response");
+        expect(deserializeRpc(serialized) !== undefined).to.equal(true);
+        expect(deserializeRpcResponse(serialized) !== undefined).to.equal(true);
+    });
+    it("classifies invalid response with valid request with response-first precedence", function () {
+        const serialized = JSON.stringify({
+            service: "svc",
+            method: "call",
+            params: [],
+            rpcResponse: true,
+            requestId: "id",
+            ok: "true"
+        });
+        const frame = deserializeRpcFrame(serialized);
+        expect(frame?.kind).to.equal("request");
+        expect(deserializeRpc(serialized) !== undefined).to.equal(true);
+        expect(deserializeRpcResponse(serialized) !== undefined).to.equal(
+            false
+        );
+    });
+    it("rejects invalid JSON during frame classification", function () {
+        expect(deserializeRpcFrame("not json")).to.equal(undefined);
+    });
+    it("rejects null during frame classification", function () {
+        expect(deserializeRpcFrame("null")).to.equal(undefined);
+    });
+    it("rejects primitive during frame classification", function () {
+        expect(deserializeRpcFrame("42")).to.equal(undefined);
+    });
+    it("rejects array during frame classification", function () {
+        expect(deserializeRpcFrame("[]")).to.equal(undefined);
+    });
+    it("rejects missing fields during frame classification", function () {
+        expect(deserializeRpcFrame("{}")).to.equal(undefined);
     });
 });

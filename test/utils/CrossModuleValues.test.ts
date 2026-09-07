@@ -1,18 +1,18 @@
-import { expect } from "chai";
-import { AbiCoder } from "ethers";
-
+import {
+    CrossModuleEthersResult,
+    CrossModuleRpcService,
+    CrossModuleTransport
+} from "../../testSupport/CrossModuleValues";
 import RemoteRpcProxy from "@/rpc/RemoteRpcProxy";
+
 import { isTransport } from "@/transport/ATransport";
 import {
     convertEthersValue,
     createEthersResultProxy
 } from "@/utils/EthersResultProxy";
 import { hasRpcService, isEthersResult } from "@/utils/ObjectChecks";
-import {
-    CrossModuleEthersResult,
-    CrossModuleRpcService,
-    CrossModuleTransport
-} from "../../testSupport/CrossModuleValues";
+import { expect } from "chai";
+import { AbiCoder } from "ethers";
 
 describe("cross-module runtime values", function () {
     it("accepts an RPC service with the public service shape", function () {

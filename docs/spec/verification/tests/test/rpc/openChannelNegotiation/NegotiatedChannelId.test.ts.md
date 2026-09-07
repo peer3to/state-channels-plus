@@ -1,0 +1,18 @@
+# test/rpc/openChannelNegotiation/NegotiatedChannelId.test.ts — Test Report
+
+> **Test file:** [test/rpc/openChannelNegotiation/NegotiatedChannelId.test.ts](../../../../../../../test/rpc/openChannelNegotiation/NegotiatedChannelId.test.ts)  
+> **Status:** Authored — engineer verification pending.  
+> **Exercises:** [OpenChannelNegotiationHelpers.ts](../../../../../implementation/source/src/rpc/services/openChannelNegotiation/OpenChannelNegotiationHelpers.ts.md)
+
+## Overview
+
+The pure helper cases use real wallet addresses and committed challenge pairs. They prove both peer views derive one ID, fresh rounds differ, malformed/self/zero transcripts reject, and a lobby match has no caller- or peer-supplied channel ID.
+
+## Tests and covered test IDs
+
+| Test declaration                                                                                                                                                                                  | Covers                                                                                                                                                                                                        |
+| ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| [`negotiated channel ID > derives the same ID from both peer views of one committed transcript`](../../../../../../../test/rpc/openChannelNegotiation/NegotiatedChannelId.test.ts#L22) (line 22)  | [`UNIT-TEST-NEGOTIATED-CHANNEL-ID-1-4C09GW.P1`](../../../../../implementation/source/src/rpc/services/openChannelNegotiation/OpenChannelNegotiationHelpers.ts.md#unit-test-negotiated-channel-id-1-4c09gw.p1) |
+| [`negotiated channel ID > derives distinct IDs for fresh challenge rounds between the same pair`](../../../../../../../test/rpc/openChannelNegotiation/NegotiatedChannelId.test.ts#L31) (line 31) | [`UNIT-TEST-NEGOTIATED-CHANNEL-ID-1-4C09GW.P2`](../../../../../implementation/source/src/rpc/services/openChannelNegotiation/OpenChannelNegotiationHelpers.ts.md#unit-test-negotiated-channel-id-1-4c09gw.p2) |
+| [`negotiated channel ID > rejects self matches and malformed or zero challenges`](../../../../../../../test/rpc/openChannelNegotiation/NegotiatedChannelId.test.ts#L44) (line 44)                 | [`UNIT-TEST-NEGOTIATED-CHANNEL-ID-1-4C09GW.P3`](../../../../../implementation/source/src/rpc/services/openChannelNegotiation/OpenChannelNegotiationHelpers.ts.md#unit-test-negotiated-channel-id-1-4c09gw.p3) |
+| [`negotiated channel ID > keeps the lobby match payload free of any supplied channel ID`](../../../../../../../test/rpc/openChannelNegotiation/NegotiatedChannelId.test.ts#L58) (line 58)         | [`UNIT-TEST-NEGOTIATED-CHANNEL-ID-1-4C09GW.P4`](../../../../../implementation/source/src/rpc/services/openChannelNegotiation/OpenChannelNegotiationHelpers.ts.md#unit-test-negotiated-channel-id-1-4c09gw.p4) |

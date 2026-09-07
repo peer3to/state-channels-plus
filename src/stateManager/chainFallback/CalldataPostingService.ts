@@ -1,6 +1,6 @@
-import { TransactionResponse } from "ethers";
-
+import type StateManager from "../StateManager";
 import Clock from "@/Clock";
+
 import { timeoutWaitTime } from "@/types";
 import { Hash } from "@/types/types";
 import { DetachedPromises, Logger } from "@/utils";
@@ -9,8 +9,7 @@ import {
     tryHandleEvmError
 } from "@/utils/evmErrorHandler";
 import { LoggerUtils } from "@/utils/LoggerUtils";
-
-import type StateManager from "../StateManager";
+import { TransactionResponse } from "ethers";
 
 /**
  * Posts my authored block's calldata on-chain when not everyone signed it, so
@@ -72,9 +71,8 @@ export default class CalldataPostingService {
                 .postBlockCalldata(block.signedBlock, maxTimestamp)
                 .then((tx) => {
                     txResponse = tx;
-                    const txReceiptPromise = txResponse.wait();
-                    DetachedPromises.collect(txReceiptPromise);
-                    return txReceiptPromise;
+                    // The outer operation owns receipt recovery before collection.
+                    return txResponse.wait();
                 })
                 .catch(async (error) => {
                     const success = await tryHandleEvmError(error, {

@@ -1,15 +1,15 @@
-import MathStateMachineArtifact from "../../../artifacts/contracts/V1/examples/MathStateMachine/MathStateMachine.sol/MathStateMachine.json";
-import MathConsumerFacetArtifact from "../../../artifacts/contracts/V1/examples/MathStateMachine/MathConsumerFacet.sol/MathConsumerFacet.json";
-import { ContractFactory, Signer } from "ethers";
-
-import { deployFullStack } from "../../../scripts/V1/deploy";
-import type { MathStateMachine } from "@typechain-types";
-import { MathStateMachine__factory } from "@typechain-types";
 import type {
     HarnessDeploymentConfig,
     HarnessLocalStateMachineDeploymentParams,
     HarnessOnChainContractsDeploymentParams
 } from "./types";
+import MathConsumerFacetArtifact from "../../../artifacts/contracts/V1/examples/MathStateMachine/MathConsumerFacet.sol/MathConsumerFacet.json";
+import MathStateMachineArtifact from "../../../artifacts/contracts/V1/examples/MathStateMachine/MathStateMachine.sol/MathStateMachine.json";
+
+import { deployFullStack } from "../../../scripts/V1/deploy";
+import type { MathStateMachine } from "@typechain-types";
+import { MathStateMachine__factory } from "@typechain-types";
+import { ContractFactory, Signer } from "ethers";
 
 export async function deployDefaultMathOnChainContracts(
     params: HarnessOnChainContractsDeploymentParams

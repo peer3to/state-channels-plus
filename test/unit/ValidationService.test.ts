@@ -1,15 +1,19 @@
-import { expect } from "chai";
-import { ethers } from "ethers";
-import { Codec, Type } from "@/utils";
 import { Block } from "@/models";
+import { Status } from "@/types";
 import { FraudProofType, toSolidityFraudProofType } from "@/types/sol-enums";
+import type { Address } from "@/types/types";
+import { Codec, Type } from "@/utils";
+import * as factory from "@test/factory";
+import {
+    assertSpectatingFraud,
+    assertObserverHook
+} from "@test/fixtures/SpectatingFraudStaging";
 import {
     MathTestSession as TestSession,
     MIN_TEST_TIME_CONFIG
 } from "@test/harness";
-import * as factory from "@test/factory";
-import type { Address } from "@/types/types";
-import { Status } from "@/types";
+import { expect } from "chai";
+import { ethers } from "ethers";
 
 // crafted confirmations run through validateBlockConfirmation host-side via
 // stub.runBlockValidation (record-only side effects). asserts input -> result
@@ -42,6 +46,36 @@ const HEIGHT_ZERO_POST_WINDOW =
     TIMESTAMP_TIME_CONFIG.evidenceTime;
 
 describe("Unit: ValidationService", function () {
+    it("observer proof replay aborts on a real double sign without requesting a dispute", async function () {
+        await assertSpectatingFraud("observer", true);
+    });
+    it("participant proof replay records double-sign fraud and requests a dispute", async function () {
+        await assertSpectatingFraud("participant", true);
+    });
+    it("pending participant proof replay records double-sign fraud and stays pending", async function () {
+        await assertSpectatingFraud("pending", true);
+    });
+    it("pending participant records live double-sign fraud and stays pending", async function () {
+        await assertSpectatingFraud("pending", false);
+    });
+    it("observer live arrivals abort on double-sign fraud without requesting a dispute", async function () {
+        await assertSpectatingFraud("observer", false);
+    });
+    it("observer wrongGenesisDetected keeps the spectator reaction without submitting a dispute", async function () {
+        await assertObserverHook("wrongGenesisDetected");
+    });
+    it("observer invalidStateTransitionDetected keeps the spectator reaction without submitting a dispute", async function () {
+        await assertObserverHook("invalidStateTransitionDetected");
+    });
+    it("observer objectiveInvalidTimestampDetected keeps the spectator reaction without submitting a dispute", async function () {
+        await assertObserverHook("objectiveInvalidTimestampDetected");
+    });
+    it("observer forgedInboundMessageBlockDetected keeps the spectator reaction without submitting a dispute", async function () {
+        await assertObserverHook("forgedInboundMessageBlockDetected");
+    });
+    it("observer blockForkIsDisputed keeps the spectator reaction without submitting a dispute", async function () {
+        await assertObserverHook("blockForkIsDisputed");
+    });
     describe("isChannelOpen", function () {
         it("open fork (non-zero) → true", async function () {
             const h = TestSession.getHarness();
@@ -71,6 +105,8 @@ describe("Unit: ValidationService", function () {
                 )
             );
 
+            // Spawn-only, classified (plan 30 item 5): the participants never serve
+            // sync here and nothing authors while the spectator connects.
             const { index: spectatorIndex } = await h.join.addSpectator();
             await h.event.waitUntilPeerStatus(spectatorIndex, Status.OPENED);
             const spectator = h.getPeer(spectatorIndex);
@@ -94,7 +130,7 @@ describe("Unit: ValidationService", function () {
 
             const r = await h
                 .control(spectator)
-                .stub.runBlockValidation(encoded)
+                .validation.runBlockValidation(encoded)
                 .request();
 
             expect(r.resultName).to.equal("NOT_READY");
@@ -122,7 +158,7 @@ describe("Unit: ValidationService", function () {
 
             const r = await h
                 .control(observer)
-                .stub.runBlockValidation(encoded)
+                .validation.runBlockValidation(encoded)
                 .request();
 
             expect(r.resultName).to.equal("DISCONNECT");
@@ -148,7 +184,7 @@ describe("Unit: ValidationService", function () {
 
             const r = await h
                 .control(observer)
-                .stub.runBlockValidation(encoded)
+                .validation.runBlockValidation(encoded)
                 .request();
 
             expect(r.resultName).to.equal("DISCONNECT");
@@ -180,7 +216,7 @@ describe("Unit: ValidationService", function () {
 
             const r = await h
                 .control(observer)
-                .stub.runBlockValidation(encoded)
+                .validation.runBlockValidation(encoded)
                 .request();
 
             // not a peer fault -> restored for a timeout sync, no dispute
@@ -211,7 +247,7 @@ describe("Unit: ValidationService", function () {
 
             const r = await h
                 .control(observer)
-                .stub.runBlockValidation(encoded)
+                .validation.runBlockValidation(encoded)
                 .request();
 
             expect(r.resultName).to.equal("DISCONNECT");
@@ -238,17 +274,19 @@ describe("Unit: ValidationService", function () {
                 previousBlockHash: factory.hash()
             });
 
-            const r = await h
-                .control(observer)
-                .stub.runBlockValidation(encoded)
-                .request();
+            for (const strategy of ["active", "spectating"] as const) {
+                const r = await h
+                    .control(observer)
+                    .validation.runBlockValidation(encoded, { strategy })
+                    .request();
 
-            // genesis snapshot present -> real fraud proof + dispute on the fork
-            expect(r.resultName).to.equal("DISPUTE");
-            expect(r.disputedForkIds).to.deep.equal([forkId]);
-            expect(r.fraudProofType).to.equal(
-                solProofType(FraudProofType.WrongGenesis)
-            );
+                // genesis snapshot present -> real fraud proof + dispute on the fork
+                expect(r.resultName).to.equal("DISPUTE");
+                expect(r.disputedForkIds).to.deep.equal([forkId]);
+                expect(r.fraudProofType).to.equal(
+                    solProofType(FraudProofType.WrongGenesis)
+                );
+            }
         });
 
         it("linked next block by the wrong leader → invalidStateTransitionDetected → DISPUTE + InvalidStateTransition proof", async function () {
@@ -279,16 +317,18 @@ describe("Unit: ValidationService", function () {
                 }
             );
 
-            const r = await h
-                .control(observer)
-                .stub.runBlockValidation(encoded)
-                .request();
+            for (const strategy of ["active", "spectating"] as const) {
+                const r = await h
+                    .control(observer)
+                    .validation.runBlockValidation(encoded, { strategy })
+                    .request();
 
-            expect(r.resultName).to.equal("DISPUTE");
-            expect(r.disputedForkIds).to.deep.equal([forkId]);
-            expect(r.fraudProofType).to.equal(
-                solProofType(FraudProofType.BlockInvalidStateTransition)
-            );
+                expect(r.resultName).to.equal("DISPUTE");
+                expect(r.disputedForkIds).to.deep.equal([forkId]);
+                expect(r.fraudProofType).to.equal(
+                    solProofType(FraudProofType.BlockInvalidStateTransition)
+                );
+            }
         });
     });
     describe("validateBlockConfirmation → punishment attribution", function () {
@@ -308,7 +348,7 @@ describe("Unit: ValidationService", function () {
 
             const r = await h
                 .control(observer)
-                .stub.runBlockValidation(encodedBlockConfirmation, {
+                .validation.runBlockValidation(encodedBlockConfirmation, {
                     senderAddress: relayer.address
                 })
                 .request();
@@ -330,7 +370,16 @@ describe("Unit: ValidationService", function () {
         it("spectating: missing genesis → supplier and author both cut, spectator keeps spectating", async function () {
             const h = TestSession.getHarness();
             await h.lifecycle.start(3, 1);
-            const spectator = await h.join.addSpectatorWait();
+            // The hook under test is invoked directly with a crafted block, so
+            // the height it syncs to does not matter; authoring through the
+            // spawn keeps the writer slot alive (a starved farm otherwise let
+            // a timeout dispute move the fork under the sync).
+            const { peer: spectator } = await h.join.addSpectatorAuthoring({
+                authoringPeerIndices: [0, 1, 2],
+                minimumBlocks: 1,
+                maximumBlocks: 20,
+                waitForFinalization: false
+            });
             const author = h.getPeer(1);
             const supplier = h.getPeer(2);
 
@@ -339,7 +388,7 @@ describe("Unit: ValidationService", function () {
 
             const r = await h
                 .control(spectator)
-                .stub.runBlockValidation(
+                .validation.runBlockValidation(
                     Codec.encode(
                         blockConfirmation,
                         Type.BlockConfirmation
@@ -410,7 +459,7 @@ describe("Unit: ValidationService", function () {
 
             const r = await h
                 .control(observer)
-                .stub.runBlockValidation(encoded)
+                .validation.runBlockValidation(encoded)
                 .request();
 
             // the chain accepted the author -> a later guard is what stops it
@@ -460,7 +509,7 @@ describe("Unit: ValidationService", function () {
 
             const r = await h
                 .control(observer)
-                .stub.runBlockValidation(encoded)
+                .validation.runBlockValidation(encoded)
                 .request();
 
             // pending participants are merged into the on-chain union
@@ -498,7 +547,7 @@ describe("Unit: ValidationService", function () {
 
             const r = await h
                 .control(observer)
-                .stub.runBlockValidation(encoded)
+                .validation.runBlockValidation(encoded)
                 .request();
 
             expect(r.resultName).to.equal("DISPUTE");
@@ -532,7 +581,7 @@ describe("Unit: ValidationService", function () {
 
             const r = await h
                 .control(observer)
-                .stub.runBlockValidation(encoded)
+                .validation.runBlockValidation(encoded)
                 .request();
 
             expect(r.resultName).to.equal("DISPUTE");
@@ -567,7 +616,7 @@ describe("Unit: ValidationService", function () {
 
             const r = await h
                 .control(observer)
-                .stub.runBlockValidation(encoded)
+                .validation.runBlockValidation(encoded)
                 .request();
 
             expect(r.resultName).to.equal("DISPUTE");
@@ -594,7 +643,7 @@ describe("Unit: ValidationService", function () {
 
             const r = await h
                 .control(observer)
-                .stub.runBlockValidation(stored!.encodedBlockConfirmation)
+                .validation.runBlockValidation(stored!.encodedBlockConfirmation)
                 .request();
 
             expect(r.resultName).to.equal("DISPUTE");
@@ -627,7 +676,7 @@ describe("Unit: ValidationService", function () {
 
             const r = await h
                 .control(observer)
-                .stub.runBlockValidation(encoded)
+                .validation.runBlockValidation(encoded)
                 .request();
 
             expect(r.resultName).to.equal("DISCONNECT");
@@ -666,16 +715,18 @@ describe("Unit: ValidationService", function () {
                 previousBlockHash: genesisHash!
             });
 
-            const r = await h
-                .control(observer)
-                .stub.runBlockValidation(encoded)
-                .request();
+            for (const strategy of ["active", "spectating"] as const) {
+                const r = await h
+                    .control(observer)
+                    .validation.runBlockValidation(encoded, { strategy })
+                    .request();
 
-            expect(r.resultName).to.equal("DISPUTE");
-            expect(r.disputedForkIds).to.deep.equal([forkId]);
-            expect(r.fraudProofType).to.equal(
-                solProofType(FraudProofType.InvalidTimestamp)
-            );
+                expect(r.resultName).to.equal("DISPUTE");
+                expect(r.disputedForkIds).to.deep.equal([forkId]);
+                expect(r.fraudProofType).to.equal(
+                    solProofType(FraudProofType.InvalidTimestamp)
+                );
+            }
         });
 
         it("non-first block, bad timestamp, previous block not on-chain → DISPUTE + InvalidTimestamp", async function () {
@@ -707,7 +758,7 @@ describe("Unit: ValidationService", function () {
 
             const r = await h
                 .control(observer)
-                .stub.runBlockValidation(encoded)
+                .validation.runBlockValidation(encoded)
                 .request();
 
             expect(r.resultName).to.equal("DISPUTE");
@@ -744,7 +795,7 @@ describe("Unit: ValidationService", function () {
 
             const r = await h
                 .control(observer)
-                .stub.runBlockValidation(encoded)
+                .validation.runBlockValidation(encoded)
                 .request();
 
             expect(r.resultName).to.equal("SUCCESS");
@@ -786,7 +837,7 @@ describe("Unit: ValidationService", function () {
 
             const r = await h
                 .control(observer)
-                .stub.runBlockValidation(encoded)
+                .validation.runBlockValidation(encoded)
                 .request();
 
             expect(r.resultName).to.equal("DISPUTE");
@@ -800,6 +851,49 @@ describe("Unit: ValidationService", function () {
             // exactly one recheck: the recursive pass sees the parent's cached
             // timestamp and proves the violation instead of re-querying
             expect(r.calldataRecoveryQueries).to.equal(1);
+        });
+
+        it("block replayed from a synchronization proof outside agreementTime → the subjective window does not apply → SUCCESS", async function () {
+            const h = TestSession.getHarness();
+            await h.lifecycle.start(3, 0, {
+                timeConfig: TIMESTAMP_TIME_CONFIG
+            });
+            const { observer, authored } =
+                await h.transition.authorNextBlockOffWireWait();
+
+            // Leave the subjective window: a live arrival would now park as
+            // NOT_ENOUGH_TIME; the same block replayed from a verified proof
+            // is history and applies.
+            const clockGap = await h.event.waitPastAgreementTime(
+                observer.index,
+                authored.timestamp
+            );
+            expect(clockGap).to.be.greaterThan(
+                TIMESTAMP_TIME_CONFIG.agreementTime
+            );
+
+            const live = await h
+                .control(observer)
+                .validation.runBlockValidation(
+                    authored.encodedBlockConfirmation
+                )
+                .request();
+            expect(live.resultName).to.equal("NOT_ENOUGH_TIME");
+            expect(live.subjectiveWarningCount).to.equal(1);
+
+            const replayed = await h
+                .control(observer)
+                .validation.runBlockValidation(
+                    authored.encodedBlockConfirmation,
+                    { strategy: "spectating" }
+                )
+                .request();
+            expect(replayed.subjectiveWarningCount).to.equal(0);
+            expect(replayed.resultName).to.equal("SUCCESS");
+            expect(replayed.firedHooks).to.deep.equal([
+                "subjectiveInvalidTimestampDetected"
+            ]);
+            expect(replayed.fraudProofType).to.be.null;
         });
 
         it("on-chain timestamp exactly at the post deadline → ON_TIME → SUCCESS even outside agreementTime", async function () {
@@ -817,7 +911,10 @@ describe("Unit: ValidationService", function () {
             const deadline = genesisTimestamp! + HEIGHT_ZERO_POST_WINDOW;
             await h
                 .control(observer)
-                .stub.stageBlockCalldata(authored.encodedSignedBlock, deadline)
+                .validation.stageBlockCalldata(
+                    authored.encodedSignedBlock,
+                    deadline
+                )
                 .request();
 
             // leave the subjective window, so only the ON_TIME early return
@@ -832,7 +929,9 @@ describe("Unit: ValidationService", function () {
 
             const r = await h
                 .control(observer)
-                .stub.runBlockValidation(authored.encodedBlockConfirmation)
+                .validation.runBlockValidation(
+                    authored.encodedBlockConfirmation
+                )
                 .request();
 
             expect(r.resultName).to.equal("SUCCESS");
@@ -856,7 +955,7 @@ describe("Unit: ValidationService", function () {
             const deadline = genesisTimestamp! + HEIGHT_ZERO_POST_WINDOW;
             await h
                 .control(observer)
-                .stub.stageBlockCalldata(
+                .validation.stageBlockCalldata(
                     authored.encodedSignedBlock,
                     deadline + 1
                 )
@@ -864,7 +963,9 @@ describe("Unit: ValidationService", function () {
 
             const r = await h
                 .control(observer)
-                .stub.runBlockValidation(authored.encodedBlockConfirmation)
+                .validation.runBlockValidation(
+                    authored.encodedBlockConfirmation
+                )
                 .request();
 
             expect(r.resultName).to.equal("DISPUTE");
@@ -885,16 +986,17 @@ describe("Unit: ValidationService", function () {
             const { leader, observer, authored, forkId } =
                 await h.transition.authorNextBlockOffWireWait();
 
-            // the observer loses the subscribed calldata delivery, so it holds
-            // no timestamp until validation queries the chain itself
-            await h
-                .control(observer)
-                .stub.stubHoldCalldataPostedEvents()
-                .request();
+            // every non-leader loses the subscribed calldata delivery: the
+            // observer holds no timestamp until validation queries the chain
+            // itself, and the third participant cannot ingest, sign, and
+            // gossip the block to the observer first
+            await h.rpcStub.holdCalldataPostedEventsExceptLeader(leader.index);
 
             await h
                 .control(leader)
-                .stub.postBlockCalldataOnChain(authored.encodedSignedBlock)
+                .validation.postBlockCalldataOnChain(
+                    authored.encodedSignedBlock
+                )
                 .request();
 
             await h
@@ -911,7 +1013,9 @@ describe("Unit: ValidationService", function () {
 
             const r = await h
                 .control(observer)
-                .stub.runBlockValidation(authored.encodedBlockConfirmation)
+                .validation.runBlockValidation(
+                    authored.encodedBlockConfirmation
+                )
                 .request();
 
             // no cached timestamp -> validation asked EventSyncService, which
@@ -958,12 +1062,17 @@ describe("Unit: ValidationService", function () {
 
             await h
                 .control(observer)
-                .stub.stageBlockCalldata(authored.encodedSignedBlock, postedAt)
+                .validation.stageBlockCalldata(
+                    authored.encodedSignedBlock,
+                    postedAt
+                )
                 .request();
 
             const r = await h
                 .control(observer)
-                .stub.runBlockValidation(authored.encodedBlockConfirmation)
+                .validation.runBlockValidation(
+                    authored.encodedBlockConfirmation
+                )
                 .request();
 
             expect(r.resultName).to.equal("DISPUTE");
@@ -994,7 +1103,9 @@ describe("Unit: ValidationService", function () {
 
             const r = await h
                 .control(observer)
-                .stub.runBlockValidation(authored.encodedBlockConfirmation)
+                .validation.runBlockValidation(
+                    authored.encodedBlockConfirmation
+                )
                 .request();
 
             expect(r.resultName).to.equal("NOT_ENOUGH_TIME");
@@ -1004,7 +1115,7 @@ describe("Unit: ValidationService", function () {
             expect(r.disputedForkIds).to.deep.equal([]);
         });
 
-        it("the same stale unposted block under the dispute strategy → subjective check skipped → SUCCESS", async function () {
+        it("the same stale unposted block under the dispute strategy → subjective hook accepts history → SUCCESS", async function () {
             const h = TestSession.getHarness();
             await h.lifecycle.start(3, 0, {
                 timeConfig: TIMESTAMP_TIME_CONFIG
@@ -1017,17 +1128,19 @@ describe("Unit: ValidationService", function () {
                 authored.timestamp
             );
 
-            // the subjective window is active-strategy only - dispute replay
-            // audits old blocks long after they were produced
+            // The dispute strategy accepts historical timestamps through its hook.
             const r = await h
                 .control(observer)
-                .stub.runBlockValidation(authored.encodedBlockConfirmation, {
-                    strategy: "dispute"
-                })
+                .validation.runBlockValidation(
+                    authored.encodedBlockConfirmation,
+                    {
+                        strategy: "dispute"
+                    }
+                )
                 .request();
 
             expect(r.resultName).to.equal("SUCCESS");
-            expect(r.firedHooks).to.not.include(
+            expect(r.firedHooks).to.include(
                 "subjectiveInvalidTimestampDetected"
             );
             expect(r.disputedForkIds).to.deep.equal([]);
@@ -1064,7 +1177,7 @@ describe("Unit: ValidationService", function () {
 
             const r = await h
                 .control(observer)
-                .stub.runBlockValidation(encoded)
+                .validation.runBlockValidation(encoded)
                 .request();
 
             expect(r.resultName).to.equal("SUCCESS");
@@ -1084,7 +1197,9 @@ describe("Unit: ValidationService", function () {
 
             const r = await h
                 .control(observer)
-                .stub.runBlockValidation(authored!.encodedBlockConfirmation)
+                .validation.runBlockValidation(
+                    authored!.encodedBlockConfirmation
+                )
                 .request();
 
             expect(r.resultName).to.equal("SUCCESS");
@@ -1121,7 +1236,7 @@ describe("Unit: ValidationService", function () {
             expect(r.bogus).to.equal(false);
         });
 
-        it("a block on the current fork while it is disputed → blockForkIsDisputed → NOT_READY, requeued", async function () {
+        it("a block on the current fork while it is disputed → blockForkIsDisputed → NOT_READY, discarded", async function () {
             const h = TestSession.getHarness();
             const observerIndex = 0;
             const maliciousPeerIndex = 2;
@@ -1160,16 +1275,19 @@ describe("Unit: ValidationService", function () {
                 }
             });
 
-            const r = await h
-                .control(observer)
-                .stub.runBlockValidation(encoded)
-                .request();
+            for (const strategy of ["active", "spectating"] as const) {
+                const r = await h
+                    .control(observer)
+                    .validation.runBlockValidation(encoded, { strategy })
+                    .request();
 
-            // sourceless entry -> requeue for the timeout sync, not a disconnect
-            expect(r.resultName).to.equal("NOT_READY");
-            expect(r.restoreQueuedEntryCalled).to.equal(true);
-            expect(r.disputedForkIds).to.deep.equal([]);
-            expect(r.firedHooks).to.include("blockForkIsDisputed");
+                // Discard a sourceless entry without disconnecting or scheduling a retry.
+                expect(r.resultName).to.equal("NOT_READY");
+                expect(r.restoreQueuedEntryCalled).to.equal(false);
+                expect(r.disconnectedAddresses).to.deep.equal([]);
+                expect(r.disputedForkIds).to.deep.equal([]);
+                expect(r.firedHooks).to.include("blockForkIsDisputed");
+            }
 
             await race.release({ replayEvents: false, runHeldTasks: false });
         });
@@ -1183,7 +1301,7 @@ describe("Unit: ValidationService", function () {
             const localOnlyForkId = factory.hash();
             const r = await h
                 .control(observer)
-                .stub.probeIsDisputedFork(localOnlyForkId, true)
+                .validation.probeIsDisputedFork(localOnlyForkId, true)
                 .request();
 
             expect(r.disputed).to.equal(true);
@@ -1199,10 +1317,9 @@ describe("Unit: ValidationService", function () {
             await h.lifecycle.start(3, 2);
             // the observer never files its own dispute, so only the contract
             // can tell it the fork is dead
-            await h
-                .control(h.getPeer(observerIndex))
-                .stub.stubSuppressDisputeInitiation()
-                .request();
+            await h.dispute.suppressDisputeInitiation([
+                h.getPeer(observerIndex).index
+            ]);
             await h.byzantine.submitDoubleSignBlock(byzantineIndex);
             // only the other honest peer files one - the observer is suppressed
             await h.assert.dispute.committedWait({
@@ -1226,7 +1343,7 @@ describe("Unit: ValidationService", function () {
 
             const r = await h
                 .control(observer)
-                .stub.probeIsDisputedFork(forkId, false)
+                .validation.probeIsDisputedFork(forkId, false)
                 .request();
 
             expect(r.disputed).to.equal(true);
@@ -1273,7 +1390,7 @@ describe("Unit: ValidationService", function () {
 
             const r = await h
                 .control(observer)
-                .stub.runBlockValidation(encoded, {
+                .validation.runBlockValidation(encoded, {
                     senderAddress: supplier.address as Address
                 })
                 .request();
@@ -1287,7 +1404,7 @@ describe("Unit: ValidationService", function () {
             expect(r.restoreQueuedEntryCalled).to.equal(false);
         });
 
-        it("a disputed-fork block from a supplier with no acknowledgment on record → requeued, NOT_READY", async function () {
+        it("a disputed-fork block from a supplier with no acknowledgment on record → discarded, NOT_READY", async function () {
             const h = TestSession.getHarness();
             const observerIndex = 0;
             const byzantineIndex = 1;
@@ -1317,16 +1434,16 @@ describe("Unit: ValidationService", function () {
 
             const r = await h
                 .control(observer)
-                .stub.runBlockValidation(encoded, {
+                .validation.runBlockValidation(encoded, {
                     senderAddress: unacknowledgedSupplier
                 })
                 .request();
 
             expect(r.sourcePeers).to.deep.equal([unacknowledgedSupplier]);
             expect(r.firedHooks).to.include("blockForkIsDisputed");
-            // not provably byzantine -> restored for the timeout sync
+            // Discard without punishing a supplier that has not acknowledged the dispute.
             expect(r.resultName).to.equal("NOT_READY");
-            expect(r.restoreQueuedEntryCalled).to.equal(true);
+            expect(r.restoreQueuedEntryCalled).to.equal(false);
             expect(r.disconnectedAddresses).to.deep.equal([]);
         });
     });
@@ -1355,7 +1472,7 @@ describe("Unit: ValidationService", function () {
             );
             const { hash: parentHash } = await h
                 .control(observer)
-                .stub.storeBlockFixture(encodedParent)
+                .validation.storeBlockFixture(encodedParent)
                 .request();
 
             const encoded = await factory.buildAndEncodeBlock(observer.signer, {
@@ -1369,7 +1486,7 @@ describe("Unit: ValidationService", function () {
 
             const error = await h
                 .control(observer)
-                .stub.runBlockValidation(encoded, { strategy: "dispute" })
+                .validation.runBlockValidation(encoded, { strategy: "dispute" })
                 .request()
                 .then(
                     () => null,
@@ -1396,7 +1513,7 @@ describe("Unit: ValidationService", function () {
             });
             const { hash: snapshotHash } = await h
                 .control(observer)
-                .stub.storeStateSnapshotFixture(
+                .validation.storeStateSnapshotFixture(
                     Codec.encode(
                         snapshot.toStruct(),
                         Type.StateSnapshot
@@ -1418,7 +1535,7 @@ describe("Unit: ValidationService", function () {
             );
             const { hash: parentHash } = await h
                 .control(observer)
-                .stub.storeBlockFixture(encodedParent)
+                .validation.storeBlockFixture(encodedParent)
                 .request();
 
             const encoded = await factory.buildAndEncodeBlock(observer.signer, {
@@ -1432,7 +1549,7 @@ describe("Unit: ValidationService", function () {
 
             const error = await h
                 .control(observer)
-                .stub.runBlockValidation(encoded, { strategy: "dispute" })
+                .validation.runBlockValidation(encoded, { strategy: "dispute" })
                 .request()
                 .then(
                     () => null,
@@ -1483,7 +1600,7 @@ describe("Unit: ValidationService", function () {
 
             const r = await h
                 .control(observer)
-                .stub.runBlockValidation(encoded, { strategy: "dispute" })
+                .validation.runBlockValidation(encoded, { strategy: "dispute" })
                 .request();
 
             // the hook throws on this strategy, so reaching a later guard is
@@ -1517,7 +1634,7 @@ describe("Unit: ValidationService", function () {
 
             const active = await h
                 .control(observer)
-                .stub.runBlockValidation(encoded)
+                .validation.runBlockValidation(encoded)
                 .request();
             expect(active.firedHooks).to.include(
                 "blockIsNotNextAndIsInTheFuture"
@@ -1525,7 +1642,7 @@ describe("Unit: ValidationService", function () {
 
             const r = await h
                 .control(observer)
-                .stub.runBlockValidation(encoded, { strategy: "dispute" })
+                .validation.runBlockValidation(encoded, { strategy: "dispute" })
                 .request();
 
             // dispute replay walks a proof's blocks, so height ordering against
@@ -1549,9 +1666,12 @@ describe("Unit: ValidationService", function () {
 
             const r = await h
                 .control(observer)
-                .stub.runBlockValidation(authored!.encodedBlockConfirmation, {
-                    strategy: "dispute"
-                })
+                .validation.runBlockValidation(
+                    authored!.encodedBlockConfirmation,
+                    {
+                        strategy: "dispute"
+                    }
+                )
                 .request();
 
             expect(r.resultName).to.equal("SUCCESS");
@@ -1586,7 +1706,7 @@ describe("Unit: ValidationService", function () {
 
             const r = await h
                 .control(observer)
-                .stub.runBlockValidation(encoded, { strategy: "dispute" })
+                .validation.runBlockValidation(encoded, { strategy: "dispute" })
                 .request();
 
             // reaching the leader check at all means the previous snapshot and
@@ -1641,9 +1761,12 @@ describe("Unit: ValidationService", function () {
             // wrongLeader and the leader check flags the block instead
             const r = await h
                 .control(observer)
-                .stub.runBlockValidation(authored!.encodedBlockConfirmation, {
-                    strategy: "dispute"
-                })
+                .validation.runBlockValidation(
+                    authored!.encodedBlockConfirmation,
+                    {
+                        strategy: "dispute"
+                    }
+                )
                 .request();
 
             expect(r.resultName).to.equal("SUCCESS");
@@ -1682,7 +1805,7 @@ describe("Unit: ValidationService", function () {
             // before: the height is unreachable -> deferred, no punishment
             const beforeAdvance = await h
                 .control(observer)
-                .stub.runBlockValidation(encoded)
+                .validation.runBlockValidation(encoded)
                 .request();
 
             expect(beforeAdvance.resultName).to.equal("NOT_READY");
@@ -1706,7 +1829,7 @@ describe("Unit: ValidationService", function () {
             // after: the same bytes are now judged on linkage instead
             const afterAdvance = await h
                 .control(observer)
-                .stub.runBlockValidation(encoded)
+                .validation.runBlockValidation(encoded)
                 .request();
 
             expect(afterAdvance.resultName).to.equal("DISCONNECT");
@@ -1748,7 +1871,7 @@ describe("Unit: ValidationService", function () {
                 Array.from({ length: probeCount }, () =>
                     h
                         .control(observer)
-                        .stub.runBlockValidation(encoded)
+                        .validation.runBlockValidation(encoded)
                         .request()
                 )
             );

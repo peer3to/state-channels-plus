@@ -1,8 +1,10 @@
+// @spec-test-coverage-ignore: shared detached-settlement owner exercised by its mapped component tests
 import { PeerTestHarness } from "../../fixtures/PeerTestHarness";
+import { DetachedPromises } from "@/utils";
 
 export class TestSession {
     private static harness?: PeerTestHarness;
-    private static firstDetachedError?: Error;
+    private static detachedErrors: Error[] = [];
     // Wakes expectFirstDetachedError waiters when the first detached error lands.
     private static detachedErrorNotify?: () => void;
     // Expected error substrings; matching unhandledRejections are ignored (multi-peer dupes).
@@ -34,6 +36,8 @@ export class TestSession {
 
     static async clear(): Promise<void> {
         if (!this.harness) {
+            this.detachedErrors = [];
+            this.detachedErrorAllowlist = [];
             return;
         }
 
@@ -43,7 +47,7 @@ export class TestSession {
         } finally {
             this.isCleanupActive = false;
         }
-        this.firstDetachedError = undefined;
+        this.detachedErrors = [];
         this.detachedErrorAllowlist = [];
         this.harness = undefined;
     }
@@ -58,8 +62,7 @@ export class TestSession {
         ) {
             return;
         }
-        if (this.firstDetachedError) return;
-        this.firstDetachedError = error;
+        this.detachedErrors.push(error);
         // wake any consumer waiting on this error
         const notify = this.detachedErrorNotify;
         this.detachedErrorNotify = undefined;
@@ -71,14 +74,26 @@ export class TestSession {
     }
 
     static getFirstDetachedError(): Error | undefined {
-        return this.firstDetachedError;
+        return this.detachedErrors[0];
+    }
+
+    static consumeDetachedFailure(): Error | undefined {
+        const [first, ...rest] = this.detachedErrors;
+        this.detachedErrors = [];
+        if (!first) return undefined;
+        if (rest.length > 0) {
+            first.message += `\nAdditional detached errors:\n${rest
+                .map((error) => error.message)
+                .join("\n")}`;
+        }
+        return first;
     }
 
     // Take and clear the first detached error; optional wait for async listener throws.
     static async consumeFirstDetachedError(
         timeoutMs = 0
     ): Promise<Error | undefined> {
-        if (!this.firstDetachedError && timeoutMs > 0) {
+        if (this.detachedErrors.length === 0 && timeoutMs > 0) {
             await new Promise<void>((resolve) => {
                 const timeoutId = setTimeout(() => {
                     if (this.detachedErrorNotify === resolveOnce) {
@@ -93,9 +108,7 @@ export class TestSession {
                 this.detachedErrorNotify = resolveOnce;
             });
         }
-        const err = this.firstDetachedError;
-        this.firstDetachedError = undefined;
-        return err;
+        return this.detachedErrors.shift();
     }
 
     // Expect a detached error matching `includes`; mismatch rethrows, timeout fails if required.
@@ -118,6 +131,54 @@ export class TestSession {
         }
         if (!err.message.includes(options.includes)) {
             throw err;
+        }
+    }
+
+    static async settleDetached(options?: {
+        expectedErrorIncludes?: string;
+        throwOnError?: boolean;
+        drainTimeoutMs?: number;
+    }): Promise<void> {
+        const hostErrors = await this.getHarness().quiesceHosts();
+        for (const error of hostErrors) this.setFirstDetachedError(error);
+        const settled = await DetachedPromises.awaitAllAndClear(
+            options?.drainTimeoutMs
+        );
+        for (const entry of settled) {
+            if (entry.status !== "rejected") continue;
+            this.setFirstDetachedError(
+                entry.reason instanceof Error
+                    ? entry.reason
+                    : new Error(String(entry.reason))
+            );
+        }
+
+        if (options?.expectedErrorIncludes) {
+            const hasExpected = this.detachedErrors.some((error) =>
+                error.message.includes(options.expectedErrorIncludes!)
+            );
+            if (!hasExpected) {
+                throw new Error(
+                    `expected detached error including "${options.expectedErrorIncludes}", got none`
+                );
+            }
+            this.detachedErrors = this.detachedErrors.filter(
+                (error) =>
+                    !error.message.includes(options.expectedErrorIncludes!)
+            );
+            this.detachedErrorAllowlist.push(options.expectedErrorIncludes);
+        }
+
+        if (this.detachedErrors.length > 0) {
+            if (options?.throwOnError === false) return;
+            const [first, ...rest] = this.detachedErrors;
+            this.detachedErrors = [];
+            if (rest.length > 0) {
+                first.message += `\nAdditional detached errors:\n${rest
+                    .map((error) => error.message)
+                    .join("\n")}`;
+            }
+            throw first;
         }
     }
 }

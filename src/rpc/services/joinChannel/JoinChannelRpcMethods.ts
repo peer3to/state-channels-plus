@@ -1,7 +1,7 @@
+import type JoinChannelService from "./JoinChannelService";
 import ARpcMethods from "@/rpc/ARpcMethods";
 import type ATransport from "@/transport/ATransport";
 import type { ForkId, Hash, Signature } from "@/types/types";
-import type JoinChannelService from "./JoinChannelService";
 
 export default class JoinChannelRpcMethods extends ARpcMethods {
     constructor(

@@ -28,4 +28,4 @@ report but are kept here.
 
 | Test declaration                                                                                                                                                  | Covers |
 | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------ |
-| [`EvmFactory > should execute custom precompiles without disabling the built-in console precompile`](../../../../../../test/evm/EvmFactory.test.ts#L27) (line 27) | —      |
+| [`EvmFactory > should execute custom precompiles without disabling the built-in console precompile`](../../../../../../test/evm/EvmFactory.test.ts#L26) (line 26) | —      |

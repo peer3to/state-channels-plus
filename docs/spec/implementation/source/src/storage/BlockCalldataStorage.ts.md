@@ -24,8 +24,10 @@ matching against a queried block.
 
 ## Key design decisions
 
+Author-specific keys append the author to the shared fork/height representation. Author separation and recovery state remain unchanged. See [BlockCalldataStorage.ts](../../../../../../src/storage/BlockCalldataStorage.ts#L1).
+
 1. **Match means hash equality.** `getMatchingBlockCalldata` returns a record only when the
-   stored signed block hashes to the queried block's hash ([#L52](../../../../../../src/storage/BlockCalldataStorage.ts#L52)) — same coordinates with different content is a divergence for the consumer to judge, never a match.
+   stored signed block hashes to the queried block's hash ([#L53](../../../../../../src/storage/BlockCalldataStorage.ts#L53)) — same coordinates with different content is a divergence for the consumer to judge, never a match.
 2. **Overwrite-safe by chain rules.** The manager contract forbids re-posting a slot, so a
    repeated observation carries identical content; the map overwrite is a replay no-op.
 
@@ -73,7 +75,7 @@ Gap column. Audit state is file-level (Status header), never a row status.
 
 | Requirement / invariant                                                                                   | Implementation status | Evidence                                                                                                                                                                                                                                                                                                                                                             | Gap / divergence |
 | --------------------------------------------------------------------------------------------------------- | --------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------- |
-| [`REQ-CDSTORE-1-ECWBNY`](../../../../specification/storage/calldata-and-timeouts.md#req-cdstore-1-ecwbny) | Covered               | **Here:** `fork:height:author` keying; hash-equality match ([#L52](../../../../../../src/storage/BlockCalldataStorage.ts#L52)). **Other files:** posting rules on-chain — [admission of the commitment](../../contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol.md); consumers — [StateManager](../stateManager/StateManager.ts.md) timeout checks. | None.            |
+| [`REQ-CDSTORE-1-ECWBNY`](../../../../specification/storage/calldata-and-timeouts.md#req-cdstore-1-ecwbny) | Covered               | **Here:** `fork:height:author` keying; hash-equality match ([#L53](../../../../../../src/storage/BlockCalldataStorage.ts#L53)). **Other files:** posting rules on-chain — [admission of the commitment](../../contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol.md); consumers — [StateManager](../stateManager/StateManager.ts.md) timeout checks. | None.            |
 
 ## Component test obligations
 
@@ -86,3 +88,5 @@ Exact test evidence is mapped against these IDs in the verification test reports
 ## Related source reports
 
 - [EventHandler](../eventHandlers/EventHandler.ts.md) (writer on posted-calldata events), [StateManager](../stateManager/StateManager.ts.md) (timeout race checks).
+
+Shared operation owners: [keys.ts.md](keys.ts.md).

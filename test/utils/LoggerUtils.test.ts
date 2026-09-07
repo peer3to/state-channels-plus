@@ -1,9 +1,103 @@
+import { BlockValidationResult, Status } from "@/types/flags";
+import { LoggerUtils } from "@/utils/LoggerUtils";
+import { LogStore } from "@/utils/logging/logStore";
+import { NodeLogger } from "@/utils/logging/node/NodeLogger";
+import * as factory from "@test/factory";
 import { expect } from "chai";
 import { ethers } from "ethers";
-import { LoggerUtils } from "@/utils/LoggerUtils";
-import * as factory from "@test/factory";
 
 describe("LoggerUtils", function () {
+    it("formats known and unknown numeric enum members without changing strings", function () {
+        expect(LoggerUtils.enumToString(Status, Status.SYNCED)).to.equal(
+            "SYNCED"
+        );
+        expect(LoggerUtils.enumToString(Status, -1)).to.equal("UNKNOWN(-1)");
+        expect(
+            LoggerUtils.enumToString<Record<string, string | number>>(
+                Status,
+                "custom"
+            )
+        ).to.equal("custom");
+    });
+
+    it("logs objective time failure using captured time and previous timestamps", function () {
+        const block = factory.block();
+        const store = new LogStore(1024 * 1024, true);
+        const logger = new NodeLogger(
+            {},
+            {},
+            "verbose",
+            store,
+            { attachErrorListener: false },
+            new Set(),
+            true
+        );
+        try {
+            LoggerUtils.logTimeValidationFailed(logger, {
+                block,
+                nowSeconds: block.timestamp + 10,
+                checkType: "objective",
+                validationResult: BlockValidationResult.DISPUTE,
+                allowedSkewSeconds: 3,
+                violatedRule: "previous timestamp",
+                previousTimestamp: 1,
+                previousOriginalTimestamp: 0
+            });
+            const entry = store.getAllLogs()[0];
+            expect(entry.level).to.equal("warn");
+            expect(entry.message).to.equal(
+                "Time validation failed - block timestamp outside allowed window"
+            );
+            expect(entry.meta[0]).to.deep.equal({
+                checkType: "objective",
+                violatedRule: "previous timestamp",
+                validationResult: "DISPUTE",
+                blockHeight: block.height,
+                nowSeconds: block.timestamp + 10,
+                blockTimestamp: block.timestamp,
+                differenceSeconds: 10,
+                allowedSkewSeconds: 3,
+                excessSeconds: 7,
+                previousTimestamp: 1,
+                previousOriginalTimestamp: 0
+            });
+        } finally {
+            logger.dispose();
+        }
+    });
+
+    it("omits previous timestamp fields for subjective time failures", function () {
+        const block = factory.block();
+        const store = new LogStore(1024 * 1024, true);
+        const logger = new NodeLogger(
+            {},
+            {},
+            "verbose",
+            store,
+            { attachErrorListener: false },
+            new Set(),
+            true
+        );
+        try {
+            LoggerUtils.logTimeValidationFailed(logger, {
+                block,
+                nowSeconds: block.timestamp - 2,
+                checkType: "subjective",
+                validationResult: BlockValidationResult.NOT_ENOUGH_TIME,
+                allowedSkewSeconds: 3,
+                violatedRule: "arrival",
+                previousTimestamp: 1
+            });
+            const metadata = store.getAllLogs()[0].meta[0];
+            expect(metadata.differenceSeconds).to.equal(2);
+            expect(metadata.excessSeconds).to.equal(0);
+            expect(metadata).not.to.have.property("previousTimestamp");
+            expect(metadata).not.to.have.property("previousOriginalTimestamp");
+        } finally {
+            logger.dispose();
+        }
+    });
+
     it("builds contract-call metadata from encoded calldata", function () {
         const contractInterface = new ethers.Interface([
             "function setValue(uint256 value)"

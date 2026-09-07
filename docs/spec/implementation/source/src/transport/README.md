@@ -15,3 +15,4 @@ _Pending authoring: shared responsibility, design decisions, assumptions, cross-
 - [TransportType.ts](./TransportType.ts.md)
 - [WebRTCTransport.ts](./WebRTCTransport.ts.md)
 - [index.ts](./index.ts.md)
+- [relay/](./relay/README.md)

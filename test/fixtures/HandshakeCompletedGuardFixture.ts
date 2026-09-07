@@ -1,11 +1,10 @@
 // @spec-test-coverage-ignore: shared worker-runtime setup for HandshakeCompletedGuard tests
-import path from "node:path";
-
-import { MathStateMachine } from "@typechain-types";
-import { DEFAULT_MATH_HARNESS_DEPLOYMENT } from "@test/harness/core/defaultMathHarnessDeployment";
-import { PeerTestHarness } from "@test/fixtures/PeerTestHarness";
-import type { PingPongRpc } from "@test/fixtures/customRpc/PingPongRpcManifest";
 import type { RemoteRpcProxyType } from "@/rpc/RemoteRpcProxy";
+import type { PingPongRpc } from "@test/fixtures/customRpc/PingPongRpcManifest";
+import { PeerTestHarness } from "@test/fixtures/PeerTestHarness";
+import { DEFAULT_MATH_HARNESS_DEPLOYMENT } from "@test/harness/core/defaultMathHarnessDeployment";
+import { MathStateMachine } from "@typechain-types";
+import path from "node:path";
 
 export class HandshakeCompletedGuardFixture {
     private readonly harness = new PeerTestHarness<

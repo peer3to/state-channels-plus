@@ -1,5 +1,5 @@
-import { MessageChannel, type MessagePort } from "node:worker_threads";
 import type { RuntimeChannel, RuntimePort } from "../types";
+import { MessageChannel, type MessagePort } from "node:worker_threads";
 
 /**
  * Adapt a Node `worker_threads` {@link MessagePort} to the platform-neutral

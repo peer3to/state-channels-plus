@@ -1,16 +1,16 @@
-import { parentPort, Worker, type MessagePort } from "node:worker_threads";
-import * as path from "node:path";
-import * as fs from "node:fs";
-import { resolveWorkerResourceLimits } from "../../node/workerResourceLimits";
-import { instrumentWorkerStartup } from "../../node/workerStartupTiming";
+import { adaptPort } from "./P2pRuntimeChannel";
 import { startCpuProfilerIfEnabled } from "../../node/workerCpuProfiler";
+import { resolveWorkerResourceLimits } from "../../node/workerResourceLimits";
 import { createWorkerShutdown } from "../../node/workerShutdown";
+import { instrumentWorkerStartup } from "../../node/workerStartupTiming";
 import type {
     P2pRuntimeWorker,
     RuntimePort,
     WorkerBootstrapMessage
 } from "../types";
-import { adaptPort } from "./P2pRuntimeChannel";
+import * as fs from "node:fs";
+import * as path from "node:path";
+import { parentPort, Worker, type MessagePort } from "node:worker_threads";
 
 export function createP2pRuntimeWorker(): P2pRuntimeWorker {
     const jsWorkerPath = path.join(
@@ -28,6 +28,18 @@ export function createP2pRuntimeWorker(): P2pRuntimeWorker {
     const workerPath = fs.existsSync(jsWorkerPath)
         ? jsWorkerPath
         : tsWorkerPath;
+    return createP2pRuntimeWorkerFromPath(workerPath);
+}
+
+/**
+ * Spawn the sdk worker from an explicit entry path. Production uses the
+ * platform entry above; tests load an outer entry that builds a scripted
+ * contract-executor worker and pass its selection through `workerData`.
+ */
+export function createP2pRuntimeWorkerFromPath(
+    workerPath: string,
+    workerData?: unknown
+): P2pRuntimeWorker {
     // Transpile-only: each worker re-loads the SDK import graph, and full
     // ts-node type-checks it (seconds per worker). Types are already checked by
     // `yarn tsc`, so skip the per-worker check.
@@ -42,6 +54,7 @@ export function createP2pRuntimeWorker(): P2pRuntimeWorker {
 
     const worker = new Worker(workerPath, {
         execArgv,
+        workerData,
         resourceLimits: resolveWorkerResourceLimits("sdk")
     });
     const shutdownWorker = createWorkerShutdown(worker);

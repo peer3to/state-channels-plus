@@ -1,11 +1,11 @@
-import { expect } from "chai";
-import { describe, it, beforeEach } from "mocha";
-import { ethers } from "hardhat";
-import { HardhatEthersSigner } from "@nomicfoundation/hardhat-ethers/signers";
-import Block from "@/models/Block";
-import { BlockStruct } from "@typechain-types/contracts/V1/types/DataTypes";
 import { block as blockFactory } from "../factory";
+import Block from "@/models/Block";
 import { Timestamp, Signature } from "@/types/types";
+import { HardhatEthersSigner } from "@nomicfoundation/hardhat-ethers/signers";
+import { BlockStruct } from "@typechain-types/contracts/V1/types/DataTypes";
+import { expect } from "chai";
+import { ethers } from "hardhat";
+import { describe, it, beforeEach } from "mocha";
 
 describe("Block Model", () => {
     let blockStruct: BlockStruct;
