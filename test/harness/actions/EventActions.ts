@@ -7,11 +7,13 @@ import {
 } from "../core/testTimeConfig";
 import { EventSpies } from "../core/types";
 import Clock from "@/Clock";
+import type { LeaveChannelState } from "@/stateManager/membership/LeaveChannelService";
 import { Status } from "@/types";
 import { Hash } from "@/types/types";
 import { Logger, sleep } from "@/utils";
 import type { HarnessControlRpc } from "@test/fixtures/customRpc/harnessControl/HarnessControlRpc";
 import { PeerTestHarness } from "@test/fixtures/PeerTestHarness";
+import { waitFor } from "@test/utils/waitFor";
 
 /**
  * EventActions handles all event spy management and queries.
@@ -260,6 +262,24 @@ export class EventActions<
                 timeoutMs,
                 timeoutMessage: `Block confirmation ${blockHash} was not processed by peer ${peerIndex} within ${timeoutMs}ms`
             }
+        );
+    }
+
+    async waitUntilLeavePhase(
+        peerIndex: number,
+        phase: LeaveChannelState["phase"]
+    ): Promise<void> {
+        const peer = this.harness.getPeer(peerIndex);
+        // Leave phases have no event of their own to wake the event barrier.
+        await waitFor(
+            async () =>
+                (
+                    await this.harness
+                        .control(peer)
+                        .query.getLeaveChannelState()
+                        .request()
+                )?.phase === phase,
+            this.protocolEventTimeoutMs()
         );
     }
 

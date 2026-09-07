@@ -4,7 +4,7 @@ import Clock from "@/Clock";
 import { StateSnapshot } from "@/models";
 import { Status, timeoutWaitTime as timeoutWaitTimeSeconds } from "@/types";
 import { Address, Bytes, ForkId, Timestamp } from "@/types/types";
-import { addressesEqual, Logger } from "@/utils";
+import { Logger } from "@/utils";
 import { errorMessage } from "@/utils/errorMessage";
 import P2pEventHooksUtils from "@/utils/P2pEventHooksUtils";
 import type {
@@ -72,26 +72,19 @@ export default class StateApplicationService {
      * never keeps serving with the VM and storage describing different states.
      */
     public async unsafeApplyReductionGenesis(
-        snapshotData: SnapshotDataStruct,
+        genesisSnapshot: StateSnapshotStruct,
         encodedState: Bytes,
-        forkId: ForkId,
-        genesisTimestamp: Timestamp,
         outboundMessageBlock: MessageBlockStruct | undefined,
         shouldCommit: () => boolean
     ): Promise<boolean> {
         const sm = this.stateManager;
-        const normalizedGenesisTimestamp = Number(genesisTimestamp);
+        const { forkId, snapshotData } = genesisSnapshot;
+        const normalizedGenesisTimestamp = Number(genesisSnapshot.timestamp);
         this.logger.info("Setting reduction genesis state", {
             forkId,
             genesisTimestamp: normalizedGenesisTimestamp,
             participant: snapshotData.participants
         });
-        const genesisSnapshot: StateSnapshotStruct = {
-            forkId,
-            blockHeight: 0,
-            timestamp: normalizedGenesisTimestamp,
-            snapshotData
-        };
 
         // Prepare: the canonical VM write and both derived reads.
         await sm.diamondStateMachine.setState(encodedState);
@@ -162,10 +155,7 @@ export default class StateApplicationService {
     ): Promise<boolean> {
         const sm = this.stateManager;
         if (participants.includes(sm.signerAddress)) return true;
-        const onChain = await sm.membershipService.getOnChainParticipantUnion();
-        return onChain.some((participant) =>
-            addressesEqual(participant, sm.signerAddress)
-        );
+        return sm.membershipService.isSignerOnChain();
     }
 
     /**

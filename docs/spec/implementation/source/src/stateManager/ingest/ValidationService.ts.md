@@ -27,15 +27,17 @@ post timing, and the subjective agreement window (live only, never evidence).
 
 ## Key design decisions
 
+Every strategy receives an out-of-window subjective outcome. The strategy owns acceptance or refusal and its diagnostic log; the shared pipeline retains objective timing checks. See [ValidationService.ts](../../../../../../../src/stateManager/ingest/ValidationService.ts#L631).
+
+Subjective timestamp outcomes are owned by the selected strategy. Proof replay accepts historical suffixes through its override; live validation retains its timing refusal. See [ValidationService.ts](../../../../../../../src/stateManager/ingest/ValidationService.ts#L644).
+
 Failed time-check metadata moves to LoggerUtils with the already-captured now value. Validation thresholds, strategy instanceof policy and return values remain here. See [ValidationService.ts](../../../../../../../src/stateManager/ingest/ValidationService.ts#L524).
 
 1. **Every predicate against one pre-state** under the caller's mutex ([`REQ-BLOCK-PIPE-2-PCXNT6`](../../../../../specification/block-progression/block-processing.md#req-block-pipe-2-pcxnt6)).
 2. **Objective time checks run the exact fraud-proof struct through the mirrored predicate** — the check and the future proof cannot disagree ([`REQ-MIRROR-1-XCY9CB`](../../../../../specification/enforcement/local-mirror.md#req-mirror-1-xcy9cb)).
 3. **Retroactive legitimization:** a failing timestamp first triggers predecessor-calldata recovery and a re-run — an on-chain post can grant the window that makes it valid.
 4. **Conflict taxonomy decides attribution:** same author → double-sign; linked-to-our-predecessor → author's invalid transition; height-0 → wrong genesis; unlinked → nobody to slash.
-5. **The subjective window judges live arrivals only.** A queue entry marked as replayed from a
-   verified synchronization proof (`replayedFromProof`, set by the sync replay) skips the
-   agreement-window judgment; every objective check still runs. The replayed suffix is proven history
+5. **The subjective window judges live arrivals only.** SpectatingValidationStrategy accepts the subjective timing outcome for a verified synchronization proof; every objective check still runs. The replayed suffix is proven history
    and, by construction of the block queue's expiry probe, at least one window old, so parking it left a
    participant's recovery unable to apply the suffix ([synchronization.md](../../../../../specification/peer-communication/synchronization.md) step 13).
 

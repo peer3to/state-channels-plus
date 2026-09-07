@@ -30,12 +30,12 @@ test ID may be assigned to at most one test across the whole tree; static analys
 duplicate assignments, and tests with no assigned ID are listed in the verification-coverage
 report but are kept here.
 
-| Test declaration                                                                                                                                                                                | Covers |
-| ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------ |
-| [`JoinActions spectator spawn helper > rethrows a peer-creation failure unchanged and authors nothing after it`](../../../../../../test/harness/JoinActions.test.ts#L11) (line 11)              | —      |
-| [`JoinActions spectator spawn helper > rethrows a beforeConnect failure unchanged without dispatching the connection`](../../../../../../test/harness/JoinActions.test.ts#L30) (line 30)        | —      |
-| [`JoinActions spectator spawn helper > rethrows a connection-dispatch failure unchanged and reports no bound error`](../../../../../../test/harness/JoinActions.test.ts#L57) (line 57)          | —      |
-| [`JoinActions spectator spawn helper > keeps authoring while beforeConnect is pending and dispatches only after it releases`](../../../../../../test/harness/JoinActions.test.ts#L75) (line 75) | —      |
-| [`JoinActions spectator spawn helper > authors the minimum even when the spectator spawns and syncs fast`](../../../../../../test/harness/JoinActions.test.ts#L112) (line 112)                  | —      |
-| [`JoinActions spectator spawn helper > installs a beforeConnect stub before the first real sync request runs`](../../../../../../test/harness/JoinActions.test.ts#L131) (line 131)              | —      |
-| [`JoinActions spectator spawn helper > spawn-only keeps blocks flowing and leaves the spectator OPENED`](../../../../../../test/harness/JoinActions.test.ts#L157) (line 157)                    | —      |
+| Test declaration                                                                                                                                                                                  | Covers |
+| ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------ |
+| [`JoinActions spectator spawn helper > rethrows a peer-creation failure unchanged and authors nothing after it`](../../../../../../test/harness/JoinActions.test.ts#L53) (line 53)                | —      |
+| [`JoinActions spectator spawn helper > rethrows a beforeConnect failure unchanged without dispatching the connection`](../../../../../../test/harness/JoinActions.test.ts#L72) (line 72)          | —      |
+| [`JoinActions spectator spawn helper > rethrows a connection-dispatch failure unchanged and reports no bound error`](../../../../../../test/harness/JoinActions.test.ts#L99) (line 99)            | —      |
+| [`JoinActions spectator spawn helper > keeps authoring while beforeConnect is pending and dispatches only after it releases`](../../../../../../test/harness/JoinActions.test.ts#L117) (line 117) | —      |
+| [`JoinActions spectator spawn helper > authors the minimum even when the spectator spawns and syncs fast`](../../../../../../test/harness/JoinActions.test.ts#L154) (line 154)                    | —      |
+| [`JoinActions spectator spawn helper > installs a beforeConnect stub before the first real sync request runs`](../../../../../../test/harness/JoinActions.test.ts#L173) (line 173)                | —      |
+| [`JoinActions spectator spawn helper > spawn-only keeps blocks flowing and leaves the spectator OPENED`](../../../../../../test/harness/JoinActions.test.ts#L199) (line 199)                      | —      |

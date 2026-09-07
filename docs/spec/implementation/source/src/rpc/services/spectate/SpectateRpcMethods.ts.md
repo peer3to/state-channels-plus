@@ -24,6 +24,8 @@ generation, return the encoded payload, or apply the unprovable-request conseque
 
 ## Key design decisions
 
+The request carries the explicit successor-proof permission to the existing proof generator. Unknown forks remain unprovable and exact requests remain exact. See [SpectateRpcMethods.ts](../../../../../../../../src/rpc/services/spectate/SpectateRpcMethods.ts#L39).
+
 1. **Cut-on-unprovable implements the mutual-cooperation rule** — and is precisely where the [`DEF-10-199C7F`](../../../../../../audit/open-findings.md#def-10-199c7f) refusal-penalty decision will land.
 
 ## Inputs, outputs, state, and side effects

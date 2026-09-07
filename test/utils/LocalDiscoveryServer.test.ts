@@ -117,6 +117,86 @@ describe("LocalDiscoveryServer topic lifecycle", function () {
         ).to.equal(0);
     });
 
+    it("deduplicates an in-flight dial across topics before authentication", async function () {
+        const h = TestSession.getHarness();
+        await h.setup(2, { autoConnect: false });
+        const topics = [
+            ethers.id("pending-dial-first"),
+            ethers.id("pending-dial-second")
+        ];
+        for (const peer of h.peers)
+            await h.control(peer).stub.holdInitHandshakes().request();
+        try {
+            await Promise.all(
+                h.peers.map((peer) =>
+                    h.control(peer).network.joinSelectedKey(topics[0]).request()
+                )
+            );
+            await waitFor(async () =>
+                (
+                    await Promise.all(
+                        h.peers.map((peer) =>
+                            h
+                                .control(peer)
+                                .stub.getHeldHandshakeCount()
+                                .request()
+                        )
+                    )
+                ).every((count) => count === 1)
+            );
+            // Neither transport knows the remote signer yet, so only the
+            // pending-dial set can suppress a second outbound connection.
+            for (const peer of h.peers) {
+                expect(
+                    await h.execOnHost(
+                        peer,
+                        (sm) =>
+                            sm.p2pManager.openConnections.filter(
+                                (transport) =>
+                                    transport.peerAddress !== undefined
+                            ).length
+                    )
+                ).to.equal(0);
+            }
+            await Promise.all(
+                h.peers.map((peer) =>
+                    h.control(peer).network.joinSelectedKey(topics[1]).request()
+                )
+            );
+            // Observe repeated discovery announcements while authentication is held.
+            await sleep(600);
+            for (const peer of h.peers) {
+                expect(
+                    await h.control(peer).stub.getHeldHandshakeCount().request()
+                ).to.equal(1);
+                expect(
+                    await h
+                        .control(peer)
+                        .query.getOpenConnectionCount()
+                        .request()
+                ).to.equal(0);
+            }
+        } finally {
+            await Promise.all(
+                h.peers.map((peer) =>
+                    h.control(peer).stub.releaseInitHandshakes().request()
+                )
+            );
+        }
+        await h.network.waitForP2PConnections();
+        for (const peer of h.peers)
+            expect(
+                await h.control(peer).query.getOpenConnectionCount().request()
+            ).to.equal(1);
+        await Promise.all(
+            h.peers.flatMap((peer) =>
+                topics.map((topic) =>
+                    h.control(peer).network.leaveSelectedKey(topic).request()
+                )
+            )
+        );
+    });
+
     it("does not dial a peer that already has a live authenticated transport on another topic", async function () {
         const h = TestSession.getHarness();
         await h.setup(2, { autoConnect: false });

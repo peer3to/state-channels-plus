@@ -11,8 +11,9 @@ import type {
     MatchedNegotiationOptions,
     NegotiationOutcome
 } from "@/rpc/services/openChannelNegotiation/OpenChannelNegotiationService";
+import type SpectateService from "@/rpc/services/spectate/SpectateService";
 import type ATransport from "@/transport/ATransport";
-import type { ForkId } from "@/types/types";
+import type { Address, ForkId } from "@/types/types";
 import {
     Codec,
     LocalDiscoveryServer,
@@ -28,12 +29,19 @@ import type {
     DisputeConfirmationStruct
 } from "@typechain-types/contracts/V1/types/DisputeTypes";
 import type { DisputeFraudProofStruct } from "@typechain-types/contracts/V1/types/ProofTypes";
+import { hexlify, resolveAddress } from "ethers";
 import { AsyncLocalStorage } from "node:async_hooks";
 import { WebSocketServer } from "ws";
 
 // `ATransport` is used both for `createRPCMethods` and the captured transport.
 
 export type BlockWorkHoldPoint = "authoring" | "commit" | "signature";
+
+export type SignatureBlockMatch = {
+    forkId: ForkId;
+    participant: Address;
+    transactionSelector: string;
+};
 
 type DisputeCommittedEventKey = string;
 type CalldataPostedEventKey = string;
@@ -165,7 +173,11 @@ export type DetachedCallOutcome = {
 };
 
 type HeldRpcReply = {
-    kind: HeldLobbyReplyKind | HeldNegotiationReplyKind | "spectate";
+    kind:
+        | HeldLobbyReplyKind
+        | HeldNegotiationReplyKind
+        | "spectate"
+        | "timeoutBuild";
     entered: number;
     gate: Promise<void>;
     release: () => void;
@@ -286,9 +298,36 @@ export class StubService extends ARpcService<
     StubRpcMethods,
     P2PManager<HarnessControlRpc>
 > {
+    private nextSignatureHold?: HeldRpcReply;
+    private restoreNextSignature?: () => void;
+    private syncReductionHold?: HeldRpcReply;
+    private restoreSyncReduction?: () => void;
+    private restoreFinalityReads?: () => void;
+    private restoreSyncRejections?: () => void;
+    /** Reasons passed to the real sync rejection handler. */
+    private syncRejectionReasons: string[] = [];
+    /** Number of finality predicates in each recorded provider call. */
+    private finalityReadWidths: number[] = [];
+    private chainMembershipReadCount = 0;
+    private restoreChainMembership?: () => void;
+    private syncWindowHold?: HeldRpcReply;
+    private restoreSyncWindow?: () => void;
+    private restoreSyncReductionRecorder?: () => void;
+    private syncReductionWindows: {
+        suppliedForks: ForkId[];
+        reductionForks: ForkId[];
+    }[] = [];
     private blockWorkRelease?: () => void;
     private blockWorkRestore?: () => void;
     public blockWorkEntered = 0;
+    private leaveWatchdogRestore?: () => void;
+    public leaveWatchdogObservation = {
+        delayMs: 0,
+        scheduled: 0,
+        cancelled: 0
+    };
+    private slashRecoveryCount = 0;
+    private restoreSlashRecovery?: () => void;
     readonly stubOriginals = new Map<StubKey, unknown>();
     /** Set by the record-dispute-ack stub when its method fires. */
     disputeAckRequestCalled = false;
@@ -299,6 +338,16 @@ export class StubService extends ARpcService<
     /** Transport captured by the init-handshake capture stub (pre-handshake). */
     capturedInitHandshakeTransport?: ATransport;
     /** Real init-handshake calls observed by the counting wrapper. */
+    private queueProbeHold?: HeldRpcReply & {
+        completed: number;
+        succeeded: number;
+    };
+    private originalQueueProbe?: SpectateService["syncAfterInFlight"];
+    private timeoutBuildHold?: HeldRpcReply;
+    private restoreTimeoutBuild?: () => void;
+    private timeoutStoreCalls = 0;
+    private heldHandshakeTransports: ATransport[] = [];
+    private releaseHandshakes?: () => void;
     initHandshakeCallCount = 0;
     /** Set by the record-spectate-abort stub when `abort` fires. */
     abortCalled = false;
@@ -428,6 +477,64 @@ export class StubService extends ARpcService<
     private postMatchTargetRefreshCallCount = 0;
     private heldMembershipReceipt?: HeldRpcReply;
     private heldMembershipReceiptKind?: HeldMembershipReceiptKind;
+
+    public recordLeaveWatchdog(): void {
+        this.leaveWatchdogRestore?.();
+        const timers = this.sm.timeoutManager;
+        const schedule = timers.scheduleTask.bind(timers);
+        const cancel = timers.cancelTask.bind(timers);
+        const observation = { delayMs: 0, scheduled: 0, cancelled: 0 };
+        this.leaveWatchdogObservation = observation;
+        let held: ReturnType<typeof setTimeout> | undefined;
+        timers.scheduleTask = (task, delayMs, name) => {
+            if (name !== "terminal channel leave watchdog")
+                return schedule(task, delayMs, name);
+            observation.delayMs = delayMs;
+            observation.scheduled += 1;
+            // Record-only timing seam: the exit can be authored without racing a 50 ms timer.
+            held = {} as ReturnType<typeof setTimeout>;
+            return held;
+        };
+        timers.cancelTask = (handle) => {
+            if (held === handle) {
+                observation.cancelled += 1;
+                held = undefined;
+            }
+            cancel(handle);
+        };
+        this.leaveWatchdogRestore = () => {
+            timers.scheduleTask = schedule;
+            timers.cancelTask = cancel;
+        };
+    }
+
+    public restoreLeaveWatchdog(): void {
+        this.leaveWatchdogRestore?.();
+        this.leaveWatchdogRestore = undefined;
+    }
+
+    public recordSlashRecoveries(): void {
+        this.restoreSlashRecoveries();
+        this.slashRecoveryCount = 0;
+        const service = this.sm.eventSyncService;
+        const original = service.recoverOnChainSlashes.bind(service);
+        service.recoverOnChainSlashes = async (...parameters) => {
+            this.slashRecoveryCount += 1;
+            return original(...parameters);
+        };
+        this.restoreSlashRecovery = () => {
+            service.recoverOnChainSlashes = original;
+        };
+    }
+
+    public getSlashRecoveryCount(): number {
+        return this.slashRecoveryCount;
+    }
+
+    public restoreSlashRecoveries(): void {
+        this.restoreSlashRecovery?.();
+        this.restoreSlashRecovery = undefined;
+    }
 
     constructor(p2pManager: P2PManager<HarnessControlRpc>) {
         super(
@@ -734,6 +841,353 @@ export class StubService extends ARpcService<
             await hold.gate;
             return Reflect.apply(original, contract, parameters);
         });
+    }
+
+    public holdNextSignature(match?: SignatureBlockMatch): void {
+        const signer = this.sm.signer;
+        const original = signer.signMessage.bind(signer);
+        const hold = this.createRpcHold("spectate");
+        this.nextSignatureHold = hold;
+        const commit = this.sm.blockCommitService;
+        const originalCommit = commit.success.bind(commit);
+        let expectedPayload: string | undefined;
+        if (match) {
+            // Observe the block before its real commit signs it; the signer only receives its hash.
+            commit.success = async (block, ...args) => {
+                if (
+                    block.forkId === match.forkId &&
+                    (
+                        await resolveAddress(block.signerAddress)
+                    ).toLowerCase() ===
+                        (
+                            await resolveAddress(match.participant)
+                        ).toLowerCase() &&
+                    hexlify(block.tx.body.data).startsWith(
+                        match.transactionSelector
+                    )
+                )
+                    expectedPayload = hexlify(block.hash);
+                return originalCommit(block, ...args);
+            };
+        }
+        this.restoreNextSignature = () => {
+            signer.signMessage = original;
+            commit.success = originalCommit;
+        };
+        signer.signMessage = async (...args) => {
+            const payload =
+                typeof args[0] === "string" ? args[0] : hexlify(args[0]);
+            if (match && payload !== expectedPayload) return original(...args);
+            this.restoreNextSignature?.();
+            hold.entered += 1;
+            await hold.gate;
+            return original(...args);
+        };
+    }
+
+    public getNextSignatureEntered(): number {
+        return this.nextSignatureHold?.entered ?? 0;
+    }
+
+    public releaseNextSignature(): void {
+        this.restoreNextSignature?.();
+        this.restoreNextSignature = undefined;
+        this.nextSignatureHold?.release();
+    }
+
+    public holdSyncReductionResult(): void {
+        const contract = this.sm.diamondStateMachine.localDiamondContract;
+        const original = contract.reduceAndFinalize;
+        const hold = this.createRpcHold("spectate");
+        this.syncReductionHold = hold;
+        this.restoreSyncReduction = () =>
+            Reflect.set(contract, "reduceAndFinalize", original);
+        Reflect.set(
+            contract,
+            "reduceAndFinalize",
+            async (...args: Parameters<typeof original>) => {
+                const result = await original(...args);
+                this.restoreSyncReduction?.();
+                hold.entered += 1;
+                await hold.gate;
+                return result;
+            }
+        );
+    }
+
+    public getSyncReductionEntered(): number {
+        return this.syncReductionHold?.entered ?? 0;
+    }
+
+    public releaseSyncReductionResult(): void {
+        this.restoreSyncReduction?.();
+        this.restoreSyncReduction = undefined;
+        this.syncReductionHold?.release();
+    }
+
+    public recordSyncRejections(): void {
+        // Private handler observed only at the host-side test seam.
+        const service = this.sm.p2pManager.localRpc
+            .spectateService as unknown as {
+            rejectSync(peerAddress: string, reason: string): false;
+        };
+        const original = service.rejectSync.bind(service);
+        this.syncRejectionReasons = [];
+        this.restoreSyncRejections = () => {
+            service.rejectSync = original;
+        };
+        service.rejectSync = (peerAddress, reason) => {
+            this.syncRejectionReasons.push(reason);
+            return original(peerAddress, reason);
+        };
+    }
+
+    public restoreRecordedSyncRejections(): string[] {
+        this.restoreSyncRejections?.();
+        this.restoreSyncRejections = undefined;
+        return [...this.syncRejectionReasons];
+    }
+
+    public recordSyncFinalityReads(): void {
+        const contract = this.sm.stateChannelManagerContract;
+        const provider = contract.runner!.provider!;
+        const original = provider.call.bind(provider);
+        const finalitySelector = contract.interface.getFunction(
+            "isReduceChallengePeriodExpired"
+        )!.selector;
+        const multicallSelector =
+            contract.interface.getFunction("multicall")!.selector;
+        this.finalityReadWidths = [];
+        this.restoreFinalityReads = () => {
+            provider.call = original;
+        };
+        provider.call = async (transaction) => {
+            if (typeof transaction.data === "string") {
+                const data = transaction.data;
+                if (data.startsWith(finalitySelector))
+                    this.finalityReadWidths.push(1);
+                if (data.startsWith(multicallSelector)) {
+                    const [calls] = contract.interface.decodeFunctionData(
+                        "multicall",
+                        data
+                    );
+                    const width = Array.from(calls as string[]).filter((call) =>
+                        call.startsWith(finalitySelector)
+                    ).length;
+                    if (width > 0) this.finalityReadWidths.push(width);
+                }
+            }
+            return original(transaction);
+        };
+    }
+
+    public getSyncFinalityReadWidths(): number[] {
+        return this.finalityReadWidths;
+    }
+
+    public restoreSyncFinalityReads(): void {
+        this.restoreFinalityReads?.();
+        this.restoreFinalityReads = undefined;
+    }
+
+    public recordChainMembershipReads(): void {
+        const contract = this.sm.stateChannelManagerContract;
+        const original = contract.getParticipants;
+        this.chainMembershipReadCount = 0;
+        this.restoreChainMembership = () => {
+            Reflect.set(contract, "getParticipants", original);
+        };
+        Reflect.set(
+            contract,
+            "getParticipants",
+            (...args: Parameters<typeof original>) => {
+                this.chainMembershipReadCount += 1;
+                return original(...args);
+            }
+        );
+    }
+
+    public getChainMembershipReadCount(): number {
+        return this.chainMembershipReadCount;
+    }
+
+    public restoreChainMembershipReads(): void {
+        this.restoreChainMembership?.();
+        this.restoreChainMembership = undefined;
+    }
+
+    public holdSyncWindowPersistence(): void {
+        const service = this.p2pManager.localRpc.spectateService;
+        const original =
+            service.fetchAndPersistOnChainDisputeWindows.bind(service);
+        const hold = this.createRpcHold("spectate");
+        this.syncWindowHold = hold;
+        this.restoreSyncWindow = () => {
+            service.fetchAndPersistOnChainDisputeWindows = original;
+        };
+        service.fetchAndPersistOnChainDisputeWindows = async (...args) => {
+            const windows = await original(...args);
+            this.restoreSyncWindow?.();
+            hold.entered += 1;
+            await hold.gate;
+            return windows;
+        };
+    }
+
+    public getSyncWindowPersistenceEntered(): number {
+        return this.syncWindowHold?.entered ?? 0;
+    }
+
+    public releaseSyncWindowPersistence(): void {
+        this.restoreSyncWindow?.();
+        this.restoreSyncWindow = undefined;
+        this.syncWindowHold?.release();
+    }
+
+    public recordSyncReductionWindows(): void {
+        const service = this.p2pManager.localRpc.spectateService;
+        const original = service.tryMulticallSnapshotUpdate.bind(service);
+        this.syncReductionWindows = [];
+        this.restoreSyncReductionRecorder = () => {
+            service.tryMulticallSnapshotUpdate = original;
+        };
+        service.tryMulticallSnapshotUpdate = async (...args) => {
+            this.syncReductionWindows.push({
+                suppliedForks: args[2].disputeWindows.map(
+                    (window) => window.forkId
+                ),
+                reductionForks: args[3].map((window) => window.forkId)
+            });
+            return await original(...args);
+        };
+    }
+
+    public getSyncReductionWindows() {
+        return this.syncReductionWindows;
+    }
+
+    public restoreSyncReductionWindows(): void {
+        this.restoreSyncReductionRecorder?.();
+        this.restoreSyncReductionRecorder = undefined;
+    }
+
+    public holdQueueProbe(): void {
+        const service = this.p2pManager.localRpc.spectateService;
+        const original = service.syncAfterInFlight.bind(service);
+        this.originalQueueProbe = original;
+        const hold = {
+            ...this.createRpcHold("spectate"),
+            completed: 0,
+            succeeded: 0
+        };
+        this.queueProbeHold = hold;
+        service.syncAfterInFlight = async (...args) => {
+            hold.entered += 1;
+            await hold.gate;
+            try {
+                const result = await original(...args);
+                if (result) hold.succeeded += 1;
+                return result;
+            } finally {
+                hold.completed += 1;
+            }
+        };
+    }
+
+    public getQueueProbeObservation() {
+        const hold = this.queueProbeHold;
+        return {
+            entered: hold?.entered ?? 0,
+            completed: hold?.completed ?? 0,
+            succeeded: hold?.succeeded ?? 0
+        };
+    }
+
+    public releaseQueueProbe(): void {
+        this.queueProbeHold?.release();
+        if (this.originalQueueProbe)
+            this.p2pManager.localRpc.spectateService.syncAfterInFlight =
+                this.originalQueueProbe;
+        this.originalQueueProbe = undefined;
+    }
+
+    public async startTimeoutConstruction(writer: string): Promise<boolean> {
+        await this.sm.participantTimeoutService["createTimeOutDispute"](
+            this.sm.forkId,
+            1,
+            writer,
+            0
+        );
+        return true;
+    }
+
+    public holdTimeoutBuild(): void {
+        const sm = this.p2pManager.stateManager;
+        const contract = sm.diamondStateMachine.localDiamondContract;
+        const original = contract.getBlockCallDataCommitment;
+        const store = sm.storage.timeout.storeTimeout.bind(sm.storage.timeout);
+        const hold = this.createRpcHold("timeoutBuild");
+        this.timeoutBuildHold = hold;
+        this.timeoutStoreCalls = 0;
+        Reflect.set(
+            contract,
+            "getBlockCallDataCommitment",
+            async (...args: Parameters<typeof original>) => {
+                const result = await original(...args);
+                hold.entered += 1;
+                await hold.gate;
+                return result;
+            }
+        );
+        sm.storage.timeout.storeTimeout = (...args) => {
+            this.timeoutStoreCalls += 1;
+            return store(...args);
+        };
+        this.restoreTimeoutBuild = () => {
+            hold.release();
+            Reflect.set(contract, "getBlockCallDataCommitment", original);
+            sm.storage.timeout.storeTimeout = store;
+        };
+    }
+
+    public getTimeoutBuildObservation(): { entered: number; stored: number } {
+        return {
+            entered: this.timeoutBuildHold?.entered ?? 0,
+            stored: this.timeoutStoreCalls
+        };
+    }
+
+    public releaseTimeoutBuild(): void {
+        this.timeoutBuildHold?.release();
+    }
+
+    public restoreTimeoutBuildRecording(): void {
+        this.restoreTimeoutBuild?.();
+        this.restoreTimeoutBuild = undefined;
+    }
+
+    public holdInitHandshakes(): void {
+        const service = this.p2pManager.localRpc.initHandshakeService;
+        const original = service.initHandshake.bind(service);
+        this.heldHandshakeTransports = [];
+        service.initHandshake = (transport) => {
+            this.heldHandshakeTransports.push(transport);
+        };
+        this.releaseHandshakes = () => {
+            service.initHandshake = original;
+            for (const transport of this.heldHandshakeTransports)
+                original(transport);
+            this.heldHandshakeTransports = [];
+        };
+    }
+
+    public getHeldHandshakeCount(): number {
+        return this.heldHandshakeTransports.length;
+    }
+
+    public releaseInitHandshakes(): void {
+        this.releaseHandshakes?.();
+        this.releaseHandshakes = undefined;
     }
 
     public countInitHandshakeCalls(): void {
@@ -1746,7 +2200,10 @@ export class StubService extends ARpcService<
                 for (const proof of parsed.args[0]) {
                     fraudProofParticipants.push(String(proof.participant));
                 }
-            } else {
+            } else if (
+                parsed.name === "uploadDispute" ||
+                parsed.name === "uploadDisputeWithCalldata"
+            ) {
                 encodedDispute = String(parsed.args[0].signedDispute[0]);
                 if (parsed.name === "uploadDisputeWithCalldata") {
                     encodedAuditingData = Codec.encode(

@@ -290,6 +290,48 @@ export class MathScenarioActions extends ScenarioActions {
         this.harness.contextApi.captureOriginalFork();
     }
 
+    /** Submit only the reduction; leave the chain snapshot unchanged. */
+    async finalizeReductionOnChainOnly(
+        peerIndex: number,
+        forkId: ForkId
+    ): Promise<boolean> {
+        return this.harness.execOnHost(
+            this.harness.getPeer(peerIndex),
+            async (sm, { forkId }) => {
+                const commitments =
+                    await sm.eventSyncService.loadSynchronizedWindowCommitments(
+                        sm.channelId,
+                        forkId
+                    );
+                const disputes = await sm.agreementManager.getForkDisputes(
+                    commitments!
+                );
+                const computation =
+                    await sm.reductionManager.computeReductionLocally(
+                        forkId,
+                        disputes
+                    );
+                if (!computation)
+                    throw new Error("Missing real reduction data");
+                const { reduceData, reducedForkId } = computation;
+                const tx =
+                    await sm.stateChannelManagerContract.reduceAndFinalize(
+                        disputes,
+                        reduceData.latestStateSnapshot,
+                        reduceData.encodedStateMachineState,
+                        reduceData.inboundMessageBlocks,
+                        reducedForkId
+                    );
+                await tx.wait();
+                return sm.stateChannelManagerContract.isReduceChallengePeriodExpired(
+                    sm.channelId,
+                    forkId
+                );
+            },
+            { forkId }
+        );
+    }
+
     /**
      * A disputed fork whose kill period has expired, with every peer's
      * `reduction-*` timer held so nothing reduces until a test says so:

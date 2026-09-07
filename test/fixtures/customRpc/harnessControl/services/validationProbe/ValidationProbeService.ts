@@ -83,12 +83,10 @@ export type IsDisputedForkProbe = {
 };
 
 export type BlockProbeOptions = {
-    strategy?: "active" | "dispute";
+    strategy?: "active" | "dispute" | "spectating";
     encodedDispute?: string;
     /** Supplier of this copy - drives `sourcePeers`/`signatureSources`. */
     senderAddress?: Address;
-    /** Mark the entry as replayed from a verified synchronization proof. */
-    replayedFromProof?: boolean;
 };
 
 export type BlockValidationProbeOptions = BlockProbeOptions & {
@@ -100,7 +98,13 @@ export type BlockValidationProbeOptions = BlockProbeOptions & {
      * both return early on a non-current fork, so the missing-genesis branch
      * is only reachable by calling the hook.
      */
-    hook?: "blockAuthorIsNotParticipant" | "wrongGenesisDetected";
+    hook?:
+        | "blockAuthorIsNotParticipant"
+        | "wrongGenesisDetected"
+        | "invalidStateTransitionDetected"
+        | "objectiveInvalidTimestampDetected"
+        | "forgedInboundMessageBlockDetected"
+        | "blockForkIsDisputed";
     /**
      * "validate" (default) runs validateBlockConfirmation only; "full" runs
      * the whole onBlockConfirmation pipeline (assembly, hash compare, VM
@@ -118,12 +122,14 @@ export type BlockValidationProbe = {
     disconnectedAddresses: string[];
     firedHooks: string[];
     restoreQueuedEntryCalled: boolean;
+    abortCalled: boolean;
     signerAddress: string;
     fraudProofType: string | null;
     /** Source attribution the entry carried into validation. */
     sourcePeers: string[];
     /** How many times validation asked EventSyncService to recover calldata. */
     calldataRecoveryQueries: number;
+    subjectiveWarningCount: number;
 };
 
 export type BlockIngestProbe = BlockValidationProbe & {
@@ -148,7 +154,9 @@ type RecordedValidationRun = {
         disconnectedAddresses: string[];
         firedHooks: string[];
         restoreQueuedEntryCalled: boolean;
+        abortCalled: boolean;
         calldataRecoveryQueries: number;
+        subjectiveWarningCount: number;
         lastHookResult: BlockValidationResult | undefined;
     };
     restore: () => void;
@@ -669,12 +677,30 @@ export class ValidationProbeService extends ARpcService<
                 options
             );
             try {
-                const result = options?.hook
-                    ? await run.instrumentedStrategy[options.hook](run.entry)
-                    : await this.sm.validationService.validateBlockConfirmation(
-                          run.entry,
-                          run.instrumentedStrategy
-                      );
+                let result: BlockValidationResult;
+                const hook = options?.hook;
+                if (
+                    hook === "invalidStateTransitionDetected" ||
+                    hook === "objectiveInvalidTimestampDetected"
+                ) {
+                    result = await run.instrumentedStrategy[hook](run.block);
+                } else if (hook === "forgedInboundMessageBlockDetected") {
+                    // This hook consumes an already classified message block; the observer only aborts.
+                    const inbound = factory.messageBlock();
+                    result =
+                        await run.instrumentedStrategy.forgedInboundMessageBlockDetected(
+                            run.block,
+                            inbound
+                        );
+                } else if (hook) {
+                    result = await run.instrumentedStrategy[hook](run.entry);
+                } else {
+                    result =
+                        await this.sm.validationService.validateBlockConfirmation(
+                            run.entry,
+                            run.instrumentedStrategy
+                        );
+                }
                 return this.buildValidationProbe(run, result);
             } finally {
                 run.restore();
@@ -743,8 +769,7 @@ export class ValidationProbeService extends ARpcService<
         // same entry the gossip pipeline builds: a supplied copy carries its
         // sender into sourcePeers/signatureSources, a sourceless one doesn't
         const entry = sm.storage.queues.createEntry(block, {
-            senderAddress: options?.senderAddress,
-            replayedFromProof: options?.replayedFromProof
+            senderAddress: options?.senderAddress
         });
         // default: the live block strategy (PARTICIPATING). "dispute" builds a
         // real DisputeValidationStrategy - as dispute auditing does - so the
@@ -759,28 +784,37 @@ export class ValidationProbeService extends ARpcService<
                           ? Codec.decode(options.encodedDispute, Type.Dispute)
                           : factory.dispute()
                   )
-                : sm.getActiveValidationStrategy();
+                : options?.strategy === "spectating"
+                  ? sm.spectatingValidationStrategy
+                  : sm.getActiveValidationStrategy();
 
         const recorded: RecordedValidationRun["recorded"] = {
             disputedForkIds: [],
             disconnectedAddresses: [],
             firedHooks: [],
             restoreQueuedEntryCalled: false,
+            abortCalled: false,
             calldataRecoveryQueries: 0,
+            subjectiveWarningCount: 0,
             lastHookResult: undefined
+        };
+
+        const logStore = sm.logger["logStore"];
+        const originalStoreLog = logStore.store.bind(logStore);
+        logStore.store = (entry) => {
+            if (
+                entry.level === "warn" &&
+                entry.meta.some((meta) => meta?.checkType === "subjective")
+            )
+                recorded.subjectiveWarningCount += 1;
+            originalStoreLog(entry);
         };
 
         // record-only: a real dispute posts on-chain against the crafted block,
         // a real disconnect cuts a live transport, a real restore re-arms a
         // queue timeout -> all would derail the session. Fraud-proof creation
         // stays real so the hook is identifiable by the persisted proof type.
-        const disputeManager = (
-            strategy as unknown as {
-                disputeManager?: {
-                    dispute: (forkId: ForkId) => Promise<void>;
-                };
-            }
-        ).disputeManager;
+        const disputeManager = sm.disputeManager;
         const originalDispute = disputeManager?.dispute.bind(disputeManager);
         if (disputeManager) {
             disputeManager.dispute = async (forkId: ForkId) => {
@@ -798,9 +832,14 @@ export class ValidationProbeService extends ARpcService<
         const originalRestore = sm.blockQueueManager.restoreQueuedEntry.bind(
             sm.blockQueueManager
         );
-        sm.blockQueueManager.restoreQueuedEntry = (() => {
+        sm.blockQueueManager.restoreQueuedEntry = (_entry) => {
             recorded.restoreQueuedEntryCalled = true;
-        }) as typeof sm.blockQueueManager.restoreQueuedEntry;
+        };
+        const originalAbort = sm.abort.bind(sm);
+        sm.abort = () => {
+            recorded.abortCalled = true;
+            return originalAbort();
+        };
         // count-and-forward: recovery must stay real, the count only proves
         // validation reached the on-chain lookup
         const eventSyncService = sm.eventSyncService;
@@ -849,12 +888,14 @@ export class ValidationProbeService extends ARpcService<
             instrumentedStrategy,
             recorded,
             restore: () => {
+                logStore.store = originalStoreLog;
                 if (disputeManager && originalDispute) {
                     disputeManager.dispute = originalDispute;
                 }
                 p2pManager.disconnectAndBlacklistPeerByEvmAddress =
                     originalDisconnect;
                 sm.blockQueueManager.restoreQueuedEntry = originalRestore;
+                sm.abort = originalAbort;
                 eventSyncService.tryRecoverBlockCalldataAndScheduleValidation =
                     originalRecover;
             }
@@ -877,10 +918,12 @@ export class ValidationProbeService extends ARpcService<
             disconnectedAddresses: run.recorded.disconnectedAddresses,
             firedHooks: run.recorded.firedHooks,
             restoreQueuedEntryCalled: run.recorded.restoreQueuedEntryCalled,
+            abortCalled: run.recorded.abortCalled,
             signerAddress: String(run.block.signerAddress),
             fraudProofType: fraudProof ? String(fraudProof.proofType) : null,
             sourcePeers: [...run.entry.sourcePeers].map(String),
-            calldataRecoveryQueries: run.recorded.calldataRecoveryQueries
+            calldataRecoveryQueries: run.recorded.calldataRecoveryQueries,
+            subjectiveWarningCount: run.recorded.subjectiveWarningCount
         };
     }
 

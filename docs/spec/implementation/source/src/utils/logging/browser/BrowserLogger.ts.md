@@ -74,8 +74,9 @@ Gap column. Audit state is file-level (Status header), never a row status.
 
 Exact test evidence is mapped against these IDs in the verification test reports.
 
-| Unit test ID | Obligation | Public entry and setup | Oracle and forbidden effects | Required permutations |
-| ------------ | ---------- | ---------------------- | ---------------------------- | --------------------- |
+| Unit test ID                                                                      | Obligation                 | Public entry and setup                 | Oracle and forbidden effects                            | Required permutations                                                                                                                                                                               |
+| --------------------------------------------------------------------------------- | -------------------------- | -------------------------------------- | ------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| <a id="unit-test-browser-logger-1-6fct8f"></a>`UNIT-TEST-BROWSER-LOGGER-1-6FCT8F` | Browser logger integration | Use the real browser logger and store. | The recorded warning retains browser-specific metadata. | <a id="unit-test-browser-logger-1-6fct8f.p1"></a>`UNIT-TEST-BROWSER-LOGGER-1-6FCT8F.P1` — browser logger stores long-task warning metadata with estimated utilization and no Node utilization field |
 
 ## Related source reports
 

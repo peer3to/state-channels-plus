@@ -16,6 +16,7 @@ import Rpc, {
 import type StateManager from "@/stateManager";
 import { ATransport, LoopbackTransport, TransportType } from "@/transport";
 import { Status } from "@/types";
+import { isEngagedStatus } from "@/types/flags";
 import { DebugProxy, getChecksumAddress, LocalDiscoveryServer } from "@/utils";
 import type { Logger } from "@/utils";
 import { requireBytes32 } from "@/utils/bytes32";
@@ -116,11 +117,7 @@ class P2PManager<TCustomRpc extends MainRpcService = MainRpcService>
                 ) {
                     return;
                 }
-                this.settleInitialSync(
-                    newStatus === Status.SYNCED ||
-                        newStatus === Status.PENDING_PARTICIPANT ||
-                        newStatus === Status.PARTICIPATING
-                );
+                this.settleInitialSync(isEngagedStatus(newStatus));
             }
         );
         this.unsubscribeAbort = this.stateManager.events.on(
@@ -449,7 +446,7 @@ class P2PManager<TCustomRpc extends MainRpcService = MainRpcService>
             return;
         }
         if (this.stateManager.status !== Status.OPENED) {
-            this.settleInitialSync(this.isEngagedStatus());
+            this.settleInitialSync(isEngagedStatus(this.stateManager.status));
             return;
         }
         for (const transport of [...this.openConnections]) {
@@ -459,15 +456,6 @@ class P2PManager<TCustomRpc extends MainRpcService = MainRpcService>
         }
         this.armInitialSyncDeadline();
         await initialSync;
-    }
-
-    private isEngagedStatus(): boolean {
-        const status = this.stateManager.status;
-        return (
-            status === Status.SYNCED ||
-            status === Status.PENDING_PARTICIPANT ||
-            status === Status.PARTICIPATING
-        );
     }
 
     /**
@@ -485,7 +473,9 @@ class P2PManager<TCustomRpc extends MainRpcService = MainRpcService>
                 this.initialSyncDeadline = undefined;
                 if (this.initialSyncStarted || stateManager.isDisposed) return;
                 if (stateManager.status !== Status.OPENED) {
-                    this.settleInitialSync(this.isEngagedStatus());
+                    this.settleInitialSync(
+                        isEngagedStatus(this.stateManager.status)
+                    );
                     return;
                 }
                 this.logger.warn(
@@ -560,6 +550,10 @@ class P2PManager<TCustomRpc extends MainRpcService = MainRpcService>
     }
 
     public disconnectAndBlacklistPeer(transport: ATransport) {
+        this.logger.warn(
+            "Disconnecting and blacklisting peer transport",
+            LoggerUtils.getTransportMetadata(transport)
+        );
         const transportToDisconnect = transport.peerAddress
             ? this.profileManager.blacklistPeer(transport.peerAddress)
             : this.profileManager.blacklistPeer(transport);
@@ -570,6 +564,9 @@ class P2PManager<TCustomRpc extends MainRpcService = MainRpcService>
     }
 
     public disconnectAndBlacklistPeerByEvmAddress(evmAddress: Address) {
+        this.logger.warn("Disconnecting and blacklisting peer address", {
+            peerAddress: evmAddress
+        });
         const transport = this.profileManager.blacklistPeer(evmAddress);
         if (transport) this.disconnectConnection(transport);
     }

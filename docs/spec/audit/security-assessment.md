@@ -276,3 +276,52 @@ reader bytecode. These maintained assessments remain pending engineer review; no
 ### Early timeout submission recovery
 
 [`REQ-DISPUTE-PIPE-10-BT8YAR`](../specification/disputes/dispute-processing.md#req-dispute-pipe-10-bt8yar) preserves chain admission while retrying a specific early-timestamp refusal through the existing timeout owner. Retries must revalidate current evidence, stop after fork replacement or disposal, and keep an older-window refusal ineligible. Repeated attempts may incur transaction cost while chain time lags; this does not relax the deadline or unrelated error policy.
+
+## Accepted PR 472 fixes after the SDK refactor
+
+The terminal-leave watchdog now routes a failed dispute start to the pending leave promise. Both the
+missing-marker and expired-evidence outcomes have explicit runtime-port declarations. The configured
+production bound remains 15 seconds: it may pre-empt an otherwise healthy turn and incur a dispute.
+This is the recorded owner policy under [terminal channel leave](../specification/peer-communication/targeted-channel-join.md#req-tjoin-7-nngtay).
+
+Current dispute upload eligibility now uses the snapshot participant set plus the unconsumed inbound
+JOIN interval, with the snapshot boundary excluded, the latest head included, and on-chain slashes
+removed. Snapshot participants retain eligibility regardless of JOIN age. Historical proof thresholds
+retain their historical walk. See the [shared Solidity report](../implementation/source/contracts/V1/StateChannelDiamondProxy/StateChannelCommon.sol.md)
+and [upload rule](../specification/disputes/disputes.md#req-dis-2-pkvz7e).
+
+The accepted-lease liability policy is retained. [Profile-loss recovery](../specification/peer-communication/lobby-matching.md#req-lobby-8-31be0f)
+already requires a healthy replacement or fallback transport to preserve the profile and attempt.
+Retiring an old transport while its replacement remains attached does not emit profile loss. The
+assessment's reported four-peer blacklist failure still lacks causal evidence identifying its call
+site; static inspection and non-reproduction do not establish its cause. No speculative transport or
+liability change is made. The implementation record keeps this limitation separate from the confirmed
+profile lifecycle behavior.
+
+Verification mappings name individual browser declarations and the new component failure and race
+cases. Maintained documents remain pending engineer review; this update grants no approval and does
+not resolve the assessment's five review-body findings that were explicitly left for discussion.
+
+## Review 472 follow-up decisions
+
+Explicit runtime disposal is local shutdown and does not await a pending dispute upload. Graceful leave is the supported route when the caller needs completed removal; the terminal-leave requirement records this distinction.
+
+Dispute upload, reduction admission, and fraud-proof target eligibility share the bounded current snapshot/inbound set. Once a participant leaves that chain set, an old join does not keep it slashable. If the chain snapshot still lists a locally departed participant, a valid fraud proof still writes the chain slash record. Later slash/removal application to a state without that participant is an idempotent no-op under [`REQ-SM-10-JD8TSF`](../specification/protocol-model/state-machines.md#req-sm-10-jd8tsf). The stale-snapshot workflow checks repeated application and unchanged withdrawal totals.
+
+Queue-expiry probes may accept a successor only through verified reduction lineage containing the requested fork, as specified by [`REQ-SYNC-1-T2589H`](../specification/peer-communication/synchronization.md#req-sync-1-t2589h). Ordinary pinned sync follows the same verified-successor rule; the pinned height applies only on the pinned fork. Blacklist and profile lifecycle logs now identify the path through existing call stacks; they do not change the accepted-lease policy. Non-reproduction of the earlier four-peer failure still does not establish its cause.
+
+Synchronization replay always uses the spectating context. Uncommitted observers abort on provable participant fraud without requesting a dispute. Pending and participating peers retain their on-chain stake and delegate these faults to live fraud-proof and dispute handling. Pending participants also use live handling for arrivals, while the commit guard still excludes them from counter-signing. The exact declarations are mapped in the [validation report](../verification/tests/test/unit/ValidationService.test.ts.md).
+
+Absent-target handling is specified separately by [`REQ-SM-10-JD8TSF`](../specification/protocol-model/state-machines.md#req-sm-10-jd8tsf). Successful slash and removal now both record their returned exit under [`REQ-SM-8-8CHSQ8`](../specification/protocol-model/state-machines.md#req-sm-8-8chsq8); [`OQ-18-2NK97T`](../specification/open-questions.md#oq-18-2nk97t) is implemented. Wrapper tests cover absent, present and repeated targets separately; the dispute consumer checks one exit and a matching withdrawal delta.
+
+Sync timeout and transport-failure liability is retained by the owner: honest peers are assumed to observe the same reality within agreementTime. No universal provider or execution bound is proved by this implementation. Local successor installation is not required to serve its already computed proof; requested same-fork heights are minimums.
+
+Sync verification reads chain reduction finality before refreshing its local dispute windows. This preserves a conservative reduction decision when a transaction lands between the reads and prevents another sync’s local-only simulation from suppressing required chain calldata. Proof validation and peer liability are unchanged. One static multicall reads finality for all supplied windows. Successful local reduction verifies the expected fork in Solidity; the already-final branch uses this request’s fetched chain window. A competing sync can overwrite the shared local mirror without invalidating either proof. Payload length remains uncapped, so the batched call and local verification work still scale with supplied windows.
+
+The retained sync design keeps each request's snapshot-update simulation complete independently
+of concurrent local proof work. Local verification is not evidence of chain execution, so it
+cannot alone remove reduction calldata. Reusing verified work remains a non-blocking
+[implementation performance question](../implementation/open-questions.md#oq-impl-sync-1-hjc60d);
+proof validation and blacklist liability are unchanged.
+
+Authored departure now rejects if its dispute fallback fails after either a failed fully signed snapshot post or an unsigned exit. The failure notification checks both the operation phase and fork, so a stale task cannot reject a new operation. Observer-hook tests separate provable-fault aborts from disputed-fork discard. Disputed-fork hooks never restore the entry; committed peers retain acknowledged-supplier liability, while unacknowledged suppliers and observers are not penalized for this branch.

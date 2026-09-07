@@ -23,6 +23,42 @@ contract DisputeWindowAdmissionHarness is DisputeManagerFacet {
         if (finalized) window.reducedResult.forkId = keccak256("reduced fork");
     }
 
+    function seedInboundJoin(bytes32 channelId, bytes32 hash, bytes32 previous, address participant) external {
+        MessageBlock storage inbound = inboundMessageBlockMap[channelId][hash];
+        inbound.timestamp = block.timestamp;
+        inbound.previousBlockHash = previous;
+        Balance memory balance = Balance({amount: 0, data: ""});
+        inbound.messages.push(
+            Message({
+                messageType: MESSAGE_TYPE_JOIN,
+                participant: participant,
+                balance: balance,
+                data: abi.encode(
+                    JoinChannel({channelId: channelId, participant: participant, deadlineTimestamp: 0, balance: balance})
+                )
+            })
+        );
+        channelBalances[channelId].latestInboundMessageBlockHash = hash;
+    }
+
+    function setInboundBoundary(bytes32 channelId, bytes32 hash) external {
+        stateSnapshots[channelId].snapshotData.latestInboundMessageBlockHash = hash;
+    }
+
+    function slash(bytes32 channelId, address participant) external {
+        disputeData[channelId].onChainSlashes.push(OnChainSlash({participant: participant, timestamp: block.timestamp}));
+    }
+
+    function clearSnapshotParticipants(bytes32 channelId) external {
+        delete stateSnapshots[channelId].snapshotData.participants;
+    }
+
+    function finalizeWindow(bytes32 channelId, bytes32 forkId) external {
+        _commitToDisputeReducedResult(
+            channelId, disputeData[channelId].disputeWindowMap[forkId], keccak256("reduced fork"), block.timestamp
+        );
+    }
+
     function readAdmissionState(bytes32 channelId, bytes32 forkId, address disputer)
         external
         view
@@ -130,7 +166,9 @@ contract DisputeWindowAdmissionTest is Test {
     }
 
     function testFuzz_trueFinalizedWindowRefused(bool withCalldata) public {
-        target.seedWindow(CHANNEL, FORK, 100, false, true);
+        _upload(false, withCalldata);
+        vm.warp(111);
+        target.finalizeWindow(CHANNEL, FORK);
         _refused(withCalldata);
     }
 
@@ -149,5 +187,60 @@ contract DisputeWindowAdmissionTest is Test {
         assertEq(created, 100);
         assertEq(last, 111);
         assertEq(count, 1);
+    }
+
+    function testFuzz_currentSnapshotParticipantWithOldJoinCanUpload(bool withCalldata) public {
+        target.seedInboundJoin(CHANNEL, keccak256("old"), bytes32(0), disputer);
+        target.seedInboundJoin(CHANNEL, keccak256("boundary"), keccak256("old"), vm.addr(67890));
+        target.setInboundBoundary(CHANNEL, keccak256("boundary"));
+        _upload(false, withCalldata);
+    }
+
+    function testFuzz_joinAtLatestInboundHeadCanUpload(bool withCalldata) public {
+        target.clearSnapshotParticipants(CHANNEL);
+        target.seedInboundJoin(CHANNEL, keccak256("boundary"), bytes32(0), vm.addr(67890));
+        target.setInboundBoundary(CHANNEL, keccak256("boundary"));
+        target.seedInboundJoin(CHANNEL, keccak256("head"), keccak256("boundary"), disputer);
+        _upload(false, withCalldata);
+    }
+
+    function testFuzz_joinInsideInboundIntervalCanUpload(bool withCalldata) public {
+        target.clearSnapshotParticipants(CHANNEL);
+        target.seedInboundJoin(CHANNEL, keccak256("boundary"), bytes32(0), vm.addr(67890));
+        target.setInboundBoundary(CHANNEL, keccak256("boundary"));
+        target.seedInboundJoin(CHANNEL, keccak256("middle"), keccak256("boundary"), disputer);
+        target.seedInboundJoin(CHANNEL, keccak256("head"), keccak256("middle"), vm.addr(98765));
+        _upload(false, withCalldata);
+    }
+
+    function testFuzz_joinAtConsumedBoundaryCannotUpload(bool withCalldata) public {
+        target.clearSnapshotParticipants(CHANNEL);
+        target.seedInboundJoin(CHANNEL, keccak256("boundary"), bytes32(0), disputer);
+        target.setInboundBoundary(CHANNEL, keccak256("boundary"));
+        vm.expectRevert(abi.encodeWithSelector(ErrorCantParticipateInDispute.selector, CHANNEL, disputer));
+        _upload(false, withCalldata);
+    }
+
+    function testFuzz_olderNonparticipantCannotUpload(bool withCalldata) public {
+        target.clearSnapshotParticipants(CHANNEL);
+        target.seedInboundJoin(CHANNEL, keccak256("old"), bytes32(0), disputer);
+        target.seedInboundJoin(CHANNEL, keccak256("boundary"), keccak256("old"), vm.addr(67890));
+        target.setInboundBoundary(CHANNEL, keccak256("boundary"));
+        vm.expectRevert(abi.encodeWithSelector(ErrorCantParticipateInDispute.selector, CHANNEL, disputer));
+        _upload(false, withCalldata);
+    }
+
+    function testFuzz_slashedSnapshotParticipantCannotUpload(bool withCalldata) public {
+        target.slash(CHANNEL, disputer);
+        vm.expectRevert(abi.encodeWithSelector(ErrorCantParticipateInDispute.selector, CHANNEL, disputer));
+        _upload(false, withCalldata);
+    }
+
+    function testFuzz_slashedPendingJoinCannotUpload(bool withCalldata) public {
+        target.clearSnapshotParticipants(CHANNEL);
+        target.seedInboundJoin(CHANNEL, keccak256("head"), bytes32(0), disputer);
+        target.slash(CHANNEL, disputer);
+        vm.expectRevert(abi.encodeWithSelector(ErrorCantParticipateInDispute.selector, CHANNEL, disputer));
+        _upload(false, withCalldata);
     }
 }

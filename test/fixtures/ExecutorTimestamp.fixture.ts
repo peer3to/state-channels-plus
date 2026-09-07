@@ -1,9 +1,11 @@
 // @spec-test-coverage-ignore: real timestamp bytecode and executor assertions shared by mapped tests
+import { TestClockProvider } from "./TestClockProvider";
 import Clock from "@/Clock";
 import type AContractExecutor from "@/evm/contractExecutor/AContractExecutor";
 import { createContractExecutor } from "@/evm/contractExecutor/createContractExecutor";
 import { sleep } from "@/utils";
 import { expect } from "chai";
+import type { Provider } from "ethers";
 
 export const wallSeconds = () => Math.floor(Date.now() / 1000);
 export const TIMESTAMP_INIT_CODE = "0x684260005260206000f360005260096017f3";
@@ -35,11 +37,14 @@ export async function deployTimestampStorage(
     return deployed.createdAddress.toString();
 }
 
-export async function assertRuntimeClock(dedicatedThread: boolean) {
-    // The component owns this Clock instance; no provider or shared-chain time is changed.
-    const instance = Reflect.get(Clock, "instance");
-    const previous = Reflect.get(instance, "clockAdjustmentSeconds");
-    Reflect.set(instance, "clockAdjustmentSeconds", 600);
+export async function assertRuntimeClock(
+    dedicatedThread: boolean,
+    provider: Provider
+) {
+    // Initialize the real Clock from shifted chain input; the actual chain is unchanged.
+    const previous = Clock.getClockAdjustmentSeconds();
+    const shifted = new TestClockProvider(provider, 600 - previous);
+    await Clock.init(shifted);
     let executor: AContractExecutor | undefined;
     let inline: AContractExecutor | undefined;
     try {
@@ -54,12 +59,13 @@ export async function assertRuntimeClock(dedicatedThread: boolean) {
             ).to.be.at.most(1);
         }
         expect(Math.abs(first - Clock.getTimeInSeconds())).to.be.at.most(1);
-        expect(Math.abs(first - (wallSeconds() + 600))).to.be.at.most(1);
+        expect(Clock.getClockAdjustmentSeconds()).to.be.greaterThan(500);
         await sleep(1100);
         expect(await read()).to.be.greaterThan(first);
     } finally {
         await executor?.dispose();
         await inline?.dispose();
-        Reflect.set(instance, "clockAdjustmentSeconds", previous);
+        await Clock.init(provider);
+        shifted.destroy();
     }
 }

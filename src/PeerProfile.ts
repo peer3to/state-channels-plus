@@ -1,5 +1,7 @@
 import type ATransport from "@/transport/ATransport";
 import { Address } from "@/types/types";
+import { LoggerUtils } from "@/utils/LoggerUtils";
+import type { Logger } from "@/utils/logging/Logger";
 
 export interface BannablePeerInfo {
     ban(value?: boolean): void;
@@ -12,6 +14,7 @@ export type ProfileDisconnectedListener = (
 
 //TODO? maybe rename to ParticipantProfile to be consistent with the rest of the codebase, even though PeerProfile sounds better
 class PeerProfile {
+    private readonly logger: Logger;
     transport: ATransport | undefined;
     evmAddress: Address | undefined; //TODO! - AAdress -> base class for different address types (when we do substrate and other address formats)
     hpAddress: string | undefined;
@@ -28,6 +31,9 @@ class PeerProfile {
         evmAddress?: Address,
         hpAddress?: string | undefined
     ) {
+        this.logger = transport.p2pManager.logger.child({
+            component: "PeerProfile"
+        });
         this.transport = transport;
         this.liveTransports.add(transport);
         this.evmAddress = evmAddress;
@@ -37,9 +43,17 @@ class PeerProfile {
     }
 
     public blacklist() {
+        this.logger.warn(
+            "Blacklisting peer profile",
+            LoggerUtils.getPeerProfileMetadata(this)
+        );
         this.isBlackListed = true;
     }
     public unblacklist() {
+        this.logger.info(
+            "Clearing peer profile blacklist",
+            LoggerUtils.getPeerProfileMetadata(this)
+        );
         this.isBlackListed = false;
     }
     public getTransport() {
@@ -50,14 +64,28 @@ class PeerProfile {
     public attachTransport(transport: ATransport, preferred = true): void {
         if (!transport.isClosed) this.liveTransports.add(transport);
         if (preferred || !this.getTransport()) this.transport = transport;
+        this.logger.debug("Attached peer transport", {
+            ...LoggerUtils.getTransportMetadata(transport),
+            preferred,
+            remainingTransports: this.liveTransports.size
+        });
     }
     public detachTransport(transport: ATransport): void {
         const wasLive = this.liveTransports.delete(transport);
+        this.logger.debug("Detached peer transport", {
+            ...LoggerUtils.getTransportMetadata(transport),
+            wasLive,
+            remainingTransports: this.liveTransports.size
+        });
         if (!wasLive) return;
         if (this.transport === transport) {
             this.transport = this.findLiveTransport();
         }
         if (this.liveTransports.size !== 0) return;
+        this.logger.info(
+            "Peer profile lost its last transport",
+            LoggerUtils.getPeerProfileMetadata(this)
+        );
         for (const listener of [...this.disconnectedListeners]) {
             listener(this, transport);
         }
@@ -104,6 +132,10 @@ class PeerProfile {
         return this.evmAddress;
     }
     public setEvmAddress(evmAddress: Address) {
+        this.logger.debug("Authenticated peer profile", {
+            previousAddress: this.evmAddress,
+            peerAddress: evmAddress
+        });
         this.evmAddress = evmAddress;
     }
     public getHpAddress() {

@@ -42,23 +42,10 @@ export async function assertKilledOpenerSubmissionRace(
         hold: true,
         forward: true
     });
+    await h.control(target).stub.recordSlashRecoveries().request();
     const attempt = h.execOnHost(target, async (sm) => {
-        const service = sm.eventSyncService;
-        const original = service.recoverOnChainSlashes.bind(service);
-        let recoveries = 0;
-        service.recoverOnChainSlashes = async (...parameters) => {
-            recoveries += 1;
-            return original(...parameters);
-        };
-        try {
-            await sm.disputeManager.dispute(sm.forkId);
-            return {
-                recoveries,
-                marker: sm.storage.disputes.didIDispute(sm.forkId)
-            };
-        } finally {
-            service.recoverOnChainSlashes = original;
-        }
+        await sm.disputeManager.dispute(sm.forkId);
+        return { marker: sm.storage.disputes.didIDispute(sm.forkId) };
     });
     try {
         await recording.waitUntilHeld();
@@ -140,7 +127,13 @@ export async function assertKilledOpenerSubmissionRace(
             );
         }
         await recording.release();
-        const result = await attempt;
+        const result = {
+            ...(await attempt),
+            recoveries: await h
+                .control(target)
+                .stub.getSlashRecoveryCount()
+                .request()
+        };
         expect(result.recoveries).to.equal(closed ? 1 : 0);
         expect(result.marker).to.equal(true);
         const submissions = await recording.submissions();
@@ -229,6 +222,7 @@ export async function assertKilledOpenerSubmissionRace(
     } finally {
         await recording.release();
         await recording.restore();
+        await h.control(target).stub.restoreSlashRecoveries().request();
         await dropped?.release();
         for (const peer of h.getActiveHonestPeers())
             await h.control(peer).stub.restoreReductionTasks(true).request();
@@ -241,6 +235,7 @@ export async function assertDirectSlashRecovery(
     failRead: boolean
 ): Promise<void> {
     await h.lifecycle.start(3, 0);
+    await h.control(h.getPeer(0)).stub.stubCountChainLogQueries().request();
     const result = await h.execOnHost(
         h.getPeer(0),
         async (sm, args) => {
@@ -275,12 +270,17 @@ export async function assertDirectSlashRecovery(
         },
         { failRead }
     );
+    expect(
+        await h.control(h.getPeer(0)).stub.getChainLogQueryCount().request()
+    ).to.equal(0);
+    await h.control(h.getPeer(0)).stub.restoreChainLogQueries().request();
     if (failRead) expect(result.error).to.contain("slash source unavailable");
     else expect(result).to.deep.equal({ changed: false, error: null });
 }
 
 export async function assertRecoveredSlashTimestampAndDedup(
-    h: MathPeerTestHarness
+    h: MathPeerTestHarness,
+    failQueries = false
 ): Promise<void> {
     const { forkId, spammer, killer } =
         await h.scenario.stageUnkilledSpamDispute({
@@ -315,6 +315,25 @@ export async function assertRecoveredSlashTimestampAndDedup(
             { spammer: spammer.address, forkId }
         );
         await dropped.waitUntilDropped();
+        if (failQueries) {
+            await h.control(target).stub.stubFailChainLogQueries().request();
+            try {
+                await expect(
+                    h.execOnHost(target, (sm) =>
+                        sm.eventSyncService.recoverOnChainSlashes(sm.channelId)
+                    )
+                ).to.be.rejectedWith("did not recover the authoritative set");
+                expect(
+                    await h
+                        .control(target)
+                        .stub.getChainLogQueryCount()
+                        .request()
+                ).to.equal(3);
+            } finally {
+                await h.control(target).stub.restoreChainLogQueries().request();
+            }
+            return;
+        }
         const [log] = await h.channelManager.queryFilter(
             h.channelManager.filters.DisputeKilled(h.channelId)
         );

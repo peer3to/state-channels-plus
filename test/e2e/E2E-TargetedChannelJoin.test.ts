@@ -141,7 +141,7 @@ describe("E2E: Targeted channel join", function () {
         });
         const leave = leaver.p2pInstance.leaveChannel();
         await h.transition.advanceState();
-        await waitFor(() => exit !== undefined);
+        await h.event.waitForPeers("onLeaveTurn", [leaver.index], 1);
         await exit;
         await leave;
         expect(

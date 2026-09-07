@@ -1,8 +1,8 @@
 import AValidationStrategy, {
     ParticipantSnapshots
 } from "./AValidationStrategy";
+import type BlockValidationStrategy from "./BlockValidationStrategy";
 import type BlockQueueManager from "../ingest/BlockQueueManager";
-import FraudProofService from "../utils/FraudProofService";
 import type ADiamondStateMachine from "@/ADiamondStateMachine";
 import { Block } from "@/models";
 import type P2PManager from "@/P2PManager";
@@ -12,6 +12,7 @@ import {
     type QueuedBlockEntry
 } from "@/storage/QueueStorage";
 import { BlockValidationResult, Signature } from "@/types";
+import { isCommittedParticipantStatus } from "@/types/flags";
 import { Logger } from "@/utils";
 import {
     BlockConfirmationStruct,
@@ -19,9 +20,9 @@ import {
 } from "@typechain-types/contracts/V1/types/DataTypes";
 
 export default class SpectatingValidationStrategy extends AValidationStrategy {
-    private readonly fraudProofService: FraudProofService;
     private readonly logger: Logger;
     constructor(
+        private readonly blockValidationStrategy: BlockValidationStrategy,
         private readonly storage: Storage,
         private readonly p2pManager: P2PManager,
         private readonly blockQueueManager: BlockQueueManager,
@@ -29,10 +30,6 @@ export default class SpectatingValidationStrategy extends AValidationStrategy {
     ) {
         super();
         this.logger = logger.child({ component: "SpectatingValidation" });
-        this.fraudProofService = new FraudProofService(
-            this.storage,
-            this.logger
-        );
     }
     public get enforcesLiveForkAndOrderingGates(): boolean {
         return true;
@@ -64,6 +61,7 @@ export default class SpectatingValidationStrategy extends AValidationStrategy {
                 return true;
         }
     }
+    // Committed peers delegate provable faults to the live strategy. For observers:
     // Deviations split by whether the fault is provable, not by who caused it.
     // No fraud proof possible (junk, outsider author, wrong channel, stray
     // signatures, malformed linkage, missing genesis) -> drop the sender and keep
@@ -140,6 +138,11 @@ export default class SpectatingValidationStrategy extends AValidationStrategy {
         _conflictingBlock: Block,
         _block: Block
     ): Promise<BlockValidationResult> {
+        if (isCommittedParticipantStatus(this.p2pManager.stateManager.status))
+            return this.blockValidationStrategy.doubleSignDetected(
+                _conflictingBlock,
+                _block
+            );
         // Provable fraud by a channel participant - stop following this channel.
         this.abort();
         return BlockValidationResult.DISPUTE;
@@ -147,6 +150,10 @@ export default class SpectatingValidationStrategy extends AValidationStrategy {
     public async invalidStateTransitionDetected(
         _block: Block
     ): Promise<BlockValidationResult> {
+        if (isCommittedParticipantStatus(this.p2pManager.stateManager.status))
+            return this.blockValidationStrategy.invalidStateTransitionDetected(
+                _block
+            );
         this.abort();
         return BlockValidationResult.DISPUTE;
     }
@@ -167,6 +174,8 @@ export default class SpectatingValidationStrategy extends AValidationStrategy {
             );
             return BlockValidationResult.DISCONNECT;
         }
+        if (isCommittedParticipantStatus(this.p2pManager.stateManager.status))
+            return this.blockValidationStrategy.wrongGenesisDetected(entry);
         this.abort();
         return BlockValidationResult.DISPUTE;
     }
@@ -174,6 +183,11 @@ export default class SpectatingValidationStrategy extends AValidationStrategy {
         _block: Block,
         _messageBlock: MessageBlockStruct
     ): Promise<BlockValidationResult> {
+        if (isCommittedParticipantStatus(this.p2pManager.stateManager.status))
+            return this.blockValidationStrategy.forgedInboundMessageBlockDetected(
+                _block,
+                _messageBlock
+            );
         this.abort();
         return BlockValidationResult.DISPUTE;
     }
@@ -187,8 +201,9 @@ export default class SpectatingValidationStrategy extends AValidationStrategy {
     public async blockForkIsDisputed(
         entry: QueuedBlockEntry
     ): Promise<BlockValidationResult> {
-        // not ready
-        this.blockQueueManager.restoreQueuedEntry(entry, this);
+        if (isCommittedParticipantStatus(this.p2pManager.stateManager.status))
+            return this.blockValidationStrategy.blockForkIsDisputed(entry);
+        // Discard the entry without aborting an observer or retrying the fork.
         return BlockValidationResult.NOT_READY;
     }
     public async blockIsNotNextAndIsInTheFuture(
@@ -216,13 +231,18 @@ export default class SpectatingValidationStrategy extends AValidationStrategy {
     public async objectiveInvalidTimestampDetected(
         _block: Block
     ): Promise<BlockValidationResult> {
+        if (isCommittedParticipantStatus(this.p2pManager.stateManager.status))
+            return this.blockValidationStrategy.objectiveInvalidTimestampDetected(
+                _block
+            );
         this.abort();
         return BlockValidationResult.DISPUTE;
     }
     public async subjectiveInvalidTimestampDetected(
         _block: Block
     ): Promise<BlockValidationResult> {
-        return BlockValidationResult.NOT_ENOUGH_TIME;
+        // Spectating applies proved history; the live arrival window does not apply.
+        return BlockValidationResult.SUCCESS;
     }
 
     private abort() {

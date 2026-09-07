@@ -342,14 +342,11 @@ describe("E2E: BlockQueueManager", function () {
                 // At expiry the source proves its lineage up to height 1; the
                 // block is not in it, so the source supplied junk and is
                 // excluded.
-                await waitFor(
-                    async () =>
-                        await h
-                            .control(observer)
-                            .query.isBlacklisted(supplier.address)
-                            .request(),
-                    (timeConfig.agreementTime + 5) * 1000
-                );
+                await h.assert.rpc.peerBlacklistedAndDisconnected({
+                    observer,
+                    target: supplier,
+                    expectedStatus: Status.PARTICIPATING
+                });
                 expect(
                     await h
                         .control(observer)
@@ -445,14 +442,11 @@ describe("E2E: BlockQueueManager", function () {
                 // The held sync lands the source's lineage; the probe then
                 // proves the junk against it and excludes the source.
                 await hold.release();
-                await waitFor(
-                    async () =>
-                        await h
-                            .control(observer)
-                            .query.isBlacklisted(supplier.address)
-                            .request(),
-                    h.event.protocolEventTimeoutMs()
-                );
+                await h.assert.rpc.peerBlacklistedAndDisconnected({
+                    observer,
+                    target: supplier,
+                    expectedStatus: Status.PARTICIPATING
+                });
                 expect(
                     await h
                         .control(observer)
@@ -516,14 +510,11 @@ describe("E2E: BlockQueueManager", function () {
 
                 // The source cannot prove a height it never reached: the
                 // probe fails, which already excludes the source.
-                await waitFor(
-                    async () =>
-                        await h
-                            .control(observer)
-                            .query.isBlacklisted(supplier.address)
-                            .request(),
-                    (timeConfig.agreementTime + 5) * 1000
-                );
+                await h.assert.rpc.peerBlacklistedAndDisconnected({
+                    observer,
+                    target: supplier,
+                    expectedStatus: Status.PARTICIPATING
+                });
                 expect(
                     await h
                         .control(observer)
@@ -872,6 +863,128 @@ describe("E2E: BlockQueueManager", function () {
 
         // Supplier != author, so the recorded targets separate them: the timeout
         // asks everyone the entry is attributed to, not just the sender.
+        it("a queue timeout accepts a proved successor fork without excluding the supplier or author", async function () {
+            const h = TestSession.getHarness();
+            let queuedHash = "";
+            const { sourceForkId } =
+                await h.scenario.stageReducibleDisputedFork({
+                    beforeDispute: async () => {
+                        const observer = h.getPeer(2);
+                        const supplier = h.getPeer(3);
+                        await h
+                            .control(observer)
+                            .stub.holdQueueProbe()
+                            .request();
+                        const nextHeight = await h
+                            .control(observer)
+                            .query.getNextBlockHeight(h.activeForkId!)
+                            .request();
+                        const future =
+                            await h.byzantine.craftUnbackedFutureBlockConfirmation(
+                                0,
+                                h.activeForkId!,
+                                nextHeight + 1
+                            );
+                        queuedHash = future.hash;
+                        await h.transition.ingestBlockConfirmationWait({
+                            peerIndex: observer.index,
+                            blockConfirmation: Codec.decode(
+                                future.encodedBlockConfirmation,
+                                Type.BlockConfirmation
+                            ),
+                            ingestOptions: { senderAddress: supplier.address },
+                            keepConnection: true,
+                            waitForProcessed: false
+                        });
+                        await waitFor(
+                            async () =>
+                                (
+                                    await h
+                                        .control(observer)
+                                        .stub.getQueueProbeObservation()
+                                        .request()
+                                ).entered === 2
+                        );
+                    }
+                });
+            const observer = h.getPeer(2);
+            const supplier = h.getPeer(3);
+            const submit = await h.rpcStub.holdReductionAttempt(
+                supplier.index,
+                "submit"
+            );
+            const authorSubmit = await h.rpcStub.holdReductionAttempt(
+                0,
+                "submit"
+            );
+            try {
+                await h
+                    .control(h.getPeer(0))
+                    .stub.startTryReduce(sourceForkId)
+                    .request();
+                await waitFor(async () => (await authorSubmit.entered()) === 1);
+                await h
+                    .control(supplier)
+                    .stub.startTryReduce(sourceForkId)
+                    .request();
+                await waitFor(async () => (await submit.entered()) === 1);
+                const successor = await h
+                    .control(supplier)
+                    .query.getForkId()
+                    .request();
+                expect(successor).to.not.equal(sourceForkId);
+                await h.control(observer).stub.releaseQueueProbe().request();
+                await waitFor(
+                    async () =>
+                        (
+                            await h
+                                .control(observer)
+                                .stub.getQueueProbeObservation()
+                                .request()
+                        ).completed === 2
+                );
+                expect(
+                    (
+                        await h
+                            .control(observer)
+                            .stub.getQueueProbeObservation()
+                            .request()
+                    ).succeeded
+                ).to.equal(2);
+                expect(
+                    await h.control(observer).query.getForkId().request()
+                ).to.equal(successor);
+                expect(
+                    await h
+                        .control(observer)
+                        .query.getBlockByHash(queuedHash)
+                        .request()
+                ).to.equal(null);
+                expect(
+                    await h
+                        .control(observer)
+                        .query.isBlacklisted(supplier.address)
+                        .request()
+                ).to.equal(false);
+                expect(
+                    await h
+                        .control(observer)
+                        .query.isBlacklisted(h.getPeer(0).address)
+                        .request()
+                ).to.equal(false);
+                expect(
+                    await h
+                        .control(supplier)
+                        .query.isBlacklisted(observer.address)
+                        .request()
+                ).to.equal(false);
+            } finally {
+                await h.control(observer).stub.releaseQueueProbe().request();
+                await submit.release();
+                await authorSubmit.release();
+            }
+        });
+
         it("unknown-fork timeout asks both the supplier and the author to sync", async function () {
             const h = TestSession.getHarness();
             const timeConfig = {

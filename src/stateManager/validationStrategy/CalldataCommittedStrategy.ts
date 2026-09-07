@@ -160,8 +160,9 @@ export default class CalldataCommittedStrategy extends AValidationStrategy {
     public async subjectiveInvalidTimestampDetected(
         _block: Block
     ): Promise<BlockValidationResult> {
+        // Chain commitment timing is checked objectively before this hook.
         throw new Error(
-            "CalldataCommittedStrategy - subjectiveInvalidTimestampDetected should not be relevant/called"
+            "Subjective timing is not applicable to chain-committed blocks"
         );
     }
 }

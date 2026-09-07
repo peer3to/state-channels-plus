@@ -32,12 +32,16 @@ opened channel performs the participant read and sync.
 
 ## Key design decisions
 
-Inbound frames are parsed once with response-first precedence after the byte-size gate. Connected peer projection remains transport-first with profile fallback and insertion-order deduplication. See [P2PManager.ts](../../../../../src/P2PManager.ts#L369).
+Both blacklist entry points ([address](../../../../../src/P2PManager.ts#L566), [transport](../../../../../src/P2PManager.ts#L552)) log the target before mutation. Existing logger call stacks identify the caller; blacklist policy and method parameters are unchanged. See [P2PManager.ts](../../../../../src/P2PManager.ts#L552).
+
+Both engagement checks use the status predicate that includes SYNCED as well as committed membership. See [P2PManager.ts](../../../../../src/P2PManager.ts#L120).
+
+Inbound frames are parsed once with response-first precedence after the byte-size gate. Connected peer projection remains transport-first with profile fallback and insertion-order deduplication. See [P2PManager.ts](../../../../../src/P2PManager.ts#L366).
 
 1. **Response-first classification** keeps response frames out of service dispatch entirely ([`REQ-RPC-6-E60S4J`](../../../specification/peer-communication/rpc.md#req-rpc-6-e60s4j)).
 2. **Settlement by peer identity, not transport identity** — a WebRTC upgrade cannot orphan pending requests; a response from any _other_ peer penalizes the responder ([`REQ-RPC-2-SZDTTM`](../../../specification/peer-communication/rpc.md#req-rpc-2-szdttm)).
 3. **Unknown/late responses are penalty-free by design** (must therefore stay cheap; bounded by the frame gate).
-4. **Service resolution uses the shared public-shape predicate.** A valid custom root loaded from a separate application module graph reaches the same guard and dispatch pipeline; constructor identity is not part of the wire contract ([#L226](../../../../../src/P2PManager.ts#L226)).
+4. **Service resolution uses the shared public-shape predicate.** A valid custom root loaded from a separate application module graph reaches the same guard and dispatch pipeline; constructor identity is not part of the wire contract ([#L226](../../../../../src/P2PManager.ts#L223)).
 5. **Handshake promotion has one owner.** The handshake hook reads local status once. Lobby transports
    enter the session-local matching set, while ordinary statuses promote directly. Lobby commitment calls
    the same promotion primitive only for the selected profile. Opened-channel participant lookup and sync

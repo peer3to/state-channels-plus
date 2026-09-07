@@ -4,6 +4,7 @@ import ReductionComputationService, {
 import ReductionExecutor from "./ReductionExecutor";
 import type StateManager from "../StateManager";
 import Clock from "@/Clock";
+import { StateSnapshot } from "@/models";
 import type { ReduceData } from "@/types";
 import type { Bytes, ForkId, Timestamp } from "@/types/types";
 import { DetachedPromises, Logger } from "@/utils";
@@ -11,7 +12,7 @@ import { errorMessage } from "@/utils/errorMessage";
 
 import type {
     MessageBlockStruct,
-    SnapshotDataStruct
+    StateSnapshotStruct
 } from "@typechain-types/contracts/V1/types/DataTypes";
 import type { DisputeStruct } from "@typechain-types/contracts/V1/types/DisputeTypes";
 
@@ -21,9 +22,8 @@ type ReductionTimeout = {
 };
 
 export type ReductionGenesis = {
-    snapshotData: SnapshotDataStruct;
+    genesisSnapshot: StateSnapshotStruct;
     encodedState: Bytes;
-    genesisTimestamp: Timestamp;
     outboundMessageBlock?: MessageBlockStruct;
 };
 
@@ -109,7 +109,7 @@ export default class ReductionManager {
         localTriggerTimestamp: Timestamp,
         isRescheduled = false
     ): void {
-        if (this.disposed || forkId !== this.stateManager.forkId) return;
+        if (this.disposed || !this.stateManager.isActiveFork(forkId)) return;
         const now = Clock.getTimeInSeconds();
         this.logger.debug(
             `setReductionTimeout called for fork ${forkId} at ${localTriggerTimestamp} (in ${localTriggerTimestamp - now}s)`
@@ -211,6 +211,29 @@ export default class ReductionManager {
         );
     }
 
+    public prepareReducedGenesis(
+        computation: ReductionComputation,
+        genesisTimestamp: Timestamp
+    ) {
+        const outboundBlock = computation.reducedOutboundMessageBlock;
+        // The fork-update calldata walks the outbound-message chain from
+        // the current on-chain snapshot through the newly reduced output.
+        // Persist the deterministic terminal block before building that
+        // range; setGenesisState will persist the same block idempotently.
+        if (outboundBlock) {
+            this.stateManager.storage.outboundMessages.store(outboundBlock, {
+                justPersist: true
+            });
+        }
+        const genesisSnapshot = StateSnapshot.from({
+            forkId: computation.reducedForkId,
+            blockHeight: 0,
+            timestamp: genesisTimestamp,
+            snapshotData: computation.reducedSnapshotData
+        });
+        return { genesisSnapshot, outboundBlock };
+    }
+
     public buildReduceAndFinalizeCalldata(
         disputes: DisputeStruct[],
         latestStateSnapshot: ReduceData["latestStateSnapshot"],
@@ -261,10 +284,8 @@ export default class ReductionManager {
                     // the final check inside the staged commit is what decides.
                     const committed =
                         await this.stateManager.stateApplicationService.unsafeApplyReductionGenesis(
-                            genesis.snapshotData,
+                            genesis.genesisSnapshot,
                             genesis.encodedState,
-                            reducedForkId,
-                            genesis.genesisTimestamp,
                             genesis.outboundMessageBlock,
                             () =>
                                 !this.disposed && !this.stateManager.isDisposed

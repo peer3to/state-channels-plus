@@ -6,7 +6,9 @@ import {
     assertDisposalDuringGenesisApplication,
     assertReadFailureDuringGenesisApplication
 } from "@test/fixtures/ReductionDisposalStaging";
+import { assertDirectCompletionLosesForkInMutex } from "@test/fixtures/ReductionForkSwitchStaging";
 import { assertLiveForkSwitch } from "@test/fixtures/ReductionForkSwitchStaging";
+import { assertSyncedLeaverSkipsSubmission } from "@test/fixtures/SyncedLeaverReductionStaging";
 import { MathTestSession as TestSession } from "@test/harness";
 import type { SubmittedFinalDispute } from "@test/harness/actions/DisputeOrchestrator";
 import { waitFor } from "@test/utils/waitFor";
@@ -14,6 +16,13 @@ import { expect } from "chai";
 import { id } from "ethers";
 
 describe("ReductionManager", function () {
+    it("direct completion returns false and removes the operation when the fork changes inside its mutex wait", async function () {
+        await assertDirectCompletionLosesForkInMutex(TestSession.getHarness());
+    });
+    it("a leaving signer that becomes SYNCED during installation skips reduction submission", async function () {
+        await assertSyncedLeaverSkipsSubmission(TestSession.getHarness());
+    });
+
     it("a live fork switch after a held dispute read reschedules no old-fork work", async function () {
         await assertLiveForkSwitch(
             TestSession.getHarness(),
@@ -42,6 +51,55 @@ describe("ReductionManager", function () {
             undefined,
             true
         );
+    });
+
+    it("disposed reduction manager refuses a new attempt without retaining a completion", async function () {
+        const h = TestSession.getHarness();
+        await h.lifecycle.start(3, 0);
+        const result = await h.execOnHost(h.getPeer(0), async (sm) => {
+            sm.reductionManager.dispose();
+            return {
+                empty:
+                    (await sm.reductionManager.tryReduce(sm.forkId)) ===
+                    undefined,
+                retained: sm.reductionManager.hasOperation(sm.forkId)
+            };
+        });
+        expect(result).to.deep.equal({ empty: true, retained: false });
+    });
+
+    it("disposed reduction manager refuses direct genesis completion without retaining it", async function () {
+        const h = TestSession.getHarness();
+        await h.lifecycle.start(3, 0);
+        const target = h.getPeer(0);
+        await h.execOnHost(target, (sm) => {
+            sm.reductionManager.dispose();
+            return true;
+        });
+        await h
+            .control(target)
+            .stub.startCompleteWithGenesis(h.activeForkId!)
+            .request();
+        await waitFor(
+            async () =>
+                (
+                    await h
+                        .control(target)
+                        .stub.getCompleteWithGenesisOutcome()
+                        .request()
+                )?.settled === true
+        );
+        expect(
+            await h
+                .control(target)
+                .stub.getCompleteWithGenesisOutcome()
+                .request()
+        ).to.deep.equal({ settled: true, result: "false", rejected: null });
+        expect(
+            await h.execOnHost(target, (sm) =>
+                sm.reductionManager.hasOperation(sm.forkId)
+            )
+        ).to.equal(false);
     });
 
     it("returns undefined without retaining an operation for a non-disputed fork", async function () {
@@ -561,6 +619,7 @@ describe("ReductionManager", function () {
                     staged!.suppressedPeerIndices
                 );
             }
+            // Observe that releasing the held rebuild causes no later chain snapshot write.
             await sleep(1_000);
             expect(
                 (await h.channelManager.getStateSnapshot(h.channelId)).forkId

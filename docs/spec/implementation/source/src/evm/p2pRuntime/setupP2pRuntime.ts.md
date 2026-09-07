@@ -40,9 +40,11 @@ The runtime construction behind `EvmStateMachine.p2pSetup`: config, the serializ
 A file may contribute to several requirements; this report describes the contribution and never
 claims complete conformance for a requirement that depends on other files.
 
-| Source file                                                                      | Specification IDs                                                                                |
-| -------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------ |
-| [setupP2pRuntime.ts](../../../../../../../src/evm/p2pRuntime/setupP2pRuntime.ts) | [`REQ-RUNTIME-3-VQXW59`](../../../../../specification/runtime/execution.md#req-runtime-3-vqxw59) |
+| Source file                                                                      | Specification IDs                                                                                                                                                                                  |
+| -------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| [setupP2pRuntime.ts](../../../../../../../src/evm/p2pRuntime/setupP2pRuntime.ts) | [`REQ-RUNTIME-3-VQXW59`](../../../../../specification/runtime/execution.md#req-runtime-3-vqxw59), [`REQ-RUNTIME-5-WJ1XKK`](../../../../../specification/runtime/execution.md#req-runtime-5-wj1xkk) |
+
+[`REQ-RUNTIME-5-WJ1XKK`](../../../../../specification/runtime/execution.md#req-runtime-5-wj1xkk): [setupP2pRuntime](../../../../../../../src/evm/p2pRuntime/setupP2pRuntime.ts#L77) builds the same host protocol over platform channels, with inline and threaded construction.
 
 ## Assumptions, dependencies, trust boundaries, and limits
 
@@ -66,8 +68,9 @@ Status enum: `Covered` | `Partial` | `Contradicts` | `Missing`. Evidence cells a
 **Here:** / **Other files:** so each row is auditable from its links alone; genuine gaps go in the
 Gap column. Audit state is file-level (Status header), never a row status.
 
-| Requirement / invariant | Implementation status | Evidence | Gap / divergence |
-| ----------------------- | --------------------- | -------- | ---------------- |
+| Requirement / invariant                                                                          | Implementation status | Evidence                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      | Gap / divergence   |
+| ------------------------------------------------------------------------------------------------ | --------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------ |
+| [`REQ-RUNTIME-5-WJ1XKK`](../../../../../specification/runtime/execution.md#req-runtime-5-wj1xkk) | Covered               | **Here:** [setupP2pRuntime](../../../../../../../src/evm/p2pRuntime/setupP2pRuntime.ts#L77) builds the same host protocol over platform channels, with inline and threaded construction. **Other files:** [browser channel](browser/P2pRuntimeChannel.ts.md), [Node channel](node/P2pRuntimeChannel.ts.md), and [P2pRuntimeHost](P2pRuntimeHost.ts.md) supply the platform boundary. The common host and protocol services retain the same behavior across platform channels; inline construction supplies the path without worker isolation. | None demonstrated. |
 
 ## Component test obligations
 

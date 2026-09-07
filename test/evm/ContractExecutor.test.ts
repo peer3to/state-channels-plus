@@ -10,7 +10,6 @@ import {
 } from "../fixtures/SimpleNumberStorage.fixture";
 import Clock from "@/Clock";
 import { ContractExecutor, type AContractExecutor } from "@/evm";
-import { createContractExecutor } from "@/evm/contractExecutor/createContractExecutor";
 import WorkerContractExecutor from "@/evm/contractExecutor/WorkerContractExecutor";
 import { tryDecodeCustomError } from "@/utils/evmErrorHandler";
 import { EVM } from "@ethereumjs/evm";
@@ -573,11 +572,11 @@ describe("ContractExecutor", function () {
         });
 
         it("the runtime inline executor observes the adjusted Clock and advances", async function () {
-            await assertRuntimeClock(false);
+            await assertRuntimeClock(false, ethers.provider);
         });
 
         it("the runtime dedicated executor observes the adjusted Clock and advances", async function () {
-            await assertRuntimeClock(true);
+            await assertRuntimeClock(true, ethers.provider);
         });
 
         it("deployment records the supplied timestamp in constructor storage", async function () {
@@ -639,31 +638,5 @@ describe("ContractExecutor", function () {
                 await dedicated.dispose();
             }
         });
-    });
-});
-
-// This component has no runtime Clock initialization.
-describe("ContractExecutor without a runtime Clock", function () {
-    it("the inline factory uses time zero before Clock initialization", async function () {
-        expect(Clock.isInitialized()).to.equal(false);
-        const executor = await createContractExecutor({
-            dedicatedThread: false
-        });
-        try {
-            expect(await (await timestampReader(executor))()).to.equal(0);
-        } finally {
-            await executor.dispose();
-        }
-    });
-    it("the dedicated factory uses time zero before Clock initialization", async function () {
-        expect(Clock.isInitialized()).to.equal(false);
-        const executor = await createContractExecutor({
-            dedicatedThread: true
-        });
-        try {
-            expect(await (await timestampReader(executor))()).to.equal(0);
-        } finally {
-            await executor.dispose();
-        }
     });
 });

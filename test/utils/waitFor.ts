@@ -1,4 +1,5 @@
 // @spec-test-coverage-ignore: shared polling utility exercised by owning mapped test declarations
+import { waitForPlain } from "./waitForPlain";
 import {
     protocolEventTimeoutMs,
     resolveTestTimeConfig
@@ -15,20 +16,5 @@ export async function waitFor(
     timeoutMs: number = protocolEventTimeoutMs(resolveTestTimeConfig()),
     pollIntervalMs: number = 200
 ): Promise<void> {
-    const startTime = Date.now();
-
-    while (Date.now() - startTime < timeoutMs) {
-        try {
-            const result = await condition();
-            if (result) {
-                return;
-            }
-        } catch {
-            // Continue polling even if condition throws
-        }
-
-        await new Promise((resolve) => setTimeout(resolve, pollIntervalMs));
-    }
-
-    throw new Error(`Condition not met within ${timeoutMs}ms`);
+    return waitForPlain(condition, timeoutMs, pollIntervalMs);
 }

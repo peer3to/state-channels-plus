@@ -23,6 +23,8 @@ Core aliases (Address, Hash, ChannelId, ForkId, BlockHeight…) shared across th
 
 ## Key design decisions
 
+ChecksumAddress names normalized address keys. It is a string alias; normalization is performed by getChecksumAddress, not by a runtime type check. See [types.ts](../../../../../../src/types/types.ts#L10).
+
 _None — the file is declarative/mechanical; behavior-shaping decisions live with its consumers._
 
 ## Inputs, outputs, state, and side effects

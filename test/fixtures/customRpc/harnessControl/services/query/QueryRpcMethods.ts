@@ -721,9 +721,15 @@ export class QueryRpcMethods extends ARpcMethods {
     }
 
     /** The stored dispute for `disputeHash`, encoded, or null. */
-    public getDispute(disputeHash: Hash): string | null {
+    public getDispute(disputeHash: Hash): { encodedDispute: string } | null {
         const dispute = this.service.storage.disputes.getDispute(disputeHash);
-        return dispute ? (Codec.encode(dispute, Type.Dispute) as string) : null;
+        return dispute
+            ? { encodedDispute: Codec.encode(dispute, Type.Dispute) as string }
+            : null;
+    }
+
+    public didIDispute(forkId: ForkId): boolean {
+        return this.service.storage.disputes.didIDispute(forkId);
     }
 
     public hasDisputeConfirmation(disputeHash: Hash): boolean {

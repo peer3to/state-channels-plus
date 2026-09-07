@@ -140,11 +140,21 @@ export default class LeaveChannelService {
                 operation,
                 "block bound"
             );
-            DetachedPromises.collect(fallback);
-            void fallback.catch((error: unknown) =>
+            DetachedPromises.observe(fallback, (error) =>
                 this.fail(operation, error)
             );
         }
+    }
+
+    public onExitFallbackFailed(forkId: ForkId, error: unknown): void {
+        const operation = this.operation;
+        if (
+            !operation ||
+            operation.phase !== "exit-authored" ||
+            operation.forkId !== forkId
+        )
+            return;
+        this.fail(operation, error);
     }
 
     public async onSettledStateObserved(): Promise<void> {
@@ -152,16 +162,7 @@ export default class LeaveChannelService {
         if (!operation || operation.phase === "starting") return;
 
         const sm = this.stateManager;
-        const [localParticipants, onChainParticipants] = await Promise.all([
-            sm.getParticipantsCurrent(),
-            sm.membershipService.getOnChainParticipantUnion()
-        ]);
-        const remainsLocal = localParticipants.some((participant) =>
-            addressesEqual(participant, sm.signerAddress)
-        );
-        const remainsOnChain = onChainParticipants.some((participant) =>
-            addressesEqual(participant, sm.signerAddress)
-        );
+        const remainsLocal = await sm.membershipService.isSignerInLocalState();
         const disputeSettlementObserved =
             (operation.phase === "awaiting-settlement" ||
                 sm.storage.disputes.didIDispute(operation.forkId)) &&
@@ -170,7 +171,8 @@ export default class LeaveChannelService {
         if (
             sm.status === Status.SYNCED &&
             !remainsLocal &&
-            (!remainsOnChain || disputeSettlementObserved)
+            (disputeSettlementObserved ||
+                !(await sm.membershipService.isSignerOnChain()))
         ) {
             this.cancelWatchdog(operation);
             operation.resolve();
@@ -225,7 +227,11 @@ export default class LeaveChannelService {
     private armWatchdog(operation: LeaveOperation): void {
         this.cancelWatchdog(operation);
         operation.watchdog = this.stateManager.timeoutManager.scheduleTask(
-            () => this.startDisputeFallback(operation, "watchdog"),
+            () =>
+                DetachedPromises.observe(
+                    this.startDisputeFallback(operation, "watchdog"),
+                    (error) => this.fail(operation, error)
+                ),
             config.LEAVE_CHANNEL_WATCHDOG_MS,
             "terminal channel leave watchdog"
         );
@@ -262,8 +268,11 @@ export default class LeaveChannelService {
                 reason
             }
         );
-        await this.stateManager.disputeManager.dispute(operation.forkId);
-        if (!this.stateManager.storage.disputes.didIDispute(operation.forkId)) {
+        if (
+            !(await this.stateManager.membershipService.startSelfRemovalDispute(
+                operation.forkId
+            ))
+        ) {
             throw new Error("Terminal channel leave failed to start a dispute");
         }
         operation.phase = "awaiting-settlement";
