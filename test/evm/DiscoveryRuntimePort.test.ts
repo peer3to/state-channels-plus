@@ -6,6 +6,10 @@ import {
     Type,
     sleep
 } from "@/utils";
+import {
+    assertAuthoredLeaveFallback,
+    assertExitFallbackFailureGuards
+} from "@test/fixtures/AuthoredLeaveFailureStaging";
 import { assertClean, setup } from "@test/fixtures/DiscoveryRuntimePortStaging";
 import { assertPendingLeaveGuard } from "@test/fixtures/PendingLeaveStaging";
 import { TargetedChannelJoinFixture } from "@test/fixtures/TargetedChannelJoinFixture";
@@ -1026,6 +1030,24 @@ describe("discovery runtime port", function () {
         ).to.equal(false);
     });
 
+    it("authored leave fast fallback rejects on missing-marker", async function () {
+        await assertAuthoredLeaveFallback(false, "missing-marker");
+    });
+    it("authored leave fast fallback rejects on evidence-expired", async function () {
+        await assertAuthoredLeaveFallback(false, "evidence-expired");
+    });
+    it("authored leave slow fallback rejects on missing-marker", async function () {
+        await assertAuthoredLeaveFallback(true, "missing-marker");
+    });
+    it("authored leave slow fallback rejects on evidence-expired", async function () {
+        await assertAuthoredLeaveFallback(true, "evidence-expired");
+    });
+    it("authored leave slow fallback settles through one dispute", async function () {
+        await assertAuthoredLeaveFallback(true, "success");
+    });
+    it("exit fallback failure ignores absent and awaiting-exit operations", async function () {
+        await assertExitFallbackFailureGuards();
+    });
     it("failed fast snapshot post falls back to a settled self-removal dispute", async function () {
         const h = TestSession.getHarness();
         // The failed post's fallback is the leaver's own self-removal dispute,
@@ -1157,25 +1179,22 @@ describe("discovery runtime port", function () {
         void leave.catch(() => undefined);
         try {
             await h.event.waitUntilLeavePhase(leaver.index, "awaiting-exit");
-            const reads = await h.execOnHost(leaver, async (sm) => {
-                const contract = sm.stateChannelManagerContract;
-                const original = contract.getParticipants;
-                let reads = 0;
-                Reflect.set(
-                    contract,
-                    "getParticipants",
-                    (...args: Parameters<typeof original>) => {
-                        reads += 1;
-                        return original(...args);
-                    }
-                );
-                try {
+            await h.control(leaver).stub.recordChainMembershipReads().request();
+            let reads: number;
+            try {
+                await h.execOnHost(leaver, async (sm) => {
                     await sm.leaveChannelService.onSettledStateObserved();
-                    return reads;
-                } finally {
-                    Reflect.set(contract, "getParticipants", original);
-                }
-            });
+                });
+                reads = await h
+                    .control(leaver)
+                    .stub.getChainMembershipReadCount()
+                    .request();
+            } finally {
+                await h
+                    .control(leaver)
+                    .stub.restoreChainMembershipReads()
+                    .request();
+            }
             expect(reads).to.equal(0);
         } finally {
             await leaver.p2pInstance.dispose();

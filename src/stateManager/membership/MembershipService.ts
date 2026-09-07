@@ -362,6 +362,12 @@ export default class MembershipService {
                                     "Self-removal dispute did not start",
                                     { forkId: block.forkId }
                                 );
+                                sm.leaveChannelService.onExitFallbackFailed(
+                                    block.forkId,
+                                    new Error(
+                                        "Terminal channel leave failed to start a dispute"
+                                    )
+                                );
                             }
                         } catch (disputeError) {
                             this.logger.error(
@@ -369,6 +375,10 @@ export default class MembershipService {
                                 {
                                     error: errorMessage(disputeError)
                                 }
+                            );
+                            sm.leaveChannelService.onExitFallbackFailed(
+                                block.forkId,
+                                disputeError
                             );
                         }
                     }
@@ -391,6 +401,12 @@ export default class MembershipService {
                                 "Self-removal dispute did not start",
                                 { forkId: persistedBlock.forkId }
                             );
+                            sm.leaveChannelService.onExitFallbackFailed(
+                                persistedBlock.forkId,
+                                new Error(
+                                    "Terminal channel leave failed to start a dispute"
+                                )
+                            );
                         }
                     } catch (error) {
                         this.logger.error(
@@ -398,6 +414,10 @@ export default class MembershipService {
                             {
                                 error: errorMessage(error)
                             }
+                        );
+                        sm.leaveChannelService.onExitFallbackFailed(
+                            persistedBlock.forkId,
+                            error
                         );
                     }
                 }

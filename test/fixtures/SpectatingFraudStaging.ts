@@ -76,3 +76,49 @@ export async function assertSpectatingFraud(
         );
     }
 }
+
+export async function assertObserverHook(
+    hook:
+        | "wrongGenesisDetected"
+        | "invalidStateTransitionDetected"
+        | "objectiveInvalidTimestampDetected"
+        | "forgedInboundMessageBlockDetected"
+        | "blockForkIsDisputed"
+) {
+    const h = TestSession.getHarness();
+    const { joiner } = await h.scenario.syncSpectatorAndPrepareJoin();
+    expect(await h.control(joiner).query.getStatus().request()).to.equal(
+        Status.SYNCED
+    );
+    const source = h.getPeer(0);
+    const encoded = await factory.buildAndEncodeBlock(source.signer, {
+        header: {
+            channelId: h.channelId,
+            forkId: h.activeForkId!,
+            transactionCnt: 0,
+            participant: source.address
+        }
+    });
+    const result = await h
+        .control(joiner)
+        .validation.runBlockValidation(encoded, {
+            strategy: "spectating",
+            hook
+        })
+        .request();
+    expect(result.firedHooks).to.include(hook);
+    expect(result.disputedForkIds).to.deep.equal([]);
+    expect(result.fraudProofType).to.equal(null);
+    if (hook === "blockForkIsDisputed") {
+        expect(result.resultName).to.equal("NOT_READY");
+        expect(result.abortCalled).to.equal(false);
+        expect(result.restoreQueuedEntryCalled).to.equal(false);
+        expect(result.disconnectedAddresses).to.deep.equal([]);
+    } else {
+        expect(result.resultName).to.equal("DISPUTE");
+        expect(result.abortCalled).to.equal(true);
+        expect(await h.control(joiner).query.getStatus().request()).to.equal(
+            Status.OPENED
+        );
+    }
+}

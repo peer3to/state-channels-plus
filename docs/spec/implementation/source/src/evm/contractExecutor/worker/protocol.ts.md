@@ -49,9 +49,9 @@ Worker request errors carry SerializedError, matching detached reports and elimi
 A file may contribute to several requirements; this report describes the contribution and never
 claims complete conformance for a requirement that depends on other files.
 
-| Source file                                                                        | Specification IDs                                                                                                                                                                                        |
-| ---------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| [protocol.ts](../../../../../../../../src/evm/contractExecutor/worker/protocol.ts) | [`REQ-RUNTIME-1-RSM6MZ`](../../../../../../specification/runtime/execution.md#req-runtime-1-rsm6mz), [`REQ-RUNTIME-3-VQXW59`](../../../../../../specification/runtime/execution.md#req-runtime-3-vqxw59) |
+| Source file                                                                        | Specification IDs                                                                                                                                                                                                                                                                                             |
+| ---------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| [protocol.ts](../../../../../../../../src/evm/contractExecutor/worker/protocol.ts) | [`REQ-RUNTIME-1-RSM6MZ`](../../../../../../specification/runtime/execution.md#req-runtime-1-rsm6mz), [`REQ-RUNTIME-3-VQXW59`](../../../../../../specification/runtime/execution.md#req-runtime-3-vqxw59), [`REQ-RUNTIME-6-6F4SSM`](../../../../../../specification/runtime/execution.md#req-runtime-6-6f4ssm) |
 
 ## Assumptions, dependencies, trust boundaries, and limits
 

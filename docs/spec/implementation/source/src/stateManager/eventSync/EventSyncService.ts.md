@@ -45,9 +45,9 @@ Channel-key creation delegates to the shared conversion; backfill, live subscrip
 A file may contribute to several requirements; this report describes the contribution and never
 claims complete conformance for a requirement that depends on other files.
 
-| Source file                                                                                | Specification IDs                                                                           |
-| ------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------- |
-| [EventSyncService.ts](../../../../../../../src/stateManager/eventSync/EventSyncService.ts) | [`REQ-STOR-3-4RJGER`](../../../../../specification/storage/durability.md#req-stor-3-4rjger) |
+| Source file                                                                                | Specification IDs                                                                                                                                                                                                 |
+| ------------------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| [EventSyncService.ts](../../../../../../../src/stateManager/eventSync/EventSyncService.ts) | [`REQ-STOR-3-4RJGER`](../../../../../specification/storage/durability.md#req-stor-3-4rjger), [`REQ-DISPUTE-PIPE-9-TDWQPV`](../../../../../specification/disputes/dispute-processing.md#req-dispute-pipe-9-tdwqpv) |
 
 Contribution in this file: [`REQ-DISPUTE-PIPE-9-TDWQPV`](../../../../../specification/disputes/dispute-processing.md#req-dispute-pipe-9-tdwqpv). The conformance rows below name this owner and the other required owners.
 

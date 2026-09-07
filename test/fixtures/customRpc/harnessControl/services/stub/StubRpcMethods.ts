@@ -16,7 +16,8 @@ import type {
     ReductionAttemptResume,
     DetachedCallOutcome,
     BlockWorkHoldPoint,
-    StubService
+    StubService,
+    SignatureBlockMatch
 } from "./StubService";
 import type { HarnessControlRpc } from "../../HarnessControlRpc";
 import type P2PManager from "@/P2PManager";
@@ -1005,6 +1006,69 @@ export class StubRpcMethods extends ARpcMethods<P2PManager<HarnessControlRpc>> {
         return true;
     }
 
+    public holdNextSignature(match?: SignatureBlockMatch): boolean {
+        this.service.holdNextSignature(match);
+        return true;
+    }
+    public getNextSignatureEntered(): number {
+        return this.service.getNextSignatureEntered();
+    }
+    public releaseNextSignature(): boolean {
+        this.service.releaseNextSignature();
+        return true;
+    }
+
+    public holdSyncReductionResult(): boolean {
+        this.service.holdSyncReductionResult();
+        return true;
+    }
+
+    public releaseSyncReductionResult(): boolean {
+        this.service.releaseSyncReductionResult();
+        return true;
+    }
+
+    public recordSyncRejections(): boolean {
+        this.service.recordSyncRejections();
+        return true;
+    }
+
+    public restoreRecordedSyncRejections(): string[] {
+        return this.service.restoreRecordedSyncRejections();
+    }
+
+    public recordSyncFinalityReads(): boolean {
+        this.service.recordSyncFinalityReads();
+        return true;
+    }
+
+    public restoreSyncFinalityReads(): boolean {
+        this.service.restoreSyncFinalityReads();
+        return true;
+    }
+
+    public getSyncReductionEntered(): number {
+        return this.service.getSyncReductionEntered();
+    }
+
+    public getSyncFinalityReadWidths(): number[] {
+        return this.service.getSyncFinalityReadWidths();
+    }
+
+    public recordChainMembershipReads(): boolean {
+        this.service.recordChainMembershipReads();
+        return true;
+    }
+
+    public getChainMembershipReadCount(): number {
+        return this.service.getChainMembershipReadCount();
+    }
+
+    public restoreChainMembershipReads(): boolean {
+        this.service.restoreChainMembershipReads();
+        return true;
+    }
+
     public holdSyncWindowPersistence(): boolean {
         this.service.holdSyncWindowPersistence();
         return true;
@@ -1394,9 +1458,8 @@ export class StubRpcMethods extends ARpcMethods<P2PManager<HarnessControlRpc>> {
         this.service.completeWithGenesisOutcome = outcome;
         void sm.reductionManager
             .completeWithGenesis(sm.forkId, reducedForkId, {
-                snapshotData: snapshot.snapshotData,
-                encodedState,
-                genesisTimestamp: Number(snapshot.timestamp)
+                genesisSnapshot: snapshot,
+                encodedState
             })
             .then(
                 (installed) => {

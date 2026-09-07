@@ -72,26 +72,19 @@ export default class StateApplicationService {
      * never keeps serving with the VM and storage describing different states.
      */
     public async unsafeApplyReductionGenesis(
-        snapshotData: SnapshotDataStruct,
+        genesisSnapshot: StateSnapshotStruct,
         encodedState: Bytes,
-        forkId: ForkId,
-        genesisTimestamp: Timestamp,
         outboundMessageBlock: MessageBlockStruct | undefined,
         shouldCommit: () => boolean
     ): Promise<boolean> {
         const sm = this.stateManager;
-        const normalizedGenesisTimestamp = Number(genesisTimestamp);
+        const { forkId, snapshotData } = genesisSnapshot;
+        const normalizedGenesisTimestamp = Number(genesisSnapshot.timestamp);
         this.logger.info("Setting reduction genesis state", {
             forkId,
             genesisTimestamp: normalizedGenesisTimestamp,
             participant: snapshotData.participants
         });
-        const genesisSnapshot: StateSnapshotStruct = {
-            forkId,
-            blockHeight: 0,
-            timestamp: normalizedGenesisTimestamp,
-            snapshotData
-        };
 
         // Prepare: the canonical VM write and both derived reads.
         await sm.diamondStateMachine.setState(encodedState);

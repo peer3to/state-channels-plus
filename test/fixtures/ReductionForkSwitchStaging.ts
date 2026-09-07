@@ -175,11 +175,8 @@ export async function assertLiveForkSwitch(
                             args.forkId,
                             sm.forkId,
                             {
-                                snapshotData: genesis.toStruct().snapshotData,
-                                encodedState,
-                                genesisTimestamp: Number(
-                                    genesis.toStruct().timestamp
-                                )
+                                genesisSnapshot: genesis.toStruct(),
+                                encodedState
                             }
                         );
                     return {

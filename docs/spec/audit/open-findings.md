@@ -46,3 +46,26 @@ Each should become a normal fix + test once confirmed.
 | ------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | <a id="find-discovery-1-dmy46s"></a>`FIND-DISCOVERY-1-DMY46S` | **Resolved (2026-09-05).** Repeated same-topic local discovery joins created another listener and replaced the active session, cancelling ownership of in-flight peer dials.     | Concurrent starts share one pending join and completed starts reuse one session. Leave waits for an in-flight listener startup before removing it. [Source report](../implementation/source/src/utils/node/LocalDiscoveryServer.ts.md), [`REQ-LOBBY-9-N894C0.T1.P17`](../specification/peer-communication/lobby-matching.md#req-lobby-9-n894c0.t1.p17).                                                                                                                                                                                |
 | <a id="find-reduction-1-7fe1yw"></a>FIND-REDUCTION-1-7FE1YW   | **Resolved (2026-09-05).** Verified synchronization used to leave the previous fork's pending reduction operation registered, so later chain events could await it indefinitely. | The sync installation now settles all pending callers with `undefined`, cancels the old timer, and removes the pending operation; completed results remain intact. Held reads cannot recreate it. Regression coverage: [`REQ-DISPUTE-PIPE-4-3YVDSA.T1.P10`](../specification/disputes/dispute-processing.md#req-dispute-pipe-4-3yvdsa.t1.p10), [`.P11`](../specification/disputes/dispute-processing.md#req-dispute-pipe-4-3yvdsa.t1.p11), [`.P12`](../specification/disputes/dispute-processing.md#req-dispute-pipe-4-3yvdsa.t1.p12). |
+
+## Evidence backlog retained after traceability repair
+
+<a id="find-verify-1-gferdm"></a>
+
+### FIND-VERIFY-1-GFERDM — Four specified behavior families lack exact evidence
+
+Status: open verification gap. The implementation links exist, but no declaration currently owns a complete permutation for these families. Adding an implementation link does not close this gap.
+
+- [`REQ-RUNTIME-5-WJ1XKK`](../specification/runtime/execution.md#req-runtime-5-wj1xkk): the browser, Node, mixed-host and worker-less capability matrix remains unverified as a whole. The runtime setup report identifies its platform boundary; its code contribution does not supply the missing test evidence.
+- [`INV-ENFDIS-1-1K65DT`](../specification/enforcement/dispute-window.md#inv-enfdis-1-1k65dt): no exact declaration currently proves its planned dispute-window invariants in full.
+- [`INV-DISPUTE-PIPE-1-BN0K81`](../specification/disputes/dispute-processing.md#inv-dispute-pipe-1-bn0k81): no exact declaration currently owns its complete planned audit invariant.
+- [`REQ-LIF-7-0XZBDM`](../specification/settlement/lifecycle.md#req-lif-7-0xzbdm): the required pause, queued-work, unrelated-fork, resume, notification and duplicate-event observations have no assigned specification evidence.
+
+Keep their generated evidence cells as `none — gap`. Close a permutation only after a test asserts its full oracle. This is the explicit-gap disposition allowed by the accepted traceability fix; the current source changes do not claim to implement this broader test matrix.
+
+<a id="find-sync-1-jwy1c8"></a>
+
+### FIND-SYNC-1-JWY1C8 — Recovery from a removed sync responder lacks verification
+
+Status: open verification gap. A removed peer can still appear in a held chain snapshot and serve a valid successor-genesis-only proof while surviving participants have advanced. The new observer's subsequent catch-up is not covered by the finalized-window calldata test, which deliberately selects surviving honest responders. Luka approved treating this recovery workflow separately.
+
+Required evidence: [`REQ-SYNC-1-T2589H.T1.P16`](../specification/peer-communication/synchronization.md#req-sync-1-t2589h.t1.p16) must exercise the removed responder, then prove recovery to the surviving participants' state without a missing-snapshot abort. No test currently owns this permutation; do not infer coverage from the honest-responder case.

@@ -203,8 +203,7 @@ export default class SpectatingValidationStrategy extends AValidationStrategy {
     ): Promise<BlockValidationResult> {
         if (isCommittedParticipantStatus(this.p2pManager.stateManager.status))
             return this.blockValidationStrategy.blockForkIsDisputed(entry);
-        // not ready
-        this.blockQueueManager.restoreQueuedEntry(entry, this);
+        // Discard the entry without aborting an observer or retrying the fork.
         return BlockValidationResult.NOT_READY;
     }
     public async blockIsNotNextAndIsInTheFuture(

@@ -23,7 +23,9 @@ The live-participant context: objective faults build fraud evidence and escalate
 
 ## Key design decisions
 
-The live strategy owns the subjective-window failure log and refusal. A replay override can accept history without logging a false validation failure. See [BlockValidationStrategy.ts](../../../../../../../src/stateManager/validationStrategy/BlockValidationStrategy.ts#L286).
+The disputed-fork hook discards the entry without requeueing. It returns NOT_READY to stop validation for sourceless or unacknowledged entries; acknowledged suppliers retain their blacklist liability. The hook accepts only the entry.
+
+The live strategy owns the subjective-window failure log and refusal. A replay override can accept history without logging a false validation failure. See [BlockValidationStrategy.ts](../../../../../../../src/stateManager/validationStrategy/BlockValidationStrategy.ts#L287).
 
 1. **Evidence-before-escalation is enforced here:** every DISPUTE verdict stores the proof via the fraud-proof service, then calls `dispute(forkId)` ([`REQ-BLOCK-PIPE-8-N529VH`](../../../../../specification/block-progression/block-processing.md#req-block-pipe-8-n529vh)).
 2. **Acknowledgment-gated tolerance** consumes the dispute-ack records ([`REQ-DACK-3-J4Z33Y`](../../../../../specification/peer-communication/dispute-acknowledgment.md#req-dack-3-j4z33y)).

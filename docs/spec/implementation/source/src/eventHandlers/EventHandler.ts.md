@@ -32,6 +32,8 @@ services can observe accepted chain events there without creating another ethers
 
 ## Key design decisions
 
+Final-dispute completion supplies the prepared height-zero snapshot to `completeWithGenesis`. Its event timestamp equals the kill-period end: a threshold-final upload backdates the last evidence timestamp by `evidenceTime`, making the window expire at the upload block timestamp. Ordinary reductions obtain the kill-period end from the window observation.
+
 Pending leave delegates local signer membership to MembershipService, matching other state-application callers. See [EventHandler.ts](../../../../../../src/eventHandlers/EventHandler.ts#L177).
 
 Signer comparisons delegate to membership ownership while pending-only chain queries retain their narrower participant set. See [EventHandler.ts](../../../../../../src/eventHandlers/EventHandler.ts#L132).

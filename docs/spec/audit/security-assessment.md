@@ -316,10 +316,12 @@ Absent-target handling is specified separately by [`REQ-SM-10-JD8TSF`](../specif
 
 Sync timeout and transport-failure liability is retained by the owner: honest peers are assumed to observe the same reality within agreementTime. No universal provider or execution bound is proved by this implementation. Local successor installation is not required to serve its already computed proof; requested same-fork heights are minimums.
 
-Sync verification reads chain reduction finality before refreshing its local dispute windows. This preserves a conservative reduction decision when a transaction lands between the reads and prevents another sync’s local-only simulation from suppressing required chain calldata. Proof validation and peer liability are unchanged. The finality read count remains one per supplied window.
+Sync verification reads chain reduction finality before refreshing its local dispute windows. This preserves a conservative reduction decision when a transaction lands between the reads and prevents another sync’s local-only simulation from suppressing required chain calldata. Proof validation and peer liability are unchanged. One static multicall reads finality for all supplied windows. Successful local reduction verifies the expected fork in Solidity; the already-final branch uses this request’s fetched chain window. A competing sync can overwrite the shared local mirror without invalidating either proof. Payload length remains uncapped, so the batched call and local verification work still scale with supplied windows.
 
 The retained sync design keeps each request's snapshot-update simulation complete independently
 of concurrent local proof work. Local verification is not evidence of chain execution, so it
 cannot alone remove reduction calldata. Reusing verified work remains a non-blocking
 [implementation performance question](../implementation/open-questions.md#oq-impl-sync-1-hjc60d);
 proof validation and blacklist liability are unchanged.
+
+Authored departure now rejects if its dispute fallback fails after either a failed fully signed snapshot post or an unsigned exit. The failure notification checks both the operation phase and fork, so a stale task cannot reject a new operation. Observer-hook tests separate provable-fault aborts from disputed-fork discard. Disputed-fork hooks never restore the entry; committed peers retain acknowledged-supplier liability, while unacknowledged suppliers and observers are not penalized for this branch.

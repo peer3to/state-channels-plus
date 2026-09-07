@@ -4,7 +4,10 @@ import { FraudProofType, toSolidityFraudProofType } from "@/types/sol-enums";
 import type { Address } from "@/types/types";
 import { Codec, Type } from "@/utils";
 import * as factory from "@test/factory";
-import { assertSpectatingFraud } from "@test/fixtures/SpectatingFraudStaging";
+import {
+    assertSpectatingFraud,
+    assertObserverHook
+} from "@test/fixtures/SpectatingFraudStaging";
 import {
     MathTestSession as TestSession,
     MIN_TEST_TIME_CONFIG
@@ -57,6 +60,21 @@ describe("Unit: ValidationService", function () {
     });
     it("observer live arrivals abort on double-sign fraud without requesting a dispute", async function () {
         await assertSpectatingFraud("observer", false);
+    });
+    it("observer wrongGenesisDetected keeps the spectator reaction without submitting a dispute", async function () {
+        await assertObserverHook("wrongGenesisDetected");
+    });
+    it("observer invalidStateTransitionDetected keeps the spectator reaction without submitting a dispute", async function () {
+        await assertObserverHook("invalidStateTransitionDetected");
+    });
+    it("observer objectiveInvalidTimestampDetected keeps the spectator reaction without submitting a dispute", async function () {
+        await assertObserverHook("objectiveInvalidTimestampDetected");
+    });
+    it("observer forgedInboundMessageBlockDetected keeps the spectator reaction without submitting a dispute", async function () {
+        await assertObserverHook("forgedInboundMessageBlockDetected");
+    });
+    it("observer blockForkIsDisputed keeps the spectator reaction without submitting a dispute", async function () {
+        await assertObserverHook("blockForkIsDisputed");
     });
     describe("isChannelOpen", function () {
         it("open fork (non-zero) → true", async function () {
@@ -1218,7 +1236,7 @@ describe("Unit: ValidationService", function () {
             expect(r.bogus).to.equal(false);
         });
 
-        it("a block on the current fork while it is disputed → blockForkIsDisputed → NOT_READY, requeued", async function () {
+        it("a block on the current fork while it is disputed → blockForkIsDisputed → NOT_READY, discarded", async function () {
             const h = TestSession.getHarness();
             const observerIndex = 0;
             const maliciousPeerIndex = 2;
@@ -1263,9 +1281,10 @@ describe("Unit: ValidationService", function () {
                     .validation.runBlockValidation(encoded, { strategy })
                     .request();
 
-                // sourceless entry -> requeue for the timeout sync, not a disconnect
+                // Discard a sourceless entry without disconnecting or scheduling a retry.
                 expect(r.resultName).to.equal("NOT_READY");
-                expect(r.restoreQueuedEntryCalled).to.equal(true);
+                expect(r.restoreQueuedEntryCalled).to.equal(false);
+                expect(r.disconnectedAddresses).to.deep.equal([]);
                 expect(r.disputedForkIds).to.deep.equal([]);
                 expect(r.firedHooks).to.include("blockForkIsDisputed");
             }
@@ -1385,7 +1404,7 @@ describe("Unit: ValidationService", function () {
             expect(r.restoreQueuedEntryCalled).to.equal(false);
         });
 
-        it("a disputed-fork block from a supplier with no acknowledgment on record → requeued, NOT_READY", async function () {
+        it("a disputed-fork block from a supplier with no acknowledgment on record → discarded, NOT_READY", async function () {
             const h = TestSession.getHarness();
             const observerIndex = 0;
             const byzantineIndex = 1;
@@ -1422,9 +1441,9 @@ describe("Unit: ValidationService", function () {
 
             expect(r.sourcePeers).to.deep.equal([unacknowledgedSupplier]);
             expect(r.firedHooks).to.include("blockForkIsDisputed");
-            // not provably byzantine -> restored for the timeout sync
+            // Discard without punishing a supplier that has not acknowledged the dispute.
             expect(r.resultName).to.equal("NOT_READY");
-            expect(r.restoreQueuedEntryCalled).to.equal(true);
+            expect(r.restoreQueuedEntryCalled).to.equal(false);
             expect(r.disconnectedAddresses).to.deep.equal([]);
         });
     });

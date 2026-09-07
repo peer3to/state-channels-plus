@@ -88,7 +88,7 @@ flowchart TB
     Q -->|"agreementTime elapsed"| TIMEOUT["queueTimeout<br/>merge / drop stale fork / sync-probe / execute"]
     EXEC --> OBC["onBlockConfirmation (mutex)<br/>fork re-check · authenticate"]
     OBC --> VAL["ValidationService.validateBlockConfirmation<br/>channel · open · author · conflict · gates · linkage · leader · time"]
-    VAL -->|fail| ACT["strategy action:<br/>NOT_READY restore · DISCONNECT · DISPUTE"]
+    VAL -->|fail| ACT["strategy action:<br/>NOT_READY stop · DISCONNECT · DISPUTE"]
     VAL -->|ok| SMX["inbound-chain checks · applyTransaction ·<br/>apply inbound messages · createStateSnapshot ·<br/>snapshot-hash check · signer-union check"]
     SMX -->|fail| RESTORE["restore VM state · strategy action"]
     SMX -->|ok| SUCC["success():<br/>persist snapshot+state · maybe sign · persist block ·<br/>gossip · exit path · schedule calldata post + timeout"]
@@ -272,6 +272,8 @@ takes the `StateManager` mutex ([`INV-BCP-1-H2H41X`](block-confirmation-pipeline
 explicit override (dispute replay, calldata) or by status —
 committed status (`PENDING_PARTICIPANT`, `PARTICIPATING`) → `BlockValidationStrategy`, otherwise →
 `SpectatingValidationStrategy`. Proof replay always uses the spectating strategy, which delegates fraud reactions to the live strategy for a committed peer. Pending participants never counter-sign.
+
+A disputed-fork validation result discards the entry without restoring it. NOT_READY stops the pipeline; it does not imply requeueing. Supplier acknowledgment still controls the live penalty.
 
 Pre-checks under the mutex:
 

@@ -13,7 +13,7 @@ import type {
 } from "@/rpc/services/openChannelNegotiation/OpenChannelNegotiationService";
 import type SpectateService from "@/rpc/services/spectate/SpectateService";
 import type ATransport from "@/transport/ATransport";
-import type { ForkId } from "@/types/types";
+import type { Address, ForkId } from "@/types/types";
 import {
     Codec,
     LocalDiscoveryServer,
@@ -29,12 +29,19 @@ import type {
     DisputeConfirmationStruct
 } from "@typechain-types/contracts/V1/types/DisputeTypes";
 import type { DisputeFraudProofStruct } from "@typechain-types/contracts/V1/types/ProofTypes";
+import { hexlify, resolveAddress } from "ethers";
 import { AsyncLocalStorage } from "node:async_hooks";
 import { WebSocketServer } from "ws";
 
 // `ATransport` is used both for `createRPCMethods` and the captured transport.
 
 export type BlockWorkHoldPoint = "authoring" | "commit" | "signature";
+
+export type SignatureBlockMatch = {
+    forkId: ForkId;
+    participant: Address;
+    transactionSelector: string;
+};
 
 type DisputeCommittedEventKey = string;
 type CalldataPostedEventKey = string;
@@ -291,6 +298,18 @@ export class StubService extends ARpcService<
     StubRpcMethods,
     P2PManager<HarnessControlRpc>
 > {
+    private nextSignatureHold?: HeldRpcReply;
+    private restoreNextSignature?: () => void;
+    private syncReductionHold?: HeldRpcReply;
+    private restoreSyncReduction?: () => void;
+    private restoreFinalityReads?: () => void;
+    private restoreSyncRejections?: () => void;
+    /** Reasons passed to the real sync rejection handler. */
+    private syncRejectionReasons: string[] = [];
+    /** Number of finality predicates in each recorded provider call. */
+    private finalityReadWidths: number[] = [];
+    private chainMembershipReadCount = 0;
+    private restoreChainMembership?: () => void;
     private syncWindowHold?: HeldRpcReply;
     private restoreSyncWindow?: () => void;
     private restoreSyncReductionRecorder?: () => void;
@@ -824,6 +843,179 @@ export class StubService extends ARpcService<
         });
     }
 
+    public holdNextSignature(match?: SignatureBlockMatch): void {
+        const signer = this.sm.signer;
+        const original = signer.signMessage.bind(signer);
+        const hold = this.createRpcHold("spectate");
+        this.nextSignatureHold = hold;
+        const commit = this.sm.blockCommitService;
+        const originalCommit = commit.success.bind(commit);
+        let expectedPayload: string | undefined;
+        if (match) {
+            // Observe the block before its real commit signs it; the signer only receives its hash.
+            commit.success = async (block, ...args) => {
+                if (
+                    block.forkId === match.forkId &&
+                    (
+                        await resolveAddress(block.signerAddress)
+                    ).toLowerCase() ===
+                        (
+                            await resolveAddress(match.participant)
+                        ).toLowerCase() &&
+                    hexlify(block.tx.body.data).startsWith(
+                        match.transactionSelector
+                    )
+                )
+                    expectedPayload = hexlify(block.hash);
+                return originalCommit(block, ...args);
+            };
+        }
+        this.restoreNextSignature = () => {
+            signer.signMessage = original;
+            commit.success = originalCommit;
+        };
+        signer.signMessage = async (...args) => {
+            const payload =
+                typeof args[0] === "string" ? args[0] : hexlify(args[0]);
+            if (match && payload !== expectedPayload) return original(...args);
+            this.restoreNextSignature?.();
+            hold.entered += 1;
+            await hold.gate;
+            return original(...args);
+        };
+    }
+
+    public getNextSignatureEntered(): number {
+        return this.nextSignatureHold?.entered ?? 0;
+    }
+
+    public releaseNextSignature(): void {
+        this.restoreNextSignature?.();
+        this.restoreNextSignature = undefined;
+        this.nextSignatureHold?.release();
+    }
+
+    public holdSyncReductionResult(): void {
+        const contract = this.sm.diamondStateMachine.localDiamondContract;
+        const original = contract.reduceAndFinalize;
+        const hold = this.createRpcHold("spectate");
+        this.syncReductionHold = hold;
+        this.restoreSyncReduction = () =>
+            Reflect.set(contract, "reduceAndFinalize", original);
+        Reflect.set(
+            contract,
+            "reduceAndFinalize",
+            async (...args: Parameters<typeof original>) => {
+                const result = await original(...args);
+                this.restoreSyncReduction?.();
+                hold.entered += 1;
+                await hold.gate;
+                return result;
+            }
+        );
+    }
+
+    public getSyncReductionEntered(): number {
+        return this.syncReductionHold?.entered ?? 0;
+    }
+
+    public releaseSyncReductionResult(): void {
+        this.restoreSyncReduction?.();
+        this.restoreSyncReduction = undefined;
+        this.syncReductionHold?.release();
+    }
+
+    public recordSyncRejections(): void {
+        // Private handler observed only at the host-side test seam.
+        const service = this.sm.p2pManager.localRpc
+            .spectateService as unknown as {
+            rejectSync(peerAddress: string, reason: string): false;
+        };
+        const original = service.rejectSync.bind(service);
+        this.syncRejectionReasons = [];
+        this.restoreSyncRejections = () => {
+            service.rejectSync = original;
+        };
+        service.rejectSync = (peerAddress, reason) => {
+            this.syncRejectionReasons.push(reason);
+            return original(peerAddress, reason);
+        };
+    }
+
+    public restoreRecordedSyncRejections(): string[] {
+        this.restoreSyncRejections?.();
+        this.restoreSyncRejections = undefined;
+        return [...this.syncRejectionReasons];
+    }
+
+    public recordSyncFinalityReads(): void {
+        const contract = this.sm.stateChannelManagerContract;
+        const provider = contract.runner!.provider!;
+        const original = provider.call.bind(provider);
+        const finalitySelector = contract.interface.getFunction(
+            "isReduceChallengePeriodExpired"
+        )!.selector;
+        const multicallSelector =
+            contract.interface.getFunction("multicall")!.selector;
+        this.finalityReadWidths = [];
+        this.restoreFinalityReads = () => {
+            provider.call = original;
+        };
+        provider.call = async (transaction) => {
+            if (typeof transaction.data === "string") {
+                const data = transaction.data;
+                if (data.startsWith(finalitySelector))
+                    this.finalityReadWidths.push(1);
+                if (data.startsWith(multicallSelector)) {
+                    const [calls] = contract.interface.decodeFunctionData(
+                        "multicall",
+                        data
+                    );
+                    const width = Array.from(calls as string[]).filter((call) =>
+                        call.startsWith(finalitySelector)
+                    ).length;
+                    if (width > 0) this.finalityReadWidths.push(width);
+                }
+            }
+            return original(transaction);
+        };
+    }
+
+    public getSyncFinalityReadWidths(): number[] {
+        return this.finalityReadWidths;
+    }
+
+    public restoreSyncFinalityReads(): void {
+        this.restoreFinalityReads?.();
+        this.restoreFinalityReads = undefined;
+    }
+
+    public recordChainMembershipReads(): void {
+        const contract = this.sm.stateChannelManagerContract;
+        const original = contract.getParticipants;
+        this.chainMembershipReadCount = 0;
+        this.restoreChainMembership = () => {
+            Reflect.set(contract, "getParticipants", original);
+        };
+        Reflect.set(
+            contract,
+            "getParticipants",
+            (...args: Parameters<typeof original>) => {
+                this.chainMembershipReadCount += 1;
+                return original(...args);
+            }
+        );
+    }
+
+    public getChainMembershipReadCount(): number {
+        return this.chainMembershipReadCount;
+    }
+
+    public restoreChainMembershipReads(): void {
+        this.restoreChainMembership?.();
+        this.restoreChainMembership = undefined;
+    }
+
     public holdSyncWindowPersistence(): void {
         const service = this.p2pManager.localRpc.spectateService;
         const original =
@@ -834,10 +1026,11 @@ export class StubService extends ARpcService<
             service.fetchAndPersistOnChainDisputeWindows = original;
         };
         service.fetchAndPersistOnChainDisputeWindows = async (...args) => {
-            await original(...args);
+            const windows = await original(...args);
             this.restoreSyncWindow?.();
             hold.entered += 1;
             await hold.gate;
+            return windows;
         };
     }
 

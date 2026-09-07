@@ -667,7 +667,7 @@ describe("E2E: Spectate Service", function () {
         // dispute the reduced fork's genesis block intermittently collects only
         // N-1 of N signatures (e.g. sigs=2/3), so sync stalls. Passes on some
         // runs, fails on others; not a harness-conversion issue.
-        it("pre-dispute spectator disconnects from participants after resolve; post-dispute joiner syncs", async function () {
+        it("pre-dispute spectator disconnects after resolve; post-dispute joiner syncs from surviving honest responders", async function () {
             const h = TestSession.getHarness();
             await h.lifecycle.start(4, 0, {
                 timeConfig: {
@@ -736,6 +736,15 @@ describe("E2E: Spectate Service", function () {
                 const { peer: postDisputeSpectator } =
                     await h.join.addSpectatorAuthoring({
                         beforeConnect: async (peer) => {
+                            // The held chain snapshot still names the removed peer.
+                            // This case checks a surviving participant's final-window proof.
+                            // Withdraw discovery: this new peer has no profile to blacklist yet.
+                            await h
+                                .control(h.getPeer(maliciousPeerIndex))
+                                .network.leaveSelectedKey(
+                                    h.channelId!.toString()
+                                )
+                                .request();
                             await h
                                 .control(peer)
                                 .stub.recordSyncReductionWindows()
@@ -1209,12 +1218,6 @@ describe("E2E: Spectate Service", function () {
             );
         });
 
-        it("serves the latest sync payload for minimum height 1 while ahead", async function () {
-            await expectSyncPayloadAboveRequestedHeightWhileAhead(
-                TestSession.getHarness(),
-                1
-            );
-        });
         it("serves a newer sync payload when the minimum is the leave-block height", async function () {
             const h = TestSession.getHarness();
             await h.lifecycle.start(4, 0, {

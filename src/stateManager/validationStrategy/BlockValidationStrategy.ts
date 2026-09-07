@@ -245,8 +245,7 @@ export default class BlockValidationStrategy extends AValidationStrategy {
             return BlockValidationResult.DISCONNECT;
         }
 
-        // Queue the block - will process normally
-        this.blockQueueManager.restoreQueuedEntry(entry, this);
+        // Discard the entry; disputed forks are cleared, not retried.
         return BlockValidationResult.NOT_READY;
     }
     public async blockIsNotNextAndIsInTheFuture(

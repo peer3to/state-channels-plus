@@ -98,7 +98,13 @@ export type BlockValidationProbeOptions = BlockProbeOptions & {
      * both return early on a non-current fork, so the missing-genesis branch
      * is only reachable by calling the hook.
      */
-    hook?: "blockAuthorIsNotParticipant" | "wrongGenesisDetected";
+    hook?:
+        | "blockAuthorIsNotParticipant"
+        | "wrongGenesisDetected"
+        | "invalidStateTransitionDetected"
+        | "objectiveInvalidTimestampDetected"
+        | "forgedInboundMessageBlockDetected"
+        | "blockForkIsDisputed";
     /**
      * "validate" (default) runs validateBlockConfirmation only; "full" runs
      * the whole onBlockConfirmation pipeline (assembly, hash compare, VM
@@ -116,6 +122,7 @@ export type BlockValidationProbe = {
     disconnectedAddresses: string[];
     firedHooks: string[];
     restoreQueuedEntryCalled: boolean;
+    abortCalled: boolean;
     signerAddress: string;
     fraudProofType: string | null;
     /** Source attribution the entry carried into validation. */
@@ -147,6 +154,7 @@ type RecordedValidationRun = {
         disconnectedAddresses: string[];
         firedHooks: string[];
         restoreQueuedEntryCalled: boolean;
+        abortCalled: boolean;
         calldataRecoveryQueries: number;
         subjectiveWarningCount: number;
         lastHookResult: BlockValidationResult | undefined;
@@ -669,12 +677,30 @@ export class ValidationProbeService extends ARpcService<
                 options
             );
             try {
-                const result = options?.hook
-                    ? await run.instrumentedStrategy[options.hook](run.entry)
-                    : await this.sm.validationService.validateBlockConfirmation(
-                          run.entry,
-                          run.instrumentedStrategy
-                      );
+                let result: BlockValidationResult;
+                const hook = options?.hook;
+                if (
+                    hook === "invalidStateTransitionDetected" ||
+                    hook === "objectiveInvalidTimestampDetected"
+                ) {
+                    result = await run.instrumentedStrategy[hook](run.block);
+                } else if (hook === "forgedInboundMessageBlockDetected") {
+                    // This hook consumes an already classified message block; the observer only aborts.
+                    const inbound = factory.messageBlock();
+                    result =
+                        await run.instrumentedStrategy.forgedInboundMessageBlockDetected(
+                            run.block,
+                            inbound
+                        );
+                } else if (hook) {
+                    result = await run.instrumentedStrategy[hook](run.entry);
+                } else {
+                    result =
+                        await this.sm.validationService.validateBlockConfirmation(
+                            run.entry,
+                            run.instrumentedStrategy
+                        );
+                }
                 return this.buildValidationProbe(run, result);
             } finally {
                 run.restore();
@@ -767,6 +793,7 @@ export class ValidationProbeService extends ARpcService<
             disconnectedAddresses: [],
             firedHooks: [],
             restoreQueuedEntryCalled: false,
+            abortCalled: false,
             calldataRecoveryQueries: 0,
             subjectiveWarningCount: 0,
             lastHookResult: undefined
@@ -805,9 +832,14 @@ export class ValidationProbeService extends ARpcService<
         const originalRestore = sm.blockQueueManager.restoreQueuedEntry.bind(
             sm.blockQueueManager
         );
-        sm.blockQueueManager.restoreQueuedEntry = (() => {
+        sm.blockQueueManager.restoreQueuedEntry = (_entry) => {
             recorded.restoreQueuedEntryCalled = true;
-        }) as typeof sm.blockQueueManager.restoreQueuedEntry;
+        };
+        const originalAbort = sm.abort.bind(sm);
+        sm.abort = () => {
+            recorded.abortCalled = true;
+            return originalAbort();
+        };
         // count-and-forward: recovery must stay real, the count only proves
         // validation reached the on-chain lookup
         const eventSyncService = sm.eventSyncService;
@@ -863,6 +895,7 @@ export class ValidationProbeService extends ARpcService<
                 p2pManager.disconnectAndBlacklistPeerByEvmAddress =
                     originalDisconnect;
                 sm.blockQueueManager.restoreQueuedEntry = originalRestore;
+                sm.abort = originalAbort;
                 eventSyncService.tryRecoverBlockCalldataAndScheduleValidation =
                     originalRecover;
             }
@@ -885,6 +918,7 @@ export class ValidationProbeService extends ARpcService<
             disconnectedAddresses: run.recorded.disconnectedAddresses,
             firedHooks: run.recorded.firedHooks,
             restoreQueuedEntryCalled: run.recorded.restoreQueuedEntryCalled,
+            abortCalled: run.recorded.abortCalled,
             signerAddress: String(run.block.signerAddress),
             fraudProofType: fraudProof ? String(fraudProof.proofType) : null,
             sourcePeers: [...run.entry.sourcePeers].map(String),

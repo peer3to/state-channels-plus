@@ -25,6 +25,8 @@ genesis under the execution boundary, and channel restart on the reduced fork.
 
 ## Key design decisions
 
+[prepareReducedGenesis](../../../../../../../src/stateManager/reduction/ReductionManager.ts#L214) owns the ordinary reduced genesis: it persists the terminal outbound block with `justPersist` and constructs the height-zero snapshot from the computation and the caller’s kill-period timestamp. Both the executor and sync responder delegate here. Application receives the prepared snapshot; the final-dispute path keeps its separate dispute-creation timestamp rule.
+
 Reduction attempts collect the handled branch after routing failures into their completion. The refactor made that completion the error boundary, so collecting the raw rejection would report handled failures again during disposal. The manager retains its own disposal flag in addition to the state manager live-fork check. See [ReductionManager.ts](../../../../../../../src/stateManager/reduction/ReductionManager.ts#L112).
 
 computeReduction remains live through EventHandler. getCompletedReduction remains private and the harness query reads it by bracket access; it is a retained test-only production query.

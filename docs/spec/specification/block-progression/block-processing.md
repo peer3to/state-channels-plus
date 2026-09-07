@@ -192,9 +192,11 @@ predicate establishes, never by who is processing it:
   otherwise valid block are junk signatures, not a junk block — they are stripped, exactly their
   suppliers are penalized, and the block continues ([`REQ-BLOCK-PIPE-11-DCHAJ2`](block-processing.md#req-block-pipe-11-dchaj2)).
 - **Not-yet-ready.** No misbehavior is demonstrated; the node lacks the context to judge: channel
-  not yet open, a block beyond the next expected height, or a disputed fork whose supplier may be
-  an honest straggler. The entry is restored to the queue unchanged; its fixed lifetime is not
+  not yet open or a block beyond the next expected height. The entry is restored to the queue unchanged; its fixed lifetime is not
   extended ([`REQ-BLOCK-PIPE-5-WJ31RG`](block-processing.md#req-block-pipe-5-wj31rg)).
+- **Disputed fork.** Discard the entry without restoring it or arming a retry. A supplier
+  without a recorded dispute acknowledgment is not penalized; the live strategy retains
+  its penalty for suppliers that already acknowledged the dispute.
 - **No new knowledge.** Duplicates and already-known signatures: no effect; new valid signatures
   merge per Stage 2 ([`REQ-BLOCK-PIPE-1-SS24D1`](block-processing.md#req-block-pipe-1-ss24d1)).
 - **Subjective lateness.** The agreement-window judgment. It is observer-relative by definition,

@@ -10,7 +10,9 @@ It does not announce membership to peers or control connection admission.
 
 ## Key design decisions
 
-startSelfRemovalDispute sets force-exit, invokes normal dispute construction and returns the resulting marker. Terminal leave turns a missing marker into failure; membership fallbacks retain their logging policy. Signer membership predicates name the local set or the on-chain union; pending-only event checks remain pending-only. See [MembershipService.ts](../../../../../../../src/stateManager/membership/MembershipService.ts#L63).
+Both authored-exit fallback paths report a missing dispute marker or a thrown upload error to `LeaveChannelService.onExitFallbackFailed` after logging. A failed snapshot post first attempts the dispute; only failure of that fallback rejects pending leave.
+
+startSelfRemovalDispute sets force-exit, invokes normal dispute construction and returns the resulting marker. Terminal leave turns a missing marker into failure; membership fallbacks log and notify the matching authored leave on failure. Signer membership predicates name the local set or the on-chain union; pending-only event checks remain pending-only. See [MembershipService.ts](../../../../../../../src/stateManager/membership/MembershipService.ts#L63).
 
 Committed membership classification uses the shared two-status predicate. Force-exit starters and public parameters stay unchanged. See [MembershipService.ts](../../../../../../../src/stateManager/membership/MembershipService.ts#L1).
 

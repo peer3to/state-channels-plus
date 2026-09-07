@@ -37,9 +37,11 @@ and participation status are applied.
 
 ## Key design decisions
 
-Signer membership reads delegate to MembershipService; this file carries no duplicate address comparison. See [StateApplicationService.ts](../../../../../../../src/stateManager/snapshotUpdate/StateApplicationService.ts#L165).
+Reduction application accepts the prepared genesis snapshot without rebuilding it. Ordinary reductions obtain it from `ReductionManager.prepareReducedGenesis`; final disputes supply their own snapshot with the dispute-creation timestamp. The prepare, commit guard and follow-up order are unchanged.
 
-The on-chain signer lookup delegates to the membership union predicate and retains the existing local short-circuit. See [StateApplicationService.ts](../../../../../../../src/stateManager/snapshotUpdate/StateApplicationService.ts#L165).
+Signer membership reads delegate to MembershipService; this file carries no duplicate address comparison. See [StateApplicationService.ts](../../../../../../../src/stateManager/snapshotUpdate/StateApplicationService.ts#L158).
+
+The on-chain signer lookup delegates to the membership union predicate and retains the existing local short-circuit. See [StateApplicationService.ts](../../../../../../../src/stateManager/snapshotUpdate/StateApplicationService.ts#L158).
 
 Error text delegates to the dependency-free errorMessage helper. Existing catch policy, stack fields, log messages and error propagation remain at this call site. See [StateApplicationService.ts](../../../../../../../src/stateManager/snapshotUpdate/StateApplicationService.ts#L1).
 

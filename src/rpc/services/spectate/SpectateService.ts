@@ -225,18 +225,29 @@ class SpectateService extends ARpcService<SpectateServiceRpcMethods> {
             // lands between reads, while a false decision safely keeps its calldata.
             // Values indicate chain-final reduction for each requested fork.
             const finalizedByFork = new Map<ForkId, boolean>();
-            await Promise.all(
-                forkIds.map(async (forkId) => {
-                    finalizedByFork.set(
-                        forkId,
-                        await stateManager.stateChannelManagerContract.isReduceChallengePeriodExpired(
-                            channelId,
-                            forkId
-                        )
+            if (forkIds.length > 0) {
+                const contract = stateManager.stateChannelManagerContract;
+                const encodedFinalityCalls = forkIds.map((forkId) =>
+                    contract.interface.encodeFunctionData(
+                        "isReduceChallengePeriodExpired",
+                        [channelId, forkId]
+                    )
+                );
+                const encodedFinalityResults =
+                    await contract.multicall.staticCall(encodedFinalityCalls);
+                forkIds.forEach((forkId, index) => {
+                    const [isFinal] = contract.interface.decodeFunctionResult(
+                        "isReduceChallengePeriodExpired",
+                        encodedFinalityResults[index]
                     );
-                })
-            );
-            await this.fetchAndPersistOnChainDisputeWindows(channelId, forkIds);
+                    finalizedByFork.set(forkId, isFinal);
+                });
+            }
+            const onChainDisputeWindows =
+                await this.fetchAndPersistOnChainDisputeWindows(
+                    channelId,
+                    forkIds
+                );
 
             let notReducedCount = 0;
             const disputeWindowsThatNeedToBeReducedOnChain: DisputeWindowVerification[] =
@@ -279,18 +290,20 @@ class SpectateService extends ARpcService<SpectateServiceRpcMethods> {
                         );
                 }
 
-                // 2.5) verify that they reduce to the correct forks as given in the SyncPayload
-                const _dw = (
-                    await diamondStateMachine.localDiamondContract.getDisputeWindows(
-                        channelId,
-                        [dw.forkId]
-                    )
-                )[0];
-                if (_dw.reducedResult.forkId != dw.reducedForkId)
-                    return this.rejectSync(
-                        peerAddress,
-                        "reduced fork mismatch"
-                    );
+                // A successful reduction already checks the expected fork in Solidity.
+                // Another sync can overwrite that local result before a re-read.
+                if (isReducedAndFinal) {
+                    // 2.5) verify that they reduce to the correct forks as given in the SyncPayload
+                    // Use this request's chain response; a competing persist may be older.
+                    const _dw = onChainDisputeWindows.find(
+                        (window) => window.forkId === dw.forkId
+                    )!;
+                    if (_dw.reducedResult.forkId != dw.reducedForkId)
+                        return this.rejectSync(
+                            peerAddress,
+                            "reduced fork mismatch"
+                        );
+                }
                 // if the above call fails -> local evm will throw -> catch and abort
                 finalForkId = dw.reducedForkId;
             }
@@ -581,7 +594,7 @@ class SpectateService extends ARpcService<SpectateServiceRpcMethods> {
 
         const disputeWindows: DisputeWindowVerification[] = [];
         let latestComputation: ReductionComputation | undefined;
-        let computedGenesisTimestamp = 0;
+        let computedGenesisSnapshot: StateSnapshot | undefined;
         let currentForkId = currentOnChainSnapshot.forkID;
         // the disputed flag comes from the same owner as the window below. the
         // local EVM only knows the dispute events we've processed, so reading
@@ -642,19 +655,18 @@ class SpectateService extends ARpcService<SpectateServiceRpcMethods> {
             }
             const { reduceData, reducedForkId } = computation;
             latestComputation = computation;
-            computedGenesisTimestamp = (
+            const computedGenesisTimestamp = (
                 await stateManager.reductionManager.isKillPeriodExpiredCached(
                     currentForkId
                 )
             ).killPeriodEnd;
             // Reuse the outbound-chain owner before building the proof range.
             // Background genesis installation persists this same block idempotently.
-            if (computation.reducedOutboundMessageBlock) {
-                stateManager.storage.outboundMessages.store(
-                    computation.reducedOutboundMessageBlock,
-                    { justPersist: true }
-                );
-            }
+            computedGenesisSnapshot =
+                stateManager.reductionManager.prepareReducedGenesis(
+                    computation,
+                    computedGenesisTimestamp
+                ).genesisSnapshot;
 
             // Move to the next fork using local EVM
             disputeWindows.push({
@@ -705,13 +717,8 @@ class SpectateService extends ARpcService<SpectateServiceRpcMethods> {
             stateManager.storage.stateSnapshots.getGenesisSnapshotByForkId(
                 forkId
             ) ??
-            (latestComputation?.reducedForkId === forkId
-                ? StateSnapshot.from({
-                      forkId,
-                      blockHeight: 0,
-                      timestamp: computedGenesisTimestamp,
-                      snapshotData: latestComputation.reducedSnapshotData
-                  })
+            (computedGenesisSnapshot?.forkID === forkId
+                ? computedGenesisSnapshot
                 : undefined);
         const hasInstalledGenesis =
             !!stateManager.storage.stateSnapshots.getGenesisSnapshotByForkId(
@@ -870,6 +877,7 @@ class SpectateService extends ARpcService<SpectateServiceRpcMethods> {
                 dw
             );
         }
+        return disputeWindows;
     }
 
     public async tryMulticallSnapshotUpdate(

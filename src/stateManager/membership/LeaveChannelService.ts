@@ -146,6 +146,17 @@ export default class LeaveChannelService {
         }
     }
 
+    public onExitFallbackFailed(forkId: ForkId, error: unknown): void {
+        const operation = this.operation;
+        if (
+            !operation ||
+            operation.phase !== "exit-authored" ||
+            operation.forkId !== forkId
+        )
+            return;
+        this.fail(operation, error);
+    }
+
     public async onSettledStateObserved(): Promise<void> {
         const operation = this.operation;
         if (!operation || operation.phase === "starting") return;

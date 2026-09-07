@@ -40,9 +40,9 @@ mismatch, and the positional committed-set matching `areDisputesCommitted`.
 A file may contribute to several requirements; this report describes the contribution and never
 claims complete conformance for a requirement that depends on other files.
 
-| Source file                                                                                              | Specification IDs                                                                                          |
-| -------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------- |
-| [DisputeUtils.sol](../../../../../../../../contracts/V1/StateChannelDiamondProxy/utils/DisputeUtils.sol) | [`REQ-ENFDIS-1-8CSA6B`](../../../../../../specification/enforcement/dispute-window.md#req-enfdis-1-8csa6b) |
+| Source file                                                                                              | Specification IDs                                                                                                                                                                                                                   |
+| -------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| [DisputeUtils.sol](../../../../../../../../contracts/V1/StateChannelDiamondProxy/utils/DisputeUtils.sol) | [`REQ-ENFDIS-1-8CSA6B`](../../../../../../specification/enforcement/dispute-window.md#req-enfdis-1-8csa6b), [`REQ-DISPUTE-PIPE-9-TDWQPV`](../../../../../../specification/disputes/dispute-processing.md#req-dispute-pipe-9-tdwqpv) |
 
 Contribution in this file: [`REQ-DISPUTE-PIPE-9-TDWQPV`](../../../../../../specification/disputes/dispute-processing.md#req-dispute-pipe-9-tdwqpv). The conformance rows below name this owner and the other required owners.
 

@@ -49,25 +49,22 @@ export async function assertSyncedLeaverSkipsSubmission(
         expect(await h.control(target).query.getStatus().request()).to.equal(
             Status.SYNCED
         );
-        const settlementReads = await h.execOnHost(target, async (sm) => {
-            const contract = sm.stateChannelManagerContract;
-            const original = contract.getParticipants;
-            let reads = 0;
-            Reflect.set(
-                contract,
-                "getParticipants",
-                (...args: Parameters<typeof original>) => {
-                    reads += 1;
-                    return original(...args);
-                }
-            );
-            try {
+        await h.control(target).stub.recordChainMembershipReads().request();
+        let settlementReads: number;
+        try {
+            await h.execOnHost(target, async (sm) => {
                 await sm.leaveChannelService.onSettledStateObserved();
-                return reads;
-            } finally {
-                Reflect.set(contract, "getParticipants", original);
-            }
-        });
+            });
+            settlementReads = await h
+                .control(target)
+                .stub.getChainMembershipReadCount()
+                .request();
+        } finally {
+            await h
+                .control(target)
+                .stub.restoreChainMembershipReads()
+                .request();
+        }
         expect(settlementReads).to.equal(0);
         await waitFor(
             async () =>

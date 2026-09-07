@@ -3,6 +3,8 @@ import type { SyncRequest } from "@/rpc/services/spectate/SpectateService";
 import { Status } from "@/types";
 import { Codec, Type } from "@/utils";
 import {
+    assertConcurrentSyncWindowOverwrite,
+    assertBatchedSyncFinality,
     assertComputedSuccessorSync,
     assertPinnedHeight,
     assertSyncWindowReadRace
@@ -14,6 +16,12 @@ import { expect } from "chai";
 import { ethers } from "ethers";
 
 describe("Unit: SpectateService", function () {
+    it("concurrent source syncs accept when a second persist overwrites the first reduction", async function () {
+        await assertConcurrentSyncWindowOverwrite(TestSession.getHarness());
+    });
+    it("sync batches finality reads for two supplied windows before rejection", async function () {
+        await assertBatchedSyncFinality(TestSession.getHarness());
+    });
     it("old-fork sync succeeds while successor installation is held without either blacklist", async function () {
         await assertComputedSuccessorSync(TestSession.getHarness(), false);
     });

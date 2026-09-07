@@ -295,3 +295,137 @@ export async function assertSyncWindowReadRace(
         await events.release({ replayEvents: false, keepTasksHeld: true });
     }
 }
+
+export async function assertConcurrentSyncWindowOverwrite(
+    h: MathPeerTestHarness
+) {
+    const { sourceForkId } = await h.scenario.stageReducibleDisputedFork();
+    const observer = h.getPeer(2);
+    const sources = [h.getPeer(0), h.getPeer(3)];
+    const events = await h.rpcStub.holdReductionRace(observer.index);
+    const stub = h.control(observer).stub;
+    await stub.holdSyncReductionResult().request();
+    const first = h.execOnHost(
+        observer,
+        async (sm, args) =>
+            sm.p2pManager.localRpc.spectateService.sync(
+                args.source,
+                sm.channelId,
+                args.forkId
+            ),
+        { source: sources[0].address, forkId: sourceForkId }
+    );
+    let second: Promise<boolean> | undefined;
+    try {
+        await waitFor(
+            async () => (await stub.getSyncReductionEntered().request()) === 1
+        );
+        await stub.holdSyncWindowPersistence().request();
+        second = h.execOnHost(
+            observer,
+            async (sm, args) =>
+                sm.p2pManager.localRpc.spectateService.sync(
+                    args.source,
+                    sm.channelId,
+                    args.forkId
+                ),
+            { source: sources[1].address, forkId: sourceForkId }
+        );
+        await waitFor(
+            async () =>
+                (await stub.getSyncWindowPersistenceEntered().request()) === 1
+        );
+        expect(
+            await h.execOnHost(
+                observer,
+                async (sm, args) =>
+                    (
+                        await sm.diamondStateMachine.localDiamondContract.getDisputeWindows(
+                            sm.channelId,
+                            [args.forkId]
+                        )
+                    )[0].reducedResult.forkId,
+                { forkId: sourceForkId }
+            )
+        ).to.equal(ZeroHash);
+        await stub.releaseSyncReductionResult().request();
+        expect(await first).to.equal(true);
+        await stub.releaseSyncWindowPersistence().request();
+        expect(await second).to.equal(true);
+        for (const source of sources) {
+            expect(
+                await h
+                    .control(observer)
+                    .query.isBlacklisted(source.address)
+                    .request()
+            ).to.equal(false);
+            expect(
+                await h
+                    .control(source)
+                    .query.isBlacklisted(observer.address)
+                    .request()
+            ).to.equal(false);
+        }
+    } finally {
+        await stub.releaseSyncReductionResult().request();
+        await stub.releaseSyncWindowPersistence().request();
+        await first;
+        await second;
+        await events.release({ replayEvents: false, keepTasksHeld: true });
+    }
+}
+
+export async function assertBatchedSyncFinality(h: MathPeerTestHarness) {
+    const { sourceForkId } = await h.scenario.stageReducibleDisputedFork();
+    const observer = h.getPeer(2);
+    const source = h.getPeer(0);
+    const stub = h.control(observer).stub;
+    await stub.recordSyncFinalityReads().request();
+    await stub.recordSyncRejections().request();
+    try {
+        const response = await h.execOnHost(
+            observer,
+            async (sm, args) =>
+                sm.p2pManager.remoteRpc.spectateService
+                    .onSpectateRequest({
+                        channelId: sm.channelId,
+                        forkId: args.forkId
+                    })
+                    .request(args.source),
+            { source: source.address, forkId: sourceForkId }
+        );
+        const payload = Codec.decode(
+            response.encodedSyncPayload,
+            Type.SyncPayload
+        );
+        // Repeat a real proved window to exercise responder-sized input before rejection.
+        payload.disputeWindows.push(payload.disputeWindows[0]);
+        const accepted = await h.execOnHost(
+            observer,
+            async (sm, args) =>
+                sm.p2pManager.localRpc.spectateService.applySyncResponse(
+                    args.source,
+                    { channelId: sm.channelId, forkId: args.forkId },
+                    args.encodedSyncPayload
+                ),
+            {
+                source: source.address,
+                forkId: sourceForkId,
+                encodedSyncPayload: Codec.encode(
+                    payload,
+                    Type.SyncPayload
+                ) as string
+            }
+        );
+        expect(accepted).to.equal(false);
+        expect(
+            await stub.restoreRecordedSyncRejections().request()
+        ).to.deep.equal(["more than one unreduced window"]);
+        expect(await stub.getSyncFinalityReadWidths().request()).to.deep.equal([
+            2
+        ]);
+    } finally {
+        await stub.restoreRecordedSyncRejections().request();
+        await stub.restoreSyncFinalityReads().request();
+    }
+}

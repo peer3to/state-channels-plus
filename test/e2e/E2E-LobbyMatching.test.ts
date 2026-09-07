@@ -591,6 +591,12 @@ describe("E2E: lobby matching", function () {
             advertiserIndex,
             "pick"
         );
+        // Keep the deliberately held pick pending while the real transport
+        // upgrades. RPC-expiry liability is covered by the bound-order cases.
+        const pickTimeout = await h.rpcStub.holdScheduledTasks(
+            selectorIndex,
+            "rpcRequest:lobbyMatchingService.pick"
+        );
         const restoreDurations = await Promise.all(
             [0, 1].map((index) =>
                 h.rpcStub.overrideLobbyRoleDuration(index, 20_000)
@@ -659,6 +665,7 @@ describe("E2E: lobby matching", function () {
                     .request()
             ).to.equal(false);
 
+            expect(await pickTimeout.heldCount()).to.equal(1);
             await releasePick();
             let channelId = ethers.ZeroHash;
             await waitFor(
@@ -683,6 +690,7 @@ describe("E2E: lobby matching", function () {
             );
         } finally {
             await releasePick();
+            await pickTimeout.release(false);
             await h.network.leaveLobby([0, 1], topic);
             await Promise.all(restoreDurations.map((restore) => restore()));
         }

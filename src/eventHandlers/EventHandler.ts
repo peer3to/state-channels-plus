@@ -480,10 +480,16 @@ export class EventHandler {
                         disputeAuditingData.inboundMessageBlocks
                     );
                 genesis = {
-                    snapshotData: outputSnapshotData,
+                    genesisSnapshot: {
+                        forkId: dispute.outputSnapshotDataHash,
+                        blockHeight: 0,
+                        // A threshold-final upload backdates the evidence timestamp,
+                        // so its kill period ends at this event's creation timestamp.
+                        timestamp: Number(disputeCreationTimestamp),
+                        snapshotData: outputSnapshotData
+                    },
                     encodedState:
                         disputeOutputState.encodedModifiedState as Bytes,
-                    genesisTimestamp: Number(disputeCreationTimestamp),
                     outboundMessageBlock:
                         disputeOutputState.outboundMessageBlock.messages
                             .length > 0
