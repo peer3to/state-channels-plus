@@ -32,6 +32,10 @@ services can observe accepted chain events there without creating another ethers
 
 ## Key design decisions
 
+Pending leave delegates local signer membership to MembershipService, matching other state-application callers. See [EventHandler.ts](../../../../../../src/eventHandlers/EventHandler.ts#L177).
+
+Signer comparisons delegate to membership ownership while pending-only chain queries retain their narrower participant set. See [EventHandler.ts](../../../../../../src/eventHandlers/EventHandler.ts#L132).
+
 Only exact pending-participant/participating pairs use the shared status predicate. Synced and engaged policies remain separate. See [EventHandler.ts](../../../../../../src/eventHandlers/EventHandler.ts#L10).
 
 1. **Mirror-first, act-second** in every handler — replication is unconditional ([`REQ-MIRROR-2-E9F3TM`](../../../../specification/enforcement/local-mirror.md#req-mirror-2-e9f3tm)), decisions follow.

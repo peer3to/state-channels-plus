@@ -25,6 +25,8 @@ worker logging and timing plus transfer-safe custom-precompile manifests.
 
 ## Key design decisions
 
+Worker request errors carry SerializedError, matching detached reports and eliminating a second wire-error shape. See [protocol.ts](../../../../../../../../src/evm/contractExecutor/worker/protocol.ts#L2).
+
 1. **Configuration crosses explicitly** — the worker rebuilds its local logger and timing configuration instead of reading main-thread process state.
 2. **Configuration keeps one timing policy** — the receiving worker rebuilds the same configured delay threshold used by the rest of the runtime.
 3. **`init` carries the clock adjustment.** The optional `clockAdjustmentSeconds` field

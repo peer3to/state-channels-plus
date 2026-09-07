@@ -109,7 +109,7 @@ export default class ReductionManager {
         localTriggerTimestamp: Timestamp,
         isRescheduled = false
     ): void {
-        if (this.disposed || forkId !== this.stateManager.forkId) return;
+        if (this.disposed || !this.stateManager.isActiveFork(forkId)) return;
         const now = Clock.getTimeInSeconds();
         this.logger.debug(
             `setReductionTimeout called for fork ${forkId} at ${localTriggerTimestamp} (in ${localTriggerTimestamp - now}s)`

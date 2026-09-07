@@ -200,11 +200,7 @@ export default class JoinChannelService extends ARpcService<JoinChannelRpcMethod
         if (String(snapshot.hash) !== String(expectedSnapshotHash)) {
             throw new Error("requestJoinSignature: snapshot mismatch");
         }
-        if (
-            !thresholdParticipants.some((participant) =>
-                addressesEqual(participant, sm.signerAddress)
-            )
-        ) {
+        if (!sm.membershipService.includesSigner(thresholdParticipants)) {
             throw new Error(
                 "requestJoinSignature: local signer not in threshold"
             );

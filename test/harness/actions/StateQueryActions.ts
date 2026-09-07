@@ -153,7 +153,9 @@ export class StateQueryActions<
             .control(this.harness.getPeer(peerIndex))
             .query.getDispute(disputeHash)
             .request();
-        return encoded ? Codec.decode(encoded, Type.Dispute) : null;
+        return encoded
+            ? Codec.decode(encoded.encodedDispute, Type.Dispute)
+            : null;
     }
 
     async getDisputeHashes(options?: {

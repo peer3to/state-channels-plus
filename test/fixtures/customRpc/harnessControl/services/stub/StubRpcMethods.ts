@@ -475,8 +475,27 @@ export class StubRpcMethods extends ARpcMethods<P2PManager<HarnessControlRpc>> {
      * Make `spectateService.onSpectateRequest` always answer with a proof at
      * `staleBlockHeight`, regardless of what was requested (stale-proof guard).
      */
-    public stubSpectateStaleProof(staleBlockHeight: number): boolean {
+    public async stubSpectateStaleProof(
+        staleBlockHeight: number
+    ): Promise<boolean> {
         const service = this.p2pManager.localRpc.spectateService;
+        const syncPayload = await service.generateSyncPayload(
+            this.p2pManager.stateManager.channelId,
+            undefined,
+            staleBlockHeight
+        );
+        if (!syncPayload)
+            throw new Error("stubSpectateStaleProof - no payload");
+        const snapshot =
+            syncPayload.milestoneSnapshots.at(-1) ??
+            syncPayload.latestForkGenesisSnapshot;
+        if (Number(snapshot.blockHeight) !== staleBlockHeight) {
+            throw new Error(
+                "Capture the stale proof before advancing beyond its height"
+            );
+        }
+        // Capture a real proof now; later chain progress makes it stale.
+        const encodedSyncPayload = Codec.encode(syncPayload, Type.SyncPayload);
         if (!this.service.stubOriginals.has("spectateCreateRpcMethods")) {
             this.service.stubOriginals.set(
                 "spectateCreateRpcMethods",
@@ -488,29 +507,7 @@ export class StubRpcMethods extends ARpcMethods<P2PManager<HarnessControlRpc>> {
         ) as typeof service.createRPCMethods;
         service.createRPCMethods = (transport: ATransport) => {
             const methods = original(transport);
-            methods.onSpectateRequest = async function (
-                this: SpectateServiceRpcMethods,
-                syncRequest: SyncRequest
-            ) {
-                const peerAddress = this.senderTransport.peerAddress;
-                if (!peerAddress) {
-                    throw new Error("stubSpectateStaleProof - missing peer");
-                }
-                const syncPayload = await this.service.generateSyncPayload(
-                    syncRequest.channelId,
-                    syncRequest.forkId,
-                    staleBlockHeight
-                );
-                if (!syncPayload) {
-                    throw new Error("stubSpectateStaleProof - no payload");
-                }
-                return {
-                    encodedSyncPayload: Codec.encode(
-                        syncPayload,
-                        Type.SyncPayload
-                    )
-                };
-            };
+            methods.onSpectateRequest = async () => ({ encodedSyncPayload });
             return methods;
         };
         return true;
@@ -1005,6 +1002,34 @@ export class StubRpcMethods extends ARpcMethods<P2PManager<HarnessControlRpc>> {
             this.service.heldScheduledTaskBase = undefined;
         }
         if (runHeld) for (const { task } of held) void task();
+        return true;
+    }
+
+    public holdSyncWindowPersistence(): boolean {
+        this.service.holdSyncWindowPersistence();
+        return true;
+    }
+
+    public getSyncWindowPersistenceEntered(): number {
+        return this.service.getSyncWindowPersistenceEntered();
+    }
+
+    public releaseSyncWindowPersistence(): boolean {
+        this.service.releaseSyncWindowPersistence();
+        return true;
+    }
+
+    public recordSyncReductionWindows(): boolean {
+        this.service.recordSyncReductionWindows();
+        return true;
+    }
+
+    public getSyncReductionWindows() {
+        return this.service.getSyncReductionWindows();
+    }
+
+    public restoreSyncReductionWindows(): boolean {
+        this.service.restoreSyncReductionWindows();
         return true;
     }
 
@@ -1626,6 +1651,34 @@ export class StubRpcMethods extends ARpcMethods<P2PManager<HarnessControlRpc>> {
         this.service.pausedReduction = undefined;
         return restored;
     }
+    public recordLeaveWatchdog(): boolean {
+        this.service.recordLeaveWatchdog();
+        return true;
+    }
+
+    public getLeaveWatchdogObservation() {
+        return { ...this.service.leaveWatchdogObservation };
+    }
+
+    public restoreLeaveWatchdog(): boolean {
+        this.service.restoreLeaveWatchdog();
+        return true;
+    }
+
+    public recordSlashRecoveries(): boolean {
+        this.service.recordSlashRecoveries();
+        return true;
+    }
+
+    public getSlashRecoveryCount(): number {
+        return this.service.getSlashRecoveryCount();
+    }
+
+    public restoreSlashRecoveries(): boolean {
+        this.service.restoreSlashRecoveries();
+        return true;
+    }
+
     /**
      * Record `dispute()`'s upload without sending it. `holdSubmissions` parks
      * each recorded send until `releaseDisputeSubmissions`; `failure` makes the
@@ -2455,6 +2508,55 @@ export class StubRpcMethods extends ARpcMethods<P2PManager<HarnessControlRpc>> {
 
     public holdMembershipSubmission(kind: HeldMembershipReceiptKind): boolean {
         this.service.holdMembershipSubmission(kind);
+        return true;
+    }
+
+    public holdQueueProbe(): boolean {
+        this.service.holdQueueProbe();
+        return true;
+    }
+    public getQueueProbeObservation() {
+        return this.service.getQueueProbeObservation();
+    }
+    public releaseQueueProbe(): boolean {
+        this.service.releaseQueueProbe();
+        return true;
+    }
+
+    public async startTimeoutConstruction(writer: string): Promise<boolean> {
+        return this.service.startTimeoutConstruction(writer);
+    }
+
+    public holdTimeoutBuild(): boolean {
+        this.service.holdTimeoutBuild();
+        return true;
+    }
+
+    public getTimeoutBuildObservation(): { entered: number; stored: number } {
+        return this.service.getTimeoutBuildObservation();
+    }
+
+    public releaseTimeoutBuild(): boolean {
+        this.service.releaseTimeoutBuild();
+        return true;
+    }
+
+    public restoreTimeoutBuildRecording(): boolean {
+        this.service.restoreTimeoutBuildRecording();
+        return true;
+    }
+
+    public holdInitHandshakes(): boolean {
+        this.service.holdInitHandshakes();
+        return true;
+    }
+
+    public getHeldHandshakeCount(): number {
+        return this.service.getHeldHandshakeCount();
+    }
+
+    public releaseInitHandshakes(): boolean {
+        this.service.releaseInitHandshakes();
         return true;
     }
 

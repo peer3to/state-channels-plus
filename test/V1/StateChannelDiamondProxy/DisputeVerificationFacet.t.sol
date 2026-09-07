@@ -21,7 +21,7 @@ import {
     DisputeInvalidBlockStructure,
     TimeoutCalldataPosted
 } from "../../../contracts/V1/types/DisputeFraudProofTypes.sol";
-import {BlockInvalidStateTransitionProof} from "../../../contracts/V1/types/FraudProofTypes.sol";
+import {BlockInvalidStateTransitionProof, BlockDoubleSignProof} from "../../../contracts/V1/types/FraudProofTypes.sol";
 import {MathState, MathStateMachine} from "../../../contracts/V1/examples/MathStateMachine/MathStateMachine.sol";
 import {AStateMachine} from "../../../contracts/V1/AStateMachine.sol";
 import {MESSAGE_TYPE_EXIT, MESSAGE_TYPE_JOIN} from "../../../contracts/V1/types/MessageTypeHashes.sol";
@@ -237,6 +237,68 @@ contract DisputeVerificationFacetTest is DiamondHarness {
         assertEq(out.outboundMessageBlock.messages.length, 0);
     }
 
+    function test_removePresentRecordsOnlySuccessfulExit() public {
+        _assertWrapperExit(false, false, false);
+    }
+
+    function test_removeAbsentRecordsOnlySuccessfulExit() public {
+        _assertWrapperExit(false, true, false);
+    }
+
+    function test_removeRepeatedRecordsOnlySuccessfulExit() public {
+        _assertWrapperExit(false, false, true);
+    }
+
+    function test_slashPresentRecordsOnlySuccessfulExit() public {
+        _assertWrapperExit(true, false, false);
+    }
+
+    function test_slashAbsentRecordsOnlySuccessfulExit() public {
+        _assertWrapperExit(true, true, false);
+    }
+
+    function test_slashRepeatedRecordsOnlySuccessfulExit() public {
+        _assertWrapperExit(true, false, true);
+    }
+
+    function _assertWrapperExit(bool slash, bool absent, bool repeated) internal {
+        MathState memory initial;
+        initial.participants = _participantsWithZeroSentinel();
+        initial.balances = _participantBalances(initial.participants.length);
+        MathStateMachine machine = new MathStateMachine(10_000_000);
+        machine.setState(abi.encode(initial));
+        address target = absent ? address(0xBAD) : initial.participants[0];
+        (bool changed, ExitChannel memory returnedExit) =
+            slash ? machine.slashParticipant(target) : machine.removeParticipant(target);
+        assertEq(changed, !absent);
+        MathState memory afterState = abi.decode(machine.getState(), (MathState));
+        assertEq(afterState.participants.length, absent ? 4 : 3);
+        assertEq(afterState.balances.length, absent ? 4 : 3);
+        for (uint256 i; i < afterState.participants.length; i++) {
+            assertEq(afterState.participants[i], initial.participants[i + (absent ? 0 : 1)]);
+            assertEq(afterState.balances[i], initial.balances[i + (absent ? 0 : 1)]);
+        }
+        Message[] memory messages = machine.getOutboundMessages();
+        assertEq(messages.length, absent ? 0 : 1);
+        assertEq(returnedExit.participant, absent ? address(0) : target);
+        assertEq(returnedExit.balance.amount, absent ? 0 : 10);
+        if (!absent) {
+            assertEq(messages[0].messageType, MESSAGE_TYPE_EXIT);
+            assertEq(messages[0].participant, returnedExit.participant);
+            assertEq(messages[0].balance.amount, returnedExit.balance.amount);
+        }
+        if (repeated) {
+            bytes memory beforeRepeat = machine.getState();
+            (bool changedAgain, ExitChannel memory again) =
+                slash ? machine.slashParticipant(target) : machine.removeParticipant(target);
+            assertFalse(changedAgain);
+            assertEq(again.participant, address(0));
+            assertEq(again.balance.amount, 0);
+            assertEq(machine.getState(), beforeRepeat);
+            assertEq(machine.getOutboundMessages().length, 1);
+        }
+    }
+
     function test_computeDisputeOutputState_selfRemovalOnly_removesDisputerAndEmitsExit() public {
         address[] memory participants = _participantsWithZeroSentinel();
         DisputeInput memory input;
@@ -313,6 +375,60 @@ contract DisputeVerificationFacetTest is DiamondHarness {
         assertEq(result.participants[1], participants[2]);
         assertEq(result.participants[2], address(0));
         _assertExactExitMessages(out, _oneAddress(participants[0]), _oneAmount(10));
+    }
+
+    function test_staleSnapshotRecordsSlashThenAbsentStateApplicationIsNoOp() public {
+        address[] memory chainParticipants = new address[](3);
+        for (uint256 i; i < 3; i++) {
+            chainParticipants[i] = vm.addr(i + 1);
+        }
+        _openChannel(chainParticipants);
+        BlockDoubleSignProof memory proof = BlockDoubleSignProof({
+            block1: _makeSignedBlock(1, CHANNEL_ID, FORK_ID, 1, 10, bytes32(0)),
+            block2: _makeSignedBlock(1, CHANNEL_ID, FORK_ID, 1, 11, bytes32(0))
+        });
+        FraudProof[] memory proofs = new FraudProof[](1);
+        proofs[0] = FraudProof(FraudProofType.BlockDoubleSign, chainParticipants[0], abi.encode(proof));
+        diamond.applyFraudProofs(proofs, FraudProofVerificationContext({channelId: CHANNEL_ID}));
+        assertTrue(diamond.isParticipantSlashedOnChain(CHANNEL_ID, chainParticipants[0]));
+        address[] memory remaining = new address[](2);
+        remaining[0] = chainParticipants[1];
+        remaining[1] = chainParticipants[2];
+        DisputeInput memory input;
+        input.channelId = CHANNEL_ID;
+        input.forkId = FORK_ID;
+        input.disputer = remaining[0];
+        input.onChainSlashes = _oneAddress(chainParticipants[0]);
+        (DisputeOutputState memory out, MathState memory result) = _computeDisputeOutputState(remaining, input);
+        assertEq(abi.encode(result.participants), abi.encode(remaining));
+        assertEq(abi.encode(result.balances), abi.encode(_participantBalances(remaining.length)));
+        assertEq(out.outboundMessageBlock.messages.length, 0);
+    }
+
+    function test_computeDisputeOutputState_absentSlashPreservesStateAndEmitsNoExit() public {
+        address[] memory participants = _participantsWithZeroSentinel();
+        DisputeInput memory input;
+        input.channelId = CHANNEL_ID;
+        input.forkId = FORK_ID;
+        input.disputer = participants[0];
+        input.onChainSlashes = _oneAddress(address(0xDEAD));
+        (DisputeOutputState memory out, MathState memory result) = _computeDisputeOutputState(participants, input);
+        assertEq(abi.encode(result.participants), abi.encode(participants));
+        assertEq(abi.encode(result.balances), abi.encode(_participantBalances(participants.length)));
+        assertEq(out.outboundMessageBlock.messages.length, 0);
+    }
+
+    function test_computeDisputeOutputState_absentRemovalPreservesStateAndEmitsNoExit() public {
+        address[] memory participants = _participantsWithZeroSentinel();
+        DisputeInput memory input;
+        input.channelId = CHANNEL_ID;
+        input.forkId = FORK_ID;
+        input.disputer = address(0xDEAD);
+        input.selfRemoval = true;
+        (DisputeOutputState memory out, MathState memory result) = _computeDisputeOutputState(participants, input);
+        assertEq(abi.encode(result.participants), abi.encode(participants));
+        assertEq(abi.encode(result.balances), abi.encode(_participantBalances(participants.length)));
+        assertEq(out.outboundMessageBlock.messages.length, 0);
     }
 
     // reduceOutput path (does not hit _calculateRemovals; keeps prior coverage of reduceOutputToSnapshotData)
@@ -911,11 +1027,14 @@ contract DisputeVerificationFacetTest is DiamondHarness {
     ) internal pure {
         Message[] memory messages = out.outboundMessageBlock.messages;
         assertEq(messages.length, expectedParticipants.length);
+        uint256 total;
         for (uint256 i = 0; i < expectedParticipants.length; i++) {
+            total += expectedAmounts[i];
             assertEq(messages[i].messageType, MESSAGE_TYPE_EXIT);
             assertEq(messages[i].participant, expectedParticipants[i]);
             assertEq(messages[i].balance.amount, expectedAmounts[i]);
         }
+        assertEq(out.totalWithdrawals.amount, total);
     }
 
     function _outputParticipants(ReduceOutput memory reducedOutput, address[] memory participants)

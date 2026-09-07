@@ -27,14 +27,14 @@ enters here as a fresh entry carrying its origin.
 
 ## Key design decisions
 
+The existing strategy option carries proof replay. No separate replay flag is propagated through the ingest entry. See [BlockIngestService.ts](../../../../../../../src/stateManager/ingest/BlockIngestService.ts#L2).
+
 Error text delegates to the dependency-free errorMessage helper. Existing catch policy, stack fields, log messages and error propagation remain at this call site. See [BlockIngestService.ts](../../../../../../../src/stateManager/ingest/BlockIngestService.ts#L1).
 
 1. **One execution boundary for every origin.** Network deliveries, calldata recovery, dispute
    replay, and synchronization replay all execute here, so the same predicate chain and commit
    rules apply ([`REQ-BLOCK-PIPE-4-CF52J6`](../../../../../specification/block-progression/block-processing.md#req-block-pipe-4-cf52j6)).
-2. **The strategy is the caller's choice, the origin is the entry's.** A caller may pass a validation
-   strategy (dispute replay); the synchronization replay marks its entries `replayedFromProof` so the
-   time rules judge them as proven history rather than live arrivals
+2. **The caller selects the strategy.** Dispute replay and verified synchronization replay select their respective strategies through the existing option. The latter accepts historical subjective timing
    ([synchronization.md](../../../../../specification/peer-communication/synchronization.md) step 13).
 
 ## Inputs, outputs, state, and side effects

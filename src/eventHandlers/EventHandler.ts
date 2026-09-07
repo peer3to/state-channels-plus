@@ -17,7 +17,6 @@ import {
     Bytes
 } from "@/types/types";
 import {
-    addressesEqual,
     Codec,
     DetachedPromises,
     hash,
@@ -129,8 +128,8 @@ export class EventHandler {
             (await this.stateManager.stateChannelManagerContract.getPendingParticipants(
                 channelId
             )) as Address[];
-        return pendingParticipants.some((participant) =>
-            addressesEqual(participant, this.stateManager.signerAddress)
+        return this.stateManager.membershipService.includesSigner(
+            pendingParticipants
         );
     }
 
@@ -164,23 +163,18 @@ export class EventHandler {
             if (isCommittedParticipantStatus(status)) {
                 const snapshotParticipants = stateSnapshot.snapshotData
                     .participants as Address[];
-                const signerRemoved = !snapshotParticipants.some((p) =>
-                    addressesEqual(p, this.stateManager.signerAddress)
-                );
+                const signerRemoved =
+                    !this.stateManager.membershipService.includesSigner(
+                        snapshotParticipants
+                    );
                 if (signerRemoved) {
                     if (this.stateManager.leaveChannelService.isLeaving) {
                         this.logger.info(
                             "onStateSnapshotUpdated - pending leave observed signer removal",
                             { channelId, status, hash: updatedSnapshot.hash }
                         );
-                        const localParticipants =
-                            await this.stateManager.getParticipantsCurrent();
-                        const inLocal = localParticipants.some((participant) =>
-                            addressesEqual(
-                                participant,
-                                this.stateManager.signerAddress
-                            )
-                        );
+                        const inLocal =
+                            await this.stateManager.membershipService.isSignerInLocalState();
                         if (!inLocal) {
                             this.stateManager.setStatus(Status.SYNCED);
                             await this.stateManager.leaveChannelService.onSettledStateObserved();
@@ -237,17 +231,19 @@ export class EventHandler {
             .participants as Address[];
         const status = this.stateManager.status;
 
-        const snapshotHasSigner = snapshotParticipants.some((p) =>
-            addressesEqual(p, signerAddress)
-        );
+        const snapshotHasSigner =
+            this.stateManager.membershipService.includesSigner(
+                snapshotParticipants
+            );
 
         // Detect when we've fully left the channel: PARTICIPATING → SYNCED
         if (status === Status.PARTICIPATING) {
             const localParticipants =
                 await this.stateManager.getParticipantsCurrent();
-            const inLocal = localParticipants.some((p) =>
-                addressesEqual(p, signerAddress)
-            );
+            const inLocal =
+                this.stateManager.membershipService.includesSigner(
+                    localParticipants
+                );
             if (!snapshotHasSigner && !inLocal) {
                 if (!(await this.isSignerPendingOnChain(channelId))) {
                     this.logger.info(

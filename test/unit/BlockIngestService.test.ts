@@ -604,15 +604,19 @@ describe("Unit: BlockIngestService", function () {
                 }
             );
 
-            const probe = await h
-                .control(observer)
-                .validation.runBlockIngest(encoded)
-                .request();
+            for (const strategy of ["active", "spectating"] as const) {
+                const probe = await h
+                    .control(observer)
+                    .validation.runBlockIngest(encoded, { strategy })
+                    .request();
 
-            expect(probe.keepConnection).to.equal(false);
-            expect(probe.firedHooks).to.include(
-                "forgedInboundMessageBlockDetected"
-            );
+                expect(probe.keepConnection).to.equal(false);
+                expect(probe.firedHooks).to.include(
+                    "forgedInboundMessageBlockDetected"
+                );
+                expect(probe.disputedForkIds).to.deep.equal([forkId]);
+                expect(probe.fraudProofType).to.not.equal(null);
+            }
         });
 
         it("a rejected block carrying a real inbound run → the run is not stored, the head stays put", async function () {

@@ -108,7 +108,7 @@ deployment bridge (`deploySigner*`, `deployComplete`), chain signer
 (`chainSignerSignTransaction/SendTransaction/SignMessage/SignTypedData`),
 p2p signer (`signMessage`, `signTypedData`), enshrined-contract execution
 (`sendTransaction`, `callView`), channel lifecycle (`connectToChannel`,
-`setChannelId`, `joinChannel`, `topUpBalance`, `collectJoinChannelConfirmation`,
+`leaveChannel`, `joinChannel`, `topUpBalance`, `collectJoinChannelConfirmation`,
 `getChannelStatus`, `setIsLeader`, `disconnectFromPeers`), `hostRpc`, `quiesce`,
 `dispose`. Host → client messages: `ready`, `response`, `busEvent`,
 `hostError`, `webRTCBridgePort`.

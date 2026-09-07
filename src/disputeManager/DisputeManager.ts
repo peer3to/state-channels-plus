@@ -118,11 +118,7 @@ class DisputeManager {
             // this peer from signing newer state until upload fails or settles.
             const admitted = await this.stateManager.withMutex(
                 () => {
-                    if (
-                        this.stateManager.isDisposed ||
-                        this.stateManager.forkId !== forkId
-                    )
-                        return false;
+                    if (!this.stateManager.isActiveFork(forkId)) return false;
                     this.storage.disputes.storeDisputedFork(forkId, true);
                     return true;
                 },
@@ -289,8 +285,7 @@ class DisputeManager {
     /** Block-pipeline callers must release the state mutex before construction. */
     public requestDispute(forkId: ForkId): void {
         const attempt = this.dispute(forkId);
-        DetachedPromises.collect(attempt);
-        void attempt.catch((error) => {
+        DetachedPromises.observe(attempt, (error) => {
             // The detached branch reaches the owning context's existing error
             // funnel even when a diagnostic collector observes the original.
             throw error;

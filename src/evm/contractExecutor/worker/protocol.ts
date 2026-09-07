@@ -59,12 +59,7 @@ export type WorkerErrorResponseMessage = {
     type: "response";
     requestId: number;
     ok: false;
-    error: {
-        message: string;
-        data?: string;
-        name?: string;
-        stack?: string;
-    };
+    error: SerializedError;
 };
 
 /**

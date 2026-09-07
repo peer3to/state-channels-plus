@@ -29,6 +29,8 @@ pins, local-signer-in-threshold authority, then countersign the exact encoded by
 
 ## Key design decisions
 
+Threshold membership delegates to MembershipService.includesSigner without changing join authorization. See [JoinChannelService.ts](../../../../../../../../src/rpc/services/joinChannel/JoinChannelService.ts#L203).
+
 The state machine owns positive-balance comparison. This service still catches validation failure, blacklists the requesting peer and rethrows the same error. See [JoinChannelService.ts](../../../../../../../../src/rpc/services/joinChannel/JoinChannelService.ts#L214).
 
 1. **Stateless across calls.** Every decision derives from arguments plus live reads — replay of a still-valid request re-signs the same bytes (idempotent-by-content).

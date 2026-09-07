@@ -566,6 +566,7 @@ export class PeerTestHarness<
             // P2pEventHooks spies
             onConnection: sinon.spy(),
             onTurn: sinon.spy(),
+            onLeaveTurn: sinon.spy(),
             onSetState: sinon.spy(),
             onAbort: sinon.spy(),
             onStatusChanged: sinon.spy(),
@@ -603,6 +604,10 @@ export class PeerTestHarness<
                     component: "P2pEventHooks"
                 });
                 void this.disconnectionBarrier.signal();
+                void this.eventCountsBarrier.signal();
+            },
+            onLeaveTurn: () => {
+                eventSpies.onLeaveTurn?.();
                 void this.eventCountsBarrier.signal();
             },
             onTurn: (

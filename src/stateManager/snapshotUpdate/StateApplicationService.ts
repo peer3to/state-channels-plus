@@ -4,7 +4,7 @@ import Clock from "@/Clock";
 import { StateSnapshot } from "@/models";
 import { Status, timeoutWaitTime as timeoutWaitTimeSeconds } from "@/types";
 import { Address, Bytes, ForkId, Timestamp } from "@/types/types";
-import { addressesEqual, Logger } from "@/utils";
+import { Logger } from "@/utils";
 import { errorMessage } from "@/utils/errorMessage";
 import P2pEventHooksUtils from "@/utils/P2pEventHooksUtils";
 import type {
@@ -162,10 +162,7 @@ export default class StateApplicationService {
     ): Promise<boolean> {
         const sm = this.stateManager;
         if (participants.includes(sm.signerAddress)) return true;
-        const onChain = await sm.membershipService.getOnChainParticipantUnion();
-        return onChain.some((participant) =>
-            addressesEqual(participant, sm.signerAddress)
-        );
+        return sm.membershipService.isSignerOnChain();
     }
 
     /**

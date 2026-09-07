@@ -3,8 +3,10 @@ import { Block, StateSnapshot } from "@/models";
 import type P2PManager from "@/P2PManager";
 import ARpcService from "@/rpc/ARpcService";
 import { HandshakeCompletedGuard } from "@/rpc/guards";
+import type { ReductionComputation } from "@/stateManager/reduction/ReductionComputationService";
 import ATransport from "@/transport/ATransport";
 import { DisputeWindowVerification, SyncPayload } from "@/types";
+import type { ChecksumAddress } from "@/types/types";
 import { Address, Bytes, ChannelId, Hash, ForkId } from "@/types/types";
 import {
     Codec,
@@ -25,8 +27,10 @@ export interface SyncRequest {
 }
 
 class SpectateService extends ARpcService<SpectateServiceRpcMethods> {
-    private readonly inFlightByPeerAddress: Map<string, Promise<boolean>> =
-        new Map();
+    private readonly inFlightByPeerAddress: Map<
+        ChecksumAddress,
+        Promise<boolean>
+    > = new Map();
 
     constructor(p2pManager: P2PManager) {
         super(
@@ -215,6 +219,23 @@ class SpectateService extends ARpcService<SpectateServiceRpcMethods> {
             const forkIds = syncPayload.disputeWindows.map(
                 (disputeWindow) => disputeWindow.forkId
             );
+            // Another sync may have finalized this window only in the shared
+            // local EVM. Only chain finality can omit reduction from the multicall.
+            // Read finality first: a later window fetch includes any reduction that
+            // lands between reads, while a false decision safely keeps its calldata.
+            // Values indicate chain-final reduction for each requested fork.
+            const finalizedByFork = new Map<ForkId, boolean>();
+            await Promise.all(
+                forkIds.map(async (forkId) => {
+                    finalizedByFork.set(
+                        forkId,
+                        await stateManager.stateChannelManagerContract.isReduceChallengePeriodExpired(
+                            channelId,
+                            forkId
+                        )
+                    );
+                })
+            );
             await this.fetchAndPersistOnChainDisputeWindows(channelId, forkIds);
 
             let notReducedCount = 0;
@@ -234,11 +255,7 @@ class SpectateService extends ARpcService<SpectateServiceRpcMethods> {
                     );
 
                 // 2.3) reduce them if they're not already reduced
-                const isReducedAndFinal =
-                    await diamondStateMachine.localDiamondContract.isReduceChallengePeriodExpired(
-                        channelId,
-                        dw.forkId
-                    );
+                const isReducedAndFinal = finalizedByFork.get(dw.forkId);
                 if (!isReducedAndFinal) {
                     disputeWindowsThatNeedToBeReducedOnChain.push(dw);
                     await diamondStateMachine.localDiamondContract.reduceAndFinalize(
@@ -348,7 +365,7 @@ class SpectateService extends ARpcService<SpectateServiceRpcMethods> {
 
             // 2.8) Depending are we syncing to the 'latest state' (spectating) or some requested state (forkId,blockHeight), verify that:
             // 2.8.1) (spectating) genesisSnapshot.forkId is not disputed on-chain -> abort otherwise
-            // 2.8.2) (requested) genesisSnapshot.forkId == syncRequest.forkId -> abort otherwise
+            // 2.8.2) (requested) prove the pinned fork or a successor whose verified lineage contains it.
             if (!syncRequest.forkId) {
                 // 2.8.1) (spectating)
                 const _timestamp =
@@ -363,7 +380,12 @@ class SpectateService extends ARpcService<SpectateServiceRpcMethods> {
                     );
             } else {
                 // 2.8.2) (requested)
-                if (finalForkId != syncRequest.forkId)
+                if (
+                    finalForkId != syncRequest.forkId &&
+                    !syncPayload.disputeWindows.some(
+                        (window) => window.forkId === syncRequest.forkId
+                    )
+                )
                     return this.rejectSync(
                         peerAddress,
                         "requested fork is not the latest"
@@ -457,7 +479,10 @@ class SpectateService extends ARpcService<SpectateServiceRpcMethods> {
                     const isOk =
                         await stateManager.blockIngestService.onBlockConfirmationStruct(
                             bc,
-                            { replayedFromProof: true }
+                            {
+                                validationStrategy:
+                                    stateManager.spectatingValidationStrategy
+                            }
                         );
                     if (!isOk)
                         return this.rejectSync(
@@ -479,7 +504,13 @@ class SpectateService extends ARpcService<SpectateServiceRpcMethods> {
                 `Spectate sync - next block height after pipeline ${stateManager.storage.blocks.getNextBlockHeight(finalForkId)}`
             );
             // 6) If state requested (forkId,blockHeight) - check if blockHeight reached
-            if (syncRequest.blockHeight !== undefined) {
+            if (
+                syncRequest.blockHeight !== undefined &&
+                !(
+                    syncRequest.forkId !== undefined &&
+                    finalForkId !== syncRequest.forkId
+                )
+            ) {
                 const [hasBlock, latestBlock] =
                     await diamondStateMachine.localDiamondContract.getLatestBlockFromStateProof(
                         syncPayload.stateProof
@@ -490,12 +521,12 @@ class SpectateService extends ARpcService<SpectateServiceRpcMethods> {
                         "state proof has no block"
                     );
                 if (
-                    Number(latestBlock.transaction.header.transactionCnt) !=
+                    Number(latestBlock.transaction.header.transactionCnt) <
                     syncRequest.blockHeight
                 )
                     return this.rejectSync(
                         peerAddress,
-                        "proved height differs from request"
+                        "proved height is below request"
                     );
             }
             this.logger.debug(
@@ -536,7 +567,7 @@ class SpectateService extends ARpcService<SpectateServiceRpcMethods> {
         }
 
         // Get the current fork ID
-        const forkId = _forkId ?? stateManager.forkId;
+        let forkId = _forkId ?? stateManager.forkId;
 
         // -------- Collect what is needed to prove the latestForkGenesisSnapshot starting from the onChainSnapshot --------
         // We'll do all the computation on our local state.
@@ -549,6 +580,8 @@ class SpectateService extends ARpcService<SpectateServiceRpcMethods> {
         );
 
         const disputeWindows: DisputeWindowVerification[] = [];
+        let latestComputation: ReductionComputation | undefined;
+        let computedGenesisTimestamp = 0;
         let currentForkId = currentOnChainSnapshot.forkID;
         // the disputed flag comes from the same owner as the window below. the
         // local EVM only knows the dispute events we've processed, so reading
@@ -608,6 +641,20 @@ class SpectateService extends ARpcService<SpectateServiceRpcMethods> {
                 return undefined;
             }
             const { reduceData, reducedForkId } = computation;
+            latestComputation = computation;
+            computedGenesisTimestamp = (
+                await stateManager.reductionManager.isKillPeriodExpiredCached(
+                    currentForkId
+                )
+            ).killPeriodEnd;
+            // Reuse the outbound-chain owner before building the proof range.
+            // Background genesis installation persists this same block idempotently.
+            if (computation.reducedOutboundMessageBlock) {
+                stateManager.storage.outboundMessages.store(
+                    computation.reducedOutboundMessageBlock,
+                    { justPersist: true }
+                );
+            }
 
             // Move to the next fork using local EVM
             disputeWindows.push({
@@ -626,6 +673,16 @@ class SpectateService extends ARpcService<SpectateServiceRpcMethods> {
                     channelId,
                     currentForkId
                 );
+        }
+
+        if (
+            currentForkId !== forkId &&
+            disputeWindows.some((window) => window.forkId === forkId)
+        ) {
+            // A proved reduction supersedes the requested block's fork. The
+            // request accepts the successor without requiring an absent old block.
+            forkId = currentForkId;
+            _blockHeight = undefined;
         }
 
         if (currentForkId != forkId) {
@@ -647,6 +704,18 @@ class SpectateService extends ARpcService<SpectateServiceRpcMethods> {
         const latestForkGenesisSnapshot =
             stateManager.storage.stateSnapshots.getGenesisSnapshotByForkId(
                 forkId
+            ) ??
+            (latestComputation?.reducedForkId === forkId
+                ? StateSnapshot.from({
+                      forkId,
+                      blockHeight: 0,
+                      timestamp: computedGenesisTimestamp,
+                      snapshotData: latestComputation.reducedSnapshotData
+                  })
+                : undefined);
+        const hasInstalledGenesis =
+            !!stateManager.storage.stateSnapshots.getGenesisSnapshotByForkId(
+                forkId
             );
         if (!latestForkGenesisSnapshot) {
             throw new Error(`No genesis snapshot found for fork ${forkId}`);
@@ -654,7 +723,7 @@ class SpectateService extends ARpcService<SpectateServiceRpcMethods> {
         const latestForkGenesisEncodedState =
             stateManager.storage.stateMachineStates.getStateMachineState(
                 latestForkGenesisSnapshot.snapshotData.stateMachineStateHash
-            );
+            ) ?? latestComputation?.reducedEncodedStateMachineState;
         if (!latestForkGenesisEncodedState) {
             throw new Error(
                 `No encoded state found for latest fork genesis state hash ${latestForkGenesisSnapshot.snapshotData.stateMachineStateHash}`
@@ -683,22 +752,20 @@ class SpectateService extends ARpcService<SpectateServiceRpcMethods> {
         const latestBlockHeight =
             stateManager.storage.blocks.getNextBlockHeight(forkId) - 1;
 
-        // An above-latest target is unprovable - and must NOT be silently
-        // downgraded to a proof for `latestBlockHeight` (that would forge a
-        // valid-looking proof for a different height). Return undefined so the
-        // caller cuts the requester; we don't serve a different height.
+        // A pinned height is a minimum. Serve the newest proof available, but
+        // refuse a target above it rather than silently returning older state.
         if (_blockHeight !== undefined && _blockHeight > latestBlockHeight) {
             return undefined;
         }
-
-        // There are blocks, so we can do a same-fork update.
-        // `??` not `||`: a requested height of 0 is valid and must be pinned,
-        // not fall through to the latest block.
-        const targetBlockHeight = _blockHeight ?? latestBlockHeight;
-        const latestStateProof = await agreementManager.tryGetStateProof(
-            forkId,
-            targetBlockHeight
-        );
+        const targetBlockHeight = latestBlockHeight;
+        // A computed, uninstalled successor has no local blocks or milestones.
+        const latestStateProof: StateProofStruct | undefined =
+            hasInstalledGenesis
+                ? await agreementManager.tryGetStateProof(
+                      forkId,
+                      targetBlockHeight
+                  )
+                : { milestones: [], signedBlocks: [] };
 
         if (!latestStateProof) {
             this.logger.debug(
@@ -729,7 +796,11 @@ class SpectateService extends ARpcService<SpectateServiceRpcMethods> {
         const latestFinalizedEncodedState =
             stateManager.storage.stateMachineStates.getStateMachineState(
                 stateHash
-            );
+            ) ??
+            (stateHash ===
+            latestForkGenesisSnapshot.snapshotData.stateMachineStateHash
+                ? latestForkGenesisEncodedState
+                : undefined);
         if (!latestFinalizedEncodedState) {
             throw new Error(
                 `No encoded state found for state hash ${stateHash}`

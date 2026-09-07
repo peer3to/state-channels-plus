@@ -1,7 +1,6 @@
 import EventSyncService from "../eventSync/EventSyncService";
 import FraudProofService from "../utils/FraudProofService";
 import AValidationStrategy from "../validationStrategy/AValidationStrategy";
-import BlockValidationStrategy from "../validationStrategy/BlockValidationStrategy";
 import ADiamondStateMachine from "@/ADiamondStateMachine";
 
 import Clock from "@/Clock";
@@ -182,11 +181,7 @@ export default class ValidationService {
         }
 
         // Time logic
-        const timeResult = await this.validateTimeLogic(
-            block,
-            strategy,
-            entry.replayedFromProof === true
-        );
+        const timeResult = await this.validateTimeLogic(block, strategy);
 
         if (timeResult !== BlockValidationResult.SUCCESS) {
             this.logger.warn("Time validation failed", {
@@ -472,8 +467,7 @@ export default class ValidationService {
      */
     private async validateTimeLogic(
         block: Block,
-        strategy: AValidationStrategy,
-        replayedFromProof: boolean
+        strategy: AValidationStrategy
     ): Promise<BlockValidationResult> {
         const nowSeconds = Clock.getTimeInSeconds();
 
@@ -586,7 +580,7 @@ export default class ValidationService {
             );
 
             // previousBlockOnChainTimestamp set - rerun validation - this time we have all the data to deduct the result
-            return this.validateTimeLogic(block, strategy, replayedFromProof);
+            return this.validateTimeLogic(block, strategy);
         }
 
         // OBJECTIVE: Check if block was posted too late on-chain
@@ -634,19 +628,7 @@ export default class ValidationService {
             Math.abs(nowSeconds - block.timestamp) <=
             this.timeConfig.agreementTime;
 
-        if (
-            !receivedWithinAgreementTime &&
-            !replayedFromProof &&
-            strategy instanceof BlockValidationStrategy
-        ) {
-            LoggerUtils.logTimeValidationFailed(this.logger, {
-                block,
-                nowSeconds,
-                validationResult: BlockValidationResult.NOT_ENOUGH_TIME,
-                checkType: "subjective",
-                allowedSkewSeconds: this.timeConfig.agreementTime,
-                violatedRule: "abs(now - blockTimestamp) <= agreementTime"
-            });
+        if (!receivedWithinAgreementTime) {
             return await strategy.subjectiveInvalidTimestampDetected(block);
         }
 

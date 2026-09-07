@@ -52,7 +52,8 @@ contract DisputeManagerFacet is StateChannelCommon {
             DisputeWindow storage existingWindow =
                 disputeData[dispute.input.channelId].disputeWindowMap[dispute.input.forkId];
             require(
-                existingWindow.evidence.creationTimestamp != 0 && existingWindow.reducedResult.forkId == bytes32(0)
+                // The reduced-fork check is defense in depth: a finalized window has already expired.
+                _isDisputeWidnowCreated(existingWindow) && existingWindow.reducedResult.forkId == bytes32(0)
                     && !_isEvidencePeriodExpired(existingWindow, _getEvidenceTime()),
                 RaceConditionDisputeWindowNotOpen(dispute.input.channelId, dispute.input.forkId)
             );

@@ -4,7 +4,7 @@
 
 ## Score
 
-- Specification IDs fully implemented (only `Covered` claims): **228/279** (82%)
+- Specification IDs fully implemented (only `Covered` claims): **230/280** (82%)
 - Source files with a file report: **274/282** (97%)
 
 ## Contents
@@ -56,7 +56,6 @@ the claiming conformance rows; an ID absent from every conformance table has no 
 | [`REQ-SM-4-Z32M0W`](../specification/protocol-model/state-machines.md#req-sm-4-z32m0w) | Partial | [implementation/views/concepts/state-machines.md](../implementation/views/concepts/state-machines.md#conformance-traceability) |
 | [`REQ-SM-6-BJZVQ5`](../specification/protocol-model/state-machines.md#req-sm-6-bjzvq5) | Partial | [implementation/views/concepts/state-machines.md](../implementation/views/concepts/state-machines.md#conformance-traceability) |
 | [`REQ-SM-7-Y38NTY`](../specification/protocol-model/state-machines.md#req-sm-7-y38nty) | Partial | [implementation/views/concepts/state-machines.md](../implementation/views/concepts/state-machines.md#conformance-traceability) |
-| [`REQ-SM-8-8CHSQ8`](../specification/protocol-model/state-machines.md#req-sm-8-8chsq8) | Contradicts | [implementation/views/concepts/state-machines.md](../implementation/views/concepts/state-machines.md#conformance-traceability) |
 | [`REQ-SM-9-QK86SJ`](../specification/protocol-model/state-machines.md#req-sm-9-qk86sj) | Partial | [implementation/views/concepts/state-machines.md](../implementation/views/concepts/state-machines.md#conformance-traceability) |
 | [`REQ-SNAPSTORE-2-Q7E6TQ`](../specification/storage/snapshots-and-states.md#req-snapstore-2-q7e6tq) | Contradicts | [implementation/source/src/storage/Storage.ts.md](../implementation/source/src/storage/Storage.ts.md#conformance-traceability) |
 | [`REQ-STOR-1-D4XE73`](../specification/storage/durability.md#req-stor-1-d4xe73) | Partial | [implementation/source/src/storage/Storage.ts.md](../implementation/source/src/storage/Storage.ts.md#conformance-traceability) |

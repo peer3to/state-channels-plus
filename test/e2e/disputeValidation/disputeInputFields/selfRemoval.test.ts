@@ -18,6 +18,9 @@ describe("E2E: dispute validation / disputeInputFields / selfRemoval", function 
         const leaverIndex = 1;
         const leaverAddress = h.getPeer(leaverIndex).address;
         const disputedForkId = h.activeForkId!;
+        const beforeSnapshot = await h.channelManager.getStateSnapshot(
+            h.channelId
+        );
 
         // forceExit yields a valid self-removal dispute; post untampered.
         // Voluntary exit: skip sync barrier, don't mark malicious.
@@ -53,6 +56,40 @@ describe("E2E: dispute validation / disputeInputFields / selfRemoval", function 
             });
 
             await h.assert.sync.participantCount({ expectedCount: 2 });
+            const exits = await h.execOnHost(
+                h.getPeer(remainingPeerIndices[0]),
+                async (sm, { leaver }) => {
+                    const messages =
+                        sm.storage.outboundMessages.getLatestMessageBlock()
+                            ?.messages ?? [];
+                    return messages
+                        .filter((message) => message.participant === leaver)
+                        .map((message) => String(message.balance.amount));
+                },
+                { leaver: leaverAddress }
+            );
+            expect(exits.length).to.equal(1);
+            // Local fork adoption can precede the chain reduction receipt.
+            // Snapshot submission is only available after that result is committed.
+            await h.event.waitForEventCounts(
+                "onDisputeReducedResultCommitted",
+                remainingPeerIndices.map((peerId) => ({
+                    peerId,
+                    expectedCount: 1
+                })),
+                h.event.protocolEventTimeoutMs(),
+                { mode: "atLeast" }
+            );
+            await h.transition.postSnapshotWait({
+                peerIndex: remainingPeerIndices[0]
+            });
+            const afterSnapshot = await h.channelManager.getStateSnapshot(
+                h.channelId
+            );
+            expect(
+                afterSnapshot.snapshotData.totalWithdrawals.amount -
+                    beforeSnapshot.snapshotData.totalWithdrawals.amount
+            ).to.equal(BigInt(exits[0]));
         } finally {
             await h
                 .control(h.getPeer(leaverIndex))

@@ -167,6 +167,7 @@ export type EventSpies = {
     // P2pEventHooks spies
     onConnection?: sinon.SinonSpy;
     onTurn?: sinon.SinonSpy;
+    onLeaveTurn?: sinon.SinonSpy;
     onSetState?: sinon.SinonSpy;
     onAbort?: sinon.SinonSpy;
     onStatusChanged?: sinon.SinonSpy;

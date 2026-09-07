@@ -237,26 +237,12 @@ export async function assertRefusalAfterLiveForkSwitch(
         }
     });
     let reduced: { release(): Promise<void> } | undefined;
+    await h.control(target).stub.recordSlashRecoveries().request();
     const attempt = h.execOnHost(
         target,
         async (sm, args) => {
-            const recover = sm.eventSyncService.recoverOnChainSlashes.bind(
-                sm.eventSyncService
-            );
-            let recoveries = 0;
-            sm.eventSyncService.recoverOnChainSlashes = async (
-                ...parameters
-            ) => {
-                recoveries += 1;
-                return recover(...parameters);
-            };
-            try {
-                await sm.disputeManager.dispute(args.forkId);
-            } finally {
-                sm.eventSyncService.recoverOnChainSlashes = recover;
-            }
+            await sm.disputeManager.dispute(args.forkId);
             return {
-                recoveries,
                 marker: sm.storage.disputes.didIDispute(args.forkId),
                 disposed: sm.isDisposed
             };
@@ -274,7 +260,13 @@ export async function assertRefusalAfterLiveForkSwitch(
         reduced = synced.responderHold;
         const forkId = synced.reducedForkId;
         await recording.release();
-        expect(await attempt).to.deep.equal({
+        expect({
+            ...(await attempt),
+            recoveries: await h
+                .control(target)
+                .stub.getSlashRecoveryCount()
+                .request()
+        }).to.deep.equal({
             recoveries: 0,
             marker: false,
             disposed: false
@@ -292,6 +284,7 @@ export async function assertRefusalAfterLiveForkSwitch(
     } finally {
         await recording.release();
         await recording.restore();
+        await h.control(target).stub.restoreSlashRecoveries().request();
         await reduced?.release();
     }
 }
@@ -344,5 +337,84 @@ export async function syncTargetToUnpostedReduction(
     } catch (error) {
         await responderHold.release();
         throw error;
+    }
+}
+
+export async function assertDirectCompletionLosesForkInMutex(
+    h: MathPeerTestHarness
+): Promise<void> {
+    const { sourceForkId } = await h.scenario.stageReducibleDisputedFork();
+    const target = h.getPeer(2);
+    const source = h.getPeer(0);
+    const sourceHold = await h.rpcStub.holdReductionAttempt(
+        source.index,
+        "submit"
+    );
+    const mutex = await h.rpcStub.holdStateMutex(target.index);
+    try {
+        await waitFor(async () => (await mutex.entered()) === 1);
+        await h.control(source).stub.startTryReduce(sourceForkId).request();
+        await waitFor(async () => (await sourceHold.entered()) === 1);
+        const reducedForkId = await h
+            .control(source)
+            .query.getForkId()
+            .request();
+        await h
+            .control(target)
+            .stub.startCompleteWithGenesis(reducedForkId)
+            .request();
+        await waitFor(
+            async () =>
+                (await h
+                    .control(target)
+                    .stub.getStateMutexWaiterCount()
+                    .request()) >= 1
+        );
+        // Use the real successor coordinate without calling the normal fork-left
+        // settlement; the completion's in-mutex guard must settle it itself.
+        await h.execOnHost(
+            target,
+            (sm, args) => {
+                sm.forkId = args.reducedForkId;
+                return true;
+            },
+            { reducedForkId }
+        );
+        await mutex.release();
+        await waitFor(
+            async () =>
+                (
+                    await h
+                        .control(target)
+                        .stub.getCompleteWithGenesisOutcome()
+                        .request()
+                )?.settled === true
+        );
+        expect(
+            await h
+                .control(target)
+                .stub.getCompleteWithGenesisOutcome()
+                .request()
+        ).to.deep.equal({ settled: true, result: "false", rejected: null });
+        expect(
+            await h.execOnHost(
+                target,
+                (sm, args) => sm.reductionManager.hasOperation(args.forkId),
+                { forkId: sourceForkId }
+            )
+        ).to.equal(false);
+    } finally {
+        await mutex.release();
+        // Restore the teleported coordinate before the real snapshot event can
+        // arrive from the source's held submission.
+        await h.execOnHost(
+            target,
+            (sm, args) => {
+                sm.forkId = args.sourceForkId;
+                return true;
+            },
+            { sourceForkId }
+        );
+        await sourceHold.release();
     }
 }

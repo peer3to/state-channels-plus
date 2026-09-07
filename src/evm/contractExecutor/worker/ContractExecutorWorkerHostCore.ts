@@ -29,6 +29,7 @@ workerGlobal.window ||= globalThis;
  */
 export type ContractExecutorWorkerHostOptions = {
     monitorOptions?: PerformanceMonitorInternalOptions;
+    logger?: Logger;
 };
 
 /** What a worker entry needs from the host besides the port. */
@@ -48,6 +49,7 @@ export type ContractExecutorWorkerHostHandle = {
 };
 
 class ContractExecutorWorkerHost {
+    private readonly suppliedLogger: Logger | undefined;
     private executor: ContractExecutor | undefined;
     private logger: Logger | undefined;
     private readonly post: (response: WorkerHostMessage) => void;
@@ -60,6 +62,7 @@ class ContractExecutorWorkerHost {
         options: ContractExecutorWorkerHostOptions = {}
     ) {
         this.post = post;
+        this.suppliedLogger = options.logger;
         this.monitorOptions = options.monitorOptions;
     }
 
@@ -69,11 +72,13 @@ class ContractExecutorWorkerHost {
         // Re-establish config in this worker and build its logger, then monitor
         // this thread with the same fatal delay threshold as every service loop.
         createConfig(request.config);
-        const logger = createLogger(
-            {},
-            { component: "ContractExecutorWorker" },
-            { attachErrorListener: false }
-        );
+        const logger =
+            this.suppliedLogger ??
+            createLogger(
+                {},
+                { component: "ContractExecutorWorker" },
+                { attachErrorListener: false }
+            );
         this.logger = logger;
         const evm = await createEvm(
             {
@@ -157,18 +162,11 @@ class ContractExecutorWorkerHost {
 
             return { type: "response", requestId, ok: true, result };
         } catch (error) {
-            const err =
-                error instanceof Error ? error : new Error(String(error));
             return {
                 type: "response",
                 requestId,
                 ok: false,
-                error: {
-                    message: err.message,
-                    data: (err as any).data,
-                    name: err.name,
-                    stack: err.stack
-                }
+                error: serializeError(error)
             };
         }
     }

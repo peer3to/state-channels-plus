@@ -4,6 +4,7 @@ import { FraudProofType, toSolidityFraudProofType } from "@/types/sol-enums";
 import type { Address } from "@/types/types";
 import { Codec, Type } from "@/utils";
 import * as factory from "@test/factory";
+import { assertSpectatingFraud } from "@test/fixtures/SpectatingFraudStaging";
 import {
     MathTestSession as TestSession,
     MIN_TEST_TIME_CONFIG
@@ -42,6 +43,21 @@ const HEIGHT_ZERO_POST_WINDOW =
     TIMESTAMP_TIME_CONFIG.evidenceTime;
 
 describe("Unit: ValidationService", function () {
+    it("observer proof replay aborts on a real double sign without requesting a dispute", async function () {
+        await assertSpectatingFraud("observer", true);
+    });
+    it("participant proof replay records double-sign fraud and requests a dispute", async function () {
+        await assertSpectatingFraud("participant", true);
+    });
+    it("pending participant proof replay records double-sign fraud and stays pending", async function () {
+        await assertSpectatingFraud("pending", true);
+    });
+    it("pending participant records live double-sign fraud and stays pending", async function () {
+        await assertSpectatingFraud("pending", false);
+    });
+    it("observer live arrivals abort on double-sign fraud without requesting a dispute", async function () {
+        await assertSpectatingFraud("observer", false);
+    });
     describe("isChannelOpen", function () {
         it("open fork (non-zero) → true", async function () {
             const h = TestSession.getHarness();
@@ -240,17 +256,19 @@ describe("Unit: ValidationService", function () {
                 previousBlockHash: factory.hash()
             });
 
-            const r = await h
-                .control(observer)
-                .validation.runBlockValidation(encoded)
-                .request();
+            for (const strategy of ["active", "spectating"] as const) {
+                const r = await h
+                    .control(observer)
+                    .validation.runBlockValidation(encoded, { strategy })
+                    .request();
 
-            // genesis snapshot present -> real fraud proof + dispute on the fork
-            expect(r.resultName).to.equal("DISPUTE");
-            expect(r.disputedForkIds).to.deep.equal([forkId]);
-            expect(r.fraudProofType).to.equal(
-                solProofType(FraudProofType.WrongGenesis)
-            );
+                // genesis snapshot present -> real fraud proof + dispute on the fork
+                expect(r.resultName).to.equal("DISPUTE");
+                expect(r.disputedForkIds).to.deep.equal([forkId]);
+                expect(r.fraudProofType).to.equal(
+                    solProofType(FraudProofType.WrongGenesis)
+                );
+            }
         });
 
         it("linked next block by the wrong leader → invalidStateTransitionDetected → DISPUTE + InvalidStateTransition proof", async function () {
@@ -281,16 +299,18 @@ describe("Unit: ValidationService", function () {
                 }
             );
 
-            const r = await h
-                .control(observer)
-                .validation.runBlockValidation(encoded)
-                .request();
+            for (const strategy of ["active", "spectating"] as const) {
+                const r = await h
+                    .control(observer)
+                    .validation.runBlockValidation(encoded, { strategy })
+                    .request();
 
-            expect(r.resultName).to.equal("DISPUTE");
-            expect(r.disputedForkIds).to.deep.equal([forkId]);
-            expect(r.fraudProofType).to.equal(
-                solProofType(FraudProofType.BlockInvalidStateTransition)
-            );
+                expect(r.resultName).to.equal("DISPUTE");
+                expect(r.disputedForkIds).to.deep.equal([forkId]);
+                expect(r.fraudProofType).to.equal(
+                    solProofType(FraudProofType.BlockInvalidStateTransition)
+                );
+            }
         });
     });
     describe("validateBlockConfirmation → punishment attribution", function () {
@@ -677,16 +697,18 @@ describe("Unit: ValidationService", function () {
                 previousBlockHash: genesisHash!
             });
 
-            const r = await h
-                .control(observer)
-                .validation.runBlockValidation(encoded)
-                .request();
+            for (const strategy of ["active", "spectating"] as const) {
+                const r = await h
+                    .control(observer)
+                    .validation.runBlockValidation(encoded, { strategy })
+                    .request();
 
-            expect(r.resultName).to.equal("DISPUTE");
-            expect(r.disputedForkIds).to.deep.equal([forkId]);
-            expect(r.fraudProofType).to.equal(
-                solProofType(FraudProofType.InvalidTimestamp)
-            );
+                expect(r.resultName).to.equal("DISPUTE");
+                expect(r.disputedForkIds).to.deep.equal([forkId]);
+                expect(r.fraudProofType).to.equal(
+                    solProofType(FraudProofType.InvalidTimestamp)
+                );
+            }
         });
 
         it("non-first block, bad timestamp, previous block not on-chain → DISPUTE + InvalidTimestamp", async function () {
@@ -839,18 +861,20 @@ describe("Unit: ValidationService", function () {
                 )
                 .request();
             expect(live.resultName).to.equal("NOT_ENOUGH_TIME");
+            expect(live.subjectiveWarningCount).to.equal(1);
 
             const replayed = await h
                 .control(observer)
                 .validation.runBlockValidation(
                     authored.encodedBlockConfirmation,
-                    {
-                        replayedFromProof: true
-                    }
+                    { strategy: "spectating" }
                 )
                 .request();
+            expect(replayed.subjectiveWarningCount).to.equal(0);
             expect(replayed.resultName).to.equal("SUCCESS");
-            expect(replayed.firedHooks).to.deep.equal([]);
+            expect(replayed.firedHooks).to.deep.equal([
+                "subjectiveInvalidTimestampDetected"
+            ]);
             expect(replayed.fraudProofType).to.be.null;
         });
 
@@ -1073,7 +1097,7 @@ describe("Unit: ValidationService", function () {
             expect(r.disputedForkIds).to.deep.equal([]);
         });
 
-        it("the same stale unposted block under the dispute strategy → subjective check skipped → SUCCESS", async function () {
+        it("the same stale unposted block under the dispute strategy → subjective hook accepts history → SUCCESS", async function () {
             const h = TestSession.getHarness();
             await h.lifecycle.start(3, 0, {
                 timeConfig: TIMESTAMP_TIME_CONFIG
@@ -1086,8 +1110,7 @@ describe("Unit: ValidationService", function () {
                 authored.timestamp
             );
 
-            // the subjective window is active-strategy only - dispute replay
-            // audits old blocks long after they were produced
+            // The dispute strategy accepts historical timestamps through its hook.
             const r = await h
                 .control(observer)
                 .validation.runBlockValidation(
@@ -1099,7 +1122,7 @@ describe("Unit: ValidationService", function () {
                 .request();
 
             expect(r.resultName).to.equal("SUCCESS");
-            expect(r.firedHooks).to.not.include(
+            expect(r.firedHooks).to.include(
                 "subjectiveInvalidTimestampDetected"
             );
             expect(r.disputedForkIds).to.deep.equal([]);
@@ -1234,16 +1257,18 @@ describe("Unit: ValidationService", function () {
                 }
             });
 
-            const r = await h
-                .control(observer)
-                .validation.runBlockValidation(encoded)
-                .request();
+            for (const strategy of ["active", "spectating"] as const) {
+                const r = await h
+                    .control(observer)
+                    .validation.runBlockValidation(encoded, { strategy })
+                    .request();
 
-            // sourceless entry -> requeue for the timeout sync, not a disconnect
-            expect(r.resultName).to.equal("NOT_READY");
-            expect(r.restoreQueuedEntryCalled).to.equal(true);
-            expect(r.disputedForkIds).to.deep.equal([]);
-            expect(r.firedHooks).to.include("blockForkIsDisputed");
+                // sourceless entry -> requeue for the timeout sync, not a disconnect
+                expect(r.resultName).to.equal("NOT_READY");
+                expect(r.restoreQueuedEntryCalled).to.equal(true);
+                expect(r.disputedForkIds).to.deep.equal([]);
+                expect(r.firedHooks).to.include("blockForkIsDisputed");
+            }
 
             await race.release({ replayEvents: false, runHeldTasks: false });
         });

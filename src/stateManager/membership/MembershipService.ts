@@ -44,6 +44,29 @@ export default class MembershipService {
         ].map(String) as Address[];
     }
 
+    public includesSigner(participants: readonly Address[]): boolean {
+        return participants.some((participant) =>
+            addressesEqual(participant, this.stateManager.signerAddress)
+        );
+    }
+
+    public async isSignerOnChain(): Promise<boolean> {
+        return this.includesSigner(await this.getOnChainParticipantUnion());
+    }
+
+    public async isSignerInLocalState(): Promise<boolean> {
+        return this.includesSigner(
+            await this.stateManager.getParticipantsCurrent()
+        );
+    }
+
+    public async startSelfRemovalDispute(forkId: ForkId): Promise<boolean> {
+        const sm = this.stateManager;
+        sm.storage.forceExit.setForceExit(true);
+        await sm.disputeManager.dispute(forkId);
+        return sm.storage.disputes.didIDispute(forkId);
+    }
+
     public async getOnChainThresholdSet(
         channelId: ChannelId = this.stateManager.channelId
     ): Promise<Address[]> {
@@ -109,11 +132,7 @@ export default class MembershipService {
                 try {
                     const participantUnion =
                         await this.getOnChainParticipantUnion();
-                    if (
-                        participantUnion.some((participant) =>
-                            addressesEqual(participant, sm.signerAddress)
-                        )
-                    ) {
+                    if (this.includesSigner(participantUnion)) {
                         this.logger.warn(
                             "joinChannel - submission outcome was uncertain but on-chain membership is present"
                         );
@@ -225,11 +244,7 @@ export default class MembershipService {
             );
             return;
         }
-        if (
-            !onChainParticipantUnion.some((participant) =>
-                addressesEqual(participant, sm.signerAddress)
-            )
-        ) {
+        if (!this.includesSigner(onChainParticipantUnion)) {
             this.logger.info(
                 "Force join dispute deferred: local pending membership is not on chain",
                 { forkId: sm.forkId, blockHeight: block.height }
@@ -338,8 +353,16 @@ export default class MembershipService {
                             }
                         );
                         try {
-                            sm.storage.forceExit.setForceExit(true);
-                            await sm.disputeManager.dispute(block.forkId);
+                            if (
+                                !(await this.startSelfRemovalDispute(
+                                    block.forkId
+                                ))
+                            ) {
+                                this.logger.warn(
+                                    "Self-removal dispute did not start",
+                                    { forkId: block.forkId }
+                                );
+                            }
                         } catch (disputeError) {
                             this.logger.error(
                                 "startMaybeExitOnChain - failed to create self-removal dispute after snapshot failure",
@@ -359,8 +382,16 @@ export default class MembershipService {
                         }
                     );
                     try {
-                        sm.storage.forceExit.setForceExit(true);
-                        await sm.disputeManager.dispute(persistedBlock.forkId);
+                        if (
+                            !(await this.startSelfRemovalDispute(
+                                persistedBlock.forkId
+                            ))
+                        ) {
+                            this.logger.warn(
+                                "Self-removal dispute did not start",
+                                { forkId: persistedBlock.forkId }
+                            );
+                        }
                     } catch (error) {
                         this.logger.error(
                             `startMaybeExitOnChain - failed to create self-removal dispute`,

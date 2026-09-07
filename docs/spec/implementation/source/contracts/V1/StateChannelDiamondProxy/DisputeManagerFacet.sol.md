@@ -25,6 +25,8 @@ with the fully-killed reopen, and the full-threshold immediate-finalization shor
 
 ## Key design decisions
 
+Window creation uses the existing predicate. The reduced-result condition is retained as defense in depth: a normally finalized window already fails the evidence deadline. See [DisputeManagerFacet.sol](../../../../../../../contracts/V1/StateChannelDiamondProxy/DisputeManagerFacet.sol#L56).
+
 1. **Commitment recorded immediately at upload** — the kill period is the challenge window over committed disputes, matching the corrected lifecycle of the disputes spec.
 
 ## Inputs, outputs, state, and side effects

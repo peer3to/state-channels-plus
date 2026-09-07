@@ -141,19 +141,11 @@ describe("E2E: Force Join Dispute", function () {
         );
 
         await h.dispute.resolveDisputeWait({ forkId: originalForkId });
-        await waitFor(
-            async () => {
-                const state = await h
-                    .control(joiner)
-                    .query.getLeaveChannelState()
-                    .request();
-                return (
-                    state?.forkId !== originalForkId &&
-                    state?.phase === "awaiting-exit"
-                );
-            },
-            h.event.protocolEventTimeoutMs({ withFirstBlockGrace: true })
-        );
+        await h.event.waitUntilLeavePhase(joiner.index, "awaiting-exit");
+        expect(
+            (await h.control(joiner).query.getLeaveChannelState().request())
+                ?.forkId
+        ).to.not.equal(originalForkId);
 
         expect(await h.control(joiner).query.getStatus().request()).to.equal(
             Status.PARTICIPATING

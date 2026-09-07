@@ -24,6 +24,118 @@ import { expect } from "chai";
  */
 describe("E2E: Participant Lifecycle", function () {
     describe("Exit path", function () {
+        it("slash and removal are idempotent after local leave while the chain snapshot still lists the leaver", async function () {
+            const h = TestSession.getHarness();
+            await h.lifecycle.start(3, 1);
+            const leaver = await h.query.getNextPeerToWrite();
+            const observer = h.peers.find(
+                (peer) => peer.index !== leaver.index
+            )!;
+            const post = await h.rpcStub.holdSnapshotPostSend(leaver.index);
+            try {
+                await h.transition.participantLeaveStateTransition({
+                    leaverIndex: leaver.index
+                });
+                await post.waitUntilHeld();
+                expect(
+                    (
+                        await h.channelManager.getParticipants(h.channelId)
+                    ).includes(leaver.address)
+                ).to.equal(true);
+                const result = await h.execOnHost(
+                    observer,
+                    async (sm, args, { ethers }) => {
+                        const block = sm.storage.blocks.getLatestBlock(
+                            sm.forkId
+                        );
+                        if (!block) throw new Error("Missing leave block");
+                        const snapshot =
+                            sm.storage.stateSnapshots.getStateSnapshotByHash(
+                                block.stateSnapshotHash
+                            );
+                        if (!snapshot)
+                            throw new Error("Missing leave snapshot");
+                        const encodedState =
+                            await sm.diamondStateMachine.getState();
+                        const participants =
+                            await sm.diamondStateMachine.getParticipants();
+                        const contract =
+                            sm.diamondStateMachine.localDiamondContract;
+                        const input = {
+                            channelId: sm.channelId,
+                            forkId: sm.forkId,
+                            latestStateSnapshotHash: snapshot.hash,
+                            latestInboundMessageBlockHash:
+                                snapshot.snapshotData
+                                    .latestInboundMessageBlockHash,
+                            lastInboundMessageBlockHeight:
+                                snapshot.snapshotData
+                                    .latestInboundMessageBlockHeight,
+                            stateProof: { milestones: [], signedBlocks: [] },
+                            onChainSlashes: [args.leaver],
+                            disputeAuditingDataHash: ethers.ZeroHash,
+                            disputer: args.leaver,
+                            timeout: {
+                                participant: ethers.ZeroAddress,
+                                blockHeight: 0,
+                                minTimeStamp: 0,
+                                isForced: false,
+                                previousBlockProducer: ethers.ZeroAddress,
+                                previousBlockProducerPostedCalldata: false,
+                                participantSignatureOnPreviousBlock: "0x"
+                            },
+                            requireExistingDisputeWindow: false,
+                            selfRemoval: true
+                        };
+                        const once =
+                            await contract.computeDisputeOutputState.staticCall(
+                                input,
+                                snapshot.toStruct(),
+                                encodedState,
+                                []
+                            );
+                        const twice =
+                            await contract.computeDisputeOutputState.staticCall(
+                                input,
+                                snapshot.toStruct(),
+                                once.encodedModifiedState,
+                                []
+                            );
+                        return {
+                            absent: !participants.includes(args.leaver),
+                            unchangedOnce:
+                                once.encodedModifiedState === encodedState,
+                            unchangedTwice:
+                                twice.encodedModifiedState === encodedState,
+                            firstExits:
+                                once.outboundMessageBlock.messages.length,
+                            repeatedExits:
+                                twice.outboundMessageBlock.messages.length,
+                            withdrawalsUnchanged:
+                                once.totalWithdrawals.amount ===
+                                    snapshot.snapshotData.totalWithdrawals
+                                        .amount &&
+                                twice.totalWithdrawals.amount ===
+                                    snapshot.snapshotData.totalWithdrawals
+                                        .amount
+                        };
+                    },
+                    { leaver: leaver.address }
+                );
+                expect(result).to.deep.equal({
+                    absent: true,
+                    unchangedOnce: true,
+                    unchangedTwice: true,
+                    firstExits: 0,
+                    repeatedExits: 0,
+                    withdrawalsUnchanged: true
+                });
+            } finally {
+                await post.release();
+            }
+            await h.event.waitUntilPeerStatus(leaver.index, Status.SYNCED);
+        });
+
         it("removes a normally closed channel from registry pages and the event-derived live set", async function () {
             const h = TestSession.getHarness();
             await h.lifecycle.start(2);
@@ -180,7 +292,7 @@ describe("E2E: Participant Lifecycle", function () {
 
             const leave = leaver.p2pInstance.leaveChannel();
             await h.transition.advanceState();
-            await waitFor(() => exitPromise !== undefined);
+            await h.event.waitForPeers("onLeaveTurn", [leaver.index], 1);
             await exitPromise;
             // The exit block is authored: the leaver never writes again and
             // its runtime disposes once the leave settles, so harness queries

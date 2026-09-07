@@ -83,12 +83,10 @@ export type IsDisputedForkProbe = {
 };
 
 export type BlockProbeOptions = {
-    strategy?: "active" | "dispute";
+    strategy?: "active" | "dispute" | "spectating";
     encodedDispute?: string;
     /** Supplier of this copy - drives `sourcePeers`/`signatureSources`. */
     senderAddress?: Address;
-    /** Mark the entry as replayed from a verified synchronization proof. */
-    replayedFromProof?: boolean;
 };
 
 export type BlockValidationProbeOptions = BlockProbeOptions & {
@@ -124,6 +122,7 @@ export type BlockValidationProbe = {
     sourcePeers: string[];
     /** How many times validation asked EventSyncService to recover calldata. */
     calldataRecoveryQueries: number;
+    subjectiveWarningCount: number;
 };
 
 export type BlockIngestProbe = BlockValidationProbe & {
@@ -149,6 +148,7 @@ type RecordedValidationRun = {
         firedHooks: string[];
         restoreQueuedEntryCalled: boolean;
         calldataRecoveryQueries: number;
+        subjectiveWarningCount: number;
         lastHookResult: BlockValidationResult | undefined;
     };
     restore: () => void;
@@ -743,8 +743,7 @@ export class ValidationProbeService extends ARpcService<
         // same entry the gossip pipeline builds: a supplied copy carries its
         // sender into sourcePeers/signatureSources, a sourceless one doesn't
         const entry = sm.storage.queues.createEntry(block, {
-            senderAddress: options?.senderAddress,
-            replayedFromProof: options?.replayedFromProof
+            senderAddress: options?.senderAddress
         });
         // default: the live block strategy (PARTICIPATING). "dispute" builds a
         // real DisputeValidationStrategy - as dispute auditing does - so the
@@ -759,7 +758,9 @@ export class ValidationProbeService extends ARpcService<
                           ? Codec.decode(options.encodedDispute, Type.Dispute)
                           : factory.dispute()
                   )
-                : sm.getActiveValidationStrategy();
+                : options?.strategy === "spectating"
+                  ? sm.spectatingValidationStrategy
+                  : sm.getActiveValidationStrategy();
 
         const recorded: RecordedValidationRun["recorded"] = {
             disputedForkIds: [],
@@ -767,20 +768,26 @@ export class ValidationProbeService extends ARpcService<
             firedHooks: [],
             restoreQueuedEntryCalled: false,
             calldataRecoveryQueries: 0,
+            subjectiveWarningCount: 0,
             lastHookResult: undefined
+        };
+
+        const logStore = sm.logger["logStore"];
+        const originalStoreLog = logStore.store.bind(logStore);
+        logStore.store = (entry) => {
+            if (
+                entry.level === "warn" &&
+                entry.meta.some((meta) => meta?.checkType === "subjective")
+            )
+                recorded.subjectiveWarningCount += 1;
+            originalStoreLog(entry);
         };
 
         // record-only: a real dispute posts on-chain against the crafted block,
         // a real disconnect cuts a live transport, a real restore re-arms a
         // queue timeout -> all would derail the session. Fraud-proof creation
         // stays real so the hook is identifiable by the persisted proof type.
-        const disputeManager = (
-            strategy as unknown as {
-                disputeManager?: {
-                    dispute: (forkId: ForkId) => Promise<void>;
-                };
-            }
-        ).disputeManager;
+        const disputeManager = sm.disputeManager;
         const originalDispute = disputeManager?.dispute.bind(disputeManager);
         if (disputeManager) {
             disputeManager.dispute = async (forkId: ForkId) => {
@@ -849,6 +856,7 @@ export class ValidationProbeService extends ARpcService<
             instrumentedStrategy,
             recorded,
             restore: () => {
+                logStore.store = originalStoreLog;
                 if (disputeManager && originalDispute) {
                     disputeManager.dispute = originalDispute;
                 }
@@ -880,7 +888,8 @@ export class ValidationProbeService extends ARpcService<
             signerAddress: String(run.block.signerAddress),
             fraudProofType: fraudProof ? String(fraudProof.proofType) : null,
             sourcePeers: [...run.entry.sourcePeers].map(String),
-            calldataRecoveryQueries: run.recorded.calldataRecoveryQueries
+            calldataRecoveryQueries: run.recorded.calldataRecoveryQueries,
+            subjectiveWarningCount: run.recorded.subjectiveWarningCount
         };
     }
 

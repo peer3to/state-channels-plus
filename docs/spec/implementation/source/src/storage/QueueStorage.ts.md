@@ -25,25 +25,25 @@ attribution, with a (fork, height) coordinate index for eligibility queries.
 
 ## Key design decisions
 
+Queue entries no longer carry a proof-replay flag. The caller selects a validation strategy through the existing ingest option. See [QueueStorage.ts](../../../../../../src/storage/QueueStorage.ts#L42).
+
 isBlockQueued and tryDequeueAt remain public for existing test callers. Their test-only use is retained rather than deleting the tests.
 
-Queue insertion and restoration use Block.mergeFrom for signatures and defined timestamps. The three coordinate-index operations call coordinateKey directly. Entry attribution, source caps, earliest arrival and replay state still merge in QueueStorage. See [QueueStorage.ts](../../../../../../src/storage/QueueStorage.ts#L72).
+Queue insertion and restoration use Block.mergeFrom for signatures and defined timestamps. The three coordinate-index operations call coordinateKey directly. Entry attribution, source caps, earliest arrival and replay state still merge in QueueStorage. See [QueueStorage.ts](../../../../../../src/storage/QueueStorage.ts#L66).
 
 1. **Copy-scoped attribution.** A sender is credited only with the signatures _its own copy_
-   carried ([#L60](../../../../../../src/storage/QueueStorage.ts#L60)) — attribution is evidence, and pooling it would
+   carried ([#L60](../../../../../../src/storage/QueueStorage.ts#L54)) — attribution is evidence, and pooling it would
    launder blame across suppliers.
 2. **Caps are markers, never gates.** The 128-source structural cap sets `overflowedSources`
    and stops retention growth; it never evicts tracked sources or rejects a later copy
-   ([#L292](../../../../../../src/storage/QueueStorage.ts#L292)).
+   ([#L292](../../../../../../src/storage/QueueStorage.ts#L286)).
 3. **Storage never schedules.** `restoreEntry` only mutates data — the queue manager reads the
    entry back to (re)schedule ([#L138](../../../../../../src/storage/QueueStorage.ts#L138)); restores keep the _earliest_
    `firstSeenAt`, so the fixed entry lifetime can never be extended from storage.
 4. **Competing bodies coexist.** The primary key is the block hash; two bodies at one
    coordinate are distinct entries and the queue never picks between them — conflict
    resolution stays with validation.
-5. **A replayed entry carries its origin.** `createEntry` records `replayedFromProof` when the
-   synchronization replay hands the block in, so validation can judge it as history rather than a live
-   arrival; the flag is an origin marker, never a validity decision.
+5. **Replay policy belongs to the strategy.** Queue entries carry block and source data. The ingest caller selects SpectatingValidationStrategy for verified history; storage carries no replay flag.
 
 ## Inputs, outputs, state, and side effects
 
@@ -94,8 +94,8 @@ Gap column. Audit state is file-level (Status header), never a row status.
 | Requirement / invariant                                                                                              | Implementation status | Evidence                                                                                                                                                                                                                                                                                     | Gap / divergence |
 | -------------------------------------------------------------------------------------------------------------------- | --------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------- |
 | [`REQ-QSTORE-1-PS769J`](../../../../specification/peer-communication/block-gossip.md#req-qstore-1-ps769j)            | Covered               | **Here:** copy-scoped `trackSource`, signature-set expansion, earliest `firstSeenAt`, defined on-chain-timestamp overwrite ([#L54](../../../../../../src/storage/QueueStorage.ts#L54), [#L138](../../../../../../src/storage/QueueStorage.ts#L138)).                                         | None.            |
-| [`REQ-QSTORE-2-VYWJAQ`](../../../../specification/storage/queue.md#req-qstore-2-vywjaq)                              | Covered               | **Here:** capped inserts flip the marker, never evict or reject ([#L292](../../../../../../src/storage/QueueStorage.ts#L292)).                                                                                                                                                               | None.            |
-| [`REQ-QSTORE-3-DEKYG6`](../../../../specification/storage/queue.md#req-qstore-3-dekyg6)                              | Covered               | **Here:** `tryDequeueAt` exact, `tryDequeuePriority` lowest ≤ bound, `clearFork` reports removals ([#L81](../../../../../../src/storage/QueueStorage.ts#L81)).                                                                                                                               | None.            |
+| [`REQ-QSTORE-2-VYWJAQ`](../../../../specification/storage/queue.md#req-qstore-2-vywjaq)                              | Covered               | **Here:** capped inserts flip the marker, never evict or reject ([#L292](../../../../../../src/storage/QueueStorage.ts#L286)).                                                                                                                                                               | None.            |
+| [`REQ-QSTORE-3-DEKYG6`](../../../../specification/storage/queue.md#req-qstore-3-dekyg6)                              | Covered               | **Here:** `tryDequeueAt` exact, `tryDequeuePriority` lowest ≤ bound, `clearFork` reports removals ([#L81](../../../../../../src/storage/QueueStorage.ts#L75)).                                                                                                                               | None.            |
 | [`REQ-BLOCK-PIPE-5-WJ31RG`](../../../../specification/block-progression/block-processing.md#req-block-pipe-5-wj31rg) | Covered               | **Here:** merge layer data rules (monotone, idempotent, attributed, capped). **Other files:** [BlockQueueManager](../stateManager/BlockQueueManager.ts.md) owns scheduling/lifetime; [StateManager](../stateManager/StateManager.ts.md) owns the execution boundary the queue stays outside. | None.            |
 
 ## Component test obligations

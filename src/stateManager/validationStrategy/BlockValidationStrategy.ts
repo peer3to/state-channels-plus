@@ -4,6 +4,7 @@ import AValidationStrategy, {
 import type BlockQueueManager from "../ingest/BlockQueueManager";
 import FraudProofService from "../utils/FraudProofService";
 import type ADiamondStateMachine from "@/ADiamondStateMachine";
+import Clock from "@/Clock";
 import DisputeManager from "@/disputeManager";
 import { Block } from "@/models";
 import type P2PManager from "@/P2PManager";
@@ -14,6 +15,7 @@ import {
 } from "@/storage/QueueStorage";
 import { BlockValidationResult, Signature } from "@/types";
 import { Logger } from "@/utils";
+import { LoggerUtils } from "@/utils/LoggerUtils";
 import {
     BlockConfirmationStruct,
     MessageBlockStruct
@@ -21,7 +23,7 @@ import {
 
 export default class BlockValidationStrategy extends AValidationStrategy {
     readonly fraudProofService: FraudProofService;
-    private readonly logger: Logger;
+    protected readonly logger: Logger;
     constructor(
         private readonly storage: Storage,
         private readonly p2pManager: P2PManager,
@@ -282,8 +284,17 @@ export default class BlockValidationStrategy extends AValidationStrategy {
         return BlockValidationResult.DISPUTE;
     }
     public async subjectiveInvalidTimestampDetected(
-        _block: Block
+        block: Block
     ): Promise<BlockValidationResult> {
+        LoggerUtils.logTimeValidationFailed(this.logger, {
+            block,
+            nowSeconds: Clock.getTimeInSeconds(),
+            validationResult: BlockValidationResult.NOT_ENOUGH_TIME,
+            checkType: "subjective",
+            allowedSkewSeconds:
+                this.p2pManager.stateManager.timeConfig.agreementTime,
+            violatedRule: "abs(now - blockTimestamp) <= agreementTime"
+        });
         return BlockValidationResult.NOT_ENOUGH_TIME;
     }
 }

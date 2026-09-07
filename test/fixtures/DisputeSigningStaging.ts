@@ -111,3 +111,58 @@ export async function assertBlockWorkAfterDisputeRollback(
     );
     expect(signedHeight).to.equal(before + 1);
 }
+
+export async function assertDisputedForkDoesNotSign(
+    h: MathPeerTestHarness
+): Promise<void> {
+    // Four blocks: writers 0, 1, 2, 0 → peer 1 is next.
+    await h.lifecycle.start(3, 4);
+    const disputer = h.getPeer(0);
+    const author = h.getPeer(1);
+    const forkId = h.activeForkId!;
+
+    // The dispute parks inside its construction, after the marker
+    // and before the dispute is stored: the one window in which a
+    // delivered block still reaches the signing step.
+    const rebuild = await h.rpcStub.holdAuditingDataRebuild(disputer.index);
+    const recorder = await h.rpcStub.recordDisputeSubmissions(disputer.index);
+    const inFlight = h.execOnHost(
+        disputer,
+        async (sm, args) => {
+            await sm.disputeManager.dispute(args.forkId);
+            return sm.storage.disputes.didIDispute(args.forkId);
+        },
+        { forkId },
+        {
+            timeoutMs: h.event.hostExecTimeoutMs()
+        }
+    );
+    let delivered: number | null = null;
+    try {
+        await rebuild.waitUntilHeld();
+        // Peer 1's block reaches peer 0 while the dispute is in flight.
+        await h.transition.submit(author, (contract) => contract.add(1), {
+            waitForPeers: [1, 2]
+        });
+        delivered = await h
+            .control(author)
+            .query.getLatestBlockHeight(forkId)
+            .request();
+    } finally {
+        await rebuild.release();
+    }
+    expect(await inFlight).to.equal(true);
+    await recorder.restore();
+    // Peer 0 neither signed nor kept the block: a fork it disputes is
+    // closed to its signature and dropped by its dead-fork gate.
+    const stored = await h
+        .control(disputer)
+        .query.getBlockByHeight(forkId, delivered!)
+        .request();
+    expect(stored).to.be.null;
+    const signed = await h
+        .control(disputer)
+        .query.getLatestSignedBlockByParticipant(forkId, disputer.address)
+        .request();
+    expect(signed?.height).to.be.lessThan(delivered!);
+}

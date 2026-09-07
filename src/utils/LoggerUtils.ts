@@ -6,6 +6,7 @@ import type { Logger, LogLevel } from "./logging/Logger";
 import { difference } from "./set";
 import Clock from "@/Clock";
 import { Block, StateSnapshot, StateProof } from "@/models";
+import type PeerProfile from "@/PeerProfile";
 import type Rpc from "@/rpc/Rpc";
 import type { NormalizedDisputeCommitment } from "@/stateManager/eventSync/EventSyncService";
 import Storage from "@/storage";
@@ -449,6 +450,17 @@ export class LoggerUtils {
             newTransport: this.getTransportMetadata(newTransport),
             peerAddress: this.formatHash(peerAddress)
         });
+    }
+
+    static getPeerProfileMetadata(profile: PeerProfile) {
+        return {
+            peerAddress: profile.getEvmAddress(),
+            hpAddress: profile.getHpAddress(),
+            blacklisted: profile.isBlackListed,
+            transports: profile
+                .getLiveTransports()
+                .map((transport) => this.getTransportMetadata(transport))
+        };
     }
 
     static getTransportMetadata(transport: ATransport) {

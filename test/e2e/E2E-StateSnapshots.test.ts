@@ -17,8 +17,8 @@ describe("E2E: State Snapshots", function () {
     const forkTimeConfig = {
         p2pTime: 3,
         agreementTime: 2,
-        chainFallbackTime: 2,
-        evidenceTime: 3
+        // The shared 6 s evidence window is used on purpose; the window length is not this suite's subject.
+        chainFallbackTime: 2
     };
 
     it("should post updated state snapshot on-chain after 3 transitions", async function () {

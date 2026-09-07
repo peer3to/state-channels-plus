@@ -36,6 +36,7 @@ import StateChannelEventListener from "@/StateChannelEventListener";
 import Storage from "@/storage";
 
 import { Status, TimeConfig } from "@/types";
+import { isCommittedParticipantStatus } from "@/types/flags";
 import { Address, ChannelId, ForkId, Hash } from "@/types/types";
 import {
     DebugProxy,
@@ -262,6 +263,7 @@ class StateManager<
             this.logger
         );
         this.spectatingValidationStrategy = new SpectatingValidationStrategy(
+            this.blockValidationStrategy,
             this.storage,
             this.p2pManager,
             this.blockQueueManager,
@@ -287,6 +289,10 @@ class StateManager<
         this.p2pEventHooks.onAbort?.();
         this.setStatus(Status.OPENED);
         DetachedPromises.collect(this.dispose());
+    }
+
+    public isActiveFork(forkId: ForkId): boolean {
+        return !this.isDisposed && this.forkId === forkId;
     }
 
     //Mark resources for garbage collection
@@ -475,14 +481,9 @@ class StateManager<
     }
 
     public getActiveValidationStrategy(): AValidationStrategy {
-        return this.getStrategyByStatus(this.status);
-    }
-
-    private getStrategyByStatus(status: Status): AValidationStrategy {
-        if (status === Status.PARTICIPATING) {
-            return this.blockValidationStrategy;
-        }
-        return this.spectatingValidationStrategy;
+        return isCommittedParticipantStatus(this.status)
+            ? this.blockValidationStrategy
+            : this.spectatingValidationStrategy;
     }
 }
 export default StateManager;

@@ -4,9 +4,9 @@
 > its content hash with `SPEC_REVIEWER="Name" node docs/spec/tools/review.js <file...>`.
 > Any later edit invalidates the record automatically (the file returns to pending as stale).
 
-- Verified (current): **33/619** (5%)
-- Pending (never reviewed): **482**
-- Stale (edited since review): **104**
+- Verified (current): **32/623** (5%)
+- Pending (never reviewed): **486**
+- Stale (edited since review): **105**
 
 ## Stale — edited since engineer review
 
@@ -31,7 +31,7 @@
 - [specification/storage/queue.md](../specification/storage/queue.md) — Luke Fishman, 2026-08-17
 - [specification/storage/README.md](../specification/storage/README.md) — Luke Fishman, 2026-08-17
 
-### implementation (45)
+### implementation (46)
 
 - [implementation/source/contracts/V1/StateChannelDiamondProxy/JoinChannelFacet.sol.md](../implementation/source/contracts/V1/StateChannelDiamondProxy/JoinChannelFacet.sol.md) — Luka, 2026-08-19
 - [implementation/source/contracts/V1/StateChannelDiamondProxy/StateChannelCommon.sol.md](../implementation/source/contracts/V1/StateChannelDiamondProxy/StateChannelCommon.sol.md) — Luka-discovery-v1, 2026-08-30
@@ -46,6 +46,7 @@
 - [implementation/source/src/Holepunch.ts.md](../implementation/source/src/Holepunch.ts.md) — Luka-discovery-v1, 2026-08-30
 - [implementation/source/src/HolepunchRelay.ts.md](../implementation/source/src/HolepunchRelay.ts.md) — Luka-discovery-base, 2026-08-27
 - [implementation/source/src/P2PManager.ts.md](../implementation/source/src/P2PManager.ts.md) — Luka-discovery-v1, 2026-08-30
+- [implementation/source/src/PeerProfile.ts.md](../implementation/source/src/PeerProfile.ts.md) — Luka-discovery-v1, 2026-08-30
 - [implementation/source/src/ProfileManager.ts.md](../implementation/source/src/ProfileManager.ts.md) — Luka-discovery-v1, 2026-08-30
 - [implementation/source/src/rpc/ARpcService.ts.md](../implementation/source/src/rpc/ARpcService.ts.md) — Luka-discovery-v1, 2026-08-30
 - [implementation/source/src/rpc/MainRpcService.ts.md](../implementation/source/src/rpc/MainRpcService.ts.md) — Luka-discovery-v1, 2026-08-30
@@ -470,7 +471,7 @@
 - [implementation/views/security/data-availability.md](../implementation/views/security/data-availability.md)
 - [implementation/views/security/trust-model.md](../implementation/views/security/trust-model.md)
 
-### verification (143)
+### verification (147)
 
 - [verification/open-questions.md](../verification/open-questions.md)
 - [verification/README.md](../verification/README.md)
@@ -529,6 +530,8 @@
 - [verification/tests/test/evm/chainSignerSerialization.test.ts.md](../verification/tests/test/evm/chainSignerSerialization.test.ts.md)
 - [verification/tests/test/evm/ContractExecutor.test.ts.md](../verification/tests/test/evm/ContractExecutor.test.ts.md)
 - [verification/tests/test/evm/ContractExecutorWatchdogRuntimePort.test.ts.md](../verification/tests/test/evm/ContractExecutorWatchdogRuntimePort.test.ts.md)
+- [verification/tests/test/evm/ContractExecutorWithoutClock.test.ts.md](../verification/tests/test/evm/ContractExecutorWithoutClock.test.ts.md)
+- [verification/tests/test/evm/ContractExecutorWorkerHost.test.ts.md](../verification/tests/test/evm/ContractExecutorWorkerHost.test.ts.md)
 - [verification/tests/test/evm/errorWire.test.ts.md](../verification/tests/test/evm/errorWire.test.ts.md)
 - [verification/tests/test/evm/EvmFactory.test.ts.md](../verification/tests/test/evm/EvmFactory.test.ts.md)
 - [verification/tests/test/evm/EvmJumpdestCache.test.ts.md](../verification/tests/test/evm/EvmJumpdestCache.test.ts.md)
@@ -588,12 +591,14 @@
 - [verification/tests/test/unit/SpectateService.test.ts.md](../verification/tests/test/unit/SpectateService.test.ts.md)
 - [verification/tests/test/unit/StateApplicationService.test.ts.md](../verification/tests/test/unit/StateApplicationService.test.ts.md)
 - [verification/tests/test/unit/StateChannelManagerBinding.test.ts.md](../verification/tests/test/unit/StateChannelManagerBinding.test.ts.md)
+- [verification/tests/test/unit/StateManager.test.ts.md](../verification/tests/test/unit/StateManager.test.ts.md)
 - [verification/tests/test/unit/StoredBlockMergeService.test.ts.md](../verification/tests/test/unit/StoredBlockMergeService.test.ts.md)
 - [verification/tests/test/unit/ValidationService.test.ts.md](../verification/tests/test/unit/ValidationService.test.ts.md)
 - [verification/tests/test/utils/channelKey.test.ts.md](../verification/tests/test/utils/channelKey.test.ts.md)
 - [verification/tests/test/utils/Config.test.ts.md](../verification/tests/test/utils/Config.test.ts.md)
 - [verification/tests/test/utils/ContractErrors.test.ts.md](../verification/tests/test/utils/ContractErrors.test.ts.md)
 - [verification/tests/test/utils/createLoggerFoundation.test.ts.md](../verification/tests/test/utils/createLoggerFoundation.test.ts.md)
+- [verification/tests/test/utils/DetachedPromises.test.ts.md](../verification/tests/test/utils/DetachedPromises.test.ts.md)
 - [verification/tests/test/utils/errorMessage.test.ts.md](../verification/tests/test/utils/errorMessage.test.ts.md)
 - [verification/tests/test/utils/LocalDiscoveryServer.test.ts.md](../verification/tests/test/utils/LocalDiscoveryServer.test.ts.md)
 - [verification/tests/test/utils/logEncoder.test.ts.md](../verification/tests/test/utils/logEncoder.test.ts.md)
@@ -632,7 +637,7 @@
 - [specification/storage/progress-markers.md](../specification/storage/progress-markers.md) — Luke Fishman, 2026-08-17
 - [specification/storage/snapshots-and-states.md](../specification/storage/snapshots-and-states.md) — Luke Fishman, 2026-08-17
 
-### implementation (20)
+### implementation (19)
 
 - [implementation/source/contracts/V1/StateChannelDiamondProxy/LocalDiamond.sol.md](../implementation/source/contracts/V1/StateChannelDiamondProxy/LocalDiamond.sol.md) — Luka-discovery-v1, 2026-08-30
 - [implementation/source/contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol.md](../implementation/source/contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol.md) — Luka-discovery-v1, 2026-08-30
@@ -640,7 +645,6 @@
 - [implementation/source/contracts/V1/StateChannelDiamondProxy/StateSnapshotFacet.sol.md](../implementation/source/contracts/V1/StateChannelDiamondProxy/StateSnapshotFacet.sol.md) — Luka-discovery-v1, 2026-08-30
 - [implementation/source/contracts/V1/StateChannelDiamondProxy/UtilityFacet.sol.md](../implementation/source/contracts/V1/StateChannelDiamondProxy/UtilityFacet.sol.md) — Luka-discovery-v1, 2026-08-30
 - [implementation/source/src/events/EventBus.ts.md](../implementation/source/src/events/EventBus.ts.md) — Luka, 2026-08-18
-- [implementation/source/src/PeerProfile.ts.md](../implementation/source/src/PeerProfile.ts.md) — Luka-discovery-v1, 2026-08-30
 - [implementation/source/src/rpc/guards/DeferredAdmissionGuard.ts.md](../implementation/source/src/rpc/guards/DeferredAdmissionGuard.ts.md) — Luka-discovery-v1, 2026-08-30
 - [implementation/source/src/rpc/guards/HandshakeCompletedGuard.ts.md](../implementation/source/src/rpc/guards/HandshakeCompletedGuard.ts.md) — Luka-discovery-v1, 2026-08-30
 - [implementation/source/src/rpc/guards/README.md](../implementation/source/src/rpc/guards/README.md) — Luka-discovery-v1, 2026-08-30

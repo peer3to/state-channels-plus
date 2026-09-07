@@ -248,9 +248,7 @@ export default class ReductionExecutor {
      * disposed. Either way this attempt stands down without writing anything.
      */
     private isStale(forkId: ForkId): boolean {
-        return (
-            forkId !== this.stateManager.forkId || this.stateManager.isDisposed
-        );
+        return !this.stateManager.isActiveFork(forkId);
     }
 
     private async complete(
@@ -517,7 +515,7 @@ export default class ReductionExecutor {
     }
 
     /** The reduced fork the chain records for `forkId`, or the zero hash. */
-    private async readReducedForkOnChain(forkId: ForkId): Promise<string> {
+    private async readReducedForkOnChain(forkId: ForkId): Promise<ForkId> {
         const reducedResult =
             await this.stateManager.stateChannelManagerContract.getReducedResult(
                 this.stateManager.channelId,

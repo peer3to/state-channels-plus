@@ -37,6 +37,10 @@ and participation status are applied.
 
 ## Key design decisions
 
+Signer membership reads delegate to MembershipService; this file carries no duplicate address comparison. See [StateApplicationService.ts](../../../../../../../src/stateManager/snapshotUpdate/StateApplicationService.ts#L165).
+
+The on-chain signer lookup delegates to the membership union predicate and retains the existing local short-circuit. See [StateApplicationService.ts](../../../../../../../src/stateManager/snapshotUpdate/StateApplicationService.ts#L165).
+
 Error text delegates to the dependency-free errorMessage helper. Existing catch policy, stack fields, log messages and error propagation remain at this call site. See [StateApplicationService.ts](../../../../../../../src/stateManager/snapshotUpdate/StateApplicationService.ts#L1).
 
 ## Inputs, outputs, state, and side effects
