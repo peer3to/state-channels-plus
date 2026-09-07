@@ -1,6 +1,6 @@
-import type P2PManager from "@/P2PManager";
 import ATransport from "./ATransport";
 import { TransportType } from "./TransportType";
+import type P2PManager from "@/P2PManager";
 
 /**
  * Base transport over a native browser `WebSocket`, used for local peer

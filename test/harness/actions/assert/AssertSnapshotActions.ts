@@ -2,8 +2,8 @@ import { StateSnapshot } from "@/models";
 import { ForkId } from "@/types";
 import { Codec, DetachedPromises, Type } from "@/utils";
 import { LoggerUtils } from "@/utils/LoggerUtils";
-import { PeerTestHarness } from "@test/fixtures/PeerTestHarness";
 import type { HarnessControlRpc } from "@test/fixtures/customRpc/harnessControl/HarnessControlRpc";
+import { PeerTestHarness } from "@test/fixtures/PeerTestHarness";
 
 export class AssertSnapshotActions<
     TCustomRpc extends HarnessControlRpc = HarnessControlRpc

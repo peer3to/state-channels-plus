@@ -1,15 +1,16 @@
 // @spec-test-coverage-ignore: test-harness query support exercised by owning mapped test declarations
-import { ethers } from "ethers";
 
+import type { QueryService } from "./QueryService";
+import Clock from "@/Clock";
+import StateSnapshot from "@/models/StateSnapshot";
 import ARpcMethods from "@/rpc/ARpcMethods";
 import type ATransport from "@/transport/ATransport";
-import Clock from "@/Clock";
+import { Status } from "@/types/flags";
+import type { Address, ForkId, Hash, BlockHeight } from "@/types/types";
 import { Codec, Type, hash } from "@/utils";
 import { getChecksumAddress } from "@/utils/address";
-import { Status } from "@/types/flags";
-import StateSnapshot from "@/models/StateSnapshot";
-import type { Address, ForkId, Hash, BlockHeight } from "@/types/types";
-import type { QueryService } from "./QueryService";
+import { config } from "@/utils/config";
+import { ethers } from "ethers";
 
 /** Serializable inputs needed to assemble a block on top of a fork's head. */
 export interface BlockBuildingContext {
@@ -83,12 +84,71 @@ export class QueryRpcMethods extends ARpcMethods {
         return this.service.sm.status;
     }
 
+    public getLeaveChannelState() {
+        return this.service.sm.leaveChannelService.state;
+    }
+
+    public getLeaveChannelWatchdogMs(): number {
+        return config.LEAVE_CHANNEL_WATCHDOG_MS;
+    }
+
+    public getForceExit(): boolean {
+        return this.service.storage.forceExit.getForceExit();
+    }
+
     public getChannelId(): string {
         return this.service.sm.channelId as string;
     }
 
     public getSignerAddress(): string {
         return this.service.sm.signerAddress as string;
+    }
+
+    public getLobbyAvailability() {
+        return this.p2pManager.localRpc.lobbyMatchingService.getAvailability();
+    }
+
+    public getJoinedHolepunchTopics(): string[] {
+        return this.p2pManager.holepunch.topics.map(
+            (topic) => `0x${topic.toString("hex")}`
+        );
+    }
+
+    public getNegotiationAttempt(): {
+        peerAddress: string;
+        channelId: string;
+        attemptNonce: string;
+        localOpeningSignatureIssued: boolean;
+    } | null {
+        const attempt =
+            this.p2pManager.localRpc.openChannelNegotiationService.state
+                .attempt;
+        if (!attempt) return null;
+        return {
+            peerAddress: String(attempt.peerAddress),
+            channelId: attempt.channelId,
+            attemptNonce: attempt.attemptNonce,
+            localOpeningSignatureIssued: attempt.localOpeningSignatureIssued
+        };
+    }
+
+    public async isChannelOpen(channelId: string): Promise<boolean> {
+        const [isOpen] =
+            await this.service.sm.stateChannelManagerContract.isChannelOpen(
+                channelId
+            );
+        return isOpen;
+    }
+
+    public async getOpenChannelIds(): Promise<string[]> {
+        const count =
+            await this.service.sm.stateChannelManagerContract.getOpenChannelCount();
+        return (
+            await this.service.sm.stateChannelManagerContract.getOpenChannelIds(
+                0,
+                count
+            )
+        ).map(String);
     }
 
     public getForkId(): string {
@@ -189,9 +249,12 @@ export class QueryRpcMethods extends ARpcMethods {
         finalized: boolean;
         signatures: number;
         union: number;
+        /** Null until the tip's snapshot and state-machine state are stored. */
+        stateHash: string | null;
     } | null {
         const block = this.service.storage.blocks.getLatestBlock(forkId);
         if (!block) return null;
+        const stateHash = this.getLatestStateMachineStateHash(forkId);
         const finalized =
             this.service.sm.agreementManager.didEveryoneSignBlock(block);
         const union = this.service.storage.getParticipantsUnion(
@@ -203,7 +266,8 @@ export class QueryRpcMethods extends ARpcMethods {
             height: Number(block.height),
             finalized,
             signatures: block.allSignatures.size,
-            union
+            union,
+            stateHash: stateHash === null ? null : String(stateHash)
         };
     }
 
@@ -384,6 +448,16 @@ export class QueryRpcMethods extends ARpcMethods {
                       Type.MessageBlock
                   ) as string
               }
+            : null;
+    }
+
+    /** Outbound message head (hash + height), or null before any block. */
+    public getOutboundHead(): { hash: Hash; height: number } | null {
+        const outbound = this.service.storage.outboundMessages;
+        const hash = outbound.getLatestBlockHash();
+        const height = outbound.getLatestBlockHeight();
+        return hash !== undefined && height !== undefined
+            ? { hash, height: Number(height) }
             : null;
     }
 
@@ -606,6 +680,13 @@ export class QueryRpcMethods extends ARpcMethods {
         return addresses;
     }
 
+    public getPreferredTransportType(evmAddress: Address): number | null {
+        return (
+            this.p2pManager.profileManager.getTransportByEvmAddress(evmAddress)
+                ?.transportType ?? null
+        );
+    }
+
     public isConnectedTo(evmAddress: Address): boolean {
         const target = String(evmAddress).toLowerCase();
         return this.getConnectedPeerAddresses().some(
@@ -637,6 +718,18 @@ export class QueryRpcMethods extends ARpcMethods {
         return t
             ? { isForced: t.isForced, participant: String(t.participant) }
             : null;
+    }
+
+    /** The stored dispute for `disputeHash`, encoded, or null. */
+    public getDispute(disputeHash: Hash): { encodedDispute: string } | null {
+        const dispute = this.service.storage.disputes.getDispute(disputeHash);
+        return dispute
+            ? { encodedDispute: Codec.encode(dispute, Type.Dispute) as string }
+            : null;
+    }
+
+    public didIDispute(forkId: ForkId): boolean {
+        return this.service.storage.disputes.didIDispute(forkId);
     }
 
     public hasDisputeConfirmation(disputeHash: Hash): boolean {

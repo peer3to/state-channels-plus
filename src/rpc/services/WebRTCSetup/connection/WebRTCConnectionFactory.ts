@@ -1,7 +1,7 @@
 import LocalWebRTCConnectionFactory from "./LocalWebRTCConnectionFactory";
-import WorkerBridgeWebRTCConnectionFactory from "./WorkerBridgeWebRTCConnectionFactory";
 import type { WebRTCConnectionFactory } from "./WebRTCConnectionTypes";
 import { loadWebRTCProvider } from "./WebRTCProvider";
+import WorkerBridgeWebRTCConnectionFactory from "./WorkerBridgeWebRTCConnectionFactory";
 
 export async function createWebRTCConnectionFactory(): Promise<WebRTCConnectionFactory> {
     try {

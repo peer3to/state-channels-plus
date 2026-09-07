@@ -7,6 +7,8 @@
 > review, plus open security design items that gate the P2P security model. Sibling documents:
 > [trust-model.md](../specification/security/trust-model.md), [data-availability.md](../specification/security/data-availability.md).
 
+The shared frame decoder keeps the size gate before parsing and response-first classification for dual-shaped input. Lobby policy callbacks run after the same malformed-input and reservation checks. Negotiation preserves raw nonce/challenge comparison and malformed-address failure. No authorization, punishment, timeout or signed-attempt release policy changes; implementation-only coercion helpers do not broaden trust. The review follow-up changes the bytes32 type assertion and import order without adding a trust-boundary branch.
+
 ## 1. Purpose
 
 The implemented fraud-proof list
@@ -52,8 +54,13 @@ and recovery behavior.
 
 **<a id="req-sec-3-nppjn5"></a>`REQ-SEC-3-NPPJN5`.** The review MUST separate **objective slashable violations** (provable misbehavior)
 from **non-Byzantine failures** (disconnection, data loss, crash). The former are candidates for
-fraud proofs; the latter need recovery paths, never punishment. Conflating them either lets
-attackers hide as "unavailable" or punishes honest failures.
+fraud proofs; the latter need recovery paths, never on-chain punishment. Conflating them either lets
+attackers hide as "unavailable" or punishes honest failures. One local reputation rule is approved as an
+exception (owner decision, 2026-09-02): once a lobby lease is accepted, a peer that loses its final
+transport before the commitment completes is excluded from the excluding peer's local lobby reputation at
+that side's agreement-window timing. This is a local blacklist, never a slashable violation, and a network
+partition during the handoff excludes two honest peers from each other for the blacklist lifetime; see
+[`OQ-AUDIT-LOBBY-1-9S3GVD`](open-questions.md#oq-audit-lobby-1-9s3gvd).
 
 ## 3. Required output per gap
 
@@ -99,13 +106,23 @@ Handshake completion no longer accepts a peer-supplied membership announcement a
 can promote a transport outside the local-status dispatcher. This removes an authorization-shaped
 remote input from connection admission. Every transport starts with an addressless `PeerProfile`,
 and its Holepunch ban handle stays on that profile while `ProfileManager` alone applies policy.
-Ordinary unauthenticated close cannot ban a peer, while explicit unauthenticated blacklist can. A stale WebRTC close cannot release the active
-fallback ban. Final identity attachment independently refuses a late bootstrap connection while
+Ordinary unauthenticated close cannot ban a peer, while explicit unauthenticated blacklist can. Policy
+release checks every live transport, so neither a selected WebRTC transport nor a non-preferred WebRTC
+transport in upgrade grace can release the active fallback ban. Final identity attachment independently refuses a late bootstrap connection while
 WebRTC is healthy and refuses every transport for an excluded identity, so an in-flight connection
 cannot bypass the SDK ban handle. Authenticated-RPC queues also die with their original transport
 or manager and cannot execute or punish after disposal. A late frame dispatched after local transport
 close is dropped without blacklisting the identity or tearing down its healthy replacement. These changes narrow existing trust boundaries;
 they do not resolve the separate open rate-limit, ICE-target, or protocol-version findings.
+
+Runtime isolation now has one worker-error policy (plan 30, 2026-09-02). An error caught outside a
+request in the sdk worker or the contract-executor worker, including the event-loop watchdog's throw,
+is reported to the application as one detached runtime error and the worker keeps serving; a failure
+before the worker's error funnel exists, or an exit the runtime did not request, is fatal for that
+worker. A remote peer cannot make a worker die by provoking a stall: the throw is contained and
+reported, so the peer's canonical EVM state survives. Whether an application disposes its runtime
+on such a report stays the application's decision. The threshold policy for the test farm is
+tracked in [`OQ-AUDIT-RUNTIME-1-HH601X`](open-questions.md#oq-audit-runtime-1-hh601x).
 
 The RPC verification ledger now separates implemented boundary coverage from missing controls.
 Endpoint hard stops, guard ordering and isolation, peer-bound response settlement, and cleanup after
@@ -213,3 +230,98 @@ _Non-normative._
 | [`REQ-SEC-3-NPPJN5`](security-assessment.md#req-sec-3-nppjn5) | Design pending | Review separates objective slashable violations from non-Byzantine failures.                                    | `none — gap`                                                                                            | `none — gap`                                                                                                                                  |
 | [`REQ-SEC-4-VF81QD`](security-assessment.md#req-sec-4-vf81qd) | Design pending | Every gap classified as proof / validation / dispute input / recovery / trust assumption / accepted limitation. | `none — gap`                                                                                            | `none — gap`                                                                                                                                  |
 | [`REQ-SEC-5-1JPJ3C`](security-assessment.md#req-sec-5-1jpj3c) | Design pending | Gossip rate-limiting policy designed and enforced before the P2P security model is complete.                    | `none — gap` ([src/P2PManager.ts](../../../src/P2PManager.ts) has frame-size and blacklist guards only) | `none — gap` (flood tests required)                                                                                                           |
+
+## Targeted-join security disposition — 2026-08-31
+
+Knowledge of the 256-bit fixed target is topic secrecy, not authorization. Authenticated eligible peers are
+allowed by default; a host-loaded custom RPC module may install a local `shouldMatchPeer` filter without
+serializing policy. Remote balances must decode and compare greater than the state machine's neutral zero
+before signing. A foreign transport cannot settle another peer's pending RPC. While the original request
+transport remains live, a response with an authenticated address is routed through that peer's current
+transport; retiring the original request transport rejects the pending request. Initial sync starts from the
+first connected authoritative participant. Its Boolean result lets `P2PManager` abort an uncommitted observer
+on failure.
+
+The accepted residual is the unverified normal-Hyperswarm deduplication assumption. No new peer-supplied
+clock, target, matching policy, or post-match cancellation authority is introduced.
+
+LocalDiscovery replacement uses authenticated identity only after the normal handshake; untrusted registry
+metadata cannot promote a connection. One canonical active dial and capped backoff prevent a tight retry loop,
+and the existing blacklist prevents a rejected peer from being recreated. Pre-submission pending status closes
+the disposal window around potentially funded join work. Force-join escalation requires authoritative on-chain
+membership and a usable dispute window, so local-only pending state cannot trigger a premature dispute.
+
+Authenticated protocol faults now exclude the peer address instead of allowing discovery to
+reconnect it immediately. Address-based attribution also covers a retired transport after upgrade.
+No identity penalty is applied for network loss, silence before identity proof, response-send
+failure, cleanup, or an unclassified local handler exception.
+
+## Dispute admission, conditional contributions, and mirror time
+
+The signing-order defect is closed by the shared state boundary described in
+[DisputeManager](../implementation/source/src/disputeManager/DisputeManager.ts.md) and
+[BlockCommitService](../implementation/source/src/stateManager/block/BlockCommitService.ts.md).
+Held authoring, admitted commit, and pending signer calls finish before dispute capture; removing the
+boundary makes all three safety tests fail. The honest-leaver workflow includes an admitted incoming
+signature. Failure rollback permits both real authoring and counter-signing again.
+
+The signed existing-window flag is checked before submission mutates admission state. Accepted state
+contributions keep their reason after opener kills, while signature, state, auditing-data and slash
+eligibility checks remain active. [EventSyncService](../implementation/source/src/stateManager/eventSync/EventSyncService.ts.md)
+recovers authoritative slashes with their original timestamps and deduplicates them. Empty or unchanged
+observations stop; unexpected read errors reach the existing top-level error handling (direct callers reject; background attempts use the detached-error route); a changed fork or disposal prevents obsolete re-entry.
+The clock repair is covered by real synchronization across an unposted reduction, not only timestamp
+reader bytecode. These maintained assessments remain pending engineer review; no approval is recorded here.
+
+### Early timeout submission recovery
+
+[`REQ-DISPUTE-PIPE-10-BT8YAR`](../specification/disputes/dispute-processing.md#req-dispute-pipe-10-bt8yar) preserves chain admission while retrying a specific early-timestamp refusal through the existing timeout owner. Retries must revalidate current evidence, stop after fork replacement or disposal, and keep an older-window refusal ineligible. Repeated attempts may incur transaction cost while chain time lags; this does not relax the deadline or unrelated error policy.
+
+## Accepted PR 472 fixes after the SDK refactor
+
+The terminal-leave watchdog now routes a failed dispute start to the pending leave promise. Both the
+missing-marker and expired-evidence outcomes have explicit runtime-port declarations. The configured
+production bound remains 15 seconds: it may pre-empt an otherwise healthy turn and incur a dispute.
+This is the recorded owner policy under [terminal channel leave](../specification/peer-communication/targeted-channel-join.md#req-tjoin-7-nngtay).
+
+Current dispute upload eligibility now uses the snapshot participant set plus the unconsumed inbound
+JOIN interval, with the snapshot boundary excluded, the latest head included, and on-chain slashes
+removed. Snapshot participants retain eligibility regardless of JOIN age. Historical proof thresholds
+retain their historical walk. See the [shared Solidity report](../implementation/source/contracts/V1/StateChannelDiamondProxy/StateChannelCommon.sol.md)
+and [upload rule](../specification/disputes/disputes.md#req-dis-2-pkvz7e).
+
+The accepted-lease liability policy is retained. [Profile-loss recovery](../specification/peer-communication/lobby-matching.md#req-lobby-8-31be0f)
+already requires a healthy replacement or fallback transport to preserve the profile and attempt.
+Retiring an old transport while its replacement remains attached does not emit profile loss. The
+assessment's reported four-peer blacklist failure still lacks causal evidence identifying its call
+site; static inspection and non-reproduction do not establish its cause. No speculative transport or
+liability change is made. The implementation record keeps this limitation separate from the confirmed
+profile lifecycle behavior.
+
+Verification mappings name individual browser declarations and the new component failure and race
+cases. Maintained documents remain pending engineer review; this update grants no approval and does
+not resolve the assessment's five review-body findings that were explicitly left for discussion.
+
+## Review 472 follow-up decisions
+
+Explicit runtime disposal is local shutdown and does not await a pending dispute upload. Graceful leave is the supported route when the caller needs completed removal; the terminal-leave requirement records this distinction.
+
+Dispute upload, reduction admission, and fraud-proof target eligibility share the bounded current snapshot/inbound set. Once a participant leaves that chain set, an old join does not keep it slashable. If the chain snapshot still lists a locally departed participant, a valid fraud proof still writes the chain slash record. Later slash/removal application to a state without that participant is an idempotent no-op under [`REQ-SM-10-JD8TSF`](../specification/protocol-model/state-machines.md#req-sm-10-jd8tsf). The stale-snapshot workflow checks repeated application and unchanged withdrawal totals.
+
+Queue-expiry probes may accept a successor only through verified reduction lineage containing the requested fork, as specified by [`REQ-SYNC-1-T2589H`](../specification/peer-communication/synchronization.md#req-sync-1-t2589h). Ordinary pinned sync follows the same verified-successor rule; the pinned height applies only on the pinned fork. Blacklist and profile lifecycle logs now identify the path through existing call stacks; they do not change the accepted-lease policy. Non-reproduction of the earlier four-peer failure still does not establish its cause.
+
+Synchronization replay always uses the spectating context. Uncommitted observers abort on provable participant fraud without requesting a dispute. Pending and participating peers retain their on-chain stake and delegate these faults to live fraud-proof and dispute handling. Pending participants also use live handling for arrivals, while the commit guard still excludes them from counter-signing. The exact declarations are mapped in the [validation report](../verification/tests/test/unit/ValidationService.test.ts.md).
+
+Absent-target handling is specified separately by [`REQ-SM-10-JD8TSF`](../specification/protocol-model/state-machines.md#req-sm-10-jd8tsf). Successful slash and removal now both record their returned exit under [`REQ-SM-8-8CHSQ8`](../specification/protocol-model/state-machines.md#req-sm-8-8chsq8); [`OQ-18-2NK97T`](../specification/open-questions.md#oq-18-2nk97t) is implemented. Wrapper tests cover absent, present and repeated targets separately; the dispute consumer checks one exit and a matching withdrawal delta.
+
+Sync timeout and transport-failure liability is retained by the owner: honest peers are assumed to observe the same reality within agreementTime. No universal provider or execution bound is proved by this implementation. Local successor installation is not required to serve its already computed proof; requested same-fork heights are minimums.
+
+Sync verification reads chain reduction finality before refreshing its local dispute windows. This preserves a conservative reduction decision when a transaction lands between the reads and prevents another sync’s local-only simulation from suppressing required chain calldata. Proof validation and peer liability are unchanged. One static multicall reads finality for all supplied windows. Successful local reduction verifies the expected fork in Solidity; the already-final branch uses this request’s fetched chain window. A competing sync can overwrite the shared local mirror without invalidating either proof. Payload length remains uncapped, so the batched call and local verification work still scale with supplied windows.
+
+The retained sync design keeps each request's snapshot-update simulation complete independently
+of concurrent local proof work. Local verification is not evidence of chain execution, so it
+cannot alone remove reduction calldata. Reusing verified work remains a non-blocking
+[implementation performance question](../implementation/open-questions.md#oq-impl-sync-1-hjc60d);
+proof validation and blacklist liability are unchanged.
+
+Authored departure now rejects if its dispute fallback fails after either a failed fully signed snapshot post or an unsigned exit. The failure notification checks both the operation phase and fork, so a stale task cannot reject a new operation. Observer-hook tests separate provable-fault aborts from disputed-fork discard. Disputed-fork hooks never restore the entry; committed peers retain acknowledged-supplier liability, while unacknowledged suppliers and observers are not penalized for this branch.

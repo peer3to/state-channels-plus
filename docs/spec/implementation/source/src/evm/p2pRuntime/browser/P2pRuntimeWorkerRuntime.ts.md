@@ -23,7 +23,7 @@ Browser worker-side runtime bootstrap.
 
 ## Key design decisions
 
-_None — the file is declarative/mechanical; behavior-shaping decisions live with its consumers._
+1. **The funnel marks both events handled.** `onUnhandledWorkerError` calls `preventDefault` on `error` and `unhandledrejection` before forwarding, so a reported detached error neither reaches the parent's `worker.onerror` (a fatal failure there) nor the console. Both worker kinds use it.
 
 ## Inputs, outputs, state, and side effects
 

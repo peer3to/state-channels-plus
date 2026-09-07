@@ -1,12 +1,12 @@
-import { ethers } from "ethers";
+import { Codec, Type } from "../utils/Codec";
+
+import { BlockHeight, Bytes, ForkId, Hash, Timestamp } from "@/types/types";
 import {
     StateSnapshotStruct,
     StateSnapshotStructOutput,
     SnapshotDataStruct
 } from "@typechain-types/contracts/V1/types/DataTypes";
-import { Codec, Type } from "../utils/Codec";
-
-import { BlockHeight, Bytes, ForkId, Hash, Timestamp } from "@/types/types";
+import { ethers } from "ethers";
 
 export default class StateSnapshot {
     private constructor(private readonly snapshot: StateSnapshotStruct) {}

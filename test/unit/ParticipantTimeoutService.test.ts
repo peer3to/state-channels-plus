@@ -1,6 +1,14 @@
-import { expect } from "chai";
 import { Status } from "@/types";
+import { Codec, Type } from "@/utils";
+import {
+    assertEarlyTimeoutRetry,
+    assertTimeoutRetryAfterForkSwitch,
+    assertObsoleteEarlyTimeoutRetry
+} from "@test/fixtures/EarlyTimeoutRetryStaging";
 import { MathTestSession as TestSession } from "@test/harness";
+import { waitFor } from "@test/utils/waitFor";
+import { expect } from "chai";
+import { ZeroAddress } from "ethers";
 
 // the guard cases call tryTimeoutParticipant directly with the dispute
 // submission recorder installed, so a guard that failed to hold would show up
@@ -8,6 +16,170 @@ import { MathTestSession as TestSession } from "@test/harness";
 // control: the same code path does submit when the deadline really passed.
 
 describe("Unit: ParticipantTimeoutService", function () {
+    it("a block arriving during timeout construction prevents the late timeout store", async function () {
+        const h = TestSession.getHarness();
+        await h.lifecycle.start(3, 1);
+        const peer = h.getPeer(2);
+        const writer = h.getPeer(1);
+        await h.control(peer).stub.holdTimeoutBuild().request();
+        const construct = h
+            .control(peer)
+            .stub.startTimeoutConstruction(writer.address)
+            .request();
+        try {
+            await waitFor(
+                async () =>
+                    (
+                        await h
+                            .control(peer)
+                            .stub.getTimeoutBuildObservation()
+                            .request()
+                    ).entered === 1
+            );
+            await h.transition.advanceState();
+            expect(
+                await h
+                    .control(peer)
+                    .query.getBlockByHeight(h.activeForkId!, 1)
+                    .request()
+            ).to.not.equal(null);
+            await h.control(peer).stub.releaseTimeoutBuild().request();
+            await construct;
+            expect(
+                (
+                    await h
+                        .control(peer)
+                        .stub.getTimeoutBuildObservation()
+                        .request()
+                ).stored
+            ).to.equal(0);
+        } finally {
+            await h.control(peer).stub.restoreTimeoutBuildRecording().request();
+        }
+    });
+
+    it("timeout construction stores one timeout when no block arrives during the hold", async function () {
+        const h = TestSession.getHarness();
+        await h.lifecycle.start(3, 1);
+        const peer = h.getPeer(2);
+        const writer = h.getPeer(1);
+        await h.control(peer).stub.holdTimeoutBuild().request();
+        const construct = h
+            .control(peer)
+            .stub.startTimeoutConstruction(writer.address)
+            .request();
+        try {
+            await waitFor(
+                async () =>
+                    (
+                        await h
+                            .control(peer)
+                            .stub.getTimeoutBuildObservation()
+                            .request()
+                    ).entered === 1
+            );
+            await h.control(peer).stub.releaseTimeoutBuild().request();
+            await construct;
+            expect(
+                (
+                    await h
+                        .control(peer)
+                        .stub.getTimeoutBuildObservation()
+                        .request()
+                ).stored
+            ).to.equal(1);
+        } finally {
+            await h.control(peer).stub.restoreTimeoutBuildRecording().request();
+        }
+    });
+
+    it("a non-timeout dispute refused as early does not schedule a timeout retry", async function () {
+        const h = TestSession.getHarness();
+        await h.lifecycle.start(3, 0);
+        const peer = h.getPeer(0);
+        const tasks = await h.rpcStub.recordScheduledTasks(peer.index);
+        const recorder = await h.rpcStub.recordDisputeSubmissions(peer.index, {
+            failWith: {
+                customError: "RaceConditionDisputeTimeoutNotMinTimestamp",
+                customErrorArgs: ["2", "1"],
+                at: "send",
+                times: 1
+            }
+        });
+        try {
+            await h.execOnHost(peer, async (sm) => {
+                await sm.membershipService.startSelfRemovalDispute(sm.forkId);
+            });
+            expect(await recorder.submissions()).to.have.length(1);
+            const dispute = Codec.decode(
+                (await recorder.submissions())[0].encodedDispute,
+                Type.Dispute
+            );
+            expect(dispute.input.timeout.participant).to.equal(ZeroAddress);
+            expect(
+                (await tasks.tasks()).filter((task) =>
+                    task.taskName.startsWith(
+                        "timeoutParticipantAfterEarlySubmission"
+                    )
+                )
+            ).to.have.length(0);
+        } finally {
+            await recorder.restore();
+            await tasks.restore();
+        }
+    });
+
+    describe("early chain timestamp refusal", function () {
+        it("send refused once → rechecks and commits the timeout", async function () {
+            await assertEarlyTimeoutRetry(TestSession.getHarness(), "send", 1);
+        });
+
+        it("receipt refused once → rolls back and commits the retry", async function () {
+            await assertEarlyTimeoutRetry(TestSession.getHarness(), "wait", 1);
+        });
+
+        it("two early refusals → re-arms each time and commits", async function () {
+            await assertEarlyTimeoutRetry(TestSession.getHarness(), "send", 2);
+        });
+    });
+
+    describe("early refusal delay", function () {
+        it("chain three seconds early → schedules the reported remaining interval", async function () {
+            await assertEarlyTimeoutRetry(
+                TestSession.getHarness(),
+                "send",
+                1,
+                3
+            );
+        });
+        it("zero reported difference → retains a one-second minimum delay", async function () {
+            await assertEarlyTimeoutRetry(
+                TestSession.getHarness(),
+                "send",
+                1,
+                0
+            );
+        });
+    });
+
+    describe("obsolete early timeout retry", function () {
+        it("verified sync replaces the fork → queued retry and later schedules do nothing", async function () {
+            await assertTimeoutRetryAfterForkSwitch(TestSession.getHarness());
+        });
+        it("the writer block arrives before retry → no second submission", async function () {
+            await assertObsoleteEarlyTimeoutRetry(
+                TestSession.getHarness(),
+                "block"
+            );
+        });
+        it("runtime disposed before retry → no second submission", async function () {
+            await assertObsoleteEarlyTimeoutRetry(
+                TestSession.getHarness(),
+                "disposed"
+            );
+        });
+    });
+
     describe("scheduleCheck", function () {
         it("composes the task label from the reason, fork, height and participant", async function () {
             const h = TestSession.getHarness();

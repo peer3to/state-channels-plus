@@ -1,6 +1,5 @@
-import { expect } from "chai";
-
 import { MathTestSession as TestSession } from "@test/harness";
+import { expect } from "chai";
 
 describe("DisputeValidationStrategy", function () {
     it("returns false only for DISPUTE and throws impossible results", async function () {
@@ -8,7 +7,7 @@ describe("DisputeValidationStrategy", function () {
         await h.lifecycle.start(4, 0);
         const matrix = await h
             .control(h.getPeer(0))
-            .stub.probeDisputeStrategyResultMatrix()
+            .validation.probeDisputeStrategyResultMatrix()
             .request();
 
         expect(matrix.SUCCESS).to.equal("true");
@@ -26,7 +25,7 @@ describe("DisputeValidationStrategy", function () {
         await h.transition.advanceState();
         const result = await h
             .control(h.getPeer(0))
-            .stub.probeCleanCommittedDivergence()
+            .validation.probeCleanCommittedDivergence()
             .request();
 
         expect(result.result).to.equal("SUCCESS");
@@ -39,7 +38,7 @@ describe("DisputeValidationStrategy", function () {
         await h.transition.advanceState();
         const result = await h
             .control(h.getPeer(0))
-            .stub.probeMissingParticipantSnapshots()
+            .validation.probeMissingParticipantSnapshots()
             .request();
 
         expect(result.earlyAuthorResult).to.equal("SUCCESS");

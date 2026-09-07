@@ -1,12 +1,11 @@
-import { expect } from "chai";
-
 import { DisputeFraudProofType } from "@/types/sol-enums";
+import { Bytes, Hash } from "@/types/types";
+import { Codec, Type } from "@/utils";
 import {
     DisputeTampering,
     MathTestSession as TestSession
 } from "@test/harness";
-import { Bytes, Hash } from "@/types/types";
-import { Codec, Type } from "@/utils";
+import { expect } from "chai";
 
 // dispute.input.latestInboundMessageBlockHash is validated by walking the on-chain
 // inbound chain backwards. Junk values that don't exist anywhere in the chain are
@@ -19,6 +18,10 @@ describe("E2E: dispute validation / inboundHash", function () {
         await h.scenario.preDisputeSetup();
         const forkId = h.activeForkId!;
 
+        // Construct the honest replacement after the kill's slash is observed.
+        // A pre-kill output can finalize against the smaller post-kill threshold.
+        await h.dispute.suppressDisputeInitiation([h.getPeer(2).index]);
+
         await h.tamper.stubConstructDispute(0, (dispute, sm) => {
             dispute.input.latestInboundMessageBlockHash =
                 sm.p2pManager.localRpc.dispute.randomHash() as Hash;
@@ -30,13 +33,14 @@ describe("E2E: dispute validation / inboundHash", function () {
             peersIndices: [0],
             initiatedWithAuditingData: false
         });
-        await h.event.waitForPeers("onDisputeKilled", [0], 1, {
+        await h.event.waitForPeers("onDisputeKilled", [0, 2], 1, {
             mode: "atLeast"
         });
         await h.assert.storage.honestPeersStoredDisputeFraudProofDetached({
             disputeFraudProofType:
                 DisputeFraudProofType.DisputeInboundHashNotInChain
         });
+        await h.rpcStub.restoreDisputeInitiationAndDispute(2, forkId);
         await h.dispute.resolveDisputeWait({ forkId });
     });
 
@@ -44,6 +48,9 @@ describe("E2E: dispute validation / inboundHash", function () {
         const h = TestSession.getHarness();
         await h.scenario.preDisputeSetup();
         const forkId = h.activeForkId!;
+
+        // Keep the same kill-before-replacement ordering as the random-hash case.
+        await h.dispute.suppressDisputeInitiation([h.getPeer(2).index]);
 
         await h.tamper.stubConstructDispute(0, (dispute, sm) => {
             dispute.input.latestInboundMessageBlockHash = sm.p2pManager.localRpc
@@ -57,13 +64,14 @@ describe("E2E: dispute validation / inboundHash", function () {
             peersIndices: [0],
             initiatedWithAuditingData: false
         });
-        await h.event.waitForPeers("onDisputeKilled", [0], 1, {
+        await h.event.waitForPeers("onDisputeKilled", [0, 2], 1, {
             mode: "atLeast"
         });
         await h.assert.storage.honestPeersStoredDisputeFraudProofDetached({
             disputeFraudProofType:
                 DisputeFraudProofType.DisputeInboundHashNotInChain
         });
+        await h.rpcStub.restoreDisputeInitiationAndDispute(2, forkId);
         await h.dispute.resolveDisputeWait({ forkId });
     });
 
@@ -76,7 +84,7 @@ describe("E2E: dispute validation / inboundHash", function () {
         const attackerIndex = 1;
         // larger agreementTime avoids writer-timeout disputes racing the upload
         await h.scenario.preDisputeSetupConsumedInboundTopUp({
-            timeConfig: { agreementTime: 8, evidenceTime: 4 }
+            timeConfig: { agreementTime: 8, evidenceTime: 8 }
         });
         const forkId = h.activeForkId!;
 
@@ -186,10 +194,7 @@ describe("E2E: dispute validation / inboundHash", function () {
 
         // peer 0 never initiates -> the committed dispute is the lagging
         // peer's, while peer 0 still audits and kills for real
-        await h
-            .control(h.getPeer(0))
-            .stub.stubSuppressDisputeInitiation()
-            .request();
+        await h.dispute.suppressDisputeInitiation([h.getPeer(0).index]);
 
         await h.byzantine.submitDoubleSignBlock(attackerIndex);
 

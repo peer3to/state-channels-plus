@@ -1,6 +1,7 @@
 import ADiamondStateMachine from "@/ADiamondStateMachine";
 import { Block } from "@/models";
 import P2pEventHooks from "@/P2pEventHooks";
+import type LeaveChannelService from "@/stateManager/membership/LeaveChannelService";
 import Storage from "@/storage";
 import { TimeConfig } from "@/types";
 import {
@@ -12,6 +13,7 @@ import {
     Timestamp
 } from "@/types/types";
 import { addressesEqual, getChecksumAddress } from "@/utils/address";
+import { errorMessage } from "@/utils/errorMessage";
 import type { Logger } from "@/utils/logging";
 import { DisputeStruct } from "@typechain-types/contracts/V1/types/DisputeTypes";
 
@@ -45,6 +47,7 @@ type NotifyTurnOptions = {
     timeConfig: TimeConfig;
     p2pEventHooks: P2pEventHooks;
     logger: Logger;
+    leaveChannelService: LeaveChannelService;
 };
 
 export default class P2pEventHooksUtils {
@@ -67,7 +70,7 @@ export default class P2pEventHooksUtils {
             logger.debug("Skipping dispute update hook", {
                 channelId,
                 forkId,
-                error: error instanceof Error ? error.message : String(error)
+                error: errorMessage(error)
             });
             return;
         }
@@ -124,7 +127,7 @@ export default class P2pEventHooksUtils {
             logger.debug("Dispute update hook failed", {
                 channelId,
                 forkId,
-                error: error instanceof Error ? error.message : String(error)
+                error: errorMessage(error)
             });
         }
     }
@@ -145,7 +148,7 @@ export default class P2pEventHooksUtils {
             }
         } catch (error) {
             logger.debug("maybeNotifyBlockFinalized skipped", {
-                error: error instanceof Error ? error.message : String(error)
+                error: errorMessage(error)
             });
         }
     }
@@ -165,7 +168,8 @@ export default class P2pEventHooksUtils {
         currentTimestamp,
         timeConfig,
         p2pEventHooks,
-        logger
+        logger,
+        leaveChannelService
     }: NotifyTurnOptions): void {
         logger.info(`onTurn signal txHeight: #${nextBlockHeight}`, {
             currentTimestamp,
@@ -174,6 +178,10 @@ export default class P2pEventHooksUtils {
             relevantTimestamp
         });
 
+        if (leaveChannelService.takeLeaveTurn(nextToWrite)) {
+            p2pEventHooks.onLeaveTurn?.();
+            return;
+        }
         // The StateManager's hooks object is a bus-publishing proxy, so this
         // one call also reaches every realm-local
         // `events.on("p2pEventHooks", "onTurn", ...)` subscriber.

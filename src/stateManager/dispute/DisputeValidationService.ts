@@ -1,27 +1,25 @@
-import { StateChannelManagerInterface } from "@typechain-types";
-import { ethers } from "ethers";
-
-import ADiamondStateMachine from "@/ADiamondStateMachine";
-import Storage from "@/storage";
-import { Codec, isSubset, Logger, tryDecodeCustomError, Type } from "@/utils";
-import { Address, Bytes, Hash, Signature } from "@/types/types";
-
 import DisputeFraudProofService from "./DisputeFraudProofService";
-import {
-    DisputeAuditingDataStruct,
-    DisputeStruct
-} from "@typechain-types/contracts/V1/types/DisputeTypes";
+import type StateManager from "../StateManager";
+import DisputeValidationStrategy from "../validationStrategy/DisputeValidationStrategy";
+import ADiamondStateMachine from "@/ADiamondStateMachine";
+import AgreementManager from "@/agreementManager";
+import DisputeManager from "@/disputeManager";
+import { Block, StateSnapshot, StateProof } from "@/models";
+import Storage from "@/storage";
+import { timeoutWaitTime } from "@/types";
+import { Address, Bytes, Hash, Signature } from "@/types/types";
+import { Codec, isSubset, Logger, tryDecodeCustomError, Type } from "@/utils";
+import { LoggerUtils } from "@/utils/LoggerUtils";
+import { StateChannelManagerInterface } from "@typechain-types";
 import {
     MessageBlockStruct,
     StateSnapshotStruct
 } from "@typechain-types/contracts/V1/types/DataTypes";
-import DisputeManager from "@/disputeManager";
-import AgreementManager from "@/agreementManager";
-import type StateManager from "../StateManager";
-import DisputeValidationStrategy from "../validationStrategy/DisputeValidationStrategy";
-import { Block, StateSnapshot, StateProof } from "@/models";
-import { timeoutWaitTime } from "@/types";
-import { LoggerUtils } from "@/utils/LoggerUtils";
+import {
+    DisputeAuditingDataStruct,
+    DisputeStruct
+} from "@typechain-types/contracts/V1/types/DisputeTypes";
+import { ethers } from "ethers";
 
 export default class DisputeValidationService {
     private readonly disputeFraudProofService: DisputeFraudProofService;
@@ -379,8 +377,6 @@ export default class DisputeValidationService {
     private async continueOtherChecks(
         dispute: DisputeStruct
     ): Promise<boolean> {
-        const isValid = true;
-
         let isCorrectLatestState: boolean | undefined;
         if (
             !dispute.postedAuditingData &&
@@ -713,7 +709,7 @@ export default class DisputeValidationService {
 
         if (!hasReason) {
             this.logger.warn(
-                "Dispute input has no stated reason (timeout, slashes, or self-removal)",
+                "Dispute input has no stated reason (timeout, slashes, self-removal, forced inbound, or existing window)",
                 {
                     dispute: LoggerUtils.getDisputeMetadata(dispute)
                 }
@@ -730,11 +726,7 @@ export default class DisputeValidationService {
             disputeAuditingData
         );
 
-        return (
-            isValid &&
-            isOutputValid &&
-            !this.hasStoredDisputeFraudProof(dispute)
-        );
+        return isOutputValid && !this.hasStoredDisputeFraudProof(dispute);
     }
 
     private async verifyDisputeOutput(

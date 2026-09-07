@@ -1,5 +1,6 @@
-import { expect } from "chai";
 import { SignatureCollectionMap } from "@/utils/SignatureCollectionMap";
+import { expect } from "chai";
+import { ethers } from "ethers";
 import sinon from "sinon";
 
 describe("SignatureCollectionMap", () => {
@@ -21,6 +22,38 @@ describe("SignatureCollectionMap", () => {
 
     afterEach(() => {
         clock.restore();
+    });
+
+    it("projects ordered signatures into fresh arrays and preserves live callback iteration", () => {
+        const key = ethers.id("signature-projection");
+        const secondKey = ethers.id("signature-projection-second");
+        const signer = ethers.Wallet.createRandom();
+        const first = {
+            signerAddress: signer.address,
+            signature: signer.signingKey.sign(key).serialized
+        };
+        const other = ethers.Wallet.createRandom();
+        const second = {
+            signerAddress: other.address,
+            signature: other.signingKey.sign(key).serialized
+        };
+        expect(map.values()).to.deep.equal([]);
+        map.tryInsert(key, first);
+        map.tryInsert(key, second);
+        const values = map.values();
+        expect(values).to.deep.equal([[first, second]]);
+        expect(map.entries()).to.deep.equal([[key, [first, second]]]);
+        values[0].pop();
+        expect(map.values()).to.deep.equal([[first, second]]);
+        const visited: Array<string | Uint8Array> = [];
+        map.forEach((value, currentKey) => {
+            visited.push(currentKey);
+            if (currentKey === key) {
+                expect(value).to.deep.equal([first, second]);
+                map.tryInsert(secondKey, first);
+            }
+        });
+        expect(visited).to.deep.equal([key, secondKey]);
     });
 
     it("should insert a new signature", () => {

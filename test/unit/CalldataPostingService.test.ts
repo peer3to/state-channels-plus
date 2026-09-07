@@ -1,6 +1,6 @@
-import { expect } from "chai";
-import { MathTestSession as TestSession } from "@test/harness";
 import { hash as randomHash } from "../factory";
+import { MathTestSession as TestSession } from "@test/harness";
+import { expect } from "chai";
 
 // maybePostBlockOnChain is called directly on the author, so the decision
 // (post or stand down) is observed without waiting out agreementTime.
@@ -63,6 +63,45 @@ describe("Unit: CalldataPostingService", function () {
             );
 
             h.assert.calldata.noCalldataPosted();
+        });
+
+        it("an expired calldata receipt is handled before detached collection", async function () {
+            const h = TestSession.getHarness();
+            await h.lifecycle.start(3, 2);
+            const { leader, authored } =
+                await h.transition.authorNextBlockOffWireWait();
+            await h.control(leader).stub.stubExpireCalldataPost().request();
+            await h
+                .control(leader)
+                .stub.restoreSuppressMaybePostBlockOnChain()
+                .request();
+            try {
+                await h.execOnHost(
+                    leader,
+                    async (sm, args) => {
+                        sm.calldataPostingService.maybePostBlockOnChain(
+                            args.blockHash
+                        );
+                        return true;
+                    },
+                    { blockHash: authored.hash }
+                );
+                expect(
+                    (await h.quiesceHosts()).map((error) => error.message)
+                ).to.deep.equal([]);
+                expect(
+                    await h
+                        .control(leader)
+                        .query.getBlockCalldataTimestamp(
+                            h.activeForkId!,
+                            authored.height,
+                            leader.address
+                        )
+                        .request()
+                ).to.equal(null);
+            } finally {
+                await h.control(leader).stub.restoreCalldataPost().request();
+            }
         });
 
         it("a block nobody else signed → author posts its calldata on-chain", async function () {

@@ -1,7 +1,6 @@
-import { expect } from "chai";
-
 import { TransportType } from "@/transport";
 import { P2PManagerFixture } from "@test/fixtures/P2PManagerFixture";
+import { expect } from "chai";
 
 describe("ProfileManager Holepunch ban policy", function () {
     let fixture: P2PManagerFixture;
@@ -87,6 +86,54 @@ describe("ProfileManager Holepunch ban policy", function () {
         expect(result.banCalls).to.deep.equal([true]);
     });
 
+    it("unblacklisting with selected WebRTC keeps the Holepunch ban", async function () {
+        const result = await fixture
+            .control()
+            .p2pManagerProbe.probeUnblacklistBanPolicy(
+                fixture.address(1),
+                "selected-webrtc"
+            )
+            .request();
+
+        expect(result.selectedTransportType).to.equal(TransportType.WEBRTC);
+        expect(result.liveWebRtcCount).to.equal(1);
+        expect(result.profileBlacklistedAfterBlacklist).to.equal(true);
+        expect(result.profileBlacklistedAfterUnblacklist).to.equal(false);
+        expect(result.banCalls).to.deep.equal([true]);
+    });
+
+    it("unblacklisting with selected Holepunch and live WebRTC keeps the Holepunch ban", async function () {
+        const result = await fixture
+            .control()
+            .p2pManagerProbe.probeUnblacklistBanPolicy(
+                fixture.address(1),
+                "selected-holepunch-with-live-webrtc"
+            )
+            .request();
+
+        expect(result.selectedTransportType).to.equal(TransportType.HOLEPUNCH);
+        expect(result.liveWebRtcCount).to.equal(1);
+        expect(result.profileBlacklistedAfterBlacklist).to.equal(true);
+        expect(result.profileBlacklistedAfterUnblacklist).to.equal(false);
+        expect(result.banCalls).to.deep.equal([true]);
+    });
+
+    it("unblacklisting with selected Holepunch and no live WebRTC releases the Holepunch ban", async function () {
+        const result = await fixture
+            .control()
+            .p2pManagerProbe.probeUnblacklistBanPolicy(
+                fixture.address(1),
+                "selected-holepunch-without-live-webrtc"
+            )
+            .request();
+
+        expect(result.selectedTransportType).to.equal(TransportType.HOLEPUNCH);
+        expect(result.liveWebRtcCount).to.equal(0);
+        expect(result.profileBlacklistedAfterBlacklist).to.equal(true);
+        expect(result.profileBlacklistedAfterUnblacklist).to.equal(false);
+        expect(result.banCalls).to.deep.equal([true, false]);
+    });
+
     it("rejects an authenticated Holepunch fallback while WebRTC is healthy", async function () {
         const result = await fixture
             .control()
@@ -120,7 +167,7 @@ describe("ProfileManager Holepunch ban policy", function () {
         expect(result.attemptedSocketDestroyed).to.equal(false);
         expect(result.currentTransportType).to.equal(TransportType.HOLEPUNCH);
         expect(result.activePeerConnections).to.equal(1);
-        expect(result.originalBanCalls).to.deep.equal([true, false, false]);
+        expect(result.originalBanCalls).to.deep.equal([true, false]);
         expect(result.attemptedBanCalls).to.deep.equal([]);
         expect(result.profileBlacklisted).to.equal(false);
         expect(result.handshakeCompleted).to.equal(true);

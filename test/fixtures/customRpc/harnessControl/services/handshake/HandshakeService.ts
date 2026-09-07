@@ -1,8 +1,8 @@
-import ARpcService from "@/rpc/ARpcService";
+import HandshakeRpcMethods from "./HandshakeRpcMethods";
 import type P2PManager from "@/P2PManager";
+import ARpcService from "@/rpc/ARpcService";
 import type ATransport from "@/transport/ATransport";
 import type { Address } from "@/types/types";
-import HandshakeRpcMethods from "./HandshakeRpcMethods";
 
 /**
  * White-box driver for the handshake / dispute-acknowledgment RPC flows.

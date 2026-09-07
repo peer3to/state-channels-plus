@@ -1,15 +1,14 @@
-import { MathTestSession as TestSession } from "@test/harness";
-import { hash, tryDecodeCustomError } from "@/utils";
+import Clock from "@/Clock";
 import StateSnapshot from "@/models/StateSnapshot";
 import { Status } from "@/types";
+import { Codec, hash, tryDecodeCustomError, Type } from "@/utils";
+import { MathTestSession as TestSession } from "@test/harness";
 import {
     encodeMathState,
     type MathStateDecoded
 } from "@test/utils/mathHarnessAbi";
 import { waitFor } from "@test/utils/waitFor";
 import { expect } from "chai";
-import Clock from "@/Clock";
-import assert from "node:assert/strict";
 
 describe("E2E: Join channel race conditions", function () {
     describe("Snapshot vs join race", function () {
@@ -234,25 +233,13 @@ describe("E2E: Join channel race conditions", function () {
             // Existing peers open a dispute on the latest fork
             await h.tamper.postTamperedDispute(0, async () => {});
 
-            let revertError: unknown;
-            try {
+            expect(
                 await joiner.p2pInstance.p2pSigner.joinChannel(
                     confirmation,
                     expectedSnapshotHash,
                     expectedForkId
-                );
-                expect.fail(
-                    "expected joinChannel to revert: spectator built confirmation against a fork that is now disputed"
-                );
-            } catch (e) {
-                revertError = e;
-            }
-
-            const customError = tryDecodeCustomError(revertError);
-            expect(customError).to.not.be.null;
-            expect(customError!.errorDescription.name).to.equal(
-                "RaceConditionForceInboundJoinForkDisputed"
-            );
+                )
+            ).to.equal(false);
 
             expect(
                 await h
@@ -305,25 +292,8 @@ describe("E2E: Join channel race conditions", function () {
             const leaverIndex = 0;
             const leaverAddress = h.getPeer(leaverIndex).address;
             const originalForkId = h.activeForkId!;
-            await h
-                .control(h.getPeer(leaverIndex))
-                .dispute.setForceExit(true)
-                .request();
-            h.context.leftChannelPeerIndices = [
-                ...h.context.leftChannelPeerIndices,
-                leaverIndex
-            ];
-            await h.tamper.postTamperedDispute(leaverIndex, () => {}, {
-                markMalicious: false
-            });
-
-            const remainingPeerIndices = h
-                .getActiveHonestPeers()
-                .map((p) => p.index);
-            await h.assert.dispute.committedWait({
-                peersIndices: remainingPeerIndices,
-                expectedCount: 1
-            });
+            const remainingPeerIndices =
+                await h.dispute.selfRemoveViaDisputeWait({ leaverIndex });
 
             // While the window is open, joiner remains in on-chain pending set
             const pendingDuring = await h.channelManager.getPendingParticipants(
@@ -371,6 +341,110 @@ describe("E2E: Join channel race conditions", function () {
             );
             await h.assert.sync.peersInSyncWait({
                 peerIndices: remainingPeerIndices
+            });
+        });
+
+        it("one dispute replays a pending join before self-removing that joiner", async function () {
+            const h = TestSession.getHarness();
+            const {
+                joiner,
+                confirmation,
+                expectedSnapshotHash,
+                expectedForkId
+            } = await h.scenario.syncSpectatorAndPrepareJoin();
+            expect(
+                await joiner.p2pInstance.p2pSigner.joinChannel(
+                    confirmation,
+                    expectedSnapshotHash,
+                    expectedForkId
+                )
+            ).to.equal(true);
+            expect(
+                await h.control(joiner).query.getStatus().request()
+            ).to.equal(Status.PENDING_PARTICIPANT);
+
+            const originalForkId = h.activeForkId!;
+            await h.control(joiner).dispute.setForceExit(true).request();
+            h.context.leftChannelPeerIndices = [
+                ...h.context.leftChannelPeerIndices,
+                joiner.index
+            ];
+            const { dispute } = await h.tamper.postTamperedDispute(
+                joiner.index,
+                () => {},
+                { markMalicious: false }
+            );
+
+            expect(dispute.input.selfRemoval).to.equal(true);
+            expect(
+                Number(dispute.input.lastInboundMessageBlockHeight)
+            ).to.be.greaterThan(0);
+            await h.assert.dispute.committedWait({
+                peersIndices: [0, 1, 2],
+                expectedCount: 1
+            });
+            await h.dispute.resolveDisputeWait({
+                forkId: originalForkId,
+                honestPeerIndices: [0, 1, 2],
+                assertMaliciousRemoved: false
+            });
+            await waitFor(async () => {
+                const snapshot = await h.channelManager.getStateSnapshot(
+                    h.channelId
+                );
+                return snapshot.forkId !== originalForkId;
+            }, h.event.protocolEventTimeoutMs());
+
+            const participants = await h.channelManager.getParticipants(
+                h.channelId
+            );
+            expect(
+                participants.map((address: unknown) =>
+                    String(address).toLowerCase()
+                )
+            ).to.not.include(joiner.address.toLowerCase());
+        });
+
+        it("omitting the newest pending join from a self-removal dispute is killed", async function () {
+            const h = TestSession.getHarness();
+            const {
+                joiner,
+                confirmation,
+                expectedSnapshotHash,
+                expectedForkId
+            } = await h.scenario.syncSpectatorAndPrepareJoin();
+            expect(
+                await joiner.p2pInstance.p2pSigner.joinChannel(
+                    confirmation,
+                    expectedSnapshotHash,
+                    expectedForkId
+                )
+            ).to.equal(true);
+            await h.control(joiner).dispute.setForceExit(true).request();
+
+            await h.tamper.postTamperedDispute(
+                joiner.index,
+                (dispute, _confirmation, auditingData) => {
+                    const newestInbound =
+                        auditingData!.inboundMessageBlocks.at(-1)!;
+                    auditingData!.inboundMessageBlocks =
+                        auditingData!.inboundMessageBlocks.slice(0, -1);
+                    dispute.input.latestInboundMessageBlockHash =
+                        newestInbound.previousBlockHash;
+                    dispute.input.lastInboundMessageBlockHeight =
+                        BigInt(newestInbound.blockHeight) - 1n;
+                    dispute.input.disputeAuditingDataHash = hash(
+                        Codec.encode(auditingData!, Type.DisputeAuditingData)
+                    );
+                }
+            );
+
+            await h.assert.dispute.committedWait({
+                peersIndices: [0, 1, 2],
+                expectedCount: 1
+            });
+            await h.event.waitForPeers("onDisputeKilled", [0, 1, 2], 1, {
+                mode: "atLeast"
             });
         });
 
@@ -489,7 +563,7 @@ describe("E2E: Join channel race conditions", function () {
             ).to.equal(Status.PARTICIPATING);
         });
 
-        it("rethrows a stale top-up guard without aborting participation", async function () {
+        it("returns false for a stale top-up guard without aborting participation", async function () {
             const h = TestSession.getHarness();
             await h.lifecycle.start(2, 1);
             const participant = h.getPeer(0);
@@ -505,14 +579,13 @@ describe("E2E: Join channel race conditions", function () {
                     }
                 );
 
-            await assert.rejects(
-                participant.p2pInstance.p2pSigner.topUpBalance(
+            expect(
+                await participant.p2pInstance.p2pSigner.topUpBalance(
                     prepared.confirmation,
                     `0x${"77".repeat(32)}`,
                     prepared.expectedForkId
-                ),
-                /RaceConditionJoinChannelSnapshotMismatch/
-            );
+                )
+            ).to.equal(false);
             const state = await h.execOnHost(
                 participant,
                 async (sm) => ({

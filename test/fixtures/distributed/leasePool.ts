@@ -1,12 +1,12 @@
 // @spec-test-coverage-ignore: shared distributed-worker fixture exercised by developer tooling tests
-import { EventEmitter } from "events";
-import fs from "fs";
-import os from "os";
-import path from "path";
 import {
     createLocalDhtNetwork,
     TEST_DISTRIBUTED_CONNECTION_TIMEOUT_MS
 } from "./testTransport";
+import { EventEmitter } from "events";
+import fs from "fs";
+import os from "os";
+import path from "path";
 
 const {
     authenticateClient,
@@ -21,11 +21,11 @@ const {
     waitForMessage
 } = require("../../../scripts/e2e-parallel/distributed/protocol.js");
 const {
-    DEFAULTS
-} = require("../../../scripts/e2e-parallel/distributed/serverArgParser.js");
-const {
     main: startServer
 } = require("../../../scripts/e2e-parallel/distributed/server.js");
+const {
+    DEFAULTS
+} = require("../../../scripts/e2e-parallel/distributed/serverArgParser.js");
 
 type LeaseEvent = {
     sequence: number;

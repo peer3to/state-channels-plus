@@ -27,6 +27,8 @@ not consumed the on-chain inbound head. This is also the N/N exit path.
 
 ## Key design decisions
 
+Error text delegates to the dependency-free errorMessage helper. Existing catch policy, stack fields, log messages and error propagation remain at this call site. See [SnapshotUpdateService.ts](../../../../../../../src/stateManager/snapshotUpdate/SnapshotUpdateService.ts#L1).
+
 1. **Multi-generation walking in one submission** — several dispute generations cross in one update because each link is verified on-chain anyway ([`REQ-DIS-9-64WHCD`](../../../../../specification/disputes/disputes.md#req-dis-9-64whcd)).
 
 ## Inputs, outputs, state, and side effects
@@ -88,3 +90,9 @@ Exact test evidence is mapped against these IDs in the verification test reports
 ## Related source reports
 
 - [ReductionExecutor](../reduction/ReductionExecutor.ts.md), [MessageBlockStorage](../../storage/MessageBlockStorage.ts.md), [AgreementManager](../../agreementManager/AgreementManager.ts.md).
+
+# Terminal leave contribution
+
+`postStateSnapshotWait` is an explicit internal awaitable boundary used by terminal leave so transaction failure can fall back to dispute. This contributes to [`REQ-LIF-10-QR8NQ9`](../../../../../specification/settlement/lifecycle.md#req-lif-10-qr8nq9).
+
+Shared operation owners: [errorMessage.ts.md](../../utils/errorMessage.ts.md).

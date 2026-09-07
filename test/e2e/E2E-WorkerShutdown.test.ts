@@ -1,6 +1,5 @@
-import { expect } from "chai";
-
 import { MathTestSession as TestSession } from "@test/harness";
+import { expect } from "chai";
 
 describe("E2E: worker shutdown", function () {
     it("drains and tears down multiple threaded peers promptly", async function () {

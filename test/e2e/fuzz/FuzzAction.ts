@@ -16,6 +16,7 @@ export async function runFuzzCampaign(
     const ranCount: Record<string, number> = {};
     for (let step = 0; step < steps; step++) {
         const action = ctx.rng.weightedPick(menu.filter((a) => a.enabled(ctx)));
+
         // eslint-disable-next-line no-console
         console.log(`[fuzz] step ${step + 1}/${steps}: ${action.name}`);
         await action.run(ctx);

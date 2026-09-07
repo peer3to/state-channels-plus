@@ -1,10 +1,10 @@
-import { expect } from "chai";
-import { PeerTestHarness } from "@test/fixtures/PeerTestHarness";
-import type { HarnessControlRpc } from "@test/fixtures/customRpc/harnessControl/HarnessControlRpc";
-import type { DisputeStruct } from "@typechain-types/contracts/V1/types/DisputeTypes";
-import { addressesEqual } from "@/utils";
 import type { ForkId } from "@/types/types";
+import { addressesEqual } from "@/utils";
+import type { HarnessControlRpc } from "@test/fixtures/customRpc/harnessControl/HarnessControlRpc";
+import { PeerTestHarness } from "@test/fixtures/PeerTestHarness";
 import { waitFor } from "@test/utils/waitFor";
+import type { DisputeStruct } from "@typechain-types/contracts/V1/types/DisputeTypes";
+import { expect } from "chai";
 
 export class AssertDisputeActions<
     TCustomRpc extends HarnessControlRpc = HarnessControlRpc

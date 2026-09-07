@@ -1,5 +1,5 @@
-import { Hash, ForkId } from "@/types/types";
 import StateSnapshot from "@/models/StateSnapshot";
+import { Hash, ForkId } from "@/types/types";
 
 type StateSnapshotHash = Hash;
 

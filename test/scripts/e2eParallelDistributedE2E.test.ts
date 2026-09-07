@@ -1,38 +1,28 @@
 // @spec-test-coverage-ignore: developer test-orchestration tooling; not protocol behavior, no specification or implementation IDs apply
+import { TestIsolatedRuntimeBackend } from "../fixtures/distributed/isolatedRuntimeBackend";
+import { LeasePoolHarness } from "../fixtures/distributed/leasePool";
+import {
+    createLocalDhtNetwork,
+    createSocketPair,
+    TEST_DISTRIBUTED_CONNECTION_TIMEOUT_MS
+} from "../fixtures/distributed/testTransport";
+import { waitFor } from "../utils/waitFor";
 import { expect } from "chai";
 import crypto from "crypto";
 import fs from "fs";
 import os from "os";
 import path from "path";
 import WebSocket from "ws";
-import { waitFor } from "../utils/waitFor";
-import { LeasePoolHarness } from "../fixtures/distributed/leasePool";
-import { TestIsolatedRuntimeBackend } from "../fixtures/distributed/isolatedRuntimeBackend";
-import {
-    createLocalDhtNetwork,
-    createSocketPair,
-    TEST_DISTRIBUTED_CONNECTION_TIMEOUT_MS
-} from "../fixtures/distributed/testTransport";
 
-const {
-    DISTRIBUTED_PROTOCOL_VERSION,
-    ProtocolPeer
-} = require("../../scripts/e2e-parallel/distributed/protocol.js");
-const {
-    derivePoolKeys,
-    authenticateClient,
-    authenticateServer
-} = require("../../scripts/e2e-parallel/distributed/authentication.js");
 const {
     receiveBundle,
     sendBundle
 } = require("../../scripts/e2e-parallel/distributed/artifactTransfer.js");
 const {
-    extractRuntimeBundle
-} = require("../../scripts/e2e-parallel/distributed/runtimeExtractor.js");
-const {
-    createPool
-} = require("../../scripts/e2e-parallel/distributed/poolTransport.js");
+    derivePoolKeys,
+    authenticateClient,
+    authenticateServer
+} = require("../../scripts/e2e-parallel/distributed/authentication.js");
 const {
     closeStream,
     connectionHash
@@ -40,6 +30,16 @@ const {
 const {
     runDistributed
 } = require("../../scripts/e2e-parallel/distributed/orchestrator.js");
+const {
+    createPool
+} = require("../../scripts/e2e-parallel/distributed/poolTransport.js");
+const {
+    DISTRIBUTED_PROTOCOL_VERSION,
+    ProtocolPeer
+} = require("../../scripts/e2e-parallel/distributed/protocol.js");
+const {
+    extractRuntimeBundle
+} = require("../../scripts/e2e-parallel/distributed/runtimeExtractor.js");
 const { runTask } = require("../../scripts/e2e-parallel/shared/runTask.js");
 const { startDiscoveryRegistry } = require("../utils/nodeInfra.js");
 
@@ -590,15 +590,22 @@ describe("distributed parallel runner", function () {
                 baseEnv: {},
                 dht: pool.createOrchestratorDht()
             });
+            // The quarantine worker's connection lives only for its 50 ms
+            // failing preparation, so both workers are active together only
+            // in a short window; poll fast enough to observe it.
             await waitFor(
                 () =>
                     preparationWorker.manager.active !== null &&
                     protocolWorker.manager.active !== null,
-                TEST_DISTRIBUTED_CONNECTION_TIMEOUT_MS
+                TEST_DISTRIBUTED_CONNECTION_TIMEOUT_MS,
+                5
             );
             const malformed = Buffer.alloc(5);
             malformed.writeUInt32BE(1, 0);
             protocolWorker.manager.active?.peer.stream.write(malformed);
+            // The worker must go down before the orchestrator's next
+            // discovery refresh (25 ms) re-dials it and a clean lease replaces
+            // the protocol failure as its last disposition, so poll fast.
             await waitFor(
                 () =>
                     dialActivity.some((line) =>
@@ -608,7 +615,8 @@ describe("distributed parallel runner", function () {
                                 ": Malformed frame"
                         )
                     ),
-                TEST_DISTRIBUTED_CONNECTION_TIMEOUT_MS
+                TEST_DISTRIBUTED_CONNECTION_TIMEOUT_MS,
+                5
             );
             await pool.stopServer(protocolWorker);
 

@@ -1,22 +1,21 @@
-import { expect } from "chai";
-import { ethers } from "hardhat";
-import { EventLog } from "ethers";
-
+import StateSnapshot from "@/models/StateSnapshot";
+import { Bytes } from "@/types/types";
+import { SignatureUtils } from "@/utils";
+import { HardhatEthersSigner } from "@nomicfoundation/hardhat-ethers/signers";
 import {
     deployMathChannelProxyFixture,
     getSigners,
     createJoinChannelTestObject,
     createOpenChannelTestObject
 } from "@test/test_utils/testHelpers";
-import { SignatureUtils } from "@/utils";
-import StateSnapshot from "@/models/StateSnapshot";
 import {
     StateChannelManagerInterface,
     MathStateMachine
 } from "@typechain-types";
-import { HardhatEthersSigner } from "@nomicfoundation/hardhat-ethers/signers";
-import { Bytes } from "@/types/types";
 import { JoinChannelStruct } from "@typechain-types/contracts/V1/types/DataTypes";
+import { expect } from "chai";
+import { EventLog } from "ethers";
+import { ethers } from "hardhat";
 
 describe("StateChannelManagerProxy", function () {
     let mathChannelManager: StateChannelManagerInterface;
@@ -63,6 +62,105 @@ describe("StateChannelManagerProxy", function () {
     });
 
     describe("Open Channel - MathStateChannel", function () {
+        it("enumerates successful opens in append order with safe page boundaries", async function () {
+            const secondOpenChannel = createOpenChannelTestObject(
+                [firstSigner.address, secondSigner.address],
+                { channelId: "open-channel-registry-second" }
+            );
+
+            await mathChannelManager.open({
+                encodedOpenChannel: (
+                    await SignatureUtils.signOpenChannel(
+                        openChannel,
+                        firstSigner
+                    )
+                ).encoded,
+                signatures: [
+                    (
+                        await SignatureUtils.signOpenChannel(
+                            openChannel,
+                            firstSigner
+                        )
+                    ).signature as Bytes,
+                    (
+                        await SignatureUtils.signOpenChannel(
+                            openChannel,
+                            secondSigner
+                        )
+                    ).signature as Bytes
+                ]
+            });
+            await mathChannelManager.open({
+                encodedOpenChannel: (
+                    await SignatureUtils.signOpenChannel(
+                        secondOpenChannel,
+                        firstSigner
+                    )
+                ).encoded,
+                signatures: [
+                    (
+                        await SignatureUtils.signOpenChannel(
+                            secondOpenChannel,
+                            firstSigner
+                        )
+                    ).signature as Bytes,
+                    (
+                        await SignatureUtils.signOpenChannel(
+                            secondOpenChannel,
+                            secondSigner
+                        )
+                    ).signature as Bytes
+                ]
+            });
+
+            expect(await mathChannelManager.getOpenChannelCount()).to.equal(2);
+            expect(
+                await mathChannelManager.getOpenChannelIds(0, 10)
+            ).to.deep.equal([
+                openChannel.channelId,
+                secondOpenChannel.channelId
+            ]);
+            expect(
+                await mathChannelManager.getOpenChannelIds(1, 1)
+            ).to.deep.equal([secondOpenChannel.channelId]);
+            expect(
+                await mathChannelManager.getOpenChannelIds(0, 0)
+            ).to.deep.equal([]);
+            expect(
+                await mathChannelManager.getOpenChannelIds(2, 1)
+            ).to.deep.equal([]);
+            expect(
+                await mathChannelManager.getOpenChannelIds(1, 100)
+            ).to.deep.equal([secondOpenChannel.channelId]);
+        });
+
+        it("keeps the open-channel registry unchanged after a duplicate open reverts", async function () {
+            const confirmation = {
+                encodedOpenChannel: openChannelSigned.encoded,
+                signatures: [
+                    (
+                        await SignatureUtils.signOpenChannel(
+                            openChannel,
+                            firstSigner
+                        )
+                    ).signature as Bytes,
+                    (
+                        await SignatureUtils.signOpenChannel(
+                            openChannel,
+                            secondSigner
+                        )
+                    ).signature as Bytes
+                ]
+            };
+            await mathChannelManager.open(confirmation);
+            await expect(mathChannelManager.open(confirmation)).to.be.reverted;
+
+            expect(await mathChannelManager.getOpenChannelCount()).to.equal(1);
+            expect(
+                await mathChannelManager.getOpenChannelIds(0, 2)
+            ).to.deep.equal([openChannel.channelId]);
+        });
+
         it("2 participants - success", async function () {
             const res = await mathChannelManager.open({
                 encodedOpenChannel: openChannelSigned.encoded,
@@ -331,6 +429,15 @@ describe("StateChannelManagerProxy", function () {
             const participants = await mathInstance.getParticipants();
             expect(participants).to.have.length(3);
             expect(participants).to.include(thirdSigner.address);
+            // Only the JOIN the snapshot has not consumed is pending: the
+            // third signer's deposit. The open joins were consumed by the
+            // genesis snapshot, so the original participants are not pending
+            // even though their JOIN messages remain in the inbound chain.
+            expect(
+                await mathChannelManager.getPendingParticipants(
+                    openChannel.channelId
+                )
+            ).to.deep.equal([thirdSigner.address]);
 
             const insertedBalance = await mathInstance.getBalance(
                 thirdSigner.address
@@ -431,16 +538,13 @@ describe("StateChannelManagerProxy", function () {
                 inboundEvent!.args.messageBlock.messages[0].balance.amount
             ).to.equal(125n);
 
+            // Only the JOIN the snapshot has not consumed is pending: the
+            // top-up's message. The open joins were consumed by the genesis
+            // snapshot, so the original participants are not pending.
             const pending = await mathChannelManager.getPendingParticipants(
                 openChannel.channelId
             );
-            expect(pending).to.deep.equal([
-                firstSigner.address,
-                secondSigner.address
-            ]);
-            expect(
-                new Set(pending.map((address) => address.toLowerCase())).size
-            ).to.equal(2);
+            expect(pending).to.deep.equal([firstSigner.address]);
             expect(
                 (
                     await mathChannelManager.getChannelBalance(

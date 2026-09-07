@@ -1,7 +1,7 @@
-import type { ForkId } from "@/types/types";
 import type { Status } from "@/types";
-import { PeerTestHarness } from "@test/fixtures/PeerTestHarness";
+import type { ForkId } from "@/types/types";
 import type { HarnessControlRpc } from "@test/fixtures/customRpc/harnessControl/HarnessControlRpc";
+import { PeerTestHarness } from "@test/fixtures/PeerTestHarness";
 import type { TestPeer } from "@test/harness/core/types";
 import { expect } from "chai";
 

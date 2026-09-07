@@ -28,6 +28,8 @@ author-relevant previous timestamp.
 
 ## Key design decisions
 
+getGenesisStateMachineState remains available for existing test callers. This test-only production method is outside the deletion scope.
+
 1. **Defensive copies everywhere.** Every module (and the facade itself) is wrapped in a
    deep-copy proxy, so values returned to callers are copies — a caller mutating a returned
    object can never corrupt stored state, which is what keeps storage's exact-preservation

@@ -1,7 +1,6 @@
-import { expect } from "chai";
-
 import HolepunchRelay from "@/HolepunchRelay";
 import { HolepunchRelayFixture } from "@test/fixtures/HolepunchRelayFixture";
+import { expect } from "chai";
 
 describe("HolepunchRelay", function () {
     let fixture: HolepunchRelayFixture;

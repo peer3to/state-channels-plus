@@ -1,9 +1,4 @@
 // @spec-test-coverage-ignore: loopback control endpoints for the mapped ATransport component cases
-import type P2PManager from "@/P2PManager";
-import ARpcMethods from "@/rpc/ARpcMethods";
-import type Rpc from "@/rpc/Rpc";
-import type { RpcResponse } from "@/rpc/Rpc";
-import type ATransport from "@/transport/ATransport";
 import type { PingPongRpc } from "../PingPongRpcManifest";
 import type {
     ATransportCloseProbe,
@@ -12,6 +7,11 @@ import type {
     ATransportIdentityProbe,
     ATransportProbeService
 } from "./ATransportProbeService";
+import type P2PManager from "@/P2PManager";
+import ARpcMethods from "@/rpc/ARpcMethods";
+import type Rpc from "@/rpc/Rpc";
+import type { RpcResponse } from "@/rpc/Rpc";
+import type ATransport from "@/transport/ATransport";
 
 export class ATransportProbeRpcMethods extends ARpcMethods<
     P2PManager<PingPongRpc>
@@ -21,6 +21,10 @@ export class ATransportProbeRpcMethods extends ARpcMethods<
         private readonly service: ATransportProbeService
     ) {
         super(transport, service.p2pManager);
+    }
+
+    public probeMessageConversion() {
+        return this.service.probeMessageConversion();
     }
 
     public probeIdentity(

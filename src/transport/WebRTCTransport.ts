@@ -1,8 +1,8 @@
-import type P2PManager from "@/P2PManager";
 import ATransport from "./ATransport";
-import { Buffer } from "buffer";
 import { TransportType } from "./TransportType";
+import type P2PManager from "@/P2PManager";
 import type { WebRTCDataChannelLike } from "@/rpc/services/WebRTCSetup/connection/WebRTCConnectionFactory";
+import { Buffer } from "buffer";
 
 class WebRTCTransport extends ATransport {
     transportType = TransportType.WEBRTC;

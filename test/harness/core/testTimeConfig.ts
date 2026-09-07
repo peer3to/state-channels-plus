@@ -1,3 +1,4 @@
+// @spec-test-coverage-ignore: shared harness support; executable evidence belongs to its calling test declarations
 import { TimeConfig, firstBlockGrace } from "@/types";
 
 export const MIN_TEST_TIME_CONFIG: Readonly<TimeConfig> = Object.freeze({
@@ -52,3 +53,10 @@ export function protocolEventTimeoutMs(
         evidencePeriodWaitMs(timeConfig, settlementMarginSeconds)
     );
 }
+
+export const INBOUND_GAP_TIME_CONFIG: Readonly<TimeConfig> = Object.freeze({
+    p2pTime: 2,
+    agreementTime: 8,
+    chainFallbackTime: 4,
+    evidenceTime: 4
+});

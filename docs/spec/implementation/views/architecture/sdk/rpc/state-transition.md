@@ -15,7 +15,7 @@ Implementation:
 [`StateTransitionService`](../../../../../../../src/rpc/services/stateTransition/StateTransitionService.ts#L7),
 [`StateTransitionRpcMethods`](../../../../../../../src/rpc/services/stateTransition/StateTransitionRpcMethods.ts#L6).
 Primary consumer: [`BlockQueueManager.ingestBlockConfirmation`](../../../../../../../src/stateManager/BlockQueueManager.ts#L56)
-via [`StateManager.ingestBlockConfirmation`](../../../../../../../src/stateManager/StateManager.ts#L720).
+via [`StateManager.ingestBlockConfirmation`](../../../../../../../src/stateManager/StateManager.ts#L478).
 
 ## 1. Purpose & position in the protocol
 
@@ -30,9 +30,9 @@ Position in the flow:
 
 - **Sending side** (local, typed proxy — never through this service's handler): the success path
   gossips after persistence
-  ([`StateManager.success`](../../../../../../../src/stateManager/StateManager.ts#L918) step 7, only when
+  ([`StateManager.success`](../../../../../../../src/stateManager/StateManager.ts#L478) step 7, only when
   `PARTICIPATING` and not dispute replay), the stored-merge path re-broadcasts grown signature
-  sets ([`tryMergeStoredBlockConfirmation`](../../../../../../../src/stateManager/StateManager.ts#L769) →
+  sets ([`tryMergeStoredBlockConfirmation`](../../../../../../../src/stateManager/StateManager.ts#L478) →
   `BROADCAST`), and the strategies re-broadcast on `goodNewSignaturesOnExistingBlock`
   ([`BlockValidationStrategy`](../../../../../../../src/stateManager/validationStrategy/BlockValidationStrategy.ts#L22)).
   All use `.broadcast()` — fire-and-forget to every open connection, no delivery receipt.
@@ -55,8 +55,8 @@ All state a frame touches lives downstream and is specified there:
 
 | State                                                              | Owner                                                                  | Written by                     | Spec                                                                            |
 | ------------------------------------------------------------------ | ---------------------------------------------------------------------- | ------------------------------ | ------------------------------------------------------------------------------- |
-| Queued entries, signature sets, source attribution, 128-source cap | [`QueueStorage`](../../../../../../../src/storage/QueueStorage.ts#L26) | pipeline intake                | [../block-confirmation-pipeline.md](../block-confirmation-pipeline.md) §3.1, §4 |
-| Stored blocks / merged signatures                                  | [`BlockStorage`](../../../../../../../src/storage/BlockStorage.ts#L16) | pipeline merge/success         | ibid. §4.1, §8                                                                  |
+| Queued entries, signature sets, source attribution, 128-source cap | [`QueueStorage`](../../../../../../../src/storage/QueueStorage.ts#L27) | pipeline intake                | [../block-confirmation-pipeline.md](../block-confirmation-pipeline.md) §3.1, §4 |
+| Stored blocks / merged signatures                                  | [`BlockStorage`](../../../../../../../src/storage/BlockStorage.ts#L15) | pipeline merge/success         | ibid. §4.1, §8                                                                  |
 | Peer profiles, blacklist                                           | [`ProfileManager`](../../../../../../../src/ProfileManager.ts#L7)      | this service's penalty mapping | [./README.md](./README.md) §8                                                   |
 
 Statelessness is load-bearing: the handler runs without the `StateManager` mutex

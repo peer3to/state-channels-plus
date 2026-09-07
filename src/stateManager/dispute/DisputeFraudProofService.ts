@@ -1,5 +1,5 @@
-import Storage from "@/storage";
 import { Block, StateSnapshot } from "@/models";
+import Storage from "@/storage";
 import {
     DisputeFraudProofType,
     toSolidityDisputeFraudProofType
@@ -12,14 +12,6 @@ import {
     SignedBlockStruct,
     StateSnapshotStruct
 } from "@typechain-types/contracts/V1/types/DataTypes";
-import {
-    DisputeAuditingDataStruct,
-    DisputeStruct
-} from "@typechain-types/contracts/V1/types/DisputeTypes";
-import {
-    DisputeFraudProofStruct,
-    FraudProofStruct
-} from "@typechain-types/contracts/V1/types/ProofTypes";
 import {
     DisputeInvalidBalanceInvariantStruct,
     DisputeInvalidBlockInStateProofApplyFraudProofStruct,
@@ -39,6 +31,14 @@ import {
     DisputeBlockAuthorNotParticipantStruct,
     DisputeInboundAnchorBehindLatestStateStruct
 } from "@typechain-types/contracts/V1/types/DisputeFraudProofTypes";
+import {
+    DisputeAuditingDataStruct,
+    DisputeStruct
+} from "@typechain-types/contracts/V1/types/DisputeTypes";
+import {
+    DisputeFraudProofStruct,
+    FraudProofStruct
+} from "@typechain-types/contracts/V1/types/ProofTypes";
 import { BigNumberish, BytesLike } from "ethers";
 // ────────────────────── FRAUD PROOF SERVICE ─────────────────────
 

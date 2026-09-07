@@ -10,6 +10,8 @@ exclusion, jitter, bounded full-pool backoff, paired-event deduplication, and su
 
 ## Key design decisions
 
+Recovered comments explain backoff, jitter, retry exhaustion and single-timer failover. The old relayerUrls name is adapted to the pool's urls field; retry behavior is unchanged. See [RelayerPool.ts](../../../../../../../src/transport/relay/RelayerPool.ts#L13).
+
 1. **Production time and randomness are direct dependencies.** Tests scope fake timers and
    `Math.random`; production construction has no test-only options.
 2. **A retry has one owned timer.** Success clears that timer before resetting pool state.

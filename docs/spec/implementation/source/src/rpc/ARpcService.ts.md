@@ -25,6 +25,8 @@ dispatched frame — the last three stages of the ingress dispatch order. Subcla
 
 ## Key design decisions
 
+Error text delegates to the dependency-free errorMessage helper. Existing catch policy, stack fields, log messages and error propagation remain at this call site. See [ARpcService.ts](../../../../../../src/rpc/ARpcService.ts#L9).
+
 1. **Guards run before method-existence disclosure.** An unauthenticated probe on a gated service hits the guard consequence even for nonexistent methods, learning nothing ([#L49](../../../../../../src/rpc/ARpcService.ts#L49)).
 2. **Trusted-loopback exemption.** Guards are skipped only when `transport.isTrusted` — true solely for self-delivery ([#L50](../../../../../../src/rpc/ARpcService.ts#L50)).
 3. **Handler errors answer, they don't disconnect.** On the request path a thrown handler error returns `{ok:false}` so the caller's promise rejects while the session survives; fire-and-forget errors escalate to disconnect. A failed response send is attempted once and disconnects the transport ([#L72](../../../../../../src/rpc/ARpcService.ts#L72)).
@@ -46,9 +48,11 @@ dispatched frame — the last three stages of the ingress dispatch order. Subcla
 A file may contribute to several requirements; this report describes the contribution and never
 claims complete conformance for a requirement that depends on other files.
 
-| Source file                                                | Specification IDs                                                                                                                                                                                                                                                                                                                                                              |
-| ---------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| [ARpcService.ts](../../../../../../src/rpc/ARpcService.ts) | [`INV-RPC-1-SJS2T6`](../../../../specification/peer-communication/rpc.md#inv-rpc-1-sjs2t6), [`REQ-RPC-2-SZDTTM`](../../../../specification/peer-communication/rpc.md#req-rpc-2-szdttm), [`REQ-RPC-6-E60S4J`](../../../../specification/peer-communication/rpc.md#req-rpc-6-e60s4j), [`REQ-RPC-7-9CBSHK`](../../../../specification/peer-communication/rpc.md#req-rpc-7-9cbshk) |
+| Source file                                                | Specification IDs                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
+| ---------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| [ARpcService.ts](../../../../../../src/rpc/ARpcService.ts) | [`INV-RPC-1-SJS2T6`](../../../../specification/peer-communication/rpc.md#inv-rpc-1-sjs2t6), [`REQ-RPC-2-SZDTTM`](../../../../specification/peer-communication/rpc.md#req-rpc-2-szdttm), [`REQ-RPC-6-E60S4J`](../../../../specification/peer-communication/rpc.md#req-rpc-6-e60s4j), [`REQ-RPC-7-9CBSHK`](../../../../specification/peer-communication/rpc.md#req-rpc-7-9cbshk), [`REQ-TJOIN-4-SDPZJW`](../../../../specification/peer-communication/targeted-channel-join.md#req-tjoin-4-sdpzjw) |
+
+[`REQ-TJOIN-4-SDPZJW`](../../../../specification/peer-communication/targeted-channel-join.md#req-tjoin-4-sdpzjw): [sendRpcResponseSafely](../../../../../../src/rpc/ARpcService.ts#L51) selects the authenticated address route, with the inbound transport as fallback.
 
 ## Assumptions, dependencies, trust boundaries, and limits
 
@@ -76,7 +80,7 @@ None demonstrated.
 
 ## Missing behavior
 
-Guard-retry semantics for request-style calls remain the [`OQ-34-FY08V2`](../../../../specification/open-questions.md#oq-34-fy08v2) decision. The former response-send failure defect [`DEF-8-HWJ10N`](../../../../audit/open-findings.md#def-8-hwj10n) is resolved by the single guarded send path.
+None demonstrated for request-style guard deferral. A guard may mark a failed request as deferred, which suppresses the premature error response until replay. The former response-send failure defect [`DEF-8-HWJ10N`](../../../../audit/open-findings.md#def-8-hwj10n) remains resolved by the single guarded send path.
 
 ## Conformance traceability
 
@@ -84,11 +88,12 @@ Status enum: `Covered` | `Partial` | `Contradicts` | `Missing`. Evidence cells a
 **Here:** / **Other files:** so each row is auditable from its links alone; genuine gaps go in the
 Gap column. Audit state is file-level (Status header), never a row status.
 
-| Requirement / invariant                                                                    | Implementation status | Evidence                                                                                                                                                                                                                     | Gap / divergence            |
-| ------------------------------------------------------------------------------------------ | --------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------- |
-| [`REQ-RPC-6-E60S4J`](../../../../specification/peer-communication/rpc.md#req-rpc-6-e60s4j) | Covered               | **Here:** guard ordering, declared-endpoint resolution, captured invocation, and consequence split ([#L49](../../../../../../src/rpc/ARpcService.ts#L49)). **Other files:** stages 1–4 in [P2PManager](../P2PManager.ts.md). | None.                       |
-| [`REQ-RPC-7-9CBSHK`](../../../../specification/peer-communication/rpc.md#req-rpc-7-9cbshk) | Covered               | **Here:** declaration-order short-circuit via [runGuards](./guards/runGuards.ts.md), trusted-only bypass, deterministic request settlement.                                                                                  | None.                       |
-| [`REQ-RPC-2-SZDTTM`](../../../../specification/peer-communication/rpc.md#req-rpc-2-szdttm) | Partial               | **Here:** at-most-once reply per request ID, including guarded send-failure cleanup. **Other files:** correlation table in [P2PManager](../P2PManager.ts.md).                                                                | No cancellation API exists. |
+| Requirement / invariant                                                                                          | Implementation status | Evidence                                                                                                                                                                                                                                                                                          | Gap / divergence            |
+| ---------------------------------------------------------------------------------------------------------------- | --------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------- |
+| [`REQ-RPC-6-E60S4J`](../../../../specification/peer-communication/rpc.md#req-rpc-6-e60s4j)                       | Covered               | **Here:** guard ordering, declared-endpoint resolution, captured invocation, and consequence split ([#L49](../../../../../../src/rpc/ARpcService.ts#L49)). **Other files:** stages 1–4 in [P2PManager](../P2PManager.ts.md).                                                                      | None.                       |
+| [`REQ-RPC-7-9CBSHK`](../../../../specification/peer-communication/rpc.md#req-rpc-7-9cbshk)                       | Covered               | **Here:** declaration-order short-circuit via [runGuards](./guards/runGuards.ts.md), trusted-only bypass, deterministic request settlement.                                                                                                                                                       | None.                       |
+| [`REQ-RPC-2-SZDTTM`](../../../../specification/peer-communication/rpc.md#req-rpc-2-szdttm)                       | Partial               | **Here:** at-most-once reply per request ID, including guarded send-failure cleanup. **Other files:** correlation table in [P2PManager](../P2PManager.ts.md).                                                                                                                                     | No cancellation API exists. |
+| [`REQ-TJOIN-4-SDPZJW`](../../../../specification/peer-communication/targeted-channel-join.md#req-tjoin-4-sdpzjw) | Covered               | **Here:** [sendRpcResponseSafely](../../../../../../src/rpc/ARpcService.ts#L51) selects the authenticated address route, with the inbound transport as fallback. **Other files:** [P2PManager](../P2PManager.ts.md) rejects a response from a different peer before settling the pending request. | None demonstrated.          |
 
 ## Component test obligations
 
@@ -101,3 +106,5 @@ Exact test evidence is mapped against these IDs in the verification test reports
 ## Related source reports
 
 - [guards/runGuards](./guards/runGuards.ts.md), [guards/HandshakeCompletedGuard](./guards/HandshakeCompletedGuard.ts.md), [P2PManager](../P2PManager.ts.md), [ObjectChecks](../utils/ObjectChecks.ts.md).
+
+Shared operation owners: [errorMessage.ts.md](../utils/errorMessage.ts.md).

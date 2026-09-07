@@ -9,6 +9,8 @@ an engineer-reviewed report assigns it the test IDs it covers in full. Current s
 [generated/verification-coverage.md](../generated/verification-coverage.md); this document explains **why the
 scores are what they are** and which lever moves each one.
 
+The simplification coverage uses real pre-deployment ports, authenticated host probes, factory-built blocks, actual provider loading and real logger stores. The full distributed gate passed all 1,987 runnable cases; Node and browser typechecks and both real browser gates passed. The review follow-up passed all 1,987 cases again in run-1653 after the separate import-order cleanup; the focused dependency/storage/manager run passed 125 cases. Existing skipped cases and unassigned specification permutations remain gaps, not evidence. New declarations have exact component permutations; moved declarations retain their existing claims only where the actual oracle still matches.
+
 ## Contents
 
 - [Current state](#current-state)
@@ -24,8 +26,11 @@ Guard coverage also proves grace-overlap traffic on a replaced authenticated pip
 one transport's authentication cannot release another transport's queued calls. It also proves a
 frame dispatched after local transport close cannot execute or punish the healthy replacement.
 Typed SDK-edge recorders cover unauthenticated-profile ban/no-ban, current-versus-stale WebRTC
-fallback, healthy-WebRTC rejection of an authenticated Holepunch attempt, usable fallback after
-current-WebRTC close, and permanent exclusion of a later attempt.
+fallback, policy release with selected WebRTC, policy release with selected Holepunch during
+non-preferred WebRTC overlap, release after the last WebRTC closes, healthy-WebRTC rejection of an
+authenticated Holepunch attempt, usable fallback after current-WebRTC close, and permanent exclusion
+of a later attempt. Block-queue evidence separately proves that ordinary same-fork future eviction
+does not punish its valid supplier when the distinct exact-recovery failure path is suppressed.
 Scoped fake time and randomness cover every relay selection/backoff branch, paired-event deduplication,
 and pending-retry cancellation after success. The real Holepunch public surface covers join,
 byte-equal leave, duplicates, no-op leaves, lazy creation, and restart replay.
@@ -139,3 +144,33 @@ its cases.
 3. **Write tests against the atomized queue** (cause 1) — the long tail; the queue is exact and
    deduplicated, so progress is measurable per row.
 4. Leave sibling tests (cause 3) alone; they are redundancy, not gaps.
+
+## Targeted pre-open channel join evidence — 2026-08-31
+
+The targeted suite covers the option matrix, fixed-topic matching, open races, exact-channel sync,
+membership boundary, timeout/cancellation, explicit retry, failure phase, handoff, and host-local policy.
+Runtime-port cases cover structured-clone options, dedicated cancellation routing, input validation, and
+Boolean propagation. Matcher, negotiation, P2P, membership, state-application, block, harness-session, and
+browser reports map their component boundaries. Participant-lifecycle evidence covers both pending-join fault
+interleavings required by [`INV-MEMBERSHIP-PENDING-1-2H1T75`](../specification/peer-communication/join-authorization.md#inv-membership-pending-1-2h1t75).
+
+RO5 is enforced as test architecture: a full connect fixture reaches a real terminal outcome and explicitly
+settles detached work; an intermediate probe never launches the reusable full flow; teardown only reports a
+leak. Normal Hyperswarm cross-topic deduplication remains an explicit verification gap.
+
+## Focused safety evidence — 2026-09-01
+
+Real loopback LocalDiscovery cases compare transport identities across close/reconnect, topic leave, and
+blacklist. Two three-peer lobby cases hold negotiation after commitment, observe another authenticated local
+connection, and prove that both successful completion and failed handoff release stop later replacement.
+Membership cases observe pending status before contract invocation, preserve it after an uncertain submission,
+and prove force join defers while on-chain membership is absent and while the window is expired before one
+later eligible submission. Participant-lifecycle E2Es retain the two pending-fault receipt interleavings.
+
+## Peer-fault consequence evidence — 2026-09-01
+
+P2P manager probes cover authenticated oversized frames, malformed envelopes, unknown services,
+unknown endpoints, local service exceptions, and stale-transport address fallback. Lobby evidence
+separates neutral profile loss from repeated wrong-topic abuse. Handshake E2Es prove blacklist for
+attributable timing, signature, and duplicate-ack faults, while response timeout remains
+disconnect-only. Custom-RPC E2Es prove blacklist without affecting an unrelated session.

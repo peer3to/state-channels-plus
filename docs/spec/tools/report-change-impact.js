@@ -131,6 +131,10 @@ function main() {
 
     for (const changedPath of changed) {
         if (!changedPath.startsWith("test/")) continue;
+        if (path.extname(changedPath) === ".md") {
+            accountedFiles.add(changedPath);
+            continue;
+        }
         const target = path.join(graph.roots.repo, changedPath);
         if (!fs.existsSync(target) || !fs.statSync(target).isFile()) continue;
         const disposition = ignoreDisposition(target);

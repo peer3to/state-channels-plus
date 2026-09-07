@@ -27,4 +27,4 @@ report but are kept here.
 
 | Test declaration                                                                                                                             | Covers                                                                                                                                |
 | -------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------- |
-| [`CustomRpc typing > allows custom RPC classes to extend MainRpcService`](../../../../../../test/evm/CustomRpcTypes.test.ts#L113) (line 113) | [`UNIT-TEST-RPC-HANDLER-1-8BP2K8.P16`](../../../../implementation/source/src/rpc/RpcHandler.ts.md#unit-test-rpc-handler-1-8bp2k8.p16) |
+| [`CustomRpc typing > allows custom RPC classes to extend MainRpcService`](../../../../../../test/evm/CustomRpcTypes.test.ts#L112) (line 112) | [`UNIT-TEST-RPC-HANDLER-1-8BP2K8.P16`](../../../../implementation/source/src/rpc/RpcHandler.ts.md#unit-test-rpc-handler-1-8bp2k8.p16) |

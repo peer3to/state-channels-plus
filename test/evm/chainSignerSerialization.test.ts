@@ -1,13 +1,12 @@
-import { expect } from "chai";
-import type { TransactionResponse } from "ethers";
-import { ethers } from "hardhat";
-
 import {
     deserializeTransactionRequest,
     deserializeTransactionResponse,
     serializeTransactionRequest,
     serializeTransactionResponse
 } from "@/evm/p2pRuntime/chainSignerSerialization";
+import { expect } from "chai";
+import type { TransactionResponse } from "ethers";
+import { ethers } from "hardhat";
 
 describe("chain signer serialization", () => {
     it("round-trips a normalized transaction request", async () => {
