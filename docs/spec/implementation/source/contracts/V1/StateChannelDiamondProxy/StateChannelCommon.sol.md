@@ -66,9 +66,11 @@ Current upload eligibility is the snapshot participant set plus JOINs after its 
    applied. The earlier unbounded walk counted every JOIN ever recorded, including the original
    participants' open joins: a leaver stayed "pending" after its reduction and a slashed inbound joiner
    stayed in the eligibility set ([cross-layer-messages.md](../../../../../specification/settlement/cross-layer-messages.md)).
-   `reduce` is the one reader that keeps the unbounded walk for slash eligibility: after a reduction is
-   mined the snapshot lists only the survivors, and a late reducer must still fold the same slashes
-   ([DisputeVerificationFacet.sol.md](DisputeVerificationFacet.sol.md)).
+   Two readers keep the unbounded walk: `reduce` for slash eligibility, because after a reduction is
+   mined the snapshot lists only the survivors and a late reducer must still fold the same slashes
+   ([DisputeVerificationFacet.sol.md](DisputeVerificationFacet.sol.md)), and the milestone-finality
+   read in [DisputeFraudProofFacet.sol.md](DisputeFraudProofFacet.sol.md) for its historical joiners.
+   That read still takes the snapshot participants from the live chain ([`FIND-DISPUTE-2-1NNNDD`](../../../../../audit/open-findings.md#find-dispute-2-1nnndd)).
 
 ## Inputs, outputs, state, and side effects
 
