@@ -68,7 +68,7 @@ claims complete conformance for a requirement that depends on other files.
 
 ## Specification contradictions
 
-None demonstrated.
+`_isLastMilestoneFinalByEveryone` ([source](../../../../../../../contracts/V1/StateChannelDiamondProxy/DisputeFraudProofFacet.sol#L778)) takes the snapshot half of the expected participant set from the live chain snapshot at call time, while [`REQ-FIN-7-RTZWQZ`](../../../../../specification/protocol-model/finality.md#req-fin-7-rtzwqz) bounds the milestone expected set by the two snapshots and their committed inbound interval. A snapshot that widens the participant set during the kill period flips a final milestone to not final, and the last-milestone fraud proof then slashes an honest disputer. Recorded as [`FIND-DISPUTE-2-1NNNDD`](../../../../../audit/open-findings.md#find-dispute-2-1nnndd).
 
 ## Missing behavior
 
@@ -80,10 +80,11 @@ Status enum: `Covered` | `Partial` | `Contradicts` | `Missing`. Evidence cells a
 **Here:** / **Other files:** so each row is auditable from its links alone; genuine gaps go in the
 Gap column. Audit state is file-level (Status header), never a row status.
 
-| Requirement / invariant                                                                               | Implementation status | Evidence                                               | Gap / divergence |
-| ----------------------------------------------------------------------------------------------------- | --------------------- | ------------------------------------------------------ | ---------------- |
-| [`REQ-DIS-3-C4KYSF`](../../../../../specification/disputes/disputes.md#req-dis-3-c4kysf)              | Covered               | **Here:** kill-during-open-window with disputer slash. | None.            |
-| [`REQ-ENFFP-2-JXMYNB`](../../../../../specification/enforcement/fraud-slashing.md#req-enffp-2-jxmynb) | Covered               | **Here:** family dispatch incl. safe rejection.        | None.            |
+| Requirement / invariant                                                                               | Implementation status | Evidence                                                                                                                                                                                                                              | Gap / divergence                                                                                                                                               |
+| ----------------------------------------------------------------------------------------------------- | --------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| [`REQ-DIS-3-C4KYSF`](../../../../../specification/disputes/disputes.md#req-dis-3-c4kysf)              | Covered               | **Here:** kill-during-open-window with disputer slash.                                                                                                                                                                                | None.                                                                                                                                                          |
+| [`REQ-ENFFP-2-JXMYNB`](../../../../../specification/enforcement/fraud-slashing.md#req-enffp-2-jxmynb) | Covered               | **Here:** family dispatch incl. safe rejection.                                                                                                                                                                                       | None.                                                                                                                                                          |
+| [`REQ-FIN-7-RTZWQZ`](../../../../../specification/protocol-model/finality.md#req-fin-7-rtzwqz)        | Contradicts           | **Here:** `_isLastMilestoneFinalByEveryone` reads the live snapshot participant set plus an unbounded pending walk from the dispute anchor. **Other files:** [StateProofFacet.sol.md](StateProofFacet.sol.md) (threshold comparison). | Snapshot half of the expected set is not pinned to the dispute anchor: [`FIND-DISPUTE-2-1NNNDD`](../../../../../audit/open-findings.md#find-dispute-2-1nnndd). |
 
 ## Component test obligations
 
