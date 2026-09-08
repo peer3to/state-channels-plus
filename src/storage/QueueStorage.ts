@@ -33,9 +33,16 @@ export class QueueStorage {
     // are. Ingress authenticates the signed block, not each confirmation
     // signature it carries, so one authenticated peer can resend a single hash
     // with fresh junk signatures; without this the merged set grows without
-    // limit. Set well above any legitimate participant count, so a real block
-    // never loses a signature it needs to become eligible.
-    private static readonly MAX_ENTRY_SIGNATURES = 128;
+    // limit.
+    //
+    // The value is deliberately far above any plausible channel and is an
+    // interim: dropping a signature a block needs costs liveness, because
+    // AgreementManager.didEveryoneSignBlock requires the whole participant
+    // union, and NOTHING currently enforces a maximum union size -- neither
+    // StateChannelManagerProxy.openChannel nor JoinChannelFacet bounds it. Once
+    // a participant maximum is enforced on chain this becomes that maximum plus
+    // a margin, and the bound becomes provable instead of assumed.
+    private static readonly MAX_ENTRY_SIGNATURES = 1024;
 
     private queuedBlocks: Map<Hash, QueuedBlockEntry> = new Map();
 
@@ -53,8 +60,12 @@ export class QueueStorage {
             sourcePeers: new Set(),
             signatureSources: new Map()
         };
-        this.trackSource(entry, block.allSignatures, options?.senderAddress);
         this.capSignatures(entry);
+        this.trackSource(
+            entry,
+            entry.block.allSignatures,
+            options?.senderAddress
+        );
         return entry;
     }
 
@@ -77,13 +88,17 @@ export class QueueStorage {
 
         if (existingEntry) {
             // Attribute only the signatures this copy carried to its sender,
-            // never signatures pooled from earlier copies.
-            this.trackSource(
-                existingEntry,
-                block.allSignatures,
-                options?.senderAddress
-            );
+            // never signatures pooled from earlier copies -- and only those the
+            // entry actually retained, so the attribution map is not spent on
+            // signatures the block no longer holds.
+            const carried = new Set(block.allSignatures);
             this.mergeBlockCapped(existingEntry, block);
+            const retained = new Set(
+                [...carried].filter((signature) =>
+                    existingEntry.block.allSignatures.has(signature)
+                )
+            );
+            this.trackSource(existingEntry, retained, options?.senderAddress);
             this.queuedBlocks.set(block.hash, existingEntry);
             return block.hash;
         }
@@ -298,7 +313,17 @@ export class QueueStorage {
     ): void {
         let peers = entry.signatureSources.get(signature);
         if (!peers) {
-            if (entry.signatureSources.size >= QueueStorage.MAX_ENTRY_SOURCES) {
+            // The key dimension has to cover every signature the block can
+            // retain, or the last retained signatures carry no attribution and
+            // their supplier escapes disconnectPeersForSignatures. The block
+            // holds at most MAX_ENTRY_SIGNATURES confirmations plus its own
+            // original signature. The per-signature peer set below is a
+            // different dimension -- how many peers sent the same signature --
+            // and stays on the source cap.
+            if (
+                entry.signatureSources.size >=
+                QueueStorage.MAX_ENTRY_SIGNATURES + 1
+            ) {
                 entry.overflowedSources = true;
                 return;
             }

@@ -216,7 +216,7 @@ describe("QueueStorage", () => {
             // confirmation signature it carries, so one authenticated peer can
             // resend the same hash forever with fresh junk signatures.
             const hash = storage.queueBlock(mockBlock);
-            for (let i = 0; i < 300; i++) {
+            for (let i = 0; i < 1100; i++) {
                 storage.queueBlock(
                     Block.fromBlockConfirmation({
                         ...mockBlockConfirmation,
@@ -226,7 +226,9 @@ describe("QueueStorage", () => {
             }
 
             const entry = storage.getQueuedEntry(hash)!;
-            expect(entry.block.confirmationSignatures.size).to.be.at.most(128);
+            // Exactly the cap, not merely under it: a capped merge must keep
+            // the first capful, not discard everything once overflowed.
+            expect(entry.block.confirmationSignatures.size).to.equal(1024);
             // Overflow stays a marker, never a validity decision.
             expect(entry.overflowedSources).to.equal(true);
             expect(storage.isBlockQueued(mockBlock)).to.equal(true);
@@ -235,7 +237,7 @@ describe("QueueStorage", () => {
         it("bounds signatures carried by the copy that creates the entry", () => {
             // Capping only the merge path moves the flood into the opening
             // request: one copy carrying thousands of signatures.
-            const flood = Array.from({ length: 300 }, () => sig());
+            const flood = Array.from({ length: 1100 }, () => sig());
             const hash = storage.queueBlock(
                 Block.fromBlockConfirmation({
                     ...mockBlockConfirmation,
@@ -244,8 +246,57 @@ describe("QueueStorage", () => {
             );
 
             const entry = storage.getQueuedEntry(hash)!;
-            expect(entry.block.confirmationSignatures.size).to.be.at.most(128);
+            expect(entry.block.confirmationSignatures.size).to.equal(1024);
             expect(entry.overflowedSources).to.equal(true);
+        });
+
+        it("attributes only signatures the entry retained", () => {
+            // Attribution spent on signatures the block no longer holds is
+            // wasted capacity, and REQ-QSTORE-1 says a sender is credited with
+            // exactly the signatures its copy contributed.
+            const sender = factory.randomAddress();
+            const flood = Array.from({ length: 1100 }, () => sig());
+            const hash = storage.queueBlock(
+                Block.fromBlockConfirmation({
+                    ...mockBlockConfirmation,
+                    signatures: flood
+                }),
+                { senderAddress: sender }
+            );
+
+            const entry = storage.getQueuedEntry(hash)!;
+            const held = entry.block.allSignatures;
+            for (const signature of entry.signatureSources.keys()) {
+                expect(held.has(signature)).to.equal(true);
+            }
+        });
+
+        it("first-come retention: an honest copy after overflow is not retained", () => {
+            // The documented residual of REQ-QSTORE-2. Pinned so nobody relies
+            // on the stronger "cannot crowd out" property the SOURCE caps give.
+            const junk = Array.from({ length: 1100 }, () => sig());
+            const hash = storage.queueBlock(
+                Block.fromBlockConfirmation({
+                    ...mockBlockConfirmation,
+                    signatures: junk
+                })
+            );
+            const honest = sig();
+            storage.queueBlock(
+                Block.fromBlockConfirmation({
+                    ...mockBlockConfirmation,
+                    signatures: [honest]
+                })
+            );
+
+            const entry = storage.getQueuedEntry(hash)!;
+            expect(entry.block.confirmationSignatures.has(honest)).to.equal(
+                false
+            );
+            expect(entry.overflowedSources).to.equal(true);
+            // Never a validity decision: the block stays queued and dequeueable
+            // until validation strips the junk and frees room.
+            expect(storage.isBlockQueued(mockBlock)).to.equal(true);
         });
 
         it("re-merging signatures already held does not consume cap budget", () => {
@@ -534,7 +585,7 @@ describe("QueueStorage", () => {
             // restoreEntry is the sanctioned re-queue path, taken on every
             // not-ready outcome. Capping only queueBlock and createEntry lets a
             // dequeue/restore cycle add a fresh capful each time.
-            const first = Array.from({ length: 128 }, () => sig());
+            const first = Array.from({ length: 1024 }, () => sig());
             storage.queueBlock(
                 Block.fromBlockConfirmation({
                     ...mockBlockConfirmation,
@@ -544,7 +595,7 @@ describe("QueueStorage", () => {
             const [dequeued] = storage.tryDequeueAt(mockForkId, mockHeight);
 
             // A disjoint capful arrives while the entry is out of the queue.
-            const second = Array.from({ length: 128 }, () => sig());
+            const second = Array.from({ length: 1024 }, () => sig());
             storage.queueBlock(
                 Block.fromBlockConfirmation({
                     ...mockBlockConfirmation,
@@ -554,7 +605,7 @@ describe("QueueStorage", () => {
             storage.restoreEntry(dequeued);
 
             const merged = storage.getQueuedEntry(mockBlock.hash)!;
-            expect(merged.block.confirmationSignatures.size).to.be.at.most(128);
+            expect(merged.block.confirmationSignatures.size).to.equal(1024);
             expect(merged.overflowedSources).to.equal(true);
         });
 
