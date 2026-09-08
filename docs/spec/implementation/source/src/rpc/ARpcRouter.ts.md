@@ -47,6 +47,10 @@ the far end is a stranger on a socket or this process's own thread.
 
 ## Assumptions, dependencies, trust boundaries, and limits
 
+- **`onTransportCreated` is how a router learns of a transport it did not build.** The peer router
+  gives every transport a profile as it is constructed; a port router has no profiles and leaves the
+  hook unset.
+
 - A transport is trusted or not; the router never decides that itself.
 - The pending map grows with unanswered requests; a subclass without a default timeout relies on the
   transport closing to settle them.

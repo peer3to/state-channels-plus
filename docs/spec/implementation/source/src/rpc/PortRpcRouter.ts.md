@@ -44,6 +44,10 @@ them once released, in arrival order.
 
 ## Assumptions, dependencies, trust boundaries, and limits
 
+- **`closeReason` names a better cause than the line going away.** A close rejects the requests it
+  still owed; an owner that knows why the far end went (a worker's exit code) supplies that error
+  instead of the generic one.
+
 - The far end of a port is this process's own thread: nothing it sends is guarded or bounded.
 - Frames cross by structured clone; a transferable cannot ride in one (the bootstrap carries the one
   port that must).

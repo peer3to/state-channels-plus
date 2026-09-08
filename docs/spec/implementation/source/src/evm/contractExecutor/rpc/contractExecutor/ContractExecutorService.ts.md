@@ -16,6 +16,10 @@ worker's logger, and the remover of its link into the log tree.
 
 ## Assumptions, dependencies, trust boundaries, and limits
 
+- **Two internal seams for a scripted worker.** `monitorOptions` always starts the monitor on its
+  own threshold rather than the runtime config, and `configOverrides` forces config values over the
+  ones `init` carried, so a scripted worker can stay silent. Production leaves both unset.
+
 - One executor per worker; a second `init` replaces it and leaks the first.
 
 ## Specification adherence

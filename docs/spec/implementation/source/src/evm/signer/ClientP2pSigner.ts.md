@@ -5,7 +5,12 @@
 
 ## Responsibility and observable boundary
 
-The client-side signer facade in isolated deployments: forwards signing/collection to the host's `p2pSigner` service over the runtime endpoint — the key never leaves the host.
+The client-side signer facade in isolated deployments: forwards signing, channel and lobby
+operations to the host's `p2pSigner` service over the runtime endpoint — the key never leaves the
+host. Channel connect takes its options here, validates them before they cross, encodes the
+balance, and answers whether this call opened the channel's genesis; joining, topping up, leaving,
+cancelling a pending connect, and joining or leaving a lobby answer what the host's signer
+returned.
 
 ## Key design decisions
 
