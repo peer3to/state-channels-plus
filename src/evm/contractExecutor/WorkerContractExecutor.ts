@@ -355,6 +355,9 @@ export default class WorkerContractExecutor extends AContractExecutor {
 
     private attachLogPort(): void {
         if (!this.logPort || !this.logger || this.disposed) return;
+        // nothing to collect from the vm realm when this realm uploads
+        // nothing: the link would only carry context nobody ships
+        if (!this.logger.isUploadEnabled()) return;
         this.logPortHandle = this.logger.addLogPort(this.logPort);
     }
 

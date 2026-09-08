@@ -78,7 +78,15 @@ export class TestSession {
     }
 
     static consumeDetachedFailure(): Error | undefined {
-        const [first, ...rest] = this.detachedErrors;
+        // a claimed error can also have been collected before the claim (node
+        // emits a rejection and mocha re-emits it), so the allowlist filters
+        // what is left at the end, not only what arrives after the claim
+        const [first, ...rest] = this.detachedErrors.filter(
+            (error) =>
+                !this.detachedErrorAllowlist.some((claimed) =>
+                    error.message.includes(claimed)
+                )
+        );
         this.detachedErrors = [];
         if (!first) return undefined;
         if (rest.length > 0) {
@@ -121,12 +129,6 @@ export class TestSession {
             options.timeoutMs ?? 0
         );
         this.detachedErrorAllowlist.push(options.includes);
-        // the same rejection can be collected twice (node emits it, mocha
-        // re-emits it), so claiming it drops the copies already collected as
-        // well as the ones still to come
-        this.detachedErrors = this.detachedErrors.filter(
-            (collected) => !collected.message.includes(options.includes)
-        );
         if (!err) {
             if (options.required ?? true) {
                 throw new Error(

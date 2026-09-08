@@ -87,10 +87,13 @@ class ContractExecutorWorkerHost {
             );
         this.logger = logger;
         this.ownsLogger = !this.suppliedLogger;
-        this.logPortHandle = logger.addLogPort({
-            post: (message) => this.post({ type: "logControl", message }),
-            remoteRealm: "parent"
-        });
+        // same rule as the owner: with uploads off there is nothing to carry
+        this.logPortHandle = !logger.isUploadEnabled()
+            ? undefined
+            : logger.addLogPort({
+                  post: (message) => this.post({ type: "logControl", message }),
+                  remoteRealm: "parent"
+              });
         const evm = await createEvm(
             {
                 allowUnlimitedContractSize: true,
