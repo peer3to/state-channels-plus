@@ -19,9 +19,10 @@ retained until validation strips unexpected signatures and frees room; this is s
 exact test. And the cap is set above any plausible participant union rather than derived from an
 enforced one — nothing bounds union size on chain, while agreement requires the whole union — so the
 headroom is an assumption. Deriving the cap from an enforced maximum is recorded as Future Work in
-the owning specification, and no end-to-end evidence yet exercises the peer-observable flood,
-stripping and punishment path; the implementation mirror carries both as named gaps rather than
-claiming coverage.
+the owning specification, End-to-end evidence now exercises the peer-observable flood over real RPC and pins the
+retained bound; the stripping and punishment half of that path remains covered only by direct
+storage tests, and the implementation mirror carries that and the union-size assumption as named
+gaps rather than claiming coverage.
 
 The simplification review fixes narrow bytes32 inputs through an assertion signature and remove the remaining queue-key forwarding method. The separate import-order change preserves all non-import executable statements, all imported bindings, and side-effect import boundaries. Runtime initialization order is checked by the distributed and browser gates; TypeScript suppression comments remain attached to their original imports.
 

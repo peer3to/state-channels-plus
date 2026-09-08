@@ -67,6 +67,79 @@ describe("E2E: BlockQueueManager", function () {
         ).to.equal(false);
     });
 
+    it("bounds retained confirmation signatures under a real-RPC signature flood", async function () {
+        // Peer-observable queue semantics: intake authenticates the signed
+        // block a copy carries, never the confirmation signatures attached to
+        // it, so one authenticated peer can resend a single hash forever with
+        // fresh values. Direct QueueStorage tests cannot see this path --
+        // frame admission, author authentication and queue scheduling all sit
+        // between the sender and the bound.
+        const h = TestSession.getHarness();
+        await h.lifecycle.start(3, 1);
+        const forkId = h.activeForkId!;
+
+        const observer = h.getPeer(0);
+        const supplier = h.getPeer(1);
+
+        // Authentic block at a height nobody has reached, so it parks in the
+        // queue instead of executing.
+        const parked = await h.byzantine.craftUnbackedFutureBlockConfirmation(
+            supplier.index,
+            forkId,
+            99
+        );
+        const confirmation = Codec.decode(
+            parked.encodedBlockConfirmation,
+            Type.BlockConfirmation
+        );
+
+        // Well-formed signatures that recover to nobody: the shape a flooder
+        // actually sends, not random bytes the queue rejects on sight.
+        const junkSignature = () =>
+            ethers.Signature.from({
+                r: ethers.hexlify(ethers.randomBytes(32)),
+                s: ethers.hexlify(
+                    ethers.concat([
+                        new Uint8Array([0x7f]),
+                        ethers.randomBytes(31)
+                    ])
+                ),
+                v: 27
+            }).serialized;
+
+        for (let round = 0; round < 12; round++) {
+            await h.transition.ingestBlockConfirmationWait({
+                peerIndex: observer.index,
+                blockConfirmation: {
+                    ...confirmation,
+                    signatures: Array.from({ length: 200 }, junkSignature)
+                },
+                ingestOptions: { senderAddress: supplier.address },
+                keepConnection: true,
+                waitForProcessed: false
+            });
+        }
+
+        expect(
+            await h.control(observer).query.isBlockQueued(parked.hash).request()
+        ).to.equal(true);
+
+        const retention = await h
+            .control(observer)
+            .query.getQueuedRetention(parked.hash)
+            .request();
+        expect(retention).to.not.be.null;
+        // 2,400 offered, at most one cap retained, and the marker records it.
+        expect(retention!.confirmationSignatures).to.equal(1024);
+        expect(retention!.overflowed).to.equal(true);
+        // Attribution never outgrows what the block holds.
+        expect(retention!.attributionKeys).to.be.at.most(1025);
+        // Bounding is not rejection: the entry survives as a queued block.
+        expect(
+            await h.control(observer).query.isBlockQueued(parked.hash).request()
+        ).to.equal(true);
+    });
+
     it("ingest drops a wrong-channel block and cuts the transport when the sender is known", async function () {
         const h = TestSession.getHarness();
         await h.lifecycle.start(3, 0);
