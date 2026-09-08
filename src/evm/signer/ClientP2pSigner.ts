@@ -190,8 +190,18 @@ class ClientP2pSigner implements Signer {
     }
 
     cancelConnectToChannel(channelId: Bytes): Promise<boolean> {
+        let normalizedChannelId: string;
+        try {
+            normalizedChannelId = ethers.hexlify(channelId);
+            requireBytes32(
+                normalizedChannelId,
+                "Channel ID must be exactly 32 bytes"
+            );
+        } catch (error) {
+            return Promise.reject(error);
+        }
         return this.host.p2pSigner
-            .cancelConnectToChannel(ethers.hexlify(channelId))
+            .cancelConnectToChannel(normalizedChannelId)
             .request({ timeoutMs: null });
     }
 
@@ -204,10 +214,15 @@ class ClientP2pSigner implements Signer {
         lobbyTopic: string,
         options: LobbyJoinOptions = {}
     ): Promise<LobbyJoinResult | undefined> {
-        const encodedBalance =
-            options.balance === undefined
-                ? undefined
-                : String(Codec.encode(options.balance, Type.Balance));
+        let encodedBalance: string | undefined;
+        try {
+            encodedBalance =
+                options.balance === undefined
+                    ? undefined
+                    : String(Codec.encode(options.balance, Type.Balance));
+        } catch (error) {
+            return Promise.reject(error);
+        }
         return this.host.p2pSigner
             .joinLobby(lobbyTopic, {
                 encodedBalance,

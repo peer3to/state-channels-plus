@@ -145,6 +145,15 @@ export abstract class ARpcRouter<TRoot extends object>
     ): Promise<T> {
         const requestId = `${++this.rpcRequestCounter}`;
         const operation = `${rpc.service}.${rpc.method}`;
+        // a post on a closed line is dropped without a word, so a request
+        // there would only ever time out; refuse it now instead
+        if (transport.isClosed) {
+            return Promise.reject(
+                new Error(
+                    `RPC request '${operation}' refused: the transport is closed`
+                )
+            );
+        }
         const timeoutMs =
             options?.timeoutMs === undefined
                 ? this.defaultRequestTimeoutMs()
