@@ -1,7 +1,23 @@
 # Specification maintenance instructions
 
-These rules apply to every file under `docs/spec/`. Read [README.md](./README.md) and
-[governance.md](./governance.md), then the owning layer README and directly linked documents.
+These rules apply to every file under `docs/spec/`. This file is the whole of what every task
+needs; read further only where your task actually reaches:
+
+| Before you                                      | Read                                                          |
+| ----------------------------------------------- | ------------------------------------------------------------- |
+| answer a question about specified behavior      | nothing further — the owning document, then stop              |
+| edit one document inside one layer              | that layer's README                                           |
+| allocate, move, or delete an ID                 | [governance.md](./governance.md)                              |
+| change behavior across layers, or add a subject | [README.md](./README.md) and [governance.md](./governance.md) |
+| record a decision, finding, or approval         | [governance.md](./governance.md)                              |
+
+Reading all four entry documents before every task costs roughly four times this file for context
+almost none of it uses. Follow a link when the work reaches it, not in advance.
+
+Keep that true when editing this file. What every task must read before it starts is the one cost
+paid by every task, so it is the one worth arguing about: a link is cheap, an instruction to read
+something first is not. Prefer routing work to a document over requiring it in advance, and when a
+document has to be read up front, say for which work.
 
 ## Agent authority
 
