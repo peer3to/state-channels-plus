@@ -75,7 +75,7 @@ abstract class ARpcService<
                 error: errorMessage(e),
                 stack: e instanceof Error ? e.stack : undefined
             });
-            this.router.onServiceFailure(responseTransport, e);
+            this.router.onServiceFailure(responseTransport, e, "handler");
         }
     }
 
@@ -156,7 +156,7 @@ abstract class ARpcService<
                     error: errorMessage(e),
                     stack: e instanceof Error ? e.stack : undefined
                 });
-                this.router.onServiceFailure(transport, e);
+                this.router.onServiceFailure(transport, e, "handler");
             });
         } catch (e) {
             this.logger.error("Unhandled RPC handler exception", {

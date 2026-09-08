@@ -1,3 +1,6 @@
+import ARpcRouter, { type ServiceFailureKind } from "./ARpcRouter";
+import RemoteRpcProxy, { type RemoteRpcServices } from "./RemoteRpcProxy";
+import Rpc, { isRpc } from "./Rpc";
 import type ATransport from "@/transport/ATransport";
 import MessagePortTransport from "@/transport/MessagePortTransport";
 import type { RuntimePort } from "@/transport/RuntimePort";
@@ -5,9 +8,6 @@ import type { Address } from "@/types/types";
 import type { Logger } from "@/utils/logging/Logger";
 import noOpLogger from "@/utils/logging/noOpLogger";
 import { hasRpcService } from "@/utils/ObjectChecks";
-import ARpcRouter from "./ARpcRouter";
-import RemoteRpcProxy, { type RemoteRpcServices } from "./RemoteRpcProxy";
-import Rpc, { isRpc } from "./Rpc";
 
 export type PortRpcRouterOptions = {
     /** bound on every request that does not bring its own; `null` -> none */
@@ -17,6 +17,9 @@ export type PortRpcRouterOptions = {
     /** a request slower than this is logged once it settles */
     slowRequestMs?: number;
     onClosed?: (transport: ATransport, isExpected: boolean) => void;
+    /** the cause a close should reject pending requests with, when the owner
+     *  knows a better one than "the line went away" (a worker's exit code) */
+    closeReason?: (isExpected: boolean) => Error | undefined;
 };
 
 /**
@@ -132,17 +135,22 @@ class PortRpcRouter<TRoot extends object> extends ARpcRouter<TRoot> {
         }
         this.rejectPendingRpcRequestsForTransport(
             transport,
-            new Error(
-                isExpected
-                    ? "Worker link disposed"
-                    : "Worker link closed before the reply arrived"
-            )
+            this.options.closeReason?.(isExpected) ??
+                new Error(
+                    isExpected
+                        ? "Worker link disposed"
+                        : "Worker link closed before the reply arrived"
+                )
         );
         this.options.onClosed?.(transport, isExpected);
     }
 
     /** our own thread misbehaving is a bug to log, not a peer to drop */
-    public onServiceFailure(_transport: ATransport, error: unknown): void {
+    public onServiceFailure(
+        _transport: ATransport,
+        error: unknown,
+        _kind?: ServiceFailureKind
+    ): void {
         this.logger.error("Worker RPC handler failed", {
             error: error instanceof Error ? error.message : String(error),
             stack: error instanceof Error ? error.stack : undefined

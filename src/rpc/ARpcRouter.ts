@@ -15,6 +15,9 @@ import Rpc, {
 } from "./Rpc";
 import { errorFromReply, serializeError } from "./serializeError";
 
+/** what failed: a frame the peer sent, or one of our own handlers */
+export type ServiceFailureKind = "frame" | "handler";
+
 export type RpcRequestOptions = {
     /** `null` -> no timer: the operation owns its own bound */
     timeoutMs?: number | null;
@@ -42,9 +45,14 @@ export interface RpcRouterLike {
     onRpcFrame(frame: Rpc | RpcResponse, transport: ATransport): void;
     /** the transport ended, expected or not -> its pending requests reject */
     onTransportClosed(transport: ATransport, isExpected: boolean): void;
-    /** a handler failed with no request to answer, or a reply could not be
-     *  sent. a peer router disconnects; a port router logs. */
-    onServiceFailure(transport: ATransport, error: unknown): void;
+    /** a frame the router refused, or a handler that failed with no request to
+     *  answer. a peer router drops the line, and bans the peer for a refused
+     *  frame; a port router logs either way. */
+    onServiceFailure(
+        transport: ATransport,
+        error: unknown,
+        kind?: ServiceFailureKind
+    ): void;
 }
 
 type PendingRpcRequest = {
@@ -81,7 +89,11 @@ export abstract class ARpcRouter<TRoot extends object>
         transport: ATransport,
         isExpected: boolean
     ): void;
-    abstract onServiceFailure(transport: ATransport, error: unknown): void;
+    abstract onServiceFailure(
+        transport: ATransport,
+        error: unknown,
+        kind?: ServiceFailureKind
+    ): void;
     protected abstract scheduleTimeout(
         fn: () => void,
         ms: number,
@@ -259,7 +271,9 @@ export abstract class ARpcRouter<TRoot extends object>
             }
             this.dispatch(rpc, transport);
         } catch (e) {
-            this.onServiceFailure(transport, e);
+            // an exception escaping dispatch is our own handler failing, not
+            // a frame the peer got wrong
+            this.onServiceFailure(transport, e, "handler");
             this.logger.error("onRpc - error handling RPC frame", {
                 error: e instanceof Error ? e.message : String(e),
                 stack: e instanceof Error ? e.stack : undefined,
@@ -285,7 +299,7 @@ export abstract class ARpcRouter<TRoot extends object>
             }
             this.dispatch(frame, transport);
         } catch (e) {
-            this.onServiceFailure(transport, e);
+            this.onServiceFailure(transport, e, "handler");
             this.logger.error("onRpcFrame - error handling RPC frame", {
                 error: e instanceof Error ? e.message : String(e),
                 stack: e instanceof Error ? e.stack : undefined,
