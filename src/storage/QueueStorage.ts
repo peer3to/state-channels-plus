@@ -17,6 +17,11 @@ export type QueuedBlockEntry = {
     // for this hash. Attribution/rate-limiting hint only - never a validity
     // decision (a later valid copy still processes).
     overflowedSources?: boolean;
+    // Recovery attempts already spent rejecting values on this entry. Slicing
+    // bounds one call; without a persistent allowance a sender can resend
+    // unrecoverable values forever, because rejected ones consume no room and
+    // so buy another full pass every time.
+    recoveryBudgetSpent?: number;
 };
 
 export function sourcePeersAndAuthor(entry: QueuedBlockEntry): Set<Address> {
@@ -44,6 +49,11 @@ export class QueueStorage {
     // a signature a block needs would cost liveness, because
     // AgreementManager.didEveryoneSignBlock requires the whole union; that
     // cannot happen while this exceeds the enforced maximum.
+    // Total failed recoveries one entry will ever pay for. An entry that has
+    // spent this much has already been shown to carry junk; further unadmitted
+    // values are dropped without recovering, so cumulative cost is bounded over
+    // the entry lifetime rather than only within a single call.
+    private static readonly MAX_ENTRY_RECOVERY_FAILURES = 2048;
     private static readonly MAX_CHANNEL_PARTICIPANTS = 256;
     private static readonly MAX_ENTRY_SIGNATURES =
         QueueStorage.MAX_CHANNEL_PARTICIPANTS * 4;
@@ -78,13 +88,19 @@ export class QueueStorage {
     // The cost is bounded by what can be retained, not by what is offered:
     // callers slice to the remaining room first, so a full entry does no
     // recovery at all and a flooder cannot buy CPU by sending more.
-    private static isRecoverable(block: Block, signature: Signature): boolean {
+    private static isRecoverable(
+        entry: QueuedBlockEntry,
+        signature: Signature
+    ): boolean {
         if (!ethers.isHexString(signature, QueueStorage.SIGNATURE_BYTES))
             return false;
+        const spent = entry.recoveryBudgetSpent ?? 0;
+        if (spent >= QueueStorage.MAX_ENTRY_RECOVERY_FAILURES) return false;
         try {
-            block.signatureToAddress(signature);
+            entry.block.signatureToAddress(signature);
             return true;
         } catch {
+            entry.recoveryBudgetSpent = spent + 1;
             return false;
         }
     }
@@ -116,7 +132,7 @@ export class QueueStorage {
         const candidates = held.slice(0, QueueStorage.MAX_ENTRY_SIGNATURES);
         const surplus = held.slice(QueueStorage.MAX_ENTRY_SIGNATURES);
         const unrecoverable = candidates.filter(
-            (signature) => !QueueStorage.isRecoverable(entry.block, signature)
+            (signature) => !QueueStorage.isRecoverable(entry, signature)
         );
         if (unrecoverable.length || surplus.length) {
             entry.block.removeConfirmationSignatures(
@@ -244,6 +260,10 @@ export class QueueStorage {
             entry.firstSeenAt
         );
         if (entry.overflowedSources) existing.overflowedSources = true;
+        // Carry the spend across, or a dequeue/restore cycle would refill it.
+        existing.recoveryBudgetSpent =
+            (existing.recoveryBudgetSpent ?? 0) +
+            (entry.recoveryBudgetSpent ?? 0);
         for (const peer of entry.sourcePeers)
             this.addSourcePeer(existing, peer);
         // Only for signatures the capped merge actually kept: attribution for a
@@ -355,7 +375,7 @@ export class QueueStorage {
         const admitted = novel
             .slice(0, room)
             .filter((signature) =>
-                QueueStorage.isRecoverable(entry.block, signature)
+                QueueStorage.isRecoverable(entry, signature)
             );
         entry.block.expandSignatures(admitted);
         const timestamp = incoming.onChainTimestamp;

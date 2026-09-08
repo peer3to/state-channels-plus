@@ -204,8 +204,9 @@ describe("QueueStorage", () => {
             }
 
             const entry = storage.getQueuedEntry(hash)!;
-            // Bounded retention: the maps can't grow past the structural cap.
-            expect(entry.sourcePeers.size).to.be.at.most(128);
+            // Exactly the cap, not merely under it: "at most" also passes an
+            // implementation that retains one source and drops the rest.
+            expect(entry.sourcePeers.size).to.equal(128);
             for (const peers of entry.signatureSources.values()) {
                 expect(peers.size).to.be.at.most(128);
             }
@@ -399,6 +400,66 @@ describe("QueueStorage", () => {
                 false
             );
             expect(entry.block.confirmationSignatures.size).to.equal(1);
+        });
+
+        it("stops paying for recovery once an entry has spent its budget", () => {
+            // Slicing bounds one call. Rejected values consume no retained
+            // room, so without a persistent allowance a sender buys another
+            // full pass of recoveries with every copy, forever.
+            // r = 0 is always outside 0 < r < n, so every one of these is
+            // unrecoverable. A random r would not do: it is a valid curve
+            // x-coordinate about half the time, so half the flood would be
+            // genuinely recoverable and the test would measure the cap instead
+            // of the budget.
+            let nonce = 0;
+            const unrecoverable = () =>
+                "0x" +
+                "00".repeat(32) +
+                (++nonce).toString(16).padStart(64, "0") +
+                "1b";
+
+            const hash = storage.queueBlock(mockBlock);
+            for (let copy = 0; copy < 4; copy++) {
+                storage.queueBlock(
+                    Block.fromBlockConfirmation({
+                        ...mockBlockConfirmation,
+                        signatures: Array.from({ length: 1000 }, unrecoverable)
+                    })
+                );
+            }
+
+            const entry = storage.getQueuedEntry(hash)!;
+            // 4,000 junk values offered; the entry pays for at most its budget.
+            expect(entry.recoveryBudgetSpent).to.be.at.most(2048);
+            // None of it was retained, and the block is still queued.
+            expect(entry.block.confirmationSignatures.size).to.equal(0);
+            expect(storage.isBlockQueued(mockBlock)).to.equal(true);
+        });
+
+        it("carries the recovery budget across a dequeue and restore", () => {
+            // Otherwise every not-ready cycle refills the allowance.
+            const noCurvePoint = ethers.Signature.from({
+                r: "0x" + "11".repeat(32),
+                s: "0x" + "22".repeat(32),
+                v: 27
+            }).serialized;
+            const hash = storage.queueBlock(
+                Block.fromBlockConfirmation({
+                    ...mockBlockConfirmation,
+                    signatures: [noCurvePoint]
+                })
+            );
+            const spentBefore =
+                storage.getQueuedEntry(hash)!.recoveryBudgetSpent ?? 0;
+            expect(spentBefore).to.be.greaterThan(0);
+
+            const [dequeued] = storage.tryDequeueAt(mockForkId, mockHeight);
+            storage.queueBlock(mockBlock);
+            storage.restoreEntry(dequeued);
+
+            expect(
+                storage.getQueuedEntry(hash)!.recoveryBudgetSpent ?? 0
+            ).to.be.at.least(spentBefore);
         });
 
         it("drops values that pass a shape check but cannot be recovered", () => {
