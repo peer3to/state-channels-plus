@@ -3,6 +3,25 @@
 > **Agent assessment:** In progress.
 > **Engineer disposition:** Pending.
 
+The simplification review fixes narrow bytes32 inputs through an assertion signature and remove the remaining queue-key forwarding method. The separate import-order change preserves all non-import executable statements, all imported bindings, and side-effect import boundaries. Runtime initialization order is checked by the distributed and browser gates; TypeScript suppression comments remain attached to their original imports.
+
+Post-handshake connection ownership is now centralized in `P2PManager`. Local channel status is
+the only admission input: every completed live transport is promoted, while `OPENED` alone performs
+the participant read and sync. Join and spectate RPC paths provide no alternate promotion or
+peer-supplied membership hint. Participant-read failure, close, disposal, and replacement races are
+contained without undoing valid authentication or creating a late connection.
+
+Every transport creates an addressless `PeerProfile` immediately, and the Holepunch ban handle is
+stored there before authentication. `ProfileManager` authenticates and indexes that same profile and
+owns all ban/unban policy. Generic transports expose no SDK ban handle. Fallback release checks the
+profile's full live transport set, so a non-preferred WebRTC transport in upgrade grace keeps Holepunch
+banned and explicit blacklist state wins.
+Authentication is also a final admission gate: a late Holepunch connection cannot replace healthy
+WebRTC or reattach an excluded identity, while a fallback after current-WebRTC close can become
+current and carry traffic.
+Relay retry state has one owned timer, which success cancels before resetting the pool. Holepunch
+topic join/leave retains its byte-exact `Buffer` contract.
+
 Join admission now keeps recorded membership separate from countersign eligibility: snapshot and
 pending participants remain members, on-chain-slashed members lose veto power, and slashed members
 cannot top up. The public paths preserve exact fork/snapshot pins and deadline semantics and invoke
@@ -38,6 +57,11 @@ the envelope nor handshake negotiates a version. [`DEF-8-HWJ10N`](open-findings.
 is resolved: handler and guard response sends use one guarded attempt, then disconnect on failure
 without a second send or unhandled rejection.
 
+The authenticated-RPC guard records admission per exact transport. A replaced but open authenticated
+pipe remains valid during upgrade grace overlap. Queued work releases only when its own transport
+authenticates; closure, timeout, and disposal clear it, and stale failure cannot punish a replacement.
+A frame dispatched after local transport close is dropped instead of treating retirement as peer malice.
+
 The runtime event bridge also preserves application-defined hook names and cloneable payloads without adding
 those names to the SDK hook declaration. The EventBus source report and real worker-to-client test now own
 that extension contract.
@@ -52,3 +76,38 @@ records the complete method, listener, event-log, query, and passthrough boundar
 the structural Result predicate.
 
 Other specification-mirrored implementation subjects, exhaustive source inventories, conformance decisions, and unit variants remain visible in generated coverage.
+
+Balance validation, byte/key conversion, same-block copy merge, frame classification and log reporting have single owners. Extraction retains input/error order, raw commitment comparisons, timestamp-defined checks, response precedence and platform timer lifetime. Existing strategy instanceof checks remain. The deleted connectivity utility had no reachable consumer; each of its five data-type IDs retains other source contributors.
+
+## Targeted pre-open channel join assessment — 2026-08-31
+
+The implementation keeps `joinLobby` and `connectToChannel` as separate public wrappers over one generic
+matcher and one negotiation service. The targeted wrapper holds a fixed ID, consumes direct mode-specific
+negotiation outcomes, performs one exact-channel post-open entry, and calls existing sync and membership
+owners. Full balances survive client/worker/peer encodings. The state machine's neutral zero and existing
+lesser-than operation remain the remote trust boundary. Match acceptance removes matcher timeout and
+cancellation ownership before negotiation.
+
+SO5 is deliberate: one valid selected-peer response supplies usable state for later enforcement; selected-peer
+failure proves the early cooperation precondition failed and permits no fallback before abort. RO3 is peer
+identity response authority, not rebinding or resend. RY3 is targeted-only and skips opening submission after
+the attempt has handed off to an authoritative open. Pending/participating failures preserve the attached
+runtime. The normal Hyperswarm one-live-connection-per-unique-peer handoff remains an accepted production
+assumption; automated coverage uses `DEBUG_LOCAL_TRANSPORT` and proves only transient duplicate cleanup.
+
+## Focused safety follow-up — 2026-09-01
+
+LocalDiscovery topic sessions now own active dial keys and capped-backoff retry timers. An authenticated close
+recreates an eligible connection only while the exact session remains active; `leave` removes the session and
+cancels its timers before closing registry and listener ownership. The existing `P2PManager` blacklist check
+blocks replacement. `MembershipService.joinChannel` now sets local pending status before contract invocation,
+restores `SYNCED` only after a proven no-commitment result, and preserves pending on uncertainty. Force-join
+checks defer until authoritative on-chain membership and a usable window, with one stored start flag.
+
+## Peer-fault call-site audit — 2026-09-01
+
+The audited ingress and handshake call sites now use `disconnectAndBlacklistPeer` for attributable
+wire violations. The helper prefers the authenticated address, so a fault received on a retired
+transport still blacklists the current profile and closes both current and reporting transports.
+Lifecycle cleanup, network loss, timeouts without proof, response-send failure, and local dispatch
+exceptions continue to call `disconnectConnection`.

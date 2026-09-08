@@ -1,6 +1,6 @@
-import { MessageBlockStruct } from "@typechain-types/contracts/V1/types/DataTypes";
 import { BlockHeight, Hash } from "@/types/types";
 import { Codec, hash, Type } from "@/utils";
+import { MessageBlockStruct } from "@typechain-types/contracts/V1/types/DataTypes";
 import { ZeroHash } from "ethers";
 
 type StoreOptions = {

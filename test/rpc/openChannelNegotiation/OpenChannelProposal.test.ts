@@ -1,7 +1,6 @@
-import { expect } from "chai";
-
 import { getOpenChannelProposalMismatch } from "@/rpc/services/openChannelNegotiation/OpenChannelNegotiationHelpers";
 import type { OpenChannelStruct } from "@typechain-types/contracts/V1/types/DataTypes";
+import { expect } from "chai";
 
 /**
  * Regression: openProposal must only co-sign the exact OpenChannel it

@@ -36,6 +36,9 @@ class Clock {
         }
         await Clock.initialization;
     }
+    public static isInitialized(): boolean {
+        return Clock.instance !== undefined;
+    }
     public static ownsProvider(provider: ethers.Provider): boolean {
         return Clock.instance?.provider === provider;
     }
@@ -44,6 +47,14 @@ class Clock {
             Math.floor(new Date().getTime() / 1000) +
             Clock.getInstance().clockAdjustmentSeconds
         );
+    }
+    /**
+     * The adjustment from wall time to estimated chain time, for a context
+     * without this singleton (a contract-executor worker) to keep the same
+     * perception: `floor(wallTime / 1000) + adjustment`.
+     */
+    public static getClockAdjustmentSeconds(): number {
+        return Clock.getInstance().clockAdjustmentSeconds;
     }
     public static getAverageOnChainBlockTime(): number {
         const averageBlockTime = Clock.getInstance().averageBlockTime;

@@ -9,6 +9,7 @@ _Pending authoring: shared responsibility, design decisions, assumptions, cross-
 
 - [ClientChainSigner.ts](./ClientChainSigner.ts.md)
 - [ClientP2pSigner.ts](./ClientP2pSigner.ts.md)
+- [ConnectToChannelOptions.ts](./ConnectToChannelOptions.ts.md)
 - [DeploymentBridgeSigner.ts](./DeploymentBridgeSigner.ts.md)
 - [HostNonceManager.ts](./HostNonceManager.ts.md)
 - [LocalContractExecutorSigner.ts](./LocalContractExecutorSigner.ts.md)

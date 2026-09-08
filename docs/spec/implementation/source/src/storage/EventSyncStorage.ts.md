@@ -24,8 +24,10 @@ node has processed — where observation resumes after a gap.
 
 ## Key design decisions
 
-1. **Monotone by max().** A store keeps the maximum of retained and incoming ([#L14](../../../../../../src/storage/EventSyncStorage.ts#L14)); regressions are ignored, so progress can never be talked backward.
-2. **Normalized keys.** Channel keys are lowercased ([#L25](../../../../../../src/storage/EventSyncStorage.ts#L25)) — the identity-normalization rule applied to channel ids so case variance cannot split progress.
+Watermarks use the shared channel conversion. Case variants share the same monotonic cursor, while distinct and absent channels remain distinct. See [EventSyncStorage.ts](../../../../../../src/storage/EventSyncStorage.ts#L2).
+
+1. **Monotone by max().** A store keeps the maximum of retained and incoming ([#L13](../../../../../../src/storage/EventSyncStorage.ts#L13)); regressions are ignored, so progress can never be talked backward.
+2. **Normalized keys.** Channel keys are lowercased ([#L21](../../../../../../src/storage/EventSyncStorage.ts#L21)) — the identity-normalization rule applied to channel ids so case variance cannot split progress.
 
 ## Inputs, outputs, state, and side effects
 
@@ -72,8 +74,8 @@ Gap column. Audit state is file-level (Status header), never a row status.
 
 | Requirement / invariant                                                                              | Implementation status | Evidence                                                                                                                                                                                                                                 | Gap / divergence |
 | ---------------------------------------------------------------------------------------------------- | --------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------- |
-| [`REQ-RMSTORE-1-BWKVBG`](../../../../specification/storage/progress-markers.md#req-rmstore-1-bwkvbg) | Covered               | **Here:** max() retention per normalized channel key ([#L14](../../../../../../src/storage/EventSyncStorage.ts#L14)). **Other files:** processed-only discipline — [EventSyncService](../stateManager/eventSync/EventSyncService.ts.md). | None.            |
-| [`REQ-ID-2-F3Y8J4`](../../../../specification/protocol-model/identity.md#req-id-2-f3y8j4)            | Covered               | **Here:** lowercased channel keys ([#L25](../../../../../../src/storage/EventSyncStorage.ts#L25)).                                                                                                                                       | None.            |
+| [`REQ-RMSTORE-1-BWKVBG`](../../../../specification/storage/progress-markers.md#req-rmstore-1-bwkvbg) | Covered               | **Here:** max() retention per normalized channel key ([#L13](../../../../../../src/storage/EventSyncStorage.ts#L13)). **Other files:** processed-only discipline — [EventSyncService](../stateManager/eventSync/EventSyncService.ts.md). | None.            |
+| [`REQ-ID-2-F3Y8J4`](../../../../specification/protocol-model/identity.md#req-id-2-f3y8j4)            | Covered               | **Here:** lowercased channel keys ([#L21](../../../../../../src/storage/EventSyncStorage.ts#L21)).                                                                                                                                       | None.            |
 
 ## Component test obligations
 
@@ -86,3 +88,5 @@ Exact test evidence is mapped against these IDs in the verification test reports
 ## Related source reports
 
 - [EventSyncService](../stateManager/eventSync/EventSyncService.ts.md) (the producer enforcing processed-only).
+
+Shared operation owners: [channelKey.ts.md](../utils/channelKey.ts.md).

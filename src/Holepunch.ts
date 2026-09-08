@@ -1,12 +1,11 @@
+import HolepunchRelay from "@/HolepunchRelay";
+import type P2PManager from "@/P2PManager";
+import { isWorkerRuntime } from "@/rpc/services/WebRTCSetup/connection/WebRTCProvider";
+import { HolepunchTransport, TransportType } from "@/transport";
+import { config } from "@/utils/config";
+import { Buffer } from "buffer";
 //@ts-ignore
 import Hyperswarm from "hyperswarm";
-//@ts-ignore
-//@ts-ignore
-import type P2PManager from "@/P2PManager";
-import { HolepunchTransport, TransportType } from "@/transport";
-import { Buffer } from "buffer";
-import HolepunchRelay from "@/HolepunchRelay";
-import { config } from "@/utils/config";
 
 class Holepunch {
     swarm: any;
@@ -20,20 +19,16 @@ class Holepunch {
         // `window` is absent in a Web Worker, so RUN_SDK_IN_THREAD (Holepunch
         // running inside the SDK's browser worker) must also detect the worker
         // scope — otherwise it falls through to the node path and
-        // `@hyperswarm/dht` throws "not supported in browsers". Mirrors
-        // isWorkerRuntime() in WebRTCSetup/connection/WebRTCProvider.ts.
-        const browserGlobal = globalThis as any;
+        // `@hyperswarm/dht` throws "not supported in browsers".
         this.isBrowserRuntime =
-            typeof window !== "undefined" ||
-            (typeof browserGlobal.WorkerGlobalScope !== "undefined" &&
-                browserGlobal instanceof browserGlobal.WorkerGlobalScope);
+            typeof window !== "undefined" || isWorkerRuntime();
         if (this.isBrowserRuntime) {
             this.p2pManager.logger.info("Using browser Hyperswarm relay");
             p2pManager.preferredTransport = TransportType.WEBRTC;
             const relayerUrls = config.HOLEPUNCH_RELAYER_URLS;
             const relayerUpdateCallback = () => {
                 const swarm = HolepunchRelay.getInstance().getSwarm();
-                this.swarm = browserGlobal.Hyperswarm || swarm;
+                this.swarm = (globalThis as any).Hyperswarm || swarm;
                 this.setupSwarm();
             };
             HolepunchRelay.init(
@@ -84,6 +79,24 @@ class Holepunch {
     public async join(topic: Buffer) {
         this.ensureNodeSwarm();
         this.topics.push(topic);
+        this.announceTopic(topic);
+        return;
+    }
+
+    public async leave(topic: Buffer) {
+        const index = this.topics.findIndex((joinedTopic) =>
+            joinedTopic.equals(topic)
+        );
+        if (index === -1) return;
+        this.topics.splice(index, 1);
+        if (!this.swarm) return;
+        await Promise.resolve(this.swarm.leave(topic));
+        this.p2pManager.logger.debug("Left holepunch topic", {
+            topic: topic.toString("hex")
+        });
+    }
+
+    private announceTopic(topic: Buffer): void {
         this.swarm.join(topic, {
             server: true,
             client: true
@@ -91,18 +104,11 @@ class Holepunch {
         this.p2pManager.logger.debug("Joined holepunch topic", {
             topic: topic.toString("hex")
         });
-        return;
     }
 
     private rejoinTopics() {
         for (const topic of this.topics) {
-            this.swarm.join(topic, {
-                server: true,
-                client: true
-            });
-            this.p2pManager.logger.debug("Joined holepunch topic", {
-                topic: topic.toString("hex")
-            });
+            this.announceTopic(topic);
         }
     }
 

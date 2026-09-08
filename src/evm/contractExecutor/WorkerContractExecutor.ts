@@ -1,20 +1,46 @@
-import { ethers } from "ethers";
-import type { Address, Bytes } from "@/types/types";
-import type { Logger } from "@/utils";
-import { config } from "@/utils/config";
 import type { EvmCustomPrecompileManifest } from "../EvmFactory";
 import AContractExecutor, {
     type ContractExecutionResult
 } from "./AContractExecutor";
+import type {
+    ContractExecutorWorkerErrorHandler,
+    ContractExecutorWorkerMessageHandler,
+    WorkerLike
+} from "./types";
 import type {
     ContractExecutorRequestPayload,
     WorkerCallMethod,
     WorkerCustomPrecompile,
     WorkerResponseMessage
 } from "./worker/protocol";
-import { createContractExecutorWorker } from "@platform/contractExecutorWorkerRuntime";
-import type { WorkerLike } from "./types";
+import { deserializeError } from "@/evm/p2pRuntime/errorWire";
+import type { Address, Bytes } from "@/types/types";
+import type { Logger } from "@/utils";
+import { config } from "@/utils/config";
+import { errorMessage } from "@/utils/errorMessage";
 import { LoggerUtils } from "@/utils/LoggerUtils";
+import { createContractExecutorWorker } from "@platform/contractExecutorWorkerRuntime";
+import { ethers } from "ethers";
+
+/**
+ * Internal construction dependencies, not part of the package API. Tests
+ * supply a worker runtime that loads a scripted worker entry and observe
+ * detached reports; production passes neither and gets the platform worker.
+ */
+export type WorkerContractExecutorDependencies = {
+    createWorkerRuntime?: (
+        onMessage: ContractExecutorWorkerMessageHandler,
+        onError: ContractExecutorWorkerErrorHandler
+    ) => WorkerLike;
+    /**
+     * Receives every error the worker caught outside a request. The worker
+     * and this executor keep serving; the host forwards the report as a
+     * `hostError`. Without a handler the error is re-thrown on the owning
+     * thread as an uncaught error, so a worker never hides what an inline
+     * executor would have surfaced.
+     */
+    onDetachedError?: (error: Error) => void;
+};
 
 type ContractExecutorOperation =
     | "init"
@@ -58,37 +84,43 @@ export default class WorkerContractExecutor extends AContractExecutor {
     private resolveWorkerReady!: () => void;
     private workerFailure?: Error;
     private disposed = false;
+    private readonly onDetachedError?: (error: Error) => void;
 
     static async create(
         customPrecompiles: readonly EvmCustomPrecompileManifest[] = [],
-        logger?: Logger
+        logger?: Logger,
+        dependencies: WorkerContractExecutorDependencies = {},
+        clockAdjustmentSeconds?: number
     ): Promise<WorkerContractExecutor> {
-        const executor = new WorkerContractExecutor(logger);
+        const executor = new WorkerContractExecutor(logger, dependencies);
         await executor.workerReady;
         await executor.request({
             type: "init",
             customPrecompiles: customPrecompiles.map(
                 serializePrecompileManifest
             ),
-            config
+            config,
+            clockAdjustmentSeconds
         });
         return executor;
     }
 
-    private constructor(logger?: Logger) {
+    private constructor(
+        logger?: Logger,
+        dependencies: WorkerContractExecutorDependencies = {}
+    ) {
         super();
         this.logger = logger?.child({ component: "WorkerContractExecutor" });
+        this.onDetachedError = dependencies.onDetachedError;
         this.workerReady = new Promise((resolve, reject) => {
             this.resolveWorkerReady = resolve;
             this.rejectWorkerReady = reject;
         });
-        this.worker = createContractExecutorWorker(
+        this.worker = (
+            dependencies.createWorkerRuntime ?? createContractExecutorWorker
+        )(
             (message: WorkerResponseMessage) => this.handleResponse(message),
-            (error: Error) => {
-                this.workerFailure = error;
-                this.rejectWorkerReady(error);
-                this.rejectAll(error);
-            }
+            (error: Error) => this.handleWorkerFailure(error)
         );
     }
 
@@ -150,6 +182,11 @@ export default class WorkerContractExecutor extends AContractExecutor {
                 new Error("Contract executor worker disposed")
             );
         }
+        // Fast-fail after a fatal worker failure: a post to a dead worker is
+        // silently dropped, so the request would never settle.
+        if (this.workerFailure) {
+            return Promise.reject(this.workerFailure);
+        }
         const request = {
             type: "request" as const,
             requestId: this.nextRequestId++,
@@ -173,9 +210,58 @@ export default class WorkerContractExecutor extends AContractExecutor {
         );
     }
 
+    /**
+     * Fatal worker failure: a load-time error, a runtime error event, or an
+     * unexpected exit. The first one wins; the exit that follows an error
+     * event must not overwrite the original cause. Nothing after disposal
+     * counts, because the worker's own exit is expected then.
+     */
+    private handleWorkerFailure(error: Error): void {
+        if (this.disposed) {
+            this.logger?.debug(
+                "Ignoring worker failure after executor disposal",
+                { error: errorMessage(error) }
+            );
+            return;
+        }
+        if (this.workerFailure) {
+            this.logger?.debug(
+                "Ignoring later worker failure after first failure",
+                { error: errorMessage(error) }
+            );
+            return;
+        }
+        this.logger?.warn("Contract executor worker failed", {
+            error: errorMessage(error)
+        });
+        this.workerFailure = error;
+        this.rejectWorkerReady(error);
+        this.rejectAll(error);
+    }
+
     private handleResponse(response: WorkerResponseMessage): void {
         if (isWorkerReadyResponse(response)) {
             this.resolveWorkerReady();
+            return;
+        }
+
+        if (response.type === "detachedError") {
+            // Report-and-continue: the worker kept its canonical EVM state and
+            // still serves; only the report leaves this executor.
+            const error = deserializeError(response.error);
+            this.logger?.error(
+                "Contract executor worker reported a detached error",
+                { error }
+            );
+            if (this.onDetachedError) {
+                this.onDetachedError(error);
+                return;
+            }
+            // No application route: surface it on this thread the way an
+            // inline executor's autonomous error would, never swallow it.
+            globalThis.queueMicrotask(() => {
+                throw error;
+            });
             return;
         }
 
@@ -191,11 +277,7 @@ export default class WorkerContractExecutor extends AContractExecutor {
             return;
         }
 
-        const error = new Error(response.error.message);
-        error.name = response.error.name || error.name;
-        error.stack = response.error.stack || error.stack;
-        (error as any).data = response.error.data;
-        pending.reject(error);
+        pending.reject(deserializeError(response.error));
     }
 
     private trackRequest(

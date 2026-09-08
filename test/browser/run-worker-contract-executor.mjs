@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import path from "node:path";
+import { test } from "node:test";
 import { fileURLToPath } from "node:url";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -47,6 +48,10 @@ const server = await createServer({
             "@platform/precompileModuleLoader": path.join(
                 projectRoot,
                 "src/evm/browser/precompileModuleLoader.ts"
+            ),
+            "@platform/evmJumpdestCache": path.join(
+                projectRoot,
+                "src/evm/browser/evmJumpdestCache.ts"
             ),
             "@platform/moduleLoader": path.join(
                 projectRoot,
@@ -108,6 +113,9 @@ try {
         await page.waitForFunction(
             () =>
                 Boolean(globalThis.runContractExecutorWorkerBrowserSmoke) &&
+                Boolean(
+                    globalThis.runContractExecutorWorkerWatchdogBrowserSmoke
+                ) &&
                 Boolean(globalThis.runWebRTCMainThreadBrowserSmoke) &&
                 Boolean(globalThis.runWebRTCDedicatedWorkerBrowserSmoke) &&
                 Boolean(globalThis.runWebRTCProxyWorkerBrowserSmoke)
@@ -119,71 +127,139 @@ try {
         throw error;
     }
 
-    const result = await page.evaluate(async () => {
-        if (!globalThis.runContractExecutorWorkerBrowserSmoke) {
-            throw new Error("Browser worker smoke function was not registered");
-        }
-        if (!globalThis.runWebRTCMainThreadBrowserSmoke) {
-            throw new Error(
-                "WebRTC main-thread smoke function was not registered"
-            );
-        }
-        if (!globalThis.runWebRTCDedicatedWorkerBrowserSmoke) {
-            throw new Error(
-                "WebRTC dedicated-worker smoke function was not registered"
-            );
-        }
-        if (!globalThis.runWebRTCProxyWorkerBrowserSmoke) {
-            throw new Error(
-                "WebRTC proxy-worker smoke function was not registered"
-            );
-        }
-        const withTimeout = (label, promise) =>
-            Promise.race([
-                promise,
-                new Promise((_, reject) =>
-                    setTimeout(
-                        () => reject(new Error(`${label} timed out`)),
-                        45_000
-                    )
-                )
-            ]);
+    async function runSmoke(functionName) {
+        return page.evaluate(async (name) => {
+            let timer;
+            try {
+                return await Promise.race([
+                    globalThis[name](),
+                    new Promise((_, reject) => {
+                        timer = setTimeout(
+                            () => reject(new Error(`${name} timed out`)),
+                            45_000
+                        );
+                    })
+                ]);
+            } finally {
+                clearTimeout(timer);
+            }
+        }, functionName);
+    }
 
-        const contractExecutor = await withTimeout(
-            "Contract executor browser worker smoke",
-            globalThis.runContractExecutorWorkerBrowserSmoke()
-        );
-        const webRTCMainThread = await withTimeout(
-            "WebRTC main-thread browser smoke",
-            globalThis.runWebRTCMainThreadBrowserSmoke()
-        );
-        const webRTCDedicatedWorker = await withTimeout(
-            "WebRTC dedicated-worker browser smoke",
-            globalThis.runWebRTCDedicatedWorkerBrowserSmoke()
-        );
-        const webRTCProxyWorker = await withTimeout(
-            "WebRTC proxy-worker browser smoke",
-            globalThis.runWebRTCProxyWorkerBrowserSmoke()
-        );
-        return {
-            contractExecutor,
-            webRTCMainThread,
-            webRTCDedicatedWorker,
-            webRTCProxyWorker
+    await test("browser performance reporting uses long-task metadata", async () => {
+        const result = {
+            performanceReporting: await runSmoke(
+                "runBrowserPerformanceReportingSmoke"
+            )
         };
+        assert.equal(result.performanceReporting.details.longTaskMax, 201);
+        assert.equal(result.performanceReporting.details.dMax, 1);
+        assert.equal(result.performanceReporting.details.runtime, "browser");
+        assert.equal(result.performanceReporting.entries[0].level, "warn");
+        assert.equal(
+            result.performanceReporting.entries[0].meta[0].estimatedUtilization,
+            0.1
+        );
+        assert.equal(
+            "utilization" in result.performanceReporting.entries[0].meta[0],
+            false
+        );
+        assert.equal(browserErrors.length, 0, browserErrors[0]?.stack);
     });
 
-    assert.equal(result.contractExecutor.value, "42");
-    assert.equal(result.contractExecutor.isWorker, true);
-    assert.equal(result.webRTCMainThread.receivedByInitiator, 1);
-    assert.equal(result.webRTCMainThread.receivedByResponder, 1);
-    assert.equal(result.webRTCDedicatedWorker.receivedByMain, 1);
-    assert.equal(result.webRTCDedicatedWorker.receivedByWorker, 1);
-    assert.equal(result.webRTCProxyWorker.receivedByMain, 1);
-    assert.equal(result.webRTCProxyWorker.receivedByWorker, 1);
-    assert.equal(browserErrors.length, 0, browserErrors[0]?.stack);
+    await test("browser worker executes a contract", async () => {
+        const result = {
+            contractExecutor: await runSmoke(
+                "runContractExecutorWorkerBrowserSmoke"
+            )
+        };
+        assert.equal(result.contractExecutor.value, "42");
+        assert.equal(result.contractExecutor.isWorker, true);
+        assert.equal(browserErrors.length, 0, browserErrors[0]?.stack);
+    });
 
-    console.log("Browser worker and WebRTC smoke passed");
+    await test("browser worker advances adjusted chain time", async () => {
+        const result = {
+            contractExecutorClock: await runSmoke(
+                "runContractExecutorWorkerClockBrowserSmoke"
+            )
+        };
+        // The browser worker's ambient block time is wall time plus the host's
+        // clock adjustment, within the one-second sampling boundary, and advances.
+        assert.ok(
+            Math.abs(result.contractExecutorClock.firstOffset - 600) <= 1,
+            `browser worker block.timestamp offset ${result.contractExecutorClock.firstOffset}`
+        );
+        assert.equal(result.contractExecutorClock.advanced, true);
+        assert.equal(browserErrors.length, 0, browserErrors[0]?.stack);
+    });
+
+    await test("browser worker reports detached errors and keeps serving", async () => {
+        const result = {
+            contractExecutorWatchdog: await runSmoke(
+                "runContractExecutorWorkerWatchdogBrowserSmoke"
+            )
+        };
+        // Detached worker errors: one report each, the worker keeps serving, and
+        // the browser saw no worker `error` event or console error (asserted by
+        // the browserErrors check below).
+        const watchdog = result.contractExecutorWatchdog;
+        assert.equal(
+            watchdog.watchdog.message,
+            watchdog.expected.watchdogMessage
+        );
+        assert.equal(watchdog.watchdog.eventLoopDelay?.runtime, "browser");
+        assert.equal(
+            watchdog.watchdog.eventLoopDelay?.dMax,
+            watchdog.expected.trippedDelayMs
+        );
+        assert.equal(watchdog.watchdog.reportsBeforeArm, 0);
+        assert.equal(watchdog.watchdog.reportCount, 1);
+        assert.equal(watchdog.watchdog.servedAfterReport, true);
+        assert.equal(watchdog.throw.message, watchdog.expected.originalError);
+        assert.equal(watchdog.throw.reportsBeforeArm, 0);
+        assert.equal(watchdog.throw.reportCount, 1);
+        assert.equal(watchdog.throw.servedAfterReport, true);
+        assert.equal(
+            watchdog.rejection.message,
+            watchdog.expected.originalError
+        );
+        assert.equal(watchdog.rejection.reportsBeforeArm, 0);
+        assert.equal(watchdog.rejection.reportCount, 1);
+        assert.equal(watchdog.rejection.servedAfterReport, true);
+        assert.equal(browserErrors.length, 0, browserErrors[0]?.stack);
+    });
+
+    await test("browser main-thread WebRTC exchanges messages", async () => {
+        const result = {
+            webRTCMainThread: await runSmoke("runWebRTCMainThreadBrowserSmoke")
+        };
+        assert.equal(result.webRTCMainThread.receivedByInitiator, 1);
+        assert.equal(result.webRTCMainThread.receivedByResponder, 1);
+        assert.equal(browserErrors.length, 0, browserErrors[0]?.stack);
+    });
+
+    await test("browser dedicated-worker WebRTC exchanges messages", async () => {
+        const result = {
+            webRTCDedicatedWorker: await runSmoke(
+                "runWebRTCDedicatedWorkerBrowserSmoke"
+            )
+        };
+        assert.equal(result.webRTCDedicatedWorker.receivedByMain, 1);
+        assert.equal(result.webRTCDedicatedWorker.receivedByWorker, 1);
+        assert.equal(browserErrors.length, 0, browserErrors[0]?.stack);
+    });
+
+    await test("browser proxy-worker WebRTC exchanges messages", async () => {
+        const result = {
+            webRTCProxyWorker: await runSmoke(
+                "runWebRTCProxyWorkerBrowserSmoke"
+            )
+        };
+        assert.equal(result.webRTCProxyWorker.receivedByMain, 1);
+        assert.equal(result.webRTCProxyWorker.receivedByWorker, 1);
+        assert.equal(browserErrors.length, 0, browserErrors[0]?.stack);
+    });
 } finally {
     await browser?.close();
     await server.close();

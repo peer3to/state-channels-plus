@@ -1,10 +1,10 @@
 // @spec-test-coverage-ignore: host-side support service for loopback guard tests
+import type { PingPongRpc } from "../PingPongRpcManifest";
+import { LoopbackGuardProbeRpcMethods } from "./LoopbackGuardProbeRpcMethods";
 import type P2PManager from "@/P2PManager";
 import ARpcService from "@/rpc/ARpcService";
 import { AGuard } from "@/rpc/guards/AGuard";
 import type ATransport from "@/transport/ATransport";
-import type { PingPongRpc } from "../PingPongRpcManifest";
-import { LoopbackGuardProbeRpcMethods } from "./LoopbackGuardProbeRpcMethods";
 
 export type LoopbackGuardProbeResult = {
     guardChecks: number;

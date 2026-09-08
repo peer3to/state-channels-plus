@@ -1,6 +1,6 @@
+import type { SignerService } from "./SignerService";
 import ARpcMethods from "@/rpc/ARpcMethods";
 import type ATransport from "@/transport/ATransport";
-import type { SignerService } from "./SignerService";
 
 /**
  * Signer registration, executed host-side. Only public endpoints live here;

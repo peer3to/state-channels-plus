@@ -1,11 +1,11 @@
-import { ContractRunner, ethers, Fragment, InterfaceAbi } from "ethers";
+import { mergeAbis } from "@/utils/contractAbi";
+import { stateChannelManagerAbi } from "@/utils/stateChannelManager";
 import {
     LocalDiamond,
     LocalDiamond__factory,
     StateChannelManagerInterface
 } from "@typechain-types";
-import { mergeAbis } from "@/utils/contractAbi";
-import { stateChannelManagerAbi } from "@/utils/stateChannelManager";
+import { ContractRunner, ethers, Fragment, InterfaceAbi } from "ethers";
 
 /**
  * The deployed local diamond as callers see it: `LocalDiamond`'s own local-only

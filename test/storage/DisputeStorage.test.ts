@@ -1,13 +1,13 @@
-import { expect } from "chai";
-import { describe, it, beforeEach } from "mocha";
-import { ethers } from "hardhat";
+import * as factory from "../factory";
 import { DisputeStorage } from "@/storage/DisputeStorage";
+import { Hash } from "@/types/types";
 import {
     DisputeConfirmationStruct,
     SignedDisputeStruct
 } from "@typechain-types/contracts/V1/types/DisputeTypes";
-import { Hash } from "@/types/types";
-import * as factory from "../factory";
+import { expect } from "chai";
+import { ethers } from "hardhat";
+import { describe, it, beforeEach } from "mocha";
 
 const sig = () => ethers.hexlify(ethers.randomBytes(65));
 

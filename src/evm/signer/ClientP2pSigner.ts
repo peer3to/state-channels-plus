@@ -1,3 +1,20 @@
+import type { ConnectToChannelOptions } from "./ConnectToChannelOptions";
+import NoopEventProvider from "./NoopEventProvider";
+import type { RuntimeRequester } from "../p2pRuntime/types";
+import type {
+    LobbyJoinOptions,
+    LobbyJoinResult,
+    PreparedJoinChannelConfirmation
+} from "@/rpc/services";
+import type { Status } from "@/types";
+
+import type { Address, Bytes, ForkId, Hash } from "@/types/types";
+import { Codec, Type } from "@/utils";
+import { requireBytes32 } from "@/utils/bytes32";
+import type {
+    JoinChannelConfirmationStruct,
+    JoinChannelStruct
+} from "@typechain-types/contracts/V1/types/DataTypes";
 import {
     ethers,
     Signer,
@@ -8,17 +25,6 @@ import {
     TypedDataDomain,
     TypedDataField
 } from "ethers";
-
-import type {
-    JoinChannelConfirmationStruct,
-    JoinChannelStruct
-} from "@typechain-types/contracts/V1/types/DataTypes";
-import type { Status } from "@/types";
-import type { Address, Bytes, ForkId, Hash } from "@/types/types";
-import type { RuntimeRequester } from "../p2pRuntime/types";
-import NoopEventProvider from "./NoopEventProvider";
-import { Codec, Type } from "@/utils";
-import type { PreparedJoinChannelConfirmation } from "@/rpc/services";
 
 const UNSUPPORTED =
     "Operation not supported by the p2p runtime client signer. " +
@@ -118,13 +124,6 @@ class ClientP2pSigner implements Signer {
         });
     }
 
-    async setChannelId(channelId: Bytes): Promise<void> {
-        await this.client.request<void>({
-            type: "setChannelId",
-            channelId: channelId.toString()
-        });
-    }
-
     setIsLeader(value: boolean): void {
         this.isLeader = value;
         void this.client.request<void>({ type: "setIsLeader", value });
@@ -134,12 +133,108 @@ class ClientP2pSigner implements Signer {
         return this.isLeader;
     }
 
-    connectToChannel(channelId: Bytes): Promise<void> {
-        return this.client.request<void>(
+    connectToChannel(
+        channelId: Bytes,
+        options: ConnectToChannelOptions = {}
+    ): Promise<boolean> {
+        let normalizedChannelId: string;
+        let encodedBalance: string | undefined;
+        try {
+            normalizedChannelId = ethers.hexlify(channelId);
+            requireBytes32(
+                normalizedChannelId,
+                "Channel ID must be exactly 32 bytes"
+            );
+            this.validateConnectOptions(options);
+            encodedBalance =
+                options.balance === undefined
+                    ? undefined
+                    : String(Codec.encode(options.balance, Type.Balance));
+        } catch (error) {
+            return Promise.reject(error);
+        }
+        const hasOptions =
+            options.autoOpen !== undefined ||
+            options.shouldJoin !== undefined ||
+            options.balance !== undefined ||
+            options.timeoutMs !== undefined;
+        return this.client.request<boolean>(
             {
                 type: "connectToChannel",
-                channelId: channelId.toString()
+                channelId: normalizedChannelId,
+                options: hasOptions
+                    ? {
+                          autoOpen: options.autoOpen,
+                          shouldJoin: options.shouldJoin,
+                          encodedBalance,
+                          timeoutMs: options.timeoutMs
+                      }
+                    : undefined
             },
+            { timeoutMs: null }
+        );
+    }
+
+    cancelConnectToChannel(channelId: Bytes): Promise<boolean> {
+        let normalizedChannelId: string;
+        try {
+            normalizedChannelId = ethers.hexlify(channelId);
+            requireBytes32(
+                normalizedChannelId,
+                "Channel ID must be exactly 32 bytes"
+            );
+        } catch (error) {
+            return Promise.reject(error);
+        }
+        return this.client.request<boolean>(
+            {
+                type: "cancelConnectToChannel",
+                channelId: normalizedChannelId
+            },
+            { timeoutMs: null }
+        );
+    }
+
+    /**
+     * Internal route for `P2pInstance.leaveChannel`.
+     * Direct callers wait for settled removal but do not dispose the runtime.
+     */
+    leaveChannel(): Promise<void> {
+        return this.client.request<void>(
+            { type: "leaveChannel" },
+            { timeoutMs: null }
+        );
+    }
+
+    joinLobby(
+        lobbyTopic: string,
+        options: LobbyJoinOptions = {}
+    ): Promise<LobbyJoinResult | undefined> {
+        let encodedBalance: string | undefined;
+        try {
+            encodedBalance =
+                options.balance === undefined
+                    ? undefined
+                    : String(Codec.encode(options.balance, Type.Balance));
+        } catch (error) {
+            return Promise.reject(error);
+        }
+        return this.client.request<LobbyJoinResult | undefined>(
+            {
+                type: "joinLobby",
+                lobbyTopic,
+                options: {
+                    encodedBalance,
+                    matchTimeoutMs: options.matchTimeoutMs
+                }
+            },
+            { timeoutMs: null }
+        );
+    }
+
+    leaveLobby(lobbyTopic: string): Promise<boolean> {
+        return this.client.request<boolean>(
+            { type: "leaveLobby", lobbyTopic },
             { timeoutMs: null }
         );
     }
@@ -148,8 +243,8 @@ class ClientP2pSigner implements Signer {
         confirmation: JoinChannelConfirmationStruct,
         expectedSnapshotHash: Hash,
         expectedForkId: ForkId
-    ): Promise<void> {
-        await this.client.request<void>(
+    ): Promise<boolean> {
+        return this.client.request<boolean>(
             {
                 type: "joinChannel",
                 encodedJoinChannelConfirmation: String(
@@ -166,8 +261,8 @@ class ClientP2pSigner implements Signer {
         confirmation: JoinChannelConfirmationStruct,
         expectedSnapshotHash: Hash,
         expectedForkId: ForkId
-    ): Promise<void> {
-        await this.client.request<void>(
+    ): Promise<boolean> {
+        return this.client.request<boolean>(
             {
                 type: "topUpBalance",
                 encodedJoinChannelConfirmation: String(
@@ -209,6 +304,30 @@ class ClientP2pSigner implements Signer {
 
     getChannelStatus(): Promise<Status> {
         return this.client.request<Status>({ type: "getChannelStatus" });
+    }
+
+    private validateConnectOptions(options: ConnectToChannelOptions): void {
+        if (
+            options.autoOpen !== undefined &&
+            typeof options.autoOpen !== "boolean"
+        ) {
+            throw new Error("autoOpen must be a boolean");
+        }
+        if (
+            options.shouldJoin !== undefined &&
+            typeof options.shouldJoin !== "boolean"
+        ) {
+            throw new Error("shouldJoin must be a boolean");
+        }
+        if (
+            options.timeoutMs !== undefined &&
+            options.timeoutMs !== null &&
+            (!Number.isSafeInteger(options.timeoutMs) || options.timeoutMs <= 0)
+        ) {
+            throw new Error(
+                "timeoutMs must be a positive finite integer or null"
+            );
+        }
     }
 }
 

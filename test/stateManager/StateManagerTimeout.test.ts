@@ -1,7 +1,6 @@
-import { expect } from "chai";
-
 import { sleep } from "@/utils";
 import { MathTestSession as TestSession } from "@test/harness";
+import { expect } from "chai";
 
 describe("StateManager timeout", function () {
     it("does not submit a timeout when the existing dispute window predates its deadline", async function () {
@@ -12,6 +11,8 @@ describe("StateManager timeout", function () {
         });
         h.contextApi.markAfkPeer({ afkPeerIndex: 2 });
 
+        // The opener needs its own reason before a dispute window exists.
+        await h.control(h.getPeer(0)).dispute.setForceExit(true).request();
         await h.tamper.postTamperedDispute(0, () => {}, {
             markMalicious: false
         });

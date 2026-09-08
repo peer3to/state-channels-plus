@@ -1,11 +1,12 @@
-import { TransactionResponse } from "ethers";
-
-import type { DisputeStruct } from "@typechain-types/contracts/V1/types/DisputeTypes";
-
+import type ReductionComputationService from "./ReductionComputationService";
+import type { ReductionComputation } from "./ReductionComputationService";
+import type StateManager from "../StateManager";
 import Clock from "@/Clock";
 import { StateSnapshot } from "@/models";
+import { Status } from "@/types";
 import type { ForkId, Timestamp } from "@/types/types";
 import { DetachedPromises, Logger, Mutex } from "@/utils";
+import { errorMessage } from "@/utils/errorMessage";
 import {
     type CustomEvmError,
     type RaceConditionErrorHandlers,
@@ -15,9 +16,8 @@ import {
 } from "@/utils/evmErrorHandler";
 import { LoggerUtils } from "@/utils/LoggerUtils";
 
-import type ReductionComputationService from "./ReductionComputationService";
-import type { ReductionComputation } from "./ReductionComputationService";
-import type StateManager from "../StateManager";
+import type { DisputeStruct } from "@typechain-types/contracts/V1/types/DisputeTypes";
+import { TransactionResponse } from "ethers";
 
 type KillPeriodObservation = {
     windowExists: boolean;
@@ -134,14 +134,14 @@ export default class ReductionExecutor {
     }
 
     private async tryReduceLocked(forkId: ForkId): Promise<void> {
-        if (forkId !== this.stateManager.forkId) return;
+        if (this.isStale(forkId)) return;
 
         const { windowExists, isExpired, killPeriodEnd } =
             await this.isKillPeriodExpiredCached(forkId);
         // A final dispute can transition the fork while this attempt is waiting
         // on any provider call. Its completion is authoritative, so the stale
         // ordinary attempt simply stands down.
-        if (forkId !== this.stateManager.forkId) return;
+        if (this.isStale(forkId)) return;
         if (!windowExists) return;
         if (!isExpired) {
             this.stateManager.reductionManager.schedule(
@@ -153,6 +153,7 @@ export default class ReductionExecutor {
         }
 
         const disputes = await this.getSyncedForkDisputes(forkId);
+        if (this.isStale(forkId)) return;
         if (!disputes) {
             // the window's disputes are on-chain but not locally readable yet ->
             // retry, never abort: the peer would lose its turns and be slashed
@@ -167,13 +168,13 @@ export default class ReductionExecutor {
             );
             return;
         }
-        if (forkId !== this.stateManager.forkId) return;
+        if (this.isStale(forkId)) return;
         const freshExpiry =
             await this.stateManager.stateChannelManagerContract.isKillPeriodExpired(
                 this.stateManager.channelId,
                 forkId
             );
-        if (forkId !== this.stateManager.forkId) return;
+        if (this.isStale(forkId)) return;
         const freshObservation = {
             windowExists: freshExpiry.windowExists,
             isExpired: freshExpiry.isExpired,
@@ -201,11 +202,13 @@ export default class ReductionExecutor {
             return;
         }
 
+        if (this.isStale(forkId)) return;
         const candidate = await this.prepareLocalCandidate(
             forkId,
             freshObservation.killPeriodEnd,
             disputes
         );
+        if (this.isStale(forkId)) return;
         if (!candidate) {
             // our inbound view cannot back the chain's reduced head yet -> retry,
             // never abort: the peer would lose its turns and be slashed for it
@@ -220,15 +223,32 @@ export default class ReductionExecutor {
             );
             return;
         }
+        if (this.isStale(forkId)) return;
         const submission = await this.prepareSubmission(candidate);
-        const submissionStatus = await this.simulateSubmission(
-            forkId,
-            candidate,
-            submission
-        );
+        if (this.isStale(forkId)) return;
+        // A full-threshold final dispute records the window's reduced fork at
+        // upload. An ordinary attempt that computed the same result converges
+        // on it: the local install stands, and the chain write is redundant
+        // (the simulation would accept it, so the race classifier never sees
+        // it). The fork's snapshot moves with the next snapshot post's walk.
+        const submissionStatus =
+            (await this.readReducedForkOnChain(forkId)) ===
+            candidate.reducedForkId
+                ? "already-reduced"
+                : await this.simulateSubmission(forkId, candidate, submission);
         if (submissionStatus === "superseded") return;
+        if (this.isStale(forkId)) return;
 
         await this.complete(forkId, candidate, submission, submissionStatus);
+    }
+
+    /**
+     * One guard for every stage of an attempt: the fork moved on (a final
+     * dispute or another reduction completed first) or the runtime is
+     * disposed. Either way this attempt stands down without writing anything.
+     */
+    private isStale(forkId: ForkId): boolean {
+        return !this.stateManager.isActiveFork(forkId);
     }
 
     private async complete(
@@ -242,13 +262,23 @@ export default class ReductionExecutor {
                 forkId,
                 candidate.reducedForkId,
                 {
-                    snapshotData: candidate.reducedSnapshotData,
+                    genesisSnapshot:
+                        candidate.reducedGenesisSnapshot.toStruct(),
                     encodedState: candidate.reducedEncodedStateMachineState,
-                    genesisTimestamp: candidate.genesisTimestamp,
                     outboundMessageBlock: candidate.reducedOutboundMessageBlock
                 }
             );
-        if (installed && submissionStatus === "submit") {
+        // After an install the active fork is the reduced one, so only
+        // disposal can make the submission stale here.
+        if (
+            installed &&
+            !this.stateManager.isDisposed &&
+            submissionStatus === "submit" &&
+            !(
+                this.stateManager.leaveChannelService.isLeaving &&
+                this.stateManager.status === Status.SYNCED
+            )
+        ) {
             this.submitDetached(forkId, candidate, submission);
         }
     }
@@ -271,29 +301,16 @@ export default class ReductionExecutor {
                 forkId,
                 disputes
             );
+            // The terminal outbound write below is reduction-owned: a fork
+            // change or disposal during the computation cancels it here,
+            // before anything is persisted.
+            if (this.isStale(forkId)) return undefined;
             if (!computation) return undefined;
-            const {
-                reducedSnapshotData,
-                reducedOutboundMessageBlock,
-                reducedForkId
-            } = computation;
-
-            // The fork-update calldata walks the outbound-message chain from
-            // the current on-chain snapshot through the newly reduced output.
-            // Persist the deterministic terminal block before building that
-            // range; setGenesisState will persist the same block idempotently.
-            if (reducedOutboundMessageBlock) {
-                this.stateManager.storage.outboundMessages.store(
-                    reducedOutboundMessageBlock,
-                    { justPersist: true }
+            const { genesisSnapshot: reducedGenesisSnapshot } =
+                this.stateManager.reductionManager.prepareReducedGenesis(
+                    computation,
+                    genesisTimestamp
                 );
-            }
-            const reducedGenesisSnapshot = StateSnapshot.from({
-                forkId: reducedForkId,
-                blockHeight: 0,
-                timestamp: genesisTimestamp,
-                snapshotData: reducedSnapshotData
-            });
 
             return {
                 ...computation,
@@ -306,7 +323,7 @@ export default class ReductionExecutor {
                 customError: LoggerUtils.getCustomEvmErrorMetadata(
                     tryDecodeCustomError(error)
                 ),
-                error: error instanceof Error ? error.message : String(error)
+                error: errorMessage(error)
             });
             throw error;
         }
@@ -374,13 +391,18 @@ export default class ReductionExecutor {
         let txResponse: TransactionResponse | undefined;
         const transaction = this.stateManager.stateChannelManagerContract
             .getGasLimit()
-            .then((gasLimit) =>
-                this.stateManager.stateChannelManagerContract.multicall(
+            .then((gasLimit) => {
+                // Disposal can land while the gas limit resolves; the chain
+                // write is the last reduction-owned effect and is re-checked
+                // right before it happens.
+                if (this.stateManager.isDisposed) return undefined;
+                return this.stateManager.stateChannelManagerContract.multicall(
                     submission.calldata,
                     { gasLimit }
-                )
-            )
+                );
+            })
             .then(async (tx) => {
+                if (!tx) return;
                 txResponse = tx;
                 await tx.wait();
             })
@@ -460,23 +482,28 @@ export default class ReductionExecutor {
             return "already-reduced";
         }
 
-        const reducedResult =
-            await this.stateManager.stateChannelManagerContract.getReducedResult(
-                this.stateManager.channelId,
-                forkId
-            );
+        const reducedForkId = await this.readReducedForkOnChain(forkId);
         const finalDispute = disputes.find(
             (dispute) =>
-                String(dispute.outputSnapshotDataHash) ===
-                String(reducedResult.reducedForkId)
+                String(dispute.outputSnapshotDataHash) === String(reducedForkId)
         );
         if (!finalDispute) return undefined;
 
         this.logger.info("Ordinary reduction superseded by a final dispute", {
             forkId,
-            reducedForkId: reducedResult.reducedForkId,
+            reducedForkId,
             disputer: finalDispute.input.disputer
         });
         return "superseded";
+    }
+
+    /** The reduced fork the chain records for `forkId`, or the zero hash. */
+    private async readReducedForkOnChain(forkId: ForkId): Promise<ForkId> {
+        const reducedResult =
+            await this.stateManager.stateChannelManagerContract.getReducedResult(
+                this.stateManager.channelId,
+                forkId
+            );
+        return String(reducedResult.reducedForkId);
     }
 }

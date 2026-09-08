@@ -75,7 +75,15 @@ contract DisputeVerificationFacet is StateChannelCommon {
 
             // ***** setup / first run *****
             if (maxSlashCount == 0) {
-                address[] memory pendingParticipants = _getPendingParticipants(dispute.input.channelId);
+                // Slash eligibility spans every signer that ever joined, not
+                // the bounded pending set: a reduction already mined for this
+                // fork moves the channel snapshot past the slashed signers, and
+                // a late reducer must still fold the same on-chain slashes.
+                address[] memory pendingParticipants = _derivePendingParticipantsFromInboundHash(
+                    dispute.input.channelId,
+                    channelBalances[dispute.input.channelId].latestInboundMessageBlockHash,
+                    bytes32(0)
+                );
                 address[] memory snapshotParticipants = snapshotData.participants;
                 maxSlashCount = snapshotParticipants.length + pendingParticipants.length;
                 slashParticipants = new address[](maxSlashCount);
@@ -84,8 +92,11 @@ contract DisputeVerificationFacet is StateChannelCommon {
                 for (uint256 j = 0; j < disputeData.onChainSlashes.length; j++) {
                     if (disputeData.onChainSlashes[j].timestamp > disputeWindowExpirationTimestamp) continue;
                     address participant = disputeData.onChainSlashes[j].participant;
-                    if (!UtilityFacet(utilityFacetAddress)
-                            .inParticipantUnion(participant, snapshotParticipants, pendingParticipants)) {
+                    if (
+                        !UtilityFacet(utilityFacetAddress).inParticipantUnion(
+                            participant, snapshotParticipants, pendingParticipants
+                        )
+                    ) {
                         continue;
                     }
                     bool alreadySlashed = false;
@@ -297,7 +308,8 @@ contract DisputeVerificationFacet is StateChannelCommon {
             ErrorInvalidLatestState(latestStateSnapshot.snapshotData.stateMachineStateHash, actualStateMachineStateHash)
         );
         //verify inbound message blocks
-        (bool inboundMessageBlocksValid, bytes32 runningInboundHash, uint256 breakIndex, uint8 failureReason) = _verifyInboundMessageBlocks(
+        (bool inboundMessageBlocksValid, bytes32 runningInboundHash, uint256 breakIndex, uint8 failureReason) =
+        _verifyInboundMessageBlocks(
             latestStateSnapshot.snapshotData.latestInboundMessageBlockHash,
             reducedOutput.latestInboundMessageBlockHash,
             inboundMessageBlocks
@@ -316,8 +328,9 @@ contract DisputeVerificationFacet is StateChannelCommon {
 
         address[] memory removals = reducedOutput.selfRemovals;
         if (reducedOutput.timeout.participant != address(0) && reducedOutput.slashedParticipants.length == 0) {
-            removals = UtilityFacet(utilityFacetAddress)
-                .insertIntoAddressArrayNoDuplicates(removals, reducedOutput.timeout.participant);
+            removals = UtilityFacet(utilityFacetAddress).insertIntoAddressArrayNoDuplicates(
+                removals, reducedOutput.timeout.participant
+            );
         }
 
         DisputeOutputState memory outputState = generateDisputeOutputState(
@@ -484,10 +497,12 @@ contract DisputeVerificationFacet is StateChannelCommon {
         console.log("BALANCE 4.1 - snapshotData.totalDeposits:", snapshotData.totalDeposits.amount);
         console.log("BALANCE 4.2 - stateMachineBalance:", stateMachineBalance.amount);
         console.log("BALANCE 4.3 - snapshotData.totalWithdrawals:", snapshotData.totalWithdrawals.amount);
-        if (!stateMachineImplementation.areBalancesEqual(
+        if (
+            !stateMachineImplementation.areBalancesEqual(
                 snapshotData.totalDeposits,
                 stateMachineImplementation.addBalance(snapshotData.totalWithdrawals, stateMachineBalance)
-            )) return false;
+            )
+        ) return false;
         console.log("BALANCE 5");
         return true;
     }

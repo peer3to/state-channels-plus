@@ -1,4 +1,10 @@
 import {
+    SerializedTransactionResponse,
+    deserializeTransactionResponse,
+    serializeTransactionRequest
+} from "../p2pRuntime/chainSignerSerialization";
+import type { RuntimeRequester } from "../p2pRuntime/types";
+import {
     AbstractSigner,
     Provider,
     TransactionRequest,
@@ -8,13 +14,6 @@ import {
     assert,
     hexlify
 } from "ethers";
-
-import type { RuntimeRequester } from "../p2pRuntime/types";
-import {
-    SerializedTransactionResponse,
-    deserializeTransactionResponse,
-    serializeTransactionRequest
-} from "../p2pRuntime/chainSignerSerialization";
 
 /** Real-chain signer whose key-bearing operations execute on the runtime host. */
 class ClientChainSigner extends AbstractSigner {

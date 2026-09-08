@@ -38,8 +38,15 @@ The local deployment serves two roles:
    state, so ordinary reads (snapshots, windows, slash sets, calldata commitments) are served
    locally instead of hammering the RPC provider.
 
+The mirror is intentionally scoped to the selected channel. It runs stateful and stateless manager
+logic on the participant's own hardware and observes events indexed by that channel. It does not
+replicate or answer global manager state such as the enumerable set of all open channels. Unobserved
+global state is neither needed for channel-local checks nor inferable from the selected channel's
+event stream.
+
 The mirror is never the authority. It answers "what would the chain say, given what I have
-observed"; the chain answers "what is".
+observed"; the chain answers "what is". Event observation has no completeness or verification
+guarantee, so consequential decisions keep the specified chain/RPC fallback.
 
 ## Equivalence constraints
 
@@ -78,6 +85,9 @@ result that will be _acted on_ with on-chain consequences — needs chain confir
   eligibility, window existence and timing, calldata commitments for timeout claims, current
   snapshot before a submission — consult the mirror first and MUST fall back to the RPC view
   before the decision is acted on. The mirror optimizes the happy path; the chain decides.
+- **Global-state boundary.** Discovery reads that enumerate all open channels go directly to the
+  authoritative manager view or a permissionless indexer with manager fallback. They are not
+  inferred from or synchronized into the channel-local mirror.
 
 ## Requirements and invariants
 
@@ -147,7 +157,7 @@ is the accepted trade for eliminating divergence bugs.
 
 ## Future Work
 
-_Non-normative._ A light-client or self-verifying chain view would upgrade "cannot prove
-completeness" into checkable sync status and shrink the RPC trust assumption
-([trust-model.md](../security/trust-model.md) future work); mirror snapshot/restore to avoid full
-re-replication after restart once disk persistence lands.
+_Non-normative._ A verified light-client RPC can expose a complete verified manager state and let
+the same normal manager operations execute locally. That direction replaces the temporary event-fed
+mirror rather than expanding it into global-state synchronization. Mirror snapshot/restore may also
+avoid full re-replication after restart once disk persistence lands.

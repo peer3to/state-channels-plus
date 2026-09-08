@@ -1,9 +1,4 @@
 // @spec-test-coverage-ignore: developer test-orchestration tooling; not protocol behavior, no specification or implementation IDs apply
-import { expect } from "chai";
-import { execFileSync } from "child_process";
-import fs from "fs";
-import os from "os";
-import path from "path";
 import {
     LeasePoolHarness,
     startLeaseWorkerServer
@@ -12,17 +7,22 @@ import {
     createLocalDhtNetwork,
     TEST_DISTRIBUTED_CONNECTION_TIMEOUT_MS
 } from "../fixtures/distributed/testTransport";
+import { expect } from "chai";
+import { execFileSync } from "child_process";
+import fs from "fs";
+import os from "os";
+import path from "path";
 
 const {
     AuthorizationStore
 } = require("../../scripts/e2e-parallel/distributed/authorizationStore.js");
 const {
-    loadOrchestratorKeyPair
-} = require("../../scripts/e2e-parallel/distributed/orchestratorIdentity.js");
-const {
     parseAdminArgs,
     runAdmin
 } = require("../../scripts/e2e-parallel/distributed/distributedAdmin.js");
+const {
+    loadOrchestratorKeyPair
+} = require("../../scripts/e2e-parallel/distributed/orchestratorIdentity.js");
 
 describe("distributed authorization administration", function () {
     it("prints the persistent orchestrator identity through its own CLI", function () {

@@ -1,11 +1,17 @@
-import type { BusKind } from "@/events/EventBus";
+import type { SerializedTransactionRequest } from "../chainSignerSerialization";
 import type {
     DistributiveOmit,
     RuntimeRequest,
     SerializedError,
     SetupPayload
 } from "../types";
-import type { SerializedTransactionRequest } from "../chainSignerSerialization";
+import type { BusKind } from "@/events/EventBus";
+import type { ConnectToChannelOptions } from "@/evm/signer/ConnectToChannelOptions";
+
+export type JoinLobbyWireOptions = {
+    encodedBalance?: string;
+    matchTimeoutMs?: number | null;
+};
 
 /**
  * Worker-level bootstrap message (NOT a runtime-port message). Sent via
@@ -32,6 +38,23 @@ export interface CallViewRequest extends RuntimeRequest<"callView"> {
 export interface ConnectToChannelRequest
     extends RuntimeRequest<"connectToChannel"> {
     channelId: string;
+    options?: Omit<ConnectToChannelOptions, "balance"> & {
+        encodedBalance?: string;
+    };
+}
+
+export interface CancelConnectToChannelRequest
+    extends RuntimeRequest<"cancelConnectToChannel"> {
+    channelId: string;
+}
+
+export interface JoinLobbyRequest extends RuntimeRequest<"joinLobby"> {
+    lobbyTopic: string;
+    options: JoinLobbyWireOptions;
+}
+
+export interface LeaveLobbyRequest extends RuntimeRequest<"leaveLobby"> {
+    lobbyTopic: string;
 }
 
 export interface JoinChannelRequest extends RuntimeRequest<"joinChannel"> {
@@ -51,9 +74,7 @@ export interface CollectJoinChannelConfirmationRequest
     encodedJoinChannel: string;
 }
 
-export interface SetChannelIdRequest extends RuntimeRequest<"setChannelId"> {
-    channelId: string;
-}
+export type LeaveChannelRequest = RuntimeRequest<"leaveChannel">;
 
 export type GetChannelStatusRequest = RuntimeRequest<"getChannelStatus">;
 
@@ -163,10 +184,13 @@ export type RuntimeClientRequest =
     | SendTransactionRequest
     | CallViewRequest
     | ConnectToChannelRequest
+    | CancelConnectToChannelRequest
+    | JoinLobbyRequest
+    | LeaveLobbyRequest
     | JoinChannelRequest
     | TopUpBalanceRequest
     | CollectJoinChannelConfirmationRequest
-    | SetChannelIdRequest
+    | LeaveChannelRequest
     | GetChannelStatusRequest
     | SetIsLeaderRequest
     | DisconnectFromPeersRequest

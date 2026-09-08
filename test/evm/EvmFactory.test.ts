@@ -1,9 +1,8 @@
-import { expect } from "chai";
-import sinon from "sinon";
-import { ethers } from "ethers";
-import { Address } from "@ethereumjs/util";
-
 import { CONSOLE_ADDRESS, createEvm, type EvmCustomPrecompile } from "@/evm";
+import { Address } from "@ethereumjs/util";
+import { expect } from "chai";
+import { ethers } from "ethers";
+import sinon from "sinon";
 
 function buildBlock() {
     const zeroAddress = Address.zero();

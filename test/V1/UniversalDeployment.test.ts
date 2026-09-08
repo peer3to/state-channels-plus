@@ -1,27 +1,26 @@
-import { expect } from "chai";
-import { ethers } from "hardhat";
-import { HardhatEthersSigner } from "@nomicfoundation/hardhat-ethers/signers";
-import { ContractFactory, type Signer } from "ethers";
-
+import MathConsumerFacetArtifact from "../../artifacts/contracts/V1/examples/MathStateMachine/MathConsumerFacet.sol/MathConsumerFacet.json";
+import MathStateMachineArtifact from "../../artifacts/contracts/V1/examples/MathStateMachine/MathStateMachine.sol/MathStateMachine.json";
+import LocalDiamondArtifact from "../../artifacts/contracts/V1/StateChannelDiamondProxy/LocalDiamond.sol/LocalDiamond.json";
 import {
     deploy,
     deployLocalDiamond,
     deployArtifact
 } from "../../scripts/V1/deploy";
-import MathStateMachineArtifact from "../../artifacts/contracts/V1/examples/MathStateMachine/MathStateMachine.sol/MathStateMachine.json";
-import MathConsumerFacetArtifact from "../../artifacts/contracts/V1/examples/MathStateMachine/MathConsumerFacet.sol/MathConsumerFacet.json";
-import LocalDiamondArtifact from "../../artifacts/contracts/V1/StateChannelDiamondProxy/LocalDiamond.sol/LocalDiamond.json";
-import { OpenChannelConfirmationStruct } from "@typechain-types/contracts/V1/StateChannelManagerInterface";
 import { createContractExecutorFactory } from "@/evm";
 import LocalContractExecutorSigner from "@/evm/signer/LocalContractExecutorSigner";
-import { connectLocalDiamond } from "@/utils/localDiamond";
-import * as factory from "@test/factory";
 import { ContractSizeLimitError } from "@/index";
+import { Codec, SignatureUtils, Type } from "@/utils";
+import { connectLocalDiamond } from "@/utils/localDiamond";
+import { HardhatEthersSigner } from "@nomicfoundation/hardhat-ethers/signers";
+import * as factory from "@test/factory";
 import {
     createJoinChannelTestObject,
     createOpenChannelTestObject
 } from "@test/test_utils/testHelpers";
-import { Codec, SignatureUtils, Type } from "@/utils";
+import { OpenChannelConfirmationStruct } from "@typechain-types/contracts/V1/StateChannelManagerInterface";
+import { expect } from "chai";
+import { ContractFactory, type Signer } from "ethers";
+import { ethers } from "hardhat";
 
 describe("Universal Deployment", () => {
     let deployer: HardhatEthersSigner;

@@ -1,6 +1,6 @@
-import { StateChannelManagerInterface } from "@typechain-types";
 import { difference, union } from "./set";
 import { Address, ChannelId } from "@/types/types";
+import { StateChannelManagerInterface } from "@typechain-types";
 
 export async function getActiveParticipants(
     contract: StateChannelManagerInterface,

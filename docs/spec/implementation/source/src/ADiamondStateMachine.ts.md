@@ -25,6 +25,8 @@ executors implement.
 
 ## Key design decisions
 
+Positive balance uses the application's zero balance and comparison methods in one operation. Callers pass their existing labels and retain their own failure handling. See [ADiamondStateMachine.ts](../../../../../src/ADiamondStateMachine.ts#L55).
+
 1. **One handle for all mirrored evaluation** — services depend on this abstraction, not on a concrete VM.
 
 ## Inputs, outputs, state, and side effects
@@ -80,3 +82,9 @@ Exact test evidence is mapped against these IDs in the verification test reports
 ## Related source reports
 
 - [EvmDiamondStateMachine](./evm/EvmDiamondStateMachine.ts.md).
+
+## Balance comparison exposure
+
+The SDK state-machine abstraction exposes the existing Solidity `isBalanceLesserThan` operation beside
+`getZeroBalance`. Negotiation and join trust boundaries use `isBalanceLesserThan(zero, received)` instead of
+inventing a TypeScript numeric comparison.

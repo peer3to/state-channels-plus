@@ -1,11 +1,10 @@
-import { expect } from "chai";
-
-import WorkerBridgeWebRTCConnectionFactory from "@/rpc/services/WebRTCSetup/connection/WorkerBridgeWebRTCConnectionFactory";
 import {
     WEBRTC_BRIDGE_NAMESPACE,
     type WebRTCBridgePortMessage
 } from "@/rpc/services/WebRTCSetup/connection/WebRTCBridgeProtocol";
 import type { WebRTCDataChannelLike } from "@/rpc/services/WebRTCSetup/connection/WebRTCConnectionFactory";
+import WorkerBridgeWebRTCConnectionFactory from "@/rpc/services/WebRTCSetup/connection/WorkerBridgeWebRTCConnectionFactory";
+import { expect } from "chai";
 
 function nextPortMessage(port: MessagePort): Promise<WebRTCBridgePortMessage> {
     return new Promise((resolve) => {

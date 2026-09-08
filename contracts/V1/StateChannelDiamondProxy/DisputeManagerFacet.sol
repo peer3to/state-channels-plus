@@ -48,6 +48,17 @@ contract DisputeManagerFacet is StateChannelCommon {
             ErrorCantParticipateInDispute(dispute.input.channelId, msg.sender)
         );
 
+        if (dispute.input.requireExistingDisputeWindow) {
+            DisputeWindow storage existingWindow =
+                disputeData[dispute.input.channelId].disputeWindowMap[dispute.input.forkId];
+            require(
+                // The reduced-fork check is defense in depth: a finalized window has already expired.
+                _isDisputeWidnowCreated(existingWindow) && existingWindow.reducedResult.forkId == bytes32(0)
+                    && !_isEvidencePeriodExpired(existingWindow, _getEvidenceTime()),
+                RaceConditionDisputeWindowNotOpen(dispute.input.channelId, dispute.input.forkId)
+            );
+        }
+
         // race condition checks
         _disputeRaceConditionCheck(dispute);
 
@@ -180,10 +191,12 @@ contract DisputeManagerFacet is StateChannelCommon {
         if (disputeConfirmation.signatures.length + 1 < thresholdSet.length) {
             return false;
         }
-        bytes[] memory signatures = UtilityFacet(utilityFacetAddress)
-            .insertBytesInByteArray(disputeConfirmation.signedDispute.signature, disputeConfirmation.signatures);
-        (bool isThresholdFinal,) = UtilityFacet(utilityFacetAddress)
-            .verifyThresholdSigned(thresholdSet, disputeConfirmation.signedDispute.encodedDispute, signatures);
+        bytes[] memory signatures = UtilityFacet(utilityFacetAddress).insertBytesInByteArray(
+            disputeConfirmation.signedDispute.signature, disputeConfirmation.signatures
+        );
+        (bool isThresholdFinal,) = UtilityFacet(utilityFacetAddress).verifyThresholdSigned(
+            thresholdSet, disputeConfirmation.signedDispute.encodedDispute, signatures
+        );
         return isThresholdFinal;
     }
 }

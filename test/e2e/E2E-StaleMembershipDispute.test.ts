@@ -1,11 +1,10 @@
-import { expect } from "chai";
-
 import { Status } from "@/types";
 import {
     DisputeFraudProofType,
     toSolidityDisputeFraudProofType
 } from "@/types/sol-enums";
 import { MathTestSession as TestSession } from "@test/harness";
+import { expect } from "chai";
 
 describe("E2E: stale-membership dispute", function () {
     it("departed author + stale resulting snapshot in a stateProof → DisputeBlockAuthorNotParticipant only, then killed on-chain", async function () {

@@ -25,6 +25,17 @@ export class DetachedPromises {
         });
     }
 
+    // Track the original promise for draining and also route failure to its owner.
+    // A throwing onError creates an untracked unhandled rejection. requestDispute
+    // uses this to reach the runtime error funnel; other callers must handle or route it.
+    public static observe<T>(
+        promise: Promise<T>,
+        onError: (error: unknown) => void
+    ): void {
+        DetachedPromises.collect(promise);
+        void promise.catch(onError);
+    }
+
     public static size(): number {
         return DetachedPromises.pending.length;
     }
@@ -63,9 +74,9 @@ export class DetachedPromises {
 
         return allSettled;
     }
-    public static async awaitAllAndClear(): Promise<
-        PromiseSettledResult<any>[]
-    > {
+    public static async awaitAllAndClear(
+        timeoutMs = DetachedPromises.AWAIT_ALL_TIMEOUT_MS
+    ): Promise<PromiseSettledResult<any>[]> {
         const batch = DetachedPromises.getAndClear();
         if (batch.length === 0) {
             return [];
@@ -107,7 +118,7 @@ export class DetachedPromises {
                         : "");
 
                 reject(new Error(message));
-            }, DetachedPromises.AWAIT_ALL_TIMEOUT_MS);
+            }, timeoutMs);
 
             Promise.allSettled(trackedPromises)
                 .then((results) => {

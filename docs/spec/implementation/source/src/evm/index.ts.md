@@ -39,9 +39,9 @@ _None — the file is declarative/mechanical; behavior-shaping decisions live wi
 A file may contribute to several requirements; this report describes the contribution and never
 claims complete conformance for a requirement that depends on other files.
 
-| Source file                                    | Specification IDs |
-| ---------------------------------------------- | ----------------- |
-| [index.ts](../../../../../../src/evm/index.ts) |                   |
+| Source file                                    | Specification IDs                                                                                                |
+| ---------------------------------------------- | ---------------------------------------------------------------------------------------------------------------- |
+| [index.ts](../../../../../../src/evm/index.ts) | [`REQ-TJOIN-1-5VGR1F`](../../../../specification/peer-communication/targeted-channel-join.md#req-tjoin-1-5vgr1f) |
 
 ## Assumptions, dependencies, trust boundaries, and limits
 
@@ -65,8 +65,9 @@ Status enum: `Covered` | `Partial` | `Contradicts` | `Missing`. Evidence cells a
 **Here:** / **Other files:** so each row is auditable from its links alone; genuine gaps go in the
 Gap column. Audit state is file-level (Status header), never a row status.
 
-| Requirement / invariant | Implementation status | Evidence | Gap / divergence |
-| ----------------------- | --------------------- | -------- | ---------------- |
+| Requirement / invariant                                                                                          | Implementation status | Evidence                                                                            | Gap / divergence |
+| ---------------------------------------------------------------------------------------------------------------- | --------------------- | ----------------------------------------------------------------------------------- | ---------------- |
+| [`REQ-TJOIN-1-5VGR1F`](../../../../specification/peer-communication/targeted-channel-join.md#req-tjoin-1-5vgr1f) | Covered               | **Here:** exports the public targeted-connect option type from the EVM SDK surface. | None.            |
 
 ## Component test obligations
 

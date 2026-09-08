@@ -1,10 +1,10 @@
-import { expect } from "chai";
-import { describe, it, beforeEach, before } from "mocha";
-import Storage from "@/storage";
-import { BlockCoordinates, Block, StateSnapshot } from "@/models";
 import * as factory from "../factory";
+import { BlockCoordinates, Block, StateSnapshot } from "@/models";
+import Storage from "@/storage";
 import { ForkId } from "@/types/types";
 import type { BlockConfirmationStruct } from "@typechain-types/contracts/V1/types/DataTypes";
+import { expect } from "chai";
+import { describe, it, beforeEach, before } from "mocha";
 
 describe("Storage", () => {
     describe("getStateSnapshot", () => {

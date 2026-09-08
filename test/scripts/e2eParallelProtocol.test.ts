@@ -1,35 +1,27 @@
 // @spec-test-coverage-ignore: developer test-orchestration tooling; not protocol behavior, no specification or implementation IDs apply
+import { createSocketPair } from "../fixtures/distributed/testTransport";
 import { expect } from "chai";
-import { EventEmitter } from "events";
 
+import crypto from "crypto";
+import { EventEmitter } from "events";
+import fs from "fs";
+import { spawn } from "node:child_process";
+import { setImmediate } from "node:timers";
+import os from "os";
+import path from "path";
+import * as tar from "tar";
 const {
     waitForEnvironmentFrame
 } = require("./fixtures/environmentFrameWait.js");
-import crypto from "crypto";
-import fs from "fs";
-import os from "os";
-import path from "path";
-import { setImmediate } from "node:timers";
-import { spawn } from "node:child_process";
-import * as tar from "tar";
-import { createSocketPair } from "../fixtures/distributed/testTransport";
 
 const {
-    loadOrchestratorKeyPair
-} = require("../../scripts/e2e-parallel/distributed/orchestratorIdentity.js");
+    waitForIdleMessage
+} = require("../../scripts/e2e-parallel/distributed/artifactTransfer.js");
 const {
-    loadWorkerKeyPair
-} = require("../../scripts/e2e-parallel/distributed/workerIdentity.js");
-const {
-    DISTRIBUTED_PROTOCOL_VERSION,
-    ProtocolPeer,
-    waitForMessage
-} = require("../../scripts/e2e-parallel/distributed/protocol.js");
-const {
-    closeOwner,
-    flushAnnouncements,
-    guardConnectionErrors
-} = require("../../scripts/e2e-parallel/distributed/poolTransport.js");
+    derivePoolKeys,
+    authenticateClient,
+    authenticateServer
+} = require("../../scripts/e2e-parallel/distributed/authentication.js");
 const {
     closeStream,
     connectionHash,
@@ -37,35 +29,43 @@ const {
     selectLowerHash
 } = require("../../scripts/e2e-parallel/distributed/connectionLifecycle.js");
 const {
-    derivePoolKeys,
-    authenticateClient,
-    authenticateServer
-} = require("../../scripts/e2e-parallel/distributed/authentication.js");
-const {
-    discoveryConfigurations
-} = require("../../scripts/e2e-parallel/distributed/poolTransport.js");
-const {
     EnvironmentFrameParser,
     GUEST_KINDS,
     HOST_KINDS,
     encodeEnvironmentFrame
 } = require("../../scripts/e2e-parallel/distributed/environmentProtocol.js");
 const {
+    INFRA_PROCESS_LOG_CHUNK_BYTES,
+    createInfrastructureProcessLogChunks,
+    unpackInfrastructureProcessLogChunk
+} = require("../../scripts/e2e-parallel/distributed/infrastructureLogTransfer.js");
+const {
     formatBusyStatus,
     isRoutineDiscoveryFailure: isRoutineOrchestratorFailure
 } = require("../../scripts/e2e-parallel/distributed/orchestrator.js");
 const {
-    waitForIdleMessage
-} = require("../../scripts/e2e-parallel/distributed/artifactTransfer.js");
+    loadOrchestratorKeyPair
+} = require("../../scripts/e2e-parallel/distributed/orchestratorIdentity.js");
+const {
+    discoveryConfigurations
+} = require("../../scripts/e2e-parallel/distributed/poolTransport.js");
+const {
+    closeOwner,
+    flushAnnouncements,
+    guardConnectionErrors
+} = require("../../scripts/e2e-parallel/distributed/poolTransport.js");
+const {
+    DISTRIBUTED_PROTOCOL_VERSION,
+    ProtocolPeer,
+    waitForMessage
+} = require("../../scripts/e2e-parallel/distributed/protocol.js");
 const {
     isRoutineDiscoveryFailure: isRoutineServerFailure,
     requireTransportPublicKey
 } = require("../../scripts/e2e-parallel/distributed/server.js");
 const {
-    INFRA_PROCESS_LOG_CHUNK_BYTES,
-    createInfrastructureProcessLogChunks,
-    unpackInfrastructureProcessLogChunk
-} = require("../../scripts/e2e-parallel/distributed/infrastructureLogTransfer.js");
+    loadWorkerKeyPair
+} = require("../../scripts/e2e-parallel/distributed/workerIdentity.js");
 
 describe("distributed protocol", function () {
     it("chunks and restores infrastructure logs below the frame limit", function () {

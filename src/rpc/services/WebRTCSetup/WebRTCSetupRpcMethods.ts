@@ -1,7 +1,6 @@
+import WebRTCSetupService from "./WebRTCSetupService";
 import ARpcMethods from "@/rpc/ARpcMethods";
 import { ATransport } from "@/transport";
-
-import WebRTCSetupService from "./WebRTCSetupService";
 
 class WebRTCSetupRpcMethods extends ARpcMethods {
     service: WebRTCSetupService;

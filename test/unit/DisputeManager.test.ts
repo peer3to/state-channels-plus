@@ -1,10 +1,117 @@
+import type { Hash } from "@/types/types";
+import { Codec, hash, Type } from "@/utils";
+import { assertDisputeAdmissionRefuses } from "@test/fixtures/DisputeAdmissionStaging";
+import {
+    assertDisputeRefreshPolicy,
+    assertBackgroundDisputeFailure
+} from "@test/fixtures/DisputeRefreshStaging";
+import { assertDisputedForkDoesNotSign } from "@test/fixtures/DisputeSigningStaging";
+import {
+    assertAdmittedBlockPrecedesDispute,
+    assertBlockWorkAfterDisputeRollback
+} from "@test/fixtures/DisputeSigningStaging";
+import { assertRefusalAfterLiveForkSwitch } from "@test/fixtures/ReductionForkSwitchStaging";
+import { MathTestSession as TestSession } from "@test/harness";
 import { expect } from "chai";
 import { ZeroAddress } from "ethers";
-import { Codec, hash, Type } from "@/utils";
-import type { Hash } from "@/types/types";
-import { MathTestSession as TestSession } from "@test/harness";
 
 describe("Unit: DisputeManager", function () {
+    it("dispute admission refuses disposal while waiting for the state mutex", async function () {
+        await assertDisputeAdmissionRefuses(
+            TestSession.getHarness(),
+            "dispose"
+        );
+    });
+    it("dispute admission refuses a changed fork before construction", async function () {
+        await assertDisputeAdmissionRefuses(TestSession.getHarness(), "fork");
+    });
+    it("inline background fraud dispute reports an unexpected recovery error to top-level handling", async function () {
+        const h = TestSession.getHarness();
+        await assertBackgroundDisputeFailure(h, false);
+        await TestSession.expectFirstDetachedError({
+            includes: "authoritative slash read failed",
+            timeoutMs: h.event.protocolEventTimeoutMs()
+        });
+        await TestSession.settleDetached({
+            expectedErrorIncludes: "authoritative slash read failed"
+        });
+    });
+    it("worker background fraud dispute reports an unexpected recovery error to top-level handling", async function () {
+        const h = TestSession.getHarness();
+        await assertBackgroundDisputeFailure(h, true);
+        await TestSession.expectFirstDetachedError({
+            includes: "authoritative slash read failed",
+            timeoutMs: h.event.protocolEventTimeoutMs()
+        });
+        await TestSession.settleDetached({
+            expectedErrorIncludes: "authoritative slash read failed"
+        });
+    });
+    it("a live fork change during a refused upload prevents obsolete recovery and re-entry", async function () {
+        await assertRefusalAfterLiveForkSwitch(TestSession.getHarness());
+    });
+    it("a refused contribution does not turn an already removed on-chain slash into a reason", async function () {
+        await assertDisputeRefreshPolicy(
+            TestSession.getHarness(),
+            "ineligible"
+        );
+    });
+
+    it("an existing-window refusal with no new slashes stops after one attempt", async function () {
+        await assertDisputeRefreshPolicy(TestSession.getHarness(), "empty");
+    });
+    it("repeated existing-window refusals with unchanged slashes do not spin", async function () {
+        await assertDisputeRefreshPolicy(TestSession.getHarness(), "repeat");
+    });
+    it("concurrent existing-window refusals release the dispute mutex before recovery", async function () {
+        await assertDisputeRefreshPolicy(
+            TestSession.getHarness(),
+            "concurrent"
+        );
+    });
+    it("a failed authoritative slash read remains visible after marker rollback", async function () {
+        await assertDisputeRefreshPolicy(
+            TestSession.getHarness(),
+            "read-failure"
+        );
+    });
+    it("an unrelated upload error does not enter slash recovery", async function () {
+        await assertDisputeRefreshPolicy(TestSession.getHarness(), "unrelated");
+    });
+    it("disposal during a refused upload prevents slash recovery and re-entry", async function () {
+        await assertDisputeRefreshPolicy(TestSession.getHarness(), "disposed");
+    });
+
+    it("authoring already admitted finishes before a dispute task captures its state", async function () {
+        await assertAdmittedBlockPrecedesDispute(
+            TestSession.getHarness(),
+            "authoring"
+        );
+    });
+    it("a block admitted to commit finishes before a dispute task captures its state", async function () {
+        await assertAdmittedBlockPrecedesDispute(
+            TestSession.getHarness(),
+            "commit"
+        );
+    });
+    it("a counter-signature already requested finishes before a dispute task captures its state", async function () {
+        await assertAdmittedBlockPrecedesDispute(
+            TestSession.getHarness(),
+            "signature"
+        );
+    });
+    it("a refused dispute reopens own-turn authoring before a retry", async function () {
+        await assertBlockWorkAfterDisputeRollback(
+            TestSession.getHarness(),
+            true
+        );
+    });
+    it("a refused dispute reopens counter-signing before a retry", async function () {
+        await assertBlockWorkAfterDisputeRollback(
+            TestSession.getHarness(),
+            false
+        );
+    });
     describe("constructDispute", function () {
         it("healthy fork → well-formed dispute, verifyStateProof accepts it", async function () {
             const h = TestSession.getHarness();
@@ -111,10 +218,7 @@ describe("Unit: DisputeManager", function () {
                 },
                 { forkId },
                 {
-                    timeoutMs:
-                        h.event.protocolEventTimeoutMs({
-                            withFirstBlockGrace: true
-                        }) * 2
+                    timeoutMs: h.event.hostExecTimeoutMs()
                 }
             );
 
@@ -190,10 +294,7 @@ describe("Unit: DisputeManager", function () {
                 },
                 { forkId },
                 {
-                    timeoutMs:
-                        h.event.protocolEventTimeoutMs({
-                            withFirstBlockGrace: true
-                        }) * 2
+                    timeoutMs: h.event.hostExecTimeoutMs()
                 }
             );
 
@@ -311,7 +412,7 @@ describe("Unit: DisputeManager", function () {
         it("a peer behind the head → constructDispute builds a complete dispute over what it has", async function () {
             const h = TestSession.getHarness();
             await h.lifecycle.start(3, 0);
-            await h.network.disconnectPeer(2); // peer 2 misses blocks 0..1
+            await h.network.blacklistAndDisconnectPeer(2); // peer 2 misses blocks 0..1
             await h.transition.advanceState({ count: 2, waitForPeers: [0, 1] });
             const forkId = h.activeForkId!;
 
@@ -339,10 +440,7 @@ describe("Unit: DisputeManager", function () {
                 },
                 { forkId },
                 {
-                    timeoutMs:
-                        h.event.protocolEventTimeoutMs({
-                            withFirstBlockGrace: true
-                        }) * 2
+                    timeoutMs: h.event.hostExecTimeoutMs()
                 }
             );
 
@@ -502,7 +600,7 @@ describe("Unit: DisputeManager", function () {
         it("a peer fed a proof for blocks it never stored → isPartial true", async function () {
             const h = TestSession.getHarness();
             await h.lifecycle.start(3, 0);
-            await h.network.disconnectPeer(2); // peer 2 misses blocks 0..1
+            await h.network.blacklistAndDisconnectPeer(2); // peer 2 misses blocks 0..1
             await h.transition.advanceState({ count: 2, waitForPeers: [0, 1] });
             const forkId = h.activeForkId!;
 
@@ -681,10 +779,7 @@ describe("Unit: DisputeManager", function () {
                     },
                     { forkId },
                     {
-                        timeoutMs:
-                            h.event.protocolEventTimeoutMs({
-                                withFirstBlockGrace: true
-                            }) * 2
+                        timeoutMs: h.event.hostExecTimeoutMs()
                     }
                 );
                 await laggingCtl.stub.restoreChainLogQueries().request();
@@ -764,10 +859,7 @@ describe("Unit: DisputeManager", function () {
                 },
                 { forkId },
                 {
-                    timeoutMs:
-                        h.event.protocolEventTimeoutMs({
-                            withFirstBlockGrace: true
-                        }) * 2
+                    timeoutMs: h.event.hostExecTimeoutMs()
                 }
             );
 
@@ -805,10 +897,7 @@ describe("Unit: DisputeManager", function () {
                 },
                 { forkId },
                 {
-                    timeoutMs:
-                        h.event.protocolEventTimeoutMs({
-                            withFirstBlockGrace: true
-                        }) * 2
+                    timeoutMs: h.event.hostExecTimeoutMs()
                 }
             );
 
@@ -849,10 +938,7 @@ describe("Unit: DisputeManager", function () {
                 },
                 { forkId },
                 {
-                    timeoutMs:
-                        h.event.protocolEventTimeoutMs({
-                            withFirstBlockGrace: true
-                        }) * 2
+                    timeoutMs: h.event.hostExecTimeoutMs()
                 }
             );
 
@@ -896,10 +982,7 @@ describe("Unit: DisputeManager", function () {
                 },
                 { forkId },
                 {
-                    timeoutMs:
-                        h.event.protocolEventTimeoutMs({
-                            withFirstBlockGrace: true
-                        }) * 2
+                    timeoutMs: h.event.hostExecTimeoutMs()
                 }
             );
 
@@ -961,10 +1044,7 @@ describe("Unit: DisputeManager", function () {
                 },
                 { forkId },
                 {
-                    timeoutMs:
-                        h.event.protocolEventTimeoutMs({
-                            withFirstBlockGrace: true
-                        }) * 2
+                    timeoutMs: h.event.hostExecTimeoutMs()
                 }
             );
 
@@ -978,6 +1058,7 @@ describe("Unit: DisputeManager", function () {
             await h.lifecycle.start(3, 3);
             const peer = h.getPeer(0);
             const forkId = h.activeForkId!;
+            const scheduled = await h.rpcStub.recordScheduledTasks(peer.index);
 
             // the send lands but the window predates the timeout deadline, so
             // the revert surfaces from tx.wait() - after the marker was stored
@@ -1005,18 +1086,23 @@ describe("Unit: DisputeManager", function () {
                 },
                 { forkId },
                 {
-                    timeoutMs:
-                        h.event.protocolEventTimeoutMs({
-                            withFirstBlockGrace: true
-                        }) * 2
+                    timeoutMs: h.event.hostExecTimeoutMs()
                 }
             );
 
             expect(r.rejected).to.equal("");
             expect(r.disputed).to.equal(false);
+            expect(
+                (await scheduled.tasks()).filter((task) =>
+                    task.taskName.startsWith(
+                        "timeoutParticipantAfterEarlySubmission"
+                    )
+                )
+            ).to.deep.equal([]);
+            await scheduled.restore();
         });
 
-        it("RaceConditionDisputeEvidencePeriodExpired at send → rejects, marker never set", async function () {
+        it("RaceConditionDisputeEvidencePeriodExpired at send → rejects and the marker rolls back", async function () {
             const h = TestSession.getHarness();
             await h.lifecycle.start(3, 3);
             const peer = h.getPeer(0);
@@ -1045,22 +1131,19 @@ describe("Unit: DisputeManager", function () {
                 },
                 { forkId },
                 {
-                    timeoutMs:
-                        h.event.protocolEventTimeoutMs({
-                            withFirstBlockGrace: true
-                        }) * 2
+                    timeoutMs: h.event.hostExecTimeoutMs()
                 }
             );
 
             // this handler rethrows -> the caller sees the custom error, and
-            // the send failed before the line that stores the marker
+            // the failed send rolls the signing marker back
             expect(r.rejected).to.contain(
                 "RaceConditionDisputeEvidencePeriodExpired"
             );
             expect(r.disputed).to.equal(false);
         });
 
-        it("RaceConditionDisputeEvidencePeriodExpired at wait → rejects with the marker left set", async function () {
+        it("RaceConditionDisputeEvidencePeriodExpired at wait → rejects and the marker rolls back", async function () {
             const h = TestSession.getHarness();
             await h.lifecycle.start(3, 3);
             const peer = h.getPeer(0);
@@ -1089,19 +1172,191 @@ describe("Unit: DisputeManager", function () {
                 },
                 { forkId },
                 {
-                    timeoutMs:
-                        h.event.protocolEventTimeoutMs({
-                            withFirstBlockGrace: true
-                        }) * 2
+                    timeoutMs: h.event.hostExecTimeoutMs()
                 }
             );
 
-            // the rethrow skips the storeDisputedFork(false) in the catch, so
-            // the marker stored before the await survives
+            // the error stays visible, but no dispute landed: the marker
+            // stored before the await rolls back like every other failure
             expect(r.rejected).to.contain(
                 "RaceConditionDisputeEvidencePeriodExpired"
             );
-            expect(r.disputed).to.equal(true);
+            expect(r.disputed).to.equal(false);
+        });
+
+        it("after a late revert on the wait, a retry submits replacement evidence, and the fork is closed to our signing while it holds", async function () {
+            const h = TestSession.getHarness();
+            await h.lifecycle.start(3, 3);
+            const peer = h.getPeer(0);
+            const forkId = h.activeForkId!;
+
+            // The kill of a winning commitment retries dispute() on the same
+            // fork. The rolled-back marker lets the retry submit, and the
+            // marker it leaves behind keeps this peer's block work off the
+            // fork.
+            const failing = await h.rpcStub.recordDisputeSubmissions(
+                peer.index,
+                {
+                    failWith: {
+                        customError:
+                            "RaceConditionDisputeEvidencePeriodExpired",
+                        at: "wait"
+                    }
+                }
+            );
+            const first = await h.execOnHost(
+                peer,
+                async (sm, args) => {
+                    let rejected = "";
+                    try {
+                        await sm.disputeManager.dispute(args.forkId);
+                    } catch (e) {
+                        rejected = e instanceof Error ? e.message : String(e);
+                    }
+                    return {
+                        rejected,
+                        disputed: sm.storage.disputes.didIDispute(args.forkId)
+                    };
+                },
+                { forkId },
+                {
+                    timeoutMs: h.event.hostExecTimeoutMs()
+                }
+            );
+            expect(first.rejected).to.contain(
+                "RaceConditionDisputeEvidencePeriodExpired"
+            );
+            expect(first.disputed).to.equal(false);
+            await failing.restore();
+
+            const retry = await h.rpcStub.recordDisputeSubmissions(peer.index);
+            const second = await h.execOnHost(
+                peer,
+                async (sm, args) => {
+                    await sm.disputeManager.dispute(args.forkId);
+                    return {
+                        disputed: sm.storage.disputes.didIDispute(args.forkId)
+                    };
+                },
+                { forkId },
+                {
+                    timeoutMs: h.event.hostExecTimeoutMs()
+                }
+            );
+            expect(second.disputed).to.equal(true);
+            expect(await retry.submissions()).to.have.length(1);
+            await retry.restore();
+
+            // Peer 0 is the next writer after three blocks; its turn produces
+            // no block on the closed fork.
+            const heightBefore = await h
+                .control(peer)
+                .query.getLatestBlockHeight(forkId)
+                .request();
+            await h.transition.submit(peer, (contract) => contract.add(1), {
+                waitForSync: false
+            });
+            expect(
+                await h
+                    .control(peer)
+                    .query.getLatestBlockHeight(forkId)
+                    .request()
+            ).to.equal(heightBefore);
+        });
+
+        it("dispute start closes the fork: our turn produces no block", async function () {
+            const h = TestSession.getHarness();
+            // Three blocks: writers 0, 1, 2 → peer 0 is next.
+            await h.lifecycle.start(3, 3);
+            const disputer = h.getPeer(0);
+            const forkId = h.activeForkId!;
+
+            // The upload parks, so the dispute is in flight for the rest of
+            // the case; the marker is set before construction.
+            const held = await h.rpcStub.recordDisputeSubmissions(
+                disputer.index,
+                { hold: true }
+            );
+            const inFlight = h.execOnHost(
+                disputer,
+                async (sm, args) => {
+                    await sm.disputeManager.dispute(args.forkId);
+                    return sm.storage.disputes.didIDispute(args.forkId);
+                },
+                { forkId },
+                {
+                    timeoutMs: h.event.hostExecTimeoutMs()
+                }
+            );
+            try {
+                await held.waitUntilHeld();
+                const heightBefore = await h
+                    .control(disputer)
+                    .query.getLatestBlockHeight(forkId)
+                    .request();
+                await h.transition.submit(
+                    disputer,
+                    (contract) => contract.add(1),
+                    { waitForSync: false }
+                );
+                expect(
+                    await h
+                        .control(disputer)
+                        .query.getLatestBlockHeight(forkId)
+                        .request()
+                ).to.equal(heightBefore);
+            } finally {
+                await held.release();
+                await held.restore();
+            }
+            expect(await inFlight).to.equal(true);
+        });
+
+        it("dispute start closes the fork: a delivered block gets no signature of ours", async function () {
+            await assertDisputedForkDoesNotSign(TestSession.getHarness());
+        });
+
+        it("the full ingest pipeline stores a block without signing when dispute admission precedes commit", async function () {
+            const h = TestSession.getHarness();
+            await h.lifecycle.start(3, 0);
+            const { observer, authored } =
+                await h.transition.authorNextBlockOffWireWait();
+            await h.execOnHost(observer, (sm) => {
+                const validate =
+                    sm.validationService.validateBlockConfirmation.bind(
+                        sm.validationService
+                    );
+                sm.validationService.validateBlockConfirmation = async (
+                    ...args
+                ) => {
+                    const result = await validate(...args);
+                    // Stage dispute admission at the validation/commit boundary;
+                    // all validation and commit behavior remains real.
+                    sm.storage.disputes.storeDisputedFork(sm.forkId, true);
+                    return result;
+                };
+            });
+            const result = await h
+                .control(observer)
+                .validation.runBlockIngest(authored.encodedBlockConfirmation)
+                .request();
+            expect(result.resultName).to.equal("SUCCESS");
+            const stored = await h
+                .control(observer)
+                .query.getBlockByHash(authored.hash)
+                .request();
+            expect(stored).to.not.equal(null);
+            const signed = await h.execOnHost(
+                observer,
+                (sm, args) => {
+                    const block = sm.storage.blocks.getBlock(args.hash);
+                    if (!block)
+                        throw new Error("Ingest did not commit the block");
+                    return block.allSignerAddresses.has(sm.signerAddress);
+                },
+                { hash: authored.hash }
+            );
+            expect(signed).to.equal(false);
         });
 
         it("an unrecognized send failure → swallowed, fork left undisputed", async function () {
@@ -1130,10 +1385,7 @@ describe("Unit: DisputeManager", function () {
                 },
                 { forkId },
                 {
-                    timeoutMs:
-                        h.event.protocolEventTimeoutMs({
-                            withFirstBlockGrace: true
-                        }) * 2
+                    timeoutMs: h.event.hostExecTimeoutMs()
                 }
             );
 
@@ -1168,10 +1420,7 @@ describe("Unit: DisputeManager", function () {
                 },
                 { forkId },
                 {
-                    timeoutMs:
-                        h.event.protocolEventTimeoutMs({
-                            withFirstBlockGrace: true
-                        }) * 2
+                    timeoutMs: h.event.hostExecTimeoutMs()
                 }
             );
 
@@ -1241,10 +1490,7 @@ describe("Unit: DisputeManager", function () {
                 },
                 { forkId },
                 {
-                    timeoutMs:
-                        h.event.protocolEventTimeoutMs({
-                            withFirstBlockGrace: true
-                        }) * 2
+                    timeoutMs: h.event.hostExecTimeoutMs()
                 }
             );
             await probe.waitUntilHeld();
@@ -1273,10 +1519,7 @@ describe("Unit: DisputeManager", function () {
                 },
                 { forkId },
                 {
-                    timeoutMs:
-                        h.event.protocolEventTimeoutMs({
-                            withFirstBlockGrace: true
-                        }) * 2
+                    timeoutMs: h.event.hostExecTimeoutMs()
                 }
             );
             await h.rpcStub.waitUntilDisputeMutexContended(peer.index);
@@ -1335,10 +1578,7 @@ describe("Unit: DisputeManager", function () {
                 },
                 { forkId },
                 {
-                    timeoutMs:
-                        h.event.protocolEventTimeoutMs({
-                            withFirstBlockGrace: true
-                        }) * 2
+                    timeoutMs: h.event.hostExecTimeoutMs()
                 }
             );
 
@@ -1388,10 +1628,7 @@ describe("Unit: DisputeManager", function () {
                 },
                 {},
                 {
-                    timeoutMs:
-                        h.event.protocolEventTimeoutMs({
-                            withFirstBlockGrace: true
-                        }) * 2
+                    timeoutMs: h.event.hostExecTimeoutMs()
                 }
             );
 
@@ -1431,10 +1668,7 @@ describe("Unit: DisputeManager", function () {
                 },
                 {},
                 {
-                    timeoutMs:
-                        h.event.protocolEventTimeoutMs({
-                            withFirstBlockGrace: true
-                        }) * 2
+                    timeoutMs: h.event.hostExecTimeoutMs()
                 }
             );
 
@@ -1496,10 +1730,7 @@ describe("Unit: DisputeManager", function () {
                 },
                 {},
                 {
-                    timeoutMs:
-                        h.event.protocolEventTimeoutMs({
-                            withFirstBlockGrace: true
-                        }) * 2
+                    timeoutMs: h.event.hostExecTimeoutMs()
                 }
             );
 
@@ -1546,10 +1777,7 @@ describe("Unit: DisputeManager", function () {
                 },
                 {},
                 {
-                    timeoutMs:
-                        h.event.protocolEventTimeoutMs({
-                            withFirstBlockGrace: true
-                        }) * 2
+                    timeoutMs: h.event.hostExecTimeoutMs()
                 }
             );
 
@@ -1587,10 +1815,7 @@ describe("Unit: DisputeManager", function () {
                     },
                     {},
                     {
-                        timeoutMs:
-                            h.event.protocolEventTimeoutMs({
-                                withFirstBlockGrace: true
-                            }) * 2
+                        timeoutMs: h.event.hostExecTimeoutMs()
                     }
                 );
             const first = kill();
@@ -1646,10 +1871,7 @@ describe("Unit: DisputeManager", function () {
                 },
                 { forkId },
                 {
-                    timeoutMs:
-                        h.event.protocolEventTimeoutMs({
-                            withFirstBlockGrace: true
-                        }) * 2
+                    timeoutMs: h.event.hostExecTimeoutMs()
                 }
             );
             // the park is scoped to constructDispute, so this pins that call
@@ -1659,7 +1881,7 @@ describe("Unit: DisputeManager", function () {
             // store the proof inside the window, then let the construction finish
             const validation = await h
                 .control(observer)
-                .stub.runBlockValidation(encodedBlock)
+                .validation.runBlockValidation(encodedBlock)
                 .request();
             expect(validation.fraudProofType).to.not.be.null;
 

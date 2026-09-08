@@ -1,7 +1,7 @@
-import ARpcService from "@/rpc/ARpcService";
-import type P2PManager from "@/P2PManager";
-import type ATransport from "@/transport/ATransport";
 import BalanceRpcMethods from "./BalanceRpcMethods";
+import type P2PManager from "@/P2PManager";
+import ARpcService from "@/rpc/ARpcService";
+import type ATransport from "@/transport/ATransport";
 
 /**
  * Balance math the harness drives on a peer's host-side diamond state machine

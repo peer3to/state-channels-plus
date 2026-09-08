@@ -1,10 +1,10 @@
-import { expect } from "chai";
+import { createEvm } from "@/evm/EvmFactory";
+import { createLogger } from "@/utils";
 import type { EVM } from "@ethereumjs/evm";
 import { Address, hexToBytes } from "@ethereumjs/util";
 
-import { createEvm } from "@/evm/EvmFactory";
 import { evmJumpdestCacheStats } from "@platform/evmJumpdestCache";
-import { createLogger } from "@/utils";
+import { expect } from "chai";
 
 const logger = createLogger({}, {}, { level: "error" });
 const CODE_ADDRESS = new Address(

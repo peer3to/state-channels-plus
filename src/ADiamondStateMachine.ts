@@ -1,10 +1,10 @@
+import { Address, Bytes } from "./types/types";
+
+import type { LocalDiamondContract } from "./utils/localDiamond";
 import {
     BalanceStruct,
     MessageStruct
 } from "@typechain-types/contracts/V1/types/DataTypes";
-import { Address, Bytes } from "./types/types";
-
-import type { LocalDiamondContract } from "./utils/localDiamond";
 type TransitionResponse = {
     success: boolean;
     outboundMessages: MessageStruct[];
@@ -39,6 +39,11 @@ abstract class ADiamondStateMachine {
         balance2: BalanceStruct
     ): Promise<boolean>;
 
+    public abstract isBalanceLesserThan(
+        balance1: BalanceStruct,
+        balance2: BalanceStruct
+    ): Promise<boolean>;
+
     public abstract processInboundMessage(
         message: MessageStruct
     ): Promise<boolean>;
@@ -46,6 +51,16 @@ abstract class ADiamondStateMachine {
     public abstract getTotalStateBalance(): Promise<BalanceStruct>;
 
     public abstract getZeroBalance(): Promise<BalanceStruct>;
+
+    public async requirePositiveBalance(
+        balance: BalanceStruct,
+        label: string
+    ): Promise<void> {
+        const zeroBalance = await this.getZeroBalance();
+        if (!(await this.isBalanceLesserThan(zeroBalance, balance))) {
+            throw new Error(`${label} must be greater than zero`);
+        }
+    }
 
     public abstract dispose(): Promise<void> | void;
 

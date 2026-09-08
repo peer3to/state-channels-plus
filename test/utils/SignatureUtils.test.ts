@@ -1,11 +1,11 @@
-import { expect } from "chai";
-import { describe, it, before } from "mocha";
-import { ethers } from "hardhat";
-import { HardhatEthersSigner } from "@nomicfoundation/hardhat-ethers/signers";
-import Block from "@/models/Block";
-import { SignatureUtils } from "@/utils/SignatureUtils";
 import { block as blockFactory } from "../factory";
+import Block from "@/models/Block";
 import { Signature } from "@/types/types";
+import { SignatureUtils } from "@/utils/SignatureUtils";
+import { HardhatEthersSigner } from "@nomicfoundation/hardhat-ethers/signers";
+import { expect } from "chai";
+import { ethers } from "hardhat";
+import { describe, it, before } from "mocha";
 
 describe("SignatureUtils.getSignerAddress", () => {
     let signer: HardhatEthersSigner;

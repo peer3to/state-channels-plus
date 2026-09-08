@@ -1,7 +1,7 @@
-import { expect } from "chai";
-import { describe, it, beforeEach } from "mocha";
 import { ParticipantSetChangeStorage } from "@/storage/ParticipantSetChangeStorage";
 import { BlockHeight, ForkId } from "@/types/types";
+import { expect } from "chai";
+import { describe, it, beforeEach } from "mocha";
 
 describe("ParticipantSetChangeStorage", () => {
     let storage: ParticipantSetChangeStorage;

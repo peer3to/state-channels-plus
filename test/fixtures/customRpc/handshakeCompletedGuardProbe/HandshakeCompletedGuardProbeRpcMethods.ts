@@ -1,19 +1,26 @@
 // @spec-test-coverage-ignore: loopback endpoints for HandshakeCompletedGuard component tests
-import type P2PManager from "@/P2PManager";
-import ARpcMethods from "@/rpc/ARpcMethods";
-import type ATransport from "@/transport/ATransport";
 import type { PingPongRpc } from "../PingPongRpcManifest";
 import type {
     CompletedGuardProbe,
     AddresslessGuardProbe,
     CustomFailureGuardProbe,
+    DisposedWaiterGuardProbe,
     HandshakeCompletedGuardProbeService,
     PunishmentGuardProbe,
     QueueIsolationGuardProbe,
     QueueGuardProbe,
     RequestGuardProbe,
-    TimeoutGuardProbe
+    RetiredTransportGuardProbe,
+    GraceOverlapGuardProbe,
+    ExactTransportQueueGuardProbe,
+    ClosedTransportDispatchGuardProbe,
+    LateCompletionGuardProbe,
+    TimeoutGuardProbe,
+    DeferredAdmissionProbe
 } from "./HandshakeCompletedGuardProbeService";
+import type P2PManager from "@/P2PManager";
+import ARpcMethods from "@/rpc/ARpcMethods";
+import type ATransport from "@/transport/ATransport";
 
 export class HandshakeCompletedGuardProbeRpcMethods extends ARpcMethods<
     P2PManager<PingPongRpc>
@@ -27,6 +34,10 @@ export class HandshakeCompletedGuardProbeRpcMethods extends ARpcMethods<
 
     public probeCompleted(): Promise<CompletedGuardProbe> {
         return this.service.probeCompleted();
+    }
+
+    public probeDeferredAdmission(): Promise<DeferredAdmissionProbe> {
+        return this.service.probeDeferredAdmission();
     }
 
     public probeQueueReplay(): Promise<QueueGuardProbe> {
@@ -55,5 +66,31 @@ export class HandshakeCompletedGuardProbeRpcMethods extends ARpcMethods<
 
     public probeCustomFailure(): Promise<CustomFailureGuardProbe> {
         return this.service.probeCustomFailure();
+    }
+
+    public probeRetiredTransportCompletion(): Promise<RetiredTransportGuardProbe> {
+        return this.service.probeRetiredTransportCompletion();
+    }
+
+    public probeDisposedWaiter(
+        completed: boolean
+    ): Promise<DisposedWaiterGuardProbe> {
+        return this.service.probeDisposedWaiter(completed);
+    }
+
+    public probeLateCompletionAfterTimeout(): Promise<LateCompletionGuardProbe> {
+        return this.service.probeLateCompletionAfterTimeout();
+    }
+
+    public probeAuthenticatedGraceOverlap(): Promise<GraceOverlapGuardProbe> {
+        return this.service.probeAuthenticatedGraceOverlap();
+    }
+
+    public probeExactTransportQueueOwnership(): Promise<ExactTransportQueueGuardProbe> {
+        return this.service.probeExactTransportQueueOwnership();
+    }
+
+    public probeClosedTransportDispatch(): Promise<ClosedTransportDispatchGuardProbe> {
+        return this.service.probeClosedTransportDispatch();
     }
 }

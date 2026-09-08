@@ -1,17 +1,17 @@
 // @spec-test-coverage-ignore: shared harness context and type declarations exercised by owning mapped test declarations
-import { ForkId } from "@/types/types";
-import { StateSnapshot } from "@/models";
-import { DisputeStruct } from "@typechain-types/contracts/V1/types/DisputeTypes";
-import { ChannelBalanceStructOutput } from "@typechain-types/contracts/V1/StateChannelManagerInterface";
-import * as sinon from "sinon";
-import { Signer } from "ethers";
 import { P2pInstance, type EvmCustomPrecompileManifest } from "@/evm";
-import { AStateMachine as AStateMachineContract } from "@typechain-types";
-import { EventBarrier, Logger } from "@/utils";
+import { StateSnapshot } from "@/models";
 import type { CustomRpcManifest } from "@/rpc";
-import type { HarnessControlRpc } from "@test/fixtures/customRpc/harnessControl/HarnessControlRpc";
 import { TimeConfig } from "@/types";
+import { ForkId } from "@/types/types";
+import { EventBarrier, Logger } from "@/utils";
 import { Config } from "@/utils";
+import type { HarnessControlRpc } from "@test/fixtures/customRpc/harnessControl/HarnessControlRpc";
+import { AStateMachine as AStateMachineContract } from "@typechain-types";
+import { ChannelBalanceStructOutput } from "@typechain-types/contracts/V1/StateChannelManagerInterface";
+import { DisputeStruct } from "@typechain-types/contracts/V1/types/DisputeTypes";
+import { Signer } from "ethers";
+import * as sinon from "sinon";
 
 /**
  * Test context fields used by blocks for cross-block state sharing
@@ -167,6 +167,7 @@ export type EventSpies = {
     // P2pEventHooks spies
     onConnection?: sinon.SinonSpy;
     onTurn?: sinon.SinonSpy;
+    onLeaveTurn?: sinon.SinonSpy;
     onSetState?: sinon.SinonSpy;
     onAbort?: sinon.SinonSpy;
     onStatusChanged?: sinon.SinonSpy;

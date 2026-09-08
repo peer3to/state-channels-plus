@@ -1,3 +1,4 @@
+// @spec-test-coverage-ignore: shared harness support; executable evidence belongs to its calling test declarations
 import type AValidationStrategy from "@/stateManager/validationStrategy/AValidationStrategy";
 import { BlockValidationResult } from "@/types";
 

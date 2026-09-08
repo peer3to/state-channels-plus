@@ -1,5 +1,6 @@
-import { ForkId, BlockHeight, BlockCalldata, Address } from "@/types/types";
+import { coordinateKey } from "./keys";
 import { Block } from "@/models";
+import { ForkId, BlockHeight, BlockCalldata, Address } from "@/types/types";
 
 type CalldataCoordinateKey = string;
 
@@ -65,6 +66,6 @@ export class BlockCalldataStorage {
         height: BlockHeight,
         blockAuthor: Address
     ): CalldataCoordinateKey {
-        return `${forkId}:${height}:${blockAuthor}`;
+        return `${coordinateKey(forkId, height)}:${blockAuthor}`;
     }
 }

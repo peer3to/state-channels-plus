@@ -1,3 +1,10 @@
+import { Block, StateSnapshot, StateProof } from "@/models";
+import type EventSyncService from "@/stateManager/eventSync/EventSyncService";
+import Storage, { SortOrder } from "@/storage";
+import { ReduceData } from "@/types";
+import { Address, BlockHeight, ForkId, Hash, Signature } from "@/types/types";
+import { Codec, difference, Logger, Type } from "@/utils";
+import { LoggerUtils } from "@/utils/LoggerUtils";
 import { SignedBlockStruct } from "@typechain-types/contracts/V1/types/DataTypes";
 import {
     DisputeConfirmationStruct,
@@ -8,14 +15,7 @@ import {
     MilestoneProofStruct,
     StateProofStruct
 } from "@typechain-types/contracts/V1/types/ProofTypes";
-import Storage, { SortOrder } from "@/storage";
-import { Address, BlockHeight, ForkId, Hash, Signature } from "@/types/types";
-import { Block, StateSnapshot, StateProof } from "@/models";
-import { Codec, difference, Logger, Type } from "@/utils";
 import { ZeroHash } from "ethers";
-import { ReduceData } from "@/types";
-import { LoggerUtils } from "@/utils/LoggerUtils";
-import type EventSyncService from "@/stateManager/eventSync/EventSyncService";
 
 /**
  * AgreementManager acts as a higher logic layer over storage

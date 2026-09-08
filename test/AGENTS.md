@@ -1,3 +1,5 @@
+// @spec-test-coverage-ignore: repository-local test guidance; it contains no executable evidence
+
 # Test harness guide (`test/`)
 
 Root conventions still apply (see `../AGENTS.md`). This file covers the
@@ -85,6 +87,19 @@ TStateMachine>` — the base is `HarnessControlRpc` (not `MainRpcService`), so
   `p2pEventHooks` + `EventHandler` invocations over the port and
   `registerPeerEventListeners` drives the sinon spies / `eventCountsBarrier` from
   the client.
+
+### Intentional network isolation
+
+- `network.blacklistAndDisconnectPeer(index)` is persistent test isolation, not a raw
+  transport failure. It blacklists the peer pair in both directions and closes
+  the current transports, so joined Holepunch topics cannot reconnect it.
+- `network.reconnectPeers(indices)` is the explicit inverse. It clears the
+  pairwise harness blacklist on both hosts before it rejoins discovery.
+- `network.connectPeers(indices)` performs initial connection only and does not
+  change blacklist policy.
+- Raw transport-close controls are only for component tests that exercise
+  natural LocalDiscovery reconnect behavior. Do not use them to stage an
+  offline peer in a protocol test.
 
 ### Typing model — why `control()` has the one cast
 
@@ -174,6 +189,12 @@ transitions burns the author's window and ends in a rejected block, a
 participant-timeout dispute, and a dead fork. Widening the timeConfig to fit the
 setup is not a fix; it hides the modeling error.
 
+Harness `network.connectToChannel` dispatches detached work. Its immediate RPC
+acknowledgement does not mean the signer connected or synced. A full-flow test
+must drive the real attempt to its terminal boundary and call
+`TestSession.settleDetached()` before returning. Teardown only reports forgotten
+work; it does not cancel or dispose the feature operation.
+
 - `addSpectatorDetached` is the default way to add a spectator.
   `addSpectatorWait` is reserved for tests whose subject is the sync flow
   itself and that schedule no state transitions while it blocks.
@@ -262,8 +283,11 @@ with the suite still green.
 - Legacy in-process unit/integration: `yarn test`. E2E inline: `yarn test:e2e`.
 - E2E in worker mode: `yarn test:e2e:worker` (per-file process isolation +
   internal X/N progress; needs the hardhat node — `yarn infra:hardhat-node`).
-- Local parallel runner: `yarn test:parallel` — use it for focused local runs;
-  each run logs to a fresh
+- Always prefer the distributed runner, also for focused subsets, loops, and
+  reruns: `yarn test:parallel:distributed --grep <regexp>`. The local runner is
+  acceptable only for a small focused selection (about ten tests or fewer).
+- Local parallel runner: `yarn test:parallel` — only for that small focused
+  selection; each run logs to a fresh
   `./logs/run-N/`; earlier run dirs (and their `error_*` logs) are retained
   for cross-run comparison. Only the current run's dir is cleared. See root
   `AGENTS.md` ("Canonical test command and parallel run logs").

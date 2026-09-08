@@ -1,8 +1,8 @@
+import { BlockValidationResult } from "@/types";
+import { Codec, Type } from "@/utils";
+import { MathTestSession as TestSession } from "@test/harness";
 import { expect } from "chai";
 import { ethers } from "ethers";
-import { Codec, Type } from "@/utils";
-import { BlockValidationResult } from "@/types";
-import { MathTestSession as TestSession } from "@test/harness";
 
 // the merge is driven directly through transition.runStoredBlockMerge, which
 // runs tryMergeStoredBlockConfirmation on the host under the peer's live

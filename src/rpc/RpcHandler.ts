@@ -1,7 +1,7 @@
 import type P2PManager from "../P2PManager";
+import Rpc from "./Rpc";
 import ATransport, { isTransport } from "../transport/ATransport";
 import { Address } from "../types/types";
-import Rpc from "./Rpc";
 
 export type RpcRequestOptions = { timeoutMs?: number };
 

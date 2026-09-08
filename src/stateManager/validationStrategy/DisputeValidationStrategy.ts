@@ -1,21 +1,21 @@
-import { Block } from "@/models";
-import { BlockValidationResult, Hash, Signature } from "@/types";
-import { DisputeStruct } from "@typechain-types/contracts/V1/types/DisputeTypes";
-
 import AValidationStrategy, {
     ParticipantSnapshots
 } from "./AValidationStrategy";
-import type { QueuedBlockEntry } from "@/storage/QueueStorage";
-import FraudProofService from "../utils/FraudProofService";
-import Storage from "@/storage";
 import DisputeFraudProofService from "../dispute/DisputeFraudProofService";
+import FraudProofService from "../utils/FraudProofService";
+import type ADiamondStateMachine from "@/ADiamondStateMachine";
+import { Block } from "@/models";
+
+import Storage from "@/storage";
+import type { QueuedBlockEntry } from "@/storage/QueueStorage";
+import { BlockValidationResult, Hash, Signature } from "@/types";
+import { Logger } from "@/utils";
+import type { LocalDiamondContract } from "@/utils/localDiamond";
 import {
     BlockConfirmationStruct,
     MessageBlockStruct
 } from "@typechain-types/contracts/V1/types/DataTypes";
-import { Logger } from "@/utils";
-import type { LocalDiamondContract } from "@/utils/localDiamond";
-import type ADiamondStateMachine from "@/ADiamondStateMachine";
+import { DisputeStruct } from "@typechain-types/contracts/V1/types/DisputeTypes";
 
 export default class DisputeValidationStrategy extends AValidationStrategy {
     readonly fraudProofService: FraudProofService;

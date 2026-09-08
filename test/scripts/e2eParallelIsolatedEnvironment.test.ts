@@ -1,12 +1,18 @@
 // @spec-test-coverage-ignore: developer test-orchestration tooling; not protocol behavior, no specification or implementation IDs apply
+import { TestIsolatedRuntimeBackend } from "../fixtures/distributed/isolatedRuntimeBackend";
 import { expect } from "chai";
+import crypto from "crypto";
 import fs from "fs";
+import { setImmediate } from "node:timers";
 import os from "os";
 import path from "path";
-import crypto from "crypto";
-import { setImmediate } from "node:timers";
-import { TestIsolatedRuntimeBackend } from "../fixtures/distributed/isolatedRuntimeBackend";
 
+const {
+    shouldTransferAttemptEvidence
+} = require("../../scripts/e2e-parallel/distributed/artifactSelection.js");
+const {
+    BoundedArtifactAssembler
+} = require("../../scripts/e2e-parallel/distributed/failureArtifacts.js");
 const {
     DOCKER_OPERATION_TIMEOUT_MS,
     DockerBackend,
@@ -15,12 +21,6 @@ const {
     runtimeNames,
     trustedRunnerManifest
 } = require("../../scripts/e2e-parallel/distributed/isolatedEnvironment.js");
-const {
-    shouldTransferAttemptEvidence
-} = require("../../scripts/e2e-parallel/distributed/artifactSelection.js");
-const {
-    BoundedArtifactAssembler
-} = require("../../scripts/e2e-parallel/distributed/failureArtifacts.js");
 const {
     DISTRIBUTED_PROTOCOL_VERSION
 } = require("../../scripts/e2e-parallel/distributed/protocol.js");

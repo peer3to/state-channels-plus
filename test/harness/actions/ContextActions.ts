@@ -1,8 +1,8 @@
 import { StateSnapshot } from "@/models";
-import { PeerTestHarness } from "@test/fixtures/PeerTestHarness";
-import type { HarnessControlRpc } from "@test/fixtures/customRpc/harnessControl/HarnessControlRpc";
 import { Codec, Logger, Type } from "@/utils";
 import { LoggerUtils } from "@/utils/LoggerUtils";
+import type { HarnessControlRpc } from "@test/fixtures/customRpc/harnessControl/HarnessControlRpc";
+import { PeerTestHarness } from "@test/fixtures/PeerTestHarness";
 
 export class ContextActions<
     TCustomRpc extends HarnessControlRpc = HarnessControlRpc

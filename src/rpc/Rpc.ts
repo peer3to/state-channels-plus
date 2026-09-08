@@ -10,6 +10,8 @@ type Rpc = {
     requestId?: string;
 };
 
+export const RPC_GUARD_REJECTION_ERROR = "RPC request rejected by guard";
+
 /**
  * Reply to a request-style RPC. Correlated back to the originating
  * `RpcHandler.request(...)` call via `requestId`.
@@ -38,21 +40,47 @@ export const MAX_RPC_FRAME_BYTES = 16 * 1024 * 1024;
 export function serializeRpc(rpc: Rpc): string {
     return JSON.stringify(rpc);
 }
+function isRpc(rpc: any): rpc is Rpc {
+    return (
+        !!rpc &&
+        typeof rpc.service === "string" &&
+        typeof rpc.method === "string" &&
+        // `params` must be an array — the dispatcher spreads it
+        // (`method(...rpc.params)`), so a non-array would mis-dispatch.
+        Array.isArray(rpc.params) &&
+        (rpc.requestId === undefined || typeof rpc.requestId === "string")
+    );
+}
+
+function isRpcResponse(response: any): response is RpcResponse {
+    return (
+        !!response &&
+        response.rpcResponse === true &&
+        typeof response.requestId === "string" &&
+        typeof response.ok === "boolean"
+    );
+}
+
 export function deserializeRpc(serializedRpc: string): Rpc | undefined {
     try {
         const rpc = JSON.parse(serializedRpc);
-        if (
-            !rpc ||
-            typeof rpc.service !== "string" ||
-            typeof rpc.method !== "string" ||
-            // `params` must be an array — the dispatcher spreads it
-            // (`method(...rpc.params)`), so a non-array would mis-dispatch.
-            !Array.isArray(rpc.params) ||
-            (rpc.requestId !== undefined && typeof rpc.requestId !== "string")
-        ) {
-            return undefined;
-        }
-        return rpc as Rpc;
+        return isRpc(rpc) ? rpc : undefined;
+    } catch {
+        return undefined;
+    }
+}
+
+export function deserializeRpcFrame(
+    serialized: string
+):
+    | { kind: "response"; response: RpcResponse }
+    | { kind: "request"; rpc: Rpc }
+    | undefined {
+    try {
+        const frame = JSON.parse(serialized);
+        if (isRpcResponse(frame)) return { kind: "response", response: frame };
+        if (isRpc(frame)) return { kind: "request", rpc: frame };
+        return undefined;
     } catch {
         return undefined;
     }
@@ -66,15 +94,7 @@ export function deserializeRpcResponse(
 ): RpcResponse | undefined {
     try {
         const response = JSON.parse(serialized);
-        if (
-            !response ||
-            response.rpcResponse !== true ||
-            typeof response.requestId !== "string" ||
-            typeof response.ok !== "boolean"
-        ) {
-            return undefined;
-        }
-        return response as RpcResponse;
+        return isRpcResponse(response) ? response : undefined;
     } catch {
         return undefined;
     }
