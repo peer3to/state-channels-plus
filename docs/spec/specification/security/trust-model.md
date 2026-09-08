@@ -256,9 +256,11 @@ through the full fallback windows
 decline future channels with participants that provide no tower-backed liveness guarantee; that is
 subjective policy with no objective protocol effect.
 
-Tower misconduct is punishable only when objectively contradictory: a valid contradiction proof
-over the tower's **own** signed operations — a participant's signature or conduct is never fraud
-evidence against its tower — submitted by any observer through a punishment entry point separate
+Tower misconduct is punishable only on objective evidence: a valid contradiction proof over the
+tower's **own** signed operations in one of the three contradiction classes — a participant's
+signature or conduct is never fraud evidence against its tower — or the separate order-sensitive
+stale-submission predicate for delegated disputes
+([`REQ-WT-11-DZ3AAE`](../runtime/watchtowers.md#req-wt-11-dz3aae)), submitted by any observer through a punishment entry point separate
 from the channel protocol, destroys the tower identity's permanent registration bond and bars it
 from future selection, without touching any existing membership interval's binding, disputes, or settlement
 ([`REQ-WT-8-W3YP4R`](../runtime/watchtowers.md#req-wt-8-w3yp4r)). Every failure that produces no

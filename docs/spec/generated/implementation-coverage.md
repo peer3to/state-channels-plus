@@ -4,7 +4,7 @@
 
 ## Score
 
-- Specification IDs fully implemented (only `Covered` claims): **199/259** (77%)
+- Specification IDs fully implemented (only `Covered` claims): **199/262** (76%)
 - Source files with a file report: **238/258** (92%)
 
 ## Contents
@@ -40,8 +40,10 @@ the claiming conformance rows; an ID absent from every conformance table has no 
 | [`REQ-DIS-13-1WWHS0`](../specification/disputes/disputes.md#req-dis-13-1wwhs0) | Not implemented (no conformance claim) | [specification/disputes/disputes.md](../specification/disputes/disputes.md#req-dis-13-1wwhs0) (definition) |
 | [`REQ-DIS-14-032T4M`](../specification/disputes/disputes.md#req-dis-14-032t4m) | Not implemented (no conformance claim) | [specification/disputes/disputes.md](../specification/disputes/disputes.md#req-dis-14-032t4m) (definition) |
 | [`REQ-DIS-15-GH01J0`](../specification/disputes/disputes.md#req-dis-15-gh01j0) | Not implemented (no conformance claim) | [specification/disputes/disputes.md](../specification/disputes/disputes.md#req-dis-15-gh01j0) (definition) |
+| [`REQ-DIS-16-0ZN4AK`](../specification/disputes/disputes.md#req-dis-16-0zn4ak) | Not implemented (no conformance claim) | [specification/disputes/disputes.md](../specification/disputes/disputes.md#req-dis-16-0zn4ak) (definition) |
 | [`REQ-DISPUTE-PIPE-5-RZZB48`](../specification/disputes/dispute-processing.md#req-dispute-pipe-5-rzzb48) | Partial | [implementation/source/src/disputeManager/DisputeManager.ts.md](../implementation/source/src/disputeManager/DisputeManager.ts.md#conformance-traceability) |
 | [`REQ-GOSSIP-2-9PMMNH`](../specification/peer-communication/block-gossip.md#req-gossip-2-9pmmnh) | Partial | [implementation/source/src/rpc/services/stateTransition/StateTransitionRpcMethods.ts.md](../implementation/source/src/rpc/services/stateTransition/StateTransitionRpcMethods.ts.md#conformance-traceability) |
+| [`REQ-LIF-8-GXAGXR`](../specification/settlement/lifecycle.md#req-lif-8-gxagxr) | Not implemented (no conformance claim) | [specification/settlement/lifecycle.md](../specification/settlement/lifecycle.md#req-lif-8-gxagxr) (definition) |
 | [`REQ-MIRROR-1-XCY9CB`](../specification/enforcement/local-mirror.md#req-mirror-1-xcy9cb) | Partial | [implementation/source/contracts/V1/StateChannelDiamondProxy/LocalDiamond.sol.md](../implementation/source/contracts/V1/StateChannelDiamondProxy/LocalDiamond.sol.md#conformance-traceability) |
 | [`REQ-MIRROR-2-E9F3TM`](../specification/enforcement/local-mirror.md#req-mirror-2-e9f3tm) | Partial | [implementation/source/contracts/V1/StateChannelDiamondProxy/LocalDiamond.sol.md](../implementation/source/contracts/V1/StateChannelDiamondProxy/LocalDiamond.sol.md#conformance-traceability)<br>[implementation/source/src/evm/EvmDiamondStateMachine.ts.md](../implementation/source/src/evm/EvmDiamondStateMachine.ts.md#conformance-traceability) |
 | [`REQ-MSGSTORE-1-6ME9D7`](../specification/storage/message-blocks.md#req-msgstore-1-6me9d7) | Contradicts | [implementation/source/src/storage/MessageBlockStorage.ts.md](../implementation/source/src/storage/MessageBlockStorage.ts.md#conformance-traceability) |
@@ -72,6 +74,7 @@ the claiming conformance rows; an ID absent from every conformance table has no 
 | [`REQ-UPG-1-MFBTZ1`](../specification/peer-communication/transport-upgrade.md#req-upg-1-mfbtz1) | Partial | [implementation/source/src/rpc/services/WebRTCSetup/WebRTCSetupService.ts.md](../implementation/source/src/rpc/services/WebRTCSetup/WebRTCSetupService.ts.md#conformance-traceability) |
 | [`REQ-WT-1-TXW328`](../specification/runtime/watchtowers.md#req-wt-1-txw328) | Not implemented (no conformance claim) | [specification/runtime/watchtowers.md](../specification/runtime/watchtowers.md#req-wt-1-txw328) (definition) |
 | [`REQ-WT-10-GNG79P`](../specification/runtime/watchtowers.md#req-wt-10-gng79p) | Not implemented (no conformance claim) | [specification/runtime/watchtowers.md](../specification/runtime/watchtowers.md#req-wt-10-gng79p) (definition) |
+| [`REQ-WT-11-DZ3AAE`](../specification/runtime/watchtowers.md#req-wt-11-dz3aae) | Not implemented (no conformance claim) | [specification/runtime/watchtowers.md](../specification/runtime/watchtowers.md#req-wt-11-dz3aae) (definition) |
 | [`REQ-WT-2-HNZA3Y`](../specification/runtime/watchtowers.md#req-wt-2-hnza3y) | Not implemented (no conformance claim) | [specification/runtime/watchtowers.md](../specification/runtime/watchtowers.md#req-wt-2-hnza3y) (definition) |
 | [`REQ-WT-3-DT0GDX`](../specification/runtime/watchtowers.md#req-wt-3-dt0gdx) | Not implemented (no conformance claim) | [specification/runtime/watchtowers.md](../specification/runtime/watchtowers.md#req-wt-3-dt0gdx) (definition) |
 | [`REQ-WT-4-PNMYMP`](../specification/runtime/watchtowers.md#req-wt-4-pnmymp) | Not implemented (no conformance claim) | [specification/runtime/watchtowers.md](../specification/runtime/watchtowers.md#req-wt-4-pnmymp) (definition) |

@@ -92,9 +92,56 @@ tower-authored removal design are all decided
 context, and the bounded open details are
 [`OQ-49-2Z3FAS`](../specification/open-questions.md#oq-49-2z3fas),
 [`OQ-50-YSDG8S`](../specification/open-questions.md#oq-50-ysdg8s), and
-[`OQ-51-BCKA50`](../specification/open-questions.md#oq-51-bcka50); none gates the version-one
-watchtower requirements. The settled redesign creates no new audit question or finding beyond
-those recorded entries.
+[`OQ-51-BCKA50`](../specification/open-questions.md#oq-51-bcka50). None gates the version-one
+watchtower requirements, for stated reasons: [`OQ-49-2Z3FAS`](../specification/open-questions.md#oq-49-2z3fas) concerns indirect participant equivocation
+that no tower power creates; [`OQ-50-YSDG8S`](../specification/open-questions.md#oq-50-ysdg8s) is narrowed by three decided rules — the slashed-disputer kill
+([`REQ-DIS-16-0ZN4AK`](../specification/disputes/disputes.md#req-dis-16-0zn4ak)), the
+snapshot-bound tower approval whose credit lapses when the checkpoint moves
+([`REQ-DIS-14-032T4M`](../specification/disputes/disputes.md#req-dis-14-032t4m)), and the
+disputed-destination snapshot freeze
+([`REQ-LIF-8-GXAGXR`](../specification/settlement/lifecycle.md#req-lif-8-gxagxr)) — so a
+delegated approval audited against a superseded checkpoint contributes no credit — the dispute
+still finalizes when the remaining valid credits reach threshold, including sufficient direct
+signatures alone or fresh approvals from other selected towers; otherwise it remains an ordinary
+challengeable commitment when ordinary admission succeeds — rather than rolling back or stranding
+a finalized result, and
+the remaining moving-checkpoint cases are refused conservatively until decided;
+[`OQ-51-BCKA50`](../specification/open-questions.md#oq-51-bcka50) is a reachability question over equal-height descendant schedules in which the AFK artifact fixes one
+target per proved pre-state and no new target ordering is approved, so no tower power depends on
+its answer. The settled redesign creates no new audit question or finding beyond those recorded
+entries.
+
+**Review updates (2026-09-08, specified-but-not-implemented).** Engineer decisions recorded in
+the PR review were staged into the specification layer only: the slashed-disputer kill ground
+([`REQ-DIS-16-0ZN4AK`](../specification/disputes/disputes.md#req-dis-16-0zn4ak)); the
+snapshot-bound `WatchtowerDisputeApproval` with its `snapshotReference` field
+([`REQ-DIS-14-032T4M`](../specification/disputes/disputes.md#req-dis-14-032t4m),
+[`REQ-WT-3-DT0GDX`](../specification/runtime/watchtowers.md#req-wt-3-dt0gdx)); the
+disputed-destination freeze and the publication route it implies
+([`REQ-LIF-8-GXAGXR`](../specification/settlement/lifecycle.md#req-lif-8-gxagxr),
+[`REQ-WT-10-GNG79P`](../specification/runtime/watchtowers.md#req-wt-10-gng79p)); the
+delegation field on committed disputes and the delegated stale-state attribution rule
+([`REQ-DIS-15-GH01J0`](../specification/disputes/disputes.md#req-dis-15-gh01j0),
+[`REQ-WT-11-DZ3AAE`](../specification/runtime/watchtowers.md#req-wt-11-dz3aae)) with its four
+undecided details in
+[`OQ-53-81N5J4`](../specification/open-questions.md#oq-53-81n5j4); the clarified signing-form
+permutations and the recorded deployment-uniqueness assumption for watchtower artifacts
+([`REQ-DATA-3-ANVN8X`](../specification/protocol-model/data-types.md#req-data-3-anvn8x),
+[`OQ-29-EFY4NF`](../specification/open-questions.md#oq-29-efy4nf) unchanged and open); the
+overlapping-authority permutations
+([`INV-ID-1-B4FXJ4`](../specification/protocol-model/identity.md#inv-id-1-b4fxj4)); and the
+spectator-view, non-punitive-removal, and design-rationale clarifications in
+[runtime/watchtowers.md](../specification/runtime/watchtowers.md). The same pass reconciled the
+older owners with those decisions: the snapshot-adoption invariant and both entry-point rows now
+carry the disputed-destination guard, the bond owner and the security model name the
+stale-submission predicate beside the three contradiction classes, the off-chain audit sequence
+authenticates authorship before its stale-state check, the same-key case is attributed to the
+recovered signer under the central key policy, and the approval's `snapshotReference` is defined
+as the hash of the complete current on-chain `StateSnapshot`. The existing same-fork settlement
+case in the snapshot E2E suite expects the behavior the freeze now refuses; replacing it is part of
+the later implementation pass, not this staging. No contract, runtime, test, or verification
+subject changed; the requirement-side gaps these add to the generated reports are
+staged gaps under the specification-first rule, and no approval was recorded.
 
 **Review updates (2026-09-01, still specified-but-not-implemented).** The staged watchtower model
 was revised from the engineer-reviewed decisions: the separately signed `assignmentEpoch` was
