@@ -59,10 +59,11 @@ closes the path by which a peer's own refusal — an exclusion or a reconnect su
 both of which close without acknowledging — was answered with an exclusion by the refused peer.
 [`REQ-LOBBY-9-N894C0`](../specification/peer-communication/lobby-matching.md#req-lobby-9-n894c0) now
 says explicitly that a suspension binds only the node holding it, that it must not be observable to
-the suspended peer, that it must not leave the pair permanently unreachable, and that the node which
-placed it owns restoring reachability — because it is the only side that knows the suspension exists
-and when it ends. The converse is stated with it: an observed close carries no reason, so a peer
-that only observed a close must not re-establish the connection, and a deliberate departure is never
-reversed by another peer. The earlier pair-level phrasing ("at least one side must remain able to
-produce the replacement connection") was withdrawn: it licensed exactly that unsound reconnect, and
-the permutation written for it was deleted in favour of the two behaviors above.
+the suspended peer, and that it must not leave the pair permanently unreachable. It reaches that
+last guarantee by acting at admission only: the suspension changes no discovery reachability, both
+sides keep dialing, every attempt is refused while it stands, and the first attempt after it lifts
+is admitted — so no node has to know when another node's suspension ended. The converse is stated
+with it: an observed close carries no reason, so a peer that only observed a close must not
+re-establish the connection, and a deliberate departure is never reversed by another peer. The
+earlier pair-level phrasing ("at least one side must remain able to produce the replacement
+connection") was withdrawn: it licensed exactly that unsound reconnect.

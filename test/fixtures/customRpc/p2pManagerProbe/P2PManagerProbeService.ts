@@ -549,14 +549,6 @@ export type ReconnectBanFinalAdmissionProbe = {
     signerReconnectBanned: boolean;
 };
 
-export type ReconnectBanHandleAdoptionProbe = {
-    redialTransportClosed: boolean;
-    redialHandleBanCalls: boolean[];
-    redialHandleBanCallsAfterAllow: boolean[];
-    signerBlacklisted: boolean;
-    signerReconnectBannedAfterAllow: boolean;
-};
-
 export type RejectedRpcAfterLobbyEndedProbe = {
     sessionStarted: boolean;
     reconnectBannedAfterOverflow: boolean;
@@ -4960,42 +4952,6 @@ export class P2PManagerProbeService extends ARpcService<
                 profile?.getTransport() === established.transport,
             signerBlacklisted: this.p2pManager.isBlacklisted(signerAddress),
             signerReconnectBanned:
-                this.p2pManager.isReconnectBanned(signerAddress)
-        };
-    }
-
-    /**
-     * A suspended identity with no Holepunch handle of its own redials on a
-     * fresh one. The refusal must move that handle onto the identity so the
-     * suspension bans it and `allowReconnect` can release it again.
-     */
-    public async probeReconnectBanHandleAdoption(): Promise<ReconnectBanHandleAdoptionProbe> {
-        this.p2pManager.stateManager.setStatus(Status.SYNCED);
-        const wallet = ethers.Wallet.createRandom();
-        const signerAddress = getChecksumAddress(wallet.address);
-        // The identity is known through a transport that carries no Holepunch
-        // handle, so the suspension has nothing to ban until the redial lands.
-        const known = this.transport(signerAddress);
-        this.registerProfile(known, signerAddress);
-        this.p2pManager.banReconnect(signerAddress);
-
-        const {
-            transport: redial,
-            peerInfo: redialPeerInfo,
-            socket
-        } = this.holepunchTransport();
-        await this.answerHandshakeChallenge(redial, socket, wallet);
-        await this.waitUntil(() => redial.isClosed);
-        const redialHandleBanCalls = [...redialPeerInfo.banCalls];
-
-        this.p2pManager.allowReconnect(signerAddress);
-
-        return {
-            redialTransportClosed: redial.isClosed,
-            redialHandleBanCalls,
-            redialHandleBanCallsAfterAllow: [...redialPeerInfo.banCalls],
-            signerBlacklisted: this.p2pManager.isBlacklisted(signerAddress),
-            signerReconnectBannedAfterAllow:
                 this.p2pManager.isReconnectBanned(signerAddress)
         };
     }

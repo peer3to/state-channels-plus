@@ -80,10 +80,10 @@ describe("LocalDiscoveryServer topic lifecycle", function () {
         ).to.equal(0);
     });
 
-    it("dials the peer back when the primary dialer lifts its reconnect suspension", async function () {
+    it("keeps dialing a reconnect-banned peer and reconnects it once the ban is lifted", async function () {
         const h = TestSession.getHarness();
         await h.setup(2, { autoConnect: false });
-        const topic = ethers.id("local-discovery-lifted-suspension-dials-back");
+        const topic = ethers.id("local-discovery-ban-refuses-every-redial");
         const primaryIndex = h.network.lobbyRoleIndices()[0];
         const primary = h.peers[primaryIndex];
         const other = h.peers[1 - primaryIndex];
@@ -94,76 +94,8 @@ describe("LocalDiscoveryServer topic lifecycle", function () {
             )
         );
         await h.network.waitForP2PConnections();
-
-        try {
-            expect(
-                await h
-                    .control(primary)
-                    .network.banReconnect(other.address)
-                    .request()
-            ).to.equal(true);
-            expect(
-                await h
-                    .control(primary)
-                    .network.closePeerTransportByAddress(other.address)
-                    .request()
-            ).to.equal(true);
-            // The suspension stops the primary's own dial loop, and the peer it
-            // suspended is never told, so the pair has no dialer while it holds.
-            await sleep(MIN_TEST_TIME_CONFIG.agreementTime * 1000);
-            expect(
-                await h
-                    .control(primary)
-                    .network.getTransportToken(other.address)
-                    .request(),
-                "a standing suspension must leave the pair disconnected"
-            ).to.equal(null);
-
-            expect(
-                await h
-                    .control(primary)
-                    .network.allowReconnect(other.address)
-                    .request()
-            ).to.equal(true);
-            await waitFor(
-                async () =>
-                    (await h
-                        .control(primary)
-                        .network.getTransportToken(other.address)
-                        .request()) !== null,
-                h.event.protocolEventTimeoutMs(),
-                100
-            );
-        } finally {
-            await h
-                .control(primary)
-                .network.allowReconnect(other.address)
-                .request();
-            await Promise.all(
-                h.peers.map((peer) =>
-                    h.control(peer).network.leaveSelectedKey(topic).request()
-                )
-            );
-        }
-    });
-
-    it("never dials from the side that only accepted the route", async function () {
-        const h = TestSession.getHarness();
-        await h.setup(2, { autoConnect: false });
-        const topic = ethers.id("local-discovery-acceptor-never-dials");
-        const primaryIndex = h.network.lobbyRoleIndices()[0];
-        const primary = h.peers[primaryIndex];
-        const other = h.peers[1 - primaryIndex];
-
-        await Promise.all(
-            h.peers.map((peer) =>
-                h.control(peer).network.joinSelectedKey(topic).request()
-            )
-        );
-        await h.network.waitForP2PConnections();
-        // Counted on the primary: the suspension stops its own dial loop, so
-        // any handshake it runs afterwards is an inbound dial, and the only
-        // peer that could have placed it is the side that merely accepted.
+        // Counted on the primary, the only side that dials this pair: every
+        // handshake it starts after the ban is a dial the ban did not stop.
         await h.control(primary).stub.countInitHandshakeCalls().request();
 
         try {
@@ -179,17 +111,50 @@ describe("LocalDiscoveryServer topic lifecycle", function () {
                     .network.closePeerTransportByAddress(other.address)
                     .request()
             ).to.equal(true);
+            // The ban is admission-only: the dial loop keeps running and every
+            // redial it makes is refused when the handshake completes.
+            await waitFor(
+                async () =>
+                    (await h
+                        .control(primary)
+                        .stub.getInitHandshakeCallCount()
+                        .request()) > 0,
+                h.event.protocolEventTimeoutMs(),
+                100
+            );
             await sleep(MIN_TEST_TIME_CONFIG.agreementTime * 1000);
-
-            // The accepting side cannot tell a suspension from a peer that
-            // left on purpose, so it must never dial a closed route back.
             expect(
                 await h
                     .control(primary)
-                    .stub.getInitHandshakeCallCount()
+                    .network.getTransportToken(other.address)
                     .request(),
-                "the accepting side must not dial the closed route back"
-            ).to.equal(0);
+                "a standing ban must refuse every redial at admission"
+            ).to.equal(null);
+            expect(
+                await h
+                    .control(primary)
+                    .query.isBlacklisted(other.address)
+                    .request(),
+                "refusing a redial must never escalate to an exclusion"
+            ).to.equal(false);
+
+            expect(
+                await h
+                    .control(primary)
+                    .network.allowReconnect(other.address)
+                    .request()
+            ).to.equal(true);
+            // Nothing dials the peer back: the next retry of the loop that
+            // never stopped is admitted.
+            await waitFor(
+                async () =>
+                    (await h
+                        .control(primary)
+                        .network.getTransportToken(other.address)
+                        .request()) !== null,
+                h.event.protocolEventTimeoutMs(),
+                100
+            );
         } finally {
             await h
                 .control(primary)

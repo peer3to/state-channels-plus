@@ -47,8 +47,8 @@ behavior is demonstrated in the repository while the ID itself stays unassigned.
 - [`REQ-LOBBY-9-N894C0.T1.P12`](../specification/peer-communication/lobby-matching.md#req-lobby-9-n894c0.t1.p12)
   bundles two suspended-peer subjects: a non-selected candidate, proven end-to-end in
   [E2E-LobbyMatching.test.ts](tests/test/e2e/E2E-LobbyMatching.test.ts.md) including the
-  un-redialed absence oracle, and a peer past the ignored-traffic bound, proven at unit level
-  where no redial oracle exists.
+  refused-at-admission absence oracle, and a peer past the ignored-traffic bound, proven at unit
+  level where no dial happens at all.
 - [`UNIT-TEST-P2P-MANAGER-2-HR5HCB.P4`](../implementation/source/src/P2PManager.ts.md#unit-test-p2p-manager-2-hr5hcb.p4)
   bundles the joined-key bookkeeping, which
   [P2PManager.test.ts](tests/test/P2PManager.test.ts.md) proves, with a duplicate join and a

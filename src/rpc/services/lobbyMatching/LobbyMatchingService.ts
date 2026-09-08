@@ -278,8 +278,9 @@ export default class LobbyMatchingService extends ARpcService<LobbyMatchingRpcMe
         }
         if (!this.activeTopic || !this.matchResolve) {
             // While the topic is still observed (handoff phase), a plain close
-            // only pauses the peer: it redials and reruns the handshake. Once
-            // the topic is left, nothing redials it.
+            // only pauses the peer: it redials and reruns the handshake, and
+            // this session has to keep refusing it. Once the topic is left,
+            // nothing redials it.
             if (this.activeTopic) this.disconnectForSession(transport);
             else this.p2pManager.disconnectConnection(transport);
             return;
@@ -863,11 +864,12 @@ export default class LobbyMatchingService extends ARpcService<LobbyMatchingRpcMe
 
     /**
      * Close a lobby transport this session no longer wants. The peer still
-     * observes the topic, so a plain close only pauses it: discovery re-dials,
-     * the handshake reruns, and the same rejection repeats. Ban its reconnects
-     * for the rest of the session instead; cleanup lifts the ban when the
-     * topic is left. This is not an exclusion. The selected peer is never
-     * banned: negotiation still needs to reach it.
+     * observes the topic, so a plain close only pauses it: discovery re-dials
+     * and the handshake reruns. Ban its reconnects for the rest of the session
+     * instead, which refuses the identity at handshake admission — the peer
+     * keeps being dialed, it just never becomes a connection again. Cleanup
+     * lifts the ban when the topic is left. This is not an exclusion. The
+     * selected peer is never banned: negotiation still needs to reach it.
      *
      * With no active topic there is no session left to lift the ban, and none
      * is needed: nothing observes the topic any more, so a plain close is final.

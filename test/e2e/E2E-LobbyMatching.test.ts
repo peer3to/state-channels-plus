@@ -1421,10 +1421,11 @@ describe("E2E: lobby matching", function () {
                 ).to.equal(false);
             }
 
-            // Absence oracle: the non-selected peer still observes the topic
-            // and is still announced on it, while the ban stops the pair from
-            // dialing or admitting it. Require its transport to go away on both
-            // matched peers and stay away for one agreement window.
+            // Absence oracle: the non-selected peer still observes the topic,
+            // is still announced on it, and is still dialed — the ban only
+            // refuses it at handshake admission. Require its transport to go
+            // away on both matched peers and stay away for one agreement
+            // window, so every redial in that window was refused.
             await waitFor(
                 async () => {
                     const closedByPeer = await Promise.all(
@@ -1447,7 +1448,7 @@ describe("E2E: lobby matching", function () {
                         .control(peer)
                         .query.isTransportClosed(unmatchedAddress)
                         .request(),
-                    `peer ${peer.index} must not be redialed by the banned peer`
+                    `peer ${peer.index} must refuse every redial of the banned peer`
                 ).to.equal(true);
             }
 

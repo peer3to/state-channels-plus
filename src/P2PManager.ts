@@ -662,21 +662,17 @@ class P2PManager<TCustomRpc extends MainRpcService = MainRpcService>
     }
 
     /**
-     * Soft ban: discovery stops dialing and accepting this identity until
-     * `allowReconnect`, and the handshake refuses it meanwhile. It is not an
-     * exclusion; use the blacklist for a proven violation.
+     * Soft ban: the handshake refuses this identity at admission until
+     * `allowReconnect`. Discovery keeps dialing and accepting it, so the next
+     * dial after the lift reconnects on its own. It is not an exclusion; use
+     * the blacklist for a proven violation.
      */
     public banReconnect(evmAddress: Address): boolean {
         return this.profileManager.banReconnect(evmAddress);
     }
 
     public allowReconnect(evmAddress: Address): boolean {
-        const lifted = this.profileManager.allowReconnect(evmAddress);
-        // The suspension stopped this side's dial loop and the suspended peer
-        // was never told about it, so it cannot know the suspension is over.
-        // The side that placed it owns dialing back.
-        if (lifted) LocalDiscoveryServer.redialPeer(this, evmAddress);
-        return lifted;
+        return this.profileManager.allowReconnect(evmAddress);
     }
 
     public isReconnectBanned(evmAddress: Address): boolean {

@@ -53,7 +53,6 @@ import type {
     DiscoveryAdmissionGateProbe,
     DiscoveryJoinLeaveRaceProbe,
     ReconnectBanFinalAdmissionProbe,
-    ReconnectBanHandleAdoptionProbe,
     RejectedRpcAfterLobbyEndedProbe,
     CleanupMatchSerializationProbe,
     ReplacementAdmissionGateProbe
@@ -447,10 +446,6 @@ export class P2PManagerProbeRpcMethods extends ARpcMethods<
 
     public probeReconnectBanAtFinalAdmission(): Promise<ReconnectBanFinalAdmissionProbe> {
         return this.service.probeReconnectBanAtFinalAdmission();
-    }
-
-    public probeReconnectBanHandleAdoption(): Promise<ReconnectBanHandleAdoptionProbe> {
-        return this.service.probeReconnectBanHandleAdoption();
     }
 
     public probeRejectedRpcAfterLobbyEnded(): Promise<RejectedRpcAfterLobbyEndedProbe> {

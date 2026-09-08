@@ -232,18 +232,11 @@ class InitHandshakeService extends ARpcService<InitHandshakeRpcMethods> {
             });
             // The blacklist banned the identity's own discovery handle. A peer
             // that rotates its discovery key arrives on a fresh handle, so an
-            // excluded identity bans the handle it came in on as well.
+            // excluded identity bans the handle it came in on as well. A
+            // reconnect ban never bans a handle: it only refuses admission, so
+            // the peer keeps redialing and is refused here until it is lifted.
             if (isBlacklisted) {
                 this.p2pManager.profileManager.banTransportReconnect(transport);
-            } else {
-                // A suspended identity otherwise redials this handle and reruns
-                // the whole handshake until the session ends. Move the handle
-                // onto the identity's profile so the suspension bans it and the
-                // session's `allowReconnect` can release it again.
-                this.p2pManager.profileManager.adoptRefusedTransportHandle(
-                    transport,
-                    signerAddress
-                );
             }
             this.p2pManager.disconnectConnection(transport);
             return;

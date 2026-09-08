@@ -33,14 +33,10 @@ type DiscoveryInfo = {
 type DiscoverySession = {
     server: WebSocketServer;
     discoveryWs?: WebSocket;
-    myPeerAddress: string;
-    myPeerPort: Port;
     activeDials: Set<PeerConnectionKey>;
     connectionKeys: Set<PeerConnectionKey>;
     pendingDials: Set<WebSocket>;
     retryTimers: Set<ReturnType<typeof setTimeout>>;
-    /** Listening port announced on this topic, per checksummed peer identity. */
-    announcedPeerPorts: Map<Address, Port>;
 };
 
 /**
@@ -717,13 +713,10 @@ export class LocalDiscoveryServer {
         const sessions = this.discoverySessions.get(p2pManager) ?? new Map();
         const session: DiscoverySession = {
             server,
-            myPeerAddress,
-            myPeerPort: port,
             activeDials: new Set(),
             connectionKeys: new Set(),
             pendingDials: new Set(),
-            retryTimers: new Set(),
-            announcedPeerPorts: new Map()
+            retryTimers: new Set()
         };
         sessions.set(rendezvousKey, session);
         this.discoverySessions.set(p2pManager, sessions);
@@ -956,13 +949,6 @@ export class LocalDiscoveryServer {
             );
             if (!session || session.server !== myServer) return;
 
-            // Remembered for every announcer, primary or not: `redialPeer`
-            // needs the port to dial back once a suspension is lifted.
-            session.announcedPeerPorts.set(
-                getChecksumAddress(peerAddress),
-                peerPort
-            );
-
             if (p2pManager.isBlacklisted(peerAddress as Address)) {
                 this.logger.debug("Announcement ignored (blacklisted)", {
                     ...logBase,
@@ -971,7 +957,9 @@ export class LocalDiscoveryServer {
                 return;
             }
 
-            if (!this.isPrimaryDialer(myPeerAddress, peerAddress)) {
+            const isPrimaryDialer =
+                myPeerAddress.toLowerCase() < peerAddress.toLowerCase();
+            if (!isPrimaryDialer) {
                 this.logger.debug("Waiting for primary peer dial", {
                     ...logBase,
                     myRendezvousKey
@@ -997,51 +985,6 @@ export class LocalDiscoveryServer {
                 mode: "peer",
                 raw: msg
             });
-        }
-    }
-
-    /** The lower EVM address owns the dial loop for a pair. */
-    private static isPrimaryDialer(
-        myPeerAddress: string,
-        peerAddress: string
-    ): boolean {
-        return myPeerAddress.toLowerCase() < peerAddress.toLowerCase();
-    }
-
-    /**
-     * Resume dialing a peer whose reconnect suspension this side just lifted.
-     *
-     * Only the primary dialer of a pair runs a retry loop here, so a suspension
-     * that this side placed stops the pair's only dialer whenever this side is
-     * the primary. The suspension is one-sided and the suspended peer is never
-     * told about it, so it cannot know when the suspension is over — the side
-     * that placed it is the side that knows, and therefore owns dialing back.
-     * Nothing is redialed while the ban stands: the dial would be refused at
-     * admission anyway, and `connectToSinglePeer` skips it as
-     * `reconnect-banned`. A pair that already reconnected skips as
-     * `peer-connected`, and a peer this side has excluded as `blacklisted`.
-     */
-    public static redialPeer(
-        p2pManager: P2PManager,
-        peerAddress: Address
-    ): void {
-        if (this._cleanupRequested || p2pManager.isDisposed) return;
-        const sessions = this.discoverySessions.get(p2pManager);
-        if (!sessions) return;
-        const checksummedPeerAddress = getChecksumAddress(peerAddress);
-        for (const [rendezvousKey, session] of sessions) {
-            const peerPort = session.announcedPeerPorts.get(
-                checksummedPeerAddress
-            );
-            if (peerPort === undefined) continue;
-            this.connectToSinglePeer(
-                peerPort,
-                checksummedPeerAddress,
-                p2pManager,
-                rendezvousKey,
-                session.myPeerAddress,
-                session.myPeerPort
-            );
         }
     }
 
@@ -1109,8 +1052,6 @@ export class LocalDiscoveryServer {
         const connectionKey: PeerConnectionKey = `${myPeerPort}->${peerPort}`;
         const retryCount = this._peerRetryCount.get(connectionKey) || 0;
         if (!session) return;
-        // Hyperswarm never dials a banned peer info; mirror that here so a
-        // blacklist or reconnect ban stops the local redial loop the same way.
         const skipReason = this._cleanupRequested
             ? "cleanup-requested"
             : p2pManager.isDisposed
@@ -1121,9 +1062,7 @@ export class LocalDiscoveryServer {
                   ? "peer-connected"
                   : p2pManager.isBlacklisted(peerAddress as Address)
                     ? "blacklisted"
-                    : p2pManager.isReconnectBanned(peerAddress as Address)
-                      ? "reconnect-banned"
-                      : undefined;
+                    : undefined;
         if (skipReason) {
             // A skipped retry is the end of the road for this key: no
             // announcement follows it, so the reason must be visible.

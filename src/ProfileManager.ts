@@ -224,15 +224,16 @@ class ProfileManager {
     }
 
     /**
-     * Ban reconnects from an identity without excluding it. Hyperswarm keeps
-     * re-dialing a peer that shares an observed topic until its peer info is
-     * banned; a plain close only pauses it. `allowReconnect` lifts the ban.
+     * Ban reconnects from an identity without excluding it. The ban refuses the
+     * identity at handshake admission only: discovery keeps dialing it and the
+     * transport is still accepted, so nothing has to dial it back once
+     * `allowReconnect` lifts the ban. The discovery handle is never banned —
+     * that belongs to an exclusion.
      */
     public banReconnect(evmAddress: Address): boolean {
         const profile = this.getProfileByEvmAddress(evmAddress);
         if (!profile) return false;
         profile.banReconnect();
-        profile.getHolepunchPeerInfo()?.ban(true);
         return true;
     }
 
@@ -240,10 +241,6 @@ class ProfileManager {
         const profile = this.getProfileByEvmAddress(evmAddress);
         if (!profile) return false;
         profile.allowReconnect();
-        // A live WebRTC route keeps the Holepunch handle banned: that ban
-        // belongs to the upgrade policy, and its own close path releases it.
-        if (this.hasLiveWebRtcTransport(profile)) return true;
-        this.restoreHolepunchReachability(profile);
         return true;
     }
 
@@ -251,28 +248,6 @@ class ProfileManager {
         return (
             this.getProfileByEvmAddress(evmAddress)?.isReconnectBanned ?? false
         );
-    }
-
-    /**
-     * Move the discovery handle a refused transport arrived on onto the
-     * identity's own profile. A standing suspension then follows the handle the
-     * identity is currently reachable on, so `allowReconnect` finds and lifts it
-     * there instead of leaving a ban on an object nothing references again.
-     */
-    public adoptRefusedTransportHandle(
-        transport: ATransport,
-        evmAddress: Address
-    ): void {
-        const identityProfile = this.getProfileByEvmAddress(evmAddress);
-        const transportProfile = this.mapTransportToProfile.get(transport);
-        if (
-            !identityProfile ||
-            !transportProfile ||
-            transportProfile === identityProfile
-        ) {
-            return;
-        }
-        identityProfile.absorbLifecycleFrom(transportProfile);
     }
 
     /** True while the identity holds a live transport other than this one. */
@@ -298,7 +273,7 @@ class ProfileManager {
         if (transport.transportType !== TransportType.WEBRTC) return;
         const profile = this.getProfileByTransport(transport);
         if (!profile || !profile.isPreferredTransport(transport)) return;
-        if (this.isDiscoveryBanHeld(profile)) return;
+        if (profile.isBlackListed) return;
         transport.p2pManager.logger.debug(
             "Releasing Holepunch upgrade ban after WebRTC close",
             LoggerUtils.getTransportMetadata(transport)
@@ -311,18 +286,10 @@ class ProfileManager {
         profile.getHolepunchPeerInfo()?.ban(true);
     }
 
-    /**
-     * Lift the discovery ban only while nothing keeps the identity out: not a
-     * blacklist and not a reconnect ban.
-     */
+    /** Lift the discovery ban only while no exclusion keeps the identity out. */
     private restoreHolepunchReachability(profile: PeerProfile): void {
-        if (this.isDiscoveryBanHeld(profile)) return;
+        if (profile.isBlackListed) return;
         profile.getHolepunchPeerInfo()?.ban(false);
-    }
-
-    /** True while a blacklist or a reconnect ban keeps the identity out. */
-    private isDiscoveryBanHeld(profile: PeerProfile): boolean {
-        return profile.isBlackListed || profile.isReconnectBanned;
     }
 
     private hasLiveWebRtcTransport(profile: PeerProfile): boolean {

@@ -31,15 +31,15 @@
   frames by disconnecting. Blacklisting is by EVM address via
   `ProfileManager`; `shouldSignBlock` and handshake admission consult it.
   `ProfileManager` also owns the weaker **reconnect ban** (`banReconnect` /
-  `allowReconnect` / `isReconnectBanned`, wrapped on `P2PManager`): it stops
-  this node's own discovery from re-dialing or admitting an identity and refuses
-  it at handshake verification, but records no exclusion and lifts with its
-  cause. The banned peer is never told, so it cannot know the ban exists or when
-  it ends: where the peer has its own dial loop it keeps dialing and is refused at
-  admission, and where the banning node owns the pair's only dial loop (the local
-  discovery backend) `allowReconnect` dials the peer back itself on the lift. No
-  other peer stands in for it — a close carries no reason, so reconnecting on
-  someone else's close would also drag back peers that left deliberately. `P2PManager`
+  `allowReconnect` / `isReconnectBanned`, wrapped on `P2PManager`): it refuses an
+  identity at handshake verification and at final admission, but records no
+  exclusion, changes no discovery reachability, and lifts with its cause. The
+  banned peer is never told, so it cannot know the ban exists or when it ends —
+  which is exactly why the ban leaves the dial loops alone: both sides keep
+  dialing, every attempt is refused while the ban stands, and the first attempt
+  after the lift is admitted with nobody dialing anybody back. Reconnecting on an
+  observed close instead would drag back peers that left deliberately, since a
+  close carries no reason. `P2PManager`
   additionally tracks the discovery keys it observes, so
   `leaveAllDiscoveryKeys` can stop every redial before transports are closed.
 - **RPC model.** [`MainRpcService`](../../../../../../src/rpc/MainRpcService.ts#L10) is
