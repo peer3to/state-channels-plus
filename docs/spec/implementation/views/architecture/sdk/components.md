@@ -34,9 +34,12 @@
   `allowReconnect` / `isReconnectBanned`, wrapped on `P2PManager`): it stops
   this node's own discovery from re-dialing or admitting an identity and refuses
   it at handshake verification, but records no exclusion and lifts with its
-  cause. The banned peer is never told, so it keeps dialing and is refused at
-  admission — which is also why the local discovery backend hands the dial to
-  the other side of a pair when the side that owned the dial loop bans. `P2PManager`
+  cause. The banned peer is never told, so it cannot know the ban exists or when
+  it ends: where the peer has its own dial loop it keeps dialing and is refused at
+  admission, and where the banning node owns the pair's only dial loop (the local
+  discovery backend) `allowReconnect` dials the peer back itself on the lift. No
+  other peer stands in for it — a close carries no reason, so reconnecting on
+  someone else's close would also drag back peers that left deliberately. `P2PManager`
   additionally tracks the discovery keys it observes, so
   `leaveAllDiscoveryKeys` can stop every redial before transports are closed.
 - **RPC model.** [`MainRpcService`](../../../../../../src/rpc/MainRpcService.ts#L10) is

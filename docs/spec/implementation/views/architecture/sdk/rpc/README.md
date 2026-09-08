@@ -554,9 +554,14 @@ identity's discovery handle and never lifts on its own. A **reconnect ban**
 verification, but writes no blacklist mark and is lifted by whoever placed it. It exists because
 discovery re-dials any peer that shares an observed topic until its peer info is banned — closing a
 transport alone only pauses the peer. Either ban binds only the node that placed it: it stops that
-node's own dials, while the peer — never told about it — keeps dialing and is refused at handshake
-verification. The refused attempt closes without an ack, and the ack timeout deliberately draws no
-consequence from a closed transport, so refusing costs the refused peer nothing. A blacklist implies a reconnect ban; lifting a reconnect ban
+node's own dials, while the peer — never told about it — keeps dialing wherever it runs its own dial
+loop, and is refused at handshake verification. The refused attempt closes without an ack, and the
+ack timeout deliberately draws no consequence from a closed transport, so refusing costs the refused
+peer nothing. Because the peer is never told, it cannot know when the ban ends either, so lifting a
+reconnect ban is what restores reachability where the banning node owned the pair's only dial loop:
+`P2PManager.allowReconnect` calls `LocalDiscoveryServer.redialPeer` on a real lift. No third party
+substitutes for that — an observed close carries no reason, so a peer that left deliberately must
+not be dialed back by whoever noticed. A blacklist implies a reconnect ban; lifting a reconnect ban
 never lifts a blacklist, and neither the WebRTC-close fallback release nor the WebRTC→Holepunch
 downgrade release lifts a reconnect ban.
 

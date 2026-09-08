@@ -177,9 +177,13 @@ disconnect-only. Custom-RPC E2Es prove blacklist without affecting an unrelated 
 
 ## Refusal-attribution evidence — 2026-09-08
 
-Two real loopback discovery cases select the suspending side by address order rather than index. The
-takeover case counts handshakes on the peer whose loop the suspension stopped, so a later handshake
-can only come from the other side, and then proves the suspension still refuses it. The
-attribution case suspends from the non-dialing side and holds one full agreement window after the
-first redial, with both peers' exclusion state as the oracle: a refusal does not become an exclusion
-on the refused peer, and a suspension does not escalate on the suspending one.
+Three real loopback discovery cases select the suspending side by address order rather than index.
+The lift case suspends from the side that owns the pair's dial loop, proves the pair is genuinely
+down for a full agreement window while the suspension stands, then lifts it on that same side and
+waits for the transport to return — so the evidence is that the placer restored reachability, not
+that anything reconnected on its own. The non-reversal case counts handshakes on that same
+suspending side after its own close and requires zero, which is only satisfiable if the side that
+merely accepted the route never dials a close back. The attribution case suspends from the
+non-dialing side and holds one full agreement window after the first redial, with both peers'
+exclusion state as the oracle: a refusal does not become an exclusion on the refused peer, and a
+suspension does not escalate on the suspending one.

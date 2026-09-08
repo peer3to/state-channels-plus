@@ -671,7 +671,12 @@ class P2PManager<TCustomRpc extends MainRpcService = MainRpcService>
     }
 
     public allowReconnect(evmAddress: Address): boolean {
-        return this.profileManager.allowReconnect(evmAddress);
+        const lifted = this.profileManager.allowReconnect(evmAddress);
+        // The suspension stopped this side's dial loop and the suspended peer
+        // was never told about it, so it cannot know the suspension is over.
+        // The side that placed it owns dialing back.
+        if (lifted) LocalDiscoveryServer.redialPeer(this, evmAddress);
+        return lifted;
     }
 
     public isReconnectBanned(evmAddress: Address): boolean {

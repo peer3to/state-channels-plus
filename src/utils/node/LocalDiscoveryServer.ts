@@ -16,10 +16,6 @@ const WS_CONNECT_TIMEOUT_MS = 750;
 const LOCAL_TRANSPORT_READY_TIMEOUT_MS = 2000;
 const REGISTRY_CONNECT_MAX_RETRIES = 10;
 const MAX_PEER_RETRY_BACKOFF_STEP = 5;
-// How long the non-primary peer waits before dialing a peer that dropped it.
-// Longer than the primary's whole backoff ramp, so a primary that is still
-// dialing has reconnected by then and the takeover skips as `peer-connected`.
-const SECONDARY_DIAL_TAKEOVER_MS = 2000;
 
 type DiscoveryMode = "registry" | "peer";
 
@@ -37,6 +33,8 @@ type DiscoveryInfo = {
 type DiscoverySession = {
     server: WebSocketServer;
     discoveryWs?: WebSocket;
+    myPeerAddress: string;
+    myPeerPort: Port;
     activeDials: Set<PeerConnectionKey>;
     connectionKeys: Set<PeerConnectionKey>;
     pendingDials: Set<WebSocket>;
@@ -690,18 +688,6 @@ export class LocalDiscoveryServer {
                     // LocalTransport listeners are installed first.
                     ws.send(LOCAL_TRANSPORT_SERVER_READY_MESSAGE);
                     const lt = new LocalTransport(ws, p2pManager);
-                    // We accepted this route, so nothing on this side redials
-                    // it. Take the dial over if the peer that owns the loop
-                    // stops running it.
-                    lt.onClosed(() =>
-                        this.scheduleSecondaryDial(
-                            p2pManager,
-                            rendezvousKey,
-                            myPeerAddress,
-                            port,
-                            lt.peerAddress
-                        )
-                    );
                     p2pManager.localRpc.initHandshakeService.initHandshake(lt);
                     this.logger.debug("Inbound peer connection accepted", {
                         ...peerLog,
@@ -731,6 +717,8 @@ export class LocalDiscoveryServer {
         const sessions = this.discoverySessions.get(p2pManager) ?? new Map();
         const session: DiscoverySession = {
             server,
+            myPeerAddress,
+            myPeerPort: port,
             activeDials: new Set(),
             connectionKeys: new Set(),
             pendingDials: new Set(),
@@ -912,9 +900,7 @@ export class LocalDiscoveryServer {
      *
      * Strategy:
      * - The lower EVM address is the primary dialer.
-     * - The other peer waits for the primary peer's owned retry loop, and
-     *   takes the dial over if that loop stops while both still observe the
-     *   topic (see `scheduleSecondaryDial`).
+     * - The other peer waits for the primary peer's owned retry loop.
      */
     private static handlePeerAnnouncement(
         msg: string,
@@ -970,8 +956,8 @@ export class LocalDiscoveryServer {
             );
             if (!session || session.server !== myServer) return;
 
-            // Remembered for every announcer, primary or not: the non-primary
-            // side needs the port to take the dial over later.
+            // Remembered for every announcer, primary or not: `redialPeer`
+            // needs the port to dial back once a suspension is lifted.
             session.announcedPeerPorts.set(
                 getChecksumAddress(peerAddress),
                 peerPort
@@ -1023,54 +1009,40 @@ export class LocalDiscoveryServer {
     }
 
     /**
-     * Take the dial over after a peer we accepted dropped us.
+     * Resume dialing a peer whose reconnect suspension this side just lifted.
      *
-     * Only the primary dialer of a pair runs a retry loop here, so when its own
-     * local policy stops that loop — a reconnect suspension it placed, which is
-     * one-sided and which the suspended peer is never told about — the pair is
-     * left with no dialer at all. Hyperswarm never does that: a ban stops the
-     * banner's dials, and the banned peer keeps dialing and is refused at
-     * admission. Mirror that pair-level behavior by dialing from this side once
-     * the primary has clearly stopped. A primary that is still dialing has
-     * reconnected inside the takeover window, so the dial skips as
-     * `peer-connected`; a peer this side has excluded skips as `blacklisted`.
+     * Only the primary dialer of a pair runs a retry loop here, so a suspension
+     * that this side placed stops the pair's only dialer whenever this side is
+     * the primary. The suspension is one-sided and the suspended peer is never
+     * told about it, so it cannot know when the suspension is over — the side
+     * that placed it is the side that knows, and therefore owns dialing back.
+     * Nothing is redialed while the ban stands: the dial would be refused at
+     * admission anyway, and `connectToSinglePeer` skips it as
+     * `reconnect-banned`. A pair that already reconnected skips as
+     * `peer-connected`, and a peer this side has excluded as `blacklisted`.
      */
-    private static scheduleSecondaryDial(
+    public static redialPeer(
         p2pManager: P2PManager,
-        rendezvousKey: RendezvousKey,
-        myPeerAddress: string,
-        myPeerPort: Port,
-        peerAddress: string | undefined
+        peerAddress: Address
     ): void {
-        if (!peerAddress) return;
         if (this._cleanupRequested || p2pManager.isDisposed) return;
-        if (this.isPrimaryDialer(myPeerAddress, peerAddress)) return;
-        const session = this.getDiscoverySession(p2pManager, rendezvousKey);
-        if (!session) return;
-        const peerPort = session.announcedPeerPorts.get(
-            getChecksumAddress(peerAddress)
-        );
-        if (peerPort === undefined) return;
-        this.scheduleSessionTimer(
-            session,
-            () => {
-                if (
-                    this.getDiscoverySession(p2pManager, rendezvousKey) !==
-                    session
-                ) {
-                    return;
-                }
-                this.connectToSinglePeer(
-                    peerPort,
-                    peerAddress,
-                    p2pManager,
-                    rendezvousKey,
-                    myPeerAddress,
-                    myPeerPort
-                );
-            },
-            SECONDARY_DIAL_TAKEOVER_MS
-        );
+        const sessions = this.discoverySessions.get(p2pManager);
+        if (!sessions) return;
+        const checksummedPeerAddress = getChecksumAddress(peerAddress);
+        for (const [rendezvousKey, session] of sessions) {
+            const peerPort = session.announcedPeerPorts.get(
+                checksummedPeerAddress
+            );
+            if (peerPort === undefined) continue;
+            this.connectToSinglePeer(
+                peerPort,
+                checksummedPeerAddress,
+                p2pManager,
+                rendezvousKey,
+                session.myPeerAddress,
+                session.myPeerPort
+            );
+        }
     }
 
     /**

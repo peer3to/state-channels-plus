@@ -112,14 +112,27 @@ transport still blacklists the current profile and closes both current and repor
 Lifecycle cleanup, network loss, timeouts without proof, response-send failure, and local dispatch
 exceptions continue to call `disconnectConnection`.
 
-## Refusal-attribution and pair-level redial — 2026-09-08
+## Refusal-attribution and lift-owned redial — 2026-09-08
 
 The handshake ack timeout now returns before any consequence when the transport is already closed,
 logging the same `ack-timeout` message with a distinct reason. The verified-but-silent exclusion is
-unchanged for a transport that is still open. The Node local-discovery backend arms a secondary-dial
-takeover on every inbound-accepted transport: when the canonical (lower-address) dialer stops its
-loop because of a suspension it placed, the accepting side dials after a fixed window longer than
-the primary's whole backoff ramp, so a still-dialing primary reconnects first and the takeover skips
-as `peer-connected`, while a peer this side excluded skips as `blacklisted`. The takeover is
-session-owned — scheduled through the session timer set and re-checking session identity — so leave
-and cleanup cancel it.
+unchanged for a transport that is still open.
+
+The Node local-discovery backend gives a pair a single dialer (the lower EVM address), so a
+suspension placed by that side stops the pair's only dial loop. `P2PManager.allowReconnect` now
+calls `LocalDiscoveryServer.redialPeer` when the profile ban was actually lifted, dialing the peer
+once on every still-registered session that recorded its announced port. Nothing is dialed while the
+ban stands — the dial gate skips it as `reconnect-banned` — and `leave` deletes the session, so a
+left topic has nothing to dial from. The browser adapter declares the same entry point as a no-op:
+its relay hub owns pairing, so no suspension there stops a local dial loop.
+
+An intermediate revision instead armed a delayed dial takeover from the accepting side on every
+inbound transport close. It was withdrawn as unsound. Close intent is not carried on the wire —
+`ATransport.close(isExpected)` is local-only and `LocalTransport` sends a bare socket close whose
+code and reason the receiver discards — so from the acceptor, "the primary suspended me" and "the
+primary deliberately left" are the same event, and the takeover resurrected transports to peers that
+had dropped the feed on purpose. It was caught on the distributed pool: the pre-dispute spectator
+case in `test/e2e/E2E-Spectate.test.ts` passed 5/5 on the base revision and failed 5/5 with the
+takeover, because four honest peers re-established live sessions to a spectator that had aborted
+channel participation, which stalled the reduced fork's writer slot and opened an unplanned second
+dispute.

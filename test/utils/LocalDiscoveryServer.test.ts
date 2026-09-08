@@ -80,10 +80,10 @@ describe("LocalDiscoveryServer topic lifecycle", function () {
         ).to.equal(0);
     });
 
-    it("takes the dial over when the primary dialer suspends the peer and stops dialing", async function () {
+    it("dials the peer back when the primary dialer lifts its reconnect suspension", async function () {
         const h = TestSession.getHarness();
         await h.setup(2, { autoConnect: false });
-        const topic = ethers.id("local-discovery-suspended-peer-dials-back");
+        const topic = ethers.id("local-discovery-lifted-suspension-dials-back");
         const primaryIndex = h.network.lobbyRoleIndices()[0];
         const primary = h.peers[primaryIndex];
         const other = h.peers[1 - primaryIndex];
@@ -94,8 +94,76 @@ describe("LocalDiscoveryServer topic lifecycle", function () {
             )
         );
         await h.network.waitForP2PConnections();
-        // Counted on the primary: its own dial loop is what the suspension
-        // stops, so any further handshake it runs came from the other side.
+
+        try {
+            expect(
+                await h
+                    .control(primary)
+                    .network.banReconnect(other.address)
+                    .request()
+            ).to.equal(true);
+            expect(
+                await h
+                    .control(primary)
+                    .network.closePeerTransportByAddress(other.address)
+                    .request()
+            ).to.equal(true);
+            // The suspension stops the primary's own dial loop, and the peer it
+            // suspended is never told, so the pair has no dialer while it holds.
+            await sleep(MIN_TEST_TIME_CONFIG.agreementTime * 1000);
+            expect(
+                await h
+                    .control(primary)
+                    .network.getTransportToken(other.address)
+                    .request(),
+                "a standing suspension must leave the pair disconnected"
+            ).to.equal(null);
+
+            expect(
+                await h
+                    .control(primary)
+                    .network.allowReconnect(other.address)
+                    .request()
+            ).to.equal(true);
+            await waitFor(
+                async () =>
+                    (await h
+                        .control(primary)
+                        .network.getTransportToken(other.address)
+                        .request()) !== null,
+                h.event.protocolEventTimeoutMs(),
+                100
+            );
+        } finally {
+            await h
+                .control(primary)
+                .network.allowReconnect(other.address)
+                .request();
+            await Promise.all(
+                h.peers.map((peer) =>
+                    h.control(peer).network.leaveSelectedKey(topic).request()
+                )
+            );
+        }
+    });
+
+    it("never dials from the side that only accepted the route", async function () {
+        const h = TestSession.getHarness();
+        await h.setup(2, { autoConnect: false });
+        const topic = ethers.id("local-discovery-acceptor-never-dials");
+        const primaryIndex = h.network.lobbyRoleIndices()[0];
+        const primary = h.peers[primaryIndex];
+        const other = h.peers[1 - primaryIndex];
+
+        await Promise.all(
+            h.peers.map((peer) =>
+                h.control(peer).network.joinSelectedKey(topic).request()
+            )
+        );
+        await h.network.waitForP2PConnections();
+        // Counted on the primary: the suspension stops its own dial loop, so
+        // any handshake it runs afterwards is an inbound dial, and the only
+        // peer that could have placed it is the side that merely accepted.
         await h.control(primary).stub.countInitHandshakeCalls().request();
 
         try {
@@ -111,29 +179,17 @@ describe("LocalDiscoveryServer topic lifecycle", function () {
                     .network.closePeerTransportByAddress(other.address)
                     .request()
             ).to.equal(true);
+            await sleep(MIN_TEST_TIME_CONFIG.agreementTime * 1000);
 
-            await waitFor(
-                async () =>
-                    (await h
-                        .control(primary)
-                        .stub.getInitHandshakeCallCount()
-                        .request()) > 0,
-                h.event.protocolEventTimeoutMs(),
-                100
-            );
-            // The suspension still refuses what the takeover dialed in.
+            // The accepting side cannot tell a suspension from a peer that
+            // left on purpose, so it must never dial a closed route back.
             expect(
                 await h
                     .control(primary)
-                    .network.getTransportToken(other.address)
-                    .request()
-            ).to.equal(null);
-            expect(
-                await h
-                    .control(primary)
-                    .query.isReconnectBanned(other.address)
-                    .request()
-            ).to.equal(true);
+                    .stub.getInitHandshakeCallCount()
+                    .request(),
+                "the accepting side must not dial the closed route back"
+            ).to.equal(0);
         } finally {
             await h
                 .control(primary)

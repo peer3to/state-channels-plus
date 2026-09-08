@@ -1,4 +1,5 @@
 import type P2PManager from "../../P2PManager";
+import type { Address } from "../../types/types";
 import { config } from "../config";
 import type { Logger } from "../logging/Logger";
 
@@ -106,6 +107,11 @@ export class LocalDiscoveryServer {
             ws.addEventListener("error", onError);
             ws.addEventListener("message", onMessage);
         });
+    }
+
+    static redialPeer(_p2pManager: P2PManager, _peerAddress: Address): void {
+        // Nothing to resume in the browser: the relay hub owns pairing, so a
+        // reconnect suspension never stops a local dial loop.
     }
 
     static async leave(
