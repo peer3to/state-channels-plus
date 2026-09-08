@@ -1,9 +1,9 @@
-import { expect } from "chai";
-import { ethers } from "hardhat";
-import { BytesLike, Signer } from "ethers";
+import { HardhatEthersSigner } from "@nomicfoundation/hardhat-ethers/signers";
 import { deployUtilityFacetTestContract } from "@test/test_utils/testHelpers";
 import { UtilityFacet } from "@typechain-types";
-import { HardhatEthersSigner } from "@nomicfoundation/hardhat-ethers/signers";
+import { expect } from "chai";
+import { BytesLike, Signer } from "ethers";
+import { ethers } from "hardhat";
 
 describe("StateChannelUtilLibrary", function () {
     // We define a fixture to reuse the same setup in every test. We use

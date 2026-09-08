@@ -1,12 +1,12 @@
-import { expect } from "chai";
-import { FraudProofStorage } from "@/storage/FraudProofStorage";
-import { DisputeFraudProofStorage } from "@/storage/DisputeFraudProofStorage";
 import {
     dispute,
     disputeFraudProof,
     fraudProof,
     randomAddress
 } from "../factory";
+import { DisputeFraudProofStorage } from "@/storage/DisputeFraudProofStorage";
+import { FraudProofStorage } from "@/storage/FraudProofStorage";
+import { expect } from "chai";
 
 describe("Unit: FraudProofStorage", function () {
     it("stores a fraud proof and reads it back by content hash", function () {

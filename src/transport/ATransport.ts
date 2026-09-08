@@ -1,23 +1,29 @@
-import type P2PManager from "@/P2PManager";
 import { TransportType } from "./TransportType";
+import type P2PManager from "@/P2PManager";
 import Rpc, {
     RpcResponse,
     serializeRpc,
     serializeRpcResponse
 } from "@/rpc/Rpc";
-import { LoggerUtils } from "@/utils/LoggerUtils";
-import { getChecksumAddress } from "@/utils/address";
 import { Address } from "@/types";
+import { getChecksumAddress } from "@/utils/address";
+import { LoggerUtils } from "@/utils/LoggerUtils";
 import { hasMethod, hasProperty } from "@/utils/ObjectChecks";
 
 abstract class ATransport {
     abstract transportType: TransportType;
     isClosed: boolean = false;
+    // Only ProfileManager.authenticateTransport sets this after proof and admission; trusted loopback names itself.
+    // A set address authenticates this exact transport for guarded RPC.
     peerAddress?: string;
     p2pManager: P2PManager;
+    private readonly closedListeners = new Set<
+        (transport: ATransport) => void
+    >();
 
     constructor(p2pManager: P2PManager) {
         this.p2pManager = p2pManager;
+        this.p2pManager.profileManager.registerTransport(this);
     }
 
     /**
@@ -36,7 +42,10 @@ abstract class ATransport {
     }
 
     abstract _send(serializedRPC: string): void;
-    abstract onMessage(data: any): void;
+    onMessage(data: any): void {
+        const serializedRPC = data.toString();
+        this.p2pManager.onRpc(serializedRPC, this);
+    }
     protected abstract _close(): void;
 
     /**
@@ -52,6 +61,8 @@ abstract class ATransport {
         if (!this.isClosed) {
             LoggerUtils.logTransportDisconnect(this, isExpected);
             this.isClosed = true;
+            for (const listener of [...this.closedListeners]) listener(this);
+            this.closedListeners.clear();
             if (!isExpected) {
                 this.p2pManager.stateManager.p2pEventHooks?.onDisconnection?.(
                     this.peerAddress as Address
@@ -60,6 +71,15 @@ abstract class ATransport {
             this.p2pManager.disconnectConnection(this);
             this._close();
         }
+    }
+
+    onClosed(listener: (transport: ATransport) => void): () => void {
+        if (this.isClosed) {
+            listener(this);
+            return () => undefined;
+        }
+        this.closedListeners.add(listener);
+        return () => this.closedListeners.delete(listener);
     }
 
     send(rpc: Rpc): void {

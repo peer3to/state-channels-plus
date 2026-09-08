@@ -16,34 +16,36 @@ Existing `OQ-*` IDs are preserved; new questions use the layer-scoped namespace 
 
 ## Index
 
-| ID                                               | Question                                                                                                                                                    | Source                 | Affected documents                                                                                                                         | Status                            |
-| ------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------- | ------------------------------------------------------------------------------------------------------------------------------------------ | --------------------------------- |
-| [`OQ-1-NTJBA1`](open-questions.md#oq-1-ntjba1)   | Exact kill-period and dispute-fraud-proof slashing semantics                                                                                                | Specification analysis | [protocol/disputes.md](./disputes/disputes.md), [protocol/fraud-proofs.md](./disputes/fraud-proofs.md)                                     | Open                              |
-| [`OQ-2-7WTV16`](open-questions.md#oq-2-7wtv16)   | Penalty for submitting an invalid fraud proof                                                                                                               | Specification analysis | [protocol/fraud-proofs.md](./disputes/fraud-proofs.md)                                                                                     | Resolved                          |
-| [`OQ-3-1AHKGW`](open-questions.md#oq-3-1ahkgw)   | Leader election beyond round-robin: revert attribution, long-range proofs                                                                                   | Specification analysis | [protocol/finality.md](./protocol-model/finality.md), [protocol/state-proofs.md](./disputes/state-proofs.md)                               | Open                              |
-| [`OQ-6-4JPNE5`](open-questions.md#oq-6-4jpne5)   | P2P gossip rate-limiting policy                                                                                                                             | Specification analysis | [security/trust-model.md](./security/trust-model.md)                                                                                       | Open                              |
-| [`OQ-7-M5G9M3`](open-questions.md#oq-7-m5g9m3)   | Whether adjudication requires a self-call-only authorization boundary                                                                                       | Specification analysis | [security/trust-model.md](./security/trust-model.md)                                                                                       | Open                              |
-| [`OQ-8-PEYAAQ`](open-questions.md#oq-8-peyaaq)   | Clock-skew and bias values to be validated empirically                                                                                                      | Specification analysis | [protocol/time.md](./protocol-model/time.md)                                                                                               | Open                              |
-| [`OQ-9-XR1MFS`](open-questions.md#oq-9-xr1mfs)   | Timeout precedence edge rules: same-fork definition, height comparison, evidence timing                                                                     | Specification analysis | [protocol/disputes.md](./disputes/disputes.md)                                                                                             | Resolved (implementation pending) |
-| [`OQ-10-04YNC4`](open-questions.md#oq-10-04ync4) | Spectate/join failure-point details: deadlines, refunds, forced-inclusion proof                                                                             | Specification analysis | [protocol/cross-layer-messages.md](./settlement/cross-layer-messages.md)                                                                   | Open                              |
-| [`OQ-11-38S3SE`](open-questions.md#oq-11-38s3se) | Channel-balance invariant: definition per balance model and check points                                                                                    | Specification analysis | [protocol/cross-layer-messages.md](./settlement/cross-layer-messages.md), [concepts/state-machines.md](./protocol-model/state-machines.md) | Open                              |
-| [`OQ-12-B45Q7N`](open-questions.md#oq-12-b45q7n) | Book-like overview vs. tree as the authoritative reference                                                                                                  | Specification analysis | [README.md](../README.md), [governance.md](../governance.md)                                                                               | Provisionally resolved            |
-| [`OQ-16-6AVF5B`](open-questions.md#oq-16-6avf5b) | Slash-set lifetime: cleared on channel-storage clear, questioned in code                                                                                    | Code                   | [protocol/fraud-proofs.md](./disputes/fraud-proofs.md)                                                                                     | Open                              |
-| [`OQ-18-2NK97T`](open-questions.md#oq-18-2nk97t) | Whether removal and slashing use the same canonical exit-recording behavior                                                                                 | Specification analysis | [concepts/state-machines.md](./protocol-model/state-machines.md)                                                                           | Resolved (implementation pending) |
-| [`OQ-20-Z9361V`](open-questions.md#oq-20-z9361v) | Outbound stream is not yet general-purpose; withdraw failure wedges snapshot advance; residual funds on close                                               | Code                   | [protocol/cross-layer-messages.md](./settlement/cross-layer-messages.md)                                                                   | Open                              |
-| [`OQ-26-XH59SP`](open-questions.md#oq-26-xh59sp) | Whether every adjudication path generically enforces next-author authorization                                                                              | Specification analysis | [concepts/state-machines.md](./protocol-model/state-machines.md)                                                                           | Open                              |
-| [`OQ-27-GT4W09`](open-questions.md#oq-27-gt4w09) | Reducer eligibility check is disabled in `reduceAndFinalize` — anyone can reduce                                                                            | Code                   | [protocol/disputes.md](./disputes/disputes.md)                                                                                             | Open                              |
-| [`OQ-28-RP46PW`](open-questions.md#oq-28-rp46pw) | Equal-height reduction tie-break by smaller block hash — unapproved rule, hash-grinding surface                                                             | Code                   | [protocol/disputes.md](./disputes/disputes.md)                                                                                             | Open                              |
-| [`OQ-29-EFY4NF`](open-questions.md#oq-29-efy4nf) | No signature domain separation: signatures replayable across deployments/chains                                                                             | Code                   | security/open-security-review.md                                                                                                           | Open                              |
-| [`OQ-31-EB892Q`](open-questions.md#oq-31-eb892q) | Hash-only dispute with unavailable/undecodable data: availability rule undecided                                                                            | Code                   | sdk/dispute-pipeline.md, [protocol/disputes.md](./disputes/disputes.md)                                                                    | Open                              |
-| [`OQ-32-5NDD24`](open-questions.md#oq-32-5ndd24) | Proof and audit size bounds (milestones, suffix blocks, signatures, auditing bytes, replay gas)                                                             | Specification analysis | [protocol/state-proofs.md](./disputes/state-proofs.md), [security/data-availability.md](./security/data-availability.md)                   | Open                              |
-| [`OQ-33-1N5BY1`](open-questions.md#oq-33-1n5by1) | Maximum participant count and required enforcement boundary                                                                                                 | Specification analysis | [security/trust-model.md](./security/trust-model.md)                                                                                       | Open                              |
-| [`OQ-34-FY08V2`](open-questions.md#oq-34-fy08v2) | RPC boundary decisions: guard retry semantics, protocol versioning, ban persistence, failure-outcome policy                                                 | Code and specification | sdk/rpc/README.md                                                                                                                          | Open                              |
-| [`OQ-38-EY27T5`](open-questions.md#oq-38-ey27t5) | Runtime budgets and targets under the mid-range-phone envelope; multi-peer test scheduling determinism and isolation                                        | Code and specification | sdk/runtime-and-concurrency.md §6, §11.5                                                                                                   | Open                              |
-| [`OQ-39-C3EAMN`](open-questions.md#oq-39-c3eamn) | Reduce: stateful (reads on-chain slashes / inbound tip) vs stateless fold over the committed dispute inputs                                                 | Engineer question      | [protocol/disputes.md](./disputes/disputes.md)                                                                                             | Open                              |
-| [`OQ-40-M12S72`](open-questions.md#oq-40-m12s72) | `challengeDisputeReduction`: dormant scaffolding for optimistic reduction, or dead code to remove                                                           | Specification analysis | [protocol/disputes.md](./disputes/disputes.md)                                                                                             | Open                              |
-| [`OQ-43-HWRTNF`](open-questions.md#oq-43-hwrtnf) | Delegated contest authorization: a keyless watchtower can only kill invalid disputes via fraud proofs - opening contests requires the participant's own key | Engineer question      | [security/trust-model.md](./security/trust-model.md)                                                                                       | Open                              |
-| [`OQ-44-3Y5MD7`](open-questions.md#oq-44-3y5md7) | Watchtower deployment shape: an ordinary peer with spectator-equivalent access, versus a distinct delegate role                                             | Engineer question      | [security/trust-model.md](./security/trust-model.md)                                                                                       | Open                              |
+| ID                                                                   | Question                                                                                                                                                    | Source                 | Affected documents                                                                                                                                     | Status                            |
+| -------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------ | --------------------------------- |
+| [`OQ-1-NTJBA1`](open-questions.md#oq-1-ntjba1)                       | Exact kill-period and dispute-fraud-proof slashing semantics                                                                                                | Specification analysis | [protocol/disputes.md](./disputes/disputes.md), [protocol/fraud-proofs.md](./disputes/fraud-proofs.md)                                                 | Open                              |
+| [`OQ-2-7WTV16`](open-questions.md#oq-2-7wtv16)                       | Penalty for submitting an invalid fraud proof                                                                                                               | Specification analysis | [protocol/fraud-proofs.md](./disputes/fraud-proofs.md)                                                                                                 | Resolved                          |
+| [`OQ-3-1AHKGW`](open-questions.md#oq-3-1ahkgw)                       | Leader election beyond round-robin: revert attribution, long-range proofs                                                                                   | Specification analysis | [protocol/finality.md](./protocol-model/finality.md), [protocol/state-proofs.md](./disputes/state-proofs.md)                                           | Open                              |
+| [`OQ-6-4JPNE5`](open-questions.md#oq-6-4jpne5)                       | P2P gossip rate-limiting policy                                                                                                                             | Specification analysis | [security/trust-model.md](./security/trust-model.md)                                                                                                   | Open                              |
+| [`OQ-7-M5G9M3`](open-questions.md#oq-7-m5g9m3)                       | Whether adjudication requires a self-call-only authorization boundary                                                                                       | Specification analysis | [security/trust-model.md](./security/trust-model.md)                                                                                                   | Open                              |
+| [`OQ-8-PEYAAQ`](open-questions.md#oq-8-peyaaq)                       | Clock-skew and bias values to be validated empirically                                                                                                      | Specification analysis | [protocol/time.md](./protocol-model/time.md)                                                                                                           | Open                              |
+| [`OQ-9-XR1MFS`](open-questions.md#oq-9-xr1mfs)                       | Timeout precedence edge rules: same-fork definition, height comparison, evidence timing                                                                     | Specification analysis | [protocol/disputes.md](./disputes/disputes.md)                                                                                                         | Resolved                          |
+| [`OQ-10-04YNC4`](open-questions.md#oq-10-04ync4)                     | Spectate/join failure-point details: deadlines, refunds, forced-inclusion proof                                                                             | Specification analysis | [protocol/cross-layer-messages.md](./settlement/cross-layer-messages.md)                                                                               | Partially resolved                |
+| [`OQ-11-38S3SE`](open-questions.md#oq-11-38s3se)                     | Channel-balance invariant: definition per balance model and check points                                                                                    | Specification analysis | [protocol/cross-layer-messages.md](./settlement/cross-layer-messages.md), [concepts/state-machines.md](./protocol-model/state-machines.md)             | Open                              |
+| [`OQ-12-B45Q7N`](open-questions.md#oq-12-b45q7n)                     | Book-like overview vs. tree as the authoritative reference                                                                                                  | Specification analysis | [README.md](../README.md), [governance.md](../governance.md)                                                                                           | Provisionally resolved            |
+| [`OQ-16-6AVF5B`](open-questions.md#oq-16-6avf5b)                     | Slash-set lifetime: cleared on channel-storage clear, questioned in code                                                                                    | Code                   | [protocol/fraud-proofs.md](./disputes/fraud-proofs.md)                                                                                                 | Open                              |
+| [`OQ-18-2NK97T`](open-questions.md#oq-18-2nk97t)                     | Whether removal and slashing use the same canonical exit-recording behavior                                                                                 | Specification analysis | [concepts/state-machines.md](./protocol-model/state-machines.md)                                                                                       | Resolved (implemented 2026-09-07) |
+| [`OQ-20-Z9361V`](open-questions.md#oq-20-z9361v)                     | Outbound stream is not yet general-purpose; withdraw failure wedges snapshot advance; residual funds on close                                               | Code                   | [protocol/cross-layer-messages.md](./settlement/cross-layer-messages.md)                                                                               | Open                              |
+| [`OQ-26-XH59SP`](open-questions.md#oq-26-xh59sp)                     | Whether every adjudication path generically enforces next-author authorization                                                                              | Specification analysis | [concepts/state-machines.md](./protocol-model/state-machines.md)                                                                                       | Open                              |
+| [`OQ-27-GT4W09`](open-questions.md#oq-27-gt4w09)                     | Reducer eligibility check is disabled in `reduceAndFinalize` — anyone can reduce                                                                            | Code                   | [protocol/disputes.md](./disputes/disputes.md)                                                                                                         | Open                              |
+| [`OQ-28-RP46PW`](open-questions.md#oq-28-rp46pw)                     | Equal-height reduction tie-break by smaller block hash — unapproved rule, hash-grinding surface                                                             | Code                   | [protocol/disputes.md](./disputes/disputes.md)                                                                                                         | Open                              |
+| [`OQ-29-EFY4NF`](open-questions.md#oq-29-efy4nf)                     | No signature domain separation: signatures replayable across deployments/chains                                                                             | Code                   | security/open-security-review.md                                                                                                                       | Open                              |
+| [`OQ-31-EB892Q`](open-questions.md#oq-31-eb892q)                     | Hash-only dispute with unavailable/undecodable data: availability rule undecided                                                                            | Code                   | sdk/dispute-pipeline.md, [protocol/disputes.md](./disputes/disputes.md)                                                                                | Open                              |
+| [`OQ-32-5NDD24`](open-questions.md#oq-32-5ndd24)                     | Proof and audit size bounds (milestones, suffix blocks, signatures, auditing bytes, replay gas)                                                             | Specification analysis | [protocol/state-proofs.md](./disputes/state-proofs.md), [security/data-availability.md](./security/data-availability.md)                               | Open                              |
+| [`OQ-33-1N5BY1`](open-questions.md#oq-33-1n5by1)                     | Maximum participant count and required enforcement boundary                                                                                                 | Specification analysis | [security/trust-model.md](./security/trust-model.md)                                                                                                   | Open                              |
+| [`OQ-34-FY08V2`](open-questions.md#oq-34-fy08v2)                     | RPC boundary decisions: protocol versioning, ban persistence, and failure-outcome policy                                                                    | Code and specification | [peer-communication/rpc.md](./peer-communication/rpc.md)                                                                                               | Open                              |
+| [`OQ-38-EY27T5`](open-questions.md#oq-38-ey27t5)                     | Runtime budgets and targets under the mid-range-phone envelope; multi-peer test scheduling determinism and isolation                                        | Code and specification | sdk/runtime-and-concurrency.md §6, §11.5                                                                                                               | Open                              |
+| [`OQ-39-C3EAMN`](open-questions.md#oq-39-c3eamn)                     | Reduce: stateful (reads on-chain slashes / inbound tip) vs stateless fold over the committed dispute inputs                                                 | Engineer question      | [protocol/disputes.md](./disputes/disputes.md)                                                                                                         | Open                              |
+| [`OQ-40-M12S72`](open-questions.md#oq-40-m12s72)                     | `challengeDisputeReduction`: dormant scaffolding for optimistic reduction, or dead code to remove                                                           | Specification analysis | [protocol/disputes.md](./disputes/disputes.md)                                                                                                         | Open                              |
+| [`OQ-43-HWRTNF`](open-questions.md#oq-43-hwrtnf)                     | Delegated contest authorization: a keyless watchtower can only kill invalid disputes via fraud proofs - opening contests requires the participant's own key | Engineer question      | [security/trust-model.md](./security/trust-model.md)                                                                                                   | Open                              |
+| [`OQ-44-3Y5MD7`](open-questions.md#oq-44-3y5md7)                     | Watchtower deployment shape: an ordinary peer with spectator-equivalent access, versus a distinct delegate role                                             | Engineer question      | [security/trust-model.md](./security/trust-model.md)                                                                                                   | Open                              |
+| [`OQ-45-ACZCDE`](open-questions.md#oq-45-aczcde)                     | Subjective post-authentication engagement policy: how a node decides whether to keep interacting with a proven identity                                     | Engineer direction     | [peer-communication/handshake.md](./peer-communication/handshake.md), [peer-communication/synchronization.md](./peer-communication/synchronization.md) | Open                              |
+| [`OQ-SPEC-LOBBY-1-D65YTT`](open-questions.md#oq-spec-lobby-1-d65ytt) | Per-transport cap and overflow outcome for deferred pre-readiness RPC admission                                                                             | Security hardening     | [peer-communication/rpc.md](./peer-communication/rpc.md), [peer-communication/channel-negotiation.md](./peer-communication/channel-negotiation.md)     | Open                              |
 
 ## Register assumptions and constraints
 
@@ -238,6 +240,13 @@ failure**, including plain timeouts and transport errors — conflating unavaila
 Byzantine behavior, contrary to the fault taxonomy in
 [security/trust-model.md](./security/trust-model.md).
 
+**Partially resolved (2026-08-31):** initial channel load now selects one authenticated peer and uses
+two independent local agreement windows; selected-peer failure aborts the uncommitted runtime without
+fallback. First-join and top-up deadlines are assigned internally, and `PENDING_PARTICIPANT` is set only
+after the membership receipt succeeds. Accepted pending or participating state is preserved after later
+operational failure. Refund/exit behavior for a deposit that is never included, and the full forced-inclusion
+proof contract, remain open.
+
 <a id="oq-11-38s3se"></a>
 
 ## OQ-11-38S3SE — Channel-balance invariant definition
@@ -271,20 +280,7 @@ window. Define the slash set's ownership and lifetime rules. See
 
 ## OQ-18-2NK97T — Exit-recording asymmetry between slash and remove
 
-The external `slashParticipant` wrapper appends the resulting `ExitChannel` to the machine's
-outbound buffer; `removeParticipant` returns it without appending (the dispute pipeline
-compensates by using return values). Inert today, but which layer owns recording the exit message
-should be decided deliberately. See [concepts/state-machines.md](./protocol-model/state-machines.md)
-§6.4.
-
-**Resolved (2026-08-10):** the wrappers MUST be symmetric — both record the exit through
-`_addExitChannel`. The only intended difference between removal and slashing lives in the hooks'
-balance semantics: `_removeParticipant` is the less aggressive path and may return the
-participant's full held balance; `_slashParticipant` applies the application-defined penalty.
-Recorded normatively as [`REQ-SM-8-8CHSQ8`](protocol-model/state-machines.md#req-sm-8-8chsq8) in
-[concepts/state-machines.md](./protocol-model/state-machines.md). The implementation change
-(`removeParticipant` also calling `_addExitChannel` on success) is pending; until it lands the
-Current: notes in the affected documents stand.
+**Resolved and implemented (2026-09-07):** both external wrappers record one exit through `_addExitChannel` when their hook succeeds. The hooks retain their own balance semantics. The dispute consumer uses returned exits and does not consume the machine buffer; the next SDK state transition clears that buffer before executing. Absent and repeated targets add no exit. See [`REQ-SM-8-8CHSQ8`](protocol-model/state-machines.md#req-sm-8-8chsq8) and [`REQ-SM-10-JD8TSF`](protocol-model/state-machines.md#req-sm-10-jd8tsf).
 
 <a id="oq-20-z9361v"></a>
 
@@ -410,22 +406,28 @@ it in `open`/`join` (and RPC) rather than degrading without bound. See
 Grouped decisions surfaced while specifying the peer-RPC model
 (sdk/rpc/README.md); each is marked in place in that document:
 
-- **Guard retry vs. request/response.** The handshake guard queues rejected calls for retry, but
-  a queued _request_ has already been answered with a guard error — its later retried response
-  arrives as an unknown `requestId` and is dropped, so retry only benefits fire-and-forget
-  sends. Also, guard `onFailure` disconnects before the error response is sent. Decide the
-  intended queue/retry semantics per delivery mode.
 - **Protocol versioning.** No version negotiation or compatibility scheme exists anywhere in the
   RPC layer (only the `peer3:init-handshake:v1` domain tag). Couples to [`OQ-29-EFY4NF`](open-questions.md#oq-29-efy4nf) (signature
   domains): one versioning decision should cover both.
-- **Ban persistence before a profile exists.** A "blacklist" verdict against a peer with no
-  established profile is disconnect-only (`profile?.blacklist()` no-ops), so a pre-handshake
-  abuser can reconnect freely. Decide whether bans persist by transport-level address.
+- **Ban durability across reconnects.** Every live transport has an unauthenticated profile, so a
+  pre-handshake verdict can ban its live Holepunch handle. Decide whether that ban must survive a
+  new SDK peer handle or process restart before the EVM identity is authenticated.
 - **Failure-outcome policy consistency.** Endpoint outcomes are currently per-service accidents:
   join-signature validation failures are penalty-free request errors (free probing), while
   spectate failures blacklist permanently ([`DEF-5-E8TP9N`](../audit/open-findings.md#def-5-e8tp9n)); WebRTC signaling failures are silently
   ignored. Decide one policy table — which failure classes disconnect, blacklist, error, or are
   ignored — and make endpoints conform.
+
+<a id="oq-spec-lobby-1-d65ytt"></a>
+
+## OQ-SPEC-LOBBY-1-D65YTT — Deferred-admission queue bound
+
+The two-agreement-window admission grace permits authenticated requests to wait while local service
+readiness catches up. The current protocol does not define a per-transport queue cap or the exact
+overflow result. A later hardening decision must choose a small bound, decide whether overflow is a
+request rejection, transport disconnect, or identity exclusion, and state how already queued requests
+settle. Until then, implementations must preserve the bounded wait duration and must not claim a bounded
+message count for pre-readiness traffic.
 
 <a id="oq-38-ey27t5"></a>
 
@@ -560,3 +562,27 @@ sub-assumption), and it interacts with [`OQ-43-HWRTNF`](open-questions.md#oq-43-
 spectator-equivalent peer is keyless, so it depends on kill paths being permissionless. Requested
 decision: which shape version one targets, and whether the watchtower peer status is specified
 alongside the spectator status or after it.
+
+<a id="oq-45-aczcde"></a>
+
+## OQ-45-ACZCDE — Subjective post-authentication engagement policy
+
+The handshake establishes objective facts only — proven key control and clock compatibility — and
+at the current baseline every completed peer proceeds to continued interaction
+([`REQ-AUTH-7-VJFSD5`](peer-communication/handshake.md#req-auth-7-vjfsd5),
+[`INV-AUTH-3-0QP5E9`](peer-communication/handshake.md#inv-auth-3-0qp5e9)). No specification yet
+defines how a node forms a local, subjective opinion about whether to keep interacting with a
+proven identity. Such an opinion may differ between nodes, must not erase or contradict the
+objective authentication facts, and must remain separate from channel participation
+([`REQ-AUTH-5-BQG9AG`](peer-communication/synchronization.md#req-auth-5-bqg9ag)).
+
+The future owning specification must define: admissible evidence inputs; decision outcomes and
+their effect on later interaction; default behavior and policy-unavailable or policy-error
+behavior; reevaluation triggers and outcome changes; persistence across reconnects or process
+restarts; and the relationship between rejection, connection termination, and identity exclusion.
+Candidate scenarios (non-normative, not accepted oracles): one node accepts and another rejects the
+same proven identity without contradiction; a node ends later interaction without erasing the proof
+result; the policy is unavailable or errors and the node must choose between continued interaction,
+temporary refusal, and termination; new evidence arrives after an earlier decision and the opinion
+is reevaluated. Requested decision: whether and when to specify this policy, and its default until
+then (the current default is the no-opinion baseline).

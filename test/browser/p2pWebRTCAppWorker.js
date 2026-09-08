@@ -3,12 +3,12 @@
 // runs the SDK host inline in its own realm (like the SDK worker entry does).
 import "@/evm/p2pRuntime/worker/nodeGlobalsShim";
 
-import { ethers, ContractFactory } from "ethers";
-
-import { EvmStateMachine } from "@/evm";
-import { MathStateMachine__factory } from "@typechain-types";
-import { connectStateChannelManager } from "@/utils/stateChannelManager";
 import MathStateMachineArtifact from "../../artifacts/contracts/V1/examples/MathStateMachine/MathStateMachine.sol/MathStateMachine.json";
+import { EvmStateMachine } from "@/evm";
+import { isWorkerRuntime } from "@/rpc/services/WebRTCSetup/connection/WebRTCProvider";
+import { connectStateChannelManager } from "@/utils/stateChannelManager";
+import { MathStateMachine__factory } from "@typechain-types";
+import { ethers, ContractFactory } from "ethers";
 
 /**
  * Path (2) of Luka's ask: a consumer app that runs the SDK inside its OWN worker.
@@ -47,10 +47,13 @@ self.onmessage = async (event) => {
         channelId,
         signerSecret,
         relayUrl,
-        peerId
+        peerId,
+        connectOptions
     } = message;
 
     try {
+        if (!isWorkerRuntime())
+            throw new Error("Expected a real browser worker scope");
         const provider = new ethers.JsonRpcProvider(providerUrl);
         const runtimeSigner = new ethers.Wallet(signerSecret, provider);
         const stateMachineContractInstance = MathStateMachine__factory.connect(
@@ -97,8 +100,12 @@ self.onmessage = async (event) => {
             bridgePort
         ]);
 
-        await p2pInstance.p2pSigner.connectToChannel(channelId);
-        self.postMessage({ type: "ready" });
+        const result = await p2pInstance.p2pSigner.connectToChannel(
+            channelId,
+            connectOptions
+        );
+        const status = await p2pInstance.p2pSigner.getChannelStatus();
+        self.postMessage({ type: "connectResult", result, status });
     } catch (error) {
         self.postMessage({
             type: "error",

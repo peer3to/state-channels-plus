@@ -19,6 +19,24 @@ A participant implementation coordinates transport, RPC, block validation, state
 storage, chain observation, recovery, and application events behind one lifecycle. Components may be split
 or replaced, but a peer must observe the same protocol results and ordering as a single coherent participant.
 
+The public discovery operations are `joinLobby(topic, options?)` and `leaveLobby(topic)`. The separate
+fixed-target operations are `connectToChannel(channelId, options?)` and
+`cancelConnectToChannel(channelId)`. Connect options independently permit opening (`autoOpen`), request
+membership (`shouldJoin`), supply a full balance, and bound only unmatched rendezvous (`timeoutMs`). A
+balance is dormant without `shouldJoin`. Omitted and `null` timeout values leave matching unbounded;
+match acceptance permanently removes the timer. Callers never supply a join deadline.
+
+Connect returns `true` at exact-channel `SYNCED` when membership was not requested. With `shouldJoin`, it
+returns `true` after confirmed genesis membership or a successful existing membership receipt reaches
+`PENDING_PARTICIPANT` or `PARTICIPATING`. A finite unmatched timeout, valid cancellation, refusal, or
+pre-boundary operational failure returns `false`. Initial observer sync failure disposes the runtime, so
+the caller must create a new runtime. Accepted pending or participating state remains attached after later
+operational failure and cannot switch targets before normal exit or dispute handling.
+
+Targeted cancellation is not a `leaveLobby` alias. It succeeds only while that channel owns an unmatched
+targeted attempt and settles connect as `false`. A wrong channel or post-acceptance request returns `false`
+without mutation. No second public targeted join operation exists.
+
 ## Requirements and invariants
 
 **<a id="inv-sdk-arch-1-knax7f"></a>`INV-SDK-ARCH-1-KNAX7F` — Coherent participant state.** Services MUST converge on the same channel, fork, peer,

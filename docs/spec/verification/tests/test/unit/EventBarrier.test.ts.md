@@ -34,13 +34,13 @@ report but are kept here.
 
 | Test declaration                                                                                                                                                                                         | Covers |
 | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------ |
-| [`EventBarrier (component) > resolves on signal when the condition turns true`](../../../../../../test/unit/EventBarrier.test.ts#L9) (line 9)                                                            | —      |
-| [`EventBarrier (component) > resolves promptly when the signal lands while the initial check is still in flight`](../../../../../../test/unit/EventBarrier.test.ts#L18) (line 18)                        | —      |
-| [`EventBarrier (component) > rejects at the deadline when the condition hangs from the first check`](../../../../../../test/unit/EventBarrier.test.ts#L32) (line 32)                                     | —      |
-| [`EventBarrier (component) > settles once with no late timeout log when the initial check resolves while the deadline check is pending`](../../../../../../test/unit/EventBarrier.test.ts#L50) (line 50) | —      |
-| [`EventBarrier (component) > rejects with the original timeout when the timeout message diagnostic hangs`](../../../../../../test/unit/EventBarrier.test.ts#L80) (line 80)                               | —      |
-| [`EventBarrier (component) > rejects with the original timeout when the timeout meta diagnostic throws`](../../../../../../test/unit/EventBarrier.test.ts#L96) (line 96)                                 | —      |
-| [`EventBarrier (component) > rejects at the deadline when the condition returns false once and then hangs`](../../../../../../test/unit/EventBarrier.test.ts#L113) (line 113)                            | —      |
-| [`EventBarrier (component) > resolves at the deadline when the condition turned true but no signal ever woke it`](../../../../../../test/unit/EventBarrier.test.ts#L134) (line 134)                      | —      |
-| [`EventBarrier (component) > times out with the given message when the condition never turns true`](../../../../../../test/unit/EventBarrier.test.ts#L148) (line 148)                                    | —      |
-| [`EventBarrier (component) > rejects the waiter when the condition throws (from signal or interval)`](../../../../../../test/unit/EventBarrier.test.ts#L169) (line 169)                                  | —      |
+| [`EventBarrier (component) > resolves on signal when the condition turns true`](../../../../../../test/unit/EventBarrier.test.ts#L8) (line 8)                                                            | —      |
+| [`EventBarrier (component) > resolves promptly when the signal lands while the initial check is still in flight`](../../../../../../test/unit/EventBarrier.test.ts#L17) (line 17)                        | —      |
+| [`EventBarrier (component) > rejects at the deadline when the condition hangs from the first check`](../../../../../../test/unit/EventBarrier.test.ts#L31) (line 31)                                     | —      |
+| [`EventBarrier (component) > settles once with no late timeout log when the initial check resolves while the deadline check is pending`](../../../../../../test/unit/EventBarrier.test.ts#L49) (line 49) | —      |
+| [`EventBarrier (component) > rejects with the original timeout when the timeout message diagnostic hangs`](../../../../../../test/unit/EventBarrier.test.ts#L79) (line 79)                               | —      |
+| [`EventBarrier (component) > rejects with the original timeout when the timeout meta diagnostic throws`](../../../../../../test/unit/EventBarrier.test.ts#L95) (line 95)                                 | —      |
+| [`EventBarrier (component) > rejects at the deadline when the condition returns false once and then hangs`](../../../../../../test/unit/EventBarrier.test.ts#L112) (line 112)                            | —      |
+| [`EventBarrier (component) > resolves at the deadline when the condition turned true but no signal ever woke it`](../../../../../../test/unit/EventBarrier.test.ts#L133) (line 133)                      | —      |
+| [`EventBarrier (component) > times out with the given message when the condition never turns true`](../../../../../../test/unit/EventBarrier.test.ts#L147) (line 147)                                    | —      |
+| [`EventBarrier (component) > rejects the waiter when the condition throws (from signal or interval)`](../../../../../../test/unit/EventBarrier.test.ts#L168) (line 168)                                  | —      |

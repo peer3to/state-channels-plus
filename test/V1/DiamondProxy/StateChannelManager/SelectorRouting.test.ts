@@ -1,10 +1,3 @@
-import { expect } from "chai";
-import { ethers } from "hardhat";
-
-import {
-    deployMathChannelProxyFixture,
-    DeployedFacetAddresses
-} from "@test/test_utils/testHelpers";
 import {
     diamondCallableFunctions,
     diamondFunctionLabel,
@@ -17,9 +10,15 @@ import {
     proxyShadowedRoutedFunctions
 } from "@test/fixtures/ProxySelectorRoutingFixture";
 import {
+    deployMathChannelProxyFixture,
+    DeployedFacetAddresses
+} from "@test/test_utils/testHelpers";
+import {
     StateChannelManagerInterface,
     StateChannelManagerProxy__factory
 } from "@typechain-types";
+import { expect } from "chai";
+import { ethers } from "hardhat";
 
 describe("StateChannelManagerProxy selector routing", function () {
     let diamond: StateChannelManagerInterface;
@@ -100,6 +99,20 @@ describe("StateChannelManagerProxy selector routing", function () {
         await expectFacetSelectorsRouted(
             diamond,
             facetRoutingSpec("UtilityFacet"),
+            facetAddresses.UtilityFacet
+        );
+    });
+
+    it("routes both open-channel enumeration selectors through the utility facet", async function () {
+        const countSelector = diamond.interface.getFunction(
+            "getOpenChannelCount"
+        ).selector;
+        const pageSelector =
+            diamond.interface.getFunction("getOpenChannelIds").selector;
+        expect(await diamond.facetAddressForSelector(countSelector)).to.equal(
+            facetAddresses.UtilityFacet
+        );
+        expect(await diamond.facetAddressForSelector(pageSelector)).to.equal(
             facetAddresses.UtilityFacet
         );
     });

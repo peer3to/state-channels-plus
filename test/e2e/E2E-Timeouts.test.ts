@@ -42,7 +42,7 @@ describe("E2E: Timeouts", function () {
                     evidenceTime: 3
                 }
             });
-            await h.network.disconnectPeer(2);
+            await h.network.blacklistAndDisconnectPeer(2);
             // TODO - under load Peer 1 can hit StateChannelManagerProxy's RaceConditionBlockCalldataTimestampTooLate revert; fix the timing bug (not #391 - that tracker sets the E2E-Timeouts cluster aside as an anomaly)
             await h.transition.advanceState({ count: 2, waitForPeers: [0, 1] }); // Peers 0 and 1 write (peer 2 disconnected)
             await h.assert.calldata.calldataPosted();
@@ -53,7 +53,7 @@ describe("E2E: Timeouts", function () {
             const h = TestSession.getHarness();
             await h.lifecycle.timeoutSetup(3, 4);
             h.event.resetEventSpies();
-            await h.network.disconnectPeer(1);
+            await h.network.blacklistAndDisconnectPeer(1);
             await h.assert.dispute.initiatedWait({
                 peersIndices: [0, 2]
             });
@@ -120,7 +120,7 @@ describe("E2E: Timeouts", function () {
         it("should maintain liveness when peer disconnects mid-transaction", async function () {
             const h = TestSession.getHarness();
             await h.lifecycle.start(3, 2);
-            await h.network.disconnectPeer(2);
+            await h.network.blacklistAndDisconnectPeer(2);
             await h.transition.advanceState({ count: 1, waitForPeers: [0, 1] });
             await h.assert.sync.peersInSyncWait({ peerIndices: [0, 1] });
             h.assert.dispute.noDisputes();

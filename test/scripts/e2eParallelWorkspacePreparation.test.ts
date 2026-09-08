@@ -5,6 +5,9 @@ import os from "os";
 import path from "path";
 
 const {
+    IsolatedGuestCommandRunner
+} = require("../../scripts/e2e-parallel/distributed/isolatedGuestCommandRunner.js");
+const {
     buildWorkerEnvironment
 } = require("../../scripts/e2e-parallel/distributed/remoteEnvironment.js");
 
@@ -12,9 +15,6 @@ const {
     prepareWorkspace,
     selectPrepareScript
 } = require("../../scripts/e2e-parallel/distributed/workspacePreparation.js");
-const {
-    IsolatedGuestCommandRunner
-} = require("../../scripts/e2e-parallel/distributed/isolatedGuestCommandRunner.js");
 
 describe("distributed workspace preparation", function () {
     const repository = {

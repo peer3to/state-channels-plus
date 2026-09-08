@@ -25,6 +25,7 @@ The runtime port protocol types.
 
 1. `SerializedContract.abiJson` carries application ABI metadata across the port. For the manager,
    both runtime sides merge it after the SDK-owned ABI so consumer extensions remain available.
+2. `SerializedError.eventLoopDelay` carries the watchdog's structured sample (`EventLoopDelayDetails`) across the port; structured cloning an `Error` keeps only its standard slots, so the codec projects it explicitly.
 
 ## Inputs, outputs, state, and side effects
 
@@ -79,3 +80,8 @@ Exact test evidence is mapped against these IDs in the verification test reports
 ## Related source reports
 
 - [P2pRuntimeHost](./P2pRuntimeHost.ts.md).
+
+## Matching-policy boundary
+
+`SetupPayload` has no matching-policy function, allowlist, denylist, or policy enum. Host-local policy is
+installed only by a loaded custom RPC module and cannot cross the structured-clone boundary.

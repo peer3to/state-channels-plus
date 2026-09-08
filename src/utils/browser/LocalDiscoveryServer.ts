@@ -1,7 +1,6 @@
-import type P2PManager from "@/P2PManager";
-import type { ChannelId } from "@/types/types";
-import type { Logger } from "@/utils/logging/Logger";
-import { config } from "@/utils/config";
+import type P2PManager from "../../P2PManager";
+import { config } from "../config";
+import type { Logger } from "../logging/Logger";
 
 /**
  * Browser LocalDiscoveryServer.
@@ -17,6 +16,8 @@ import { config } from "@/utils/config";
 export class LocalDiscoveryServer {
     private static _logger?: Logger;
     private static readonly sockets = new Set<WebSocket>();
+    private static readonly socketTopics = new Map<WebSocket, string>();
+    private static readonly socketManagers = new Map<WebSocket, P2PManager>();
 
     static setLogger(logger: Logger): void {
         this._logger = logger.child({ component: "LocalDiscovery" });
@@ -30,7 +31,7 @@ export class LocalDiscoveryServer {
 
     static async connectToPeers(
         p2pManager: P2PManager,
-        channelId: ChannelId,
+        rendezvousKey: string,
         myPeerAddress: string
     ): Promise<void> {
         const registryUrl = config.LOCAL_DISCOVERY_REGISTRY_URL?.trim();
@@ -46,15 +47,21 @@ export class LocalDiscoveryServer {
         // and the announce listener attaching (the hub's peer announce fires
         // the instant both peers are present and would be missed in a gap).
         const { default: BrowserLocalTransport } = await import(
-            "@/transport/BrowserLocalTransport"
+            "../../transport/BrowserLocalTransport"
         );
 
         const url =
-            `${registryUrl}?channelId=${encodeURIComponent(String(channelId))}` +
+            `${registryUrl}?channelId=${encodeURIComponent(rendezvousKey)}` +
             `&address=${encodeURIComponent(myPeerAddress)}`;
         const ws = new WebSocket(url);
         this.sockets.add(ws);
-        ws.addEventListener("close", () => this.sockets.delete(ws));
+        this.socketTopics.set(ws, rendezvousKey);
+        this.socketManagers.set(ws, p2pManager);
+        ws.addEventListener("close", () => {
+            this.sockets.delete(ws);
+            this.socketTopics.delete(ws);
+            this.socketManagers.delete(ws);
+        });
 
         // The hub relays a single transport between the two peers, so — unlike
         // the node mesh's separate dial/accept sockets — both sides initiating
@@ -82,7 +89,6 @@ export class LocalDiscoveryServer {
 
                 const remoteAddress = announce.address;
                 const transport = new BrowserLocalTransport(ws, p2pManager);
-                transport.peerAddress = remoteAddress;
                 // Both ends initiate: the handshake is a mutual challenge, so a
                 // peer only finalizes once it has BOTH verified the remote (via
                 // its own challenge) and received the remote's ack.
@@ -91,7 +97,7 @@ export class LocalDiscoveryServer {
                 );
 
                 this._logger?.debug("Connected to local discovery relay hub", {
-                    channelId: String(channelId),
+                    rendezvousKey,
                     myPeerAddress,
                     remoteAddress
                 });
@@ -100,6 +106,21 @@ export class LocalDiscoveryServer {
             ws.addEventListener("error", onError);
             ws.addEventListener("message", onMessage);
         });
+    }
+
+    static async leave(
+        rendezvousKey: string,
+        p2pManager?: P2PManager
+    ): Promise<void> {
+        for (const ws of [...this.sockets]) {
+            if (this.socketTopics.get(ws) !== rendezvousKey) continue;
+            if (p2pManager && this.socketManagers.get(ws) !== p2pManager) {
+                continue;
+            }
+            // The relay socket becomes the established peer transport. Remove
+            // its discovery membership without closing the channel connection.
+            this.socketTopics.delete(ws);
+        }
     }
 
     static async cleanup(): Promise<void> {
@@ -111,5 +132,7 @@ export class LocalDiscoveryServer {
             }
         }
         this.sockets.clear();
+        this.socketTopics.clear();
+        this.socketManagers.clear();
     }
 }

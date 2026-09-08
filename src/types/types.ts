@@ -7,6 +7,7 @@ export type ForkId = Hash;
 export type BlockHeight = number;
 export type Timestamp = number;
 export type Address = AddressLike;
+export type ChecksumAddress = string;
 export type ChannelId = BytesLike;
 export type Signature = SignatureLike;
 export type Bytes = BytesLike;

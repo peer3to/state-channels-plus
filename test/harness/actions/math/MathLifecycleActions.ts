@@ -1,7 +1,6 @@
-import { MathStateMachine } from "@typechain-types";
-
 import { LifecycleActions } from "@test/harness/actions/lifecycle/LifecycleActions";
 import { HarnessOptions } from "@test/harness/core/types";
+import { MathStateMachine } from "@typechain-types";
 import { MathPeerTestHarness } from "test-harness";
 
 export class MathLifecycleActions extends LifecycleActions {

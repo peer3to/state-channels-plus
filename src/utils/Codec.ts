@@ -1,28 +1,6 @@
-import { ethers } from "ethers";
-import {
-    BlockStruct,
-    JoinChannelStruct,
-    SignedJoinChannelStruct,
-    JoinChannelConfirmationStruct,
-    OpenChannelStruct,
-    TransactionStruct,
-    StateSnapshotStruct,
-    ExitChannelBlockStruct,
-    BlockConfirmationStruct,
-    ExitChannelStruct,
-    JoinChannelBlockStruct,
-    SnapshotDataStruct,
-    SignedBlockStruct,
-    MessageBlockStruct,
-    BalanceStruct
-} from "@typechain-types/contracts/V1/types/DataTypes";
-import {
-    BlockDoubleSignProofStruct,
-    BlockInvalidStateTransitionProofStruct,
-    InvalidTimestampProofStruct,
-    WrongGenesisProofStruct,
-    ForgedInboundMessageBlockProofStruct
-} from "@typechain-types/contracts/V1/types/FraudProofTypes";
+import type { ContractExecutionResult } from "@/evm/contractExecutor";
+import type { SyncPayload } from "@/types";
+import { SyncPayloadEthersType } from "@/types";
 import {
     BlockEthersType,
     BlockCommitmentEthersType,
@@ -68,18 +46,26 @@ import {
     SignedBlockEthersType,
     StateProofEthersType
 } from "@/types";
-import {
-    DisputeStruct,
-    DisputeConfirmationStruct,
-    DisputeAuditingDataStruct,
-    StateProofStruct
-} from "@typechain-types/contracts/V1/types/DisputeTypes";
-import { Bytes, Timestamp } from "@/types/types";
 import { DisputeFraudProofType, FraudProofType } from "@/types/sol-enums";
-import { SyncPayloadEthersType } from "@/types";
-import type { SyncPayload } from "@/types";
-import type { ContractExecutionResult } from "@/evm/contractExecutor";
+import { Bytes, Timestamp } from "@/types/types";
 import { isEthersResult } from "@/utils/ObjectChecks";
+import {
+    BlockStruct,
+    JoinChannelStruct,
+    SignedJoinChannelStruct,
+    JoinChannelConfirmationStruct,
+    OpenChannelStruct,
+    TransactionStruct,
+    StateSnapshotStruct,
+    ExitChannelBlockStruct,
+    BlockConfirmationStruct,
+    ExitChannelStruct,
+    JoinChannelBlockStruct,
+    SnapshotDataStruct,
+    SignedBlockStruct,
+    MessageBlockStruct,
+    BalanceStruct
+} from "@typechain-types/contracts/V1/types/DataTypes";
 import {
     DisputeInvalidBalanceInvariantStruct,
     DisputeOnChainSlashesNotSubsetStruct,
@@ -100,6 +86,20 @@ import {
     DisputeBlockAuthorNotParticipantStruct,
     DisputeInboundAnchorBehindLatestStateStruct
 } from "@typechain-types/contracts/V1/types/DisputeFraudProofTypes";
+import {
+    DisputeStruct,
+    DisputeConfirmationStruct,
+    DisputeAuditingDataStruct,
+    StateProofStruct
+} from "@typechain-types/contracts/V1/types/DisputeTypes";
+import {
+    BlockDoubleSignProofStruct,
+    BlockInvalidStateTransitionProofStruct,
+    InvalidTimestampProofStruct,
+    WrongGenesisProofStruct,
+    ForgedInboundMessageBlockProofStruct
+} from "@typechain-types/contracts/V1/types/FraudProofTypes";
+import { ethers } from "ethers";
 
 export type FraudStruct =
     | BlockDoubleSignProofStruct

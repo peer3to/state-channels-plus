@@ -1,7 +1,6 @@
+import { RpcHandlerFixture } from "@test/fixtures/RpcHandlerFixture";
 import { expect } from "chai";
 import { Wallet } from "ethers";
-
-import { RpcHandlerFixture } from "@test/fixtures/RpcHandlerFixture";
 
 describe("ATransport", function () {
     let fixture: RpcHandlerFixture | undefined;
@@ -9,6 +8,20 @@ describe("ATransport", function () {
     afterEach(async function () {
         await fixture?.cleanup();
         fixture = undefined;
+    });
+
+    it("converts string and Buffer frames and preserves conversion errors", async function () {
+        fixture = new RpcHandlerFixture();
+        await fixture.setup(2);
+        const result = await fixture
+            .control(0)
+            .aTransportProbe.probeMessageConversion()
+            .request();
+        expect(result).to.deep.equal({
+            frames: ["string-frame", "buffer-frame"],
+            correctReceiver: true,
+            sameError: true
+        });
     });
 
     it("compares peer identities across address boundaries and transport replacement", async function () {

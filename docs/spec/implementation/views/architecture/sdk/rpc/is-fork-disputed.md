@@ -11,9 +11,9 @@
 > The off-chain dispute flow around it: [../dispute-pipeline.md](../dispute-pipeline.md).
 
 Implementation:
-[`IsForkDisputedService`](../../../../../../../src/rpc/services/isForkDisputedService/IsForkDisputedService.ts#L8),
+[`IsForkDisputedService`](../../../../../../../src/rpc/services/isForkDisputedService/IsForkDisputedService.ts#L9),
 [`IsForkDisputedRpcMethods`](../../../../../../../src/rpc/services/isForkDisputedService/IsForkDisputedRpcMethods.ts#L6).
-Trigger: [`EventHandler.handleDisputeCommitted`](../../../../../../../src/eventHandlers/EventHandler.ts#L300).
+Trigger: [`EventHandler.handleDisputeCommitted`](../../../../../../../src/eventHandlers/EventHandler.ts#L299).
 Evidence consumer:
 [`BlockValidationStrategy.blockForkIsDisputed`](../../../../../../../src/stateManager/validationStrategy/BlockValidationStrategy.ts#L220).
 
@@ -58,7 +58,7 @@ sequenceDiagram
 
 The round is **relevance-gated**: it fires only when the disputed fork is the node's current
 fork, or the dispute is final and the node has a pending reduction operation for that fork
-([`handleDisputeCommitted`](../../../../../../../src/eventHandlers/EventHandler.ts#L300)); late non-final
+([`handleDisputeCommitted`](../../../../../../../src/eventHandlers/EventHandler.ts#L299)); late non-final
 events for already-resolved forks do not restart it. Dispute-event ordering and
 kill/counter-dispute sequencing around this trigger have known lifecycle races —
 [`OQ-25-E09XFR`](../../../../open-questions.md#oq-25-e09xfr).
@@ -96,7 +96,7 @@ delegated to a downstream pipeline:
 
 1. **Dispatch preconditions** _(dispatcher + guard, [./README.md](./README.md) §6.4/§5)_.
 2. **Sender attribution**: `senderTransport.peerAddress`; missing (unreachable behind the
-   guard) → disconnect + weak pre-profile ban + throw (the requester's promise rejects).
+   guard) → disconnect + blacklist of the addressless transport profile + throw (the requester's promise rejects).
 3. **Duplicate check** _(replay-rejecting, [`REQ-RPC-6-E60S4J`](../../../../../specification/peer-communication/rpc.md#req-rpc-6-e60s4j) pattern 2)_:
    `didIAcknowledgeDisputedFork(peerAddress, forkId)` — a second request for a fork already
    acknowledged **to this peer** is a protocol violation → disconnect + blacklist by address +
@@ -280,14 +280,14 @@ rejecting foreign-channel queries breaks any intended multi-channel future.
 
 Against the model doc's table ([./README.md](./README.md) §8):
 
-| Failure                                                           | Consequence                                       | Model-doc row                                       | Match                                                                                                                                                                                                                                                     |
-| ----------------------------------------------------------------- | ------------------------------------------------- | --------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Duplicate ack request (responder)                                 | Disconnect + blacklist + request error            | "Fork-not-disputed / duplicate dispute-ack request" | yes                                                                                                                                                                                                                                                       |
-| Fork not disputed (responder)                                     | Disconnect + blacklist + request error            | same row                                            | yes                                                                                                                                                                                                                                                       |
-| Missing `peerAddress` (responder)                                 | Disconnect + weak pre-profile ban + request error | service bullet §7                                   | yes                                                                                                                                                                                                                                                       |
-| **Malformed `channelId`/`forkId` / responder chain-read failure** | Request error only, **connection kept**           | falls under generic "Request handler throws"        | **flag: the per-service row reads as if every responder failure blacklists; this path does not (§6.1) — and on the requester side the same error _does_ blacklist the responder (row below), so one fault produces asymmetric penalties on the two ends** |
-| Peer replies `false` / rejects / errors / times out (requester)   | Disconnect + blacklist by address                 | "Dispute-ack rejection/error/timeout (outgoing)"    | yes                                                                                                                                                                                                                                                       |
-| Response from non-addressed peer                                  | Disconnect + blacklist responder                  | correlation row                                     | yes (inherited)                                                                                                                                                                                                                                           |
+| Failure                                                           | Consequence                                                | Model-doc row                                       | Match                                                                                                                                                                                                                                                     |
+| ----------------------------------------------------------------- | ---------------------------------------------------------- | --------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Duplicate ack request (responder)                                 | Disconnect + blacklist + request error                     | "Fork-not-disputed / duplicate dispute-ack request" | yes                                                                                                                                                                                                                                                       |
+| Fork not disputed (responder)                                     | Disconnect + blacklist + request error                     | same row                                            | yes                                                                                                                                                                                                                                                       |
+| Missing `peerAddress` (responder)                                 | Disconnect + addressless-profile blacklist + request error | service bullet §7                                   | yes                                                                                                                                                                                                                                                       |
+| **Malformed `channelId`/`forkId` / responder chain-read failure** | Request error only, **connection kept**                    | falls under generic "Request handler throws"        | **flag: the per-service row reads as if every responder failure blacklists; this path does not (§6.1) — and on the requester side the same error _does_ blacklist the responder (row below), so one fault produces asymmetric penalties on the two ends** |
+| Peer replies `false` / rejects / errors / times out (requester)   | Disconnect + blacklist by address                          | "Dispute-ack rejection/error/timeout (outgoing)"    | yes                                                                                                                                                                                                                                                       |
+| Response from non-addressed peer                                  | Disconnect + blacklist responder                           | correlation row                                     | yes (inherited)                                                                                                                                                                                                                                           |
 
 ## 8. Assumptions, constraints & dependencies
 

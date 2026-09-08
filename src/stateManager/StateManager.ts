@@ -1,71 +1,60 @@
-// External libraries
-import { ethers, ZeroHash } from "ethers";
-
-// TypeChain types - Data types
-import { MessageBlockStruct } from "@typechain-types/contracts/V1/types/DataTypes";
-
-// TypeChain types - Contract interfaces
-import { StateChannelManagerInterface } from "@typechain-types";
-
-// Core components
-import AgreementManager from "../agreementManager/AgreementManager";
-import ADiamondStateMachine from "@/ADiamondStateMachine";
-import DisputeManager from "@/disputeManager";
-import P2PManager from "@/P2PManager";
-import StateChannelEventListener from "@/StateChannelEventListener";
-import ValidationService from "./ingest/ValidationService";
-import { ReductionManager } from "./reduction";
-import {
-    SnapshotUpdateService,
-    StateApplicationService
-} from "./snapshotUpdate";
 import {
     BlockCommitService,
     BlockProductionService,
     SnapshotAssemblyService
 } from "./block";
-import { BlockIngestService, StoredBlockMergeService } from "./ingest";
 import {
     CalldataPostingService,
     ParticipantTimeoutService
 } from "./chainFallback";
-import { MembershipService } from "./membership";
-import Storage from "@/storage";
+import DisputeValidationService from "./dispute/DisputeValidationService";
+import { BlockIngestService, StoredBlockMergeService } from "./ingest";
+import ValidationService from "./ingest/ValidationService";
+import { LeaveChannelService, MembershipService } from "./membership";
+import { ReductionManager } from "./reduction";
+import {
+    SnapshotUpdateService,
+    StateApplicationService
+} from "./snapshotUpdate";
+import AgreementManager from "../agreementManager/AgreementManager";
+import EventSyncService from "./eventSync/EventSyncService";
+import BlockQueueManager from "./ingest/BlockQueueManager";
+import FraudProofService from "./utils/FraudProofService";
+import AValidationStrategy from "./validationStrategy/AValidationStrategy";
+import BlockValidationStrategy from "./validationStrategy/BlockValidationStrategy";
+import SpectatingValidationStrategy from "./validationStrategy/SpectatingValidationStrategy";
+import ADiamondStateMachine from "@/ADiamondStateMachine";
+import DisputeManager from "@/disputeManager";
 import { EventHandler } from "@/eventHandlers/EventHandler";
-
-// Event handlers and processors
-import P2pEventHooks from "@/P2pEventHooks";
-
-// Models
+import { createBusPublishingHooks, EventBus } from "@/events/EventBus";
 import { StateSnapshot } from "@/models";
+import P2pEventHooks from "@/P2pEventHooks";
+import P2PManager from "@/P2PManager";
+import MainRpcService from "@/rpc/MainRpcService";
+import type { CustomRpcConstructor } from "@/rpc/registry";
+import StateChannelEventListener from "@/StateChannelEventListener";
+import Storage from "@/storage";
 
-// Utils
+import { Status, TimeConfig } from "@/types";
+import { isCommittedParticipantStatus } from "@/types/flags";
+import { Address, ChannelId, ForkId, Hash } from "@/types/types";
 import {
     DebugProxy,
     Mutex,
     Logger,
     DetachedPromises,
-    createEthersResultProxy
+    createEthersResultProxy,
+    getChecksumAddress
 } from "@/utils";
 import type { MutexLockOptions, MutexUnlockOptions } from "@/utils";
-// Types
-import { Status, TimeConfig } from "@/types";
-import { Address, ChannelId, ForkId, Hash } from "@/types/types";
-
-import FraudProofService from "./utils/FraudProofService";
-import DisputeValidationService from "./dispute/DisputeValidationService";
-import AValidationStrategy from "./validationStrategy/AValidationStrategy";
-import BlockValidationStrategy from "./validationStrategy/BlockValidationStrategy";
-import SpectatingValidationStrategy from "./validationStrategy/SpectatingValidationStrategy";
 
 import { config } from "@/utils/config";
-import { TimeoutManager } from "@/utils/TimeoutManager";
+import { errorMessage } from "@/utils/errorMessage";
 import { LoggerUtils } from "@/utils/LoggerUtils";
-import { createBusPublishingHooks, EventBus } from "@/events/EventBus";
-import MainRpcService from "@/rpc/MainRpcService";
-import type { CustomRpcConstructor } from "@/rpc/registry";
-import EventSyncService from "./eventSync/EventSyncService";
-import BlockQueueManager from "./ingest/BlockQueueManager";
+import { TimeoutManager } from "@/utils/TimeoutManager";
+import { StateChannelManagerInterface } from "@typechain-types";
+import { MessageBlockStruct } from "@typechain-types/contracts/V1/types/DataTypes";
+import { ethers, ZeroHash } from "ethers";
 
 const NULL = ZeroHash;
 
@@ -107,7 +96,7 @@ class StateManager<
         this.logger?.error("Event bus listener failed", {
             kind,
             eventName,
-            error: error instanceof Error ? error.message : String(error)
+            error: errorMessage(error)
         })
     );
     private appP2pEventHooks: P2pEventHooks;
@@ -120,6 +109,7 @@ class StateManager<
     readonly participantTimeoutService: ParticipantTimeoutService;
     readonly calldataPostingService: CalldataPostingService;
     readonly membershipService: MembershipService;
+    readonly leaveChannelService: LeaveChannelService;
     private disposalPromise?: Promise<void>;
 
     constructor(
@@ -171,7 +161,8 @@ class StateManager<
             this.eventHandler,
             this.storage,
             this.timeConfig,
-            logger
+            logger,
+            this.diamondStateMachine.localDiamondContract
         );
         this.stateChannelEventListener = new StateChannelEventListener(
             this.stateChannelManagerContract,
@@ -193,7 +184,8 @@ class StateManager<
             this.storage,
             this.diamondStateMachine,
             this.eventSyncService,
-            logger
+            logger,
+            this.self
         );
         this.p2pManager = new P2PManager<TCustomRpc>(
             this.self,
@@ -245,6 +237,10 @@ class StateManager<
             this.logger
         );
         this.membershipService = new MembershipService(this.self, this.logger);
+        this.leaveChannelService = new LeaveChannelService(
+            this.self,
+            this.logger
+        );
         this.fraudProofService = new FraudProofService(
             this.storage,
             this.logger
@@ -267,6 +263,7 @@ class StateManager<
             this.logger
         );
         this.spectatingValidationStrategy = new SpectatingValidationStrategy(
+            this.blockValidationStrategy,
             this.storage,
             this.p2pManager,
             this.blockQueueManager,
@@ -294,6 +291,10 @@ class StateManager<
         DetachedPromises.collect(this.dispose());
     }
 
+    public isActiveFork(forkId: ForkId): boolean {
+        return !this.isDisposed && this.forkId === forkId;
+    }
+
     //Mark resources for garbage collection
     public dispose(): Promise<void> {
         if (this.disposalPromise) {
@@ -301,6 +302,7 @@ class StateManager<
         }
 
         this.isDisposed = true;
+        this.leaveChannelService.dispose();
         this.reductionManager.dispose();
 
         // Event handlers may still need the local EVM while draining already
@@ -345,14 +347,7 @@ class StateManager<
         this.appP2pEventHooks = p2pEventHooks;
     }
 
-    /**
-     * High-level status for SDK consumers.
-     *
-     * - NOT_OPENED: channel not opened on-chain
-     * - OPENED: opened on-chain but local node not yet synced (no fork id)
-     * - SYNCED: opened on-chain and locally synced, but signer is not a participant
-     * - PARTICIPATING: opened on-chain, locally synced, and signer is a participant
-     */
+    /** Current SDK lifecycle status. */
     public get status(): Status {
         return this._status;
     }
@@ -363,8 +358,8 @@ class StateManager<
             return;
         }
         this.logger.debug("Status changed", {
-            oldStatus: Status[oldStatus] ?? `UNKNOWN(${oldStatus})`,
-            newStatus: Status[status] ?? `UNKNOWN(${status})`
+            oldStatus: LoggerUtils.enumToString(Status, oldStatus),
+            newStatus: LoggerUtils.enumToString(Status, status)
         });
         this._status = status;
         this.p2pEventHooks.onStatusChanged?.(oldStatus, status);
@@ -435,6 +430,19 @@ class StateManager<
         this.eventSyncService.setChannelId(channelId);
         await this.stateChannelEventListener.setChannelId(channelId);
     }
+
+    public async clearChannelId(): Promise<void> {
+        this.logger.verbose("Clearing channel ID");
+        this._channelId = NULL;
+        this.logger.updateSharedContext({ channelId: String(NULL) });
+        this.disputeManager.setChannelId(NULL);
+        this.eventSyncService.setChannelId(NULL);
+        await this.stateChannelEventListener.clearChannelId();
+    }
+
+    public get checksumSignerAddress(): string {
+        return getChecksumAddress(String(this.signerAddress));
+    }
     public getParticipantsCurrent(): Promise<Address[]> {
         return this.diamondStateMachine.getParticipants();
     }
@@ -473,14 +481,9 @@ class StateManager<
     }
 
     public getActiveValidationStrategy(): AValidationStrategy {
-        return this.getStrategyByStatus(this.status);
-    }
-
-    private getStrategyByStatus(status: Status): AValidationStrategy {
-        if (status === Status.PARTICIPATING) {
-            return this.blockValidationStrategy;
-        }
-        return this.spectatingValidationStrategy;
+        return isCommittedParticipantStatus(this.status)
+            ? this.blockValidationStrategy
+            : this.spectatingValidationStrategy;
     }
 }
 export default StateManager;

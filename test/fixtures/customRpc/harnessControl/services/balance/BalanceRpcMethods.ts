@@ -1,7 +1,7 @@
+import type { BalanceService } from "./BalanceService";
 import ARpcMethods from "@/rpc/ARpcMethods";
 import type ATransport from "@/transport/ATransport";
 import { Codec, Type } from "@/utils";
-import type { BalanceService } from "./BalanceService";
 
 /**
  * Balance math executed host-side on the diamond state machine. Only public

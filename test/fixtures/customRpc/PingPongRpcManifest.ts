@@ -1,18 +1,18 @@
 // @spec-test-coverage-ignore: shared custom-RPC support manifest; executable evidence is mapped from its test files
-import { ethers } from "ethers";
 
-import ARpcMethods from "@/rpc/ARpcMethods";
-import ARpcService from "@/rpc/ARpcService";
-import type P2PManager from "@/P2PManager";
-import type ATransport from "@/transport/ATransport";
-import { Codec, Type } from "@/utils";
-import { HarnessControlRpc } from "./harnessControl/HarnessControlRpc";
 import { ARpcServiceProbeService } from "./aRpcServiceProbe/ARpcServiceProbeService";
 import { ATransportProbeService } from "./aTransportProbe/ATransportProbeService";
-import { RpcHandlerProbeService } from "./rpcHandlerProbe/RpcHandlerProbeService";
-import { P2PManagerProbeService } from "./p2pManagerProbe/P2PManagerProbeService";
 import { HandshakeCompletedGuardProbeService } from "./handshakeCompletedGuardProbe/HandshakeCompletedGuardProbeService";
+import { HarnessControlRpc } from "./harnessControl/HarnessControlRpc";
 import { LoopbackGuardProbeService } from "./loopbackGuardProbe/LoopbackGuardProbeService";
+import { P2PManagerProbeService } from "./p2pManagerProbe/P2PManagerProbeService";
+import { RpcHandlerProbeService } from "./rpcHandlerProbe/RpcHandlerProbeService";
+import type P2PManager from "@/P2PManager";
+import ARpcMethods from "@/rpc/ARpcMethods";
+import ARpcService from "@/rpc/ARpcService";
+import type ATransport from "@/transport/ATransport";
+import { Codec, Type } from "@/utils";
+import { ethers } from "ethers";
 
 /**
  * Showcase custom RPC: proves typed peer-to-peer custom RPCs work across the

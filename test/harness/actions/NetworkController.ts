@@ -1,14 +1,17 @@
-import { PeerTestHarness } from "@test/fixtures/PeerTestHarness";
+// @spec-test-coverage-ignore: shared lobby transport actions exercised by owning mapped E2E declarations
+import type { ConnectToChannelOptions } from "@/evm/signer/ConnectToChannelOptions";
+import { compareAddresses } from "@/rpc/services/openChannelNegotiation/OpenChannelNegotiationHelpers";
+import { Codec, Logger, Type } from "@/utils";
 import type { HarnessControlRpc } from "@test/fixtures/customRpc/harnessControl/HarnessControlRpc";
-import { Logger } from "@/utils";
+import { PeerTestHarness } from "@test/fixtures/PeerTestHarness";
 
 /**
  * Handles network connectivity and P2P connections between peers.
  *
  * All peer-internal connection work runs host-side via the harness-control
  * `network` RPC (the live `p2pManager` is behind the runtime port). Discovery
- * wiring under `DEBUG_LOCAL_TRANSPORT` is performed by the host inside
- * `network.connectToChannel`.
+ * `autoConnect: false` is implemented by not calling the public connection
+ * operation. Channel and lobby joins remain self-contained SDK operations.
  */
 export class NetworkController<
     TCustomRpc extends HarnessControlRpc = HarnessControlRpc
@@ -17,6 +20,15 @@ export class NetworkController<
         private harness: PeerTestHarness<TCustomRpc>,
         private logger: Logger
     ) {}
+
+    lobbyRoleIndices(): [advertiserIndex: number, selectorIndex: number] {
+        return compareAddresses(
+            this.harness.peers[0].address,
+            this.harness.peers[1].address
+        ) < 0
+            ? [0, 1]
+            : [1, 0];
+    }
 
     /**
      * Connect all peers to each other via P2P
@@ -31,7 +43,10 @@ export class NetworkController<
     /**
      * Connect a subset of peers
      */
-    async connectPeers(peerIndices: number[]): Promise<void> {
+    async connectPeers(
+        peerIndices: number[],
+        options?: ConnectToChannelOptions
+    ): Promise<void> {
         const peers = this.harness.getFilteredPeers(peerIndices);
         const channelId = this.harness.channelId!.toString();
 
@@ -39,7 +54,104 @@ export class NetworkController<
             peers.map((peer) =>
                 this.harness
                     .control(peer)
-                    .network.connectToChannel(channelId)
+                    .network.connectToChannel(
+                        channelId,
+                        options
+                            ? {
+                                  autoOpen: options.autoOpen,
+                                  shouldJoin: options.shouldJoin,
+                                  timeoutMs: options.timeoutMs,
+                                  encodedBalance: options.balance
+                                      ? String(
+                                            Codec.encode(
+                                                options.balance,
+                                                Type.Balance
+                                            )
+                                        )
+                                      : undefined
+                              }
+                            : undefined
+                    )
+                    .request()
+            )
+        );
+    }
+
+    /** Reconnect peers after persistent harness isolation. */
+    async reconnectPeers(
+        peerIndices: number[],
+        options?: ConnectToChannelOptions
+    ): Promise<void> {
+        const peers = this.harness.getFilteredPeers(peerIndices);
+        // Isolation can stop discovery's retry loop. Restart this observation
+        // explicitly; joining an already observed topic is idempotent.
+        await Promise.all(
+            peers.map((peer) =>
+                this.harness
+                    .control(peer)
+                    .network.leaveSelectedKey(
+                        this.harness.channelId!.toString()
+                    )
+                    .request()
+            )
+        );
+        await Promise.all(
+            peers.flatMap((peer) =>
+                this.harness.peers
+                    .filter((other) => other.index !== peer.index)
+                    .flatMap((other) => [
+                        this.harness
+                            .control(peer)
+                            .network.unblacklistPeerByAddress(other.address)
+                            .request(),
+                        this.harness
+                            .control(other)
+                            .network.unblacklistPeerByAddress(peer.address)
+                            .request()
+                    ])
+            )
+        );
+        await this.connectPeers(peerIndices, options);
+    }
+
+    async joinLobby(peerIndices: number[], rendezvousTopic: string) {
+        const peers = this.harness.getFilteredPeers(peerIndices);
+        await Promise.all(
+            peers.map((peer) =>
+                this.harness
+                    .control(peer)
+                    .network.joinLobby(rendezvousTopic)
+                    .request()
+            )
+        );
+    }
+
+    async leaveLobby(peerIndices: number[], rendezvousTopic: string) {
+        const peers = this.harness.getFilteredPeers(peerIndices);
+        await Promise.all(
+            peers.map((peer) =>
+                this.harness
+                    .control(peer)
+                    .network.leaveLobby(rendezvousTopic)
+                    .request({
+                        timeoutMs: this.harness.event.protocolEventTimeoutMs({
+                            withFirstBlockGrace: true
+                        })
+                    })
+            )
+        );
+    }
+
+    async joinSelectedKey(
+        peerIndices: number[],
+        channelId: string
+    ): Promise<void> {
+        const peers = this.harness.getFilteredPeers(peerIndices);
+        await Promise.all(
+            peers.map((peer) =>
+                this.harness
+                    .control(peer)
+                    .network.joinSelectedKey(channelId)
                     .request()
             )
         );
@@ -84,15 +196,24 @@ export class NetworkController<
         });
     }
 
-    /**
-     * Disconnect a peer from the P2P network (simulates timeout)
-     */
-    async disconnectPeer(peerIndex: number): Promise<void> {
+    /** Persistently isolate one peer from every other peer. */
+    async blacklistAndDisconnectPeer(peerIndex: number): Promise<void> {
         const peer = this.harness.getPeer(peerIndex);
-        await this.harness
-            .control(peer)
-            .network.disconnectAllConnections()
-            .request();
-        peer.logger.warn("Disconnected to simulate timeout");
+        const otherPeers = this.harness.peers.filter(
+            (other) => other.index !== peer.index
+        );
+        await Promise.all(
+            otherPeers.flatMap((other) => [
+                this.harness
+                    .control(peer)
+                    .network.blacklistAndDisconnectPeerByAddress(other.address)
+                    .request(),
+                this.harness
+                    .control(other)
+                    .network.blacklistAndDisconnectPeerByAddress(peer.address)
+                    .request()
+            ])
+        );
+        peer.logger.warn("Blacklisted and disconnected to simulate timeout");
     }
 }

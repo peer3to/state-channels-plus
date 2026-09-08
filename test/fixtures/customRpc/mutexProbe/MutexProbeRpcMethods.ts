@@ -1,9 +1,9 @@
 // @spec-test-coverage-ignore: test-only endpoint for observing handler-entry mutex state
+import type { ReadyLifecycleRpc } from "../ReadyLifecycleRpcManifest";
+import type { MutexProbeService } from "./MutexProbeService";
 import type P2PManager from "@/P2PManager";
 import ARpcMethods from "@/rpc/ARpcMethods";
 import type ATransport from "@/transport/ATransport";
-import type { ReadyLifecycleRpc } from "../ReadyLifecycleRpcManifest";
-import type { MutexProbeService } from "./MutexProbeService";
 
 export class MutexProbeRpcMethods extends ARpcMethods<
     P2PManager<ReadyLifecycleRpc>

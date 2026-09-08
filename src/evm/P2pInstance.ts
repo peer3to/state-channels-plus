@@ -1,19 +1,19 @@
-import { AStateMachine } from "@typechain-types";
+import { createHostRpc } from "./p2pRuntime/ClientHostRpc";
+import type P2pRuntimeClient from "./p2pRuntime/P2pRuntimeClient";
+import type ClientChainSigner from "./signer/ClientChainSigner";
+import type ClientP2pSigner from "./signer/ClientP2pSigner";
+import type { EventBus } from "@/events/EventBus";
 import MainRpcService from "@/rpc/MainRpcService";
 import type { RemoteRpcProxyType } from "@/rpc/RemoteRpcProxy";
-import { Logger } from "@/utils";
-import type StateManager from "@/stateManager/StateManager";
-import type ClientP2pSigner from "./signer/ClientP2pSigner";
-import type ClientChainSigner from "./signer/ClientChainSigner";
-import type { StateChannelManagerInterface } from "@typechain-types";
-import type P2pRuntimeClient from "./p2pRuntime/P2pRuntimeClient";
-import type { EventBus } from "@/events/EventBus";
-import { createHostRpc } from "./p2pRuntime/ClientHostRpc";
 import {
     installWebRTCMainThreadBridge,
     type WebRTCMainThreadBridgeHandle
 } from "@/rpc/services/WebRTCSetup/connection/WebRTCMainThreadBridge";
 import { isWorkerRuntime } from "@/rpc/services/WebRTCSetup/connection/WebRTCProvider";
+import type StateManager from "@/stateManager/StateManager";
+import { Logger } from "@/utils";
+import type { StateChannelManagerInterface } from "@typechain-types";
+import { AStateMachine } from "@typechain-types";
 
 export default class P2pInstance<
     T extends AStateMachine,
@@ -43,6 +43,7 @@ export default class P2pInstance<
 
     private webRTCBridgeHandle?: WebRTCMainThreadBridgeHandle;
     private readonly client: P2pRuntimeClient<T>;
+    private terminalLeavePromise?: Promise<void>;
 
     /**
      * Main-thread end of the WebRTC bridge `MessagePort`. Present only when the
@@ -92,6 +93,18 @@ export default class P2pInstance<
             this.webRTCBridgeHandle?.dispose();
             this.webRTCBridgeHandle = undefined;
         }
+    }
+
+    public leaveChannel(): Promise<void> {
+        if (!this.terminalLeavePromise) {
+            this.terminalLeavePromise = this.leaveAndDispose();
+        }
+        return this.terminalLeavePromise;
+    }
+
+    private async leaveAndDispose(): Promise<void> {
+        await this.p2pSigner.leaveChannel();
+        await this.dispose();
     }
 
     /**

@@ -1,15 +1,17 @@
-import type P2PManager from "@/P2PManager";
-import { DebugProxy } from "@/utils";
-
-import { config } from "@/utils/config";
 import {
     InitHandshakeService,
     StateTransitionService,
     WebRTCSetupService,
     SpectateService,
     IsForkDisputedService,
-    JoinChannelService
+    JoinChannelService,
+    LobbyMatchingService,
+    OpenChannelNegotiationService
 } from "./services";
+import type P2PManager from "@/P2PManager";
+import { DebugProxy } from "@/utils";
+
+import { config } from "@/utils/config";
 
 class MainRpcService {
     p2pManager: P2PManager;
@@ -24,6 +26,8 @@ class MainRpcService {
     spectateService: SpectateService;
     isForkDisputedService: IsForkDisputedService;
     joinChannelService: JoinChannelService;
+    lobbyMatchingService: LobbyMatchingService;
+    openChannelNegotiationService: OpenChannelNegotiationService;
 
     constructor(p2pManager: P2PManager) {
         this.p2pManager = p2pManager;
@@ -35,6 +39,10 @@ class MainRpcService {
         this.spectateService = new SpectateService(this.p2pManager);
         this.isForkDisputedService = new IsForkDisputedService(this.p2pManager);
         this.joinChannelService = new JoinChannelService(this.p2pManager);
+        this.lobbyMatchingService = new LobbyMatchingService(this.p2pManager);
+        this.openChannelNegotiationService = new OpenChannelNegotiationService(
+            this.p2pManager
+        );
         return this.self;
     }
 
@@ -44,8 +52,12 @@ class MainRpcService {
     /**
      * Runtime-shutdown hook for custom RPC roots. `StateManager.dispose()`
      * awaits it before tearing down the p2p manager, timeout manager, and EVM,
-     * so a root can settle waits and drain async work. The base is a no-op.
+     * so a root can settle waits and drain async work. Overrides must call
+     * `super.dispose()` so active lobby and negotiation work is cancelled.
      */
-    dispose(): Promise<void> | void {}
+    async dispose(): Promise<void> {
+        await this.openChannelNegotiationService.dispose();
+        await this.lobbyMatchingService.dispose();
+    }
 }
 export default MainRpcService;

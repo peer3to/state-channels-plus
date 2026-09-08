@@ -1,6 +1,6 @@
 import { Address, Hash } from "@/types/types";
-import { FraudProofStruct } from "@typechain-types/contracts/V1/types/ProofTypes";
 import { hash } from "@/utils";
+import { FraudProofStruct } from "@typechain-types/contracts/V1/types/ProofTypes";
 
 export class FraudProofStorage {
     // ====================================

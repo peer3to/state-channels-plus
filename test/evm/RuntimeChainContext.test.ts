@@ -1,19 +1,18 @@
-import { expect } from "chai";
-import { ethers } from "hardhat";
-import { type Interface, WebSocketProvider } from "ethers";
-import sinon from "sinon";
-import { stateChannelManagerAbi } from "@/utils/stateChannelManager";
-
-import { resolveWebSocketProviderUrl } from "@/evm/p2pRuntime/RuntimeChainContext";
-import { startP2pRuntimeHost } from "@/evm/p2pRuntime/P2pRuntimeHost";
-import P2pRuntimeClient from "@/evm/p2pRuntime/P2pRuntimeClient";
 import Clock from "@/Clock";
-import { createConfig } from "@/utils/config";
-import { createRuntimeChannel } from "@platform/p2pRuntimeChannel";
+import P2pRuntimeClient from "@/evm/p2pRuntime/P2pRuntimeClient";
+import { startP2pRuntimeHost } from "@/evm/p2pRuntime/P2pRuntimeHost";
+import { resolveWebSocketProviderUrl } from "@/evm/p2pRuntime/RuntimeChainContext";
 import type {
     RuntimeClientRequest,
     RuntimeHostMessage
 } from "@/evm/p2pRuntime/types";
+import { createConfig } from "@/utils/config";
+import { stateChannelManagerAbi } from "@/utils/stateChannelManager";
+import { createRuntimeChannel } from "@platform/p2pRuntimeChannel";
+import { expect } from "chai";
+import { type Interface, WebSocketProvider } from "ethers";
+import { ethers } from "hardhat";
+import sinon from "sinon";
 
 describe("RuntimeChainContext", () => {
     it("accepts WebSocket URLs and optimistically converts HTTP URLs", () => {

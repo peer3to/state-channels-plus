@@ -31,7 +31,7 @@ report but are kept here.
 
 | Test declaration                                                                                                                                                                        | Covers |
 | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------ |
-| [`resolveOrDeployShared (component) > deploys once and serves every later caller from the marker`](../../../../../../test/unit/DeploymentCache.test.ts#L16) (line 16)                   | —      |
-| [`resolveOrDeployShared (component) > gives concurrent first callers a usable value each, then caches for the rest`](../../../../../../test/unit/DeploymentCache.test.ts#L41) (line 41) | —      |
-| [`resolveOrDeployShared (component) > redeploys when the stored value no longer validates`](../../../../../../test/unit/DeploymentCache.test.ts#L76) (line 76)                          | —      |
-| [`resolveOrDeployShared (component) > deploys directly when no cache dir is configured`](../../../../../../test/unit/DeploymentCache.test.ts#L101) (line 101)                           | —      |
+| [`resolveOrDeployShared (component) > deploys once and serves every later caller from the marker`](../../../../../../test/unit/DeploymentCache.test.ts#L15) (line 15)                   | —      |
+| [`resolveOrDeployShared (component) > gives concurrent first callers a usable value each, then caches for the rest`](../../../../../../test/unit/DeploymentCache.test.ts#L40) (line 40) | —      |
+| [`resolveOrDeployShared (component) > redeploys when the stored value no longer validates`](../../../../../../test/unit/DeploymentCache.test.ts#L75) (line 75)                          | —      |
+| [`resolveOrDeployShared (component) > deploys directly when no cache dir is configured`](../../../../../../test/unit/DeploymentCache.test.ts#L100) (line 100)                           | —      |

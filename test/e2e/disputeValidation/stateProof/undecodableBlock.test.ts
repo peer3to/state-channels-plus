@@ -1,7 +1,7 @@
-import { DisputeFraudProofType } from "@/types/sol-enums";
-import { MathTestSession as TestSession } from "@test/harness";
 import { hexString } from "../../../factory";
 import { Bytes } from "@/types";
+import { DisputeFraudProofType } from "@/types/sol-enums";
+import { MathTestSession as TestSession } from "@test/harness";
 
 // A truncated encodedBlock cannot be decoded by abi.decode on-chain.
 // hasStateProofHeaderMismatch.staticCall reverts; DisputeValidationService must

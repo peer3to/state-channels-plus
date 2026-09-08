@@ -1,20 +1,23 @@
-import type P2PManager from "@/P2PManager";
 import ATransport from "./ATransport";
-import { Buffer } from "buffer";
 import { TransportType } from "./TransportType";
+import type P2PManager from "@/P2PManager";
+import type { BannablePeerInfo } from "@/PeerProfile";
+import { Buffer } from "buffer";
 
 class HolepunchTransport extends ATransport {
     transportType = TransportType.HOLEPUNCH;
     holepunchSocket: any;
-    holepunchPeerInfo: any;
     constructor(
         holepunchSocket: any,
-        holepunchPeerInfo: any,
+        holepunchPeerInfo: BannablePeerInfo,
         p2pManager: P2PManager
     ) {
         super(p2pManager);
         this.holepunchSocket = holepunchSocket;
-        this.holepunchPeerInfo = holepunchPeerInfo;
+        this.p2pManager.profileManager.setBannablePeerInfo(
+            this,
+            holepunchPeerInfo
+        );
         this.holepunchSocket.on("data", async (data: any) => {
             if (data instanceof Uint8Array) {
                 data = Buffer.from(data);
@@ -36,13 +39,8 @@ class HolepunchTransport extends ATransport {
     _send(serializedRPC: string): void {
         this.holepunchSocket.write(serializedRPC);
     }
-    onMessage(data: any): void {
-        const serializedRPC = data.toString();
-        this.p2pManager.onRpc(serializedRPC, this);
-    }
 
     _close(): void {
-        this.holepunchPeerInfo.ban(true);
         this.holepunchSocket.destroy();
     }
 }

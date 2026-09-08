@@ -1,7 +1,12 @@
-import { expect } from "chai";
 import { DisputeFraudProofType } from "@/types/sol-enums";
 import { Codec, Type, hash, sleep } from "@/utils";
+import { assertKilledOpenerSubmissionRace } from "@test/fixtures/DisputeSlashRecoveryStaging";
+import {
+    assertStateOnlyContribution,
+    assertMissingWindowRefused
+} from "@test/fixtures/DisputeWindowStaging";
 import { MathTestSession as TestSession } from "@test/harness";
+import { expect } from "chai";
 
 /**
  * E2E Tests for Dispute Management
@@ -14,6 +19,39 @@ import { MathTestSession as TestSession } from "@test/harness";
  * Tests dispute creation, validation, resolution, and fraud proof mechanisms.
  */
 describe("E2E: Dispute Manager", function () {
+    it("an accepted state contribution keeps its reason after the original opener is killed", async function () {
+        await assertKilledOpenerSubmissionRace(
+            TestSession.getHarness(),
+            false,
+            { killAfterAcceptance: true }
+        );
+    });
+    it("a closed-window refusal rebuilds from a slash already delivered after construction", async function () {
+        await assertKilledOpenerSubmissionRace(TestSession.getHarness(), true, {
+            observeSlashBeforeRefusal: true
+        });
+    });
+
+    it("a held state contribution survives an opener kill while the window stays open", async function () {
+        await assertKilledOpenerSubmissionRace(TestSession.getHarness(), false);
+    });
+    it("a held state contribution refreshes authoritative slashes after the opener is killed and the window closes", async function () {
+        await assertKilledOpenerSubmissionRace(TestSession.getHarness(), true);
+    });
+
+    it("a state-only contribution is accepted without auditing calldata in an existing window", async function () {
+        await assertStateOnlyContribution(TestSession.getHarness(), false);
+    });
+    it("a state-only contribution is accepted with auditing calldata in an existing window", async function () {
+        await assertStateOnlyContribution(TestSession.getHarness(), true);
+    });
+    it("a state-only contribution without an existing window is refused without a slash", async function () {
+        await assertMissingWindowRefused(TestSession.getHarness(), false);
+    });
+    it("a state-only contribution after the evidence deadline is refused without a slash", async function () {
+        await assertMissingWindowRefused(TestSession.getHarness(), true);
+    });
+
     describe("Dispute Resolution and Fork Management", function () {
         it("should reduce invalid state transition disputes and create new fork", async function () {
             const h = TestSession.getHarness();
@@ -141,6 +179,7 @@ describe("E2E: Dispute Manager", function () {
                     "0x0000000000000000000000000000000000000000";
                 dispute.input.onChainSlashes = [];
                 dispute.input.selfRemoval = false;
+                dispute.input.requireExistingDisputeWindow = false;
             });
 
             await h.event.waitForAllPeers("onDisputeKilled", 1, {
@@ -245,11 +284,10 @@ describe("E2E: Dispute Manager", function () {
                     passFirst: false
                 }
             );
-            await h
-                .control(h.getPeer(missedPeerIndex))
-                .stub.stubSuppressDisputeInitiation()
-                .request();
-            await h.byzantine.disconnect(missedPeerIndex);
+            await h.dispute.suppressDisputeInitiation([
+                h.getPeer(missedPeerIndex).index
+            ]);
+            await h.byzantine.blacklistAndDisconnect(missedPeerIndex);
             await h.transition.advanceState({
                 waitForPeers: connectedPeerIndices
             });
@@ -284,7 +322,9 @@ describe("E2E: Dispute Manager", function () {
             await sleep(h.event.evidencePeriodWaitMs());
             // The peer missed the event while disconnected, then reconnects so
             // event recovery can fetch the committed dispute payloads.
-            await h.network.connectPeers([missedPeerIndex]);
+            // The missed peer↔connected-peer bans are reversed after the
+            // dispute commits so the missed peer can recover its event.
+            await h.network.reconnectPeers([missedPeerIndex]);
             await restoreEvents(false);
             const missedPeer = h.getPeer(missedPeerIndex);
             const recoveredCount = await h
@@ -378,7 +418,7 @@ describe("E2E: Dispute Manager", function () {
             await h.lifecycle.start(3, 0);
             await h.byzantine.stubCalldataHandler(2);
             await h.contextApi.storeSnapshotCount(2, "before_isolation");
-            await h.byzantine.disconnect(2);
+            await h.byzantine.blacklistAndDisconnect(2);
             h.event.resetEventSpies();
 
             await h.transition.advanceState({ waitForPeers: [0, 1], count: 2 });

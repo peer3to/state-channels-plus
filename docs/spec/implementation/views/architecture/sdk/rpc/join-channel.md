@@ -42,7 +42,7 @@ Position in the end-to-end flow (owned by the protocol doc; here for orientation
 sync (§3) → **collect signatures (this service)** → on-chain `joinChannel` submit + deposit →
 off-chain inbound inclusion → forced inclusion via dispute if ignored. This service owns exactly
 the "collect signatures" hop. The on-chain submission, deposit, inclusion, and force-join dispute
-live in [`StateManager`](../../../../../../../src/stateManager/StateManager.ts#L107) and the contracts, not
+live in [`StateManager`](../../../../../../../src/stateManager/StateManager.ts#L94) and the contracts, not
 here.
 
 **Observable contract.** `collectJoinChannelConfirmation(joinChannel)` returns a
@@ -87,8 +87,8 @@ source, and a slashed participant cannot veto a later join.
 ### 3.1 `collectJoinChannelConfirmation(joinChannel)` — collector (local)
 
 Runs on the joiner. Not an RPC endpoint; invoked through the signer facade
-([`LocalP2pSigner`](../../../../../../../src/evm/signer/LocalP2pSigner.ts#L22) /
-[`ClientP2pSigner`](../../../../../../../src/evm/signer/ClientP2pSigner.ts#L31) → `hostRpc`, §3 of
+([`LocalP2pSigner`](../../../../../../../src/evm/signer/LocalP2pSigner.ts#L8) /
+[`ClientP2pSigner`](../../../../../../../src/evm/signer/ClientP2pSigner.ts#L32) → `hostRpc`, §3 of
 [./README.md](./README.md)). Ordered stages
 ([`JoinChannelService`](../../../../../../../src/rpc/services/joinChannel/JoinChannelService.ts#L28)):
 
@@ -239,7 +239,7 @@ decision pending.)
 the snapshot advances. Two simultaneous joiners each collect against the current snapshot; whichever
 submits first advances the chain, and the other's pinned snapshot goes stale → its on-chain submit
 reverts `RaceCondition*` and `StateManager.joinChannel` aborts
-([`StateManager`](../../../../../../../src/stateManager/StateManager.ts#L107), lines ~512-528; SDK TODO:
+([`StateManager`](../../../../../../../src/stateManager/StateManager.ts#L94), lines ~512-528; SDK TODO:
 "support concurrent joins by collecting safe extra signatures before submission"). At the RPC layer,
 a responder signing two concurrent requests is not itself a fault — it signs both; the contention is
 resolved on-chain. Consequence: concurrent admissions are serialized by chain races, not

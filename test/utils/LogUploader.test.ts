@@ -1,11 +1,11 @@
-import { expect } from "chai";
-import { AxiosError } from "axios";
 import {
     createUploaderFixture,
     decodeUpload,
     startLogReceiver,
     LogReceiver
 } from "@test/fixtures/logging/LogUploader.fixture";
+import { AxiosError } from "axios";
+import { expect } from "chai";
 
 describe("LogUploader", function () {
     let receiver: LogReceiver | undefined;

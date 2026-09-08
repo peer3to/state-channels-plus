@@ -1,4 +1,4 @@
-import { Address } from "@/types/types";
+import { Address, ChecksumAddress } from "@/types/types";
 import { Address as EthereumJsAddress } from "@ethereumjs/util";
 import { ethers } from "ethers";
 
@@ -11,7 +11,7 @@ export function toEthereumJsEvmAddress(
     return EthereumJsAddress.fromString(address.toString().toLowerCase());
 }
 
-export function getChecksumAddress(address: Address): string {
+export function getChecksumAddress(address: Address): ChecksumAddress {
     return ethers.getAddress(address.toString());
 }
 

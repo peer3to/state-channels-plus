@@ -1,17 +1,22 @@
+import { config } from "../../config";
+import { formatTimeFromSeconds } from "../formatUtils";
 import {
     LogEntry,
     Logger,
     ExclusiveLoggerContext,
     LogLevel,
-    SharedLoggerContext,
-    LoggerPerformanceMonitorOptions
+    SharedLoggerContext
 } from "../Logger";
+import type { LogStore } from "../logStore";
+import type {
+    EventLoopDelayDetails,
+    PerformanceMonitorInternalOptions,
+    PerformanceSampleSource
+} from "../performanceMonitorInternal";
+import { reportPerformanceSample } from "../performanceMonitorInternal";
 import { BrowserLogUploader } from "./BrowserLogUploader";
 import type { LogUploaderOptions } from "../LogUploader";
-import type { LogStore } from "../logStore";
 import { BROWSER_PEER_COLORS, BROWSER_LEVEL_CSS } from "./colors";
-import { formatTimeFromSeconds } from "../formatUtils";
-import { config } from "../../config";
 
 export class BrowserLogger extends Logger {
     constructor(
@@ -89,15 +94,13 @@ export class BrowserLogger extends Logger {
             level !== "debug" &&
             level !== "verbose" // don't use groups for debug/verbose since group labels are always INFO...
         ) {
-            // eslint-disable-next-line no-console
             console.groupCollapsed(...this.fmt(logEntry));
             if (meta.length > 0) {
-                // eslint-disable-next-line no-console
                 console[method](...meta);
             }
-            // eslint-disable-next-line no-console
+
             console[method](logEntry.stack);
-            // eslint-disable-next-line no-console
+
             console.groupEnd();
             return;
         }
@@ -111,109 +114,110 @@ export class BrowserLogger extends Logger {
     }
 
     protected createPerformanceMonitor(
-        options: LoggerPerformanceMonitorOptions
+        options: PerformanceMonitorInternalOptions
     ): () => void {
         const intervalMs = options.intervalMs ?? 1000;
         const sampleIntervalMs = options.sampleIntervalMs ?? 50;
-        const delayWarnThresholdMs = options.delayWarnThresholdMs ?? 200;
-        const getDelayErrorThresholdMs = () => {
-            if (options.delayErrorThresholdMs !== undefined) {
-                return options.delayErrorThresholdMs;
-            }
-            return (
-                (config.EVENT_LOOP_DELAY_ERROR_THRESHOLD_SECONDS || 0) * 1000
-            );
-        };
-        const utilizationWarnThreshold =
-            options.utilizationWarnThreshold ?? 0.8;
 
-        let delaySamples: number[] = [];
-        let longTaskDurations: number[] = [];
-        let lastSampleAt = this.nowMs();
-
-        const sampleTimer = setInterval(() => {
-            const now = this.nowMs();
-            const delayMs = Math.max(0, now - lastSampleAt - sampleIntervalMs);
-            lastSampleAt = now;
-            delaySamples.push(delayMs);
-        }, sampleIntervalMs);
-
-        const observer = this.tryStartLongTaskObserver((duration) => {
-            longTaskDurations.push(duration);
-        });
+        const source =
+            options.sampleSource ??
+            this.createBrowserSampleSource(intervalMs, sampleIntervalMs);
+        source.start();
 
         const reportTimer = setInterval(() => {
-            const stats = this.computeStats(delaySamples);
-            const longTaskStats = this.computeStats(longTaskDurations);
-            const blockedMs = delaySamples.reduce(
-                (sum, value) => sum + value,
-                0
+            const sample = source.sample();
+            const details = reportPerformanceSample(
+                this,
+                sample,
+                options,
+                "browser"
             );
-            const estimatedUtilization = Math.min(1, blockedMs / intervalMs);
-            const longTaskCount = longTaskDurations.length;
-            const shouldWarn =
-                estimatedUtilization > utilizationWarnThreshold ||
-                stats.dMean > delayWarnThresholdMs ||
-                stats.d50 > delayWarnThresholdMs ||
-                stats.d90 > delayWarnThresholdMs ||
-                stats.d99 > delayWarnThresholdMs ||
-                stats.dMax > delayWarnThresholdMs ||
-                longTaskStats.dMax > delayWarnThresholdMs;
-            const logFn = shouldWarn
-                ? this.warn.bind(this)
-                : this.verbose.bind(this);
-            logFn(
-                `Event Loop mean delay: ${stats.dMean}ms, max: ${stats.dMax}ms, estimated utilization: ${estimatedUtilization}`,
-                {
-                    runtime: "browser",
-                    dMean: stats.dMean,
-                    d50: stats.d50,
-                    d90: stats.d90,
-                    d99: stats.d99,
-                    dMax: stats.dMax,
-                    estimatedUtilization,
-                    longTaskCount,
-                    longTaskMean: longTaskStats.dMean,
-                    longTaskMax: longTaskStats.dMax
-                }
-            );
-
-            const delayErrorThresholdMs = getDelayErrorThresholdMs();
-            const maxDelayMs = Math.max(stats.dMax, longTaskStats.dMax);
-            if (
-                delayErrorThresholdMs > 0 &&
-                maxDelayMs > delayErrorThresholdMs
-            ) {
+            if (details) {
+                const maxDelayMs = Math.max(
+                    sample.dMax,
+                    sample.longTaskMax ?? 0
+                );
+                const { delayErrorThresholdMs } = details;
                 const error = new Error(
                     `Event loop delay ${maxDelayMs}ms exceeded configured threshold ${delayErrorThresholdMs}ms`
                 );
-                (error as any).eventLoopDelay = {
-                    runtime: "browser",
+                (
+                    error as Error & { eventLoopDelay?: EventLoopDelayDetails }
+                ).eventLoopDelay = details;
+                clearInterval(reportTimer);
+                source.stop();
+                throw error;
+            }
+
+            source.reset();
+        }, intervalMs);
+        options.onStarted?.();
+
+        return () => {
+            clearInterval(reportTimer);
+            source.stop();
+        };
+    }
+
+    /**
+     * The real browser sample source: timer-drift delay samples plus the
+     * long-task observer, collected between reporting intervals.
+     */
+    private createBrowserSampleSource(
+        intervalMs: number,
+        sampleIntervalMs: number
+    ): PerformanceSampleSource {
+        let delaySamples: number[] = [];
+        let longTaskDurations: number[] = [];
+        let lastSampleAt = this.nowMs();
+        let sampleTimer: ReturnType<typeof setInterval> | undefined;
+        let observer: PerformanceObserver | undefined;
+
+        return {
+            start: () => {
+                lastSampleAt = this.nowMs();
+                sampleTimer = setInterval(() => {
+                    const now = this.nowMs();
+                    const delayMs = Math.max(
+                        0,
+                        now - lastSampleAt - sampleIntervalMs
+                    );
+                    lastSampleAt = now;
+                    delaySamples.push(delayMs);
+                }, sampleIntervalMs);
+                observer = this.tryStartLongTaskObserver((duration) => {
+                    longTaskDurations.push(duration);
+                });
+            },
+            sample: () => {
+                const stats = this.computeStats(delaySamples);
+                const longTaskStats = this.computeStats(longTaskDurations);
+                const blockedMs = delaySamples.reduce(
+                    (sum, value) => sum + value,
+                    0
+                );
+                return {
                     dMean: stats.dMean,
                     d50: stats.d50,
                     d90: stats.d90,
                     d99: stats.d99,
                     dMax: stats.dMax,
-                    estimatedUtilization,
-                    longTaskCount,
+                    utilization: Math.min(1, blockedMs / intervalMs),
+                    longTaskCount: longTaskDurations.length,
                     longTaskMean: longTaskStats.dMean,
-                    longTaskMax: longTaskStats.dMax,
-                    delayErrorThresholdMs
+                    longTaskMax: longTaskStats.dMax
                 };
-                clearInterval(sampleTimer);
-                clearInterval(reportTimer);
+            },
+            reset: () => {
+                delaySamples = [];
+                longTaskDurations = [];
+            },
+            stop: () => {
+                if (sampleTimer !== undefined) clearInterval(sampleTimer);
+                sampleTimer = undefined;
                 observer?.disconnect();
-                throw error;
+                observer = undefined;
             }
-
-            delaySamples = [];
-            longTaskDurations = [];
-        }, intervalMs);
-
-        return () => {
-            clearInterval(sampleTimer);
-            clearInterval(reportTimer);
-            observer?.disconnect();
         };
     }
 
@@ -329,7 +333,6 @@ export class BrowserLogger extends Logger {
         }
     }
     public groupEnd(): void {
-        // eslint-disable-next-line no-console
         console.groupEnd();
     }
 }

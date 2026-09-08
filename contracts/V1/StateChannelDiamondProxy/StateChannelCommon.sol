@@ -99,9 +99,7 @@ contract StateChannelCommon is StateChannelManagerStorage, StateChannelManagerEv
             // check if current on-chain snapshot.fork == forkId
             if (
                 currentOnChainSnapshot.forkId == forkId
-                    && UtilityFacetInterface(utilityFacetAddress).isGenesisSnapshotWithoutTimeCheck(
-                        currentOnChainSnapshot
-                    )
+                    && UtilityFacetInterface(utilityFacetAddress).isGenesisSnapshotWithoutTimeCheck(currentOnChainSnapshot)
             ) {
                 return (true, currentOnChainSnapshot.timestamp);
             }
@@ -114,9 +112,16 @@ contract StateChannelCommon is StateChannelManagerStorage, StateChannelManagerEv
         return stateSnapshots[channelId].snapshotData.participants;
     }
 
+    /// Joiners whose JOIN the current snapshot has not consumed yet: the walk
+    /// from the channel's inbound head stops at the snapshot's own inbound
+    /// hash. An unbounded walk counted every JOIN ever recorded, including
+    /// the original participants' open joins, so a leaver stayed "pending"
+    /// forever and a slashed joiner stayed eligible.
     function _getPendingParticipants(bytes32 channelId) internal view virtual returns (address[] memory) {
         address[] memory pendingParticipants = _derivePendingParticipantsFromInboundHash(
-            channelId, channelBalances[channelId].latestInboundMessageBlockHash, bytes32(0)
+            channelId,
+            channelBalances[channelId].latestInboundMessageBlockHash,
+            stateSnapshots[channelId].snapshotData.latestInboundMessageBlockHash
         );
         return pendingParticipants;
     }
@@ -158,20 +163,22 @@ contract StateChannelCommon is StateChannelManagerStorage, StateChannelManagerEv
     {
         address[] memory snapshotParticipants = _getSnapshotParticipants(channelId);
         return _deriveEligibleParticipantsFromInboundHashAndSnapshotParticipants(
-            channelId, latestInboundMessageBlockHash, snapshotParticipants
+            channelId, latestInboundMessageBlockHash, snapshotParticipants, bytes32(0)
         );
     }
 
     function _deriveEligibleParticipantsFromInboundHashAndSnapshotParticipants(
         bytes32 channelId,
         bytes32 latestInboundMessageBlockHash,
-        address[] memory snapshotParticipants
+        address[] memory snapshotParticipants,
+        bytes32 lowerInboundHash
     ) internal view returns (address[] memory eligibleParticipants) {
         address[] memory pendingParticipants =
-            _derivePendingParticipantsFromInboundHash(channelId, latestInboundMessageBlockHash, bytes32(0));
+            _derivePendingParticipantsFromInboundHash(channelId, latestInboundMessageBlockHash, lowerInboundHash);
 
-        address[] memory participants = UtilityFacetInterface(utilityFacetAddress)
-            .concatAddressArraysNoDuplicates(snapshotParticipants, pendingParticipants);
+        address[] memory participants = UtilityFacetInterface(utilityFacetAddress).concatAddressArraysNoDuplicates(
+            snapshotParticipants, pendingParticipants
+        );
         eligibleParticipants = UtilityFacetInterface(utilityFacetAddress).subtractAddressArrays(
             participants, _getOnChainSlashedParticipants(channelId)
         );
@@ -180,6 +187,28 @@ contract StateChannelCommon is StateChannelManagerStorage, StateChannelManagerEv
 
     function _getStateSnapshot(bytes32 channelId) internal view virtual returns (StateSnapshot memory) {
         return stateSnapshots[channelId];
+    }
+
+    function _appendOpenChannel(bytes32 channelId) internal {
+        if (openChannelIndexPlusOne[channelId] != 0) return;
+        openChannelIds.push(channelId);
+        openChannelIndexPlusOne[channelId] = openChannelIds.length;
+    }
+
+    function _removeOpenChannel(bytes32 channelId) internal {
+        uint256 indexPlusOne = openChannelIndexPlusOne[channelId];
+        if (indexPlusOne == 0) return;
+
+        uint256 index = indexPlusOne - 1;
+        uint256 lastIndex = openChannelIds.length - 1;
+        if (index != lastIndex) {
+            bytes32 lastChannelId = openChannelIds[lastIndex];
+            openChannelIds[index] = lastChannelId;
+            openChannelIndexPlusOne[lastChannelId] = index + 1;
+        }
+
+        openChannelIds.pop();
+        delete openChannelIndexPlusOne[channelId];
     }
 
     function _getChannelBalance(bytes32 channelId) internal view virtual returns (ChannelBalance memory) {
@@ -567,8 +596,11 @@ contract StateChannelCommon is StateChannelManagerStorage, StateChannelManagerEv
     }
 
     function _canParticipateInDisputes(bytes32 channelId, address participant) internal view virtual returns (bool) {
-        address[] memory eligibleParticipants = _deriveEligibleParticipantsFromInboundHash(
-            channelId, channelBalances[channelId].latestInboundMessageBlockHash
+        address[] memory eligibleParticipants = _deriveEligibleParticipantsFromInboundHashAndSnapshotParticipants(
+            channelId,
+            channelBalances[channelId].latestInboundMessageBlockHash,
+            _getSnapshotParticipants(channelId),
+            stateSnapshots[channelId].snapshotData.latestInboundMessageBlockHash
         );
         return UtilityFacetInterface(utilityFacetAddress).isAddressInArray(eligibleParticipants, participant);
     }

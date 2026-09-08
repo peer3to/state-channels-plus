@@ -114,24 +114,14 @@ export class SignatureCollectionMap {
     public values(): SignerAndSignature[][] {
         // Convert each inner Map to SignerAndSignature[]
         return Array.from(this.map.values()).map((innerMap) =>
-            Array.from(innerMap.entries()).map(
-                ([signerAddress, signature]) => ({
-                    signerAddress,
-                    signature
-                })
-            )
+            this.projectSignatures(innerMap)
         );
     }
 
     public entries(): [EncodedJoinChannel, SignerAndSignature[]][] {
         return Array.from(this.map.entries()).map(([key, innerMap]) => [
             key,
-            Array.from(innerMap.entries()).map(
-                ([signerAddress, signature]) => ({
-                    signerAddress,
-                    signature
-                })
-            )
+            this.projectSignatures(innerMap)
         ]);
     }
 
@@ -139,13 +129,18 @@ export class SignatureCollectionMap {
         callback: (value: SignerAndSignature[], key: EncodedJoinChannel) => void
     ): void {
         this.map.forEach((innerMap, key) => {
-            const signerAndSignatures = Array.from(innerMap.entries()).map(
-                ([signerAddress, signature]) => ({
-                    signerAddress,
-                    signature
-                })
-            );
+            const signerAndSignatures = this.projectSignatures(innerMap);
             callback(signerAndSignatures, key);
         });
+    }
+    private projectSignatures(
+        innerMap: Map<Address, Signature>
+    ): SignerAndSignature[] {
+        return Array.from(innerMap.entries()).map(
+            ([signerAddress, signature]) => ({
+                signerAddress,
+                signature
+            })
+        );
     }
 }

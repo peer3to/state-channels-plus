@@ -1,10 +1,11 @@
-import { MathTestSession as TestSession } from "@test/harness";
-import { expect } from "chai";
-import { Status } from "@/types";
 import { Block } from "@/models";
-import { Codec, Type } from "@/utils";
-import type { Address } from "@/types/types";
-import assert from "node:assert/strict";
+import { Status } from "@/types";
+import type { Address, Bytes } from "@/types/types";
+import { Codec, SignatureUtils, Type } from "@/utils";
+import { MathTestSession as TestSession } from "@test/harness";
+import { createOpenChannelTestObject } from "@test/test_utils/testHelpers";
+import { waitFor } from "@test/utils/waitFor";
+import { expect } from "chai";
 
 /**
  * E2E Tests for Participant Lifecycle (Exit + Join)
@@ -23,6 +24,188 @@ import assert from "node:assert/strict";
  */
 describe("E2E: Participant Lifecycle", function () {
     describe("Exit path", function () {
+        it("slash and removal are idempotent after local leave while the chain snapshot still lists the leaver", async function () {
+            const h = TestSession.getHarness();
+            await h.lifecycle.start(3, 1);
+            const leaver = await h.query.getNextPeerToWrite();
+            const observer = h.peers.find(
+                (peer) => peer.index !== leaver.index
+            )!;
+            const post = await h.rpcStub.holdSnapshotPostSend(leaver.index);
+            try {
+                await h.transition.participantLeaveStateTransition({
+                    leaverIndex: leaver.index
+                });
+                await post.waitUntilHeld();
+                expect(
+                    (
+                        await h.channelManager.getParticipants(h.channelId)
+                    ).includes(leaver.address)
+                ).to.equal(true);
+                const result = await h.execOnHost(
+                    observer,
+                    async (sm, args, { ethers }) => {
+                        const block = sm.storage.blocks.getLatestBlock(
+                            sm.forkId
+                        );
+                        if (!block) throw new Error("Missing leave block");
+                        const snapshot =
+                            sm.storage.stateSnapshots.getStateSnapshotByHash(
+                                block.stateSnapshotHash
+                            );
+                        if (!snapshot)
+                            throw new Error("Missing leave snapshot");
+                        const encodedState =
+                            await sm.diamondStateMachine.getState();
+                        const participants =
+                            await sm.diamondStateMachine.getParticipants();
+                        const contract =
+                            sm.diamondStateMachine.localDiamondContract;
+                        const input = {
+                            channelId: sm.channelId,
+                            forkId: sm.forkId,
+                            latestStateSnapshotHash: snapshot.hash,
+                            latestInboundMessageBlockHash:
+                                snapshot.snapshotData
+                                    .latestInboundMessageBlockHash,
+                            lastInboundMessageBlockHeight:
+                                snapshot.snapshotData
+                                    .latestInboundMessageBlockHeight,
+                            stateProof: { milestones: [], signedBlocks: [] },
+                            onChainSlashes: [args.leaver],
+                            disputeAuditingDataHash: ethers.ZeroHash,
+                            disputer: args.leaver,
+                            timeout: {
+                                participant: ethers.ZeroAddress,
+                                blockHeight: 0,
+                                minTimeStamp: 0,
+                                isForced: false,
+                                previousBlockProducer: ethers.ZeroAddress,
+                                previousBlockProducerPostedCalldata: false,
+                                participantSignatureOnPreviousBlock: "0x"
+                            },
+                            requireExistingDisputeWindow: false,
+                            selfRemoval: true
+                        };
+                        const once =
+                            await contract.computeDisputeOutputState.staticCall(
+                                input,
+                                snapshot.toStruct(),
+                                encodedState,
+                                []
+                            );
+                        const twice =
+                            await contract.computeDisputeOutputState.staticCall(
+                                input,
+                                snapshot.toStruct(),
+                                once.encodedModifiedState,
+                                []
+                            );
+                        return {
+                            absent: !participants.includes(args.leaver),
+                            unchangedOnce:
+                                once.encodedModifiedState === encodedState,
+                            unchangedTwice:
+                                twice.encodedModifiedState === encodedState,
+                            firstExits:
+                                once.outboundMessageBlock.messages.length,
+                            repeatedExits:
+                                twice.outboundMessageBlock.messages.length,
+                            withdrawalsUnchanged:
+                                once.totalWithdrawals.amount ===
+                                    snapshot.snapshotData.totalWithdrawals
+                                        .amount &&
+                                twice.totalWithdrawals.amount ===
+                                    snapshot.snapshotData.totalWithdrawals
+                                        .amount
+                        };
+                    },
+                    { leaver: leaver.address }
+                );
+                expect(result).to.deep.equal({
+                    absent: true,
+                    unchangedOnce: true,
+                    unchangedTwice: true,
+                    firstExits: 0,
+                    repeatedExits: 0,
+                    withdrawalsUnchanged: true
+                });
+            } finally {
+                await post.release();
+            }
+            await h.event.waitUntilPeerStatus(leaver.index, Status.SYNCED);
+        });
+
+        it("removes a normally closed channel from registry pages and the event-derived live set", async function () {
+            const h = TestSession.getHarness();
+            await h.lifecycle.start(2);
+            const primaryChannelId = String(h.channelId);
+            const extraParticipants = h.peers.map((peer) => peer.address);
+            const extraChannels = [
+                createOpenChannelTestObject(extraParticipants, {
+                    channelId: "participant-registry-extra-first"
+                }),
+                createOpenChannelTestObject(extraParticipants, {
+                    channelId: "participant-registry-extra-second"
+                })
+            ];
+            for (const channel of extraChannels) {
+                const signed = await Promise.all(
+                    h.peers.map((peer) =>
+                        SignatureUtils.signOpenChannel(channel, peer.signer)
+                    )
+                );
+                await h.channelManager.open({
+                    encodedOpenChannel: signed[0].encoded,
+                    signatures: signed.map((entry) => entry.signature as Bytes)
+                });
+            }
+
+            await h.transition.participantLeaveStateTransition();
+            await h.transition.participantLeaveStateTransition();
+            await waitFor(
+                async () =>
+                    !(await h
+                        .control(h.peers[0])
+                        .query.isChannelOpen(primaryChannelId)
+                        .request()),
+                h.event.protocolEventTimeoutMs({
+                    withFirstBlockGrace: true
+                }),
+                50
+            );
+
+            const liveFromEvents = new Set(
+                (
+                    await h.channelManager.queryFilter(
+                        h.channelManager.filters.ChannelOpened()
+                    )
+                ).map((event) => String(event.args.channelId))
+            );
+            const snapshots = await h.channelManager.queryFilter(
+                h.channelManager.filters.StateSnapshotUpdated()
+            );
+            for (const event of snapshots) {
+                if (
+                    event.args.stateSnapshot.snapshotData.participants
+                        .length === 0
+                ) {
+                    liveFromEvents.delete(String(event.args.channelId));
+                }
+            }
+            const registry = await h
+                .control(h.peers[0])
+                .query.getOpenChannelIds()
+                .request();
+            expect([...liveFromEvents].sort()).to.deep.equal(
+                [...registry].sort()
+            );
+            expect(registry).not.to.include(primaryChannelId);
+            expect(registry).to.include.members(
+                extraChannels.map((channel) => String(channel.channelId))
+            );
+        });
+
         it("should demote exiting participant to SYNCED when state snapshot is updated on-chain", async function () {
             const h = TestSession.getHarness();
             await h.lifecycle.start(3, 2);
@@ -95,6 +278,76 @@ describe("E2E: Participant Lifecycle", function () {
                 }
             }
         });
+
+        it("public terminal leave settles before disposal and excludes the former signer", async function () {
+            const h = TestSession.getHarness();
+            await h.lifecycle.start(3, 0);
+            const leaver = h.getPeer(1);
+            const remaining = [0, 2];
+            let exitPromise: Promise<unknown> | undefined;
+            leaver.p2pInstance.events.on("p2pEventHooks", "onLeaveTurn", () => {
+                exitPromise =
+                    leaver.p2pInstance.p2pContractInstance.leaveChannel();
+            });
+
+            const leave = leaver.p2pInstance.leaveChannel();
+            await h.transition.advanceState();
+            await h.event.waitForPeers("onLeaveTurn", [leaver.index], 1);
+            await exitPromise;
+            // The exit block is authored: the leaver never writes again and
+            // its runtime disposes once the leave settles, so harness queries
+            // stop routing through it; the others keep the slot alive while
+            // the exit snapshot lands.
+            h.contextApi.markAfkPeer({ afkPeerIndex: leaver.index });
+            let leaveSettled = false;
+            const settledLeave = leave.then(() => {
+                leaveSettled = true;
+            });
+            await h.transition.keepAuthoringUntil({
+                until: () => leaveSettled,
+                waitForPeers: remaining,
+                excludePeerIndices: [leaver.index],
+                maximumBlocks: 20
+            });
+            await settledLeave;
+            expect(
+                (await h.channelManager.getParticipants(h.channelId)).includes(
+                    leaver.address
+                )
+            ).to.equal(false);
+
+            await h.transition.advanceState({
+                count: 1,
+                waitForPeers: remaining,
+                waitForFinalization: true
+            });
+            const bundle = await h
+                .control(h.getPeer(remaining[0]))
+                .query.getLatestBlockBundle(h.activeForkId!)
+                .request();
+            expect(bundle).to.not.equal(null);
+            const block = Block.fromBlockConfirmation({
+                signedBlock: Codec.decode(
+                    bundle!.encodedSignedBlock,
+                    Type.SignedBlock
+                ),
+                signatures: bundle!.confirmationSignatures
+            });
+            expect(
+                block.allSignerAddresses.has(leaver.address as Address)
+            ).to.equal(false);
+            for (const peerIndex of remaining) {
+                const otherIndex = remaining.find(
+                    (candidate) => candidate !== peerIndex
+                )!;
+                expect(
+                    await h
+                        .control(h.getPeer(peerIndex))
+                        .query.isBlacklisted(h.getPeer(otherIndex).address)
+                        .request()
+                ).to.equal(false);
+            }
+        });
     });
 
     describe("Join path", function () {
@@ -103,15 +356,13 @@ describe("E2E: Participant Lifecycle", function () {
 
             await h.lifecycle.start(2);
 
-            const spectator = await h.join.addSpectatorDetached({
+            const { peer: spectator } = await h.join.addSpectatorAuthoring({
+                authoringPeerIndices: [0, 1],
+                minimumBlocks: 1,
+                maximumBlocks: 20,
+                waitForFinalization: true,
                 statusTimeoutMessage: "Spectator did not reach SYNCED status"
             });
-            await h.transition.advanceState({
-                count: 1,
-                waitForPeers: [0, 1],
-                waitForFinalization: true
-            });
-            await h.event.waitUntilPeerStatus(spectator.index, Status.SYNCED);
             await h.assert.sync.peersInSyncWait({ peerIndices: [0, 1, 2] });
 
             const prepared = await h.join.buildJoinChannelConfirmation({
@@ -119,30 +370,38 @@ describe("E2E: Participant Lifecycle", function () {
                 channelId: h.channelId
             });
 
-            // Fire joinChannel WITHOUT awaiting — the synchronous portion of
-            // StateManager.joinChannel() calls setStatus(PENDING_PARTICIPANT)
-            // before the first `await`, so the promotion is observable
-            // immediately after the call starts.
+            const releaseReceipt = await h.rpcStub.holdMembershipReceipt(
+                spectator.index,
+                "joinChannel"
+            );
             const joinPromise = spectator.p2pInstance.p2pSigner.joinChannel(
                 prepared.confirmation,
                 prepared.expectedSnapshotHash,
                 prepared.expectedForkId
             );
-
-            // Status flips to PENDING_PARTICIPANT host-side on broadcast (the
-            // join RPC sets it before the tx is mined); read it back over the port.
+            await waitFor(
+                async () =>
+                    (await h
+                        .control(spectator)
+                        .stub.getHeldMembershipReceiptCount()
+                        .request()) === 1,
+                h.event.protocolEventTimeoutMs()
+            );
             expect(
                 await h
                     .control(h.getPeer(spectator.index))
                     .query.getStatus()
                     .request()
-            ).to.equal(
-                Status.PENDING_PARTICIPANT,
-                "Status should be PENDING_PARTICIPANT immediately on broadcast, before tx is mined"
-            );
+            ).to.equal(Status.PENDING_PARTICIPANT);
 
-            // Wait for the tx to land on-chain
-            await joinPromise;
+            await releaseReceipt();
+            expect(await joinPromise).to.equal(true);
+            expect(
+                await h
+                    .control(h.getPeer(spectator.index))
+                    .query.getStatus()
+                    .request()
+            ).to.equal(Status.PENDING_PARTICIPANT);
 
             // Ensure all honest peers have stored the inbound message before
             // the block producer runs, so the join is included in the block
@@ -163,17 +422,156 @@ describe("E2E: Participant Lifecycle", function () {
             );
         });
 
+        it("pending join fault survives until a failed receipt restores SYNCED", async function () {
+            const h = TestSession.getHarness();
+            await h.lifecycle.start(2);
+            // Sync itself is the subject here and no transition is scheduled
+            // while the spawn blocks, so the non-authoring exception applies.
+            const spectator = await h.join.addSpectatorDetached();
+            await h.event.waitUntilPeerStatus(spectator.index, Status.SYNCED);
+            const prepared = await h.join.buildJoinChannelConfirmation({
+                joiner: spectator,
+                channelId: h.channelId
+            });
+            await h.control(spectator).stub.stubRecordAbort().request();
+            const releaseReceipt = await h.rpcStub.holdMembershipReceipt(
+                spectator.index,
+                "joinChannel",
+                true
+            );
+            const join = spectator.p2pInstance.p2pSigner.joinChannel(
+                prepared.confirmation,
+                prepared.expectedSnapshotHash,
+                prepared.expectedForkId
+            );
+            await waitFor(
+                async () =>
+                    (await h
+                        .control(spectator)
+                        .stub.getHeldMembershipReceiptCount()
+                        .request()) === 1,
+                h.event.protocolEventTimeoutMs()
+            );
+            expect(
+                await h.control(spectator).query.getStatus().request()
+            ).to.equal(Status.PENDING_PARTICIPANT);
+
+            const restoreJunk = await h.rpcStub.stubSpectateJunkPayload([0]);
+            try {
+                await h
+                    .control(spectator)
+                    .spectate.startSync(
+                        h.getPeer(0).address,
+                        prepared.expectedForkId,
+                        0
+                    )
+                    .request();
+                await waitFor(
+                    () =>
+                        h
+                            .control(spectator)
+                            .query.isBlacklisted(h.getPeer(0).address)
+                            .request(),
+                    h.event.protocolEventTimeoutMs()
+                );
+                expect(
+                    await h.control(spectator).stub.wasAbortCalled().request()
+                ).to.equal(false);
+                await releaseReceipt();
+                expect(await join).to.equal(false);
+                expect(
+                    await h.control(spectator).query.getStatus().request()
+                ).to.equal(Status.SYNCED);
+            } finally {
+                await restoreJunk();
+                await releaseReceipt();
+            }
+        });
+
+        it("pending join fault preserves the successful on-chain join and inbound message", async function () {
+            const h = TestSession.getHarness();
+            await h.lifecycle.start(2);
+            // Sync itself is the subject here and no transition is scheduled
+            // while the spawn blocks, so the non-authoring exception applies.
+            const spectator = await h.join.addSpectatorDetached();
+            await h.event.waitUntilPeerStatus(spectator.index, Status.SYNCED);
+            const prepared = await h.join.buildJoinChannelConfirmation({
+                joiner: spectator,
+                channelId: h.channelId
+            });
+            await h.control(spectator).stub.stubRecordAbort().request();
+            const releaseReceipt = await h.rpcStub.holdMembershipReceipt(
+                spectator.index,
+                "joinChannel"
+            );
+            const join = spectator.p2pInstance.p2pSigner.joinChannel(
+                prepared.confirmation,
+                prepared.expectedSnapshotHash,
+                prepared.expectedForkId
+            );
+            await waitFor(
+                async () =>
+                    (await h
+                        .control(spectator)
+                        .stub.getHeldMembershipReceiptCount()
+                        .request()) === 1,
+                h.event.protocolEventTimeoutMs()
+            );
+
+            const restoreJunk = await h.rpcStub.stubSpectateJunkPayload([0]);
+            try {
+                await h
+                    .control(spectator)
+                    .spectate.startSync(
+                        h.getPeer(0).address,
+                        prepared.expectedForkId,
+                        0
+                    )
+                    .request();
+                await waitFor(
+                    () =>
+                        h
+                            .control(spectator)
+                            .query.isBlacklisted(h.getPeer(0).address)
+                            .request(),
+                    h.event.protocolEventTimeoutMs()
+                );
+                expect(
+                    await h.control(spectator).stub.wasAbortCalled().request()
+                ).to.equal(false);
+                await releaseReceipt();
+                expect(await join).to.equal(true);
+                expect(
+                    await h.channelManager.getPendingParticipants(h.channelId)
+                ).to.include(spectator.address);
+                await h.assert.storage.honestPeersObserveInboundMessageWait();
+            } finally {
+                await restoreJunk();
+                await releaseReceipt();
+            }
+        });
+
         it("preserves a landed pending join when the same confirmation is retried", async function () {
             const h = TestSession.getHarness();
             await h.lifecycle.start(2);
-            const spectator = await h.join.addSpectatorDetached();
-            await h.transition.advanceState({
-                count: 1,
-                waitForPeers: [0, 1],
+            const { peer: spectator } = await h.join.addSpectatorAuthoring({
+                authoringPeerIndices: [0, 1],
+                minimumBlocks: 1,
+                maximumBlocks: 20,
                 waitForFinalization: true
             });
-            await h.event.waitUntilPeerStatus(spectator.index, Status.SYNCED);
             await h.assert.sync.peersInSyncWait();
+            // The confirmation build and the two join transactions take
+            // seconds on a loaded host while the writer slot sits idle; an
+            // idle slot lets a participant time out and reduce the channel
+            // under the join. Keep authoring until the join's inbound block
+            // is observed.
+            let joinObserved = false;
+            const keepAlive = h.transition.keepAuthoringUntil({
+                until: () => joinObserved,
+                waitForPeers: [0, 1],
+                maximumBlocks: 40
+            });
             const prepared = await h.join.buildJoinChannelConfirmation({
                 joiner: spectator,
                 channelId: h.channelId
@@ -190,14 +588,13 @@ describe("E2E: Participant Lifecycle", function () {
                 { status: Status.SYNCED }
             );
 
-            await assert.rejects(
-                spectator.p2pInstance.p2pSigner.joinChannel(
+            expect(
+                await spectator.p2pInstance.p2pSigner.joinChannel(
                     prepared.confirmation,
                     prepared.expectedSnapshotHash,
                     prepared.expectedForkId
-                ),
-                /ErrorJoinChannelParticipantAlreadyExists/
-            );
+                )
+            ).to.equal(true);
             const retryState = await h.execOnHost(
                 h.getPeer(spectator.index),
                 async (sm) => ({
@@ -211,6 +608,8 @@ describe("E2E: Participant Lifecycle", function () {
             expect(retryState.joinSubmissionHeight).to.not.equal(undefined);
 
             await h.assert.storage.honestPeersObserveInboundMessageWait();
+            joinObserved = true;
+            await keepAlive;
             await h.transition.advanceState({ count: 1 });
             expect(
                 await h

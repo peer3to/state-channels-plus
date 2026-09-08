@@ -1,22 +1,22 @@
 // @spec-test-coverage-ignore: developer test-orchestration tooling; not protocol behavior, no specification or implementation IDs apply
+import { TestIsolatedRuntimeBackend } from "../fixtures/distributed/isolatedRuntimeBackend";
+import { LeasePoolHarness } from "../fixtures/distributed/leasePool";
 import { expect } from "chai";
 import crypto from "crypto";
 import fs from "fs";
 import os from "os";
 import path from "path";
-import { LeasePoolHarness } from "../fixtures/distributed/leasePool";
-import { TestIsolatedRuntimeBackend } from "../fixtures/distributed/isolatedRuntimeBackend";
 
+const {
+    ingestAttemptLogMessage
+} = require("../../scripts/e2e-parallel/distributed/orchestrator.js");
 const {
     OrchestratorLogStore
 } = require("../../scripts/e2e-parallel/distributed/orchestratorLogStore.js");
 const {
-    ingestAttemptLogMessage
-} = require("../../scripts/e2e-parallel/distributed/orchestrator.js");
-const DHT = require("@hyperswarm/dht");
-const {
     DISTRIBUTED_PROTOCOL_VERSION
 } = require("../../scripts/e2e-parallel/distributed/protocol.js");
+const DHT = require("@hyperswarm/dht");
 
 const workspaceManifest = {
     version: 3,

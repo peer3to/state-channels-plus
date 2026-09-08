@@ -1,14 +1,14 @@
 // @spec-test-coverage-ignore: host-side support service for ARpcService component tests
+import type { PingPongRpc } from "../PingPongRpcManifest";
+import { ARpcServiceProbeRpcMethods } from "./ARpcServiceProbeRpcMethods";
 import type P2PManager from "@/P2PManager";
 import ARpcMethods from "@/rpc/ARpcMethods";
 import ARpcService from "@/rpc/ARpcService";
+import { AGuard } from "@/rpc/guards/AGuard";
 import type Rpc from "@/rpc/Rpc";
 import type { RpcResponse } from "@/rpc/Rpc";
-import { AGuard } from "@/rpc/guards/AGuard";
 import ATransport from "@/transport/ATransport";
 import { TransportType } from "@/transport/TransportType";
-import type { PingPongRpc } from "../PingPongRpcManifest";
-import { ARpcServiceProbeRpcMethods } from "./ARpcServiceProbeRpcMethods";
 
 export type ARpcDispatchProbe = {
     consumed: boolean;

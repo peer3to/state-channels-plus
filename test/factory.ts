@@ -1,8 +1,23 @@
+// @spec-test-coverage-ignore: typed test data factories; executable cases own their coverage
 // Plain ethers, not hardhat's: the SDK worker thread imports helpers from this
 // file (via HarnessControlRpc → DisputeService), and requiring "hardhat" there
 // boots the whole Hardhat runtime — incl. hardhat-foundry's sync `forge config`
 // exec — blocking the worker's event loop for ~800ms.
-import { ethers } from "ethers";
+import { Block, StateSnapshot } from "@/models";
+import type { ReduceData } from "@/types/disputes";
+import {
+    DisputeFraudProofType,
+    FraudProofType,
+    toSolidityDisputeFraudProofType,
+    toSolidityFraudProofType
+} from "@/types/sol-enums";
+import { Address, BlockHeight, Bytes, ForkId, Timestamp } from "@/types/types";
+import { Codec, Type } from "@/utils";
+import {
+    tryDecodeCustomError,
+    type CustomEvmError
+} from "@/utils/evmErrorHandler";
+import type { HardhatEthersSigner } from "@nomicfoundation/hardhat-ethers/signers";
 import {
     BlockStruct,
     TransactionStruct,
@@ -15,35 +30,21 @@ import {
     SnapshotDataStruct,
     MessageBlockStruct
 } from "@typechain-types/contracts/V1/types/DataTypes";
+import { DisputeNotLatestStateStruct } from "@typechain-types/contracts/V1/types/DisputeFraudProofTypes";
 import {
     DisputeStruct,
     SignedDisputeStruct,
     DisputeInputStruct,
     ReduceOutputStruct
 } from "@typechain-types/contracts/V1/types/DisputeTypes";
-import type { ReduceData } from "@/types/disputes";
+import { BlockDoubleSignProofStruct } from "@typechain-types/contracts/V1/types/FraudProofTypes";
 import {
     DisputeFraudProofStruct,
     FraudProofStruct,
     StateProofStruct
 } from "@typechain-types/contracts/V1/types/ProofTypes";
-import { BlockDoubleSignProofStruct } from "@typechain-types/contracts/V1/types/FraudProofTypes";
-import { DisputeNotLatestStateStruct } from "@typechain-types/contracts/V1/types/DisputeFraudProofTypes";
 import { randomInt } from "crypto";
-import { Codec, Type } from "@/utils";
-import {
-    DisputeFraudProofType,
-    FraudProofType,
-    toSolidityDisputeFraudProofType,
-    toSolidityFraudProofType
-} from "@/types/sol-enums";
-import {
-    tryDecodeCustomError,
-    type CustomEvmError
-} from "@/utils/evmErrorHandler";
-import { Block, StateSnapshot } from "@/models";
-import { Address, BlockHeight, Bytes, ForkId, Timestamp } from "@/types/types";
-import type { HardhatEthersSigner } from "@nomicfoundation/hardhat-ethers/signers";
+import { ethers } from "ethers";
 
 export const hash = (): `0x${string}` =>
     ethers.hexlify(ethers.randomBytes(32)) as `0x${string}`;
@@ -235,6 +236,7 @@ export function dispute(
                     ethers.randomBytes(32)
                 )
             },
+            requireExistingDisputeWindow: false,
             selfRemoval: false
         },
 
@@ -553,7 +555,10 @@ function zeroValueForParamType(paramType: ethers.ParamType): unknown {
  *
  * Throws when `errorName` is not a known contract error.
  */
-export function encodedCustomErrorRevert(errorName: string): Bytes {
+export function encodedCustomErrorRevert(
+    errorName: string,
+    args?: string[]
+): Bytes {
     const errorInterface = getErrorInterface();
     const errorFragment = errorInterface.getError(errorName);
     if (!errorFragment) {
@@ -561,7 +566,7 @@ export function encodedCustomErrorRevert(errorName: string): Bytes {
     }
     return errorInterface.encodeErrorResult(
         errorFragment,
-        errorFragment.inputs.map(zeroValueForParamType)
+        args ?? errorFragment.inputs.map(zeroValueForParamType)
     );
 }
 

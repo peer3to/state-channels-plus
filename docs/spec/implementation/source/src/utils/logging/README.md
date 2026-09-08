@@ -11,6 +11,7 @@ _Pending authoring: shared responsibility, design decisions, assumptions, cross-
 - [Logger.ts](./Logger.ts.md)
 - [axiosErrorUtils.ts](./axiosErrorUtils.ts.md)
 - [browser/](./browser/README.md)
+- [createLoggerFoundation.ts](./createLoggerFoundation.ts.md)
 - [createLoggerTypes.ts](./createLoggerTypes.ts.md)
 - [formatUtils.ts](./formatUtils.ts.md)
 - [index.ts](./index.ts.md)

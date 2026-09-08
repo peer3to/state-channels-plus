@@ -21,6 +21,9 @@ tracking live participant-set changes and failing closed on a provably invalid f
 following the dispute onto the new fork. The spectator fail-closed permutations have been atomized into
 one-scenario IDs, so the adversarial-feed abort now carries its own assignments; the leave/dispute
 permutations keep their definitive homes in the lifecycle and dispute suites.
+Both spectator spawns run through the shared `addSpectatorAuthoring` helper: the remaining participants author at
+least the scripted blocks and keep the writer slot alive until the spectator is synced, so the next leave never
+follows an idle window.
 
 ## Tests and covered test IDs
 

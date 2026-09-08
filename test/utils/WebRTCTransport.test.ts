@@ -1,7 +1,7 @@
-import { expect } from "chai";
-
-import WebRTCTransport from "@/transport/WebRTCTransport";
+import ProfileManager from "@/ProfileManager";
 import type { WebRTCDataChannelLike } from "@/rpc/services/WebRTCSetup/connection/WebRTCConnectionFactory";
+import WebRTCTransport from "@/transport/WebRTCTransport";
+import { expect } from "chai";
 
 class FakeRTCDataChannel implements WebRTCDataChannelLike {
     label = "webRTC-DataChannel";
@@ -58,9 +58,7 @@ function createP2PManager(
                 closeWebRTCConnection: () => undefined
             }
         },
-        profileManager: {
-            getProfileByTransport: () => undefined
-        },
+        profileManager: new ProfileManager(),
         disconnectConnection: () => undefined,
         onRpc: options.onRpc || (() => undefined)
     };

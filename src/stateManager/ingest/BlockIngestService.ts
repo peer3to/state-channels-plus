@@ -1,16 +1,16 @@
-import type { BlockConfirmationStruct } from "@typechain-types/contracts/V1/types/DataTypes";
-
+import type StateManager from "../StateManager";
+import type AValidationStrategy from "../validationStrategy/AValidationStrategy";
+import DisputeValidationStrategy from "../validationStrategy/DisputeValidationStrategy";
 import { Block } from "@/models";
 import type { QueuedBlockEntry } from "@/storage/QueueStorage";
 import { BlockValidationResult } from "@/types";
 import { Address, Bytes } from "@/types/types";
 import { difference, Logger } from "@/utils";
+import { errorMessage } from "@/utils/errorMessage";
 import { LoggerUtils } from "@/utils/LoggerUtils";
 import P2pEventHooksUtils from "@/utils/P2pEventHooksUtils";
 
-import type StateManager from "../StateManager";
-import type AValidationStrategy from "../validationStrategy/AValidationStrategy";
-import DisputeValidationStrategy from "../validationStrategy/DisputeValidationStrategy";
+import type { BlockConfirmationStruct } from "@typechain-types/contracts/V1/types/DataTypes";
 
 /**
  * Runs an inbound block confirmation through the verification pipeline and
@@ -343,7 +343,7 @@ export default class BlockIngestService {
                 strategy: strategy?.name,
                 channelId: sm.channelId,
                 blockHash: block?.hash,
-                error: error instanceof Error ? error.message : String(error),
+                error: errorMessage(error),
                 stack: error instanceof Error ? error.stack : undefined
             });
             throw error;

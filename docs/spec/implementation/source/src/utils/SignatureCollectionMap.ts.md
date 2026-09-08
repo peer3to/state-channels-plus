@@ -23,6 +23,8 @@ Signer-keyed signature collection (dedup by recovered address) used in confirmat
 
 ## Key design decisions
 
+values, entries and forEach share projection from each participant map. Returned arrays stay fresh and outer-map iteration remains live during callbacks. See [SignatureCollectionMap.ts](../../../../../../src/utils/SignatureCollectionMap.ts#L117).
+
 _None — the file is declarative/mechanical; behavior-shaping decisions live with its consumers._
 
 ## Inputs, outputs, state, and side effects
@@ -72,8 +74,9 @@ Gap column. Audit state is file-level (Status header), never a row status.
 
 Exact test evidence is mapped against these IDs in the verification test reports.
 
-| Unit test ID | Obligation | Public entry and setup | Oracle and forbidden effects | Required permutations |
-| ------------ | ---------- | ---------------------- | ---------------------------- | --------------------- |
+| Unit test ID                                                                                            | Obligation           | Public entry and setup                                                                                                | Oracle and forbidden effects                                                                                 | Required permutations                                                                                                                                                                               |
+| ------------------------------------------------------------------------------------------------------- | -------------------- | --------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| <a id="unit-test-signature-collection-map-32-kb4qyc"></a>`UNIT-TEST-SIGNATURE-COLLECTION-MAP-32-KB4QYC` | Signature projection | Use real signed values across multiple keys; compare fresh ordered arrays and live iteration after callback mutation. | Each variation below states its observable result; preserve all unrelated stored state and lifecycle policy. | <a id="unit-test-signature-collection-map-32-kb4qyc.p1"></a>`UNIT-TEST-SIGNATURE-COLLECTION-MAP-32-KB4QYC.P1` — projects ordered signatures into fresh arrays and preserves live callback iteration |
 
 ## Related source reports
 

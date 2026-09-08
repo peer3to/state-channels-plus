@@ -1,6 +1,5 @@
-import { expect } from "chai";
-
 import { applyNodeGlobalsShim } from "@/evm/p2pRuntime/worker/nodeGlobalsShim";
+import { expect } from "chai";
 
 type ProcessShim = {
     env?: Record<string, string | undefined>;

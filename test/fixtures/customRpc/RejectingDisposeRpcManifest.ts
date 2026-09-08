@@ -1,5 +1,5 @@
-import type P2PManager from "@/P2PManager";
 import { HarnessControlRpc } from "./harnessControl/HarnessControlRpc";
+import type P2PManager from "@/P2PManager";
 
 /**
  * A real custom RPC root whose `dispose()` rejects. Proves through the public

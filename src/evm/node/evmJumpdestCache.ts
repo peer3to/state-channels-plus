@@ -42,6 +42,7 @@ export function installEvmJumpdestCache(): void {
         path.dirname(require.resolve("@ethereumjs/evm")),
         "interpreter.js"
     );
+
     // eslint-disable-next-line @typescript-eslint/no-var-requires
     const { Interpreter } = require(interpreterPath) as {
         Interpreter: { prototype: InterpreterInternals };

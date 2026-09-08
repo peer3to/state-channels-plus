@@ -1,11 +1,18 @@
 // @spec-test-coverage-ignore: developer test-orchestration tooling; not protocol behavior, no specification or implementation IDs apply
+import { createSocketPair } from "../fixtures/distributed/testTransport";
 import { expect } from "chai";
 import { execFileSync } from "child_process";
 import fs from "fs";
 import os from "os";
 import path from "path";
-import { createSocketPair } from "../fixtures/distributed/testTransport";
 
+const {
+    sendBundle,
+    receiveBundle
+} = require("../../scripts/e2e-parallel/distributed/artifactTransfer.js");
+const {
+    ProtocolPeer
+} = require("../../scripts/e2e-parallel/distributed/protocol.js");
 const {
     buildRuntimeManifest,
     buildRuntimeBundle,
@@ -15,13 +22,6 @@ const {
     extractRuntimeBundle,
     assertCompatible
 } = require("../../scripts/e2e-parallel/distributed/runtimeExtractor.js");
-const {
-    ProtocolPeer
-} = require("../../scripts/e2e-parallel/distributed/protocol.js");
-const {
-    sendBundle,
-    receiveBundle
-} = require("../../scripts/e2e-parallel/distributed/artifactTransfer.js");
 
 function initializeRepository(root: string): void {
     fs.mkdirSync(root, { recursive: true });
