@@ -54,7 +54,20 @@ export class QueueStorage {
             signatureSources: new Map()
         };
         this.trackSource(entry, block.allSignatures, options?.senderAddress);
+        this.capSignatures(entry);
         return entry;
+    }
+
+    // The cap has to apply to the copy that creates the entry as well as to
+    // every later merge: a first copy carrying thousands of confirmation
+    // signatures is retained whole otherwise, and capping only the merge path
+    // just moves the flood into the opening request.
+    private capSignatures(entry: QueuedBlockEntry): void {
+        const held = entry.block.confirmationSignatures;
+        if (held.size <= QueueStorage.MAX_ENTRY_SIGNATURES) return;
+        const surplus = [...held].slice(QueueStorage.MAX_ENTRY_SIGNATURES);
+        entry.block.removeConfirmationSignatures(new Set(surplus));
+        entry.overflowedSources = true;
     }
 
     /** Queue a block for future processing */

@@ -232,6 +232,22 @@ describe("QueueStorage", () => {
             expect(storage.isBlockQueued(mockBlock)).to.equal(true);
         });
 
+        it("bounds signatures carried by the copy that creates the entry", () => {
+            // Capping only the merge path moves the flood into the opening
+            // request: one copy carrying thousands of signatures.
+            const flood = Array.from({ length: 300 }, () => sig());
+            const hash = storage.queueBlock(
+                Block.fromBlockConfirmation({
+                    ...mockBlockConfirmation,
+                    signatures: flood
+                })
+            );
+
+            const entry = storage.getQueuedEntry(hash)!;
+            expect(entry.block.confirmationSignatures.size).to.be.at.most(128);
+            expect(entry.overflowedSources).to.equal(true);
+        });
+
         it("re-merging signatures already held does not consume cap budget", () => {
             // Only novel signatures spend budget, so an honest peer resending
             // the same copy never trips the marker.
