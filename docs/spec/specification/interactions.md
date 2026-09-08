@@ -130,7 +130,8 @@ through the storage system ([storage/README.md](./storage/README.md)). Data: eac
 records and keys. Validity: storage returns exactly what its producer committed — no fabrication,
 substitution, reinterpretation, or gap-bridging — and grants no validity: read-back data re-enters
 the owning system's validation ([`REQ-STOR-3-4RJGER`](storage/durability.md#req-stor-3-4rjger)). Ordering: single operations are atomic; merge
-operations are monotone, idempotent, and arrival-order independent; multi-module consistency at an
+operations are monotone, idempotent, and arrival-order independent within whatever retention bound the
+owning module declares; multi-module consistency at an
 operation boundary is the calling system's commit obligation ([`REQ-STOR-2-TARP8S`](storage/durability.md#req-stor-2-tarp8s)). Trust boundary:
 storage is inside the node, but what flows into it originates from untrusted sources — attribution
 and evidence MUST survive storage exactly so they remain usable as evidence. Failure: an absent

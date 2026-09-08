@@ -12,17 +12,15 @@ import { expect } from "chai";
 import { ethers } from "hardhat";
 import { describe, it, before, beforeEach } from "mocha";
 
-// Canonically shaped: random r and s in range with a valid v, so the value is
-// a well-formed ECDSA signature that simply recovers to nobody. Random bytes
-// usually carry an invalid v, which the queue now rejects outright.
+// A real signature over a random digest from a throwaway key: recoverable, so
+// the queue admits it, but it recovers to nobody in the channel. That is what
+// junk looks like on the wire. Random bytes are not usable here — an in-range
+// r almost never identifies a curve point, so recovery throws and the queue
+// now rejects the value outright.
 const sig = () =>
-    ethers.Signature.from({
-        r: ethers.hexlify(ethers.randomBytes(32)),
-        s: ethers.hexlify(
-            ethers.concat([new Uint8Array([0x7f]), ethers.randomBytes(31)])
-        ),
-        v: 27
-    }).serialized;
+    new ethers.SigningKey(ethers.hexlify(ethers.randomBytes(32))).sign(
+        ethers.hexlify(ethers.randomBytes(32))
+    ).serialized;
 
 describe("QueueStorage", () => {
     let storage: QueueStorage;
@@ -401,6 +399,41 @@ describe("QueueStorage", () => {
                 false
             );
             expect(entry.block.confirmationSignatures.size).to.equal(1);
+        });
+
+        it("drops values that pass a shape check but cannot be recovered", () => {
+            // ethers.Signature.from length-checks r without requiring
+            // 0 < r < n, and an in-range r almost never identifies a curve
+            // point. Both shapes reach signer recovery and throw there, so the
+            // queue must reject what it cannot itself recover.
+            const zeroR =
+                "0x" + "00".repeat(32) + "00".repeat(31) + "01" + "1b";
+            const noCurvePoint = ethers.Signature.from({
+                r: "0x" + "11".repeat(32),
+                s: "0x" + "22".repeat(32),
+                v: 27
+            }).serialized;
+            const hash = storage.queueBlock(
+                Block.fromBlockConfirmation({
+                    ...mockBlockConfirmation,
+                    signatures: [zeroR, noCurvePoint, sig()]
+                })
+            );
+
+            const entry = storage.getQueuedEntry(hash)!;
+            expect(entry.block.confirmationSignatures.has(zeroR)).to.equal(
+                false
+            );
+            expect(
+                entry.block.confirmationSignatures.has(noCurvePoint)
+            ).to.equal(false);
+            expect(entry.block.confirmationSignatures.size).to.equal(1);
+            // Every retained value survives the recovery its consumer performs.
+            for (const signature of entry.block.confirmationSignatures) {
+                expect(() =>
+                    entry.block.signatureToAddress(signature)
+                ).to.not.throw();
+            }
         });
 
         it("drops an unrecoverable value on the creating copy", () => {

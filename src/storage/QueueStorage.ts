@@ -63,17 +63,23 @@ export class QueueStorage {
      * Build a standalone entry for a block copy — the unit of work the
      * pipeline consumes. Same construction the queue uses, without queueing.
      */
-    // Length alone is not canonicality. A 65-byte value with an invalid v, or
-    // a non-canonical s, passes a hex-length check and is then retained -- and
-    // ethers.verifyMessage throws rather than returning on it, so the junk
-    // reaches SignerRecoveryCache and takes the recovery path down with it.
-    // Signature.from performs the canonical r/s/v checks without recovering,
-    // and never throws out of here.
-    private static isCanonicalSignature(signature: Signature): boolean {
+    // Only recovery proves recoverability. Length is not enough, and neither is
+    // Signature.from: it length-checks r without requiring 0 < r < n, and even
+    // an in-range r usually identifies no curve point ("Cannot find square
+    // root"). Every such value throws out of ethers when validation later
+    // derives confirmation signers through SignerRecoveryCache, so a value the
+    // queue retains but cannot recover takes the recovery path down with it.
+    // Attempting the recovery is the only check that matches what the consumer
+    // does.
+    //
+    // The cost is bounded by what can be retained, not by what is offered:
+    // callers slice to the remaining room first, so a full entry does no
+    // recovery at all and a flooder cannot buy CPU by sending more.
+    private static isRecoverable(block: Block, signature: Signature): boolean {
         if (!ethers.isHexString(signature, QueueStorage.SIGNATURE_BYTES))
             return false;
         try {
-            ethers.Signature.from(signature);
+            block.signatureToAddress(signature);
             return true;
         } catch {
             return false;
@@ -102,16 +108,16 @@ export class QueueStorage {
     // just moves the flood into the opening request.
     private capSignatures(entry: QueuedBlockEntry): void {
         const held = [...entry.block.confirmationSignatures];
-        const malformed = held.filter(
-            (signature) => !QueueStorage.isCanonicalSignature(signature)
+        // Slice before recovering, so the cost is bounded by the cap rather
+        // than by how much the sender offered.
+        const candidates = held.slice(0, QueueStorage.MAX_ENTRY_SIGNATURES);
+        const surplus = held.slice(QueueStorage.MAX_ENTRY_SIGNATURES);
+        const unrecoverable = candidates.filter(
+            (signature) => !QueueStorage.isRecoverable(entry.block, signature)
         );
-        const canonical = held.filter((signature) =>
-            QueueStorage.isCanonicalSignature(signature)
-        );
-        const surplus = canonical.slice(QueueStorage.MAX_ENTRY_SIGNATURES);
-        if (malformed.length || surplus.length) {
+        if (unrecoverable.length || surplus.length) {
             entry.block.removeConfirmationSignatures(
-                new Set([...malformed, ...surplus])
+                new Set([...unrecoverable, ...surplus])
             );
             if (surplus.length) entry.overflowedSources = true;
         }
@@ -338,13 +344,17 @@ export class QueueStorage {
     private mergeBlockCapped(entry: QueuedBlockEntry, incoming: Block): void {
         const held = entry.block.confirmationSignatures;
         const novel = [...incoming.confirmationSignatures].filter(
-            (signature) =>
-                !held.has(signature) &&
-                QueueStorage.isCanonicalSignature(signature)
+            (signature) => !held.has(signature)
         );
         const room = Math.max(QueueStorage.MAX_ENTRY_SIGNATURES - held.size, 0);
         if (novel.length > room) entry.overflowedSources = true;
-        entry.block.expandSignatures(novel.slice(0, room));
+        // Recover only what could be kept: a full entry does no crypto work.
+        const admitted = novel
+            .slice(0, room)
+            .filter((signature) =>
+                QueueStorage.isRecoverable(entry.block, signature)
+            );
+        entry.block.expandSignatures(admitted);
         const timestamp = incoming.onChainTimestamp;
         if (timestamp !== undefined) entry.block.onChainTimestamp = timestamp;
     }

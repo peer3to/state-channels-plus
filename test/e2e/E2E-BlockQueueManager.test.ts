@@ -93,36 +93,48 @@ describe("E2E: BlockQueueManager", function () {
             Type.BlockConfirmation
         );
 
-        // Well-formed signatures that recover to nobody: the shape a flooder
-        // actually sends, not random bytes the queue rejects on sight.
+        // Real signatures from throwaway keys over random digests: recoverable,
+        // so the queue admits them, but recovering to nobody in the channel.
+        // That is what a flooder sends; unrecoverable values are rejected
+        // before the cap is ever reached and would prove nothing about it.
         const junkSignature = () =>
-            ethers.Signature.from({
-                r: ethers.hexlify(ethers.randomBytes(32)),
-                s: ethers.hexlify(
-                    ethers.concat([
-                        new Uint8Array([0x7f]),
-                        ethers.randomBytes(31)
-                    ])
-                ),
-                v: 27
-            }).serialized;
+            new ethers.SigningKey(ethers.hexlify(ethers.randomBytes(32))).sign(
+                ethers.hexlify(ethers.randomBytes(32))
+            ).serialized;
 
+        // Sent peer-to-peer over the production state-transition RPC, so the
+        // handshake guard runs and the observer derives the sender from the
+        // transport rather than from test-supplied data.
         for (let round = 0; round < 12; round++) {
-            await h.transition.ingestBlockConfirmationWait({
-                peerIndex: observer.index,
-                blockConfirmation: {
-                    ...confirmation,
-                    signatures: Array.from({ length: 200 }, junkSignature)
-                },
-                ingestOptions: { senderAddress: supplier.address },
-                keepConnection: true,
-                waitForProcessed: false
-            });
+            await h
+                .control(supplier)
+                .byzantine.sendBlockConfirmation(
+                    Codec.encode(
+                        {
+                            ...confirmation,
+                            signatures: Array.from(
+                                { length: 200 },
+                                junkSignature
+                            )
+                        },
+                        Type.BlockConfirmation
+                    ) as string,
+                    observer.address
+                )
+                .request();
         }
 
-        expect(
-            await h.control(observer).query.isBlockQueued(parked.hash).request()
-        ).to.equal(true);
+        await h.connectionBarrier.waitFor(
+            async () =>
+                await h
+                    .control(observer)
+                    .query.isBlockQueued(parked.hash)
+                    .request(),
+            {
+                timeoutMs: h.event.protocolEventTimeoutMs(),
+                timeoutMessage: "flooded block never reached the observer queue"
+            }
+        );
 
         const retention = await h
             .control(observer)
@@ -132,7 +144,10 @@ describe("E2E: BlockQueueManager", function () {
         // 2,400 offered, at most one cap retained, and the marker records it.
         expect(retention!.confirmationSignatures).to.equal(1024);
         expect(retention!.overflowed).to.equal(true);
-        // Attribution never outgrows what the block holds.
+        // Attribution is exercised, and never outgrows what the block holds:
+        // the sender came from the transport, so every retained signature is
+        // attributable to it.
+        expect(retention!.attributionKeys).to.be.greaterThan(0);
         expect(retention!.attributionKeys).to.be.at.most(1025);
         // Bounding is not rejection: the entry survives as a queued block.
         expect(

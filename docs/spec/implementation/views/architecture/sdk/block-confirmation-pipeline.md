@@ -28,9 +28,10 @@ Guarantees:
   mutex ([`INV-BCP-1-H2H41X`](block-confirmation-pipeline.md#inv-bcp-1-h2h41x), [`INV-BCP-3-GTHAHV`](block-confirmation-pipeline.md#inv-bcp-3-gthahv)).
 - The live state machine is never left holding the effects of a block that was
   not committed ([`INV-BCP-2-BVPQF4`](block-confirmation-pipeline.md#inv-bcp-2-bvpqf4)).
-- Signature merging is monotone and attributable: duplicate copies only add
-  signatures, and every stray signature can be traced to the transports that
-  supplied it ([`INV-BCP-4-16TP2N`](block-confirmation-pipeline.md#inv-bcp-4-16tp2n)).
+- Signature merging is monotone and attributable below the per-entry cap:
+  duplicate copies only add signatures until the cap is reached, after which
+  retention is first-come and a later signature is not kept. Every retained
+  signature can be traced to the transports that supplied it ([`INV-BCP-4-16TP2N`](block-confirmation-pipeline.md#inv-bcp-4-16tp2n)).
 
 Non-guarantees: no persistence across process restart (storage is in-memory);
 no gossip rate limiting (**Open question** in
