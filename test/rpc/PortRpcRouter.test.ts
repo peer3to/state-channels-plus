@@ -99,6 +99,26 @@ describe("PortRpcRouter", function () {
         other.close();
     });
 
+    it("refuses a request on a closed transport at once instead of timing out", async function () {
+        link = linkedRouters();
+        link.b.transport.close(true);
+        link.a.transport.close(true);
+
+        const started = Date.now();
+        let caught: Error | undefined;
+        try {
+            // a null timeout would otherwise wait forever on a dropped post
+            await link.a.far.probe.sum(1, 2).request({ timeoutMs: null });
+        } catch (error) {
+            caught = error as Error;
+        }
+        expect(caught?.message).to.equal(
+            "RPC request 'probe.sum' refused: the transport is closed"
+        );
+        // refused before any timer, not after one
+        expect(Date.now() - started).to.be.lessThan(1000);
+    });
+
     it("answers an unknown service or method with an error and keeps the line", async function () {
         link = linkedRouters();
         const far = link.a.far as unknown as {
