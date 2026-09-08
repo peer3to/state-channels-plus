@@ -209,6 +209,53 @@ describe("QueueStorage", () => {
             expect(storage.isBlockQueued(mockBlock)).to.equal(true);
         });
 
+        it("bounds merged confirmation signatures under a signature flood", () => {
+            // The sibling tests vary the SENDER against one copy of the block,
+            // so the merged signature set never grows. Vary the signatures
+            // instead: ingress authenticates the signed block, not each
+            // confirmation signature it carries, so one authenticated peer can
+            // resend the same hash forever with fresh junk signatures.
+            const hash = storage.queueBlock(mockBlock);
+            for (let i = 0; i < 300; i++) {
+                storage.queueBlock(
+                    Block.fromBlockConfirmation({
+                        ...mockBlockConfirmation,
+                        signatures: [sig()]
+                    })
+                );
+            }
+
+            const entry = storage.getQueuedEntry(hash)!;
+            expect(entry.block.confirmationSignatures.size).to.be.at.most(128);
+            // Overflow stays a marker, never a validity decision.
+            expect(entry.overflowedSources).to.equal(true);
+            expect(storage.isBlockQueued(mockBlock)).to.equal(true);
+        });
+
+        it("re-merging signatures already held does not consume cap budget", () => {
+            // Only novel signatures spend budget, so an honest peer resending
+            // the same copy never trips the marker.
+            const repeated = sig();
+            const hash = storage.queueBlock(
+                Block.fromBlockConfirmation({
+                    ...mockBlockConfirmation,
+                    signatures: [repeated]
+                })
+            );
+            for (let i = 0; i < 300; i++) {
+                storage.queueBlock(
+                    Block.fromBlockConfirmation({
+                        ...mockBlockConfirmation,
+                        signatures: [repeated]
+                    })
+                );
+            }
+
+            const entry = storage.getQueuedEntry(hash)!;
+            expect(entry.block.confirmationSignatures.size).to.equal(1);
+            expect(entry.overflowedSources).to.not.equal(true);
+        });
+
         it("junk-first: a flood that fills the cap first still lets a later valid copy process", () => {
             // Byzantine peer floods the hash to the cap BEFORE any honest copy.
             let hash!: Hash;

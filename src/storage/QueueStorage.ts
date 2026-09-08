@@ -29,6 +29,13 @@ export class QueueStorage {
     // unique junk signatures/sources for one block hash. Far above any real
     // participant union; overflow is retained as a marker, never rejected.
     private static readonly MAX_ENTRY_SOURCES = 128;
+    // Confirmation signatures are capped per entry for the same reason sources
+    // are. Ingress authenticates the signed block, not each confirmation
+    // signature it carries, so one authenticated peer can resend a single hash
+    // with fresh junk signatures; without this the merged set grows without
+    // limit. Set well above any legitimate participant count, so a real block
+    // never loses a signature it needs to become eligible.
+    private static readonly MAX_ENTRY_SIGNATURES = 128;
 
     private queuedBlocks: Map<Hash, QueuedBlockEntry> = new Map();
 
@@ -63,7 +70,7 @@ export class QueueStorage {
                 block.allSignatures,
                 options?.senderAddress
             );
-            existingEntry.block.mergeFrom(block);
+            this.mergeBlockCapped(existingEntry, block);
             this.queuedBlocks.set(block.hash, existingEntry);
             return block.hash;
         }
@@ -239,6 +246,23 @@ export class QueueStorage {
         for (const signature of signatures) {
             this.addSignatureSource(entry, signature, senderAddress);
         }
+    }
+
+    // Merge a further copy of a block already held, keeping the confirmation
+    // signature set inside the per-entry cap. Signatures already held are free:
+    // only novel ones consume budget, so an honest peer resending the same copy
+    // never trips the marker. The on-chain timestamp is not capped -- it is a
+    // single value read from chain observation, never from a gossiped payload.
+    private mergeBlockCapped(entry: QueuedBlockEntry, incoming: Block): void {
+        const held = entry.block.confirmationSignatures;
+        const novel = [...incoming.confirmationSignatures].filter(
+            (signature) => !held.has(signature)
+        );
+        const room = Math.max(QueueStorage.MAX_ENTRY_SIGNATURES - held.size, 0);
+        if (novel.length > room) entry.overflowedSources = true;
+        entry.block.expandSignatures(novel.slice(0, room));
+        const timestamp = incoming.onChainTimestamp;
+        if (timestamp !== undefined) entry.block.onChainTimestamp = timestamp;
     }
 
     // Capped inserts: retention stops at MAX_ENTRY_SOURCES and flips the
