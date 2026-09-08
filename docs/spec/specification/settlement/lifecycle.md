@@ -80,7 +80,7 @@ Participants submit a threshold-authorized open request to the base-layer adjudi
 application boundary accepts deposits and derives the genesis state; each off-chain participant
 then observes the canonical open event and initializes the same channel and fork.
 
-`open()` requires a non-zero channel id, no duplicate participants, a signature from **every**
+`open()` requires a non-zero channel id, at least two and at most a bounded maximum of participants, no duplicate participants, a signature from **every**
 listed participant over the encoded `OpenChannel`, and at least two successful deposits. Deposits
 run composably through the application boundary (`depositAssetsComposable`), atomically when
 `OpenChannel.isAtomic` is set. The successful joins become the first inbound message block; the

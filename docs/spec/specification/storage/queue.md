@@ -55,9 +55,11 @@ removes their signatures, but real. Attribution follows retention: a sender is c
 the signatures the entry kept, so the attribution map is never spent on signatures the block no
 longer holds.
 
-The signature cap is set far above any plausible participant union, because dropping a signature a
-block needs costs liveness. Nothing currently enforces a maximum union size, so that headroom is an
-assumption rather than a guarantee; closing it is future work.
+The signature cap is derived from the enforced maximum participant-union size, not assumed above
+it. A valid block carries at most one confirmation per participant and the union is bounded at both
+open and join, so a block needing every participant's confirmation still fits with margin. Dropping
+a signature a block needs would cost liveness, because agreement requires the whole union; that
+cannot happen while the cap exceeds the enforced maximum.
 
 **<a id="req-qstore-3-dekyg6"></a>`REQ-QSTORE-3-DEKYG6` — Coordinate dequeue rules.** Dequeue-at removes and returns every entry at exactly
 (fork, height). Priority dequeue selects the _lowest_ queued height on the fork not exceeding the
@@ -94,6 +96,4 @@ boundary.
 ## Future Work
 
 _Non-normative._ Age-based eviction for never-eligible entries once the shared pruning policy
-exists; queue-depth metrics for the communication layer's admission control. Enforce a maximum
-participant-union size so the signature cap can be derived from it rather than assumed to exceed it,
-which would also remove the first-come residual for any legitimate signer.
+exists; queue-depth metrics for the communication layer's admission control.

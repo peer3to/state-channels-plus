@@ -3,7 +3,17 @@ pragma solidity ^0.8.8;
 //Channel Open
 error ErrorInvalidJoinChannel();
 error ErrorAtLeastTwoParticipantsRequired();
+error ErrorTooManyParticipants(uint256 requested, uint256 maximum);
 error ErrorDuplicateParticipant();
+
+// Upper bound on a channel's participant union, counterpart to the
+// two-participant minimum above. Off-chain agreement needs a signature from
+// every participant, so the union size bounds how many confirmation signatures
+// a valid block carries and therefore what the client must be able to retain;
+// without a maximum on chain that retention bound can only be assumed. The
+// duplicate-participant scan at open is quadratic in the union, so a bound also
+// keeps that loop's gas finite.
+uint256 constant MAX_CHANNEL_PARTICIPANTS = 256;
 
 //Calldata errors
 error ErrorBlockCalldataAlreadyPosted();

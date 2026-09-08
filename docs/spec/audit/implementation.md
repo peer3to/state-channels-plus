@@ -16,9 +16,9 @@ Two residuals are assessed as accepted for this change and are visible in the ma
 Retention above the cap is first-come, so a signature offered while an entry is overflowed is not
 retained until validation strips unexpected signatures and frees room; this is specified in
 [`REQ-QSTORE-2-VYWJAQ`](../specification/storage/queue.md#req-qstore-2-vywjaq) and covered by an
-exact test. And the cap is set above any plausible participant union rather than derived from an
-enforced one — nothing bounds union size on chain, while agreement requires the whole union — so the
-headroom is an assumption. Deriving the cap from an enforced maximum is recorded as Future Work in
+exact test. The cap is now derived from an enforced maximum union size rather than assumed above one:
+`open` and `_processJoinChannel` both reject a union larger than MAX_CHANNEL_PARTICIPANTS, so a
+block needing every participant's confirmation provably fits. Deriving the cap from an enforced maximum is recorded as Future Work in
 the owning specification, End-to-end evidence now exercises the peer-observable flood over the production
 state-transition RPC and pins the retained bound. The stripping and punishment half of that path
 has no end-to-end evidence at all — direct storage tests cannot observe transport blacklisting —

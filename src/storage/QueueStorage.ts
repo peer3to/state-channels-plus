@@ -36,14 +36,17 @@ export class QueueStorage {
     // with fresh junk signatures; without this the merged set grows without
     // limit.
     //
-    // The value is deliberately far above any plausible channel and is an
-    // interim: dropping a signature a block needs costs liveness, because
-    // AgreementManager.didEveryoneSignBlock requires the whole participant
-    // union, and NOTHING currently enforces a maximum union size -- neither
-    // StateChannelManagerProxy.openChannel nor JoinChannelFacet bounds it. Once
-    // a participant maximum is enforced on chain this becomes that maximum plus
-    // a margin, and the bound becomes provable instead of assumed.
-    private static readonly MAX_ENTRY_SIGNATURES = 1024;
+    // Derived from the on-chain bound, not assumed above it. A valid block
+    // carries at most one confirmation per participant, the channel union is
+    // capped at MAX_CHANNEL_PARTICIPANTS (Errors.sol) at both open and join,
+    // and the author's own signature is held separately -- so a block that
+    // needs every participant's confirmation still fits with margin. Dropping
+    // a signature a block needs would cost liveness, because
+    // AgreementManager.didEveryoneSignBlock requires the whole union; that
+    // cannot happen while this exceeds the enforced maximum.
+    private static readonly MAX_CHANNEL_PARTICIPANTS = 256;
+    private static readonly MAX_ENTRY_SIGNATURES =
+        QueueStorage.MAX_CHANNEL_PARTICIPANTS * 4;
     // A cardinality cap alone bounds nothing: ingress authenticates the signed
     // block, never the confirmation values attached to it, and
     // Block.fromBlockConfirmation casts them straight into a Set. A frame may
