@@ -113,7 +113,7 @@ describe("PortRpcRouter", function () {
             caught = error as Error;
         }
         expect(caught?.message).to.equal(
-            "RPC request 'probe.sum' refused: the transport is closed"
+            "RPC request 'probe.sum' refused: the transport is closed or disposed"
         );
         // refused before any timer, not after one
         expect(Date.now() - started).to.be.lessThan(1000);

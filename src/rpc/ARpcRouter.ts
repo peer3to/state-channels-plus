@@ -150,7 +150,7 @@ export abstract class ARpcRouter<TRoot extends object>
         if (transport.isClosed) {
             return Promise.reject(
                 new Error(
-                    `RPC request '${operation}' refused: the transport is closed`
+                    `RPC request '${operation}' refused: the transport is closed or disposed`
                 )
             );
         }
