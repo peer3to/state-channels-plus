@@ -530,6 +530,34 @@ describe("QueueStorage", () => {
             ).to.have.lengthOf(1);
         });
 
+        it("bounds signatures merged back through the restore path", () => {
+            // restoreEntry is the sanctioned re-queue path, taken on every
+            // not-ready outcome. Capping only queueBlock and createEntry lets a
+            // dequeue/restore cycle add a fresh capful each time.
+            const first = Array.from({ length: 128 }, () => sig());
+            storage.queueBlock(
+                Block.fromBlockConfirmation({
+                    ...mockBlockConfirmation,
+                    signatures: first
+                })
+            );
+            const [dequeued] = storage.tryDequeueAt(mockForkId, mockHeight);
+
+            // A disjoint capful arrives while the entry is out of the queue.
+            const second = Array.from({ length: 128 }, () => sig());
+            storage.queueBlock(
+                Block.fromBlockConfirmation({
+                    ...mockBlockConfirmation,
+                    signatures: second
+                })
+            );
+            storage.restoreEntry(dequeued);
+
+            const merged = storage.getQueuedEntry(mockBlock.hash)!;
+            expect(merged.block.confirmationSignatures.size).to.be.at.most(128);
+            expect(merged.overflowedSources).to.equal(true);
+        });
+
         it("should merge a restored entry with a copy queued meanwhile", () => {
             const senderA = ethers.Wallet.createRandom().address;
             const senderB = ethers.Wallet.createRandom().address;

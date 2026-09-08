@@ -173,7 +173,7 @@ export class QueueStorage {
             return;
         }
 
-        existing.block.mergeFrom(entry.block);
+        this.mergeBlockCapped(existing, entry.block);
         existing.firstSeenAt = Math.min(
             existing.firstSeenAt,
             entry.firstSeenAt
