@@ -55,9 +55,18 @@ export async function assertWorkerHostMonitor(
     host.start((handler) => {
         receive = handler;
     });
+    // the worker announces its log identity on the link as soon as init
+    // attaches it, so a reply is the one carrying this request's id
     const request = (message: WorkerRequestMessage) =>
         new Promise<WorkerHostMessage>((resolve) => {
-            respond = resolve;
+            respond = (reply) => {
+                if (
+                    reply.type === "response" &&
+                    reply.requestId === message.requestId
+                ) {
+                    resolve(reply);
+                }
+            };
             receive(structuredClone(message));
         });
     try {

@@ -56,6 +56,9 @@ class ContractExecutorWorkerHost {
     private logger: Logger | undefined;
     private readonly post: (response: WorkerHostMessage) => void;
     private logPortHandle: LogPortHandle | undefined;
+    /** a supplied logger stays the caller's to dispose; one built here is this
+     *  worker's own and leaves the bus with it */
+    private ownsLogger = false;
     private readonly monitorOptions:
         | PerformanceMonitorInternalOptions
         | undefined;
@@ -83,6 +86,7 @@ class ContractExecutorWorkerHost {
                 { attachErrorListener: true }
             );
         this.logger = logger;
+        this.ownsLogger = !this.suppliedLogger;
         this.logPortHandle = logger.addLogPort({
             post: (message) => this.post({ type: "logControl", message }),
             remoteRealm: "parent"
@@ -126,7 +130,8 @@ class ContractExecutorWorkerHost {
         this.logPortHandle?.remove();
         this.logPortHandle = undefined;
         this.logger?.stopPerformanceMonitoring();
-        this.logger?.dispose();
+        if (this.ownsLogger) this.logger?.dispose();
+        this.ownsLogger = false;
         this.logger = undefined;
         this.executor = undefined;
         return null;

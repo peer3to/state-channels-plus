@@ -121,6 +121,12 @@ export class TestSession {
             options.timeoutMs ?? 0
         );
         this.detachedErrorAllowlist.push(options.includes);
+        // the same rejection can be collected twice (node emits it, mocha
+        // re-emits it), so claiming it drops the copies already collected as
+        // well as the ones still to come
+        this.detachedErrors = this.detachedErrors.filter(
+            (collected) => !collected.message.includes(options.includes)
+        );
         if (!err) {
             if (options.required ?? true) {
                 throw new Error(
