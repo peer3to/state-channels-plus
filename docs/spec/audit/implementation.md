@@ -3,6 +3,26 @@
 > **Agent assessment:** In progress.
 > **Engineer disposition:** Pending.
 
+Queue retention is now bounded in two dimensions rather than one. The per-entry source caps were
+already in place; the block's own confirmation-signature set was not bounded at all, and intake
+authenticates only the signed block a copy carries, so one authenticated peer could grow a single
+entry without limit. All three write paths — the creating copy, a duplicate merge, and restore —
+now cap retention, drop values that are not recoverable ECDSA signatures, and confine attribution to
+signatures the entry kept. Bounding cardinality alone would not have bounded memory: confirmation
+values were never format-checked and a frame may approach the transport limit, so the byte bound
+depends on the value check rather than the count.
+
+Two residuals are assessed as accepted for this change and are visible in the maintained layers.
+Retention above the cap is first-come, so a signature offered while an entry is overflowed is not
+retained until validation strips unexpected signatures and frees room; this is specified in
+[`REQ-QSTORE-2-VYWJAQ`](../specification/storage/queue.md#req-qstore-2-vywjaq) and covered by an
+exact test. And the cap is set above any plausible participant union rather than derived from an
+enforced one — nothing bounds union size on chain, while agreement requires the whole union — so the
+headroom is an assumption. Deriving the cap from an enforced maximum is recorded as Future Work in
+the owning specification, and no end-to-end evidence yet exercises the peer-observable flood,
+stripping and punishment path; the implementation mirror carries both as named gaps rather than
+claiming coverage.
+
 The simplification review fixes narrow bytes32 inputs through an assertion signature and remove the remaining queue-key forwarding method. The separate import-order change preserves all non-import executable statements, all imported bindings, and side-effect import boundaries. Runtime initialization order is checked by the distributed and browser gates; TypeScript suppression comments remain attached to their original imports.
 
 Post-handshake connection ownership is now centralized in `P2PManager`. Local channel status is
