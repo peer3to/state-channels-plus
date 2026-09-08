@@ -24,5 +24,5 @@ report but are kept here.
 
 | Test declaration                                                                                                                  | Covers                                                                                                 |
 | --------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------ |
-| [`fetch-logs > marks a persisted log the server read short`](../../../../../../test/scripts/fetchLogs.test.ts#L41) (line 41)      | [`REQ-LOG-7-M2RC5W.T1.P7`](../../../../specification/runtime/log-collection.md#req-log-7-m2rc5w.t1.p7) |
-| [`fetch-logs > writes no marker for a read the server completed`](../../../../../../test/scripts/fetchLogs.test.ts#L82) (line 82) | —                                                                                                      |
+| [`fetch-logs > marks a persisted log the server read short`](../../../../../../test/scripts/fetchLogs.test.ts#L40) (line 40)      | [`REQ-LOG-7-M2RC5W.T1.P7`](../../../../specification/runtime/log-collection.md#req-log-7-m2rc5w.t1.p7) |
+| [`fetch-logs > writes no marker for a read the server completed`](../../../../../../test/scripts/fetchLogs.test.ts#L81) (line 81) | —                                                                                                      |

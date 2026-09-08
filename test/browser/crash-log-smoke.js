@@ -1,3 +1,4 @@
+// @spec-test-coverage-ignore: browser page fixture driven by the mapped browser worker gate
 import { Buffer } from "buffer";
 
 globalThis.Buffer ||= Buffer;
