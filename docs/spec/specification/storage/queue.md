@@ -34,13 +34,18 @@ preference rule between conflicting values is needed, because such values cannot
 coexist: the on-chain calldata commitment is author-bound, first-post-wins, and non-overwritable
 ([data-availability.md](../security/data-availability.md)), and the annotation is populated only
 from chain observation, never from gossiped payloads. Merge is idempotent and arrival-order
-independent.
+independent **within the retention cap**: what is retained is attributed exactly and converges
+regardless of arrival order, while which sources are retained at all is bounded by
+[`REQ-QSTORE-2-VYWJAQ`](queue.md#req-qstore-2-vywjaq) and therefore depends on arrival order once
+the cap is reached.
 
 **<a id="req-qstore-2-vywjaq"></a>`REQ-QSTORE-2-VYWJAQ` — Structural caps as markers, not rejections.** Per-entry attribution retention is
 capped. Reaching the cap sets an overflow marker and stops _retention growth_; it never rejects a
 later copy, never evicts already-tracked sources, and never influences any validity decision — the
-marker is an attribution/rate-limiting hint only. A junk-first flood therefore cannot crowd out an
-honest source or block a later valid copy.
+marker is an attribution/rate-limiting hint only. A junk-first flood therefore cannot evict an
+already-tracked honest source, cannot cause a later valid copy to be rejected, and cannot influence
+any validity decision. It can exhaust the retention budget: a source first seen after the cap is
+processed but not recorded, so attribution is best-effort evidence and never a completeness claim.
 
 **<a id="req-qstore-3-dekyg6"></a>`REQ-QSTORE-3-DEKYG6` — Coordinate dequeue rules.** Dequeue-at removes and returns every entry at exactly
 (fork, height). Priority dequeue selects the _lowest_ queued height on the fork not exceeding the
@@ -50,7 +55,9 @@ entry leaves both the entry map and the coordinate index.
 ## Assumptions and constraints
 
 - The queue holds _unvalidated_ knowledge by design; everything read from it re-enters pipeline
-  validation. Attribution must therefore be preserved exactly — it is future evidence.
+  validation. Retained attribution must therefore be preserved exactly — it is future evidence —
+  but retention itself is capped, so attribution is evidence of what was seen and recorded, never a
+  complete record of who sent what.
 - Entries may never become eligible; retention is bounded per entry ([`REQ-BLOCK-PIPE-5-WJ31RG`](../block-progression/block-processing.md#req-block-pipe-5-wj31rg)) and by the
   shared retention rules ([durability.md](./durability.md), [`REQ-STOR-4-MF6FT6`](durability.md#req-stor-4-mf6ft6)).
 - Frequency-bounding of intake is the communication layer's duty ([`REQ-RPC-5-CV1R1Y`](../peer-communication/rpc.md#req-rpc-5-cv1r1y)); the queue bounds
@@ -58,8 +65,10 @@ entry leaves both the entry map and the coordinate index.
 
 ## Security considerations
 
-This module is the direct target of flooding adversaries: unique junk signatures or sources for one
-hash (bounded by the caps), never-eligible blocks (bounded by retention rules), and attribution
+This module is the direct target of flooding adversaries: unique junk sources for one hash (bounded
+by the caps), unique junk _signatures_ for one hash (which the caps MUST bound and the current
+implementation does not — an authenticated peer can resend one block hash with fresh confirmation
+signatures and grow a single entry without limit), never-eligible blocks (bounded by retention rules), and attribution
 laundering (prevented by copy-scoped attribution — a sender is credited only with what its own copy
 carried). The queue must keep merge work cheap enough that intake never needs the execution
 boundary.
