@@ -174,3 +174,12 @@ unknown endpoints, local service exceptions, and stale-transport address fallbac
 separates neutral profile loss from repeated wrong-topic abuse. Handshake E2Es prove blacklist for
 attributable timing, signature, and duplicate-ack faults, while response timeout remains
 disconnect-only. Custom-RPC E2Es prove blacklist without affecting an unrelated session.
+
+## Refusal-attribution evidence — 2026-09-08
+
+Two real loopback discovery cases select the suspending side by address order rather than index. The
+takeover case counts handshakes on the peer whose loop the suspension stopped, so a later handshake
+can only come from the other side, and then proves the suspension still refuses it. The
+attribution case suspends from the non-dialing side and holds one full agreement window after the
+first redial, with both peers' exclusion state as the oracle: a refusal does not become an exclusion
+on the refused peer, and a suspension does not escalate on the suspending one.

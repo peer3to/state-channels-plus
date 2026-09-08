@@ -553,7 +553,10 @@ identity's discovery handle and never lifts on its own. A **reconnect ban**
 (`ProfileManager.banReconnect`) bans the discovery handle too and is refused at handshake
 verification, but writes no blacklist mark and is lifted by whoever placed it. It exists because
 discovery re-dials any peer that shares an observed topic until its peer info is banned — closing a
-transport alone only pauses the peer. A blacklist implies a reconnect ban; lifting a reconnect ban
+transport alone only pauses the peer. Either ban binds only the node that placed it: it stops that
+node's own dials, while the peer — never told about it — keeps dialing and is refused at handshake
+verification. The refused attempt closes without an ack, and the ack timeout deliberately draws no
+consequence from a closed transport, so refusing costs the refused peer nothing. A blacklist implies a reconnect ban; lifting a reconnect ban
 never lifts a blacklist, and neither the WebRTC-close fallback release nor the WebRTC→Holepunch
 downgrade release lifts a reconnect ban.
 
@@ -571,7 +574,8 @@ downgrade release lifts a reconnect ban.
 | Malformed handshake request / skew violation | `initHandshakeService` | Disconnect + request error |
 | Duplicate handshake ack | `initHandshakeService` | Disconnect + blacklist |
 | Handshake response invalid/timeout (outgoing) | `initHandshakeService` | Disconnect |
-| Handshake ack timeout | `initHandshakeService` | Blacklist by verified address, else disconnect |
+| Handshake ack timeout, transport still open | `initHandshakeService` | Blacklist by verified address, else disconnect |
+| Handshake ack timeout, transport already closed | `initHandshakeService` | Log and return; no disconnect, no blacklist (the close explains the missing ack, so a peer's refusal is not answered with an exclusion) |
 | Response signer already blacklisted | `initHandshakeService` | Refuse + disconnect; also ban the discovery handle the transport arrived on (a rotated key must not bypass exclusion). No new blacklist |
 | Response signer reconnect-banned | `initHandshakeService` | Refuse + disconnect. No blacklist, no extra handle ban |
 | Non-selected lobby candidate at commitment handoff | `lobbyMatchingService` | Disconnect + session reconnect ban; lifted when the lobby leaves the topic. Not an exclusion |

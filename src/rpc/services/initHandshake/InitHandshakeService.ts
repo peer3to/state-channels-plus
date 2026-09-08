@@ -364,6 +364,24 @@ class InitHandshakeService extends ARpcService<InitHandshakeRpcMethods> {
                     transport.peerAddress ||
                     this.verifiedPeerAddressByTransport.get(transport);
 
+                // A closed transport cannot carry the ack, so its absence is
+                // explained by the close and proves nothing about the peer.
+                // The exclusion is for a peer that stays connected and
+                // withholds the ack. Without this, a peer that legitimately
+                // refuses us mid-handshake — an exclusion or a reconnect
+                // suspension it placed, both of which close without acking —
+                // is excluded by us for refusing, turning its one-sided
+                // suspension into a mutual permanent exclusion.
+                if (transport.isClosed) {
+                    LoggerUtils.logInitHandshakeMessage(this.logger, transport, {
+                        direction: "local",
+                        message: "ack-timeout",
+                        verifiedPeerAddress: peerAddress,
+                        reason: "transport closed before the handshake ack"
+                    });
+                    return;
+                }
+
                 LoggerUtils.logInitHandshakeMessage(this.logger, transport, {
                     direction: "local",
                     message: "ack-timeout",

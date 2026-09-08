@@ -1,5 +1,8 @@
 import { sleep } from "@/utils";
-import { MathTestSession as TestSession } from "@test/harness";
+import {
+    MathTestSession as TestSession,
+    MIN_TEST_TIME_CONFIG
+} from "@test/harness";
 import { waitFor } from "@test/utils/waitFor";
 import { expect } from "chai";
 import { ethers } from "ethers";
@@ -75,6 +78,144 @@ describe("LocalDiscoveryServer topic lifecycle", function () {
         expect(
             await h.control(primary).query.getOpenConnectionCount().request()
         ).to.equal(0);
+    });
+
+    it("takes the dial over when the primary dialer suspends the peer and stops dialing", async function () {
+        const h = TestSession.getHarness();
+        await h.setup(2, { autoConnect: false });
+        const topic = ethers.id("local-discovery-suspended-peer-dials-back");
+        const primaryIndex = h.network.lobbyRoleIndices()[0];
+        const primary = h.peers[primaryIndex];
+        const other = h.peers[1 - primaryIndex];
+
+        await Promise.all(
+            h.peers.map((peer) =>
+                h.control(peer).network.joinSelectedKey(topic).request()
+            )
+        );
+        await h.network.waitForP2PConnections();
+        // Counted on the primary: its own dial loop is what the suspension
+        // stops, so any further handshake it runs came from the other side.
+        await h.control(primary).stub.countInitHandshakeCalls().request();
+
+        try {
+            expect(
+                await h
+                    .control(primary)
+                    .network.banReconnect(other.address)
+                    .request()
+            ).to.equal(true);
+            expect(
+                await h
+                    .control(primary)
+                    .network.closePeerTransportByAddress(other.address)
+                    .request()
+            ).to.equal(true);
+
+            await waitFor(
+                async () =>
+                    (await h
+                        .control(primary)
+                        .stub.getInitHandshakeCallCount()
+                        .request()) > 0,
+                h.event.protocolEventTimeoutMs(),
+                100
+            );
+            // The suspension still refuses what the takeover dialed in.
+            expect(
+                await h
+                    .control(primary)
+                    .network.getTransportToken(other.address)
+                    .request()
+            ).to.equal(null);
+            expect(
+                await h
+                    .control(primary)
+                    .query.isReconnectBanned(other.address)
+                    .request()
+            ).to.equal(true);
+        } finally {
+            await h
+                .control(primary)
+                .network.allowReconnect(other.address)
+                .request();
+            await Promise.all(
+                h.peers.map((peer) =>
+                    h.control(peer).network.leaveSelectedKey(topic).request()
+                )
+            );
+        }
+    });
+
+    it("does not exclude a peer whose refusal closes the transport before the handshake ack", async function () {
+        const h = TestSession.getHarness();
+        await h.setup(2, { autoConnect: false });
+        const topic = ethers.id("local-discovery-refusal-is-not-an-exclusion");
+        const primaryIndex = h.network.lobbyRoleIndices()[0];
+        const primary = h.peers[primaryIndex];
+        const other = h.peers[1 - primaryIndex];
+
+        await Promise.all(
+            h.peers.map((peer) =>
+                h.control(peer).network.joinSelectedKey(topic).request()
+            )
+        );
+        await h.network.waitForP2PConnections();
+        await h.control(primary).stub.countInitHandshakeCalls().request();
+
+        try {
+            // Suspended by the peer that does not own the dial loop, so the
+            // primary keeps redialing into a refusal it is never told about.
+            expect(
+                await h
+                    .control(other)
+                    .network.banReconnect(primary.address)
+                    .request()
+            ).to.equal(true);
+            expect(
+                await h
+                    .control(other)
+                    .network.closePeerTransportByAddress(primary.address)
+                    .request()
+            ).to.equal(true);
+
+            await waitFor(
+                async () =>
+                    (await h
+                        .control(primary)
+                        .stub.getInitHandshakeCallCount()
+                        .request()) > 0,
+                h.event.protocolEventTimeoutMs(),
+                100
+            );
+            // The refusal closes before acking, so the redialing peer's ack
+            // timeout has nothing to attribute. Hold one full timeout window.
+            await sleep(MIN_TEST_TIME_CONFIG.agreementTime * 1000);
+            expect(
+                await h
+                    .control(primary)
+                    .query.isBlacklisted(other.address)
+                    .request(),
+                "a refusal must not become an exclusion on the refused peer"
+            ).to.equal(false);
+            expect(
+                await h
+                    .control(other)
+                    .query.isBlacklisted(primary.address)
+                    .request(),
+                "a suspension must not escalate to an exclusion"
+            ).to.equal(false);
+        } finally {
+            await h
+                .control(other)
+                .network.allowReconnect(primary.address)
+                .request();
+            await Promise.all(
+                h.peers.map((peer) =>
+                    h.control(peer).network.leaveSelectedKey(topic).request()
+                )
+            );
+        }
     });
 
     it("does not redial a peer blacklisted before its transport closes", async function () {

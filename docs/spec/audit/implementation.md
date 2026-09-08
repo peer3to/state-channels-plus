@@ -111,3 +111,15 @@ wire violations. The helper prefers the authenticated address, so a fault receiv
 transport still blacklists the current profile and closes both current and reporting transports.
 Lifecycle cleanup, network loss, timeouts without proof, response-send failure, and local dispatch
 exceptions continue to call `disconnectConnection`.
+
+## Refusal-attribution and pair-level redial — 2026-09-08
+
+The handshake ack timeout now returns before any consequence when the transport is already closed,
+logging the same `ack-timeout` message with a distinct reason. The verified-but-silent exclusion is
+unchanged for a transport that is still open. The Node local-discovery backend arms a secondary-dial
+takeover on every inbound-accepted transport: when the canonical (lower-address) dialer stops its
+loop because of a suspension it placed, the accepting side dials after a fixed window longer than
+the primary's whole backoff ramp, so a still-dialing primary reconnects first and the takeover skips
+as `peer-connected`, while a peer this side excluded skips as `blacklisted`. The takeover is
+session-owned — scheduled through the session timer set and re-checking session identity — so leave
+and cleanup cancel it.

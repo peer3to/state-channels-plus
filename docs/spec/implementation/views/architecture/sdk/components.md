@@ -32,8 +32,11 @@
   `ProfileManager`; `shouldSignBlock` and handshake admission consult it.
   `ProfileManager` also owns the weaker **reconnect ban** (`banReconnect` /
   `allowReconnect` / `isReconnectBanned`, wrapped on `P2PManager`): it stops
-  discovery from re-dialing or admitting an identity and is refused at handshake
-  verification, but records no exclusion and lifts with its cause. `P2PManager`
+  this node's own discovery from re-dialing or admitting an identity and refuses
+  it at handshake verification, but records no exclusion and lifts with its
+  cause. The banned peer is never told, so it keeps dialing and is refused at
+  admission — which is also why the local discovery backend hands the dial to
+  the other side of a pair when the side that owned the dial loop bans. `P2PManager`
   additionally tracks the discovery keys it observes, so
   `leaveAllDiscoveryKeys` can stop every redial before transports are closed.
 - **RPC model.** [`MainRpcService`](../../../../../../src/rpc/MainRpcService.ts#L10) is

@@ -49,3 +49,15 @@ RPC ingress, handshake, and lobby matching now use one consequence rule. A malfo
 protocol action blacklists only when an authenticated peer identity makes the fault attributable.
 Transport loss, response timeout, cleanup, send failure, and an unclassified local handler error
 remain disconnect-only.
+
+## 2026-09-08 — Refusal is not silence, and a suspension is one-sided
+
+[`REQ-AUTH-4-JWCF71`](../specification/peer-communication/handshake.md#req-auth-4-jwcf71) now states
+that silence is attributable only while the transport that owed the message is still open: a missing
+acknowledgement on an already closed transport penalizes nobody, even a peer already verified. This
+closes the path by which a peer's own refusal — an exclusion or a reconnect suspension it placed,
+both of which close without acknowledging — was answered with an exclusion by the refused peer.
+[`REQ-LOBBY-9-N894C0`](../specification/peer-communication/lobby-matching.md#req-lobby-9-n894c0) now
+says explicitly that a suspension binds only the node holding it, that the suspended peer keeps
+attempting and is refused at admission, and that the replacement obligation is pair-level, so one
+side's local suspension can never leave the pair with no side attempting reconnection.
