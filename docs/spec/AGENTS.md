@@ -195,7 +195,8 @@ reruns each generator in check mode. It never authors or repairs a specification
 verification subject. Agents must resolve each reported gap in the correct maintained layer or leave the
 genuine missing behavior/evidence explicit.
 
-Inspect all five files under `generated/`:
+`generated/` is gitignored and not committed. Run `yarn spec:refresh` locally to (re)build it, then
+inspect all five files under `generated/`:
 
 - `specification-index.md`: specification IDs that do not appear in a specification test plan;
 - `implementation-coverage.md`: missing specification/implementation counterparts and unreferenced source files;
