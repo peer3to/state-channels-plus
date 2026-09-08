@@ -266,9 +266,122 @@ describe("QueueStorage", () => {
 
             const entry = storage.getQueuedEntry(hash)!;
             const held = entry.block.allSignatures;
+            // Existence first: a loop over keys alone passes on an empty map.
+            expect(entry.signatureSources.size).to.be.greaterThan(0);
+            // Every retained signature is attributed...
+            for (const signature of held) {
+                expect(entry.signatureSources.has(signature)).to.equal(true);
+            }
+            // ...and nothing else is.
+            expect(entry.signatureSources.size).to.equal(held.size);
+            for (const peers of entry.signatureSources.values()) {
+                expect([...peers]).to.deep.equal([sender]);
+            }
+        });
+
+        it("attributes only retained signatures through merge and restore", () => {
+            // The creation path is not the only one that can record a key the
+            // block does not hold.
+            const senderA = factory.randomAddress();
+            const senderB = factory.randomAddress();
+            const first = Array.from({ length: 1024 }, () => sig());
+            const hash = storage.queueBlock(
+                Block.fromBlockConfirmation({
+                    ...mockBlockConfirmation,
+                    signatures: first
+                }),
+                { senderAddress: senderA }
+            );
+
+            // A disjoint capful cannot fit; none of it may be attributed.
+            const second = Array.from({ length: 64 }, () => sig());
+            storage.queueBlock(
+                Block.fromBlockConfirmation({
+                    ...mockBlockConfirmation,
+                    signatures: second
+                }),
+                { senderAddress: senderB }
+            );
+
+            const entry = storage.getQueuedEntry(hash)!;
+            const held = entry.block.allSignatures;
+            expect(entry.signatureSources.size).to.be.greaterThan(0);
             for (const signature of entry.signatureSources.keys()) {
                 expect(held.has(signature)).to.equal(true);
             }
+            for (const signature of second) {
+                expect(entry.signatureSources.has(signature)).to.equal(false);
+            }
+        });
+
+        it("restore does not attribute signatures the capped merge rejected", () => {
+            // The restored entry holds its own signatures legitimately, but the
+            // queued copy is already full of disjoint ones, so none of them fit
+            // and none may be attributed.
+            const sender = factory.randomAddress();
+            const mine = Array.from({ length: 64 }, () => sig());
+            storage.queueBlock(
+                Block.fromBlockConfirmation({
+                    ...mockBlockConfirmation,
+                    signatures: mine
+                }),
+                { senderAddress: sender }
+            );
+            const [dequeued] = storage.tryDequeueAt(mockForkId, mockHeight);
+
+            // A full capful of other signatures arrives while it is out.
+            storage.queueBlock(
+                Block.fromBlockConfirmation({
+                    ...mockBlockConfirmation,
+                    signatures: Array.from({ length: 1024 }, () => sig())
+                })
+            );
+            storage.restoreEntry(dequeued);
+
+            const merged = storage.getQueuedEntry(mockBlock.hash)!;
+            const held = merged.block.allSignatures;
+            for (const signature of mine) {
+                expect(held.has(signature)).to.equal(false);
+                expect(merged.signatureSources.has(signature)).to.equal(false);
+            }
+            for (const signature of merged.signatureSources.keys()) {
+                expect(held.has(signature)).to.equal(true);
+            }
+        });
+
+        it("drops malformed signature values instead of retaining them", () => {
+            // The count cap bounds nothing while values are unvalidated: a
+            // frame may approach 16 MiB and confirmation values are never
+            // format-checked at ingress.
+            const oversized = "0x" + "ab".repeat(4096);
+            const hash = storage.queueBlock(
+                Block.fromBlockConfirmation({
+                    ...mockBlockConfirmation,
+                    signatures: [oversized, sig()]
+                })
+            );
+
+            const entry = storage.getQueuedEntry(hash)!;
+            expect(entry.block.confirmationSignatures.has(oversized)).to.equal(
+                false
+            );
+            expect(entry.block.confirmationSignatures.size).to.equal(1);
+            // Never a validity decision: the block stays queued.
+            expect(storage.isBlockQueued(mockBlock)).to.equal(true);
+        });
+
+        it("normalizes an entry expanded past the cap before restoring it", () => {
+            // restoreEntry takes an object the caller held across a dequeue.
+            const hash = storage.queueBlock(mockBlock);
+            const [dequeued] = storage.tryDequeueAt(mockForkId, mockHeight);
+            dequeued.block.expandSignatures(
+                Array.from({ length: 1100 }, () => sig())
+            );
+            storage.restoreEntry(dequeued);
+
+            const restored = storage.getQueuedEntry(hash)!;
+            expect(restored.block.confirmationSignatures.size).to.equal(1024);
+            expect(restored.overflowedSources).to.equal(true);
         });
 
         it("first-come retention: an honest copy after overflow is not retained", () => {

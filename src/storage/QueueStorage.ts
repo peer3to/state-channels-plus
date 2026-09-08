@@ -2,6 +2,7 @@ import { coordinateKey, CoordinateKey } from "./keys";
 import Clock from "@/Clock";
 import { Block } from "@/models";
 import { Address, BlockHeight, ForkId, Hash, Signature } from "@/types/types";
+import { ethers } from "ethers";
 
 export type QueueBlockOptions = {
     senderAddress?: Address;
@@ -43,6 +44,19 @@ export class QueueStorage {
     // a participant maximum is enforced on chain this becomes that maximum plus
     // a margin, and the bound becomes provable instead of assumed.
     private static readonly MAX_ENTRY_SIGNATURES = 1024;
+    // A cardinality cap alone bounds nothing: ingress authenticates the signed
+    // block, never the confirmation values attached to it, and
+    // Block.fromBlockConfirmation casts them straight into a Set. A frame may
+    // approach MAX_RPC_FRAME_BYTES, so 1024 unvalidated strings can hold orders
+    // of magnitude more memory than 1024 signatures. Only a canonical 65-byte
+    // ECDSA signature can ever recover to a participant, so anything else is
+    // retained by nobody and dropped here — which makes the count cap a real
+    // byte bound: MAX_ENTRY_SIGNATURES * 65 bytes.
+    private static readonly SIGNATURE_BYTES = 65;
+
+    private static isCanonicalSignature(signature: Signature): boolean {
+        return ethers.isHexString(signature, QueueStorage.SIGNATURE_BYTES);
+    }
 
     private queuedBlocks: Map<Hash, QueuedBlockEntry> = new Map();
 
@@ -74,11 +88,20 @@ export class QueueStorage {
     // signatures is retained whole otherwise, and capping only the merge path
     // just moves the flood into the opening request.
     private capSignatures(entry: QueuedBlockEntry): void {
-        const held = entry.block.confirmationSignatures;
-        if (held.size <= QueueStorage.MAX_ENTRY_SIGNATURES) return;
-        const surplus = [...held].slice(QueueStorage.MAX_ENTRY_SIGNATURES);
-        entry.block.removeConfirmationSignatures(new Set(surplus));
-        entry.overflowedSources = true;
+        const held = [...entry.block.confirmationSignatures];
+        const malformed = held.filter(
+            (signature) => !QueueStorage.isCanonicalSignature(signature)
+        );
+        const canonical = held.filter((signature) =>
+            QueueStorage.isCanonicalSignature(signature)
+        );
+        const surplus = canonical.slice(QueueStorage.MAX_ENTRY_SIGNATURES);
+        if (malformed.length || surplus.length) {
+            entry.block.removeConfirmationSignatures(
+                new Set([...malformed, ...surplus])
+            );
+            if (surplus.length) entry.overflowedSources = true;
+        }
     }
 
     /** Queue a block for future processing */
@@ -177,6 +200,11 @@ export class QueueStorage {
      * `BlockQueueManager` reads the entry back (`getQueuedEntry`) to (re)schedule.
      */
     restoreEntry(entry: QueuedBlockEntry): void {
+        // Normalize first. A restored entry is an object the caller has held
+        // across a dequeue, so the queue cannot assume it still respects the
+        // cap; the no-existing branch below stores it as-is.
+        this.capSignatures(entry);
+        this.pruneAttribution(entry);
         const existing = this.queuedBlocks.get(entry.block.hash);
         if (!existing) {
             this.queuedBlocks.set(entry.block.hash, entry);
@@ -196,10 +224,23 @@ export class QueueStorage {
         if (entry.overflowedSources) existing.overflowedSources = true;
         for (const peer of entry.sourcePeers)
             this.addSourcePeer(existing, peer);
+        // Only for signatures the capped merge actually kept: attribution for a
+        // rejected signature spends a bounded map on a key the block does not
+        // hold, and nothing ever reads it.
+        const kept = existing.block.allSignatures;
         for (const [signature, peers] of entry.signatureSources) {
+            if (!kept.has(signature)) continue;
             for (const peer of peers) {
                 this.addSignatureSource(existing, signature, peer);
             }
+        }
+    }
+
+    // Drop attribution keys for signatures the entry no longer holds.
+    private pruneAttribution(entry: QueuedBlockEntry): void {
+        const held = entry.block.allSignatures;
+        for (const signature of [...entry.signatureSources.keys()]) {
+            if (!held.has(signature)) entry.signatureSources.delete(signature);
         }
     }
 
@@ -284,7 +325,9 @@ export class QueueStorage {
     private mergeBlockCapped(entry: QueuedBlockEntry, incoming: Block): void {
         const held = entry.block.confirmationSignatures;
         const novel = [...incoming.confirmationSignatures].filter(
-            (signature) => !held.has(signature)
+            (signature) =>
+                !held.has(signature) &&
+                QueueStorage.isCanonicalSignature(signature)
         );
         const room = Math.max(QueueStorage.MAX_ENTRY_SIGNATURES - held.size, 0);
         if (novel.length > room) entry.overflowedSources = true;

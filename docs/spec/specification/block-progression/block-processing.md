@@ -285,8 +285,12 @@ excluded: it supplied junk. A source whose lineage carries the block MUST NOT be
 pre-execution layer. Accepting an older, future, duplicate, or not-yet-eligible block, or additional
 signatures for any already known block, MUST NOT require the serialization boundary that guards
 state-machine execution. The merge MUST be monotone (signature sets only grow), idempotent under duplicate
-delivery, independent of arrival order, and MUST retain per-signature source attribution. Pre-execution
-retention MUST be bounded per entry so that work which never executes cannot exhaust memory or storage;
+delivery, independent of arrival order, and MUST retain per-signature source attribution. Those
+properties hold below the retention bound and cannot hold above it: once an entry is full, which
+signatures it kept depends on which arrived first, and monotone growth stops. Pre-execution
+retention MUST be bounded per entry so that work which never executes cannot exhaust memory or storage,
+and the bound MUST constrain retained bytes rather than only cardinality, since a value admitted by
+the transport is not a validated signature;
 an entry's lifetime is fixed at first sight and MUST NOT be extended by duplicates or restores.
 
 **<a id="req-block-pipe-6-xq0rtt"></a>`REQ-BLOCK-PIPE-6-XQ0RTT` — Total-order application.** Blocks leave the pre-execution layer in total order by fork
