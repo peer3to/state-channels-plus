@@ -12,7 +12,17 @@ import { expect } from "chai";
 import { ethers } from "hardhat";
 import { describe, it, before, beforeEach } from "mocha";
 
-const sig = () => ethers.hexlify(ethers.randomBytes(65));
+// Canonically shaped: random r and s in range with a valid v, so the value is
+// a well-formed ECDSA signature that simply recovers to nobody. Random bytes
+// usually carry an invalid v, which the queue now rejects outright.
+const sig = () =>
+    ethers.Signature.from({
+        r: ethers.hexlify(ethers.randomBytes(32)),
+        s: ethers.hexlify(
+            ethers.concat([new Uint8Array([0x7f]), ethers.randomBytes(31)])
+        ),
+        v: 27
+    }).serialized;
 
 describe("QueueStorage", () => {
     let storage: QueueStorage;
@@ -368,6 +378,47 @@ describe("QueueStorage", () => {
             expect(entry.block.confirmationSignatures.size).to.equal(1);
             // Never a validity decision: the block stays queued.
             expect(storage.isBlockQueued(mockBlock)).to.equal(true);
+        });
+
+        it("drops malformed and unrecoverable values arriving through merge", () => {
+            // capSignatures and mergeBlockCapped filter independently; a test
+            // that only ever creates an entry cannot see the merge predicate.
+            const oversized = "0x" + "ab".repeat(4096);
+            const badV = "0x" + "11".repeat(64) + "07";
+            const hash = storage.queueBlock(mockBlock);
+            storage.queueBlock(
+                Block.fromBlockConfirmation({
+                    ...mockBlockConfirmation,
+                    signatures: [oversized, badV, sig()]
+                })
+            );
+
+            const entry = storage.getQueuedEntry(hash)!;
+            expect(entry.block.confirmationSignatures.has(oversized)).to.equal(
+                false
+            );
+            expect(entry.block.confirmationSignatures.has(badV)).to.equal(
+                false
+            );
+            expect(entry.block.confirmationSignatures.size).to.equal(1);
+        });
+
+        it("drops an unrecoverable value on the creating copy", () => {
+            // A 65-byte value with an invalid v passes a length check and then
+            // makes ethers.verifyMessage throw during signer recovery.
+            const badV = "0x" + "11".repeat(64) + "07";
+            const hash = storage.queueBlock(
+                Block.fromBlockConfirmation({
+                    ...mockBlockConfirmation,
+                    signatures: [badV, sig()]
+                })
+            );
+
+            const entry = storage.getQueuedEntry(hash)!;
+            expect(entry.block.confirmationSignatures.has(badV)).to.equal(
+                false
+            );
+            expect(entry.block.confirmationSignatures.size).to.equal(1);
         });
 
         it("normalizes an entry expanded past the cap before restoring it", () => {

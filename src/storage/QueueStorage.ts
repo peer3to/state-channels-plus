@@ -54,10 +54,6 @@ export class QueueStorage {
     // byte bound: MAX_ENTRY_SIGNATURES * 65 bytes.
     private static readonly SIGNATURE_BYTES = 65;
 
-    private static isCanonicalSignature(signature: Signature): boolean {
-        return ethers.isHexString(signature, QueueStorage.SIGNATURE_BYTES);
-    }
-
     private queuedBlocks: Map<Hash, QueuedBlockEntry> = new Map();
 
     // Secondary index for efficient queries by coordinates
@@ -67,6 +63,23 @@ export class QueueStorage {
      * Build a standalone entry for a block copy — the unit of work the
      * pipeline consumes. Same construction the queue uses, without queueing.
      */
+    // Length alone is not canonicality. A 65-byte value with an invalid v, or
+    // a non-canonical s, passes a hex-length check and is then retained -- and
+    // ethers.verifyMessage throws rather than returning on it, so the junk
+    // reaches SignerRecoveryCache and takes the recovery path down with it.
+    // Signature.from performs the canonical r/s/v checks without recovering,
+    // and never throws out of here.
+    private static isCanonicalSignature(signature: Signature): boolean {
+        if (!ethers.isHexString(signature, QueueStorage.SIGNATURE_BYTES))
+            return false;
+        try {
+            ethers.Signature.from(signature);
+            return true;
+        } catch {
+            return false;
+        }
+    }
+
     createEntry(block: Block, options?: QueueBlockOptions): QueuedBlockEntry {
         const entry: QueuedBlockEntry = {
             block,
