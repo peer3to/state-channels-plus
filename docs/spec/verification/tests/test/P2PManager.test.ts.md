@@ -14,11 +14,27 @@ penalties, broadcast, and peer-registry snapshots. The ingress probes authentica
 and prove that oversized, malformed-envelope, unknown-service, and unknown-endpoint traffic
 blacklists them. A throwing local service only disconnects. The lifecycle probe also proves that a
 fault on a retired authenticated transport blacklists the current address profile and closes both
-transports.
+transports. Six discovery cases close the suite: one drives the joined-discovery-key bookkeeping
+(`joinDiscoveryKey` / `leaveDiscoveryKey` / `leaveAllDiscoveryKeys` / `getJoinedDiscoveryKeys`) over
+two distinct keys plus a never-joined key; one completes real handshakes with and without an
+observed key and asserts the refusal is penalty-free and reversible, with a WebRTC upgrade still
+admitted; and one holds a join inside the discovery backend, races `leaveAllDiscoveryKeys` against
+it, and asserts the raced key is left rather than landing afterwards. Two more hold a join at the
+same backend boundary: one completes a real handshake while it is parked and asserts the peer is
+admitted, unpenalized, and the key observed once the join is released; the other fails the backend
+join and asserts the rejection propagates with nothing observed. A sixth proves that a further
+transport for a peer that still holds a live admitted transport is a route replacement, not a
+discovery admission, and stays admitted while no key is observed.
 
 The initial-sync genesis and abort cases keep the original participants authoring through the fresh
 observer's spawn and the held-request window. This prevents a participant timeout from changing the
 fork before the settlement behavior is exercised; protocol time values are unchanged.
+Unassigned: [`UNIT-TEST-P2P-MANAGER-2-HR5HCB.P4`](../../../implementation/source/src/P2PManager.ts.md#unit-test-p2p-manager-2-hr5hcb.p4). The
+discovery-key case proves the reported set, the single-key leave, the no-op leave of a key that was
+never joined, and that leave-all empties the set, but it never joins the same key twice and never
+joins a malformed key, so the permutation's "including a duplicate and a rejected invalid key"
+clause has no oracle. Partial credit is not recorded, so the permutation stays a tracked gap until
+the case is extended — see [`OQ-VER-PERMUTATION-SPLIT-1-GBB0NX`](../../open-questions.md#oq-ver-permutation-split-1-gbb0nx).
 
 ## Tests and covered test IDs
 
@@ -82,3 +98,9 @@ coverage records the first-participant initial-load call and its explicit two-wi
 | [`P2PManager > targeted connect host composition > a late sync success after the abort changes nothing`](../../../../../test/P2PManager.test.ts#L1067) (line 1067)                                             | [`UNIT-TEST-P2P-MANAGER-1-9DNSRZ.P33`](../../../implementation/source/src/P2PManager.ts.md#unit-test-p2p-manager-1-9dnsrz.p33)                                                                                                                                                   |
 | [`P2PManager > targeted connect host composition > a late sync failure after the abort changes nothing`](../../../../../test/P2PManager.test.ts#L1084) (line 1084)                                             | [`UNIT-TEST-P2P-MANAGER-1-9DNSRZ.P34`](../../../implementation/source/src/P2PManager.ts.md#unit-test-p2p-manager-1-9dnsrz.p34)                                                                                                                                                   |
 | [`P2PManager > prefers a transport address over its registered profile address`](../../../../../test/P2PManager.test.ts#L27) (line 27)                                                                         | [`UNIT-TEST-P2PMANAGER-32-RX8SQP.P1`](../../../implementation/source/src/P2PManager.ts.md#unit-test-p2pmanager-32-rx8sqp.p1)                                                                                                                                                     |
+| [`P2PManager > tracks joined discovery keys and leaves them all`](../../../../../test/P2PManager.test.ts#L1102) (line 1102)                                                                                    | —                                                                                                                                                                                                                                                                                |
+| [`P2PManager > refuses a discovery admission while no key is observed and admits again once one is`](../../../../../test/P2PManager.test.ts#L1131) (line 1131)                                                 | [`UNIT-TEST-P2P-MANAGER-2-HR5HCB.P5`](../../../implementation/source/src/P2PManager.ts.md#unit-test-p2p-manager-2-hr5hcb.p5)                                                                                                                                                     |
+| [`P2PManager > leaves a discovery key whose join was still in flight when the disconnect ran`](../../../../../test/P2PManager.test.ts#L1157) (line 1157)                                                       | [`UNIT-TEST-P2P-MANAGER-2-HR5HCB.P6`](../../../implementation/source/src/P2PManager.ts.md#unit-test-p2p-manager-2-hr5hcb.p6)                                                                                                                                                     |
+| [`P2PManager > admits a handshake that completes while the discovery join is still in flight`](../../../../../test/P2PManager.test.ts#L1173) (line 1173)                                                       | [`UNIT-TEST-P2P-MANAGER-2-HR5HCB.P8`](../../../implementation/source/src/P2PManager.ts.md#unit-test-p2p-manager-2-hr5hcb.p8), [`REQ-UPG-7-KQPXRE.T1.P6`](../../../specification/peer-communication/transport-upgrade.md#req-upg-7-kqpxre.t1.p6)                                  |
+| [`P2PManager > stops observing a discovery key whose backend join failed`](../../../../../test/P2PManager.test.ts#L1194) (line 1194)                                                                           | [`UNIT-TEST-P2P-MANAGER-2-HR5HCB.P9`](../../../implementation/source/src/P2PManager.ts.md#unit-test-p2p-manager-2-hr5hcb.p9), [`REQ-UPG-7-KQPXRE.T1.P7`](../../../specification/peer-communication/transport-upgrade.md#req-upg-7-kqpxre.t1.p7)                                  |
+| [`P2PManager > admits a replacement transport for an already connected peer while no key is observed`](../../../../../test/P2PManager.test.ts#L1206) (line 1206)                                               | [`UNIT-TEST-P2P-MANAGER-2-HR5HCB.P7`](../../../implementation/source/src/P2PManager.ts.md#unit-test-p2p-manager-2-hr5hcb.p7), [`REQ-UPG-7-KQPXRE.T1.P4`](../../../specification/peer-communication/transport-upgrade.md#req-upg-7-kqpxre.t1.p4)                                  |

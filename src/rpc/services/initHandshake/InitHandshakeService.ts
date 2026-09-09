@@ -211,8 +211,14 @@ class InitHandshakeService extends ARpcService<InitHandshakeRpcMethods> {
             rttSeconds: rtt,
             signerAddress
         });
-        // Check if this peer is blacklisted
-        if (this.p2pManager.isBlacklisted(signerAddress)) {
+        // Check if this peer is blacklisted or has reconnects banned
+        const isBlacklisted = this.p2pManager.isBlacklisted(signerAddress);
+        const refusal = isBlacklisted
+            ? "response signer is blacklisted"
+            : this.p2pManager.isReconnectBanned(signerAddress)
+              ? "response signer has reconnects banned"
+              : undefined;
+        if (refusal) {
             LoggerUtils.logInitHandshakeMessage(this.logger, transport, {
                 direction: "local",
                 message: "rejected",
@@ -222,8 +228,16 @@ class InitHandshakeService extends ARpcService<InitHandshakeRpcMethods> {
                 preferredTransport,
                 rttSeconds: rtt,
                 signerAddress,
-                reason: "response signer is blacklisted"
+                reason: refusal
             });
+            // The blacklist banned the identity's own discovery handle. A peer
+            // that rotates its discovery key arrives on a fresh handle, so an
+            // excluded identity bans the handle it came in on as well. A
+            // reconnect ban never bans a handle: it only refuses admission, so
+            // the peer keeps redialing and is refused here until it is lifted.
+            if (isBlacklisted) {
+                this.p2pManager.profileManager.banTransportReconnect(transport);
+            }
             this.p2pManager.disconnectConnection(transport);
             return;
         }
@@ -342,6 +356,24 @@ class InitHandshakeService extends ARpcService<InitHandshakeRpcMethods> {
                 const peerAddress =
                     transport.peerAddress ||
                     this.verifiedPeerAddressByTransport.get(transport);
+
+                // A closed transport cannot carry the ack, so its absence is
+                // explained by the close and proves nothing about the peer.
+                // The exclusion is for a peer that stays connected and
+                // withholds the ack. Without this, a peer that legitimately
+                // refuses us mid-handshake — an exclusion or a reconnect
+                // suspension it placed, both of which close without acking —
+                // is excluded by us for refusing, turning its one-sided
+                // suspension into a mutual permanent exclusion.
+                if (transport.isClosed) {
+                    LoggerUtils.logInitHandshakeMessage(this.logger, transport, {
+                        direction: "local",
+                        message: "ack-timeout",
+                        verifiedPeerAddress: peerAddress,
+                        reason: "transport closed before the handshake ack"
+                    });
+                    return;
+                }
 
                 LoggerUtils.logInitHandshakeMessage(this.logger, transport, {
                     direction: "local",

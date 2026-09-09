@@ -61,6 +61,8 @@ export default class LobbyMatchingService extends ARpcService<LobbyMatchingRpcMe
     private readonly sessionTransports = new Map<ATransport, () => void>();
     /** Selected transports promoted for negotiation and closed on retry. */
     private readonly handedOffTransports = new Set<ATransport>();
+    /** Peers whose reconnects this session banned; lifted when the topic is left. */
+    private readonly reconnectBannedPeers = new Set<Address>();
     /** Selected profile that may add replacement transports during handoff. */
     private handedOffPeerAddress?: Address;
     private activeTopic?: string;
@@ -80,6 +82,13 @@ export default class LobbyMatchingService extends ARpcService<LobbyMatchingRpcMe
     };
     private observedTargetChannelId?: string;
     private unsubscribeTargetOpened?: () => void;
+    /**
+     * A cleanup that has not settled yet. It clears `activeTopic` before it
+     * suspends on the discovery leave, so a session started inside that window
+     * would be torn down by the older cleanup when it resumes; `match` waits
+     * this out first. Never rejects.
+     */
+    private cleanupInFlight?: Promise<void>;
 
     constructor(
         p2pManager: P2PManager,
@@ -122,6 +131,11 @@ export default class LobbyMatchingService extends ARpcService<LobbyMatchingRpcMe
         const normalizedTarget = observedTargetChannelId
             ? this.validateTopic(observedTargetChannelId)
             : undefined;
+        // A cleanup that started elsewhere clears `activeTopic` before it
+        // suspends on the discovery leave, so a session started inside that
+        // window shares the instance-wide collections with the session the old
+        // cleanup is still tearing down. Decide on settled state instead.
+        if (this.cleanupInFlight) await this.settleCleanupInFlight();
 
         if (this.activeTopic && !this.matchResolve) {
             throw new Error(
@@ -244,7 +258,7 @@ export default class LobbyMatchingService extends ARpcService<LobbyMatchingRpcMe
         const count = (this.rejectedRpcCounts.get(transport) ?? 0) + 1;
         this.rejectedRpcCounts.set(transport, count);
         if (count > MAX_REJECTED_RPCS_PER_TRANSPORT) {
-            this.p2pManager.disconnectAndBlacklistPeer(transport);
+            this.disconnectForSession(transport);
         }
     }
 
@@ -263,7 +277,12 @@ export default class LobbyMatchingService extends ARpcService<LobbyMatchingRpcMe
             return;
         }
         if (!this.activeTopic || !this.matchResolve) {
-            this.p2pManager.disconnectConnection(transport);
+            // While the topic is still observed (handoff phase), a plain close
+            // only pauses the peer: it redials and reruns the handshake, and
+            // this session has to keep refusing it. Once the topic is left,
+            // nothing redials it.
+            if (this.activeTopic) this.disconnectForSession(transport);
+            else this.p2pManager.disconnectConnection(transport);
             return;
         }
         if (!this.sessionTransports.has(transport)) {
@@ -706,7 +725,35 @@ export default class LobbyMatchingService extends ARpcService<LobbyMatchingRpcMe
         resolve(match);
     }
 
-    private async cleanup(
+    /**
+     * Runs one cleanup and publishes it as the in-flight one, so a `match` on
+     * this instance cannot start a session into the shared collections while an
+     * earlier cleanup is still tearing its own session down.
+     */
+    private cleanup(
+        options: { preserveHandedOffTransports?: boolean } = {}
+    ): Promise<void> {
+        const settled = this.runCleanup(options);
+        const tracked: Promise<void> = settled
+            .then(
+                () => undefined,
+                () => undefined
+            )
+            .then(() => {
+                if (this.cleanupInFlight === tracked) {
+                    this.cleanupInFlight = undefined;
+                }
+            });
+        this.cleanupInFlight = tracked;
+        return settled;
+    }
+
+    /** Waits out every cleanup still running, including ones started meanwhile. */
+    private async settleCleanupInFlight(): Promise<void> {
+        while (this.cleanupInFlight) await this.cleanupInFlight;
+    }
+
+    private async runCleanup(
         options: { preserveHandedOffTransports?: boolean } = {}
     ): Promise<void> {
         const topic = this.activeTopic;
@@ -717,15 +764,22 @@ export default class LobbyMatchingService extends ARpcService<LobbyMatchingRpcMe
         this.matchResolve = undefined;
         this.unsubscribeTargetOpened?.();
         this.unsubscribeTargetOpened = undefined;
+        // Leave the topic before closing its transports: a close while the
+        // topic is still observed queues a redial. Reconnect bans this
+        // session placed lift with the topic; nothing was excluded.
+        if (topic) {
+            await this.p2pManager.leaveDiscoveryKey(topic);
+            for (const address of this.reconnectBannedPeers) {
+                this.p2pManager.allowReconnect(address);
+            }
+            this.reconnectBannedPeers.clear();
+        }
         this.disconnectSessionTransports();
         if (!options.preserveHandedOffTransports) {
             this.disconnectHandedOffTransports();
         } else {
             this.handedOffTransports.clear();
             this.handedOffPeerAddress = undefined;
-        }
-        if (topic) {
-            await this.p2pManager.leaveDiscoveryKey(topic);
         }
         if (
             String(this.p2pManager.stateManager.channelId) === ZeroHash &&
@@ -794,12 +848,43 @@ export default class LobbyMatchingService extends ARpcService<LobbyMatchingRpcMe
             const address = this.peerAddress(transport);
             unsubscribe();
             this.sessionTransports.delete(transport);
-            if (address === peerAddress && !transport.isClosed) {
+            if (address === peerAddress) {
+                // A closed transport of the selected peer is dropped, never
+                // reconnect-banned: negotiation still needs that peer.
+                if (transport.isClosed) {
+                    this.p2pManager.disconnectConnection(transport);
+                    continue;
+                }
                 this.handedOffTransports.add(transport);
             } else {
-                this.p2pManager.disconnectConnection(transport);
+                this.disconnectForSession(transport);
             }
         }
+    }
+
+    /**
+     * Close a lobby transport this session no longer wants. The peer still
+     * observes the topic, so a plain close only pauses it: discovery re-dials
+     * and the handshake reruns. Ban its reconnects for the rest of the session
+     * instead, which refuses the identity at handshake admission — the peer
+     * keeps being dialed, it just never becomes a connection again. Cleanup
+     * lifts the ban when the topic is left. This is not an exclusion. The
+     * selected peer is never banned: negotiation still needs to reach it.
+     *
+     * With no active topic there is no session left to lift the ban, and none
+     * is needed: nothing observes the topic any more, so a plain close is final.
+     */
+    private disconnectForSession(transport: ATransport): void {
+        const address = this.peerAddress(transport);
+        if (
+            this.activeTopic &&
+            address &&
+            address !== this.handedOffPeerAddress &&
+            this.p2pManager.banReconnect(address)
+        ) {
+            this.reconnectBannedPeers.add(address);
+        }
+        this.p2pManager.disconnectConnection(transport);
     }
 
     private disconnectSessionTransports(): void {

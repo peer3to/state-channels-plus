@@ -152,7 +152,8 @@ describe("LobbyMatchingService", function () {
         expect(afterBound.reserved).to.equal(false);
         expect(afterBound.matching).to.equal(true);
         expect(result.abusiveTransportClosed).to.equal(true);
-        expect(result.abusivePeerBlacklisted).to.equal(true);
+        expect(result.abusivePeerReconnectBanned).to.equal(true);
+        expect(result.abusivePeerBlacklisted).to.equal(false);
     });
 
     it("settles cancellation when the selected peer disconnects during commit", async function () {
@@ -443,5 +444,61 @@ describe("LobbyMatchingService", function () {
 
         expect(result.responseStatus).to.equal("rejected");
         expect(result.requesterBlacklisted).to.equal(false);
+    });
+
+    it("bans reconnects of a peer that authenticates after the handoff", async function () {
+        const result = await fixture
+            .control()
+            .p2pManagerProbe.probeLateJoinerAfterHandoff()
+            .request();
+
+        expect(result.commitAcknowledged).to.equal(true);
+        expect(result.lateJoinerTransportClosed).to.equal(true);
+        expect(result.lateJoinerReconnectBanned).to.equal(true);
+        expect(result.lateJoinerBlacklisted).to.equal(false);
+        expect(result.selectedPeerReconnectBanned).to.equal(false);
+        expect(result.lateJoinerReconnectBannedAfterComplete).to.equal(false);
+    });
+
+    it("leaves the lobby topic before closing its transports and lifting session bans", async function () {
+        const result = await fixture
+            .control()
+            .p2pManagerProbe.probeLobbyCleanupOrdering()
+            .request();
+
+        expect(result.leaveObserved).to.equal(true);
+        expect(result.sessionTransportOpenAtLeave).to.equal(true);
+        expect(result.bannedPeerReconnectBannedAtLeave).to.equal(true);
+        expect(result.sessionTransportClosedAfterCleanup).to.equal(true);
+        expect(result.bannedPeerReconnectBannedAfterCleanup).to.equal(false);
+    });
+
+    it("does not session-ban rejected lobby traffic once the session has ended", async function () {
+        const result = await fixture
+            .control()
+            .p2pManagerProbe.probeRejectedRpcAfterLobbyEnded()
+            .request();
+
+        expect(result.sessionStarted).to.equal(true);
+        expect(result.transportClosedAfterOverflow).to.equal(true);
+        // No session is left to lift a ban, so none may be placed.
+        expect(result.reconnectBannedAfterOverflow).to.equal(false);
+        expect(result.reconnectAdmitted).to.equal(true);
+    });
+
+    it("starts a replacement match only after the previous cleanup has settled", async function () {
+        const result = await fixture
+            .control()
+            .p2pManagerProbe.probeCleanupSerializesWithMatch()
+            .request();
+
+        // The held cleanup owns the instance until it settles.
+        expect(result.topicWhileCleanupHeld).to.equal(undefined);
+        expect(result.secondSessionStarted).to.equal(true);
+        expect(result.secondTransportOpen).to.equal(true);
+        expect(result.secondSessionBanned).to.equal(true);
+        expect(result.secondSessionLeft).to.equal(true);
+        expect(result.secondResolvedUndefined).to.equal(true);
+        expect(result.banLiftedAfterSecondCleanup).to.equal(true);
     });
 });

@@ -1,8 +1,11 @@
 import { requireBytes32 } from "@/utils/bytes32";
 import { ethers } from "ethers";
 
+/** Normalized 32-byte hex key a runtime observes for peer discovery. */
+export type DiscoveryKey = string;
+
 /** Uses the channel ID bytes directly as its 32-byte discovery key. */
-export function channelIdToDiscoveryKey(channelId: string): string {
+export function channelIdToDiscoveryKey(channelId: string): DiscoveryKey {
     requireBytes32(channelId, "Channel ID must be exactly 32 bytes");
     return ethers.hexlify(channelId);
 }

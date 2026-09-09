@@ -9,7 +9,7 @@ import { P2PManagerFixture } from "@test/fixtures/P2PManagerFixture";
 import { slotAccountIndex } from "@test/harness/core/slotAccounts";
 import { waitFor } from "@test/utils/waitFor";
 import { expect } from "chai";
-import { ethers, Wallet } from "ethers";
+import { ethers, Wallet, hexlify, id } from "ethers";
 
 describe("P2PManager", function () {
     let fixture: P2PManagerFixture | undefined;
@@ -1097,5 +1097,131 @@ describe("P2PManager", function () {
                 "failure"
             );
         });
+    });
+
+    it("tracks joined discovery keys and leaves them all", async function () {
+        // The keys are passed in mixed case so the probe's snapshots prove the
+        // set is keyed by the `ethers.hexlify` normalized form.
+        const firstKey = `0x${id("p2p-manager-joined-discovery-first")
+            .slice(2)
+            .toUpperCase()}`;
+        const secondKey = id("p2p-manager-joined-discovery-second");
+        const unknownKey = id("p2p-manager-joined-discovery-unknown");
+
+        const result = await fixture!
+            .control()
+            .p2pManagerProbe.probeJoinedDiscoveryKeys(
+                firstKey,
+                secondKey,
+                unknownKey
+            )
+            .request();
+
+        expect(result.initial).to.deep.equal([]);
+        expect(result.afterFirstJoin).to.deep.equal([hexlify(firstKey)]);
+        expect(result.afterSecondJoin).to.deep.equal([
+            hexlify(firstKey),
+            secondKey
+        ]);
+        expect(result.afterLeavingFirst).to.deep.equal([secondKey]);
+        expect(result.afterLeavingUnknown).to.deep.equal([secondKey]);
+        expect(result.afterLeavingAll).to.deep.equal([]);
+    });
+
+    it("refuses a discovery admission while no key is observed and admits again once one is", async function () {
+        const discoveryKey = id("p2p-manager-discovery-admission-gate");
+
+        const result = await fixture!
+            .control()
+            .p2pManagerProbe.probeDiscoveryAdmissionGate(
+                Wallet.createRandom().address,
+                Wallet.createRandom().address,
+                Wallet.createRandom().address,
+                discoveryKey
+            )
+            .request();
+
+        expect(result.refusedConnected).to.equal(false);
+        expect(result.refusedTransportClosed).to.equal(true);
+        expect(result.refusedSocketDestroyed).to.equal(true);
+        // Stopping observation is neutral bookkeeping: the refusal must not
+        // exclude, penalize, or suspend the identity.
+        expect(result.refusedBanCalls).to.deep.equal([]);
+        expect(result.refusedBlacklisted).to.equal(false);
+        expect(result.refusedReconnectBanned).to.equal(false);
+        expect(result.webRtcConnected).to.equal(true);
+        expect(result.admittedConnected).to.equal(true);
+        expect(result.admittedTransportClosed).to.equal(false);
+    });
+
+    it("leaves a discovery key whose join was still in flight when the disconnect ran", async function () {
+        const discoveryKey = id("p2p-manager-discovery-join-leave-race");
+
+        const result = await fixture!
+            .control()
+            .p2pManagerProbe.probeDiscoveryJoinLeaveRace(discoveryKey)
+            .request();
+
+        // The staged race is real: the key is already observed while the
+        // backend has not answered the join, and `leaveAllDiscoveryKeys` must
+        // still leave it at the backend exactly once.
+        expect(result.observedDuringJoin).to.deep.equal([discoveryKey]);
+        expect(result.observedAfterLeaveAll).to.deep.equal([]);
+        expect(result.backendLeftKeys).to.deep.equal([discoveryKey]);
+    });
+
+    it("admits a handshake that completes while the discovery join is still in flight", async function () {
+        const discoveryKey = id("p2p-manager-in-flight-join-admission");
+
+        const result = await fixture!
+            .control()
+            .p2pManagerProbe.probeAdmissionDuringInFlightDiscoveryJoin(
+                Wallet.createRandom().address,
+                discoveryKey
+            )
+            .request();
+
+        expect(result.admittedConnected).to.equal(true);
+        expect(result.admittedTransportClosed).to.equal(false);
+        expect(result.admittedSocketDestroyed).to.equal(false);
+        // Admission is the whole point: nothing may penalize the identity.
+        expect(result.admittedBanCalls).to.deep.equal([]);
+        expect(result.admittedBlacklisted).to.equal(false);
+        expect(result.admittedReconnectBanned).to.equal(false);
+        expect(result.observedAfterJoin).to.deep.equal([discoveryKey]);
+    });
+
+    it("stops observing a discovery key whose backend join failed", async function () {
+        const discoveryKey = id("p2p-manager-failed-discovery-join");
+
+        const result = await fixture!
+            .control()
+            .p2pManagerProbe.probeFailedDiscoveryJoin(discoveryKey)
+            .request();
+
+        expect(result.joinRejected).to.equal(true);
+        expect(result.observedAfterFailedJoin).to.deep.equal([]);
+    });
+
+    it("admits a replacement transport for an already connected peer while no key is observed", async function () {
+        const discoveryKey = id("p2p-manager-replacement-admission-gate");
+
+        const result = await fixture!
+            .control()
+            .p2pManagerProbe.probeReplacementAdmissionWithoutDiscoveryKey(
+                Wallet.createRandom().address,
+                Wallet.createRandom().address,
+                discoveryKey
+            )
+            .request();
+
+        expect(result.establishedConnected).to.equal(true);
+        expect(result.establishedTransportStillLive).to.equal(true);
+        // Replacing a route we already accepted is not a discovery admission.
+        expect(result.replacementConnected).to.equal(true);
+        expect(result.replacementTransportClosed).to.equal(false);
+        // An identity nothing has reached is still refused.
+        expect(result.freshIdentityConnected).to.equal(false);
+        expect(result.freshIdentityTransportClosed).to.equal(true);
     });
 });

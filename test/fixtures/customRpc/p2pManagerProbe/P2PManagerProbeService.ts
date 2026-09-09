@@ -7,6 +7,7 @@ import PeerProfile from "@/PeerProfile";
 import ARpcService from "@/rpc/ARpcService";
 import type Rpc from "@/rpc/Rpc";
 import { MAX_RPC_FRAME_BYTES } from "@/rpc/Rpc";
+import InitHandshakeService from "@/rpc/services/initHandshake/InitHandshakeService";
 import LobbyMatchingService from "@/rpc/services/lobbyMatching/LobbyMatchingService";
 import type { LobbyMatch } from "@/rpc/services/lobbyMatching/LobbyMatchingTypes";
 import {
@@ -27,10 +28,12 @@ import type { Bytes } from "@/types/types";
 import {
     Codec,
     DetachedPromises,
+    LocalDiscoveryServer,
     SignatureUtils,
     Type,
     getChecksumAddress
 } from "@/utils";
+import type { DiscoveryKey } from "@/utils/discoveryKey";
 import {
     RecordingBannablePeerInfo,
     RecordingHolepunchSocket,
@@ -196,6 +199,7 @@ export type LobbyRecoveryProbe = {
     matchingAfterFinalLoss: boolean;
     disconnectedPeerBlacklisted: boolean;
     abusiveTransportClosed: boolean;
+    abusivePeerReconnectBanned: boolean;
     abusivePeerBlacklisted: boolean;
 };
 
@@ -215,6 +219,15 @@ export type LobbyCommitCancellationProbe = {
     candidateCount: number;
     transportClosed: boolean;
     peerBlacklisted: boolean;
+};
+
+export type LateJoinerHandoffProbe = {
+    commitAcknowledged: boolean;
+    lateJoinerTransportClosed: boolean;
+    lateJoinerReconnectBanned: boolean;
+    lateJoinerBlacklisted: boolean;
+    selectedPeerReconnectBanned: boolean;
+    lateJoinerReconnectBannedAfterComplete: boolean;
 };
 
 export type LobbyBootstrapValidationProbe = {
@@ -237,6 +250,21 @@ export type LobbyRoleTimerProbe = {
     roleTimerScheduleCount: number;
     availabilityFramesBeforeExpiry: number;
     availabilityFramesAfterExpiry: number;
+};
+
+export type HandshakeResponseRefusalProbe = {
+    freshTransportClosed: boolean;
+    freshPeerInfoBanCalls: boolean[];
+    signerBlacklisted: boolean;
+    signerReconnectBanned: boolean;
+};
+
+export type LobbyCleanupOrderingProbe = {
+    leaveObserved: boolean;
+    sessionTransportOpenAtLeave: boolean;
+    bannedPeerReconnectBannedAtLeave: boolean;
+    sessionTransportClosedAfterCleanup: boolean;
+    bannedPeerReconnectBannedAfterCleanup: boolean;
 };
 
 export type LobbySessionCleanupProbe = {
@@ -421,6 +449,28 @@ export type UnblacklistBanPolicyProbe = {
     banCalls: boolean[];
 };
 
+export type ReconnectBanProbe = {
+    banned: boolean;
+    banCallsAfterBan: boolean[];
+    reconnectBannedAfterBan: boolean;
+    blacklistedAfterBan: boolean;
+    banCallsAfterAllow: boolean[];
+    reconnectBannedAfterAllow: boolean;
+    unknownPeerBanned: boolean;
+};
+
+export type ReconnectBanPrecedenceProbe = {
+    banCallsAfterBlacklistThenAllow: boolean[];
+    blacklistedAfterAllow: boolean;
+    reconnectBannedAfterAllow: boolean;
+};
+
+export type ReconnectBanWebRtcCloseProbe = {
+    banCallsAfterUpgradeAndBan: boolean[];
+    banCallsAfterCurrentClose: boolean[];
+    reconnectBannedAfterClose: boolean;
+};
+
 export type RelayAdmissionProbe = {
     admitted: boolean;
     attemptedClosed: boolean;
@@ -444,6 +494,15 @@ export type HolepunchTopicProbe = {
     leaveCalls: string[];
 };
 
+export type JoinedDiscoveryKeysProbe = {
+    initial: DiscoveryKey[];
+    afterFirstJoin: DiscoveryKey[];
+    afterSecondJoin: DiscoveryKey[];
+    afterLeavingFirst: DiscoveryKey[];
+    afterLeavingUnknown: DiscoveryKey[];
+    afterLeavingAll: DiscoveryKey[];
+};
+
 export type HandshakeFailureProbe = {
     connected: boolean;
     hookCount: number;
@@ -460,6 +519,75 @@ export type ReplacementHandshakeProbe = {
     connectedCount: number;
     replacementConnected: boolean;
     hookCount: number;
+};
+
+export type DiscoveryAdmissionGateProbe = {
+    refusedConnected: boolean;
+    refusedTransportClosed: boolean;
+    refusedSocketDestroyed: boolean;
+    refusedBanCalls: boolean[];
+    refusedBlacklisted: boolean;
+    refusedReconnectBanned: boolean;
+    webRtcConnected: boolean;
+    admittedConnected: boolean;
+    admittedTransportClosed: boolean;
+};
+
+export type DiscoveryJoinLeaveRaceProbe = {
+    observedDuringJoin: DiscoveryKey[];
+    observedAfterLeaveAll: DiscoveryKey[];
+    backendLeftKeys: string[];
+};
+
+export type InFlightJoinAdmissionProbe = {
+    admittedConnected: boolean;
+    admittedTransportClosed: boolean;
+    admittedSocketDestroyed: boolean;
+    admittedBanCalls: boolean[];
+    admittedBlacklisted: boolean;
+    admittedReconnectBanned: boolean;
+    observedAfterJoin: DiscoveryKey[];
+};
+
+export type FailedDiscoveryJoinProbe = {
+    joinRejected: boolean;
+    observedAfterFailedJoin: DiscoveryKey[];
+};
+
+export type ReconnectBanFinalAdmissionProbe = {
+    responseAcceptedBeforeBan: boolean;
+    replacementTransportClosed: boolean;
+    replacementAuthenticated: boolean;
+    replacementConnected: boolean;
+    establishedTransportRetained: boolean;
+    signerBlacklisted: boolean;
+    signerReconnectBanned: boolean;
+};
+
+export type RejectedRpcAfterLobbyEndedProbe = {
+    sessionStarted: boolean;
+    reconnectBannedAfterOverflow: boolean;
+    transportClosedAfterOverflow: boolean;
+    reconnectAdmitted: boolean;
+};
+
+export type CleanupMatchSerializationProbe = {
+    topicWhileCleanupHeld: string | undefined;
+    secondSessionStarted: boolean;
+    secondTransportOpen: boolean;
+    secondSessionBanned: boolean;
+    secondSessionLeft: boolean;
+    secondResolvedUndefined: boolean;
+    banLiftedAfterSecondCleanup: boolean;
+};
+
+export type ReplacementAdmissionGateProbe = {
+    establishedConnected: boolean;
+    establishedTransportStillLive: boolean;
+    replacementConnected: boolean;
+    replacementTransportClosed: boolean;
+    freshIdentityConnected: boolean;
+    freshIdentityTransportClosed: boolean;
 };
 
 export class P2PManagerProbeService extends ARpcService<
@@ -1576,6 +1704,68 @@ export class P2PManagerProbeService extends ARpcService<
         };
     }
 
+    public probeReconnectBan(
+        address: string,
+        unknownAddress: string
+    ): ReconnectBanProbe {
+        const { peerInfo } = this.registeredHolepunchTransport(address);
+        const banned = this.p2pManager.banReconnect(address);
+        const banCallsAfterBan = [...peerInfo.banCalls];
+        const reconnectBannedAfterBan =
+            this.p2pManager.isReconnectBanned(address);
+        const blacklistedAfterBan = this.p2pManager.isBlacklisted(address);
+        this.p2pManager.allowReconnect(address);
+        return {
+            banned,
+            banCallsAfterBan,
+            reconnectBannedAfterBan,
+            blacklistedAfterBan,
+            banCallsAfterAllow: [...peerInfo.banCalls],
+            reconnectBannedAfterAllow:
+                this.p2pManager.isReconnectBanned(address),
+            unknownPeerBanned: this.p2pManager.banReconnect(
+                getChecksumAddress(unknownAddress)
+            )
+        };
+    }
+
+    public probeReconnectBanPrecedence(
+        address: string
+    ): ReconnectBanPrecedenceProbe {
+        const { peerInfo } = this.registeredHolepunchTransport(address);
+        this.p2pManager.banReconnect(address);
+        this.p2pManager.disconnectAndBlacklistPeerByEvmAddress(address);
+        this.p2pManager.allowReconnect(address);
+        return {
+            banCallsAfterBlacklistThenAllow: [...peerInfo.banCalls],
+            blacklistedAfterAllow: this.p2pManager.isBlacklisted(address),
+            reconnectBannedAfterAllow:
+                this.p2pManager.isReconnectBanned(address)
+        };
+    }
+
+    public probeReconnectBanWebRtcClose(
+        address: string
+    ): ReconnectBanWebRtcCloseProbe {
+        const { peerInfo } = this.registeredHolepunchTransport(address);
+        // The upgrade lands first: a suspension is refused at verification, so
+        // the WebRTC route an identity holds is one it had before the ban.
+        const webRTC = new WebRTCTransport(
+            new RecordingWebRTCDataChannel(),
+            this.p2pManager
+        );
+        this.authenticateTransport(webRTC, address);
+        this.p2pManager.banReconnect(address);
+        const banCallsAfterUpgradeAndBan = [...peerInfo.banCalls];
+        this.p2pManager.disconnectConnection(webRTC);
+        return {
+            banCallsAfterUpgradeAndBan,
+            banCallsAfterCurrentClose: [...peerInfo.banCalls],
+            reconnectBannedAfterClose:
+                this.p2pManager.isReconnectBanned(address)
+        };
+    }
+
     public probeUpgradeBanPolicy(address: string): UpgradeBanPolicyProbe {
         const { peerInfo } = this.registeredHolepunchTransport(address);
         const firstWebRTC = new WebRTCTransport(
@@ -1705,42 +1895,47 @@ export class P2PManagerProbeService extends ARpcService<
     public async probeWebRtcCloseAcceptsHolepunch(
         address: string
     ): Promise<RelayAdmissionProbe> {
-        const { peerInfo: originalPeerInfo, profile } =
-            this.registeredHolepunchTransport(address);
-        const webRTC = new WebRTCTransport(
-            new RecordingWebRTCDataChannel(),
-            this.p2pManager
-        );
-        this.authenticateTransport(webRTC, address);
-        this.p2pManager.addConnection(webRTC);
-        webRTC.close();
+        await this.observeFixtureDiscoveryKey("webrtc-close-accepts-holepunch");
+        try {
+            const { peerInfo: originalPeerInfo, profile } =
+                this.registeredHolepunchTransport(address);
+            const webRTC = new WebRTCTransport(
+                new RecordingWebRTCDataChannel(),
+                this.p2pManager
+            );
+            this.authenticateTransport(webRTC, address);
+            this.p2pManager.addConnection(webRTC);
+            webRTC.close();
 
-        const {
-            transport: attempted,
-            peerInfo: attemptedPeerInfo,
-            socket: attemptedSocket
-        } = this.holepunchTransport();
-        const disconnectionHookCalls =
-            await this.finalizeAndCountDisconnections(attempted, address);
-        const admitted = this.isAuthenticatedCurrentTransport(attempted);
-        if (admitted) {
-            attempted.send({
-                service: "probe",
-                method: "ordinaryTraffic",
-                params: ["usable"]
+            const {
+                transport: attempted,
+                peerInfo: attemptedPeerInfo,
+                socket: attemptedSocket
+            } = this.holepunchTransport();
+            const disconnectionHookCalls =
+                await this.finalizeAndCountDisconnections(attempted, address);
+            const admitted = this.isAuthenticatedCurrentTransport(attempted);
+            if (admitted) {
+                attempted.send({
+                    service: "probe",
+                    method: "ordinaryTraffic",
+                    params: ["usable"]
+                });
+            }
+
+            return this.relayAdmissionResult({
+                address,
+                admitted,
+                attempted,
+                attemptedPeerInfo,
+                attemptedSocket,
+                originalPeerInfo,
+                profile,
+                disconnectionHookCalls
             });
+        } finally {
+            await this.p2pManager.leaveAllDiscoveryKeys();
         }
-
-        return this.relayAdmissionResult({
-            address,
-            admitted,
-            attempted,
-            attemptedPeerInfo,
-            attemptedSocket,
-            originalPeerInfo,
-            profile,
-            disconnectionHookCalls
-        });
     }
 
     public async probeBlacklistRejectsHolepunch(
@@ -1969,6 +2164,41 @@ export class P2PManagerProbeService extends ARpcService<
         }
     }
 
+    /**
+     * Drives the real join/leave bookkeeping over two distinct keys, plus a
+     * key that was never joined, and snapshots the observed set after each
+     * step.
+     */
+    public async probeJoinedDiscoveryKeys(
+        firstKey: string,
+        secondKey: string,
+        unknownKey: string
+    ): Promise<JoinedDiscoveryKeysProbe> {
+        const initial = this.p2pManager.getJoinedDiscoveryKeys();
+        try {
+            await this.p2pManager.joinDiscoveryKey(firstKey);
+            const afterFirstJoin = this.p2pManager.getJoinedDiscoveryKeys();
+            await this.p2pManager.joinDiscoveryKey(secondKey);
+            const afterSecondJoin = this.p2pManager.getJoinedDiscoveryKeys();
+            await this.p2pManager.leaveDiscoveryKey(firstKey);
+            const afterLeavingFirst = this.p2pManager.getJoinedDiscoveryKeys();
+            await this.p2pManager.leaveDiscoveryKey(unknownKey);
+            const afterLeavingUnknown =
+                this.p2pManager.getJoinedDiscoveryKeys();
+            await this.p2pManager.leaveAllDiscoveryKeys();
+            return {
+                initial,
+                afterFirstJoin,
+                afterSecondJoin,
+                afterLeavingFirst,
+                afterLeavingUnknown,
+                afterLeavingAll: this.p2pManager.getJoinedDiscoveryKeys()
+            };
+        } finally {
+            await this.p2pManager.leaveAllDiscoveryKeys();
+        }
+    }
+
     private holepunchTopicProbe(swarm: RecordingSwarm): HolepunchTopicProbe {
         return {
             joinedTopics: this.p2pManager.holepunch.topics.map((topic) =>
@@ -1990,6 +2220,10 @@ export class P2PManagerProbeService extends ARpcService<
             transport,
             getChecksumAddress(address)
         );
+        // Observe the key before OPENED: `joinDiscoveryKey` waits out the
+        // initial sync while the runtime is OPENED, and this probe only needs
+        // the membership that admission reads.
+        await this.observeFixtureDiscoveryKey("handshake-participant-read");
         stateManager.setStatus(Status.OPENED);
         await stateManager.setChannelId("0x12");
         const originalDebug = this.p2pManager.logger.debug.bind(
@@ -2038,6 +2272,7 @@ export class P2PManagerProbeService extends ARpcService<
             };
         } finally {
             await stateManager.setChannelId(originalChannelId);
+            await this.p2pManager.leaveAllDiscoveryKeys();
             sync.restore();
             debug.restore();
             unsubscribeConnection();
@@ -2146,6 +2381,7 @@ export class P2PManagerProbeService extends ARpcService<
     ): Promise<ReplacementHandshakeProbe> {
         const stateManager = this.p2pManager.stateManager;
         stateManager.setStatus(Status.SYNCED);
+        await this.observeFixtureDiscoveryKey("replacement-handshake");
         const normalizedAddress = getChecksumAddress(address);
         const first = this.transport(normalizedAddress);
         const profile = this.registerProfile(first, normalizedAddress);
@@ -2187,6 +2423,7 @@ export class P2PManagerProbeService extends ARpcService<
                 hookCount
             };
         } finally {
+            await this.p2pManager.leaveAllDiscoveryKeys();
             unsubscribeConnection();
         }
     }
@@ -2454,6 +2691,8 @@ export class P2PManagerProbeService extends ARpcService<
             matchingAfterFinalLoss: afterLoss.matching,
             disconnectedPeerBlacklisted: blacklistedAtLoss,
             abusiveTransportClosed: abusive.isClosed,
+            abusivePeerReconnectBanned:
+                this.p2pManager.isReconnectBanned(abusiveAddress),
             abusivePeerBlacklisted: abusiveProfile.isBlackListed
         };
     }
@@ -2548,6 +2787,71 @@ export class P2PManagerProbeService extends ARpcService<
         };
         await service.dispose();
         return result;
+    }
+
+    public async probeLateJoinerAfterHandoff(): Promise<LateJoinerHandoffProbe> {
+        const service = this.p2pManager.localRpc.lobbyMatchingService;
+        const topic = `0x${"71".repeat(32)}`;
+        // The local signer address is random per run, so the lobby peer must
+        // sort above it for this peer to bootstrap as the advertiser.
+        const selectorAddress = getChecksumAddress(
+            "0xffffffffffffffffffffffffffffffffffffffff"
+        );
+        const selector = this.transport(selectorAddress);
+        this.registerProfile(selector, selectorAddress);
+        void service.match(topic);
+        await Promise.resolve();
+        service.onAuthenticatedTransport(selector);
+        service.receiveAvailability(selector, {
+            topic,
+            role: "none",
+            roleEpoch: 0,
+            available: false
+        });
+        const attemptNonce = `0x${"72".repeat(32)}`;
+        const selectorChallenge = `0x${"73".repeat(32)}`;
+        const pick = service.receivePick(
+            selector,
+            attemptNonce,
+            1,
+            selectorChallenge
+        );
+        if (pick.status !== "accepted") {
+            throw new Error("Expected advertiser reservation");
+        }
+        // Committing hands the selected peer off; the topic stays observed.
+        const commitStatus = service.receiveCommit(
+            selector,
+            attemptNonce,
+            1,
+            selectorChallenge,
+            pick.advertiserChallenge
+        ).status;
+
+        const lateAddress = getChecksumAddress(
+            "0xfffffffffffffffffffffffffffffffffffffffe"
+        );
+        const late = this.transport(lateAddress);
+        this.registerProfile(late, lateAddress);
+        service.onAuthenticatedTransport(late);
+        const lateJoinerTransportClosed = late.isClosed;
+        const lateJoinerReconnectBanned =
+            this.p2pManager.isReconnectBanned(lateAddress);
+        const lateJoinerBlacklisted =
+            this.p2pManager.isBlacklisted(lateAddress);
+        const selectedPeerReconnectBanned =
+            this.p2pManager.isReconnectBanned(selectorAddress);
+        // Leaving the topic is the cleanup that lifts session reconnect bans.
+        await service.completeLobby(topic);
+        return {
+            commitAcknowledged: commitStatus === "acknowledged",
+            lateJoinerTransportClosed,
+            lateJoinerReconnectBanned,
+            lateJoinerBlacklisted,
+            selectedPeerReconnectBanned,
+            lateJoinerReconnectBannedAfterComplete:
+                this.p2pManager.isReconnectBanned(lateAddress)
+        };
     }
 
     public async probeLobbyBootstrapAndValidation(): Promise<LobbyBootstrapValidationProbe> {
@@ -2737,13 +3041,16 @@ export class P2PManagerProbeService extends ARpcService<
                 roleDurationMinMs: 5000,
                 roleDurationMaxMs: 5000
             });
+            // The local signer address is random per run, and the role is
+            // bootstrapped by address order, so both lobby peers must sort
+            // above it for this peer to become the advertiser.
             const silentAddress = getChecksumAddress(
-                "0xfffffffffffffffffffffffffffffffffffffffd"
+                "0xfffffffffffffffffffffffffffffffffffffffe"
             );
             const silent = this.transport(silentAddress);
             const silentProfile = this.registerProfile(silent, silentAddress);
             const expiryObserverAddress = getChecksumAddress(
-                "0xcccccccccccccccccccccccccccccccccccccccc"
+                "0xfffffffffffffffffffffffffffffffffffffffd"
             );
             const expiryObserver = this.transport(expiryObserverAddress);
             this.registerProfile(expiryObserver, expiryObserverAddress);
@@ -2791,6 +3098,125 @@ export class P2PManagerProbeService extends ARpcService<
         } finally {
             timeoutManager.scheduleTask = originalScheduleTask;
         }
+    }
+
+    /**
+     * Drives the real handshake response path: a fresh Holepunch transport
+     * challenges on construction, and the probe answers with a valid signature
+     * from an identity this peer already refuses.
+     */
+    public async probeHandshakeResponseRefusal(
+        banMode: "reconnect" | "blacklist"
+    ): Promise<HandshakeResponseRefusalProbe> {
+        const wallet = ethers.Wallet.createRandom();
+        const signerAddress = getChecksumAddress(wallet.address);
+        // The identity is already known on its own discovery handle.
+        this.registeredHolepunchTransport(signerAddress);
+        if (banMode === "reconnect") {
+            this.p2pManager.banReconnect(signerAddress);
+        } else {
+            this.p2pManager.disconnectAndBlacklistPeerByEvmAddress(
+                signerAddress
+            );
+        }
+
+        // A rotated discovery key arrives as a fresh transport with its own
+        // peer info; constructing it starts the real handshake.
+        const {
+            transport: fresh,
+            peerInfo: freshPeerInfo,
+            socket
+        } = this.holepunchTransport();
+        const request = JSON.parse(socket.writes[0]) as {
+            requestId: string;
+            params: [string, number];
+        };
+        const [challengeHash, initTime] = request.params;
+        const signature = await wallet.signMessage(
+            InitHandshakeService.buildHandshakeChallengeMessage(challengeHash)
+        );
+        fresh.onMessage(
+            JSON.stringify({
+                rpcResponse: true,
+                requestId: request.requestId,
+                ok: true,
+                result: {
+                    signature,
+                    responseTime: initTime,
+                    preferredTransport: TransportType.HOLEPUNCH
+                }
+            })
+        );
+        for (let attempt = 0; attempt < 20 && !fresh.isClosed; attempt += 1) {
+            await new Promise((resolve) => setTimeout(resolve, 5));
+        }
+
+        return {
+            freshTransportClosed: fresh.isClosed,
+            freshPeerInfoBanCalls: [...freshPeerInfo.banCalls],
+            signerBlacklisted: this.p2pManager.isBlacklisted(signerAddress),
+            signerReconnectBanned:
+                this.p2pManager.isReconnectBanned(signerAddress)
+        };
+    }
+
+    /**
+     * Oracle for the cleanup order: the topic must be left while the session
+     * transports are still open and the session bans still in place.
+     */
+    public async probeLobbyCleanupOrdering(): Promise<LobbyCleanupOrderingProbe> {
+        const service = this.p2pManager.localRpc.lobbyMatchingService;
+        const topic = `0x${"81".repeat(32)}`;
+        const liveAddress = getChecksumAddress(
+            "0xffffffffffffffffffffffffffffffffffffffff"
+        );
+        const live = this.transport(liveAddress);
+        this.registerProfile(live, liveAddress);
+        const abusiveAddress = getChecksumAddress(
+            "0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
+        );
+        const abusive = this.transport(abusiveAddress);
+        this.registerProfile(abusive, abusiveAddress);
+        void service.match(topic);
+        await Promise.resolve();
+        service.onAuthenticatedTransport(live);
+        const wrongTopicRpc: Rpc = {
+            service: "lobbyMatchingService",
+            method: "advertise",
+            params: [`0x${"82".repeat(32)}`, "advertiser", 1, true]
+        };
+        for (let rejected = 0; rejected < 9; rejected += 1) {
+            service.runRPC(wrongTopicRpc, abusive);
+        }
+
+        // Record-only wrapper: observe the state at the moment the topic is
+        // left, then call through to the real implementation.
+        const originalLeaveDiscoveryKey =
+            this.p2pManager.leaveDiscoveryKey.bind(this.p2pManager);
+        let leaveObserved = false;
+        let sessionTransportOpenAtLeave = false;
+        let bannedPeerReconnectBannedAtLeave = false;
+        this.p2pManager.leaveDiscoveryKey = async (discoveryKey: string) => {
+            leaveObserved = true;
+            sessionTransportOpenAtLeave = !live.isClosed;
+            bannedPeerReconnectBannedAtLeave =
+                this.p2pManager.isReconnectBanned(abusiveAddress);
+            await originalLeaveDiscoveryKey(discoveryKey);
+        };
+        try {
+            await service.cancelMatching(topic);
+        } finally {
+            this.p2pManager.leaveDiscoveryKey = originalLeaveDiscoveryKey;
+        }
+
+        return {
+            leaveObserved,
+            sessionTransportOpenAtLeave,
+            bannedPeerReconnectBannedAtLeave,
+            sessionTransportClosedAfterCleanup: live.isClosed,
+            bannedPeerReconnectBannedAfterCleanup:
+                this.p2pManager.isReconnectBanned(abusiveAddress)
+        };
     }
 
     public async probeLobbySessionCleanup(): Promise<LobbySessionCleanupProbe> {
@@ -4313,5 +4739,528 @@ export class P2PManagerProbeService extends ARpcService<
 
     private encodeBalance(amount: bigint | number, data = "0x"): string {
         return String(Codec.encode({ amount, data }, Type.Balance));
+    }
+
+    /**
+     * Observes one fixture-private discovery key. An ordinary admission only
+     * happens through an observed key in production, so a probe that expects a
+     * transport to be promoted has to stage that precondition.
+     */
+    private async observeFixtureDiscoveryKey(label: string): Promise<void> {
+        await this.p2pManager.joinDiscoveryKey(ethers.id(label));
+    }
+
+    /** Fires the real completion hook and lets the routing microtask drain. */
+    private async completeHandshakeFor(address: string): Promise<void> {
+        this.p2pManager.stateManager.p2pEventHooks.handshakeCompleted?.(
+            getChecksumAddress(address)
+        );
+        await Promise.resolve();
+    }
+
+    /**
+     * Drives the discovery-admission gate: a Holepunch peer completing its
+     * handshake while no key is observed, a WebRTC upgrade in the same window,
+     * and a Holepunch peer once a key is observed again.
+     */
+    public async probeDiscoveryAdmissionGate(
+        refusedAddressInput: string,
+        webRtcAddressInput: string,
+        admittedAddressInput: string,
+        discoveryKey: string
+    ): Promise<DiscoveryAdmissionGateProbe> {
+        const stateManager = this.p2pManager.stateManager;
+        stateManager.setStatus(Status.SYNCED);
+        const refusedAddress = getChecksumAddress(refusedAddressInput);
+        const webRtcAddress = getChecksumAddress(webRtcAddressInput);
+        const admittedAddress = getChecksumAddress(admittedAddressInput);
+        try {
+            const refused = this.registeredHolepunchTransport(refusedAddress);
+            await this.completeHandshakeFor(refusedAddress);
+
+            const webRTC = new WebRTCTransport(
+                new RecordingWebRTCDataChannel(),
+                this.p2pManager
+            );
+            this.authenticateTransport(webRTC, webRtcAddress);
+            await this.completeHandshakeFor(webRtcAddress);
+
+            await this.p2pManager.joinDiscoveryKey(discoveryKey);
+            const admitted = this.registeredHolepunchTransport(admittedAddress);
+            await this.completeHandshakeFor(admittedAddress);
+
+            return {
+                refusedConnected: this.p2pManager.openConnections.includes(
+                    refused.transport
+                ),
+                refusedTransportClosed: refused.transport.isClosed,
+                refusedSocketDestroyed: refused.socket.destroyed,
+                refusedBanCalls: [...refused.peerInfo.banCalls],
+                refusedBlacklisted:
+                    this.p2pManager.isBlacklisted(refusedAddress),
+                refusedReconnectBanned:
+                    this.p2pManager.isReconnectBanned(refusedAddress),
+                webRtcConnected:
+                    this.p2pManager.openConnections.includes(webRTC),
+                admittedConnected: this.p2pManager.openConnections.includes(
+                    admitted.transport
+                ),
+                admittedTransportClosed: admitted.transport.isClosed
+            };
+        } finally {
+            await this.p2pManager.leaveAllDiscoveryKeys();
+        }
+    }
+
+    /**
+     * Stages the join/leave race: the backend join is held at its await
+     * boundary, `leaveAllDiscoveryKeys` runs while the backend has not
+     * answered, then the join is released. Record-only wrappers observe the
+     * backend calls and are restored in `finally`.
+     */
+    public async probeDiscoveryJoinLeaveRace(
+        discoveryKey: string
+    ): Promise<DiscoveryJoinLeaveRaceProbe> {
+        const originalConnectToPeers =
+            LocalDiscoveryServer.connectToPeers.bind(LocalDiscoveryServer);
+        const originalLeave =
+            LocalDiscoveryServer.leave.bind(LocalDiscoveryServer);
+        const backendLeftKeys: string[] = [];
+        let joinReachedBackend = false;
+        let releaseJoin!: () => void;
+        const heldJoin = new Promise<void>((resolve) => {
+            releaseJoin = resolve;
+        });
+
+        LocalDiscoveryServer.connectToPeers = async (
+            p2pManager,
+            rendezvousKey,
+            myPeerAddress
+        ) => {
+            joinReachedBackend = true;
+            await heldJoin;
+            await originalConnectToPeers(
+                p2pManager,
+                rendezvousKey,
+                myPeerAddress
+            );
+        };
+        LocalDiscoveryServer.leave = async (rendezvousKey, p2pManager) => {
+            backendLeftKeys.push(rendezvousKey);
+            await originalLeave(rendezvousKey, p2pManager);
+        };
+
+        try {
+            const join = this.p2pManager.joinDiscoveryKey(discoveryKey);
+            // Time is the input here: wait until the join is parked inside the
+            // backend so the leave really races an in-flight join.
+            while (!joinReachedBackend) {
+                await new Promise((resolve) => setTimeout(resolve, 1));
+            }
+            const observedDuringJoin = this.p2pManager.getJoinedDiscoveryKeys();
+
+            const leaveAll = this.p2pManager.leaveAllDiscoveryKeys();
+            releaseJoin();
+            await join;
+            await leaveAll;
+
+            return {
+                observedDuringJoin,
+                observedAfterLeaveAll: this.p2pManager.getJoinedDiscoveryKeys(),
+                backendLeftKeys
+            };
+        } finally {
+            releaseJoin();
+            LocalDiscoveryServer.connectToPeers = originalConnectToPeers;
+            LocalDiscoveryServer.leave = originalLeave;
+            await this.p2pManager.leaveAllDiscoveryKeys();
+        }
+    }
+
+    /**
+     * Holds the backend join at its await boundary and completes an inbound
+     * handshake while it is parked. The key is observed from the start of the
+     * join, so the peer must be admitted, not refused as an unobserved
+     * discovery admission. The held wrapper is restored in `finally`.
+     */
+    public async probeAdmissionDuringInFlightDiscoveryJoin(
+        admittedAddressInput: string,
+        discoveryKey: string
+    ): Promise<InFlightJoinAdmissionProbe> {
+        this.p2pManager.stateManager.setStatus(Status.SYNCED);
+        const admittedAddress = getChecksumAddress(admittedAddressInput);
+        const originalConnectToPeers =
+            LocalDiscoveryServer.connectToPeers.bind(LocalDiscoveryServer);
+        let joinReachedBackend = false;
+        let releaseJoin!: () => void;
+        const heldJoin = new Promise<void>((resolve) => {
+            releaseJoin = resolve;
+        });
+
+        LocalDiscoveryServer.connectToPeers = async (
+            p2pManager,
+            rendezvousKey,
+            myPeerAddress
+        ) => {
+            joinReachedBackend = true;
+            await heldJoin;
+            await originalConnectToPeers(
+                p2pManager,
+                rendezvousKey,
+                myPeerAddress
+            );
+        };
+
+        try {
+            const join = this.p2pManager.joinDiscoveryKey(discoveryKey);
+            // Time is the input here: wait until the join is parked inside the
+            // backend so the handshake really lands mid-join.
+            if (!(await this.waitUntil(() => joinReachedBackend))) {
+                throw new Error("The discovery join never reached the backend");
+            }
+            const admitted = this.registeredHolepunchTransport(admittedAddress);
+            await this.completeHandshakeFor(admittedAddress);
+            const duringJoin = {
+                admittedConnected: this.p2pManager.openConnections.includes(
+                    admitted.transport
+                ),
+                admittedTransportClosed: admitted.transport.isClosed,
+                admittedSocketDestroyed: admitted.socket.destroyed,
+                admittedBanCalls: [...admitted.peerInfo.banCalls],
+                admittedBlacklisted:
+                    this.p2pManager.isBlacklisted(admittedAddress),
+                admittedReconnectBanned:
+                    this.p2pManager.isReconnectBanned(admittedAddress)
+            };
+
+            releaseJoin();
+            await join;
+
+            return {
+                ...duringJoin,
+                observedAfterJoin: this.p2pManager.getJoinedDiscoveryKeys()
+            };
+        } finally {
+            releaseJoin();
+            LocalDiscoveryServer.connectToPeers = originalConnectToPeers;
+            await this.p2pManager.leaveAllDiscoveryKeys();
+        }
+    }
+
+    /**
+     * Fails the backend join. The key is recorded before the backend is
+     * awaited, so a rejected join has to stop observing it again.
+     */
+    public async probeFailedDiscoveryJoin(
+        discoveryKey: string
+    ): Promise<FailedDiscoveryJoinProbe> {
+        this.p2pManager.stateManager.setStatus(Status.SYNCED);
+        const originalConnectToPeers =
+            LocalDiscoveryServer.connectToPeers.bind(LocalDiscoveryServer);
+        LocalDiscoveryServer.connectToPeers = async () => {
+            throw new Error("Discovery backend rejected the join");
+        };
+
+        try {
+            let joinRejected = false;
+            try {
+                await this.p2pManager.joinDiscoveryKey(discoveryKey);
+            } catch {
+                joinRejected = true;
+            }
+            return {
+                joinRejected,
+                observedAfterFailedJoin:
+                    this.p2pManager.getJoinedDiscoveryKeys()
+            };
+        } finally {
+            LocalDiscoveryServer.connectToPeers = originalConnectToPeers;
+            await this.p2pManager.leaveAllDiscoveryKeys();
+        }
+    }
+
+    /** Bounded wait for a staged condition; time is the input, not the oracle. */
+    private async waitUntil(condition: () => boolean): Promise<boolean> {
+        for (let attempt = 0; attempt < 200 && !condition(); attempt += 1) {
+            await new Promise((resolve) => setTimeout(resolve, 5));
+        }
+        return condition();
+    }
+
+    /**
+     * Answers the challenge a freshly constructed Holepunch transport sent, with
+     * a real signature from `wallet`. Returns the challenge hash so the caller
+     * can deliver the matching ack later.
+     */
+    private async answerHandshakeChallenge(
+        transport: HolepunchTransport,
+        socket: RecordingHolepunchSocket,
+        wallet: ethers.HDNodeWallet
+    ): Promise<string> {
+        const request = JSON.parse(socket.writes[0]) as {
+            requestId: string;
+            params: [string, number];
+        };
+        const [challengeHash, initTime] = request.params;
+        const signature = await wallet.signMessage(
+            InitHandshakeService.buildHandshakeChallengeMessage(challengeHash)
+        );
+        transport.onMessage(
+            JSON.stringify({
+                rpcResponse: true,
+                requestId: request.requestId,
+                ok: true,
+                result: {
+                    signature,
+                    responseTime: initTime,
+                    preferredTransport: TransportType.HOLEPUNCH
+                }
+            })
+        );
+        return challengeHash;
+    }
+
+    /**
+     * Drives the ack-gated finalize with a suspension placed after the response
+     * was already accepted: the response passes, then the identity is
+     * reconnect-banned, then the held ack is delivered.
+     */
+    public async probeReconnectBanAtFinalAdmission(): Promise<ReconnectBanFinalAdmissionProbe> {
+        this.p2pManager.stateManager.setStatus(Status.SYNCED);
+        const wallet = ethers.Wallet.createRandom();
+        const signerAddress = getChecksumAddress(wallet.address);
+        // The identity already holds one admitted transport.
+        const established = this.registeredHolepunchTransport(signerAddress);
+
+        const { transport: replacement, socket } = this.holepunchTransport();
+        const challengeHash = await this.answerHandshakeChallenge(
+            replacement,
+            socket,
+            wallet
+        );
+        // Our own ack frame is written once the response is verified; that is
+        // the window the ban is placed in.
+        const responseAcceptedBeforeBan = await this.waitUntil(
+            () => socket.writes.length > 1
+        );
+
+        this.p2pManager.banReconnect(signerAddress);
+
+        replacement.onMessage(
+            JSON.stringify({
+                service: "initHandshakeService",
+                method: "onInitHandshakeAck",
+                params: [challengeHash]
+            })
+        );
+        await this.waitUntil(() => replacement.isClosed);
+
+        const profile =
+            this.p2pManager.profileManager.getProfileByEvmAddress(
+                signerAddress
+            );
+        return {
+            responseAcceptedBeforeBan,
+            replacementTransportClosed: replacement.isClosed,
+            replacementAuthenticated: replacement.peerAddress !== undefined,
+            replacementConnected:
+                this.p2pManager.openConnections.includes(replacement),
+            establishedTransportRetained:
+                profile?.getTransport() === established.transport,
+            signerBlacklisted: this.p2pManager.isBlacklisted(signerAddress),
+            signerReconnectBanned:
+                this.p2pManager.isReconnectBanned(signerAddress)
+        };
+    }
+
+    /**
+     * Rejected lobby traffic arriving after the session ended still reaches
+     * `disconnectForSession`. With no topic left to lift a ban, none may be
+     * placed: nothing would ever release it.
+     */
+    public async probeRejectedRpcAfterLobbyEnded(): Promise<RejectedRpcAfterLobbyEndedProbe> {
+        const service = new LobbyMatchingService(this.p2pManager);
+        const topic = `0x${"73".repeat(32)}`;
+        const abusiveAddress = getChecksumAddress(
+            ethers.Wallet.createRandom().address
+        );
+        const abusive = this.transport(abusiveAddress);
+        this.registerProfile(abusive, abusiveAddress);
+        void service.match(topic);
+        const sessionStarted = await this.waitUntil(
+            () => service.getAvailability().topic === topic
+        );
+        await service.cancelMatching(topic);
+
+        const wrongTopicRpc: Rpc = {
+            service: "lobbyMatchingService",
+            method: "advertise",
+            params: [`0x${"74".repeat(32)}`, "advertiser", 1, true]
+        };
+        for (let rejected = 0; rejected < 9; rejected += 1) {
+            service.runRPC(wrongTopicRpc, abusive);
+        }
+        const reconnectBannedAfterOverflow =
+            this.p2pManager.isReconnectBanned(abusiveAddress);
+        const transportClosedAfterOverflow = abusive.isClosed;
+
+        // A legitimate reconnect from the same identity must still be admitted:
+        // a ban with no session left to lift it would refuse it forever.
+        const { transport: reconnect } = this.holepunchTransport();
+        const admitted =
+            this.p2pManager.profileManager.authenticateTransport(
+                reconnect,
+                abusiveAddress
+            ) !== undefined;
+        this.p2pManager.disconnectConnection(reconnect);
+
+        return {
+            sessionStarted,
+            reconnectBannedAfterOverflow,
+            transportClosedAfterOverflow,
+            reconnectAdmitted: admitted
+        };
+    }
+
+    /**
+     * Holds a cleanup at its discovery leave and starts a different-topic match
+     * on the same instance: the new session may not exist until the old cleanup
+     * has fully settled, or the old cleanup tears it down when it resumes.
+     */
+    public async probeCleanupSerializesWithMatch(): Promise<CleanupMatchSerializationProbe> {
+        const service = new LobbyMatchingService(this.p2pManager);
+        const firstTopic = `0x${"75".repeat(32)}`;
+        const secondTopic = `0x${"76".repeat(32)}`;
+        const firstAddress = getChecksumAddress(
+            ethers.Wallet.createRandom().address
+        );
+        const secondAddress = getChecksumAddress(
+            ethers.Wallet.createRandom().address
+        );
+        const abusiveAddress = getChecksumAddress(
+            ethers.Wallet.createRandom().address
+        );
+        const first = this.transport(firstAddress);
+        const second = this.transport(secondAddress);
+        const abusive = this.transport(abusiveAddress);
+        for (const [transport, address] of [
+            [first, firstAddress],
+            [second, secondAddress],
+            [abusive, abusiveAddress]
+        ] as const) {
+            this.registerProfile(transport, address);
+        }
+
+        void service.match(firstTopic);
+        await this.waitUntil(
+            () => service.getAvailability().topic === firstTopic
+        );
+        service.onAuthenticatedTransport(first);
+
+        const originalLeaveDiscoveryKey =
+            this.p2pManager.leaveDiscoveryKey.bind(this.p2pManager);
+        let leaveReached = false;
+        let releaseLeave!: () => void;
+        const heldLeave = new Promise<void>((resolve) => {
+            releaseLeave = resolve;
+        });
+        this.p2pManager.leaveDiscoveryKey = async (discoveryKey: string) => {
+            leaveReached = true;
+            await heldLeave;
+            await originalLeaveDiscoveryKey(discoveryKey);
+        };
+
+        try {
+            const leaving = service.cancelMatching(firstTopic);
+            await this.waitUntil(() => leaveReached);
+
+            const secondMatch = service.match(secondTopic);
+            // Time is the input: give an unserialized `match` every chance to
+            // start its session while the old cleanup is still suspended.
+            await new Promise((resolve) => setTimeout(resolve, 20));
+            const topicWhileCleanupHeld = service.getAvailability().topic;
+
+            releaseLeave();
+            await leaving;
+            const secondSessionStarted = await this.waitUntil(
+                () => service.getAvailability().topic === secondTopic
+            );
+            service.onAuthenticatedTransport(second);
+            const wrongTopicRpc: Rpc = {
+                service: "lobbyMatchingService",
+                method: "advertise",
+                params: [`0x${"77".repeat(32)}`, "advertiser", 1, true]
+            };
+            for (let rejected = 0; rejected < 9; rejected += 1) {
+                service.runRPC(wrongTopicRpc, abusive);
+            }
+
+            const secondTransportOpen = !second.isClosed;
+            const secondSessionBanned =
+                this.p2pManager.isReconnectBanned(abusiveAddress);
+
+            const secondSessionLeft = await service.cancelMatching(secondTopic);
+            const secondResolvedUndefined = (await secondMatch) === undefined;
+
+            return {
+                topicWhileCleanupHeld,
+                secondSessionStarted,
+                secondTransportOpen,
+                secondSessionBanned,
+                secondSessionLeft,
+                secondResolvedUndefined,
+                banLiftedAfterSecondCleanup:
+                    !this.p2pManager.isReconnectBanned(abusiveAddress)
+            };
+        } finally {
+            releaseLeave();
+            this.p2pManager.leaveDiscoveryKey = originalLeaveDiscoveryKey;
+            await this.p2pManager.leaveAllDiscoveryKeys();
+        }
+    }
+
+    /**
+     * A replacement transport for a peer that already holds a live admitted one
+     * is not a discovery admission, so the no-key gate must let it through
+     * while still refusing an identity nothing has ever reached.
+     */
+    public async probeReplacementAdmissionWithoutDiscoveryKey(
+        establishedAddressInput: string,
+        freshAddressInput: string,
+        discoveryKey: string
+    ): Promise<ReplacementAdmissionGateProbe> {
+        this.p2pManager.stateManager.setStatus(Status.SYNCED);
+        const establishedAddress = getChecksumAddress(establishedAddressInput);
+        const freshAddress = getChecksumAddress(freshAddressInput);
+        try {
+            await this.p2pManager.joinDiscoveryKey(discoveryKey);
+            const established =
+                this.registeredHolepunchTransport(establishedAddress);
+            await this.completeHandshakeFor(establishedAddress);
+            const establishedConnected =
+                this.p2pManager.openConnections.includes(established.transport);
+
+            await this.p2pManager.leaveAllDiscoveryKeys();
+
+            const { transport: replacement } = this.holepunchTransport();
+            this.authenticateTransport(replacement, establishedAddress);
+            await this.completeHandshakeFor(establishedAddress);
+
+            const fresh = this.registeredHolepunchTransport(freshAddress);
+            await this.completeHandshakeFor(freshAddress);
+
+            return {
+                establishedConnected,
+                establishedTransportStillLive: !established.transport.isClosed,
+                replacementConnected:
+                    this.p2pManager.openConnections.includes(replacement),
+                replacementTransportClosed: replacement.isClosed,
+                freshIdentityConnected:
+                    this.p2pManager.openConnections.includes(fresh.transport),
+                freshIdentityTransportClosed: fresh.transport.isClosed
+            };
+        } finally {
+            await this.p2pManager.leaveAllDiscoveryKeys();
+        }
     }
 }

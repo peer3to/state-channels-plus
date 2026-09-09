@@ -548,6 +548,22 @@ EVM-address index to that profile, and the profile then survives transport churn
 whether an unauthenticated ban must survive a new SDK peer handle or process restart.
 (Divergence class: decision pending.)
 
+Two distinct ban strengths appear in the table below. A **blacklist** is an exclusion: it bans the
+identity's discovery handle and never lifts on its own. A **reconnect ban**
+(`ProfileManager.banReconnect`) is refused at handshake verification and at final admission, but
+writes no blacklist mark, touches no discovery handle, and is lifted by whoever placed it. It exists
+because closing a transport alone only pauses a peer that still shares an observed topic: discovery
+re-dials it and the handshake reruns. The ban refuses that rerun instead of stopping it. Either ban
+binds only the node that placed it, and the peer is never told about it: with a reconnect ban both
+sides keep dialing and every attempt is refused at admission. The refused attempt closes without an
+ack, and the ack timeout deliberately draws no consequence from a closed transport, so refusing
+costs the refused peer nothing. Because no dial was ever suppressed, no node has to dial the peer
+back when the ban lifts — the next ordinary attempt is simply admitted, which is also why no node
+reconnects a peer on the strength of an observed close: a close carries no reason, so a peer that
+left deliberately would be dragged back. A blacklist implies a reconnect ban; lifting a reconnect
+ban never lifts a blacklist, and the handle ban an exclusion places is released only by its own
+paths.
+
 | Failure | Where | Consequence |
 | --- | --- | --- |
 | Oversized frame | `onRpc` step 1 | Disconnect |
@@ -562,7 +578,12 @@ whether an unauthenticated ban must survive a new SDK peer handle or process res
 | Malformed handshake request / skew violation | `initHandshakeService` | Disconnect + request error |
 | Duplicate handshake ack | `initHandshakeService` | Disconnect + blacklist |
 | Handshake response invalid/timeout (outgoing) | `initHandshakeService` | Disconnect |
-| Handshake ack timeout | `initHandshakeService` | Blacklist by verified address, else disconnect |
+| Handshake ack timeout, transport still open | `initHandshakeService` | Blacklist by verified address, else disconnect |
+| Handshake ack timeout, transport already closed | `initHandshakeService` | Log and return; no disconnect, no blacklist (the close explains the missing ack, so a peer's refusal is not answered with an exclusion) |
+| Response signer already blacklisted | `initHandshakeService` | Refuse + disconnect; also ban the discovery handle the transport arrived on (a rotated key must not bypass exclusion). No new blacklist |
+| Response signer reconnect-banned | `initHandshakeService` | Refuse + disconnect. No blacklist, no extra handle ban |
+| Non-selected lobby candidate at commitment handoff | `lobbyMatchingService` | Disconnect + session reconnect ban; lifted when the lobby leaves the topic. Not an exclusion |
+| Lobby ignored-traffic bound exceeded | `lobbyMatchingService` | Disconnect + session reconnect ban; lifted when the lobby leaves the topic. Not an exclusion |
 | Block confirmation judged Byzantine (strategy verdict `false`) | `stateTransitionService` → pipeline | Disconnect + blacklist |
 | Block confirmation invalid but tolerated (duplicate, wrong fork, unknown sender…) | pipeline strategies | Ignore (entry dropped or queued; connection kept) — see [block-confirmation-pipeline.md](../block-confirmation-pipeline.md) §9 |
 | Provable equivocation / invalid transition in ingested blocks | pipeline, not RPC layer | Fraud-proof / dispute work ([dispute-pipeline.md](../dispute-pipeline.md)); the RPC layer itself never constructs proofs |

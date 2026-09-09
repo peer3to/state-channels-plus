@@ -151,8 +151,11 @@ no callback, transport, abort signal, or live manager object. Matching has no im
 finite timeout crosses with the options. Replacing a join settles an earlier active match as `undefined`.
 `leaveLobby` returns the host's phase decision: true during cancellable matching and false after handoff.
 Lobby-authenticated transports remain host-side and outside ordinary connection tracking until one selected
-profile is promoted at commitment. Every non-success cleanup closes the session set, and unsigned retry
-leaves and freshly rejoins the topic. The internal match transcript never crosses the port.
+profile is promoted at commitment; every other candidate is closed and reconnect-banned for the rest of the
+session, so the rendezvous does not hand it straight back. Every non-success cleanup leaves the topic first,
+then closes the session set and lifts the bans it placed — leaving before closing is what makes those closes
+final — and unsigned retry freshly rejoins the topic. None of that is an exclusion: a peer the session
+suspended ends it neither suspended nor blacklisted. The internal match transcript never crosses the port.
 The host derives the channel ID during negotiation, observes the opening on-chain, leaves the topic, and
 returns the opened channel ID and selected peer address for the client to observe.
 

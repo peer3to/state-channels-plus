@@ -21,6 +21,7 @@ import { DebugProxy, getChecksumAddress, LocalDiscoveryServer } from "@/utils";
 import type { Logger } from "@/utils";
 import { requireBytes32 } from "@/utils/bytes32";
 import { config, isNodeRuntime } from "@/utils/config";
+import type { DiscoveryKey } from "@/utils/discoveryKey";
 import { errorMessage } from "@/utils/errorMessage";
 import { LoggerUtils } from "@/utils/LoggerUtils";
 import { Buffer } from "buffer";
@@ -70,6 +71,17 @@ class P2PManager<TCustomRpc extends MainRpcService = MainRpcService>
     // Bounds the wait for the first cooperating participant handshake. An
     // observer that never reaches a sync request must not wait forever.
     private initialSyncDeadline?: ReturnType<typeof setTimeout>;
+    // Discovery keys this runtime observes. Discovery re-dials every peer that
+    // shares one, so leaving them is what makes a disconnect stick.
+    private readonly joinedDiscoveryKeys = new Set<DiscoveryKey>();
+    // Joins whose discovery backend has not answered yet. The key is already
+    // observed, but the backend is not joined, so a concurrent
+    // `leaveAllDiscoveryKeys` must wait for the join to settle before it leaves
+    // the key at the backend.
+    private readonly pendingDiscoveryJoins = new Map<
+        DiscoveryKey,
+        Promise<void>
+    >();
 
     constructor(
         stateManager: StateManager<TCustomRpc>,
@@ -183,6 +195,31 @@ class P2PManager<TCustomRpc extends MainRpcService = MainRpcService>
                     lobbyTransport
                 );
             }
+            return;
+        }
+
+        // While no discovery key is observed, nothing may be admitted through
+        // discovery: leaving a key does not close the listening server, so a
+        // peer that still shares the key we just left keeps reaching us. WebRTC
+        // is exempt because it only ever arrives as a same-peer upgrade between
+        // already-authenticated peers, never as a fresh discovery admission.
+        // A peer that still holds another live transport is not a discovery
+        // admission either: it is replacing a route we already accepted (a
+        // matched lobby peer redialing between the lobby leaving its topic and
+        // the channel key being joined), so its replacement stays admitted.
+        if (
+            this.joinedDiscoveryKeys.size === 0 &&
+            transport.transportType !== TransportType.WEBRTC &&
+            !this.profileManager.hasOtherLiveTransport(peerAddress, transport)
+        ) {
+            this.logger.debug(
+                "Refusing discovery admission while no discovery key is observed",
+                {
+                    peerAddress,
+                    transportType: TransportType[transport.transportType]
+                }
+            );
+            this.disconnectConnection(transport);
             return;
         }
 
@@ -421,21 +458,21 @@ class P2PManager<TCustomRpc extends MainRpcService = MainRpcService>
         const initialSync = waitForInitialSync
             ? this.getInitialSyncPromise()
             : undefined;
-        // TODO: Give Holepunch and LocalDiscoveryServer the same lifecycle API
-        // and inject the selected backend so P2PManager does not know which
-        // discovery implementation it is using.
-        if (config.DEBUG_LOCAL_TRANSPORT) {
-            if (isNodeRuntime() || config.LOCAL_DISCOVERY_REGISTRY_URL) {
-                await LocalDiscoveryServer.tryStart();
-                await LocalDiscoveryServer.connectToPeers(
-                    this.self,
-                    normalizedKey,
-                    this.stateManager.signerAddress.toString()
-                );
+        const join = this.observeDiscoveryKey(normalizedKey);
+        // A settled-either-way handle: a waiter only needs to know when the
+        // join stopped being in flight, not whether the backend accepted it.
+        const pending = join.then(
+            () => undefined,
+            () => undefined
+        );
+        this.pendingDiscoveryJoins.set(normalizedKey, pending);
+        try {
+            await join;
+        } finally {
+            // A later join for the same key owns the entry; only clear our own.
+            if (this.pendingDiscoveryJoins.get(normalizedKey) === pending) {
+                this.pendingDiscoveryJoins.delete(normalizedKey);
             }
-        } else {
-            const topic = Buffer.from(normalizedKey.slice(2), "hex");
-            await this.holepunch.join(topic);
         }
 
         if (!initialSync) return;
@@ -456,6 +493,38 @@ class P2PManager<TCustomRpc extends MainRpcService = MainRpcService>
         }
         this.armInitialSyncDeadline();
         await initialSync;
+    }
+
+    /** Records the observed key, then joins the configured discovery backend. */
+    private async observeDiscoveryKey(
+        normalizedKey: DiscoveryKey
+    ): Promise<void> {
+        // Recorded before the backend answers: the join itself starts the
+        // listening server and dials peers, so an inbound handshake completes
+        // inside the await and would be refused as an unobserved admission.
+        this.joinedDiscoveryKeys.add(normalizedKey);
+        try {
+            // TODO: Give Holepunch and LocalDiscoveryServer the same lifecycle
+            // API and inject the selected backend so P2PManager does not know
+            // which discovery implementation it is using.
+            if (config.DEBUG_LOCAL_TRANSPORT) {
+                if (isNodeRuntime() || config.LOCAL_DISCOVERY_REGISTRY_URL) {
+                    await LocalDiscoveryServer.tryStart();
+                    await LocalDiscoveryServer.connectToPeers(
+                        this.self,
+                        normalizedKey,
+                        this.stateManager.signerAddress.toString()
+                    );
+                }
+            } else {
+                const topic = Buffer.from(normalizedKey.slice(2), "hex");
+                await this.holepunch.join(topic);
+            }
+        } catch (e) {
+            // The backend never joined, so nothing observes the key.
+            this.joinedDiscoveryKeys.delete(normalizedKey);
+            throw e;
+        }
     }
 
     /**
@@ -510,6 +579,7 @@ class P2PManager<TCustomRpc extends MainRpcService = MainRpcService>
     public async leaveDiscoveryKey(discoveryKey: string): Promise<void> {
         requireBytes32(discoveryKey, "Discovery key must be exactly 32 bytes");
         const normalizedKey = ethers.hexlify(discoveryKey);
+        this.joinedDiscoveryKeys.delete(normalizedKey);
         if (config.DEBUG_LOCAL_TRANSPORT) {
             await LocalDiscoveryServer.leave(normalizedKey, this.self);
             return;
@@ -517,6 +587,22 @@ class P2PManager<TCustomRpc extends MainRpcService = MainRpcService>
         const topic = Buffer.from(normalizedKey.slice(2), "hex");
         await this.holepunch.leave(topic);
     }
+
+    /** Stop observing every discovery key; no peer is re-dialed afterwards. */
+    public async leaveAllDiscoveryKeys(): Promise<void> {
+        // Await the joins in flight at call time first. Their backend join has
+        // not answered yet, so leaving before it settles would let the backend
+        // join land after the caller believes discovery is empty.
+        await Promise.all([...this.pendingDiscoveryJoins.values()]);
+        for (const discoveryKey of [...this.joinedDiscoveryKeys]) {
+            await this.leaveDiscoveryKey(discoveryKey);
+        }
+    }
+
+    public getJoinedDiscoveryKeys(): DiscoveryKey[] {
+        return [...this.joinedDiscoveryKeys];
+    }
+
     public addConnection(transport: ATransport) {
         // Do not revive a transport that closed while handshake work was pending.
         if (transport.isClosed) return;
@@ -582,6 +668,24 @@ class P2PManager<TCustomRpc extends MainRpcService = MainRpcService>
             this.profileManager.getProfileByEvmAddress(evmAddress)
                 ?.isBlackListed || false
         );
+    }
+
+    /**
+     * Soft ban: the handshake refuses this identity at admission until
+     * `allowReconnect`. Discovery keeps dialing and accepting it, so the next
+     * dial after the lift reconnects on its own. It is not an exclusion; use
+     * the blacklist for a proven violation.
+     */
+    public banReconnect(evmAddress: Address): boolean {
+        return this.profileManager.banReconnect(evmAddress);
+    }
+
+    public allowReconnect(evmAddress: Address): boolean {
+        return this.profileManager.allowReconnect(evmAddress);
+    }
+
+    public isReconnectBanned(evmAddress: Address): boolean {
+        return this.profileManager.isReconnectBanned(evmAddress);
     }
 
     public disconnectAll() {

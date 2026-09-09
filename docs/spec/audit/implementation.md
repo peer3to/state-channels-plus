@@ -111,3 +111,37 @@ wire violations. The helper prefers the authenticated address, so a fault receiv
 transport still blacklists the current profile and closes both current and reporting transports.
 Lifecycle cleanup, network loss, timeouts without proof, response-send failure, and local dispatch
 exceptions continue to call `disconnectConnection`.
+
+## Refusal attribution and an admission-only suspension — 2026-09-08
+
+The handshake ack timeout now returns before any consequence when the transport is already closed,
+logging the same `ack-timeout` message with a distinct reason. The verified-but-silent exclusion is
+unchanged for a transport that is still open.
+
+The reconnect suspension is admission-only. `ProfileManager.banReconnect` sets a profile flag and
+nothing else: it bans no discovery handle, the local backend's dial gate skips only a blacklisted
+peer, and `allowReconnect` has nothing to restore. A suspended peer therefore keeps being announced,
+dialed and accepted at the transport level, and is refused at handshake verification and at final
+admission until the suspension lifts; the first attempt after the lift is admitted by the ordinary
+retry loop. Only the exclusion path still bans the handle a refused attempt arrived on, which is
+what stops a rotated discovery key from bypassing a blacklist.
+
+An intermediate revision made the suspension suppress dials instead — a `reconnect-banned` skip in
+the local dial gate and a Hyperswarm handle ban — and then had to add `LocalDiscoveryServer.redialPeer`
+so the suspending side could dial the peer back on a lift, because it owned the pair's only dialer.
+Both were withdrawn. The suppression starved the pair of its only dialer in the local backend: in
+`test/e2e/E2E-LobbyMatching.test.ts` the unmatched peer of a three-peer lobby is a pure acceptor
+whenever it holds the highest address, so both matched peers skipped dialing it and the redial the
+test waits for never happened. Refusing at admission keeps the observable behavior the lobby needs
+(the peer never becomes a session again) without any node owning the pair's reachability.
+
+An intermediate revision instead armed a delayed dial takeover from the accepting side on every
+inbound transport close. It was withdrawn as unsound. Close intent is not carried on the wire —
+`ATransport.close(isExpected)` is local-only and `LocalTransport` sends a bare socket close whose
+code and reason the receiver discards — so from the acceptor, "the primary suspended me" and "the
+primary deliberately left" are the same event, and the takeover resurrected transports to peers that
+had dropped the feed on purpose. It was caught on the distributed pool: the pre-dispute spectator
+case in `test/e2e/E2E-Spectate.test.ts` passed 5/5 on the base revision and failed 5/5 with the
+takeover, because four honest peers re-established live sessions to a spectator that had aborted
+channel participation, which stalled the reduced fork's writer slot and opened an unplanned second
+dispute.
