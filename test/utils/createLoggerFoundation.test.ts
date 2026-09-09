@@ -35,6 +35,7 @@ describe("createLoggerFoundation", function () {
             logStore.store({
                 time: "0",
                 level: "info",
+                wallTimeMs: 0,
                 context: {},
                 sharedContext: {},
                 message: "disabled",
@@ -59,6 +60,7 @@ describe("createLoggerFoundation", function () {
             first.logStore.store({
                 time: "0",
                 level: "info",
+                wallTimeMs: 0,
                 context: {},
                 sharedContext: {},
                 message: "retained",

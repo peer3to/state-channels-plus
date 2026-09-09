@@ -1,7 +1,6 @@
-import { expect } from "chai";
-
-import { LogStore } from "@/utils/logging/logStore";
 import type { LogEntry } from "@/utils/logging/Logger";
+import { LogStore } from "@/utils/logging/logStore";
+import { expect } from "chai";
 
 function entry(message: string): LogEntry {
     return {

@@ -1,10 +1,10 @@
 // @spec-test-coverage-ignore: crash-log server staging shared by its suites; the suites own the declarations
-import path from "path";
-import { mkdtempSync } from "node:fs";
-import { tmpdir } from "node:os";
 import { once } from "node:events";
-import type { AddressInfo } from "node:net";
+import { mkdtempSync } from "node:fs";
 import type { Server } from "node:http";
+import type { AddressInfo } from "node:net";
+import { tmpdir } from "node:os";
+import path from "path";
 
 export type UploadValidation =
     | { ok: true }

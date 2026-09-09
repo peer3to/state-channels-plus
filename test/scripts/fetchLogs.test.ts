@@ -1,9 +1,7 @@
-import { expect } from "chai";
-import { mkdtempSync, readFileSync, rmSync } from "node:fs";
-import { tmpdir } from "node:os";
-import path from "node:path";
-import type { Server } from "node:http";
-
+import {
+    fetchLogEntries,
+    persistLogEntries
+} from "../../scripts/logging/logFetch";
 import {
     encodeChunk,
     listenOn,
@@ -13,10 +11,11 @@ import {
     upload,
     uploadBody
 } from "@test/fixtures/logging/crashLogServer.fixture";
-import {
-    fetchLogEntries,
-    persistLogEntries
-} from "../../scripts/logging/logFetch";
+import { expect } from "chai";
+import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import type { Server } from "node:http";
+import { tmpdir } from "node:os";
+import path from "node:path";
 
 const { app, logDir: TEST_LOG_DIR } = loadCrashLogServer();
 

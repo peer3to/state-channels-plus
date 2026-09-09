@@ -45,8 +45,8 @@ import { LocalDiscoveryServer } from "@/utils";
 import { config, isNodeRuntime } from "@/utils/config";
 import { LoggerUtils } from "@/utils/LoggerUtils";
 
-import type { Logger } from "@/utils/logging/Logger";
 import type { LogPortHandle } from "@/utils/logging/logControl";
+import type { Logger } from "@/utils/logging/Logger";
 import { connectStateChannelManager } from "@/utils/stateChannelManager";
 import { ethers, type InterfaceAbi } from "ethers";
 

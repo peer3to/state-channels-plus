@@ -1,6 +1,5 @@
-import { expect } from "chai";
-
 import type { LogEntry } from "@/utils/logging/Logger";
+import { expect } from "chai";
 
 // The chunk helpers are a CommonJS dev-script module shared with the crash-log
 // server, required here the same way the server helper is.

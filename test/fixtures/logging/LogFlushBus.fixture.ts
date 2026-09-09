@@ -1,19 +1,17 @@
 // @spec-test-coverage-ignore: developer diagnostics tooling; not protocol behavior, no specification or implementation IDs apply
-import { MessageChannel } from "node:worker_threads";
-import { ethers } from "ethers";
-
-import { LogFlushBus } from "@/utils/logging/LogFlushBus";
+import { createUploaderFixture } from "./LogUploader.fixture";
 import type {
     LogControlMessage,
     LogControlPort,
     LogPortHandle
 } from "@/utils/logging/logControl";
+import { LogFlushBus } from "@/utils/logging/LogFlushBus";
 import type { LogThreadName } from "@/utils/logging/Logger";
-import type { NodeLogUploader } from "@/utils/logging/node/NodeLogUploader";
-import type { NodeLogger } from "@/utils/logging/node/NodeLogger";
 import type { LogStore } from "@/utils/logging/logStore";
-
-import { createUploaderFixture } from "./LogUploader.fixture";
+import type { NodeLogger } from "@/utils/logging/node/NodeLogger";
+import type { NodeLogUploader } from "@/utils/logging/node/NodeLogUploader";
+import { ethers } from "ethers";
+import { MessageChannel } from "node:worker_threads";
 
 /** one realm's logging state: its own bus, logger, store, uploader */
 export type TestRealm = {

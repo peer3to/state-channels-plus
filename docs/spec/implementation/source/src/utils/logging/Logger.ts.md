@@ -27,19 +27,19 @@ leaving the bus when disposed.
 ## Key design decisions
 
 1. **The monitor seam is internal.** `startPerformanceMonitoring` and the abstract `createPerformanceMonitor` take `PerformanceMonitorInternalOptions` (the exported `LoggerPerformanceMonitorOptions` plus a sample source and a started callback); the exported option type is unchanged and the seam is not re-exported from the package root.
-- **Writing a line stores it and does nothing else.** `log` gates on the level, stores the entry and
-  writes it locally; only `error` schedules this realm's upload, and a collection is something a
-  caller or a crash hook asks for ([`REQ-LOG-3-T9FM2K`](../../../../../specification/runtime/log-collection.md#req-log-3-t9fm2k)).
-- **Children share the root's store, uploader and bus registration.** A child adds context, never a
-  second store, so a realm root uploads once however many children wrote to it.
-- **The shared context is held by reference.** A line written before the session or participant was
-  known is filed under it once it arrives, because the store keeps the context object, not a copy
-  ([`REQ-LOG-4-W5XR7Q`](../../../../../specification/runtime/log-collection.md#req-log-4-w5xr7q)).
-- **`uploadLogs` is the report-a-bug entry.** It writes a marker, runs a collection over every
-  reachable realm, then records what that collection reached and ships the record too
-  ([`REQ-LOG-9-V6SMAC`](../../../../../specification/runtime/log-collection.md#req-log-9-v6smac)).
-- **`dispose` leaves the bus.** A closed session's root is unregistered so a later collection does not
-  re-upload it; until then the root stays reachable ([`REQ-LOG-1-H2VQ8X`](../../../../../specification/runtime/log-collection.md#req-log-1-h2vq8x)).
+2. **Writing a line stores it and does nothing else.** `log` gates on the level, stores the entry and
+   writes it locally; only `error` schedules this realm's upload, and a collection is something a
+   caller or a crash hook asks for ([`REQ-LOG-3-T9FM2K`](../../../../../specification/runtime/log-collection.md#req-log-3-t9fm2k)).
+3. **Children share the root's store, uploader and bus registration.** A child adds context, never a
+   second store, so a realm root uploads once however many children wrote to it.
+4. **The shared context is held by reference.** A line written before the session or participant was
+   known is filed under it once it arrives, because the store keeps the context object, not a copy
+   ([`REQ-LOG-4-W5XR7Q`](../../../../../specification/runtime/log-collection.md#req-log-4-w5xr7q)).
+5. **`uploadLogs` is the report-a-bug entry.** It writes a marker, runs a collection over every
+   reachable realm, then records what that collection reached and ships the record too
+   ([`REQ-LOG-9-V6SMAC`](../../../../../specification/runtime/log-collection.md#req-log-9-v6smac)).
+6. **`dispose` leaves the bus.** A closed session's root is unregistered so a later collection does not
+   re-upload it; until then the root stays reachable ([`REQ-LOG-1-H2VQ8X`](../../../../../specification/runtime/log-collection.md#req-log-1-h2vq8x)).
 
 ## Inputs, outputs, state, and side effects
 

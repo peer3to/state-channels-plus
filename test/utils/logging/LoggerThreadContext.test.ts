@@ -1,6 +1,3 @@
-import { expect } from "chai";
-import { ethers } from "ethers";
-
 import { createLogger } from "@/utils/logging";
 import {
     createUploaderFixture,
@@ -8,6 +5,8 @@ import {
     startLogReceiver,
     type LogReceiver
 } from "@test/fixtures/logging/LogUploader.fixture";
+import { expect } from "chai";
+import { ethers } from "ethers";
 
 describe("Logger thread context", function () {
     let receiver: LogReceiver | undefined;

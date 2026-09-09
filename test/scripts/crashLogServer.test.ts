@@ -1,8 +1,3 @@
-import { expect } from "chai";
-import path from "path";
-import { mkdirSync, readdirSync, rmSync, utimesSync } from "node:fs";
-import type { Server } from "node:http";
-
 import {
     decodeChunk,
     encodeChunk,
@@ -14,6 +9,10 @@ import {
     upload as uploadTo,
     uploadBody
 } from "@test/fixtures/logging/crashLogServer.fixture";
+import { expect } from "chai";
+import { mkdirSync, readdirSync, rmSync, utimesSync } from "node:fs";
+import type { Server } from "node:http";
+import path from "path";
 
 const {
     app,

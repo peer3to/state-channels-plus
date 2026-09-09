@@ -1,6 +1,4 @@
-import { expect } from "chai";
-import { ethers } from "ethers";
-
+import { applyCrashLogConfig } from "@test/fixtures/logging/crashLogConfig";
 import {
     addDeadPort,
     countMessages,
@@ -16,7 +14,8 @@ import {
     threadStream,
     type LogReceiver
 } from "@test/fixtures/logging/LogUploader.fixture";
-import { applyCrashLogConfig } from "@test/fixtures/logging/crashLogConfig";
+import { expect } from "chai";
+import { ethers } from "ethers";
 
 // above the 1s retry delay -> a failing realm reports failed, not timed out
 const ACK_TIMEOUT_MS = 5000;

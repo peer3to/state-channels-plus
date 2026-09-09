@@ -1,7 +1,3 @@
-import { expect } from "chai";
-
-import { MathTestSession as TestSession } from "@test/harness";
-import { waitFor } from "@test/utils/waitFor";
 import {
     crashLogConfigOverrides,
     decodeUpload,
@@ -12,6 +8,9 @@ import {
     streamsIn,
     type LogReceiver
 } from "@test/fixtures/logging/LogUploader.fixture";
+import { MathTestSession as TestSession } from "@test/harness";
+import { waitFor } from "@test/utils/waitFor";
+import { expect } from "chai";
 
 // a port hop plus a POST per realm -> above the fixture's 2s default
 const UPLOAD_WAIT_MS = 20_000;

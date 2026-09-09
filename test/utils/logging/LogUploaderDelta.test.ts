@@ -1,6 +1,3 @@
-import { expect } from "chai";
-import { ethers } from "ethers";
-
 import { deferred } from "@test/fixtures/logging/LogFlushBus.fixture";
 import {
     createUploaderFixture,
@@ -8,6 +5,8 @@ import {
     startLogReceiver,
     type LogReceiver
 } from "@test/fixtures/logging/LogUploader.fixture";
+import { expect } from "chai";
+import { ethers } from "ethers";
 
 function messagesOf(receiver: LogReceiver, index: number): string[] {
     return decodeUpload(receiver.requests[index]).map((entry) => entry.message);

@@ -13,8 +13,8 @@ import {
     Logger
 } from "./Logger";
 import { LogStore } from "./logStore";
-import { retry } from "../retry";
 import { config as globalConfig } from "../config";
+import { retry } from "../retry";
 import axios from "axios";
 import { ethers } from "ethers";
 

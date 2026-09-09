@@ -18,22 +18,20 @@ export async function createContractExecutor(
     options: ContractExecutorFactoryOptions,
     dependencies: WorkerContractExecutorDependencies = {}
 ): Promise<AContractExecutor> {
-    const logger = options.logger || noOpLogger;
-
     if (!options.dedicatedThread) {
         const evm = await createEvm(
             {
                 allowUnlimitedContractSize: true,
                 customPrecompiles: options.customPrecompiles
             },
-            logger
+            options.logger ?? noOpLogger
         );
 
         // Every call observes the runtime's estimated chain time as ambient
         // block time, read at call time so it keeps advancing. A runtime
         // initializes the Clock before it builds its executor; an executor
         // built without one (a bare unit test) keeps time zero.
-        return new InlineContractExecutor(evm, logger, {
+        return new InlineContractExecutor(evm, options.logger, {
             clock: Clock.isInitialized()
                 ? () => Clock.getTimeInSeconds()
                 : undefined
@@ -43,7 +41,7 @@ export async function createContractExecutor(
     // adjustment at initialization and builds the same perception locally.
     return WorkerContractExecutor.create(
         options.customPrecompiles,
-        logger,
+        options.logger,
         dependencies,
         Clock.isInitialized() ? Clock.getClockAdjustmentSeconds() : undefined
     );
