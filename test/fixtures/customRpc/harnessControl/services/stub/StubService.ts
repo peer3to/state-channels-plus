@@ -119,6 +119,7 @@ export type StubKey =
     | "membershipJoinReceipt"
     | "membershipTopUpReceipt"
     | "countInitHandshake"
+    | "disconnectAll"
     | "lobbyRoleDuration";
 
 export type HeldLobbyReplyKind = "pick" | "commit";
@@ -351,6 +352,12 @@ export class StubService extends ARpcService<
     initHandshakeCallCount = 0;
     /** Set by the record-spectate-abort stub when `abort` fires. */
     abortCalled = false;
+    /**
+     * One entry per `disconnectAll` call seen by the recording wrapper: the
+     * number of discovery keys this runtime was still observing at that
+     * moment. A close that leaves its keys first records `0`.
+     */
+    readonly keysObservedAtDisconnectAll: number[] = [];
     /** Incremented by the count-spectate-requests stub per onSpectateRequest. */
     spectateRequestCount = 0;
     /** Incremented per join-signature request by the recording wrapper. */

@@ -853,6 +853,39 @@ export class StubRpcMethods extends ARpcMethods<P2PManager<HarnessControlRpc>> {
     }
 
     /**
+     * Record how many discovery keys this runtime still observes each time
+     * `disconnectAll` runs, then run the real disconnect. The ordering oracle
+     * for ending participation: leaving the keys first must make every
+     * recorded count `0`.
+     */
+    public stubRecordDisconnectAllKeyState(): boolean {
+        const p2pManager = this.p2pManager;
+        if (!this.service.stubOriginals.has("disconnectAll")) {
+            this.service.stubOriginals.set(
+                "disconnectAll",
+                p2pManager.disconnectAll.bind(p2pManager)
+            );
+        }
+        this.service.keysObservedAtDisconnectAll.length = 0;
+        const original = this.service.stubOriginals.get(
+            "disconnectAll"
+        ) as typeof p2pManager.disconnectAll;
+        const stubService = this.service;
+        p2pManager.disconnectAll = () => {
+            stubService.keysObservedAtDisconnectAll.push(
+                p2pManager.getJoinedDiscoveryKeys().length
+            );
+            return original();
+        };
+        return true;
+    }
+
+    /** Keys still observed at each recorded `disconnectAll` call, in order. */
+    public disconnectAllKeyObservations(): number[] {
+        return [...this.service.keysObservedAtDisconnectAll];
+    }
+
+    /**
      * Capture the transport this peer initiates a handshake over (its outbound
      * `initHandshake`), recording it on the service so a test can send an RPC
      * over a pre-handshake transport (read via `execOnHost`). Runs the original.
