@@ -3,6 +3,32 @@
 > **Agent assessment:** In progress.
 > **Engineer disposition:** Pending.
 
+Queue retention is now bounded in two dimensions rather than one. The per-entry source caps were
+already in place; the block's own confirmation-signature set was not bounded at all, and intake
+authenticates only the signed block a copy carries, so one authenticated peer could grow a single
+entry without limit. All three write paths — the creating copy, a duplicate merge, and restore —
+now cap retention, drop values that are not recoverable ECDSA signatures, and confine attribution to
+signatures the entry kept. Bounding cardinality alone would not have bounded memory: confirmation
+values were never format-checked and a frame may approach the transport limit, so the byte bound
+depends on the value check rather than the count.
+
+Two residuals are assessed as accepted for this change and are visible in the maintained layers.
+Retention above the cap is first-come, so a signature offered while an entry is overflowed is not
+retained until validation strips unexpected signatures and frees room; this is specified in
+[`REQ-QSTORE-2-VYWJAQ`](../specification/storage/queue.md#req-qstore-2-vywjaq) and covered by an
+exact test. The cap is now sized against an enforced maximum union size rather than an assumed one:
+`open` and `_processJoinChannel` both reject a union larger than MAX_CHANNEL_PARTICIPANTS. That is
+sizing, not proof. Three findings record why: the maximum is not enforced on every path that makes
+a participant set authoritative, retention counts signature bytes while validity counts recovered
+signers, and the Solidity and TypeScript constants are unrelated literals that can drift. The cap
+bounds per-entry memory, which is what it was added for, and recovery cost is bounded per block
+hash so a dequeue cannot refill the allowance. Deriving the cap from an enforced maximum is recorded as Future Work in
+the owning specification, No end-to-end evidence covers the peer-observable path. A case written for it was
+withdrawn once it proved vacuous: a block padded with foreign confirmation signatures is cut before
+it parks, so the test passed with no signatures sent at all. Reaching the caps end to end requires a
+block that parks without being cut, which is a larger fixture than this change warranted; the caps
+are covered by unit tests and the gap is recorded rather than papered over.
+
 The simplification review fixes narrow bytes32 inputs through an assertion signature and remove the remaining queue-key forwarding method. The separate import-order change preserves all non-import executable statements, all imported bindings, and side-effect import boundaries. Runtime initialization order is checked by the distributed and browser gates; TypeScript suppression comments remain attached to their original imports.
 
 Post-handshake connection ownership is now centralized in `P2PManager`. Local channel status is

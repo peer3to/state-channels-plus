@@ -366,6 +366,26 @@ export class QueryRpcMethods extends ARpcMethods {
     }
 
     /**
+     * Retention shape of the queued entry for `blockHash`: how many
+     * confirmation signatures it kept, how many attribution keys it holds, and
+     * whether a cap was exceeded. Lets a test observe the per-entry bound from
+     * outside the process instead of reaching into storage.
+     */
+    public getQueuedRetention(blockHash: Hash): {
+        confirmationSignatures: number;
+        attributionKeys: number;
+        overflowed: boolean;
+    } | null {
+        const entry = this.service.storage.queues.getQueuedEntry(blockHash);
+        if (!entry) return null;
+        return {
+            confirmationSignatures: entry.block.confirmationSignatures.size,
+            attributionKeys: entry.signatureSources.size,
+            overflowed: entry.overflowedSources === true
+        };
+    }
+
+    /**
      * Decode the top block of a dispute state proof on-chain: whether it has a
      * block and that block's height (`transactionCnt`).
      */

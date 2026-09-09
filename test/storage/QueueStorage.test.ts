@@ -12,7 +12,15 @@ import { expect } from "chai";
 import { ethers } from "hardhat";
 import { describe, it, before, beforeEach } from "mocha";
 
-const sig = () => ethers.hexlify(ethers.randomBytes(65));
+// A real signature over a random digest from a throwaway key: recoverable, so
+// the queue admits it, but it recovers to nobody in the channel. That is what
+// junk looks like on the wire. Random bytes are not usable here — an in-range
+// r almost never identifies a curve point, so recovery throws and the queue
+// now rejects the value outright.
+const sig = () =>
+    new ethers.SigningKey(ethers.hexlify(ethers.randomBytes(32))).sign(
+        ethers.hexlify(ethers.randomBytes(32))
+    ).serialized;
 
 describe("QueueStorage", () => {
     let storage: QueueStorage;
@@ -196,8 +204,9 @@ describe("QueueStorage", () => {
             }
 
             const entry = storage.getQueuedEntry(hash)!;
-            // Bounded retention: the maps can't grow past the structural cap.
-            expect(entry.sourcePeers.size).to.be.at.most(128);
+            // Exactly the cap, not merely under it: "at most" also passes an
+            // implementation that retains one source and drops the rest.
+            expect(entry.sourcePeers.size).to.equal(128);
             for (const peers of entry.signatureSources.values()) {
                 expect(peers.size).to.be.at.most(128);
             }
@@ -207,6 +216,444 @@ describe("QueueStorage", () => {
             expect(entry.sourcePeers.has(honest)).to.equal(true);
             // ...and the block itself is still queued (never invalidated).
             expect(storage.isBlockQueued(mockBlock)).to.equal(true);
+        });
+
+        it("bounds merged confirmation signatures under a signature flood", () => {
+            // The sibling tests vary the SENDER against one copy of the block,
+            // so the merged signature set never grows. Vary the signatures
+            // instead: ingress authenticates the signed block, not each
+            // confirmation signature it carries, so one authenticated peer can
+            // resend the same hash forever with fresh junk signatures.
+            const hash = storage.queueBlock(mockBlock);
+            for (let i = 0; i < 1100; i++) {
+                storage.queueBlock(
+                    Block.fromBlockConfirmation({
+                        ...mockBlockConfirmation,
+                        signatures: [sig()]
+                    })
+                );
+            }
+
+            const entry = storage.getQueuedEntry(hash)!;
+            // Exactly the cap, not merely under it: a capped merge must keep
+            // the first capful, not discard everything once overflowed.
+            expect(entry.block.confirmationSignatures.size).to.equal(128);
+            // Overflow stays a marker, never a validity decision.
+            expect(entry.overflowedSources).to.equal(true);
+            expect(storage.isBlockQueued(mockBlock)).to.equal(true);
+        });
+
+        it("bounds signatures carried by the copy that creates the entry", () => {
+            // Capping only the merge path moves the flood into the opening
+            // request: one copy carrying thousands of signatures.
+            const flood = Array.from({ length: 1100 }, () => sig());
+            const hash = storage.queueBlock(
+                Block.fromBlockConfirmation({
+                    ...mockBlockConfirmation,
+                    signatures: flood
+                })
+            );
+
+            const entry = storage.getQueuedEntry(hash)!;
+            expect(entry.block.confirmationSignatures.size).to.equal(128);
+            expect(entry.overflowedSources).to.equal(true);
+        });
+
+        it("attributes only signatures the entry retained", () => {
+            // Attribution spent on signatures the block no longer holds is
+            // wasted capacity, and REQ-QSTORE-1 says a sender is credited with
+            // exactly the signatures its copy contributed.
+            const sender = factory.randomAddress();
+            const flood = Array.from({ length: 1100 }, () => sig());
+            const hash = storage.queueBlock(
+                Block.fromBlockConfirmation({
+                    ...mockBlockConfirmation,
+                    signatures: flood
+                }),
+                { senderAddress: sender }
+            );
+
+            const entry = storage.getQueuedEntry(hash)!;
+            const held = entry.block.allSignatures;
+            // Existence first: a loop over keys alone passes on an empty map.
+            expect(entry.signatureSources.size).to.be.greaterThan(0);
+            // Every retained signature is attributed...
+            for (const signature of held) {
+                expect(entry.signatureSources.has(signature)).to.equal(true);
+            }
+            // ...and nothing else is.
+            expect(entry.signatureSources.size).to.equal(held.size);
+            for (const peers of entry.signatureSources.values()) {
+                expect([...peers]).to.deep.equal([sender]);
+            }
+        });
+
+        it("attributes only retained signatures through merge and restore", () => {
+            // The creation path is not the only one that can record a key the
+            // block does not hold.
+            const senderA = factory.randomAddress();
+            const senderB = factory.randomAddress();
+            const first = Array.from({ length: 128 }, () => sig());
+            const hash = storage.queueBlock(
+                Block.fromBlockConfirmation({
+                    ...mockBlockConfirmation,
+                    signatures: first
+                }),
+                { senderAddress: senderA }
+            );
+
+            // A disjoint capful cannot fit; none of it may be attributed.
+            const second = Array.from({ length: 64 }, () => sig());
+            storage.queueBlock(
+                Block.fromBlockConfirmation({
+                    ...mockBlockConfirmation,
+                    signatures: second
+                }),
+                { senderAddress: senderB }
+            );
+
+            const entry = storage.getQueuedEntry(hash)!;
+            const held = entry.block.allSignatures;
+            expect(entry.signatureSources.size).to.be.greaterThan(0);
+            for (const signature of entry.signatureSources.keys()) {
+                expect(held.has(signature)).to.equal(true);
+            }
+            for (const signature of second) {
+                expect(entry.signatureSources.has(signature)).to.equal(false);
+            }
+        });
+
+        it("restore does not attribute signatures the capped merge rejected", () => {
+            // The restored entry holds its own signatures legitimately, but the
+            // queued copy is already full of disjoint ones, so none of them fit
+            // and none may be attributed.
+            const sender = factory.randomAddress();
+            const mine = Array.from({ length: 64 }, () => sig());
+            storage.queueBlock(
+                Block.fromBlockConfirmation({
+                    ...mockBlockConfirmation,
+                    signatures: mine
+                }),
+                { senderAddress: sender }
+            );
+            const [dequeued] = storage.tryDequeueAt(mockForkId, mockHeight);
+
+            // A full capful of other signatures arrives while it is out.
+            storage.queueBlock(
+                Block.fromBlockConfirmation({
+                    ...mockBlockConfirmation,
+                    signatures: Array.from({ length: 128 }, () => sig())
+                })
+            );
+            storage.restoreEntry(dequeued);
+
+            const merged = storage.getQueuedEntry(mockBlock.hash)!;
+            const held = merged.block.allSignatures;
+            for (const signature of mine) {
+                expect(held.has(signature)).to.equal(false);
+                expect(merged.signatureSources.has(signature)).to.equal(false);
+            }
+            for (const signature of merged.signatureSources.keys()) {
+                expect(held.has(signature)).to.equal(true);
+            }
+        });
+
+        it("drops malformed signature values instead of retaining them", () => {
+            // The count cap bounds nothing while values are unvalidated: a
+            // frame may approach 16 MiB and confirmation values are never
+            // format-checked at ingress.
+            const oversized = "0x" + "ab".repeat(4096);
+            const hash = storage.queueBlock(
+                Block.fromBlockConfirmation({
+                    ...mockBlockConfirmation,
+                    signatures: [oversized, sig()]
+                })
+            );
+
+            const entry = storage.getQueuedEntry(hash)!;
+            expect(entry.block.confirmationSignatures.has(oversized)).to.equal(
+                false
+            );
+            expect(entry.block.confirmationSignatures.size).to.equal(1);
+            // Never a validity decision: the block stays queued.
+            expect(storage.isBlockQueued(mockBlock)).to.equal(true);
+        });
+
+        it("drops malformed and unrecoverable values arriving through merge", () => {
+            // capSignatures and mergeBlockCapped filter independently; a test
+            // that only ever creates an entry cannot see the merge predicate.
+            const oversized = "0x" + "ab".repeat(4096);
+            const badV = "0x" + "11".repeat(64) + "07";
+            const hash = storage.queueBlock(mockBlock);
+            storage.queueBlock(
+                Block.fromBlockConfirmation({
+                    ...mockBlockConfirmation,
+                    signatures: [oversized, badV, sig()]
+                })
+            );
+
+            const entry = storage.getQueuedEntry(hash)!;
+            expect(entry.block.confirmationSignatures.has(oversized)).to.equal(
+                false
+            );
+            expect(entry.block.confirmationSignatures.has(badV)).to.equal(
+                false
+            );
+            expect(entry.block.confirmationSignatures.size).to.equal(1);
+        });
+
+        it("stops paying for recovery once an entry has spent its budget", () => {
+            // Slicing bounds one call. Rejected values consume no retained
+            // room, so without a persistent allowance a sender buys another
+            // full pass of recoveries with every copy, forever.
+            // r = 0 is always outside 0 < r < n, so every one of these is
+            // unrecoverable. A random r would not do: it is a valid curve
+            // x-coordinate about half the time, so half the flood would be
+            // genuinely recoverable and the test would measure the cap instead
+            // of the budget.
+            let nonce = 0;
+            const unrecoverable = () =>
+                "0x" +
+                "00".repeat(32) +
+                (++nonce).toString(16).padStart(64, "0") +
+                "1b";
+
+            const hash = storage.queueBlock(mockBlock);
+            for (let copy = 0; copy < 20; copy++) {
+                storage.queueBlock(
+                    Block.fromBlockConfirmation({
+                        ...mockBlockConfirmation,
+                        signatures: Array.from({ length: 1000 }, unrecoverable)
+                    })
+                );
+            }
+
+            const entry = storage.getQueuedEntry(hash)!;
+            // 4,000 junk values offered; the entry pays for at most its budget.
+            expect(entry.recoveryBudgetSpent).to.be.at.most(2048);
+            // None of it was retained, and the block is still queued.
+            expect(entry.block.confirmationSignatures.size).to.equal(0);
+            expect(storage.isBlockQueued(mockBlock)).to.equal(true);
+        });
+
+        it("stops calling recovery once the budget is spent", () => {
+            // Counting the field is not enough: an implementation that keeps
+            // recovering and merely clamps the counter passes that. Count the
+            // actual calls instead, by watching the recovery the queue uses.
+            let calls = 0;
+            const realRecover = Block.prototype.signatureToAddress;
+            Block.prototype.signatureToAddress = function (signature) {
+                calls++;
+                return realRecover.call(this, signature);
+            };
+            try {
+                let nonce = 0;
+                const unrecoverable = () =>
+                    "0x" +
+                    "00".repeat(32) +
+                    (++nonce).toString(16).padStart(64, "0") +
+                    "1b";
+                storage.queueBlock(mockBlock);
+                for (let copy = 0; copy < 20; copy++) {
+                    storage.queueBlock(
+                        Block.fromBlockConfirmation({
+                            ...mockBlockConfirmation,
+                            signatures: Array.from(
+                                { length: 1000 },
+                                unrecoverable
+                            )
+                        })
+                    );
+                }
+                // 4,000 junk values offered; recovery is attempted at most as
+                // often as the allowance permits, not once per value.
+                expect(calls).to.be.at.most(2048);
+            } finally {
+                Block.prototype.signatureToAddress = realRecover;
+            }
+        });
+
+        it("a dequeue does not refill the recovery budget", () => {
+            // The allowance is keyed by block hash, not by entry object, so
+            // dequeueing and letting a fresh copy rebuild the entry must not
+            // buy another full pass of recoveries.
+            let nonce = 0;
+            const unrecoverable = () =>
+                "0x" +
+                "00".repeat(32) +
+                (++nonce).toString(16).padStart(64, "0") +
+                "1b";
+            const hash = storage.queueBlock(mockBlock);
+            for (let copy = 0; copy < 20; copy++) {
+                storage.queueBlock(
+                    Block.fromBlockConfirmation({
+                        ...mockBlockConfirmation,
+                        signatures: Array.from({ length: 1000 }, unrecoverable)
+                    })
+                );
+            }
+            const spentBefore =
+                storage.getQueuedEntry(hash)!.recoveryBudgetSpent ?? 0;
+            expect(spentBefore).to.equal(2048);
+
+            // Dequeue, let a fresh copy create a new entry, then restore.
+            const [dequeued] = storage.tryDequeueAt(mockForkId, mockHeight);
+            storage.queueBlock(
+                Block.fromBlockConfirmation({
+                    ...mockBlockConfirmation,
+                    signatures: Array.from({ length: 1000 }, unrecoverable)
+                })
+            );
+            storage.restoreEntry(dequeued);
+
+            expect(
+                storage.getQueuedEntry(hash)!.recoveryBudgetSpent ?? 0
+            ).to.equal(2048);
+        });
+
+        it("carries the recovery budget across a dequeue and restore", () => {
+            // Otherwise every not-ready cycle refills the allowance.
+            const noCurvePoint = ethers.Signature.from({
+                r: "0x" + "11".repeat(32),
+                s: "0x" + "22".repeat(32),
+                v: 27
+            }).serialized;
+            const hash = storage.queueBlock(
+                Block.fromBlockConfirmation({
+                    ...mockBlockConfirmation,
+                    signatures: [noCurvePoint]
+                })
+            );
+            const spentBefore =
+                storage.getQueuedEntry(hash)!.recoveryBudgetSpent ?? 0;
+            expect(spentBefore).to.be.greaterThan(0);
+
+            const [dequeued] = storage.tryDequeueAt(mockForkId, mockHeight);
+            storage.queueBlock(mockBlock);
+            storage.restoreEntry(dequeued);
+
+            expect(
+                storage.getQueuedEntry(hash)!.recoveryBudgetSpent ?? 0
+            ).to.be.at.least(spentBefore);
+        });
+
+        it("drops values that pass a shape check but cannot be recovered", () => {
+            // ethers.Signature.from length-checks r without requiring
+            // 0 < r < n, and an in-range r almost never identifies a curve
+            // point. Both shapes reach signer recovery and throw there, so the
+            // queue must reject what it cannot itself recover.
+            const zeroR =
+                "0x" + "00".repeat(32) + "00".repeat(31) + "01" + "1b";
+            const noCurvePoint = ethers.Signature.from({
+                r: "0x" + "11".repeat(32),
+                s: "0x" + "22".repeat(32),
+                v: 27
+            }).serialized;
+            const hash = storage.queueBlock(
+                Block.fromBlockConfirmation({
+                    ...mockBlockConfirmation,
+                    signatures: [zeroR, noCurvePoint, sig()]
+                })
+            );
+
+            const entry = storage.getQueuedEntry(hash)!;
+            expect(entry.block.confirmationSignatures.has(zeroR)).to.equal(
+                false
+            );
+            expect(
+                entry.block.confirmationSignatures.has(noCurvePoint)
+            ).to.equal(false);
+            expect(entry.block.confirmationSignatures.size).to.equal(1);
+            // Every retained value survives the recovery its consumer performs.
+            for (const signature of entry.block.confirmationSignatures) {
+                expect(() =>
+                    entry.block.signatureToAddress(signature)
+                ).to.not.throw();
+            }
+        });
+
+        it("drops an unrecoverable value on the creating copy", () => {
+            // A 65-byte value with an invalid v passes a length check and then
+            // makes ethers.verifyMessage throw during signer recovery.
+            const badV = "0x" + "11".repeat(64) + "07";
+            const hash = storage.queueBlock(
+                Block.fromBlockConfirmation({
+                    ...mockBlockConfirmation,
+                    signatures: [badV, sig()]
+                })
+            );
+
+            const entry = storage.getQueuedEntry(hash)!;
+            expect(entry.block.confirmationSignatures.has(badV)).to.equal(
+                false
+            );
+            expect(entry.block.confirmationSignatures.size).to.equal(1);
+        });
+
+        it("normalizes an entry expanded past the cap before restoring it", () => {
+            // restoreEntry takes an object the caller held across a dequeue.
+            const hash = storage.queueBlock(mockBlock);
+            const [dequeued] = storage.tryDequeueAt(mockForkId, mockHeight);
+            dequeued.block.expandSignatures(
+                Array.from({ length: 1100 }, () => sig())
+            );
+            storage.restoreEntry(dequeued);
+
+            const restored = storage.getQueuedEntry(hash)!;
+            expect(restored.block.confirmationSignatures.size).to.equal(128);
+            expect(restored.overflowedSources).to.equal(true);
+        });
+
+        it("first-come retention: an honest copy after overflow is not retained", () => {
+            // The documented residual of REQ-QSTORE-2. Pinned so nobody relies
+            // on the stronger "cannot crowd out" property the SOURCE caps give.
+            const junk = Array.from({ length: 1100 }, () => sig());
+            const hash = storage.queueBlock(
+                Block.fromBlockConfirmation({
+                    ...mockBlockConfirmation,
+                    signatures: junk
+                })
+            );
+            const honest = sig();
+            storage.queueBlock(
+                Block.fromBlockConfirmation({
+                    ...mockBlockConfirmation,
+                    signatures: [honest]
+                })
+            );
+
+            const entry = storage.getQueuedEntry(hash)!;
+            expect(entry.block.confirmationSignatures.has(honest)).to.equal(
+                false
+            );
+            expect(entry.overflowedSources).to.equal(true);
+            // Never a validity decision: the block stays queued and dequeueable
+            // until validation strips the junk and frees room.
+            expect(storage.isBlockQueued(mockBlock)).to.equal(true);
+        });
+
+        it("re-merging signatures already held does not consume cap budget", () => {
+            // Only novel signatures spend budget, so an honest peer resending
+            // the same copy never trips the marker.
+            const repeated = sig();
+            const hash = storage.queueBlock(
+                Block.fromBlockConfirmation({
+                    ...mockBlockConfirmation,
+                    signatures: [repeated]
+                })
+            );
+            for (let i = 0; i < 300; i++) {
+                storage.queueBlock(
+                    Block.fromBlockConfirmation({
+                        ...mockBlockConfirmation,
+                        signatures: [repeated]
+                    })
+                );
+            }
+
+            const entry = storage.getQueuedEntry(hash)!;
+            expect(entry.block.confirmationSignatures.size).to.equal(1);
+            expect(entry.overflowedSources).to.not.equal(true);
         });
 
         it("junk-first: a flood that fills the cap first still lets a later valid copy process", () => {
@@ -465,6 +912,34 @@ describe("QueueStorage", () => {
             expect(
                 storage.tryDequeueAt(mockForkId, mockHeight)
             ).to.have.lengthOf(1);
+        });
+
+        it("bounds signatures merged back through the restore path", () => {
+            // restoreEntry is the sanctioned re-queue path, taken on every
+            // not-ready outcome. Capping only queueBlock and createEntry lets a
+            // dequeue/restore cycle add a fresh capful each time.
+            const first = Array.from({ length: 128 }, () => sig());
+            storage.queueBlock(
+                Block.fromBlockConfirmation({
+                    ...mockBlockConfirmation,
+                    signatures: first
+                })
+            );
+            const [dequeued] = storage.tryDequeueAt(mockForkId, mockHeight);
+
+            // A disjoint capful arrives while the entry is out of the queue.
+            const second = Array.from({ length: 128 }, () => sig());
+            storage.queueBlock(
+                Block.fromBlockConfirmation({
+                    ...mockBlockConfirmation,
+                    signatures: second
+                })
+            );
+            storage.restoreEntry(dequeued);
+
+            const merged = storage.getQueuedEntry(mockBlock.hash)!;
+            expect(merged.block.confirmationSignatures.size).to.equal(128);
+            expect(merged.overflowedSources).to.equal(true);
         });
 
         it("should merge a restored entry with a copy queued meanwhile", () => {

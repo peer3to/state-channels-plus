@@ -28,9 +28,10 @@ Guarantees:
   mutex ([`INV-BCP-1-H2H41X`](block-confirmation-pipeline.md#inv-bcp-1-h2h41x), [`INV-BCP-3-GTHAHV`](block-confirmation-pipeline.md#inv-bcp-3-gthahv)).
 - The live state machine is never left holding the effects of a block that was
   not committed ([`INV-BCP-2-BVPQF4`](block-confirmation-pipeline.md#inv-bcp-2-bvpqf4)).
-- Signature merging is monotone and attributable: duplicate copies only add
-  signatures, and every stray signature can be traced to the transports that
-  supplied it ([`INV-BCP-4-16TP2N`](block-confirmation-pipeline.md#inv-bcp-4-16tp2n)).
+- Signature merging is monotone and attributable below the per-entry cap:
+  duplicate copies only add signatures until the cap is reached, after which
+  retention is first-come and a later signature is not kept. Every retained
+  signature can be traced to the transports that supplied it ([`INV-BCP-4-16TP2N`](block-confirmation-pipeline.md#inv-bcp-4-16tp2n)).
 
 Non-guarantees: no persistence across process restart (storage is in-memory);
 no gossip rate limiting (**Open question** in
@@ -130,8 +131,11 @@ Conflicts are resolved downstream by the defined validation paths — the confli
 stored blocks, the double-sign fraud proof, or a drop — never hidden by queue arrival order
 ([`REQ-BCP-4-MS5VVZ`](block-confirmation-pipeline.md#req-bcp-4-ms5vvz)). Each entry accumulates its own confirmations independently until eligibility.
 
-**Merge algebra (per entry).** Grow-only and idempotent: the signature set is a set union of
-every copy seen (`expandSignatures`; re-delivering known signatures is a no-op — the stored-merge
+**Merge algebra (per entry).** Grow-only and idempotent below the retention bound, which is where
+those properties hold: the signature set is a bounded set union of every copy seen — bounded because
+intake authenticates the block a copy carries and never the confirmation values attached to it, so
+values that are not recoverable signatures are dropped and retention stops at
+`MAX_ENTRY_SIGNATURES` (first-come above it, with an overflow marker) (`expandSignatures`; re-delivering known signatures is a no-op — the stored-merge
 path computes `incoming − existing` and treats empty as `DUPLICATE`); `firstSeenAt` keeps the
 earliest copy's clock; an on-chain post timestamp merges in when a calldata copy arrives; source
 attribution maps each signature to exactly the senders whose copies carried it. Structural caps
@@ -198,7 +202,8 @@ in order:
    mutex via dispute re-ingest paths, and reduction takes that mutex.
 6. **Queue.** [`QueueStorage.queueBlock`](../../../../../../src/storage/QueueStorage.ts#L54)
    creates or merges a `QueuedBlockEntry`:
-    - `block` (signature set is a grow-only merge of every copy seen),
+    - `block` (signature set is a grow-only merge of every copy seen, bounded by
+      the per-entry retention cap),
     - `firstSeenAt` (Clock seconds; kept at the **earliest** copy),
     - `sourcePeers` and per-signature `signatureSources` (attribution: each copy
       contributes only the signatures _it carried_ to _its_ sender),
@@ -477,10 +482,11 @@ as impossible (throws).
 - **[`INV-BCP-3-GTHAHV`](block-confirmation-pipeline.md#inv-bcp-3-gthahv)** — On a live strategy, blocks execute in fork order at the next
   expected height; future blocks are parked, never executed early.
 
-- **[`INV-BCP-4-16TP2N`](block-confirmation-pipeline.md#inv-bcp-4-16tp2n)** — Queued-entry merging is monotone (signatures only grow, the
-  fixed lifetime never extends) and attributed (each signature maps to the
-  transports that supplied it); retention caps mark overflow but never cause
-  rejection of a later valid copy.
+- **[`INV-BCP-4-16TP2N`](block-confirmation-pipeline.md#inv-bcp-4-16tp2n)** — Queued-entry merging is monotone below the retention cap
+  (signatures only grow, the fixed lifetime never extends) and attributed (each
+  signature maps to the transports that supplied it). Retention caps mark
+  overflow but never cause rejection of a later valid copy; above a cap,
+  retention is first-come and a later signature is simply not retained.
 
 - **[`INV-BCP-5-NGASJJ`](block-confirmation-pipeline.md#inv-bcp-5-ngasjj)** — A confirmation is persisted locally before it is gossiped,
   so echoes merge as duplicates instead of re-entering validation.
