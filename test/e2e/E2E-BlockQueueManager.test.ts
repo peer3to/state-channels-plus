@@ -141,14 +141,14 @@ describe("E2E: BlockQueueManager", function () {
             .query.getQueuedRetention(parked.hash)
             .request();
         expect(retention).to.not.be.null;
-        // 2,400 offered, at most one cap retained, and the marker records it.
-        expect(retention!.confirmationSignatures).to.equal(1024);
+        // 2,400 offered, one cap retained, and the marker records it.
+        expect(retention!.confirmationSignatures).to.equal(128);
         expect(retention!.overflowed).to.equal(true);
         // Attribution is exercised, and never outgrows what the block holds:
         // the sender came from the transport, so every retained signature is
         // attributable to it.
         expect(retention!.attributionKeys).to.be.greaterThan(0);
-        expect(retention!.attributionKeys).to.be.at.most(1025);
+        expect(retention!.attributionKeys).to.be.at.most(129);
         // Bounding is not rejection: the entry survives as a queued block.
         expect(
             await h.control(observer).query.isBlockQueued(parked.hash).request()

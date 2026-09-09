@@ -13,7 +13,7 @@ error ErrorDuplicateParticipant();
 // without a maximum on chain that retention bound can only be assumed. The
 // duplicate-participant scan at open is quadratic in the union, so a bound also
 // keeps that loop's gas finite.
-uint256 constant MAX_CHANNEL_PARTICIPANTS = 256;
+uint256 constant MAX_CHANNEL_PARTICIPANTS = 32;
 
 //Calldata errors
 error ErrorBlockCalldataAlreadyPosted();

@@ -237,7 +237,7 @@ describe("QueueStorage", () => {
             const entry = storage.getQueuedEntry(hash)!;
             // Exactly the cap, not merely under it: a capped merge must keep
             // the first capful, not discard everything once overflowed.
-            expect(entry.block.confirmationSignatures.size).to.equal(1024);
+            expect(entry.block.confirmationSignatures.size).to.equal(128);
             // Overflow stays a marker, never a validity decision.
             expect(entry.overflowedSources).to.equal(true);
             expect(storage.isBlockQueued(mockBlock)).to.equal(true);
@@ -255,7 +255,7 @@ describe("QueueStorage", () => {
             );
 
             const entry = storage.getQueuedEntry(hash)!;
-            expect(entry.block.confirmationSignatures.size).to.equal(1024);
+            expect(entry.block.confirmationSignatures.size).to.equal(128);
             expect(entry.overflowedSources).to.equal(true);
         });
 
@@ -293,7 +293,7 @@ describe("QueueStorage", () => {
             // block does not hold.
             const senderA = factory.randomAddress();
             const senderB = factory.randomAddress();
-            const first = Array.from({ length: 1024 }, () => sig());
+            const first = Array.from({ length: 128 }, () => sig());
             const hash = storage.queueBlock(
                 Block.fromBlockConfirmation({
                     ...mockBlockConfirmation,
@@ -342,7 +342,7 @@ describe("QueueStorage", () => {
             storage.queueBlock(
                 Block.fromBlockConfirmation({
                     ...mockBlockConfirmation,
-                    signatures: Array.from({ length: 1024 }, () => sig())
+                    signatures: Array.from({ length: 128 }, () => sig())
                 })
             );
             storage.restoreEntry(dequeued);
@@ -419,7 +419,7 @@ describe("QueueStorage", () => {
                 "1b";
 
             const hash = storage.queueBlock(mockBlock);
-            for (let copy = 0; copy < 4; copy++) {
+            for (let copy = 0; copy < 20; copy++) {
                 storage.queueBlock(
                     Block.fromBlockConfirmation({
                         ...mockBlockConfirmation,
@@ -454,7 +454,7 @@ describe("QueueStorage", () => {
                     (++nonce).toString(16).padStart(64, "0") +
                     "1b";
                 storage.queueBlock(mockBlock);
-                for (let copy = 0; copy < 4; copy++) {
+                for (let copy = 0; copy < 20; copy++) {
                     storage.queueBlock(
                         Block.fromBlockConfirmation({
                             ...mockBlockConfirmation,
@@ -484,7 +484,7 @@ describe("QueueStorage", () => {
                 (++nonce).toString(16).padStart(64, "0") +
                 "1b";
             const hash = storage.queueBlock(mockBlock);
-            for (let copy = 0; copy < 4; copy++) {
+            for (let copy = 0; copy < 20; copy++) {
                 storage.queueBlock(
                     Block.fromBlockConfirmation({
                         ...mockBlockConfirmation,
@@ -600,7 +600,7 @@ describe("QueueStorage", () => {
             storage.restoreEntry(dequeued);
 
             const restored = storage.getQueuedEntry(hash)!;
-            expect(restored.block.confirmationSignatures.size).to.equal(1024);
+            expect(restored.block.confirmationSignatures.size).to.equal(128);
             expect(restored.overflowedSources).to.equal(true);
         });
 
@@ -918,7 +918,7 @@ describe("QueueStorage", () => {
             // restoreEntry is the sanctioned re-queue path, taken on every
             // not-ready outcome. Capping only queueBlock and createEntry lets a
             // dequeue/restore cycle add a fresh capful each time.
-            const first = Array.from({ length: 1024 }, () => sig());
+            const first = Array.from({ length: 128 }, () => sig());
             storage.queueBlock(
                 Block.fromBlockConfirmation({
                     ...mockBlockConfirmation,
@@ -928,7 +928,7 @@ describe("QueueStorage", () => {
             const [dequeued] = storage.tryDequeueAt(mockForkId, mockHeight);
 
             // A disjoint capful arrives while the entry is out of the queue.
-            const second = Array.from({ length: 1024 }, () => sig());
+            const second = Array.from({ length: 128 }, () => sig());
             storage.queueBlock(
                 Block.fromBlockConfirmation({
                     ...mockBlockConfirmation,
@@ -938,7 +938,7 @@ describe("QueueStorage", () => {
             storage.restoreEntry(dequeued);
 
             const merged = storage.getQueuedEntry(mockBlock.hash)!;
-            expect(merged.block.confirmationSignatures.size).to.equal(1024);
+            expect(merged.block.confirmationSignatures.size).to.equal(128);
             expect(merged.overflowedSources).to.equal(true);
         });
 

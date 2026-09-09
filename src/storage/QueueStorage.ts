@@ -54,19 +54,25 @@ export class QueueStorage {
     // many valid signatures can occupy slots others need
     // (FIND-QSTORE-3-1HF4V6). Until those are decided this bounds memory,
     // which is what it was added for.
-    // Total failed recoveries one entry will ever pay for. An entry that has
-    // spent this much has already been shown to carry junk; further unadmitted
-    // values are dropped without recovering, so cumulative cost is bounded over
-    // the entry lifetime rather than only within a single call.
-    private static readonly MAX_ENTRY_RECOVERY_FAILURES = 2048;
-    private static readonly MAX_CHANNEL_PARTICIPANTS = 256;
+    private static readonly MAX_CHANNEL_PARTICIPANTS = 32;
     private static readonly MAX_ENTRY_SIGNATURES =
         QueueStorage.MAX_CHANNEL_PARTICIPANTS * 4;
+    // Total failed recoveries one block hash will ever pay for. A hash that has
+    // spent this much has already been shown to carry junk; further unadmitted
+    // values are dropped without recovering, so cumulative cost is bounded over
+    // the hash's life in the queue rather than only within a single call.
+    //
+    // Declared after the cap it derives from, deliberately: a static field
+    // initialised from one declared later reads undefined, and the ceiling
+    // silently becomes NaN -- which compares false against everything, so no
+    // ceiling applies at all.
+    private static readonly MAX_ENTRY_RECOVERY_FAILURES =
+        QueueStorage.MAX_ENTRY_SIGNATURES * 16;
     // A cardinality cap alone bounds nothing: ingress authenticates the signed
     // block, never the confirmation values attached to it, and
     // Block.fromBlockConfirmation casts them straight into a Set. A frame may
-    // approach MAX_RPC_FRAME_BYTES, so 1024 unvalidated strings can hold orders
-    // of magnitude more memory than 1024 signatures. Only a canonical 65-byte
+    // approach MAX_RPC_FRAME_BYTES, so a capful of unvalidated strings can hold
+    // orders of magnitude more memory than a capful of signatures. Only a canonical 65-byte
     // ECDSA signature can ever recover to a participant, so anything else is
     // retained by nobody and dropped here — which makes the count cap a real
     // byte bound: MAX_ENTRY_SIGNATURES * 65 bytes.
