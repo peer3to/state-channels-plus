@@ -23,11 +23,11 @@ a participant set authoritative, retention counts signature bytes while validity
 signers, and the Solidity and TypeScript constants are unrelated literals that can drift. The cap
 bounds per-entry memory, which is what it was added for, and recovery cost is bounded per block
 hash so a dequeue cannot refill the allowance. Deriving the cap from an enforced maximum is recorded as Future Work in
-the owning specification, End-to-end evidence now exercises the peer-observable flood over the production
-state-transition RPC and pins the retained bound. The stripping and punishment half of that path
-has no end-to-end evidence at all — direct storage tests cannot observe transport blacklisting —
-and the implementation mirror carries that and the union-size assumption as named gaps rather than
-claiming coverage.
+the owning specification, No end-to-end evidence covers the peer-observable path. A case written for it was
+withdrawn once it proved vacuous: a block padded with foreign confirmation signatures is cut before
+it parks, so the test passed with no signatures sent at all. Reaching the caps end to end requires a
+block that parks without being cut, which is a larger fixture than this change warranted; the caps
+are covered by unit tests and the gap is recorded rather than papered over.
 
 The simplification review fixes narrow bytes32 inputs through an assertion signature and remove the remaining queue-key forwarding method. The separate import-order change preserves all non-import executable statements, all imported bindings, and side-effect import boundaries. Runtime initialization order is checked by the distributed and browser gates; TypeScript suppression comments remain attached to their original imports.
 
