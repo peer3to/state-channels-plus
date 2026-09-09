@@ -55,11 +55,13 @@ removes their signatures, but real. Attribution follows retention: a sender is c
 the signatures the entry kept, so the attribution map is never spent on signatures the block no
 longer holds.
 
-The signature cap is derived from the enforced maximum participant-union size, not assumed above
-it. A valid block carries at most one confirmation per participant and the union is bounded at both
-open and join, so a block needing every participant's confirmation still fits with margin. Dropping
-a signature a block needs would cost liveness, because agreement requires the whole union; that
-cannot happen while the cap exceeds the enforced maximum.
+The signature cap is sized against the enforced maximum participant-union size: the union is
+bounded where it is proposed, at open and at join, and an honest block needing every participant's
+confirmation fits with margin. That is a sizing argument rather than a guarantee. It does not yet
+establish that a needed signature is never dropped, because the maximum is not enforced on every
+path that makes a participant set authoritative, and because retention counts signatures while
+validity counts signers — one participant able to produce many valid signatures for a block can
+occupy slots the others need. Both are recorded as findings against the audit layer.
 
 **<a id="req-qstore-3-dekyg6"></a>`REQ-QSTORE-3-DEKYG6` — Coordinate dequeue rules.** Dequeue-at removes and returns every entry at exactly
 (fork, height). Priority dequeue selects the _lowest_ queued height on the fork not exceeding the

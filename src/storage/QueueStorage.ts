@@ -41,14 +41,19 @@ export class QueueStorage {
     // with fresh junk signatures; without this the merged set grows without
     // limit.
     //
-    // Derived from the on-chain bound, not assumed above it. A valid block
-    // carries at most one confirmation per participant, the channel union is
-    // capped at MAX_CHANNEL_PARTICIPANTS (Errors.sol) at both open and join,
-    // and the author's own signature is held separately -- so a block that
-    // needs every participant's confirmation still fits with margin. Dropping
-    // a signature a block needs would cost liveness, because
-    // AgreementManager.didEveryoneSignBlock requires the whole union; that
-    // cannot happen while this exceeds the enforced maximum.
+    // Sized against the on-chain bound: the channel union is capped at
+    // MAX_CHANNEL_PARTICIPANTS (Errors.sol) where it is proposed, and the
+    // author's own signature is held separately, so an honest block needing
+    // every participant's confirmation fits with margin.
+    //
+    // This is a sizing argument, not a proof that a needed signature is never
+    // dropped. Two gaps are open and recorded: the maximum is not enforced on
+    // every path that makes a participant set authoritative
+    // (FIND-SETTLE-1-G2CPV6), and retention counts signature bytes while
+    // validity counts recovered signers, so one participant able to produce
+    // many valid signatures can occupy slots others need
+    // (FIND-QSTORE-3-1HF4V6). Until those are decided this bounds memory,
+    // which is what it was added for.
     // Total failed recoveries one entry will ever pay for. An entry that has
     // spent this much has already been shown to carry junk; further unadmitted
     // values are dropped without recovering, so cumulative cost is bounded over
@@ -72,6 +77,13 @@ export class QueueStorage {
     // Secondary index for efficient queries by coordinates
     private blocksByCoordinates: Map<CoordinateKey, Set<Hash>> = new Map();
 
+    // Recovery failures already paid for, keyed by block hash rather than by
+    // entry. An entry object does not survive a dequeue, so a per-entry
+    // allowance refills every cycle: dequeue, let a fresh copy build a new
+    // entry with a new allowance, spend it, restore. Keyed by hash the spend
+    // outlives the entry, and clearFork is what releases it.
+    private recoverySpend: Map<Hash, number> = new Map();
+
     /**
      * Build a standalone entry for a block copy — the unit of work the
      * pipeline consumes. Same construction the queue uses, without queueing.
@@ -88,18 +100,20 @@ export class QueueStorage {
     // The cost is bounded by what can be retained, not by what is offered:
     // callers slice to the remaining room first, so a full entry does no
     // recovery at all and a flooder cannot buy CPU by sending more.
-    private static isRecoverable(
+    private isRecoverable(
         entry: QueuedBlockEntry,
         signature: Signature
     ): boolean {
         if (!ethers.isHexString(signature, QueueStorage.SIGNATURE_BYTES))
             return false;
-        const spent = entry.recoveryBudgetSpent ?? 0;
+        const hash = entry.block.hash;
+        const spent = this.recoverySpend.get(hash) ?? 0;
         if (spent >= QueueStorage.MAX_ENTRY_RECOVERY_FAILURES) return false;
         try {
             entry.block.signatureToAddress(signature);
             return true;
         } catch {
+            this.recoverySpend.set(hash, spent + 1);
             entry.recoveryBudgetSpent = spent + 1;
             return false;
         }
@@ -132,7 +146,7 @@ export class QueueStorage {
         const candidates = held.slice(0, QueueStorage.MAX_ENTRY_SIGNATURES);
         const surplus = held.slice(QueueStorage.MAX_ENTRY_SIGNATURES);
         const unrecoverable = candidates.filter(
-            (signature) => !QueueStorage.isRecoverable(entry, signature)
+            (signature) => !this.isRecoverable(entry, signature)
         );
         if (unrecoverable.length || surplus.length) {
             entry.block.removeConfirmationSignatures(
@@ -260,10 +274,10 @@ export class QueueStorage {
             entry.firstSeenAt
         );
         if (entry.overflowedSources) existing.overflowedSources = true;
-        // Carry the spend across, or a dequeue/restore cycle would refill it.
-        existing.recoveryBudgetSpent =
-            (existing.recoveryBudgetSpent ?? 0) +
-            (entry.recoveryBudgetSpent ?? 0);
+        // Both sides read the same hash-keyed allowance, so nothing to add.
+        existing.recoveryBudgetSpent = this.recoverySpend.get(
+            existing.block.hash
+        );
         for (const peer of entry.sourcePeers)
             this.addSourcePeer(existing, peer);
         // Only for signatures the capped merge actually kept: attribution for a
@@ -308,6 +322,10 @@ export class QueueStorage {
 
             for (const hash of hashSet) {
                 this.queuedBlocks.delete(hash);
+                // The fork is gone, so its recovery allowances are too. This is
+                // the only release point: a dequeue must not free one, or the
+                // allowance refills every cycle.
+                this.recoverySpend.delete(hash);
                 removedHashes.push(hash);
             }
             this.blocksByCoordinates.delete(key);
@@ -374,9 +392,7 @@ export class QueueStorage {
         // Recover only what could be kept: a full entry does no crypto work.
         const admitted = novel
             .slice(0, room)
-            .filter((signature) =>
-                QueueStorage.isRecoverable(entry, signature)
-            );
+            .filter((signature) => this.isRecoverable(entry, signature));
         entry.block.expandSignatures(admitted);
         const timestamp = incoming.onChainTimestamp;
         if (timestamp !== undefined) entry.block.onChainTimestamp = timestamp;

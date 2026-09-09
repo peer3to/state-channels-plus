@@ -436,6 +436,81 @@ describe("QueueStorage", () => {
             expect(storage.isBlockQueued(mockBlock)).to.equal(true);
         });
 
+        it("stops calling recovery once the budget is spent", () => {
+            // Counting the field is not enough: an implementation that keeps
+            // recovering and merely clamps the counter passes that. Count the
+            // actual calls instead, by watching the recovery the queue uses.
+            let calls = 0;
+            const realRecover = Block.prototype.signatureToAddress;
+            Block.prototype.signatureToAddress = function (signature) {
+                calls++;
+                return realRecover.call(this, signature);
+            };
+            try {
+                let nonce = 0;
+                const unrecoverable = () =>
+                    "0x" +
+                    "00".repeat(32) +
+                    (++nonce).toString(16).padStart(64, "0") +
+                    "1b";
+                storage.queueBlock(mockBlock);
+                for (let copy = 0; copy < 4; copy++) {
+                    storage.queueBlock(
+                        Block.fromBlockConfirmation({
+                            ...mockBlockConfirmation,
+                            signatures: Array.from(
+                                { length: 1000 },
+                                unrecoverable
+                            )
+                        })
+                    );
+                }
+                // 4,000 junk values offered; recovery is attempted at most as
+                // often as the allowance permits, not once per value.
+                expect(calls).to.be.at.most(2048);
+            } finally {
+                Block.prototype.signatureToAddress = realRecover;
+            }
+        });
+
+        it("a dequeue does not refill the recovery budget", () => {
+            // The allowance is keyed by block hash, not by entry object, so
+            // dequeueing and letting a fresh copy rebuild the entry must not
+            // buy another full pass of recoveries.
+            let nonce = 0;
+            const unrecoverable = () =>
+                "0x" +
+                "00".repeat(32) +
+                (++nonce).toString(16).padStart(64, "0") +
+                "1b";
+            const hash = storage.queueBlock(mockBlock);
+            for (let copy = 0; copy < 4; copy++) {
+                storage.queueBlock(
+                    Block.fromBlockConfirmation({
+                        ...mockBlockConfirmation,
+                        signatures: Array.from({ length: 1000 }, unrecoverable)
+                    })
+                );
+            }
+            const spentBefore =
+                storage.getQueuedEntry(hash)!.recoveryBudgetSpent ?? 0;
+            expect(spentBefore).to.equal(2048);
+
+            // Dequeue, let a fresh copy create a new entry, then restore.
+            const [dequeued] = storage.tryDequeueAt(mockForkId, mockHeight);
+            storage.queueBlock(
+                Block.fromBlockConfirmation({
+                    ...mockBlockConfirmation,
+                    signatures: Array.from({ length: 1000 }, unrecoverable)
+                })
+            );
+            storage.restoreEntry(dequeued);
+
+            expect(
+                storage.getQueuedEntry(hash)!.recoveryBudgetSpent ?? 0
+            ).to.equal(2048);
+        });
+
         it("carries the recovery budget across a dequeue and restore", () => {
             // Otherwise every not-ready cycle refills the allowance.
             const noCurvePoint = ethers.Signature.from({
