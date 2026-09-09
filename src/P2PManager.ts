@@ -74,10 +74,10 @@ class P2PManager<TCustomRpc extends MainRpcService = MainRpcService>
     // Discovery keys this runtime observes. Discovery re-dials every peer that
     // shares one, so leaving them is what makes a disconnect stick.
     private readonly joinedDiscoveryKeys = new Set<DiscoveryKey>();
-    // Joins whose discovery backend has not answered yet. They are not in
-    // `joinedDiscoveryKeys` and would otherwise be invisible to a concurrent
-    // `leaveAllDiscoveryKeys`, so the key would land after the caller believes
-    // discovery is empty.
+    // Joins whose discovery backend has not answered yet. The key is already
+    // observed, but the backend is not joined, so a concurrent
+    // `leaveAllDiscoveryKeys` must wait for the join to settle before it leaves
+    // the key at the backend.
     private readonly pendingDiscoveryJoins = new Map<
         DiscoveryKey,
         Promise<void>
@@ -495,27 +495,36 @@ class P2PManager<TCustomRpc extends MainRpcService = MainRpcService>
         await initialSync;
     }
 
-    /** Joins the configured discovery backend, then records the observed key. */
+    /** Records the observed key, then joins the configured discovery backend. */
     private async observeDiscoveryKey(
         normalizedKey: DiscoveryKey
     ): Promise<void> {
-        // TODO: Give Holepunch and LocalDiscoveryServer the same lifecycle API
-        // and inject the selected backend so P2PManager does not know which
-        // discovery implementation it is using.
-        if (config.DEBUG_LOCAL_TRANSPORT) {
-            if (isNodeRuntime() || config.LOCAL_DISCOVERY_REGISTRY_URL) {
-                await LocalDiscoveryServer.tryStart();
-                await LocalDiscoveryServer.connectToPeers(
-                    this.self,
-                    normalizedKey,
-                    this.stateManager.signerAddress.toString()
-                );
-            }
-        } else {
-            const topic = Buffer.from(normalizedKey.slice(2), "hex");
-            await this.holepunch.join(topic);
-        }
+        // Recorded before the backend answers: the join itself starts the
+        // listening server and dials peers, so an inbound handshake completes
+        // inside the await and would be refused as an unobserved admission.
         this.joinedDiscoveryKeys.add(normalizedKey);
+        try {
+            // TODO: Give Holepunch and LocalDiscoveryServer the same lifecycle
+            // API and inject the selected backend so P2PManager does not know
+            // which discovery implementation it is using.
+            if (config.DEBUG_LOCAL_TRANSPORT) {
+                if (isNodeRuntime() || config.LOCAL_DISCOVERY_REGISTRY_URL) {
+                    await LocalDiscoveryServer.tryStart();
+                    await LocalDiscoveryServer.connectToPeers(
+                        this.self,
+                        normalizedKey,
+                        this.stateManager.signerAddress.toString()
+                    );
+                }
+            } else {
+                const topic = Buffer.from(normalizedKey.slice(2), "hex");
+                await this.holepunch.join(topic);
+            }
+        } catch (e) {
+            // The backend never joined, so nothing observes the key.
+            this.joinedDiscoveryKeys.delete(normalizedKey);
+            throw e;
+        }
     }
 
     /**
@@ -581,9 +590,9 @@ class P2PManager<TCustomRpc extends MainRpcService = MainRpcService>
 
     /** Stop observing every discovery key; no peer is re-dialed afterwards. */
     public async leaveAllDiscoveryKeys(): Promise<void> {
-        // Await the joins in flight at call time first. Their key is not in the
-        // set yet, so leaving without them would let a racing join land after
-        // the caller believes discovery is empty.
+        // Await the joins in flight at call time first. Their backend join has
+        // not answered yet, so leaving before it settles would let the backend
+        // join land after the caller believes discovery is empty.
         await Promise.all([...this.pendingDiscoveryJoins.values()]);
         for (const discoveryKey of [...this.joinedDiscoveryKeys]) {
             await this.leaveDiscoveryKey(discoveryKey);

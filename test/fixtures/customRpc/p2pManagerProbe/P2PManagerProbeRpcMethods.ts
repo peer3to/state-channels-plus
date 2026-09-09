@@ -52,6 +52,8 @@ import type {
     LobbyLatePickProbe,
     DiscoveryAdmissionGateProbe,
     DiscoveryJoinLeaveRaceProbe,
+    InFlightJoinAdmissionProbe,
+    FailedDiscoveryJoinProbe,
     ReconnectBanFinalAdmissionProbe,
     RejectedRpcAfterLobbyEndedProbe,
     CleanupMatchSerializationProbe,
@@ -442,6 +444,22 @@ export class P2PManagerProbeRpcMethods extends ARpcMethods<
         discoveryKey: string
     ): Promise<DiscoveryJoinLeaveRaceProbe> {
         return this.service.probeDiscoveryJoinLeaveRace(discoveryKey);
+    }
+
+    public probeAdmissionDuringInFlightDiscoveryJoin(
+        admittedAddress: string,
+        discoveryKey: string
+    ): Promise<InFlightJoinAdmissionProbe> {
+        return this.service.probeAdmissionDuringInFlightDiscoveryJoin(
+            admittedAddress,
+            discoveryKey
+        );
+    }
+
+    public probeFailedDiscoveryJoin(
+        discoveryKey: string
+    ): Promise<FailedDiscoveryJoinProbe> {
+        return this.service.probeFailedDiscoveryJoin(discoveryKey);
     }
 
     public probeReconnectBanAtFinalAdmission(): Promise<ReconnectBanFinalAdmissionProbe> {

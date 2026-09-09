@@ -1162,11 +1162,45 @@ describe("P2PManager", function () {
             .p2pManagerProbe.probeDiscoveryJoinLeaveRace(discoveryKey)
             .request();
 
-        // The staged race is real: the key was not observable yet when the
-        // leave started.
-        expect(result.observedDuringJoin).to.deep.equal([]);
+        // The staged race is real: the key is already observed while the
+        // backend has not answered the join, and `leaveAllDiscoveryKeys` must
+        // still leave it at the backend exactly once.
+        expect(result.observedDuringJoin).to.deep.equal([discoveryKey]);
         expect(result.observedAfterLeaveAll).to.deep.equal([]);
         expect(result.backendLeftKeys).to.deep.equal([discoveryKey]);
+    });
+
+    it("admits a handshake that completes while the discovery join is still in flight", async function () {
+        const discoveryKey = id("p2p-manager-in-flight-join-admission");
+
+        const result = await fixture!
+            .control()
+            .p2pManagerProbe.probeAdmissionDuringInFlightDiscoveryJoin(
+                Wallet.createRandom().address,
+                discoveryKey
+            )
+            .request();
+
+        expect(result.admittedConnected).to.equal(true);
+        expect(result.admittedTransportClosed).to.equal(false);
+        expect(result.admittedSocketDestroyed).to.equal(false);
+        // Admission is the whole point: nothing may penalize the identity.
+        expect(result.admittedBanCalls).to.deep.equal([]);
+        expect(result.admittedBlacklisted).to.equal(false);
+        expect(result.admittedReconnectBanned).to.equal(false);
+        expect(result.observedAfterJoin).to.deep.equal([discoveryKey]);
+    });
+
+    it("stops observing a discovery key whose backend join failed", async function () {
+        const discoveryKey = id("p2p-manager-failed-discovery-join");
+
+        const result = await fixture!
+            .control()
+            .p2pManagerProbe.probeFailedDiscoveryJoin(discoveryKey)
+            .request();
+
+        expect(result.joinRejected).to.equal(true);
+        expect(result.observedAfterFailedJoin).to.deep.equal([]);
     });
 
     it("admits a replacement transport for an already connected peer while no key is observed", async function () {

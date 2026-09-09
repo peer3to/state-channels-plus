@@ -539,6 +539,21 @@ export type DiscoveryJoinLeaveRaceProbe = {
     backendLeftKeys: string[];
 };
 
+export type InFlightJoinAdmissionProbe = {
+    admittedConnected: boolean;
+    admittedTransportClosed: boolean;
+    admittedSocketDestroyed: boolean;
+    admittedBanCalls: boolean[];
+    admittedBlacklisted: boolean;
+    admittedReconnectBanned: boolean;
+    observedAfterJoin: DiscoveryKey[];
+};
+
+export type FailedDiscoveryJoinProbe = {
+    joinRejected: boolean;
+    observedAfterFailedJoin: DiscoveryKey[];
+};
+
 export type ReconnectBanFinalAdmissionProbe = {
     responseAcceptedBeforeBan: boolean;
     replacementTransportClosed: boolean;
@@ -4799,9 +4814,9 @@ export class P2PManagerProbeService extends ARpcService<
 
     /**
      * Stages the join/leave race: the backend join is held at its await
-     * boundary, `leaveAllDiscoveryKeys` runs against the still-empty set, then
-     * the join is released. Record-only wrappers observe the backend calls and
-     * are restored in `finally`.
+     * boundary, `leaveAllDiscoveryKeys` runs while the backend has not
+     * answered, then the join is released. Record-only wrappers observe the
+     * backend calls and are restored in `finally`.
      */
     public async probeDiscoveryJoinLeaveRace(
         discoveryKey: string
@@ -4858,6 +4873,108 @@ export class P2PManagerProbeService extends ARpcService<
             releaseJoin();
             LocalDiscoveryServer.connectToPeers = originalConnectToPeers;
             LocalDiscoveryServer.leave = originalLeave;
+            await this.p2pManager.leaveAllDiscoveryKeys();
+        }
+    }
+
+    /**
+     * Holds the backend join at its await boundary and completes an inbound
+     * handshake while it is parked. The key is observed from the start of the
+     * join, so the peer must be admitted, not refused as an unobserved
+     * discovery admission. The held wrapper is restored in `finally`.
+     */
+    public async probeAdmissionDuringInFlightDiscoveryJoin(
+        admittedAddressInput: string,
+        discoveryKey: string
+    ): Promise<InFlightJoinAdmissionProbe> {
+        this.p2pManager.stateManager.setStatus(Status.SYNCED);
+        const admittedAddress = getChecksumAddress(admittedAddressInput);
+        const originalConnectToPeers =
+            LocalDiscoveryServer.connectToPeers.bind(LocalDiscoveryServer);
+        let joinReachedBackend = false;
+        let releaseJoin!: () => void;
+        const heldJoin = new Promise<void>((resolve) => {
+            releaseJoin = resolve;
+        });
+
+        LocalDiscoveryServer.connectToPeers = async (
+            p2pManager,
+            rendezvousKey,
+            myPeerAddress
+        ) => {
+            joinReachedBackend = true;
+            await heldJoin;
+            await originalConnectToPeers(
+                p2pManager,
+                rendezvousKey,
+                myPeerAddress
+            );
+        };
+
+        try {
+            const join = this.p2pManager.joinDiscoveryKey(discoveryKey);
+            // Time is the input here: wait until the join is parked inside the
+            // backend so the handshake really lands mid-join.
+            if (!(await this.waitUntil(() => joinReachedBackend))) {
+                throw new Error("The discovery join never reached the backend");
+            }
+            const admitted = this.registeredHolepunchTransport(admittedAddress);
+            await this.completeHandshakeFor(admittedAddress);
+            const duringJoin = {
+                admittedConnected: this.p2pManager.openConnections.includes(
+                    admitted.transport
+                ),
+                admittedTransportClosed: admitted.transport.isClosed,
+                admittedSocketDestroyed: admitted.socket.destroyed,
+                admittedBanCalls: [...admitted.peerInfo.banCalls],
+                admittedBlacklisted:
+                    this.p2pManager.isBlacklisted(admittedAddress),
+                admittedReconnectBanned:
+                    this.p2pManager.isReconnectBanned(admittedAddress)
+            };
+
+            releaseJoin();
+            await join;
+
+            return {
+                ...duringJoin,
+                observedAfterJoin: this.p2pManager.getJoinedDiscoveryKeys()
+            };
+        } finally {
+            releaseJoin();
+            LocalDiscoveryServer.connectToPeers = originalConnectToPeers;
+            await this.p2pManager.leaveAllDiscoveryKeys();
+        }
+    }
+
+    /**
+     * Fails the backend join. The key is recorded before the backend is
+     * awaited, so a rejected join has to stop observing it again.
+     */
+    public async probeFailedDiscoveryJoin(
+        discoveryKey: string
+    ): Promise<FailedDiscoveryJoinProbe> {
+        this.p2pManager.stateManager.setStatus(Status.SYNCED);
+        const originalConnectToPeers =
+            LocalDiscoveryServer.connectToPeers.bind(LocalDiscoveryServer);
+        LocalDiscoveryServer.connectToPeers = async () => {
+            throw new Error("Discovery backend rejected the join");
+        };
+
+        try {
+            let joinRejected = false;
+            try {
+                await this.p2pManager.joinDiscoveryKey(discoveryKey);
+            } catch {
+                joinRejected = true;
+            }
+            return {
+                joinRejected,
+                observedAfterFailedJoin:
+                    this.p2pManager.getJoinedDiscoveryKeys()
+            };
+        } finally {
+            LocalDiscoveryServer.connectToPeers = originalConnectToPeers;
             await this.p2pManager.leaveAllDiscoveryKeys();
         }
     }
