@@ -1,8 +1,3 @@
-import type ATransport from "@/transport/ATransport";
-import { TransportType } from "@/transport/TransportType";
-import type { Address } from "@/types/types";
-import type { Logger } from "@/utils/logging/Logger";
-import { hasRpcService } from "@/utils/ObjectChecks";
 import type ARpcService from "./ARpcService";
 import RemoteRpcProxy, { type RemoteRpcProxyType } from "./RemoteRpcProxy";
 import Rpc, {
@@ -14,6 +9,11 @@ import Rpc, {
     RpcResponse
 } from "./Rpc";
 import { errorFromReply, serializeError } from "./serializeError";
+import type ATransport from "@/transport/ATransport";
+import { TransportType } from "@/transport/TransportType";
+import type { Address } from "@/types/types";
+import type { Logger } from "@/utils/logging/Logger";
+import { hasRpcService } from "@/utils/ObjectChecks";
 
 /** what failed: a frame the peer sent, or one of our own handlers */
 export type ServiceFailureKind = "frame" | "handler";
@@ -43,6 +43,9 @@ export interface RpcRouterLike {
     resolveTransport(address: Address): ATransport | undefined;
     onRpc(serializedRpc: string, transport: ATransport): void;
     onRpcFrame(frame: Rpc | RpcResponse, transport: ATransport): void;
+    /** a transport was built. a peer router gives it a profile; a port
+     *  router has none and leaves this unset. */
+    onTransportCreated?(transport: ATransport): void;
     /** the transport ended, expected or not -> its pending requests reject */
     onTransportClosed(transport: ATransport, isExpected: boolean): void;
     /** a frame the router refused, or a handler that failed with no request to

@@ -1,12 +1,12 @@
 // @spec-test-coverage-ignore: shared test-worker core exercised by the mapped watchdog test declarations
 import {
-    createContractExecutorWorkerHost,
-    type ContractExecutorWorkerHostHandle
-} from "@/evm/contractExecutor/worker/ContractExecutorWorkerHostCore";
-import type {
-    WorkerHostMessage,
-    WorkerRequestMessage
-} from "@/evm/contractExecutor/worker/protocol";
+    CONTRACT_EXECUTOR_CLIENT_MANIFEST,
+    type ContractExecutorClientRoot
+} from "@/evm/contractExecutor/rpc/ContractExecutorClientRoot";
+import { ContractExecutorRoot } from "@/evm/contractExecutor/rpc/ContractExecutorRoot";
+import PortRpcRouter from "@/rpc/PortRpcRouter";
+import { serializeError } from "@/rpc/serializeError";
+import type { RuntimePort } from "@/transport/RuntimePort";
 import type {
     PerformanceSample,
     PerformanceSampleSource
@@ -30,29 +30,6 @@ export const WATCHDOG_WORKER_ORIGINAL_ERROR =
 
 /** Arm-channel message; anything else on the channel is ignored. */
 export type WatchdogArmMessage = { type: "arm" };
-
-/**
- * Synthetic runs are silent by config: the worker's own log of the report
- * would carry the watchdog message into the runner log and trip its
- * starvation classifier, and the timing marker would report a synthetic peak.
- * The scripted threshold below still trips the monitor.
- */
-function silenceInit(message: WorkerRequestMessage): WorkerRequestMessage {
-    if (message.type !== "request" || message.payload.type !== "init") {
-        return message;
-    }
-    return {
-        ...message,
-        payload: {
-            ...message.payload,
-            config: {
-                ...message.payload.config,
-                LOG_SKIP_WRITING: true,
-                EVENT_LOOP_DELAY_ERROR_THRESHOLD_SECONDS: 0
-            }
-        }
-    };
-}
 
 /**
  * One scripted delay sample source: below threshold until armed, then one
@@ -89,9 +66,8 @@ export function createScriptedSampleSource(): PerformanceSampleSource & {
 }
 
 export type WatchdogWorkerPort = {
-    post: (response: WorkerHostMessage) => void;
-    onMessage: (handler: (message: WorkerRequestMessage) => void) => void;
-    onDisposed?: () => void;
+    /** the worker's own scope as a port; the router speaks on it */
+    port: RuntimePort;
     /** Platform arm subscription; resolves the unsubscribe once armed. */
     subscribeArm: (handler: () => void) => () => void;
     /** Platform unhandled-error funnel registration (the sdk worker's helper). */
@@ -99,35 +75,52 @@ export type WatchdogWorkerPort = {
 };
 
 /**
- * Runs the real contract-executor host core with the scripted sample source
- * and the real error funnel. Nothing trips until the arm message arrives; the
- * arm subscription is one-shot and closes itself after the first valid arm.
+ * Runs the real contract-executor root with the scripted sample source and
+ * the real error funnel. Nothing trips until the arm message arrives; the arm
+ * subscription is one-shot and closes itself after the first valid arm.
+ *
+ * Synthetic runs are silent by config: the worker's own log of the report
+ * would carry the watchdog message into the runner log and trip its
+ * starvation classifier, and the timing marker would report a synthetic peak.
+ * The scripted threshold still trips the monitor.
  */
 export function startWatchdogContractExecutorWorker(
     mode: WatchdogWorkerMode,
     port: WatchdogWorkerPort
-): ContractExecutorWorkerHostHandle {
+): void {
     const sampleSource = createScriptedSampleSource();
-    // Same order as the production entries: the funnel is registered on the
-    // handle before request handling and readiness.
-    const host = createContractExecutorWorkerHost(port.post, {
-        monitorOptions: {
-            threadLabel: "vm",
-            sampleSource,
-            delayErrorThresholdMs: WATCHDOG_WORKER_DELAY_ERROR_THRESHOLD_MS,
-            intervalMs: 50
-        }
-    });
-    port.onUnhandledWorkerError(host.reportUnhandledError);
-    host.start(
-        (handler) => port.onMessage((message) => handler(silenceInit(message))),
-        port.onDisposed
+    const router = new PortRpcRouter<ContractExecutorRoot>(
+        (self) =>
+            new ContractExecutorRoot(self, {
+                monitorOptions: {
+                    threadLabel: "vm",
+                    sampleSource,
+                    delayErrorThresholdMs:
+                        WATCHDOG_WORKER_DELAY_ERROR_THRESHOLD_MS,
+                    intervalMs: 50
+                },
+                configOverrides: {
+                    LOG_SKIP_WRITING: true,
+                    EVENT_LOOP_DELAY_ERROR_THRESHOLD_SECONDS: 0
+                }
+            }),
+        undefined
     );
+    const transport = router.attach(port.port);
+    const owner = router.endpoint<ContractExecutorClientRoot>(
+        transport,
+        CONTRACT_EXECUTOR_CLIENT_MANIFEST
+    );
+    // Same order as the production entries: the funnel is registered with the
+    // line already up, before anything can fail.
+    port.onUnhandledWorkerError((error) => {
+        owner.workerErrors.detachedError(serializeError(error)).sendOne();
+    });
     if (mode === "post-start") {
         queueMicrotask(() => {
             throw new Error(WATCHDOG_WORKER_ORIGINAL_ERROR);
         });
-        return host;
+        return;
     }
 
     const unsubscribe = port.subscribeArm(() => {
@@ -146,5 +139,4 @@ export function startWatchdogContractExecutorWorker(
             void Promise.reject(new Error(WATCHDOG_WORKER_ORIGINAL_ERROR));
         }, 0);
     });
-    return host;
 }

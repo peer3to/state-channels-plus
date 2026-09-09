@@ -4,11 +4,8 @@ import {
     type WatchdogArmMessage,
     type WatchdogWorkerMode
 } from "../watchdogContractExecutorWorkerCore";
-import type {
-    WorkerHostMessage,
-    WorkerRequestMessage
-} from "@/evm/contractExecutor/worker/protocol";
 import { onUnhandledWorkerError } from "@/evm/p2pRuntime/node/P2pRuntimeWorkerRuntime";
+import type { RuntimePort } from "@/transport/RuntimePort";
 import { BroadcastChannel, parentPort, workerData } from "node:worker_threads";
 
 /**
@@ -27,7 +24,7 @@ if (!parentPort) {
     throw new Error("Contract executor worker host requires a parent port");
 }
 
-const port = parentPort;
+const parent = parentPort;
 const data = workerData as WatchdogWorkerData;
 
 // Pre-funnel mode: fail synchronously before any handler or host exists. This
@@ -50,18 +47,29 @@ const mode: WatchdogWorkerMode =
     data.mode === "post-start"
         ? data.mode
         : "watchdog";
+
+/** a call frame, whatever its id: what `exit-pending` holds back */
+function isCallFrame(frame: unknown): boolean {
+    const rpc = frame as { service?: string; method?: string } | null;
+    return (
+        rpc?.service === "contractExecutor" &&
+        (rpc.method === "deploy" ||
+            rpc.method === "executeCall" ||
+            rpc.method === "simulateCall")
+    );
+}
+
 let swallowedCall = false;
-startWatchdogContractExecutorWorker(mode, {
-    post: (response: WorkerHostMessage) => port.postMessage(response),
-    onMessage: (handler: (message: WorkerRequestMessage) => void) => {
-        port.on("message", (message: WorkerRequestMessage) => {
-            // The held call never reaches the host, so its caller stays
+const port: RuntimePort = {
+    post: (message) => parent.postMessage(message),
+    onMessage: (handler) => {
+        parent.on("message", (message: unknown) => {
+            // The held call never reaches the root, so its caller stays
             // pending until the exit below settles it.
             if (
                 data.mode === "exit-pending" &&
                 !swallowedCall &&
-                message.type === "request" &&
-                message.payload.type === "call"
+                isCallFrame(message)
             ) {
                 swallowedCall = true;
                 return;
@@ -69,9 +77,13 @@ startWatchdogContractExecutorWorker(mode, {
             handler(message);
         });
     },
-    // Close the port so the drained loop can exit naturally (see
-    // workerShutdown.ts for why the loop must never be force-stopped).
-    onDisposed: () => port.close(),
+    start: () => {},
+    onClose: () => {},
+    close: () => parent.close()
+};
+
+startWatchdogContractExecutorWorker(mode, {
+    port,
     subscribeArm: (handler) => {
         channel.onmessage = (message: unknown) => {
             const payload = (message as { data?: WatchdogArmMessage })?.data;

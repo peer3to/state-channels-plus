@@ -1,9 +1,9 @@
-import type { RpcRouterLike } from "@/rpc/ARpcRouter";
-import type Rpc from "@/rpc/Rpc";
-import type { RpcResponse } from "@/rpc/Rpc";
 import ATransport from "./ATransport";
 import type { RuntimePort } from "./RuntimePort";
 import { TransportType } from "./TransportType";
+import type { RpcRouterLike } from "@/rpc/ARpcRouter";
+import type Rpc from "@/rpc/Rpc";
+import type { RpcResponse } from "@/rpc/Rpc";
 
 /**
  * a worker port as a transport. trusted: the far end is this process's own

@@ -1,4 +1,4 @@
-import { deserializeError, serializeError } from "@/evm/p2pRuntime/errorWire";
+import { deserializeError, serializeError } from "@/rpc/serializeError";
 import {
     getErrorPeerAddress,
     maybeStampErrorWithPeerAddress
@@ -8,7 +8,7 @@ import { encodedCustomErrorRevert } from "@test/factory";
 import { expect } from "chai";
 import { ethers } from "ethers";
 
-describe("errorWire", function () {
+describe("serializeError", function () {
     it("keeps the original error when its metadata toJSON throws", function () {
         const error = Object.assign(new Error("original failure"), {
             code: "CALL_EXCEPTION",

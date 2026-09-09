@@ -4,10 +4,10 @@ import type { PerformanceMonitorInternalOptions } from "./performanceMonitorInte
 import { DetachedPromises } from "../DetachedPromises";
 import { emptyFlushResult } from "./logControl";
 import type { LogFlushResult } from "./logControl";
-import type { WorkerLink } from "@/rpc/WorkerLinks";
 import type { LogFlushBus } from "./LogFlushBus";
 import { LoggerUtils } from "../LoggerUtils";
 import Clock from "@/Clock";
+import type { WorkerLink } from "@/rpc/WorkerLinks";
 import { Address } from "@/types/types";
 
 // The context exclusive to each logger

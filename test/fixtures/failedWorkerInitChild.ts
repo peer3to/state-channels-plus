@@ -1,6 +1,6 @@
 // @spec-test-coverage-ignore: child-process fixture for the worker init failure case; no SDK behavior applies
-import { createContractExecutorFactory } from "@/evm";
 import { unloadableWorkerPrecompile } from "./workerAnswerPrecompile";
+import { createContractExecutorFactory } from "@/evm";
 
 // asks for a worker whose evm init fails, reports the failure to the parent,
 // then holds nothing else -> the process ends only if the worker was ended

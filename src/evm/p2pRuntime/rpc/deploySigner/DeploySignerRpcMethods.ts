@@ -1,9 +1,9 @@
-import type { ethers } from "ethers";
+import type { P2pRuntimeHostRoot } from "../P2pRuntimeHostRoot";
+import type { DeploySignerService } from "./DeploySignerService";
 import ARpcMethods from "@/rpc/ARpcMethods";
 import type PortRpcRouter from "@/rpc/PortRpcRouter";
 import type ATransport from "@/transport/ATransport";
-import type { P2pRuntimeHostRoot } from "../P2pRuntimeHostRoot";
-import type { DeploySignerService } from "./DeploySignerService";
+import type { ethers } from "ethers";
 
 /** a local-VM deploy, already mined: what the bridge signer's `wait()` returns */
 export type DeployedTransaction = {

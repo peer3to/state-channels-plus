@@ -1,8 +1,8 @@
+import type { P2pRuntimeHostRoot } from "../P2pRuntimeHostRoot";
+import type { HostRpcMirrorService } from "./HostRpcMirrorService";
 import ARpcMethods from "@/rpc/ARpcMethods";
 import type PortRpcRouter from "@/rpc/PortRpcRouter";
 import type ATransport from "@/transport/ATransport";
-import type { P2pRuntimeHostRoot } from "../P2pRuntimeHostRoot";
-import type { HostRpcMirrorService } from "./HostRpcMirrorService";
 
 export class HostRpcMirrorRpcMethods extends ARpcMethods<
     PortRpcRouter<P2pRuntimeHostRoot>

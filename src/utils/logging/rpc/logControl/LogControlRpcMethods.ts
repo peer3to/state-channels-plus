@@ -1,9 +1,9 @@
+import type { LogControlService } from "./LogControlService";
 import ARpcMethods from "@/rpc/ARpcMethods";
 import type { RpcRouterLike } from "@/rpc/ARpcRouter";
 import type ATransport from "@/transport/ATransport";
-import type { SharedLoggerContext } from "@/utils/logging/Logger";
 import type { LogFlushResult } from "@/utils/logging/logControl";
-import type { LogControlService } from "./LogControlService";
+import type { SharedLoggerContext } from "@/utils/logging/Logger";
 
 export class LogControlRpcMethods extends ARpcMethods<RpcRouterLike> {
     constructor(

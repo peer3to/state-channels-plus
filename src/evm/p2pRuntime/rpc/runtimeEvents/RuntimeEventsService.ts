@@ -1,11 +1,11 @@
-import ARpcService from "@/rpc/ARpcService";
-import type PortRpcRouter from "@/rpc/PortRpcRouter";
-import type ATransport from "@/transport/ATransport";
 import type {
     P2pRuntimeClientRoot,
     RuntimeEventSink
 } from "../P2pRuntimeClientRoot";
 import { RuntimeEventsRpcMethods } from "./RuntimeEventsRpcMethods";
+import ARpcService from "@/rpc/ARpcService";
+import type PortRpcRouter from "@/rpc/PortRpcRouter";
+import type ATransport from "@/transport/ATransport";
 
 /** the host's one-way traffic to the client: nothing here is answered */
 export class RuntimeEventsService extends ARpcService<

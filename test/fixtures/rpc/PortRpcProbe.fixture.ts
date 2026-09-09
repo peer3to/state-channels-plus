@@ -1,18 +1,18 @@
 // @spec-test-coverage-ignore: port router staging shared by the port-link suites; the suites own the declarations
+
+import { adaptPort } from "@/evm/p2pRuntime/node/P2pRuntimeChannel";
+import ARpcMethods from "@/rpc/ARpcMethods";
+import ARpcService from "@/rpc/ARpcService";
+import PortRpcRouter, { type PortRpcRouterOptions } from "@/rpc/PortRpcRouter";
+import type { RemoteRpcServices } from "@/rpc/RemoteRpcProxy";
+import type MessagePortTransport from "@/transport/MessagePortTransport";
+import type { LogStore } from "@/utils/logging/logStore";
+import type { NodeLogger } from "@/utils/logging/node/NodeLogger";
+import { createUploaderFixture } from "@test/fixtures/logging/LogUploader.fixture";
 import {
     MessageChannel,
     type MessagePort as NodeMessagePort
 } from "node:worker_threads";
-
-import ARpcMethods from "@/rpc/ARpcMethods";
-import ARpcService from "@/rpc/ARpcService";
-import PortRpcRouter, { type PortRpcRouterOptions } from "@/rpc/PortRpcRouter";
-import type MessagePortTransport from "@/transport/MessagePortTransport";
-import type { RemoteRpcServices } from "@/rpc/RemoteRpcProxy";
-import { adaptPort } from "@/evm/p2pRuntime/node/P2pRuntimeChannel";
-import { createUploaderFixture } from "@test/fixtures/logging/LogUploader.fixture";
-import type { NodeLogger } from "@/utils/logging/node/NodeLogger";
-import type { LogStore } from "@/utils/logging/logStore";
 
 type ProbeRouter = PortRpcRouter<ProbeRoot>;
 

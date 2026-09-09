@@ -1,7 +1,3 @@
-import type { Logger, SharedLoggerContext } from "./Logger";
-import type ATransport from "@/transport/ATransport";
-import { WorkerLinks, realmWorkerLinks } from "@/rpc/WorkerLinks";
-import { logControlPortOver } from "./rpc/logControl/logControlPort";
 import {
     emptyFlushResult,
     sumFlushResults,
@@ -10,6 +6,10 @@ import {
     type LogPortHandle,
     type LogRemoteRealm
 } from "./logControl";
+import type { Logger, SharedLoggerContext } from "./Logger";
+import { logControlPortOver } from "./rpc/logControl/logControlPort";
+import { WorkerLinks, realmWorkerLinks } from "@/rpc/WorkerLinks";
+import type ATransport from "@/transport/ATransport";
 
 /**
  * one per realm: that realm's root loggers, and one port per neighbouring

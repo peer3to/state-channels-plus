@@ -1,14 +1,13 @@
+import P2pRuntimeClient from "@/evm/p2pRuntime/P2pRuntimeClient";
+import { serializeError } from "@/rpc/serializeError";
+import type { RuntimePort } from "@/transport/RuntimePort";
+import { createRuntimeChannel } from "@platform/p2pRuntimeChannel";
+import { fakeHost } from "@test/fixtures/p2pRuntime/fakeHost.fixture";
+import { waitFor } from "@test/utils/waitFor";
+import { StateChannelManagerProxy__factory } from "@typechain-types";
 import { expect } from "chai";
 import { ethers } from "hardhat";
 import { MessageChannel } from "node:worker_threads";
-import { StateChannelManagerProxy__factory } from "@typechain-types";
-
-import P2pRuntimeClient from "@/evm/p2pRuntime/P2pRuntimeClient";
-import { serializeError } from "@/rpc/serializeError";
-import { createRuntimeChannel } from "@platform/p2pRuntimeChannel";
-import type { RuntimePort } from "@/transport/RuntimePort";
-import { fakeHost } from "@test/fixtures/p2pRuntime/fakeHost.fixture";
-import { waitFor } from "@test/utils/waitFor";
 
 function clientOver(
     port: RuntimePort,

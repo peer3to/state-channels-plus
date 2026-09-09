@@ -1,8 +1,9 @@
-import { ethers } from "ethers";
 import {
     getErrorPeerAddress,
     maybeStampErrorWithPeerAddress
 } from "@/utils/errorPeerAddress";
+import type { EventLoopDelayDetails } from "@/utils/logging/performanceMonitorInternal";
+import { ethers } from "ethers";
 
 /** an error as it crosses a trusted line: everything a caller needs to
  *  classify what happened on the other side */
@@ -25,6 +26,8 @@ export interface SerializedError {
      * doesn't survive the structured-clone hop across the port.
      */
     peerAddress?: string;
+    /** Watchdog sample data attached by the event-loop monitor, when any. */
+    eventLoopDelay?: EventLoopDelayDetails;
 }
 
 /**
@@ -59,6 +62,18 @@ function extractRevertData(error: unknown): string | undefined {
     return undefined;
 }
 
+/** the watchdog's sample, when the monitor attached one to this error */
+function extractEventLoopDelay(
+    error: unknown
+): EventLoopDelayDetails | undefined {
+    if (typeof error !== "object" || error === null) return undefined;
+    const details = (error as { eventLoopDelay?: unknown }).eventLoopDelay;
+    if (typeof details !== "object" || details === null) return undefined;
+    return cloneSerializableErrorField(details) as
+        | EventLoopDelayDetails
+        | undefined;
+}
+
 function serializeEthersErrorMetadata(error: Error) {
     // Project ethers' extra error fields into structured-clone-safe values for
     // the client to restore on its local Error instance.
@@ -84,16 +99,18 @@ function serializeEthersErrorMetadata(error: Error) {
 
 function cloneSerializableErrorField(value: unknown): unknown {
     if (value === undefined) return undefined;
-    let candidate = value;
-    if (
-        typeof value === "object" &&
-        value !== null &&
-        "toJSON" in value &&
-        typeof value.toJSON === "function"
-    ) {
-        candidate = value.toJSON();
-    }
+    // This runs inside the uncaught-error funnel: a metadata object whose
+    // `toJSON` throws must not replace the original error with its own.
     try {
+        let candidate = value;
+        if (
+            typeof value === "object" &&
+            value !== null &&
+            "toJSON" in value &&
+            typeof value.toJSON === "function"
+        ) {
+            candidate = value.toJSON();
+        }
         return globalThis.structuredClone(candidate);
     } catch {
         return undefined;
@@ -108,13 +125,15 @@ export function serializeError(error: unknown): SerializedError {
             stack: error.stack,
             data: extractRevertData(error),
             ...serializeEthersErrorMetadata(error),
-            peerAddress: getErrorPeerAddress(error)
+            peerAddress: getErrorPeerAddress(error),
+            eventLoopDelay: extractEventLoopDelay(error)
         };
     }
     return {
         message: String(error),
         data: extractRevertData(error),
-        peerAddress: getErrorPeerAddress(error)
+        peerAddress: getErrorPeerAddress(error),
+        eventLoopDelay: extractEventLoopDelay(error)
     };
 }
 
@@ -146,6 +165,11 @@ export function deserializeError(serialized: SerializedError): Error {
         (error as Error & { data?: string }).data = serialized.data;
     }
     restoreEthersErrorMetadata(error, serialized);
+    if (serialized.eventLoopDelay !== undefined) {
+        (
+            error as Error & { eventLoopDelay?: EventLoopDelayDetails }
+        ).eventLoopDelay = serialized.eventLoopDelay;
+    }
     // Restore the originating-peer stamp (the non-enumerable in-process
     // property doesn't survive the structured-clone hop across the port).
     maybeStampErrorWithPeerAddress(error, serialized.peerAddress);

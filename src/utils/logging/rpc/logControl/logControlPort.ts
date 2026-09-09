@@ -1,7 +1,7 @@
+import type { LogControlService } from "./LogControlService";
 import type { WorkerLink } from "@/rpc/WorkerLinks";
 import { config } from "@/utils/config";
 import type { LogControlPort } from "@/utils/logging/logControl";
-import type { LogControlService } from "./LogControlService";
 
 /** the far end of a link as a log port: the collection is one call answered
  *  with the subtree's totals, the context a cast */

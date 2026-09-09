@@ -1,6 +1,6 @@
+import type PortRpcRouter from "./PortRpcRouter";
 import type ATransport from "@/transport/ATransport";
 import type { Logger } from "@/utils/logging/Logger";
-import type PortRpcRouter from "./PortRpcRouter";
 
 /** which side of the realm tree the far end of a link sits on */
 export type WorkerLinkSide = "parent" | "child";

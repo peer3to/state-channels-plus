@@ -218,10 +218,9 @@ export async function setupWatchdogP2pInstance(options: {
                   createContractExecutor: (factoryOptions, deps) =>
                       createContractExecutor(factoryOptions, {
                           ...deps,
-                          createWorkerRuntime: (onMessage, onError) =>
+                          createWorkerRuntime: (onError) =>
                               createContractExecutorWorkerFromPath(
                                   WATCHDOG_VM_WORKER_ENTRY,
-                                  onMessage,
                                   onError,
                                   workerData
                               )

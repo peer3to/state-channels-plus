@@ -5,7 +5,6 @@ import "@/evm/p2pRuntime/worker/nodeGlobalsShim";
 import type { WatchdogWorkerData } from "./watchdogContractExecutorWorkerEntry";
 import { createContractExecutor } from "@/evm/contractExecutor/createContractExecutor";
 import { createContractExecutorWorkerFromPath } from "@/evm/contractExecutor/node/ContractExecutorWorkerRuntime";
-import { serializeError } from "@/evm/p2pRuntime/errorWire";
 import {
     onWorkerBootstrap,
     adaptTransferredPort,
@@ -13,6 +12,7 @@ import {
     closeWorkerBootstrapPort
 } from "@/evm/p2pRuntime/node/P2pRuntimeWorkerRuntime";
 import { startP2pRuntimeHost } from "@/evm/p2pRuntime/P2pRuntimeHost";
+import { serializeError } from "@/rpc/serializeError";
 import { createConfig } from "@/utils/config";
 import * as path from "node:path";
 import { workerData } from "node:worker_threads";
@@ -38,13 +38,12 @@ onWorkerBootstrap(async (message) => {
         createContractExecutor: (options, dependencies) =>
             createContractExecutor(options, {
                 ...dependencies,
-                createWorkerRuntime: (onMessage, onError) =>
+                createWorkerRuntime: (onError) =>
                     createContractExecutorWorkerFromPath(
                         path.join(
                             __dirname,
                             "watchdogContractExecutorWorkerEntry.ts"
                         ),
-                        onMessage,
                         onError,
                         data
                     )

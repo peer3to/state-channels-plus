@@ -1,8 +1,8 @@
+import type { P2pRuntimeHostRoot, RuntimeHost } from "../P2pRuntimeHostRoot";
+import { HostRpcMirrorRpcMethods } from "./HostRpcMirrorRpcMethods";
 import ARpcService from "@/rpc/ARpcService";
 import type PortRpcRouter from "@/rpc/PortRpcRouter";
 import type ATransport from "@/transport/ATransport";
-import type { P2pRuntimeHostRoot, RuntimeHost } from "../P2pRuntimeHostRoot";
-import { HostRpcMirrorRpcMethods } from "./HostRpcMirrorRpcMethods";
 
 /**
  * the host's peer RPC, mirrored to the main thread. the peer services live on

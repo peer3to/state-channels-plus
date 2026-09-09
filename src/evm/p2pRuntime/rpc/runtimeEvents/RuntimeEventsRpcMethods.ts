@@ -1,10 +1,10 @@
+import type { P2pRuntimeClientRoot } from "../P2pRuntimeClientRoot";
+import type { RuntimeEventsService } from "./RuntimeEventsService";
 import type { BusKind } from "@/events/EventBus";
 import ARpcMethods from "@/rpc/ARpcMethods";
 import type PortRpcRouter from "@/rpc/PortRpcRouter";
 import type { SerializedError } from "@/rpc/serializeError";
 import type ATransport from "@/transport/ATransport";
-import type { P2pRuntimeClientRoot } from "../P2pRuntimeClientRoot";
-import type { RuntimeEventsService } from "./RuntimeEventsService";
 
 export class RuntimeEventsRpcMethods extends ARpcMethods<
     PortRpcRouter<P2pRuntimeClientRoot>

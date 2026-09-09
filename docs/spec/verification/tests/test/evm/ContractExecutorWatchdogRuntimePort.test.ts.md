@@ -1,7 +1,7 @@
 # test/evm/ContractExecutorWatchdogRuntimePort.test.ts — Test Report
 
 > **Test file:** [test/evm/ContractExecutorWatchdogRuntimePort.test.ts](../../../../../../test/evm/ContractExecutorWatchdogRuntimePort.test.ts) > **Status:** Authored — engineer verification pending.
-> **Exercises:** [P2pRuntimeHost.ts](../../../../implementation/source/src/evm/p2pRuntime/P2pRuntimeHost.ts.md), [setupP2pRuntime.ts](../../../../implementation/source/src/evm/p2pRuntime/setupP2pRuntime.ts.md), [WorkerContractExecutor.ts](../../../../implementation/source/src/evm/contractExecutor/WorkerContractExecutor.ts.md), [errorWire.ts](../../../../implementation/source/src/evm/p2pRuntime/errorWire.ts.md)
+> **Exercises:** [P2pRuntimeHost.ts](../../../../implementation/source/src/evm/p2pRuntime/P2pRuntimeHost.ts.md), [setupP2pRuntime.ts](../../../../implementation/source/src/evm/p2pRuntime/setupP2pRuntime.ts.md), [WorkerContractExecutor.ts](../../../../implementation/source/src/evm/contractExecutor/WorkerContractExecutor.ts.md), [serializeError.ts](../../../../implementation/source/src/rpc/serializeError.ts.md)
 
 The shared assertion body lives in `test/fixtures/WatchdogRuntimePortAssertions.ts`; each declaration calls it with its mode and host arguments.
 

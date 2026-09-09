@@ -1,5 +1,5 @@
-import type { WorkerLinkSide } from "@/rpc/WorkerLinks";
 import type { SharedLoggerContext } from "./Logger";
+import type { WorkerLinkSide } from "@/rpc/WorkerLinks";
 
 /** which end of the tree the realm across a link sits on -> how much of its
  *  context this realm trusts */

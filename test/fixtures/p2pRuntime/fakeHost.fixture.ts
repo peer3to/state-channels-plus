@@ -1,8 +1,8 @@
 // @spec-test-coverage-ignore: fake runtime host staging shared by the client suites; the suites own the declarations
 import type Rpc from "@/rpc/Rpc";
 import type { RpcResponse } from "@/rpc/Rpc";
-import type { RuntimePort } from "@/transport/RuntimePort";
 import type { SerializedError } from "@/rpc/serializeError";
+import type { RuntimePort } from "@/transport/RuntimePort";
 
 export type FakeHostReply =
     | { ok: true; result: unknown }

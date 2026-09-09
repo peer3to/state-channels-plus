@@ -1,9 +1,9 @@
+import { RuntimeEventsService } from "./runtimeEvents/RuntimeEventsService";
 import type { BusKind } from "@/events/EventBus";
 import type PortRpcRouter from "@/rpc/PortRpcRouter";
 import type { SerializedError } from "@/rpc/serializeError";
 import type { Logger } from "@/utils/logging/Logger";
 import { LogControlService } from "@/utils/logging/rpc/logControl/LogControlService";
-import { RuntimeEventsService } from "./runtimeEvents/RuntimeEventsService";
 
 /** what the host pushes at the client: bus emissions and its own failures */
 export interface RuntimeEventSink {

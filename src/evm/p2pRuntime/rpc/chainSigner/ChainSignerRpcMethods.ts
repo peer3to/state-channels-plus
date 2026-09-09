@@ -1,7 +1,3 @@
-import { ethers } from "ethers";
-import ARpcMethods from "@/rpc/ARpcMethods";
-import type PortRpcRouter from "@/rpc/PortRpcRouter";
-import type ATransport from "@/transport/ATransport";
 import {
     deserializeTransactionRequest,
     serializeTransactionResponse,
@@ -10,6 +6,10 @@ import {
 } from "../../chainSignerSerialization";
 import type { P2pRuntimeHostRoot } from "../P2pRuntimeHostRoot";
 import type { ChainSignerService } from "./ChainSignerService";
+import ARpcMethods from "@/rpc/ARpcMethods";
+import type PortRpcRouter from "@/rpc/PortRpcRouter";
+import type ATransport from "@/transport/ATransport";
+import { ethers } from "ethers";
 
 /** a message to sign, as it crosses: text, or bytes as hex */
 export type ChainSignerMessage =

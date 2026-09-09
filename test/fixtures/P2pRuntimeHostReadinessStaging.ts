@@ -1,37 +1,42 @@
 // @spec-test-coverage-ignore: real pre-deployment runtime fixture
 import { startP2pRuntimeHost } from "@/evm/p2pRuntime/P2pRuntimeHost";
-import type {
-    RuntimeClientRequest,
-    RuntimeHostMessage
-} from "@/evm/p2pRuntime/types";
-import type { RuntimeRequestInput } from "@/evm/p2pRuntime/worker/protocol";
+import {
+    P2P_RUNTIME_HOST_MANIFEST,
+    type P2pRuntimeHostRoot
+} from "@/evm/p2pRuntime/rpc/P2pRuntimeHostRoot";
+import PortRpcRouter from "@/rpc/PortRpcRouter";
+import type { RemoteRpcServices } from "@/rpc/RemoteRpcProxy";
 import { config } from "@/utils/config";
 import { createRuntimeChannel } from "@platform/p2pRuntimeChannel";
 import { MathTestSession as TestSession } from "@test/harness";
 import { expect } from "chai";
 import { ethers } from "ethers";
 
+/** the host's services as a client before the runtime graph exists */
+export type PreDeploymentHost = RemoteRpcServices<P2pRuntimeHostRoot>;
+
+/**
+ * Start a real host, stop before `deployComplete`, and invoke one endpoint.
+ * Everything that needs the runtime graph refuses with "Runtime is not ready";
+ * the deploy signer answers, because deployment is what it exists for.
+ */
 export async function checkPreDeploymentRequest(
-    request: RuntimeRequestInput,
+    invoke: (host: PreDeploymentHost) => Promise<unknown>,
     succeeds = false
 ): Promise<void> {
     const h = TestSession.getHarness();
     await h.setup(2, { autoConnect: false });
     const channel = createRuntimeChannel();
     const signer = ethers.Wallet.createRandom();
-    // Request IDs map to the callback waiting for that host response.
-    const responses = new Map<number, (message: RuntimeHostMessage) => void>();
-    channel.port1.onMessage((raw) => {
-        const message = raw as RuntimeHostMessage;
-        if (message.type === "response")
-            responses.get(message.requestId)?.(message);
-    });
-    channel.port1.start();
-    const send = (input: RuntimeRequestInput, requestId: number) =>
-        new Promise<RuntimeHostMessage>((resolve) => {
-            responses.set(requestId, resolve);
-            channel.port1.post({ ...input, requestId } as RuntimeClientRequest);
-        });
+    const clientRouter = new PortRpcRouter<Record<string, never>>(
+        () => ({}),
+        undefined
+    );
+    const transport = clientRouter.attach(channel.port1);
+    const host = clientRouter.endpoint<P2pRuntimeHostRoot>(
+        transport,
+        P2P_RUNTIME_HOST_MANIFEST
+    );
     try {
         await startP2pRuntimeHost(
             channel.port2,
@@ -51,17 +56,19 @@ export async function checkPreDeploymentRequest(
             },
             { threadLabel: "pre-deployment-readiness" }
         );
-        const response = await send(request, 701);
-        expect(response.type).to.equal("response");
-        if (response.type !== "response") throw new Error("Expected response");
-        expect(response.requestId).to.equal(701);
-        expect(response.ok).to.equal(succeeds);
-        if (response.ok) {
-            expect(response.result).to.equal(signer.address);
+        if (succeeds) {
+            expect(await invoke(host)).to.equal(signer.address);
         } else {
-            expect(response.error.message).to.equal("Runtime is not ready");
+            let message = "";
+            try {
+                await invoke(host);
+            } catch (error) {
+                message =
+                    error instanceof Error ? error.message : String(error);
+            }
+            expect(message).to.contain("Runtime is not ready");
         }
-        await send({ type: "dispose" }, 702);
+        await host.lifecycle.dispose().request({ timeoutMs: null });
     } finally {
         channel.port1.close();
         channel.port2.close();

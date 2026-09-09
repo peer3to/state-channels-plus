@@ -1,9 +1,8 @@
+import { adaptPort } from "@/evm/p2pRuntime/node/P2pRuntimeChannel";
+import { TransportType } from "@/transport/TransportType";
+import { linkedRouters } from "@test/fixtures/rpc/PortRpcProbe.fixture";
 import { expect } from "chai";
 import { MessageChannel } from "node:worker_threads";
-
-import { TransportType } from "@/transport/TransportType";
-import { adaptPort } from "@/evm/p2pRuntime/node/P2pRuntimeChannel";
-import { linkedRouters } from "@test/fixtures/rpc/PortRpcProbe.fixture";
 
 describe("MessagePortTransport", function () {
     let link: ReturnType<typeof linkedRouters> | undefined;

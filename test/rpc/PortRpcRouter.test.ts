@@ -1,10 +1,9 @@
-import { expect } from "chai";
-
 import {
     linkedRouters,
     type ProbeEnd
 } from "@test/fixtures/rpc/PortRpcProbe.fixture";
 import { waitFor } from "@test/utils/waitFor";
+import { expect } from "chai";
 
 /** what the logger of one end recorded, as messages */
 function logged(end: ProbeEnd): string[] {
