@@ -33,10 +33,11 @@ For usage in other projects, install from npm:
 yarn add @peer3/state-channels-plus
 ```
 
-For usage in this repository, install Foundry `v1.2.3`, initialize the pinned
-Solidity dependencies, install local dependencies, and build the SDK:
+For usage in this repository, install the Foundry version in `.forge-version`,
+initialize the pinned Solidity dependencies, install local dependencies, and
+build the SDK:
 ```shell
-foundryup --install v1.2.3
+foundryup --install "$(cat .forge-version)"
 git submodule update --init --recursive
 yarn && yarn build
 ```
