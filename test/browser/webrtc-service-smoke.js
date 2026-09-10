@@ -102,9 +102,12 @@ function createP2PManager(localAddress, remoteAddress, errors, progress = []) {
                 (t) => t !== transport
             );
         },
-        // the router hooks a transport calls: a closed line and a failed handler
-        onTransportClosed: (transport) => manager.disconnectConnection(transport),
-        onServiceFailure: (transport) => manager.disconnectConnection(transport),
+        // the router hooks a transport calls: a new line, a closed line and a
+        // failed handler
+        onTransportCreated: () => undefined,
+        onTransportClosed: (transport) =>
+            manager.disconnectConnection(transport),
+        onBadFrame: (transport) => manager.disconnectConnection(transport),
         resolveTransport: (address) =>
             manager.openConnections.find((t) => t.peerAddress === address)
     };
