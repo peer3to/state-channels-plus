@@ -275,7 +275,7 @@ reader bytecode. These maintained assessments remain pending engineer review; no
 
 ### Early timeout submission recovery
 
-[`REQ-DISPUTE-PIPE-10-BT8YAR`](../specification/disputes/dispute-processing.md#req-dispute-pipe-10-bt8yar) preserves chain admission while retrying a specific early-timestamp refusal through the existing timeout owner. Retries must revalidate current evidence, stop after fork replacement or disposal, and keep an older-window refusal ineligible. Repeated attempts may incur transaction cost while chain time lags; this does not relax the deadline or unrelated error policy.
+[`REQ-DISPUTE-PIPE-10-BT8YAR`](../specification/disputes/dispute-processing.md#req-dispute-pipe-10-bt8yar) preserves chain admission while retrying a specific early-timestamp refusal through the existing timeout owner. Retries must revalidate current evidence, stop after fork replacement or disposal, and keep an older-window refusal ineligible. Repeated attempts may incur transaction cost while chain time lags; this does not relax the deadline or unrelated error policy. The calldata-posted refusal on the same path has no recovery and strands the timeout ([`FIND-TIMEOUT-1-3KH429`](open-findings.md#find-timeout-1-3kh429)).
 
 ## Accepted PR 472 fixes after the SDK refactor
 
@@ -287,7 +287,8 @@ This is the recorded owner policy under [terminal channel leave](../specificatio
 Current dispute upload eligibility now uses the snapshot participant set plus the unconsumed inbound
 JOIN interval, with the snapshot boundary excluded, the latest head included, and on-chain slashes
 removed. Snapshot participants retain eligibility regardless of JOIN age. Historical proof thresholds
-retain their historical walk. See the [shared Solidity report](../implementation/source/contracts/V1/StateChannelDiamondProxy/StateChannelCommon.sol.md)
+retain their historical pending walk, but the milestone-finality read still takes the snapshot participant
+set from the live chain ([`FIND-DISPUTE-2-1NNNDD`](open-findings.md#find-dispute-2-1nnndd)). See the [shared Solidity report](../implementation/source/contracts/V1/StateChannelDiamondProxy/StateChannelCommon.sol.md)
 and [upload rule](../specification/disputes/disputes.md#req-dis-2-pkvz7e).
 
 The accepted-lease liability policy is retained. [Profile-loss recovery](../specification/peer-communication/lobby-matching.md#req-lobby-8-31be0f)
