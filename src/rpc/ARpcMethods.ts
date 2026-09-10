@@ -1,8 +1,8 @@
-import type { RpcRouterLike } from "./ARpcRouter";
+import type { RpcRouter } from "./RpcRouter";
 import type P2PManager from "@/P2PManager";
 import { ATransport } from "@/transport";
 
-abstract class ARpcMethods<TRouter extends RpcRouterLike = P2PManager> {
+abstract class ARpcMethods<TRouter extends RpcRouter<any, any> = P2PManager> {
     senderTransport: ATransport;
     /** what dispatched this call: the peer manager or a port router */
     readonly router: TRouter;

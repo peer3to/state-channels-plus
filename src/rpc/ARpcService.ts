@@ -1,7 +1,7 @@
 import ARpcMethods from "./ARpcMethods";
-import type { RpcRouterLike } from "./ARpcRouter";
 import Rpc, { RPC_GUARD_REJECTION_ERROR } from "./Rpc";
 import type { RpcResponse } from "./Rpc";
+import type { RpcRouter } from "./RpcRouter";
 import { serializeError } from "./serializeError";
 import type P2PManager from "@/P2PManager";
 import type { AGuard } from "@/rpc/guards/AGuard";
@@ -37,7 +37,7 @@ function resolveRpcEndpoint(
 
 abstract class ARpcService<
     R extends ARpcMethods<TRouter>,
-    TRouter extends RpcRouterLike = P2PManager
+    TRouter extends RpcRouter<any, any> = P2PManager
 > {
     /** what dispatches to this service: the peer manager or a port router */
     readonly router: TRouter;
@@ -75,7 +75,7 @@ abstract class ARpcService<
                 error: errorMessage(e),
                 stack: e instanceof Error ? e.stack : undefined
             });
-            this.router.onServiceFailure(responseTransport, e, "handler");
+            this.router.onBadFrame(responseTransport, e, "handler");
         }
     }
 
@@ -156,7 +156,7 @@ abstract class ARpcService<
                     error: errorMessage(e),
                     stack: e instanceof Error ? e.stack : undefined
                 });
-                this.router.onServiceFailure(transport, e, "handler");
+                this.router.onBadFrame(transport, e, "handler");
             });
         } catch (e) {
             this.logger.error("Unhandled RPC handler exception", {

@@ -2,11 +2,12 @@ import { ChainSignerService } from "./chainSigner/ChainSignerService";
 import { DeploySignerService } from "./deploySigner/DeploySignerService";
 import { HostRpcMirrorService } from "./hostRpc/HostRpcMirrorService";
 import { RuntimeLifecycleService } from "./lifecycle/RuntimeLifecycleService";
+import type { P2pRuntimeClientRoot } from "./P2pRuntimeClientRoot";
 import { P2pSignerService } from "./p2pSigner/P2pSignerService";
 import type EvmDiamondStateMachine from "@/evm/EvmDiamondStateMachine";
 import type HostNonceManager from "@/evm/signer/HostNonceManager";
 import type LocalContractExecutorSigner from "@/evm/signer/LocalContractExecutorSigner";
-import type PortRpcRouter from "@/rpc/PortRpcRouter";
+import type { RpcRouter } from "@/rpc/RpcRouter";
 import type { SerializedError } from "@/rpc/serializeError";
 import type StateManager from "@/stateManager/StateManager";
 import type ATransport from "@/transport/ATransport";
@@ -50,7 +51,10 @@ export class P2pRuntimeHostRoot {
     readonly hostRpc: HostRpcMirrorService;
     readonly logControl: LogControlService;
 
-    constructor(router: PortRpcRouter<P2pRuntimeHostRoot>, host: RuntimeHost) {
+    constructor(
+        router: RpcRouter<P2pRuntimeHostRoot, P2pRuntimeClientRoot>,
+        host: RuntimeHost
+    ) {
         this.lifecycle = new RuntimeLifecycleService(router, host);
         this.p2pSigner = new P2pSignerService(router, host);
         this.chainSigner = new ChainSignerService(router, host);
@@ -59,15 +63,5 @@ export class P2pRuntimeHostRoot {
         this.logControl = new LogControlService(router, router.logger);
     }
 }
-
-/** the names the main thread may call on the host: its typed endpoint */
-export const P2P_RUNTIME_HOST_MANIFEST = [
-    "lifecycle",
-    "p2pSigner",
-    "chainSigner",
-    "deploySigner",
-    "hostRpc",
-    "logControl"
-] as const satisfies readonly (keyof P2pRuntimeHostRoot)[];
 
 export default P2pRuntimeHostRoot;

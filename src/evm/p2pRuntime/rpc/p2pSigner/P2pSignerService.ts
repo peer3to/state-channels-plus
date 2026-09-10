@@ -1,19 +1,24 @@
 import type { P2pRuntimeHostRoot, RuntimeHost } from "../P2pRuntimeHostRoot";
 import { P2pSignerRpcMethods } from "./P2pSignerRpcMethods";
 import ARpcService from "@/rpc/ARpcService";
-import type PortRpcRouter from "@/rpc/PortRpcRouter";
+import type { RpcRouter } from "@/rpc/RpcRouter";
 import type ATransport from "@/transport/ATransport";
 
 /** the host-owned p2p signer, as the main thread's signer facade calls it */
 export class P2pSignerService extends ARpcService<
     P2pSignerRpcMethods,
-    PortRpcRouter<P2pRuntimeHostRoot>
+    RpcRouter<P2pRuntimeHostRoot, any>
 > {
     constructor(
-        router: PortRpcRouter<P2pRuntimeHostRoot>,
+        router: RpcRouter<P2pRuntimeHostRoot, any>,
         readonly host: RuntimeHost
     ) {
         super(router, router.logger);
+    }
+
+    /** the live host-side signer; throws until the runtime graph exists */
+    get p2pSigner() {
+        return this.host.runtime().stateManager.p2pManager.p2pSigner;
     }
 
     createRPCMethods(transport: ATransport): P2pSignerRpcMethods {

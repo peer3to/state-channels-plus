@@ -1,8 +1,9 @@
+import type { ContractExecutorRoot } from "./ContractExecutorRoot";
 import {
     WorkerErrorsService,
     type WorkerErrorSink
 } from "./workerErrors/WorkerErrorsService";
-import type PortRpcRouter from "@/rpc/PortRpcRouter";
+import type { RpcRouter } from "@/rpc/RpcRouter";
 import type { Logger } from "@/utils/logging/Logger";
 import { LogControlService } from "@/utils/logging/rpc/logControl/LogControlService";
 
@@ -13,7 +14,7 @@ export class ContractExecutorClientRoot {
 
     /** `ownerLogger` is the root whose bus the worker's link lands on */
     constructor(
-        router: PortRpcRouter<ContractExecutorClientRoot>,
+        router: RpcRouter<ContractExecutorClientRoot, ContractExecutorRoot>,
         ownerLogger: Logger | undefined,
         errorSink: WorkerErrorSink
     ) {
@@ -25,11 +26,5 @@ export class ContractExecutorClientRoot {
         this.workerErrors = new WorkerErrorsService(router, errorSink);
     }
 }
-
-/** the names the worker may call on its owner: its typed endpoint */
-export const CONTRACT_EXECUTOR_CLIENT_MANIFEST = [
-    "logControl",
-    "workerErrors"
-] as const satisfies readonly (keyof ContractExecutorClientRoot)[];
 
 export default ContractExecutorClientRoot;

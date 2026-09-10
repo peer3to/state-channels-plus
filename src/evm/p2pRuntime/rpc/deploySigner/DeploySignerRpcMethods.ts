@@ -1,7 +1,7 @@
 import type { P2pRuntimeHostRoot } from "../P2pRuntimeHostRoot";
 import type { DeploySignerService } from "./DeploySignerService";
 import ARpcMethods from "@/rpc/ARpcMethods";
-import type PortRpcRouter from "@/rpc/PortRpcRouter";
+import type { RpcRouter } from "@/rpc/RpcRouter";
 import type ATransport from "@/transport/ATransport";
 import type { ethers } from "ethers";
 
@@ -15,7 +15,7 @@ export type DeployedTransaction = {
 };
 
 export class DeploySignerRpcMethods extends ARpcMethods<
-    PortRpcRouter<P2pRuntimeHostRoot>
+    RpcRouter<P2pRuntimeHostRoot, any>
 > {
     constructor(
         transport: ATransport,

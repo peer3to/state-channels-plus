@@ -7,8 +7,8 @@ import { difference } from "./set";
 import Clock from "@/Clock";
 import { Block, StateSnapshot, StateProof } from "@/models";
 import type PeerProfile from "@/PeerProfile";
-import type { RpcRouterLike } from "@/rpc/ARpcRouter";
 import type Rpc from "@/rpc/Rpc";
+import type { RpcRouter } from "@/rpc/RpcRouter";
 import type { NormalizedDisputeCommitment } from "@/stateManager/eventSync/EventSyncService";
 import type StateManager from "@/stateManager/StateManager";
 import Storage from "@/storage";
@@ -82,8 +82,8 @@ export type InitHandshakeLogArgs = {
 
 /** a peer router carries the channel it serves; a port router carries none */
 function namesChannel(
-    router: RpcRouterLike
-): router is RpcRouterLike & { stateManager: StateManager } {
+    router: RpcRouter<any, any>
+): router is RpcRouter<any, any> & { stateManager: StateManager } {
     return "stateManager" in router;
 }
 

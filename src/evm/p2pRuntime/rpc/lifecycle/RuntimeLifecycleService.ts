@@ -1,16 +1,16 @@
 import type { P2pRuntimeHostRoot, RuntimeHost } from "../P2pRuntimeHostRoot";
 import { RuntimeLifecycleRpcMethods } from "./RuntimeLifecycleRpcMethods";
 import ARpcService from "@/rpc/ARpcService";
-import type PortRpcRouter from "@/rpc/PortRpcRouter";
+import type { RpcRouter } from "@/rpc/RpcRouter";
 import type ATransport from "@/transport/ATransport";
 
 /** the host's life: build it once the deploys are in, drain it, end it */
 export class RuntimeLifecycleService extends ARpcService<
     RuntimeLifecycleRpcMethods,
-    PortRpcRouter<P2pRuntimeHostRoot>
+    RpcRouter<P2pRuntimeHostRoot, any>
 > {
     constructor(
-        router: PortRpcRouter<P2pRuntimeHostRoot>,
+        router: RpcRouter<P2pRuntimeHostRoot, any>,
         readonly host: RuntimeHost
     ) {
         super(router, router.logger);

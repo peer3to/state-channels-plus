@@ -1,11 +1,9 @@
 // @spec-test-coverage-ignore: shared test-worker core exercised by the mapped watchdog test declarations
-import {
-    CONTRACT_EXECUTOR_CLIENT_MANIFEST,
-    type ContractExecutorClientRoot
-} from "@/evm/contractExecutor/rpc/ContractExecutorClientRoot";
+import type { ContractExecutorClientRoot } from "@/evm/contractExecutor/rpc/ContractExecutorClientRoot";
 import { ContractExecutorRoot } from "@/evm/contractExecutor/rpc/ContractExecutorRoot";
-import PortRpcRouter from "@/rpc/PortRpcRouter";
+import { RpcRouter } from "@/rpc/RpcRouter";
 import { serializeError } from "@/rpc/serializeError";
+import MessagePortTransport from "@/transport/MessagePortTransport";
 import type { RuntimePort } from "@/transport/RuntimePort";
 import type {
     PerformanceSample,
@@ -89,7 +87,10 @@ export function startWatchdogContractExecutorWorker(
     port: WatchdogWorkerPort
 ): void {
     const sampleSource = createScriptedSampleSource();
-    const router = new PortRpcRouter<ContractExecutorRoot>(
+    const router = new RpcRouter<
+        ContractExecutorRoot,
+        ContractExecutorClientRoot
+    >(
         (self) =>
             new ContractExecutorRoot(self, {
                 monitorOptions: {
@@ -106,11 +107,8 @@ export function startWatchdogContractExecutorWorker(
             }),
         undefined
     );
-    const transport = router.attach(port.port);
-    const owner = router.endpoint<ContractExecutorClientRoot>(
-        transport,
-        CONTRACT_EXECUTOR_CLIENT_MANIFEST
-    );
+    new MessagePortTransport(port.port, router, { remoteRealm: "parent" });
+    const owner = router.remoteRpc;
     // Same order as the production entries: the funnel is registered with the
     // line already up, before anything can fail.
     port.onUnhandledWorkerError((error) => {

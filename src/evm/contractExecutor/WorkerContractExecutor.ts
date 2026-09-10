@@ -4,14 +4,11 @@ import AContractExecutor, {
 } from "./AContractExecutor";
 import type { WorkerCustomPrecompile } from "./rpc/contractExecutor/ContractExecutorRpcMethods";
 import { ContractExecutorClientRoot } from "./rpc/ContractExecutorClientRoot";
-import {
-    CONTRACT_EXECUTOR_MANIFEST,
-    type ContractExecutorRoot
-} from "./rpc/ContractExecutorRoot";
+import type { ContractExecutorRoot } from "./rpc/ContractExecutorRoot";
 import type { ContractExecutorWorkerErrorHandler, WorkerLike } from "./types";
-import PortRpcRouter from "@/rpc/PortRpcRouter";
 import type { RemoteRpcServices } from "@/rpc/RemoteRpcProxy";
-import type MessagePortTransport from "@/transport/MessagePortTransport";
+import { RpcRouter } from "@/rpc/RpcRouter";
+import MessagePortTransport from "@/transport/MessagePortTransport";
 import type { Address, Bytes } from "@/types/types";
 import type { Logger } from "@/utils";
 import { config } from "@/utils/config";
@@ -49,9 +46,6 @@ export type WorkerContractExecutorDependencies = {
     onDetachedError?: (error: Error) => void;
 };
 
-/** every request to the worker; a slow one is logged */
-const SLOW_REQUEST_MS = 1000;
-
 /**
  * the executor behind a worker port: a router on this side serving the log
  * tree, a typed endpoint for the worker's services, and the link that makes
@@ -60,12 +54,14 @@ const SLOW_REQUEST_MS = 1000;
 export default class WorkerContractExecutor extends AContractExecutor {
     private readonly logger?: Logger;
     private readonly worker: WorkerLike;
-    private readonly router: PortRpcRouter<ContractExecutorClientRoot>;
+    private readonly router: RpcRouter<
+        ContractExecutorClientRoot,
+        ContractExecutorRoot
+    >;
     private readonly transport: MessagePortTransport;
     private readonly vm: RemoteRpcServices<ContractExecutorRoot>;
     private workerFailure?: Error;
     private disposed = false;
-    private removeLink?: () => void;
     private readonly onDetachedError?: (error: Error) => void;
 
     static async create(
@@ -103,39 +99,35 @@ export default class WorkerContractExecutor extends AContractExecutor {
         super();
         this.logger = logger?.child({ component: "WorkerContractExecutor" });
         this.onDetachedError = dependencies.onDetachedError;
-        this.router = new PortRpcRouter<ContractExecutorClientRoot>(
+        this.router = new RpcRouter<
+            ContractExecutorClientRoot,
+            ContractExecutorRoot
+        >(
             (self) =>
                 new ContractExecutorClientRoot(self, logger, {
                     onDetachedError: (error) => this.reportDetachedError(error)
                 }),
-            this.logger,
-            {
-                slowRequestMs: SLOW_REQUEST_MS,
-                // the runtime reports a worker's exit with its code before the
-                // line closes, so that is the cause a pending call gets
-                closeReason: () => this.workerFailure,
-                onClosed: (_transport, isExpected) => {
-                    // the runtime reports the exit with its code first, so
-                    // this only names a close that arrived on its own
-                    if (!isExpected) {
-                        this.handleWorkerFailure(
-                            new Error(
-                                "Contract executor worker closed the connection"
-                            )
-                        );
-                    }
-                    this.unlink();
-                }
-            }
+            this.logger
         );
         this.worker = (
             dependencies.createWorkerRuntime ?? createContractExecutorWorker
         )((error) => this.handleWorkerFailure(error));
-        this.transport = this.router.attach(this.worker.port);
-        this.vm = this.router.endpoint<ContractExecutorRoot>(
-            this.transport,
-            CONTRACT_EXECUTOR_MANIFEST
+        // the vm worker is a child of this realm
+        this.transport = new MessagePortTransport(
+            this.worker.port,
+            this.router,
+            { remoteRealm: "child" }
         );
+        // the runtime reports the exit with its code first, so this only names
+        // a close that arrived on its own; a close this executor asked for is
+        // not a failure
+        this.worker.port.onClose(() => {
+            if (this.disposed) return;
+            this.handleWorkerFailure(
+                new Error("Contract executor worker closed the connection")
+            );
+        });
+        this.vm = this.router.remoteRpc;
     }
 
     async deploy(data: Bytes): Promise<ContractExecutionResult> {
@@ -168,7 +160,6 @@ export default class WorkerContractExecutor extends AContractExecutor {
     async dispose(): Promise<void> {
         if (this.disposed) return;
         this.disposed = true;
-        this.unlink();
 
         try {
             if (!this.workerFailure) {
@@ -216,6 +207,9 @@ export default class WorkerContractExecutor extends AContractExecutor {
             error: errorMessage(error)
         });
         this.workerFailure = error;
+        // the runtime reports a worker's exit with its code before the line
+        // closes, so that is the cause a pending call gets
+        this.router.rejectPending(this.transport, error);
     }
 
     /**
@@ -244,18 +238,6 @@ export default class WorkerContractExecutor extends AContractExecutor {
         // nothing to collect from the vm realm when this realm uploads
         // nothing: the link would only carry context nobody ships
         if (!this.logger.isUploadEnabled()) return;
-        const peerAddress = this.logger.getSharedContext().peerAddress;
-        this.removeLink = this.logger.addLogLink({
-            id: `vm:${peerAddress ?? "unknown"}`,
-            transport: this.transport,
-            router: this.router,
-            remoteRealm: "child",
-            ownerLogger: this.logger
-        });
-    }
-
-    private unlink(): void {
-        this.removeLink?.();
-        this.removeLink = undefined;
+        this.logger.logFlushBus?.addLink(this.transport, this.logger);
     }
 }

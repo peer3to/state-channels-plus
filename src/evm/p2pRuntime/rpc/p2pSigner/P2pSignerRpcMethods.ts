@@ -1,7 +1,7 @@
 import type { P2pRuntimeHostRoot } from "../P2pRuntimeHostRoot";
 import type { P2pSignerService } from "./P2pSignerService";
 import ARpcMethods from "@/rpc/ARpcMethods";
-import type PortRpcRouter from "@/rpc/PortRpcRouter";
+import type { RpcRouter } from "@/rpc/RpcRouter";
 import type { LobbyJoinResult } from "@/rpc/services/lobbyMatching/LobbyMatchingTypes";
 import type ATransport from "@/transport/ATransport";
 import type { Status } from "@/types";
@@ -31,7 +31,7 @@ export type EncodedPreparedJoinChannelConfirmation = {
 };
 
 export class P2pSignerRpcMethods extends ARpcMethods<
-    PortRpcRouter<P2pRuntimeHostRoot>
+    RpcRouter<P2pRuntimeHostRoot, any>
 > {
     constructor(
         transport: ATransport,
@@ -40,18 +40,14 @@ export class P2pSignerRpcMethods extends ARpcMethods<
         super(transport, service.router);
     }
 
-    private get p2pSigner() {
-        return this.service.host.runtime().stateManager.p2pManager.p2pSigner;
-    }
-
     /** raw calldata (hex); the host builds the transaction header and block */
     async sendTransaction(data: string): Promise<void> {
-        await this.p2pSigner.sendTransaction({ data });
+        await this.service.p2pSigner.sendTransaction({ data });
     }
 
     /** raw calldata (hex) for a read-only call */
     callView(data: string): Promise<string> {
-        return this.p2pSigner.call({ data });
+        return this.service.p2pSigner.call({ data });
     }
 
     /** true when this call opened the channel's genesis */
@@ -59,7 +55,7 @@ export class P2pSignerRpcMethods extends ARpcMethods<
         channelId: string,
         options?: ConnectToChannelWireOptions
     ): Promise<boolean> {
-        return this.p2pSigner.connectToChannel(channelId as Bytes, {
+        return this.service.p2pSigner.connectToChannel(channelId as Bytes, {
             autoOpen: options?.autoOpen,
             shouldJoin: options?.shouldJoin,
             balance:
@@ -71,18 +67,20 @@ export class P2pSignerRpcMethods extends ARpcMethods<
     }
 
     cancelConnectToChannel(channelId: string): Promise<boolean> {
-        return this.p2pSigner.cancelConnectToChannel(channelId as Bytes);
+        return this.service.p2pSigner.cancelConnectToChannel(
+            channelId as Bytes
+        );
     }
 
     leaveChannel(): Promise<void> {
-        return this.p2pSigner.leaveChannel();
+        return this.service.p2pSigner.leaveChannel();
     }
 
     joinLobby(
         lobbyTopic: string,
         options?: JoinLobbyWireOptions
     ): Promise<LobbyJoinResult | undefined> {
-        return this.p2pSigner.joinLobby(lobbyTopic, {
+        return this.service.p2pSigner.joinLobby(lobbyTopic, {
             balance:
                 options?.encodedBalance === undefined
                     ? undefined
@@ -92,7 +90,7 @@ export class P2pSignerRpcMethods extends ARpcMethods<
     }
 
     leaveLobby(lobbyTopic: string): Promise<boolean> {
-        return this.p2pSigner.leaveLobby(lobbyTopic);
+        return this.service.p2pSigner.leaveLobby(lobbyTopic);
     }
 
     joinChannel(
@@ -100,7 +98,7 @@ export class P2pSignerRpcMethods extends ARpcMethods<
         expectedSnapshotHash: string,
         expectedForkId: string
     ): Promise<boolean> {
-        return this.p2pSigner.joinChannel(
+        return this.service.p2pSigner.joinChannel(
             Codec.decode(
                 encodedJoinChannelConfirmation,
                 Type.JoinChannelConfirmation
@@ -115,7 +113,7 @@ export class P2pSignerRpcMethods extends ARpcMethods<
         expectedSnapshotHash: string,
         expectedForkId: string
     ): Promise<boolean> {
-        return this.p2pSigner.topUpBalance(
+        return this.service.p2pSigner.topUpBalance(
             Codec.decode(
                 encodedJoinChannelConfirmation,
                 Type.JoinChannelConfirmation
@@ -128,9 +126,10 @@ export class P2pSignerRpcMethods extends ARpcMethods<
     async collectJoinChannelConfirmation(
         encodedJoinChannel: string
     ): Promise<EncodedPreparedJoinChannelConfirmation> {
-        const prepared = await this.p2pSigner.collectJoinChannelConfirmation(
-            Codec.decode(encodedJoinChannel, Type.JoinChannel)
-        );
+        const prepared =
+            await this.service.p2pSigner.collectJoinChannelConfirmation(
+                Codec.decode(encodedJoinChannel, Type.JoinChannel)
+            );
         return {
             encodedJoinChannelConfirmation: String(
                 Codec.encode(
@@ -144,16 +143,16 @@ export class P2pSignerRpcMethods extends ARpcMethods<
     }
 
     getChannelStatus(): Promise<Status> {
-        return this.p2pSigner.getChannelStatus();
+        return this.service.p2pSigner.getChannelStatus();
     }
 
     /** a flag nobody waits on */
     setIsLeader(value: boolean): void {
-        this.p2pSigner.setIsLeader(value);
+        this.service.p2pSigner.setIsLeader(value);
     }
 
     disconnectFromPeers(): void {
-        this.p2pSigner.disconnectFromPeers();
+        this.service.p2pSigner.disconnectFromPeers();
     }
 
     /** hex bytes or a UTF-8 string, signed by the host wallet */

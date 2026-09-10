@@ -4,16 +4,16 @@ import type {
 } from "../P2pRuntimeClientRoot";
 import { RuntimeEventsRpcMethods } from "./RuntimeEventsRpcMethods";
 import ARpcService from "@/rpc/ARpcService";
-import type PortRpcRouter from "@/rpc/PortRpcRouter";
+import type { RpcRouter } from "@/rpc/RpcRouter";
 import type ATransport from "@/transport/ATransport";
 
 /** the host's one-way traffic to the client: nothing here is answered */
 export class RuntimeEventsService extends ARpcService<
     RuntimeEventsRpcMethods,
-    PortRpcRouter<P2pRuntimeClientRoot>
+    RpcRouter<P2pRuntimeClientRoot, any>
 > {
     constructor(
-        router: PortRpcRouter<P2pRuntimeClientRoot>,
+        router: RpcRouter<P2pRuntimeClientRoot, any>,
         readonly sink: RuntimeEventSink
     ) {
         super(router, router.logger);

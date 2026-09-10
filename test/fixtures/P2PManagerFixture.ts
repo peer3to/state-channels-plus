@@ -1,6 +1,6 @@
 // @spec-test-coverage-ignore: shared runtime setup for P2PManager component tests
 
-import type { RemoteRpcProxyType } from "@/rpc/RemoteRpcProxy";
+import type { RemoteRpcServices } from "@/rpc/RemoteRpcProxy";
 import { Status } from "@/types";
 import type { PingPongRpc } from "@test/fixtures/customRpc/PingPongRpcManifest";
 import { PeerTestHarness } from "@test/fixtures/PeerTestHarness";
@@ -46,10 +46,10 @@ export class P2PManagerFixture {
         await this.harness.cleanup();
     }
 
-    public control(): RemoteRpcProxyType<PingPongRpc> {
+    public control(): RemoteRpcServices<PingPongRpc> {
         return this.harness.control(
             this.harness.getPeer(0)
-        ) as RemoteRpcProxyType<PingPongRpc>;
+        ) as RemoteRpcServices<PingPongRpc>;
     }
 
     public address(index: number): string {

@@ -3,9 +3,9 @@
 import { adaptPort } from "@/evm/p2pRuntime/node/P2pRuntimeChannel";
 import ARpcMethods from "@/rpc/ARpcMethods";
 import ARpcService from "@/rpc/ARpcService";
-import PortRpcRouter, { type PortRpcRouterOptions } from "@/rpc/PortRpcRouter";
 import type { RemoteRpcServices } from "@/rpc/RemoteRpcProxy";
-import type MessagePortTransport from "@/transport/MessagePortTransport";
+import { RpcRouter, type RpcRouterOptions } from "@/rpc/RpcRouter";
+import MessagePortTransport from "@/transport/MessagePortTransport";
 import type { LogStore } from "@/utils/logging/logStore";
 import type { NodeLogger } from "@/utils/logging/node/NodeLogger";
 import { createUploaderFixture } from "@test/fixtures/logging/LogUploader.fixture";
@@ -14,7 +14,7 @@ import {
     type MessagePort as NodeMessagePort
 } from "node:worker_threads";
 
-type ProbeRouter = PortRpcRouter<ProbeRoot>;
+type ProbeRouter = RpcRouter<ProbeRoot, ProbeRoot>;
 
 /** request/response endpoints: every return type but void */
 export class ProbeRpcMethods extends ARpcMethods<ProbeRouter> {
@@ -110,11 +110,6 @@ export class ProbeRoot {
     }
 }
 
-export const PROBE_MANIFEST = [
-    "probe",
-    "notice"
-] as const satisfies readonly (keyof ProbeRoot)[];
-
 export type ProbeEnd = {
     router: ProbeRouter;
     transport: MessagePortTransport;
@@ -124,28 +119,28 @@ export type ProbeEnd = {
 };
 
 /** two routers on the two ends of a real MessageChannel, each serving a probe
- *  root and holding a typed endpoint for the other */
+ *  root and typed by the other's */
 export function linkedRouters(
-    options: { a?: PortRpcRouterOptions; b?: PortRpcRouterOptions } = {}
+    options: { a?: RpcRouterOptions; b?: RpcRouterOptions } = {}
 ): { a: ProbeEnd; b: ProbeEnd; close: () => void } {
     const channel = new MessageChannel();
     const build = (
         port: NodeMessagePort,
-        routerOptions: PortRpcRouterOptions | undefined
+        routerOptions: RpcRouterOptions | undefined
     ): ProbeEnd => {
         const { logger, logStore } = createUploaderFixture({
             uploadEndpoint: ""
         });
-        const router = new PortRpcRouter<ProbeRoot>(
+        const router = new RpcRouter<ProbeRoot, ProbeRoot>(
             (self) => new ProbeRoot(self),
             logger,
             routerOptions
         );
-        const transport = router.attach(adaptPort(port));
+        const transport = new MessagePortTransport(adaptPort(port), router);
         return {
             router,
             transport,
-            far: router.endpoint<ProbeRoot>(transport, PROBE_MANIFEST),
+            far: router.remoteRpc,
             logger,
             logStore
         };

@@ -2,23 +2,19 @@ import ClientChainSigner from "../signer/ClientChainSigner";
 import ClientP2pSigner from "../signer/ClientP2pSigner";
 import {
     P2pRuntimeClientRoot,
-    P2P_RUNTIME_CLIENT_MANIFEST,
     type RuntimeEventSink
 } from "./rpc/P2pRuntimeClientRoot";
-import {
-    P2P_RUNTIME_HOST_MANIFEST,
-    type P2pRuntimeHostRoot
-} from "./rpc/P2pRuntimeHostRoot";
+import type { P2pRuntimeHostRoot } from "./rpc/P2pRuntimeHostRoot";
 import type { RuntimePort, SerializedContract } from "./types";
 import {
     attachContractEvents,
     EventBus,
     type BusKind
 } from "@/events/EventBus";
-import PortRpcRouter from "@/rpc/PortRpcRouter";
 import type { RemoteRpcServices } from "@/rpc/RemoteRpcProxy";
+import { RpcRouter } from "@/rpc/RpcRouter";
 import { deserializeError, type SerializedError } from "@/rpc/serializeError";
-import type MessagePortTransport from "@/transport/MessagePortTransport";
+import MessagePortTransport from "@/transport/MessagePortTransport";
 import type { Address } from "@/types/types";
 import type { Logger } from "@/utils";
 import { maybeStampErrorWithPeerAddress } from "@/utils/errorPeerAddress";
@@ -83,7 +79,10 @@ class P2pRuntimeClient<T = ethers.Contract> implements RuntimeEventSink {
      */
     webRTCBridgePort?: MessagePort;
 
-    private readonly router: PortRpcRouter<P2pRuntimeClientRoot>;
+    private readonly router: RpcRouter<
+        P2pRuntimeClientRoot,
+        P2pRuntimeHostRoot
+    >;
     private readonly transport: MessagePortTransport;
     private readonly signerAddress: Address;
     readonly events: EventBus;
@@ -94,7 +93,6 @@ class P2pRuntimeClient<T = ethers.Contract> implements RuntimeEventSink {
     private rejectReady!: (error: Error) => void;
     private readySettled = false;
     private disposed = false;
-    private removeLink?: () => void;
 
     constructor(port: RuntimePort, options: P2pRuntimeClientOptions) {
         this.events = new EventBus((kind, eventName, error) =>
@@ -112,21 +110,19 @@ class P2pRuntimeClient<T = ethers.Contract> implements RuntimeEventSink {
             this.rejectReady = reject;
         });
 
-        this.router = new PortRpcRouter<P2pRuntimeClientRoot>(
+        this.router = new RpcRouter<P2pRuntimeClientRoot, P2pRuntimeHostRoot>(
             (self) => new P2pRuntimeClientRoot(self, this, options.logger),
             options.logger,
-            {
-                defaultTimeoutMs: P2pRuntimeClient.DEFAULT_REQUEST_TIMEOUT_MS,
-                onClosed: (_transport, isExpected) => {
-                    if (!isExpected) this.handlePortClosed();
-                }
-            }
+            { defaultTimeoutMs: P2pRuntimeClient.DEFAULT_REQUEST_TIMEOUT_MS }
         );
-        this.transport = this.router.attach(port);
-        this.host = this.router.endpoint<P2pRuntimeHostRoot>(
-            this.transport,
-            P2P_RUNTIME_HOST_MANIFEST
-        );
+        // host is a child -> its peer identity stays off the shared main realm
+        this.transport = new MessagePortTransport(port, this.router, {
+            remoteRealm: "child"
+        });
+        // the port is where the client hears that the host went away without a
+        // clean dispose; the transport's own close rejects what was pending
+        port.onClose(() => this.handlePortClosed());
+        this.host = this.router.remoteRpc;
 
         this.signer = new ClientP2pSigner(this.host, options.signerAddress);
         this.chainSigner = new ClientChainSigner(
@@ -157,20 +153,12 @@ class P2pRuntimeClient<T = ethers.Contract> implements RuntimeEventSink {
         });
 
         if (options.openLogControlPort && options.logger) {
-            // host is a child -> its peer identity stays off the shared main realm
-            this.removeLink = options.logger.addLogLink({
-                id: `sdk:${String(options.signerAddress)}`,
-                transport: this.transport,
-                router: this.router,
-                remoteRealm: "child",
-                ownerLogger: options.logger
-            });
+            options.logger.logFlushBus?.addLink(this.transport, options.logger);
         }
     }
 
     private handlePortClosed(): void {
         if (this.disposed) return;
-        this.dropLink();
         const error = new Error("P2P runtime host closed the connection");
         for (const listener of this.hostErrorListeners) listener(error);
         void this.dispose();
@@ -231,7 +219,6 @@ class P2pRuntimeClient<T = ethers.Contract> implements RuntimeEventSink {
             // The host may already be gone; proceed with local teardown.
         }
         this.disposed = true;
-        this.dropLink();
         this.bridgeCandidate?.close();
         this.transport.close(true);
         await this.onClose?.();
@@ -282,11 +269,6 @@ class P2pRuntimeClient<T = ethers.Contract> implements RuntimeEventSink {
         // whole worker is this one peer)
         maybeStampErrorWithPeerAddress(error, String(this.signerAddress));
         this.onHostErrorPushed(error);
-    }
-
-    private dropLink(): void {
-        this.removeLink?.();
-        this.removeLink = undefined;
     }
 }
 

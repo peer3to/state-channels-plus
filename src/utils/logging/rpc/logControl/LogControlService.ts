@@ -1,7 +1,8 @@
 import { LogControlRpcMethods } from "./LogControlRpcMethods";
-import type { RpcRouterLike } from "@/rpc/ARpcRouter";
 import ARpcService from "@/rpc/ARpcService";
+import type { RpcRouter } from "@/rpc/RpcRouter";
 import type ATransport from "@/transport/ATransport";
+import type MessagePortTransport from "@/transport/MessagePortTransport";
 import { LogFlushBus, realmLogFlushBus } from "@/utils/logging/LogFlushBus";
 import type { Logger } from "@/utils/logging/Logger";
 
@@ -12,17 +13,26 @@ import type { Logger } from "@/utils/logging/Logger";
  */
 export class LogControlService extends ARpcService<
     LogControlRpcMethods,
-    RpcRouterLike
+    RpcRouter<any, any>
 > {
     readonly bus: LogFlushBus;
 
-    constructor(router: RpcRouterLike, logger: Logger, bus?: LogFlushBus) {
+    constructor(
+        router: RpcRouter<any, any>,
+        logger: Logger,
+        bus?: LogFlushBus
+    ) {
         super(router, logger);
         this.bus = bus ?? logger.logFlushBus ?? realmLogFlushBus;
     }
 
     createRPCMethods(transport: ATransport): LogControlRpcMethods {
-        return new LogControlRpcMethods(transport, this);
+        // this service is only ever composed onto a root that serves a worker
+        // link, so the line a call arrived on is that link
+        return new LogControlRpcMethods(
+            transport as MessagePortTransport,
+            this
+        );
     }
 }
 

@@ -1,11 +1,10 @@
 import ARpcMethods from "./ARpcMethods";
-import type { RpcRouterLike } from "./ARpcRouter";
 import Rpc from "./Rpc";
 import RpcHandler, {
     FireAndForgetRpcHandler,
     RequestRpcHandler
 } from "./RpcHandler";
-import type ATransport from "@/transport/ATransport";
+import type { RpcRouter } from "./RpcRouter";
 
 /**
  * Picks the delivery API based on a method's return type:
@@ -40,9 +39,7 @@ export type RpcHandleMethods<T extends ARpcMethods> = {
  */
 export type RpcMethodsContextObject = {
     serviceName: string;
-    router: RpcRouterLike;
-    /** set for an endpoint bound to one far transport */
-    defaultTarget?: ATransport;
+    router: RpcRouter<any, any>;
 };
 class RpcMethodsProxy {
     public static createProxy(ctx: RpcMethodsContextObject) {
@@ -61,11 +58,7 @@ class RpcMethodsProxy {
                             method: prop.toString(),
                             params: args
                         };
-                        return new RpcHandler(
-                            rpc,
-                            ctx.router,
-                            ctx.defaultTarget
-                        );
+                        return new RpcHandler(rpc, ctx.router);
                     };
                 }
             }

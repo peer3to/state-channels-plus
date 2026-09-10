@@ -1,9 +1,9 @@
-import type { RpcRequestOptions, RpcRouterLike } from "./ARpcRouter";
 import Rpc from "./Rpc";
+import type { RpcRequestOptions, RpcRouter } from "./RpcRouter";
 import ATransport, { isTransport } from "../transport/ATransport";
 import { Address } from "../types/types";
 
-export type { RpcRequestOptions } from "./ARpcRouter";
+export type { RpcRequestOptions } from "./RpcRouter";
 
 /**
  * Type face exposed for RPC methods that return `void`/`Promise<void>`.
@@ -34,13 +34,10 @@ export interface RequestRpcHandler<TResult> {
 
 class RpcHandler {
     rpc: Rpc;
-    router: RpcRouterLike;
-    /** where an omitted target goes: the far end of a bound endpoint */
-    private readonly defaultTarget?: ATransport;
-    constructor(rpc: Rpc, router: RpcRouterLike, defaultTarget?: ATransport) {
+    router: RpcRouter<any, any>;
+    constructor(rpc: Rpc, router: RpcRouter<any, any>) {
         this.rpc = rpc;
         this.router = router;
-        this.defaultTarget = defaultTarget;
     }
 
     public broadcast() {
@@ -97,7 +94,12 @@ class RpcHandler {
             ? (targetOrOptions as RpcRequestOptions | undefined)
             : maybeOptions;
 
-        const transport = this.resolveTarget(target);
+        let transport: ATransport | undefined;
+        try {
+            transport = this.resolveTarget(target);
+        } catch (e) {
+            return Promise.reject(e as Error);
+        }
         if (!transport) {
             return Promise.reject(
                 new Error(
@@ -116,14 +118,23 @@ class RpcHandler {
 
     /**
      * Resolves a delivery target to a transport. An omitted target delivers to
-     * the bound far end of an endpoint, else to self via the in-process
-     * loopback transport.
+     * self via the in-process loopback transport, or - on a router that has
+     * none - to its single line, which is the whole far end there.
      */
     private resolveTarget(
         target?: ATransport | Address
     ): ATransport | undefined {
         if (target === undefined) {
-            return this.defaultTarget ?? this.router.loopbackTransport;
+            if (this.router.loopbackTransport) {
+                return this.router.loopbackTransport;
+            }
+            const [only] = this.router.transports;
+            if (this.router.transports.size !== 1) {
+                throw new Error(
+                    `RpcHandler: '${this.rpc.service}.${this.rpc.method}' needs a target: this router has no loopback and ${this.router.transports.size} transports`
+                );
+            }
+            return only;
         }
         if (isTransport(target)) return target;
         return this.router.resolveTransport(target);

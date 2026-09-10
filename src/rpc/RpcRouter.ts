@@ -1,5 +1,5 @@
 import type ARpcService from "./ARpcService";
-import RemoteRpcProxy, { type RemoteRpcProxyType } from "./RemoteRpcProxy";
+import RemoteRpcProxy, { type RemoteRpcServices } from "./RemoteRpcProxy";
 import Rpc, {
     isRpc,
     isRpcResponse,
@@ -13,56 +13,47 @@ import type ATransport from "@/transport/ATransport";
 import { TransportType } from "@/transport/TransportType";
 import type { Address } from "@/types/types";
 import type { Logger } from "@/utils/logging/Logger";
+import noOpLogger from "@/utils/logging/noOpLogger";
 import { hasRpcService } from "@/utils/ObjectChecks";
 
-/** what failed: a frame the peer sent, or one of our own handlers */
-export type ServiceFailureKind = "frame" | "handler";
+/** what failed: a frame the far end sent, a reply for a request this line
+ *  never carried, or one of our own handlers */
+export type ServiceFailureKind = "frame" | "handler" | "foreign-response";
 
 export type RpcRequestOptions = {
     /** `null` -> no timer: the operation owns its own bound */
     timeoutMs?: number | null;
 };
 
-/**
- * what the transports, services and delivery handles need from the thing that
- * owns them. P2PManager is one (peers), PortRpcRouter is another (a worker
- * port); a service or transport never knows which.
- */
-export interface RpcRouterLike {
-    readonly logger: Logger;
-    readonly localRpc: object;
-    readonly remoteRpc: unknown;
-    /** "send to self"; only a peer router has one */
-    readonly loopbackTransport?: ATransport;
-    sendRpcRequest<T>(
-        rpc: Rpc,
-        transport: ATransport,
-        options?: RpcRequestOptions
-    ): Promise<T>;
-    broadcastRpc(rpc: Rpc): void;
-    resolveTransport(address: Address): ATransport | undefined;
-    onRpc(serializedRpc: string, transport: ATransport): void;
-    onRpcFrame(frame: Rpc | RpcResponse, transport: ATransport): void;
-    /** a transport was built. a peer router gives it a profile; a port
-     *  router has none and leaves this unset. */
-    onTransportCreated?(transport: ATransport): void;
-    /** the transport ended, expected or not -> its pending requests reject */
-    onTransportClosed(transport: ATransport, isExpected: boolean): void;
-    /** a frame the router refused, or a handler that failed with no request to
-     *  answer. a peer router drops the line, and bans the peer for a refused
-     *  frame; a port router logs either way. */
-    onServiceFailure(
-        transport: ATransport,
-        error: unknown,
-        kind?: ServiceFailureKind
-    ): void;
+/** what schedules a request's timeout. `TimeoutManager` is one; plain timers
+ *  are the default. */
+export interface RpcTimer {
+    scheduleTask(
+        task: () => void,
+        delayMs: number,
+        taskName?: string
+    ): ReturnType<typeof setTimeout>;
+    cancelTask(handle: ReturnType<typeof setTimeout>): void;
 }
+
+const plainTimer: RpcTimer = {
+    scheduleTask: (task, delayMs) => setTimeout(task, delayMs),
+    cancelTask: (handle) => clearTimeout(handle)
+};
+
+export type RpcRouterOptions = {
+    timer?: RpcTimer;
+    /** bound on every request that does not bring its own; `null` -> none */
+    defaultTimeoutMs?: number | null;
+    /** runs every inbound dispatch, e.g. inside a handler execution context */
+    wrapInbound?: <T>(run: () => T) => T;
+};
 
 type PendingRpcRequest = {
     resolve: (value: unknown) => void;
     reject: (reason: Error) => void;
     transport: ATransport;
-    timeout?: unknown;
+    timeout?: ReturnType<typeof setTimeout>;
     /** `service.method`, for the timeout and failure logs */
     operation: string;
     startedAtMs: number;
@@ -74,67 +65,129 @@ export type PendingOperation = { operation: string; durationMs: number };
 /**
  * the request/response core every line shares: request ids, the pending map,
  * timeouts, reply matching, and dispatch of an inbound frame onto the root's
- * services. subclasses supply timers, targets and what to do when a line or a
- * handler fails.
+ * services. one router per realm end - `P2PManager` is the peers' one and
+ * assigns its peer policy to the fields below; a worker port keeps the
+ * defaults.
+ *
+ * `TRoot` is what this end serves, `TRemote` what the far end serves and what
+ * `remoteRpc` is typed by.
  */
-export abstract class ARpcRouter<TRoot extends object>
-    implements RpcRouterLike
-{
+export class RpcRouter<TRoot extends object, TRemote extends object = TRoot> {
     localRpc!: TRoot;
-    remoteRpc!: RemoteRpcProxyType<TRoot>;
-    abstract readonly logger: Logger;
-    private rpcRequestCounter = 0;
-    private readonly pendingRpcRequests = new Map<string, PendingRpcRequest>();
-
-    abstract broadcastRpc(rpc: Rpc): void;
-    abstract resolveTransport(address: Address): ATransport | undefined;
-    abstract onTransportClosed(
-        transport: ATransport,
-        isExpected: boolean
-    ): void;
-    abstract onServiceFailure(
+    remoteRpc!: RemoteRpcServices<TRemote>;
+    logger: Logger;
+    /** every transport delivering to this router; `broadcastRpc` and an
+     *  omitted request target read it */
+    readonly transports = new Set<ATransport>();
+    /** "send to self"; only the peer router has one */
+    loopbackTransport?: ATransport;
+    /** peers resolve an address to its transport; a port has no address */
+    resolveTransport: (address: Address) => ATransport | undefined = () =>
+        undefined;
+    /** only the transport a request went out on may settle it. peers compare
+     *  by peer identity so a transport upgrade still settles the request. */
+    isSameSender: (expected: ATransport, actual: ATransport) => boolean = (
+        expected,
+        actual
+    ) => expected === actual;
+    /** a frame this router refused, a reply for a request this line never
+     *  carried, or a handler that failed with no request to answer. our own
+     *  thread misbehaving is a bug to log; peers drop the line and ban. */
+    onBadFrame: (
         transport: ATransport,
         error: unknown,
-        kind?: ServiceFailureKind
-    ): void;
-    protected abstract scheduleTimeout(
-        fn: () => void,
-        ms: number,
-        label: string
-    ): unknown;
-    protected abstract cancelTimeout(handle: unknown): void;
-    /** `null` -> requests wait as long as they take unless a call says otherwise */
-    protected abstract defaultRequestTimeoutMs(): number | null;
-
+        kind: ServiceFailureKind
+    ) => void = (_transport, error) => {
+        this.logger.error("Worker RPC handler failed", {
+            error: error instanceof Error ? error.message : String(error),
+            stack: error instanceof Error ? error.stack : undefined
+        });
+    };
     /** an inbound request about to be dispatched; peers log it */
-    protected onFrameDispatched(_rpc: Rpc, _transport: ATransport): void {}
+    onFrameDispatched?: (rpc: Rpc, transport: ATransport) => void;
+    private readonly timer: RpcTimer;
+    private readonly defaultTimeoutMs: number | null;
+    private readonly wrapInbound?: <T>(run: () => T) => T;
+    private rpcRequestCounter = 0;
+    private readonly pendingRpcRequests = new Map<string, PendingRpcRequest>();
+    /** requests that arrived while this end was still being built; a port
+     *  queues what is posted before anyone listens, and this keeps that
+     *  promise once every service can answer */
+    private heldRequests?: { frame: Rpc; transport: ATransport }[];
 
-    /** a request settled by reply; port routers log the slow ones */
-    protected onRequestSettled(
-        _operation: string,
-        _durationMs: number,
-        _ok: boolean
-    ): void {}
+    /** the root needs the router and the router the root -> built here. a root
+     *  that cannot be built before its owner's fields exist attaches later. */
+    constructor(
+        buildRoot: ((router: RpcRouter<TRoot, TRemote>) => TRoot) | undefined,
+        logger: Logger | undefined,
+        options: RpcRouterOptions = {}
+    ) {
+        this.logger = logger ?? noOpLogger;
+        this.timer = options.timer ?? plainTimer;
+        this.defaultTimeoutMs = options.defaultTimeoutMs ?? null;
+        this.wrapInbound = options.wrapInbound;
+        if (buildRoot) this.attachRoot(buildRoot(this));
+    }
+
+    /** a worker has no logger until its config arrived; the services on the
+     *  root were built with the stand-in and take the real one here */
+    setLogger(logger: Logger): void {
+        this.logger = logger;
+        for (const name of Object.keys(this.localRpc)) {
+            if (hasRpcService(this.localRpc, name)) {
+                this.localRpc[name].logger = logger;
+            }
+        }
+    }
 
     /** the root is built with a reference to the router, so it attaches after
      *  construction */
     protected attachRoot(root: TRoot): void {
         this.localRpc = root;
-        this.remoteRpc = RemoteRpcProxy.createProxy(
-            root
-        ) as unknown as RemoteRpcProxyType<TRoot>;
+        this.remoteRpc = RemoteRpcProxy.createProxy<TRemote>(this);
     }
 
-    /** only the transport a request went out on may settle it */
-    protected isResponseFromRequestee(
-        expected: ATransport,
-        actual: ATransport
-    ): boolean {
-        return expected === actual;
+    /** queue inbound requests until `releaseInbound`: the services behind the
+     *  root are not all built yet. replies to this end's own requests still
+     *  settle. */
+    holdInbound(): void {
+        this.heldRequests ??= [];
     }
 
-    /** a reply for a request this transport never carried */
-    protected onForeignResponse(_transport: ATransport): void {}
+    /** dispatch what was held, in arrival order, and stop holding */
+    releaseInbound(): void {
+        const held = this.heldRequests;
+        this.heldRequests = undefined;
+        for (const { frame, transport } of held ?? []) {
+            this.deliverFrame(frame, transport);
+        }
+    }
+
+    public broadcastRpc(rpc: Rpc): void {
+        for (const transport of this.transports) transport.send(rpc);
+    }
+
+    /** a transport was built: it delivers here from now on */
+    public onTransportCreated(transport: ATransport): void {
+        this.transports.add(transport);
+    }
+
+    /** the transport ended, expected or not -> its pending requests reject */
+    public onTransportClosed(transport: ATransport, isExpected: boolean): void {
+        this.transports.delete(transport);
+        const pendingRequests = this.pendingOperationsOn(transport);
+        if (!isExpected && pendingRequests.length > 0) {
+            this.logger.error("RPC transport closed with pending requests", {
+                pendingRequests
+            });
+        }
+        this.rejectPending(
+            transport,
+            new Error(
+                isExpected ? "RPC transport disposed" : "RPC transport closed"
+            )
+        );
+    }
 
     /**
      * Sends a request-style RPC and resolves with the value the far handler
@@ -159,14 +212,14 @@ export abstract class ARpcRouter<TRoot extends object>
         }
         const timeoutMs =
             options?.timeoutMs === undefined
-                ? this.defaultRequestTimeoutMs()
+                ? this.defaultTimeoutMs
                 : options.timeoutMs;
 
         return new Promise<T>((resolve, reject) => {
             const timeout =
                 timeoutMs === null
                     ? undefined
-                    : this.scheduleTimeout(
+                    : this.timer.scheduleTask(
                           () => {
                               if (this.pendingRpcRequests.delete(requestId)) {
                                   reject(
@@ -193,7 +246,7 @@ export abstract class ARpcRouter<TRoot extends object>
                 transport.send({ ...rpc, requestId });
             } catch (e) {
                 if (this.pendingRpcRequests.delete(requestId)) {
-                    if (timeout !== undefined) this.cancelTimeout(timeout);
+                    if (timeout !== undefined) this.timer.cancelTask(timeout);
                     reject(e instanceof Error ? e : new Error(String(e)));
                 }
             }
@@ -203,17 +256,18 @@ export abstract class ARpcRouter<TRoot extends object>
     private handleRpcResponse(response: RpcResponse, transport: ATransport) {
         const pending = this.pendingRpcRequests.get(response.requestId);
         if (!pending) return;
-        if (!this.isResponseFromRequestee(pending.transport, transport)) {
-            this.onForeignResponse(transport);
+        if (!this.isSameSender(pending.transport, transport)) {
+            this.onBadFrame(
+                transport,
+                new Error("RPC reply for a request this line never carried"),
+                "foreign-response"
+            );
             return;
         }
         this.pendingRpcRequests.delete(response.requestId);
-        if (pending.timeout !== undefined) this.cancelTimeout(pending.timeout);
-        this.onRequestSettled(
-            pending.operation,
-            Date.now() - pending.startedAtMs,
-            response.ok
-        );
+        if (pending.timeout !== undefined) {
+            this.timer.cancelTask(pending.timeout);
+        }
         if (response.ok) {
             pending.resolve(response.result);
         } else {
@@ -221,15 +275,13 @@ export abstract class ARpcRouter<TRoot extends object>
         }
     }
 
-    protected rejectPendingRpcRequestsForTransport(
-        transport: ATransport,
-        reason: Error
-    ): void {
+    public rejectPending(transport: ATransport, reason: Error): void {
         for (const [requestId, pending] of this.pendingRpcRequests) {
             if (pending.transport !== transport) continue;
             this.pendingRpcRequests.delete(requestId);
-            if (pending.timeout !== undefined)
-                this.cancelTimeout(pending.timeout);
+            if (pending.timeout !== undefined) {
+                this.timer.cancelTask(pending.timeout);
+            }
             pending.reject(reason);
         }
     }
@@ -261,9 +313,10 @@ export abstract class ARpcRouter<TRoot extends object>
                         transportType: TransportType[transport.transportType],
                         peerAddress: transport.peerAddress
                     });
-                    this.onServiceFailure(
+                    this.onBadFrame(
                         transport,
-                        new Error("Oversized RPC frame")
+                        new Error("Oversized RPC frame"),
+                        "frame"
                     );
                     return;
                 }
@@ -275,9 +328,10 @@ export abstract class ARpcRouter<TRoot extends object>
             }
             const rpc = deserializeRpc(serializedRpc);
             if (!rpc) {
-                this.onServiceFailure(
+                this.onBadFrame(
                     transport,
-                    new Error("Undecodable RPC frame")
+                    new Error("Undecodable RPC frame"),
+                    "frame"
                 );
                 return;
             }
@@ -285,7 +339,7 @@ export abstract class ARpcRouter<TRoot extends object>
         } catch (e) {
             // an exception escaping dispatch is our own handler failing, not
             // a frame the peer got wrong
-            this.onServiceFailure(transport, e, "handler");
+            this.onBadFrame(transport, e, "handler");
             this.logger.error("onRpc - error handling RPC frame", {
                 error: e instanceof Error ? e.message : String(e),
                 stack: e instanceof Error ? e.stack : undefined,
@@ -297,21 +351,37 @@ export abstract class ARpcRouter<TRoot extends object>
 
     /** a frame that arrived as an object (a port): validated, then dispatched */
     public onRpcFrame(frame: Rpc | RpcResponse, transport: ATransport): void {
+        if (this.heldRequests && isRpc(frame)) {
+            this.heldRequests.push({ frame, transport });
+            return;
+        }
+        if (this.wrapInbound) {
+            this.wrapInbound(() => this.deliverFrame(frame, transport));
+            return;
+        }
+        this.deliverFrame(frame, transport);
+    }
+
+    private deliverFrame(
+        frame: Rpc | RpcResponse,
+        transport: ATransport
+    ): void {
         try {
             if (isRpcResponse(frame)) {
                 this.handleRpcResponse(frame, transport);
                 return;
             }
             if (!isRpc(frame)) {
-                this.onServiceFailure(
+                this.onBadFrame(
                     transport,
-                    new Error("Malformed RPC frame")
+                    new Error("Malformed RPC frame"),
+                    "frame"
                 );
                 return;
             }
             this.dispatch(frame, transport);
         } catch (e) {
-            this.onServiceFailure(transport, e, "handler");
+            this.onBadFrame(transport, e, "handler");
             this.logger.error("onRpcFrame - error handling RPC frame", {
                 error: e instanceof Error ? e.message : String(e),
                 stack: e instanceof Error ? e.stack : undefined,
@@ -321,7 +391,7 @@ export abstract class ARpcRouter<TRoot extends object>
     }
 
     private dispatch(rpc: Rpc, transport: ATransport): void {
-        this.onFrameDispatched(rpc, transport);
+        this.onFrameDispatched?.(rpc, transport);
         if (!hasRpcService(this.localRpc, rpc.service)) {
             this.refuse(rpc, transport, `Unknown RPC service '${rpc.service}'`);
             return;
@@ -345,7 +415,7 @@ export abstract class ARpcRouter<TRoot extends object>
     private refuse(rpc: Rpc, transport: ATransport, reason: string): void {
         const error = new Error(reason);
         if (!transport.isTrusted) {
-            this.onServiceFailure(transport, error);
+            this.onBadFrame(transport, error, "frame");
             return;
         }
         if (rpc.requestId === undefined) {
@@ -361,4 +431,4 @@ export abstract class ARpcRouter<TRoot extends object>
     }
 }
 
-export default ARpcRouter;
+export default RpcRouter;

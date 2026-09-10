@@ -1,16 +1,19 @@
+import { adaptPort } from "@/evm/p2pRuntime/node/P2pRuntimeChannel";
+import MessagePortTransport from "@/transport/MessagePortTransport";
 import {
     linkedRouters,
     type ProbeEnd
 } from "@test/fixtures/rpc/PortRpcProbe.fixture";
 import { waitFor } from "@test/utils/waitFor";
 import { expect } from "chai";
+import { MessageChannel } from "node:worker_threads";
 
 /** what the logger of one end recorded, as messages */
 function logged(end: ProbeEnd): string[] {
     return end.logStore.getAllLogs().map((entry) => entry.message);
 }
 
-describe("PortRpcRouter", function () {
+describe("RpcRouter", function () {
     let link: ReturnType<typeof linkedRouters> | undefined;
 
     afterEach(function () {
@@ -87,13 +90,11 @@ describe("PortRpcRouter", function () {
         } catch (error) {
             caught = error as Error;
         }
-        expect(caught?.message).to.equal(
-            "Worker link closed before the reply arrived"
-        );
+        expect(caught?.message).to.equal("RPC transport closed");
         expect(await untouched).to.equal("done");
         // the closed link logged what it still owed
         expect(logged(link.a)).to.include(
-            "Worker link closed with pending requests"
+            "RPC transport closed with pending requests"
         );
         other.close();
     });
@@ -120,20 +121,16 @@ describe("PortRpcRouter", function () {
 
     it("answers an unknown service or method with an error and keeps the line", async function () {
         link = linkedRouters();
+        // the far root has neither; the type is the only contract, so a stale
+        // caller reaches both names at runtime
         const far = link.a.far as unknown as {
             missing: { anything(): { request(): Promise<unknown> } };
             probe: { nowhere(): { request(): Promise<unknown> } };
         };
-        // the manifest has no such service; forge the handle the way a stale
-        // caller would
-        const forged = link.a.router.endpoint<{ missing: never }>(
-            link.a.transport,
-            ["missing"] as never
-        ) as unknown as typeof far;
 
         let service: Error | undefined;
         try {
-            await forged.missing.anything().request();
+            await far.missing.anything().request();
         } catch (error) {
             service = error as Error;
         }
@@ -208,19 +205,41 @@ describe("PortRpcRouter", function () {
         expect([...echoed.bytes]).to.deep.equal([1, 2, 3]);
     });
 
-    it("logs a request that settles slower than the threshold", async function () {
-        link = linkedRouters({ a: { slowRequestMs: 20 } });
+    it("request() with no target uses the router's only transport", async function () {
+        link = linkedRouters();
 
-        await link.a.far.probe.slow(40).request();
-        await link.a.far.probe.echo("fast").request();
+        // no loopback on a port router and one line held -> that line is the
+        // whole far end
+        expect(link.a.router.transports.size).to.equal(1);
+        expect(await link.a.far.probe.echo("only line").request()).to.equal(
+            "only line"
+        );
+    });
 
-        const slow = link.a.logStore
-            .getAllLogs()
-            .filter(
-                (entry) => entry.message === "Slow worker request completed"
-            );
-        expect(slow).to.have.length(1);
-        expect(slow[0].meta[0].operation).to.equal("probe.slow");
+    it("request() with no target and two transports rejects", async function () {
+        link = linkedRouters();
+        const spare = new MessageChannel();
+        const second = new MessagePortTransport(
+            adaptPort(spare.port1),
+            link.a.router
+        );
+
+        let caught: Error | undefined;
+        try {
+            await link.a.far.probe.echo("ambiguous").request();
+        } catch (error) {
+            caught = error as Error;
+        }
+
+        expect(caught?.message).to.equal(
+            "RpcHandler: 'probe.echo' needs a target: this router has no loopback and 2 transports"
+        );
+        // naming the line it wants still works
+        expect(
+            await link.a.far.probe.echo("named").request(link.a.transport)
+        ).to.equal("named");
+        second.close(true);
+        spare.port2.close();
     });
 
     it("holds inbound requests until released and dispatches them in order", async function () {

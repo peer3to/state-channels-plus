@@ -1,7 +1,7 @@
 import type { ContractExecutorClientRoot } from "../ContractExecutorClientRoot";
 import { WorkerErrorsRpcMethods } from "./WorkerErrorsRpcMethods";
 import ARpcService from "@/rpc/ARpcService";
-import type PortRpcRouter from "@/rpc/PortRpcRouter";
+import type { RpcRouter } from "@/rpc/RpcRouter";
 import type ATransport from "@/transport/ATransport";
 
 /** where a report from the worker goes once it is back on the owning thread */
@@ -12,10 +12,10 @@ export type WorkerErrorSink = {
 /** the vm worker's one-way traffic to its owner: nothing here is answered */
 export class WorkerErrorsService extends ARpcService<
     WorkerErrorsRpcMethods,
-    PortRpcRouter<ContractExecutorClientRoot>
+    RpcRouter<ContractExecutorClientRoot, any>
 > {
     constructor(
-        router: PortRpcRouter<ContractExecutorClientRoot>,
+        router: RpcRouter<ContractExecutorClientRoot, any>,
         readonly sink: WorkerErrorSink
     ) {
         super(router, router.logger);

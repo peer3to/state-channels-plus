@@ -1,13 +1,16 @@
 import type { LogControlService } from "./LogControlService";
 import ARpcMethods from "@/rpc/ARpcMethods";
-import type { RpcRouterLike } from "@/rpc/ARpcRouter";
-import type ATransport from "@/transport/ATransport";
-import type { LogFlushResult } from "@/utils/logging/logControl";
+import type { RpcRouter } from "@/rpc/RpcRouter";
+import type MessagePortTransport from "@/transport/MessagePortTransport";
+import type { LogFlushResult } from "@/utils/logging/LogFlushBus";
 import type { SharedLoggerContext } from "@/utils/logging/Logger";
 
-export class LogControlRpcMethods extends ARpcMethods<RpcRouterLike> {
+export class LogControlRpcMethods extends ARpcMethods<RpcRouter<any, any>> {
+    /** log control only ever runs over a worker link */
+    declare senderTransport: MessagePortTransport;
+
     constructor(
-        transport: ATransport,
+        transport: MessagePortTransport,
         private readonly service: LogControlService
     ) {
         super(transport, service.router);
@@ -16,15 +19,12 @@ export class LogControlRpcMethods extends ARpcMethods<RpcRouterLike> {
     /** upload every store reachable from this realm but the asker's side, and
      *  answer with the totals - the reply is the ack */
     flush(reason: string): Promise<LogFlushResult> {
-        const bus = this.service.bus;
-        return bus.receiveFlush(reason, bus.portFor(this.senderTransport));
+        return this.service.bus.receiveFlush(reason, this.senderTransport);
     }
 
     /** the far realm's channel or identity changed */
     contextUpdate(context: SharedLoggerContext): void {
-        const bus = this.service.bus;
-        const port = bus.portFor(this.senderTransport);
-        if (port) bus.applyInboundContext(port, context);
+        this.service.bus.applyInboundContext(this.senderTransport, context);
     }
 }
 

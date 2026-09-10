@@ -1,16 +1,16 @@
 import type { P2pRuntimeHostRoot, RuntimeHost } from "../P2pRuntimeHostRoot";
 import { ChainSignerRpcMethods } from "./ChainSignerRpcMethods";
 import ARpcService from "@/rpc/ARpcService";
-import type PortRpcRouter from "@/rpc/PortRpcRouter";
+import type { RpcRouter } from "@/rpc/RpcRouter";
 import type ATransport from "@/transport/ATransport";
 
 /** the host's managed real-chain signer, as the main thread's chain signer calls it */
 export class ChainSignerService extends ARpcService<
     ChainSignerRpcMethods,
-    PortRpcRouter<P2pRuntimeHostRoot>
+    RpcRouter<P2pRuntimeHostRoot, any>
 > {
     constructor(
-        router: PortRpcRouter<P2pRuntimeHostRoot>,
+        router: RpcRouter<P2pRuntimeHostRoot, any>,
         readonly host: RuntimeHost
     ) {
         super(router, router.logger);

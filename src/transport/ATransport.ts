@@ -1,11 +1,11 @@
 import { TransportType } from "./TransportType";
 import type P2PManager from "@/P2PManager";
-import type { RpcRouterLike } from "@/rpc/ARpcRouter";
 import Rpc, {
     RpcResponse,
     serializeRpc,
     serializeRpcResponse
 } from "@/rpc/Rpc";
+import type { RpcRouter } from "@/rpc/RpcRouter";
 import { getChecksumAddress } from "@/utils/address";
 import { LoggerUtils } from "@/utils/LoggerUtils";
 import { hasMethod, hasProperty } from "@/utils/ObjectChecks";
@@ -17,16 +17,16 @@ abstract class ATransport {
     // A set address authenticates this exact transport for guarded RPC.
     peerAddress?: string;
     /** the router this transport delivers to: the peer manager or a port router */
-    readonly router: RpcRouterLike;
+    readonly router: RpcRouter<any, any>;
     private readonly closedListeners = new Set<
         (transport: ATransport) => void
     >();
 
-    constructor(router: RpcRouterLike) {
+    constructor(router: RpcRouter<any, any>) {
         this.router = router;
-        // a peer router gives every transport a profile as it is built; a port
-        // router has no profiles and does nothing here
-        this.router.onTransportCreated?.(this);
+        // the router tracks the line from here on; a peer router also gives
+        // every transport its profile as it is built
+        this.router.onTransportCreated(this);
     }
 
     /** the peer transports live on the peer manager */

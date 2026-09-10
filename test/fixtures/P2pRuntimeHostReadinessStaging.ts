@@ -1,11 +1,9 @@
 // @spec-test-coverage-ignore: real pre-deployment runtime fixture
 import { startP2pRuntimeHost } from "@/evm/p2pRuntime/P2pRuntimeHost";
-import {
-    P2P_RUNTIME_HOST_MANIFEST,
-    type P2pRuntimeHostRoot
-} from "@/evm/p2pRuntime/rpc/P2pRuntimeHostRoot";
-import PortRpcRouter from "@/rpc/PortRpcRouter";
+import type { P2pRuntimeHostRoot } from "@/evm/p2pRuntime/rpc/P2pRuntimeHostRoot";
 import type { RemoteRpcServices } from "@/rpc/RemoteRpcProxy";
+import { RpcRouter } from "@/rpc/RpcRouter";
+import MessagePortTransport from "@/transport/MessagePortTransport";
 import { config } from "@/utils/config";
 import { createRuntimeChannel } from "@platform/p2pRuntimeChannel";
 import { MathTestSession as TestSession } from "@test/harness";
@@ -28,15 +26,12 @@ export async function checkPreDeploymentRequest(
     await h.setup(2, { autoConnect: false });
     const channel = createRuntimeChannel();
     const signer = ethers.Wallet.createRandom();
-    const clientRouter = new PortRpcRouter<Record<string, never>>(
-        () => ({}),
-        undefined
-    );
-    const transport = clientRouter.attach(channel.port1);
-    const host = clientRouter.endpoint<P2pRuntimeHostRoot>(
-        transport,
-        P2P_RUNTIME_HOST_MANIFEST
-    );
+    const clientRouter = new RpcRouter<
+        Record<string, never>,
+        P2pRuntimeHostRoot
+    >(() => ({}), undefined);
+    new MessagePortTransport(channel.port1, clientRouter);
+    const host = clientRouter.remoteRpc;
     try {
         await startP2pRuntimeHost(
             channel.port2,

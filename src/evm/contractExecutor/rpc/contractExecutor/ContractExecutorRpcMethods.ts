@@ -4,8 +4,8 @@ import type { ContractExecutionResult } from "../../AContractExecutor";
 import ContractExecutor from "../../ContractExecutor";
 import type { ContractExecutorRoot } from "../ContractExecutorRoot";
 import ARpcMethods from "@/rpc/ARpcMethods";
-import type PortRpcRouter from "@/rpc/PortRpcRouter";
-import type ATransport from "@/transport/ATransport";
+import type { RpcRouter } from "@/rpc/RpcRouter";
+import type MessagePortTransport from "@/transport/MessagePortTransport";
 import { config, createConfig, type Config } from "@/utils/config";
 import type { SharedLoggerContext } from "@/utils/logging/Logger";
 import { createLogger } from "@platform/createLogger";
@@ -19,22 +19,16 @@ export type WorkerCustomPrecompile = {
 };
 
 export class ContractExecutorRpcMethods extends ARpcMethods<
-    PortRpcRouter<ContractExecutorRoot>
+    RpcRouter<ContractExecutorRoot, any>
 > {
+    /** the vm worker only ever serves the thread above it */
+    declare senderTransport: MessagePortTransport;
+
     constructor(
-        transport: ATransport,
+        transport: MessagePortTransport,
         private readonly service: ContractExecutorService
     ) {
         super(transport, service.router);
-    }
-
-    private get executor(): ContractExecutor {
-        if (!this.service.executor) {
-            throw new Error(
-                "Contract executor worker has not been initialized"
-            );
-        }
-        return this.service.executor;
     }
 
     /** the reply is the worker's readiness */
@@ -61,20 +55,15 @@ export class ContractExecutorRpcMethods extends ARpcMethods<
         // the link to the thread above before anything that can fail: a crash
         // while the evm is still being built already has a way up
         // same rule as the owner: with uploads off there is nothing to carry
-        service.removeLink = !logger.isUploadEnabled()
-            ? undefined
-            : logger.addLogLink({
-                  id: "sdk",
-                  transport: this.senderTransport,
-                  router: service.router,
-                  remoteRealm: "parent",
-                  ownerLogger: logger
-              });
+        if (logger.isUploadEnabled()) {
+            logger.logFlushBus?.addLink(this.senderTransport, logger);
+        }
         // the owner's identity rides in init: the cast its link makes on
         // registration may have crossed before this end of the link existed
-        const bus = logger.logFlushBus;
-        const port = bus?.portFor(this.senderTransport);
-        if (bus && port) bus.applyInboundContext(port, ownerContext);
+        logger.logFlushBus?.applyInboundContext(
+            this.senderTransport,
+            ownerContext
+        );
         const evm = await createEvm(
             {
                 allowUnlimitedContractSize: true,
@@ -114,8 +103,6 @@ export class ContractExecutorRpcMethods extends ARpcMethods<
     /** end the executor; the link closes once this reply is out */
     async dispose(): Promise<void> {
         const service = this.service;
-        service.removeLink?.();
-        service.removeLink = undefined;
         service.workerLogger?.stopPerformanceMonitoring();
         if (service.ownsLogger) service.workerLogger?.dispose();
         service.ownsLogger = false;
@@ -129,21 +116,25 @@ export class ContractExecutorRpcMethods extends ARpcMethods<
     }
 
     deploy(data: string): Promise<ContractExecutionResult> {
-        return this.executor.deploy(data);
+        return this.service.requireExecutor().deploy(data);
     }
 
     executeCall(
         data: string,
         contractAddress: string
     ): Promise<ContractExecutionResult> {
-        return this.executor.executeCall(data, contractAddress);
+        return this.service
+            .requireExecutor()
+            .executeCall(data, contractAddress);
     }
 
     simulateCall(
         data: string,
         contractAddress: string
     ): Promise<ContractExecutionResult> {
-        return this.executor.simulateCall(data, contractAddress);
+        return this.service
+            .requireExecutor()
+            .simulateCall(data, contractAddress);
     }
 }
 

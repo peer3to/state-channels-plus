@@ -1,11 +1,9 @@
 // @spec-test-coverage-ignore: real worker-root protocol and logger lifecycle staging
 import { createScriptedSampleSource } from "../../evm/workers/watchdogContractExecutorWorkerCore";
 import { ContractExecutorClientRoot } from "@/evm/contractExecutor/rpc/ContractExecutorClientRoot";
-import {
-    CONTRACT_EXECUTOR_MANIFEST,
-    ContractExecutorRoot
-} from "@/evm/contractExecutor/rpc/ContractExecutorRoot";
-import PortRpcRouter from "@/rpc/PortRpcRouter";
+import { ContractExecutorRoot } from "@/evm/contractExecutor/rpc/ContractExecutorRoot";
+import { RpcRouter } from "@/rpc/RpcRouter";
+import MessagePortTransport from "@/transport/MessagePortTransport";
 import { config, createConfig } from "@/utils/config";
 import * as loggerFactory from "@platform/createLogger";
 import { createRuntimeChannel } from "@platform/p2pRuntimeChannel";
@@ -43,7 +41,10 @@ export async function assertWorkerHostMonitor(
     // the real thing in one process: the worker's root on one end of a
     // channel, its owner's on the other
     const channel = createRuntimeChannel();
-    const workerRouter = new PortRpcRouter<ContractExecutorRoot>(
+    const workerRouter = new RpcRouter<
+        ContractExecutorRoot,
+        ContractExecutorClientRoot
+    >(
         (self) =>
             new ContractExecutorRoot(self, {
                 logger,
@@ -58,19 +59,23 @@ export async function assertWorkerHostMonitor(
             }),
         undefined
     );
-    workerRouter.attach(channel.port2);
-    const ownerRouter = new PortRpcRouter<ContractExecutorClientRoot>(
+    new MessagePortTransport(channel.port2, workerRouter, {
+        remoteRealm: "parent"
+    });
+    const ownerRouter = new RpcRouter<
+        ContractExecutorClientRoot,
+        ContractExecutorRoot
+    >(
         (self) =>
             new ContractExecutorClientRoot(self, undefined, {
                 onDetachedError: () => undefined
             }),
         undefined
     );
-    const ownerTransport = ownerRouter.attach(channel.port1);
-    const vm = ownerRouter.endpoint<ContractExecutorRoot>(
-        ownerTransport,
-        CONTRACT_EXECUTOR_MANIFEST
-    );
+    new MessagePortTransport(channel.port1, ownerRouter, {
+        remoteRealm: "child"
+    });
+    const vm = ownerRouter.remoteRpc;
 
     try {
         await vm.contractExecutor

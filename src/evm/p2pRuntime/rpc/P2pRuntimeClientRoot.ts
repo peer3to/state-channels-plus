@@ -1,6 +1,7 @@
+import type { P2pRuntimeHostRoot } from "./P2pRuntimeHostRoot";
 import { RuntimeEventsService } from "./runtimeEvents/RuntimeEventsService";
 import type { BusKind } from "@/events/EventBus";
-import type PortRpcRouter from "@/rpc/PortRpcRouter";
+import type { RpcRouter } from "@/rpc/RpcRouter";
 import type { SerializedError } from "@/rpc/serializeError";
 import type { Logger } from "@/utils/logging/Logger";
 import { LogControlService } from "@/utils/logging/rpc/logControl/LogControlService";
@@ -18,7 +19,7 @@ export class P2pRuntimeClientRoot {
 
     /** `ownerLogger` is the root whose bus the host's link lands on */
     constructor(
-        router: PortRpcRouter<P2pRuntimeClientRoot>,
+        router: RpcRouter<P2pRuntimeClientRoot, P2pRuntimeHostRoot>,
         sink: RuntimeEventSink,
         ownerLogger?: Logger
     ) {
@@ -30,11 +31,5 @@ export class P2pRuntimeClientRoot {
         );
     }
 }
-
-/** the names the host may call on the client: its typed endpoint */
-export const P2P_RUNTIME_CLIENT_MANIFEST = [
-    "runtimeEvents",
-    "logControl"
-] as const satisfies readonly (keyof P2pRuntimeClientRoot)[];
 
 export default P2pRuntimeClientRoot;

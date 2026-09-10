@@ -2,12 +2,10 @@ import type { LogStore } from "./logStore";
 import type { LogUploader, LogUploadOutcome } from "./LogUploader";
 import type { PerformanceMonitorInternalOptions } from "./performanceMonitorInternal";
 import { DetachedPromises } from "../DetachedPromises";
-import { emptyFlushResult } from "./logControl";
-import type { LogFlushResult } from "./logControl";
-import type { LogFlushBus } from "./LogFlushBus";
+import { emptyFlushResult } from "./LogFlushBus";
+import type { LogFlushBus, LogFlushResult } from "./LogFlushBus";
 import { LoggerUtils } from "../LoggerUtils";
 import Clock from "@/Clock";
-import type { WorkerLink } from "@/rpc/WorkerLinks";
 import { Address } from "@/types/types";
 
 // The context exclusive to each logger
@@ -121,13 +119,6 @@ export abstract class Logger {
     public attachFlushBus(bus: LogFlushBus, unregister: () => void): void {
         this.flushBusRegistration?.unregister();
         this.flushBusRegistration = { bus, unregister };
-    }
-
-    /** register a worker link on whichever bus this root belongs to: the link
-     *  becomes a port carrying this logger's context. undefined when this
-     *  logger is on no bus, so there is no flush tree to join. */
-    public addLogLink(link: WorkerLink): (() => void) | undefined {
-        return this.flushBus?.links.add(link);
     }
 
     /** the bus this root is registered on, if any */

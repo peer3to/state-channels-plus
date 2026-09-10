@@ -7,7 +7,7 @@ import {
 import type { P2pRuntimeHostRoot } from "../P2pRuntimeHostRoot";
 import type { ChainSignerService } from "./ChainSignerService";
 import ARpcMethods from "@/rpc/ARpcMethods";
-import type PortRpcRouter from "@/rpc/PortRpcRouter";
+import type { RpcRouter } from "@/rpc/RpcRouter";
 import type ATransport from "@/transport/ATransport";
 import { ethers } from "ethers";
 
@@ -17,7 +17,7 @@ export type ChainSignerMessage =
     | { kind: "bytes"; encodedBytes: string };
 
 export class ChainSignerRpcMethods extends ARpcMethods<
-    PortRpcRouter<P2pRuntimeHostRoot>
+    RpcRouter<P2pRuntimeHostRoot, any>
 > {
     constructor(
         transport: ATransport,

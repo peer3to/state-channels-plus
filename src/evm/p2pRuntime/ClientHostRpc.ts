@@ -1,10 +1,10 @@
 import type { RuntimeHostEndpoint } from "./P2pRuntimeClient";
 import type MainRpcService from "@/rpc/MainRpcService";
-import type { RemoteRpcProxyType } from "@/rpc/RemoteRpcProxy";
+import type { RemoteRpcServices } from "@/rpc/RemoteRpcProxy";
 
 /**
  * Builds the client-side `hostRpc` proxy. It mirrors the host's `remoteRpc`
- * surface exactly ({@link RemoteRpcProxyType}); the runtime port is a pure
+ * surface exactly ({@link RemoteRpcServices}); the runtime port is a pure
  * proxy. A call such as `hostRpc.svc.m(...params).request(addr?, opts?)` is
  * forwarded verbatim through the host's `hostRpc.call` service and the host
  * replays the identical chained call on its own `remoteRpc`, awaiting and
@@ -16,7 +16,7 @@ import type { RemoteRpcProxyType } from "@/rpc/RemoteRpcProxy";
  */
 export function createHostRpc<TCustomRpc extends MainRpcService>(
     host: RuntimeHostEndpoint
-): RemoteRpcProxyType<TCustomRpc> {
+): RemoteRpcServices<TCustomRpc> {
     const serviceCache = new Map<string, unknown>();
 
     const root = new Proxy(
@@ -36,7 +36,7 @@ export function createHostRpc<TCustomRpc extends MainRpcService>(
         }
     );
 
-    return root as unknown as RemoteRpcProxyType<TCustomRpc>;
+    return root as unknown as RemoteRpcServices<TCustomRpc>;
 }
 
 function createServiceProxy(host: RuntimeHostEndpoint, service: string) {

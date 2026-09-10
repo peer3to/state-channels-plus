@@ -1,6 +1,6 @@
 // @spec-test-coverage-ignore: support fixture for the mapped RpcHandler integration cases; it is not an evidence unit
 
-import type { RemoteRpcProxyType } from "@/rpc/RemoteRpcProxy";
+import type { RemoteRpcServices } from "@/rpc/RemoteRpcProxy";
 import type { PingPongRpc } from "@test/fixtures/customRpc/PingPongRpcManifest";
 import { PeerTestHarness } from "@test/fixtures/PeerTestHarness";
 import { DEFAULT_MATH_HARNESS_DEPLOYMENT } from "@test/harness/core/defaultMathHarnessDeployment";
@@ -34,10 +34,10 @@ export class RpcHandlerFixture {
         await this.harness.network.waitForP2PConnections();
     }
 
-    public control(peerIndex: number): RemoteRpcProxyType<PingPongRpc> {
+    public control(peerIndex: number): RemoteRpcServices<PingPongRpc> {
         return this.harness.control(
             this.harness.getPeer(peerIndex)
-        ) as unknown as RemoteRpcProxyType<PingPongRpc>;
+        ) as unknown as RemoteRpcServices<PingPongRpc>;
     }
 
     public address(peerIndex: number) {

@@ -1,9 +1,6 @@
 import { forwardEventHandlerInvocations } from "./host/EventForwarding";
 import type { HostHandlerExecutionContext } from "./HostHandlerExecutionContext";
-import {
-    P2P_RUNTIME_CLIENT_MANIFEST,
-    type P2pRuntimeClientRoot
-} from "./rpc/P2pRuntimeClientRoot";
+import type { P2pRuntimeClientRoot } from "./rpc/P2pRuntimeClientRoot";
 import {
     P2pRuntimeHostRoot,
     type RuntimeHandle,
@@ -23,14 +20,15 @@ import EvmDiamondStateMachine from "@/evm/EvmDiamondStateMachine";
 import HostNonceManager from "@/evm/signer/HostNonceManager";
 import LocalContractExecutorSigner from "@/evm/signer/LocalContractExecutorSigner";
 import MainRpcService from "@/rpc/MainRpcService";
-import PortRpcRouter from "@/rpc/PortRpcRouter";
 import { resolveCustomRpcConstructor } from "@/rpc/resolveCustomRpcManifest";
+import { RpcRouter } from "@/rpc/RpcRouter";
 import { serializeError, type SerializedError } from "@/rpc/serializeError";
 import { doesWorkerNeedMainThreadBridge } from "@/rpc/services/WebRTCSetup/connection/WebRTCProvider";
 import WorkerBridgeWebRTCConnectionFactory from "@/rpc/services/WebRTCSetup/connection/WorkerBridgeWebRTCConnectionFactory";
 import StateManager from "@/stateManager/StateManager";
 import Storage from "@/storage";
 import type ATransport from "@/transport/ATransport";
+import MessagePortTransport from "@/transport/MessagePortTransport";
 import { TimeConfig } from "@/types";
 import { createLogger, DebugProxy, DetachedPromises } from "@/utils";
 import { LocalDiscoveryServer } from "@/utils";
@@ -212,34 +210,32 @@ export async function startP2pRuntimeHost<
 
     // the line to the client, up before anything that can fail so a startup
     // error has a way out
-    const router = new PortRpcRouter<P2pRuntimeHostRoot>(
+    const router = new RpcRouter<P2pRuntimeHostRoot, P2pRuntimeClientRoot>(
         (self) => new P2pRuntimeHostRoot(self, host),
         undefined,
         {
             defaultTimeoutMs: null,
             wrapInbound: handlerExecutionContext
                 ? (run) => handlerExecutionContext.runHandler(run)
-                : undefined,
-            // Client went away without a clean `dispose` (thread died / port
-            // closed).
-            onClosed: (_transport, isExpected) => {
-                if (isExpected) return;
-                void disposeRuntime().catch((error) => {
-                    logger?.error("Runtime dispose on client close failed", {
-                        error
-                    });
-                });
-            }
+                : undefined
         }
     );
     // the client deploys through this line while the host is still being
     // built; hold its requests until every service can answer
     router.holdInbound();
-    const transport = router.attach(port);
-    const client = router.endpoint<P2pRuntimeClientRoot>(
-        transport,
-        P2P_RUNTIME_CLIENT_MANIFEST
-    );
+    // the main thread this host serves is its parent realm
+    const transport = new MessagePortTransport(port, router, {
+        remoteRealm: "parent"
+    });
+    // Client went away without a clean `dispose` (thread died / port closed).
+    port.onClose(() => {
+        void disposeRuntime().catch((error) => {
+            logger?.error("Runtime dispose on client close failed", {
+                error
+            });
+        });
+    });
+    const client = router.remoteRpc;
     const reportHostError = (error: unknown) => {
         try {
             client.runtimeEvents.hostError(serializeError(error)).sendOne();
@@ -287,13 +283,7 @@ export async function startP2pRuntimeHost<
 
         // threadLabel is set only by startP2pRuntimeWorker -> host is threaded
         if (threadLabel) {
-            removeLogWiring = logger.addLogLink({
-                id: "main",
-                transport,
-                router,
-                remoteRealm: "parent",
-                ownerLogger: logger
-            });
+            logger.logFlushBus?.addLink(transport, logger);
         } else if (ctx.contextFollower) {
             removeLogWiring = logger.followContextTo(ctx.contextFollower);
         }

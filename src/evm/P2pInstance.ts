@@ -4,7 +4,7 @@ import type ClientChainSigner from "./signer/ClientChainSigner";
 import type ClientP2pSigner from "./signer/ClientP2pSigner";
 import type { EventBus } from "@/events/EventBus";
 import MainRpcService from "@/rpc/MainRpcService";
-import type { RemoteRpcProxyType } from "@/rpc/RemoteRpcProxy";
+import type { RemoteRpcServices } from "@/rpc/RemoteRpcProxy";
 import {
     installWebRTCMainThreadBridge,
     type WebRTCMainThreadBridgeHandle
@@ -33,7 +33,7 @@ export default class P2pInstance<
      * peer (and, for request/response methods, the reply is returned across the
      * port).
      */
-    hostRpc: RemoteRpcProxyType<TCustomRpc>;
+    hostRpc: RemoteRpcServices<TCustomRpc>;
 
     /**
      * Main-thread event surface: `events.on(kind, eventName, listener)` for

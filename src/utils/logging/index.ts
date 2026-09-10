@@ -19,14 +19,8 @@ export type {
     CreateLoggerOptions
 };
 export { decodeLogs, decompressFromBase64, LogFlushBus, realmLogFlushBus };
-export type {
-    LogControlPort,
-    LogFlushResult,
-    LogPortHandle,
-    LogRemoteRealm
-} from "./logControl";
+export type { LogFlushResult } from "./LogFlushBus";
 export { LogControlService } from "./rpc/logControl/LogControlService";
-export { logControlPortOver } from "./rpc/logControl/logControlPort";
 export { LogControlRpcMethods } from "./rpc/logControl/LogControlRpcMethods";
 export type { LogThreadName } from "./Logger";
 export type { LogUploadOutcome } from "./LogUploader";

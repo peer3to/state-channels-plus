@@ -2,8 +2,9 @@ import type ContractExecutor from "../../ContractExecutor";
 import type { ContractExecutorRoot } from "../ContractExecutorRoot";
 import { ContractExecutorRpcMethods } from "./ContractExecutorRpcMethods";
 import ARpcService from "@/rpc/ARpcService";
-import type PortRpcRouter from "@/rpc/PortRpcRouter";
+import type { RpcRouter } from "@/rpc/RpcRouter";
 import type ATransport from "@/transport/ATransport";
+import type MessagePortTransport from "@/transport/MessagePortTransport";
 import type { Config } from "@/utils/config";
 import type { Logger } from "@/utils/logging/Logger";
 import type { PerformanceMonitorInternalOptions } from "@/utils/logging/performanceMonitorInternal";
@@ -30,20 +31,19 @@ export type ContractExecutorServiceOptions = {
 
 export class ContractExecutorService extends ARpcService<
     ContractExecutorRpcMethods,
-    PortRpcRouter<ContractExecutorRoot>
+    RpcRouter<ContractExecutorRoot, any>
 > {
     executor?: ContractExecutor;
     workerLogger?: Logger;
     /** a supplied logger stays the caller's to dispose; one built in init is
      *  this worker's own and leaves the bus with it */
     ownsLogger = false;
-    removeLink?: () => void;
     readonly monitorOptions?: PerformanceMonitorInternalOptions;
     readonly configOverrides?: Partial<Config>;
     readonly suppliedLogger?: Logger;
 
     constructor(
-        router: PortRpcRouter<ContractExecutorRoot>,
+        router: RpcRouter<ContractExecutorRoot, any>,
         options: ContractExecutorServiceOptions = {}
     ) {
         super(router, router.logger);
@@ -52,8 +52,22 @@ export class ContractExecutorService extends ARpcService<
         this.suppliedLogger = options.logger;
     }
 
+    /** the executor `init` built; every call endpoint needs it */
+    requireExecutor(): ContractExecutor {
+        if (!this.executor) {
+            throw new Error(
+                "Contract executor worker has not been initialized"
+            );
+        }
+        return this.executor;
+    }
+
     createRPCMethods(transport: ATransport): ContractExecutorRpcMethods {
-        return new ContractExecutorRpcMethods(transport, this);
+        // the worker's only line is the port to the thread that spawned it
+        return new ContractExecutorRpcMethods(
+            transport as MessagePortTransport,
+            this
+        );
     }
 }
 

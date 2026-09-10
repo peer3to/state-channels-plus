@@ -3,11 +3,10 @@
 import { applyCrashLogConfig, crashLogUploadOverrides } from "./crashLogConfig";
 import { createUploaderFixture, type LogReceiver } from "./LogUploader.fixture";
 import { adaptPort } from "@/evm/p2pRuntime/node/P2pRuntimeChannel";
-import PortRpcRouter from "@/rpc/PortRpcRouter";
 import type Rpc from "@/rpc/Rpc";
 import type { RpcResponse } from "@/rpc/Rpc";
-import { WorkerLinks } from "@/rpc/WorkerLinks";
-import type MessagePortTransport from "@/transport/MessagePortTransport";
+import { RpcRouter } from "@/rpc/RpcRouter";
+import MessagePortTransport from "@/transport/MessagePortTransport";
 import type { RuntimePort } from "@/transport/RuntimePort";
 import { LogFlushBus } from "@/utils/logging/LogFlushBus";
 import type { LogThreadName } from "@/utils/logging/Logger";
@@ -26,17 +25,19 @@ import {
 class TestRealmRoot {
     readonly logControl: LogControlService;
 
-    constructor(router: PortRpcRouter<TestRealmRoot>, bus: LogFlushBus) {
+    constructor(
+        router: RpcRouter<TestRealmRoot, TestRealmRoot>,
+        bus: LogFlushBus
+    ) {
         this.logControl = new LogControlService(router, router.logger, bus);
     }
 }
 
-/** one realm's logging state: its own bus and link registry, its router, its
- *  logger, store and uploader */
+/** one realm's logging state: its own bus, its router, its logger, store and
+ *  uploader */
 export type TestRealm = {
     bus: LogFlushBus;
-    links: WorkerLinks;
-    router: PortRpcRouter<TestRealmRoot>;
+    router: RpcRouter<TestRealmRoot, TestRealmRoot>;
     logger: NodeLogger;
     logStore: LogStore;
     logUploader: NodeLogUploader;
@@ -51,14 +52,11 @@ export type RealmConnection = {
     toChild: LinkFrame[];
     /** everything the child sent up, in order */
     toParent: LinkFrame[];
-    removeFromParent: () => void;
-    removeFromChild: () => void;
     close: () => void;
 };
 
-/** a realm as a thread has it: one bus over one link registry, one registered
- *  root, a real uploader on a real endpoint. `uploadEndpoint` of "" means
- *  uploads are off. */
+/** a realm as a thread has it: one bus, one registered root, a real uploader
+ *  on a real endpoint. `uploadEndpoint` of "" means uploads are off. */
 export function createTestRealm(opts: {
     threadName: LogThreadName;
     uploadEndpoint: string;
@@ -77,16 +75,14 @@ export function createTestRealm(opts: {
             ...(opts.channelId ? { channelId: opts.channelId } : {})
         }
     });
-    const links = new WorkerLinks();
-    const bus = new LogFlushBus(links);
+    const bus = new LogFlushBus();
     bus.registerLogger(logger);
-    const router = new PortRpcRouter<TestRealmRoot>(
+    const router = new RpcRouter<TestRealmRoot, TestRealmRoot>(
         (self) => new TestRealmRoot(self, bus),
         logger
     );
     return {
         bus,
-        links,
         router,
         logger,
         logStore,
@@ -139,38 +135,26 @@ export function connectRealms(
     const toChild: LinkFrame[] = [];
     const toParent: LinkFrame[] = [];
 
-    const parentTransport: MessagePortTransport = parent.router.attach(
-        recordingPort(channel.port1, toChild)
+    const parentTransport = new MessagePortTransport(
+        recordingPort(channel.port1, toChild),
+        parent.router,
+        { remoteRealm: "child" }
     );
-    const childTransport: MessagePortTransport = child.router.attach(
-        recordingPort(channel.port2, toParent)
+    const childTransport = new MessagePortTransport(
+        recordingPort(channel.port2, toParent),
+        child.router,
+        { remoteRealm: "parent" }
     );
 
-    // through the registries, like the real transports -> each link lands on
-    // the bus of the realm that holds it
-    const removeFromParent = parent.links.add({
-        id: child.threadName,
-        transport: parentTransport,
-        router: parent.router,
-        remoteRealm: "child",
-        ownerLogger: parent.logger
-    });
-    const removeFromChild = child.links.add({
-        id: parent.threadName,
-        transport: childTransport,
-        router: child.router,
-        remoteRealm: "parent",
-        ownerLogger: child.logger
-    });
+    // like the real transports -> each link lands on the bus of the realm that
+    // holds it, and leaves it when the link closes
+    parent.bus.addLink(parentTransport, parent.logger);
+    child.bus.addLink(childTransport, child.logger);
 
     return {
         toChild,
         toParent,
-        removeFromParent,
-        removeFromChild,
         close: () => {
-            removeFromParent();
-            removeFromChild();
             parentTransport.close(true);
             childTransport.close(true);
         }
@@ -185,18 +169,15 @@ export function addDeadPort(realm: TestRealm): {
 } {
     const channel = new MessageChannel();
     const posted: LinkFrame[] = [];
-    const transport = realm.router.attach(recordingPort(channel.port1, posted));
-    const removeLink = realm.links.add({
-        id: "dead",
-        transport,
-        router: realm.router,
-        remoteRealm: "child",
-        ownerLogger: realm.logger
-    });
+    const transport = new MessagePortTransport(
+        recordingPort(channel.port1, posted),
+        realm.router,
+        { remoteRealm: "child" }
+    );
+    realm.bus.addLink(transport, realm.logger);
     return {
         posted,
         remove: () => {
-            removeLink();
             transport.close(true);
             channel.port2.close();
         }

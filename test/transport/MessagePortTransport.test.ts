@@ -1,4 +1,5 @@
 import { adaptPort } from "@/evm/p2pRuntime/node/P2pRuntimeChannel";
+import MessagePortTransport from "@/transport/MessagePortTransport";
 import { TransportType } from "@/transport/TransportType";
 import { linkedRouters } from "@test/fixtures/rpc/PortRpcProbe.fixture";
 import { expect } from "chai";
@@ -26,7 +27,10 @@ describe("MessagePortTransport", function () {
         const frames: unknown[] = [];
         channel.port2.on("message", (frame) => frames.push(frame));
         link = linkedRouters();
-        const spy = link.a.router.attach(adaptPort(channel.port1));
+        const spy = new MessagePortTransport(
+            adaptPort(channel.port1),
+            link.a.router
+        );
 
         spy.send({ service: "probe", method: "echo", params: [1n] });
         await new Promise((resolve) => setTimeout(resolve, 20));
@@ -69,12 +73,12 @@ describe("MessagePortTransport", function () {
         } catch (error) {
             caught = error as Error;
         }
-        expect(caught?.message).to.equal("Worker link disposed");
+        expect(caught?.message).to.equal("RPC transport disposed");
         expect(
             link.a.logStore
                 .getAllLogs()
                 .map((entry) => entry.message)
-                .includes("Worker link closed with pending requests")
+                .includes("RPC transport closed with pending requests")
         ).to.equal(false);
     });
 });

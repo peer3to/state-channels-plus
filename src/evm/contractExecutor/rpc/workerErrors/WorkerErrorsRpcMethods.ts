@@ -1,12 +1,12 @@
 import type { ContractExecutorClientRoot } from "../ContractExecutorClientRoot";
 import type { WorkerErrorsService } from "./WorkerErrorsService";
 import ARpcMethods from "@/rpc/ARpcMethods";
-import type PortRpcRouter from "@/rpc/PortRpcRouter";
+import type { RpcRouter } from "@/rpc/RpcRouter";
 import { deserializeError, type SerializedError } from "@/rpc/serializeError";
 import type ATransport from "@/transport/ATransport";
 
 export class WorkerErrorsRpcMethods extends ARpcMethods<
-    PortRpcRouter<ContractExecutorClientRoot>
+    RpcRouter<ContractExecutorClientRoot, any>
 > {
     constructor(
         transport: ATransport,

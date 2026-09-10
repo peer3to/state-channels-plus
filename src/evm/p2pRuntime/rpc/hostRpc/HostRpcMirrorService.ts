@@ -1,7 +1,7 @@
 import type { P2pRuntimeHostRoot, RuntimeHost } from "../P2pRuntimeHostRoot";
 import { HostRpcMirrorRpcMethods } from "./HostRpcMirrorRpcMethods";
 import ARpcService from "@/rpc/ARpcService";
-import type PortRpcRouter from "@/rpc/PortRpcRouter";
+import type { RpcRouter } from "@/rpc/RpcRouter";
 import type ATransport from "@/transport/ATransport";
 
 /**
@@ -11,10 +11,10 @@ import type ATransport from "@/transport/ATransport";
  */
 export class HostRpcMirrorService extends ARpcService<
     HostRpcMirrorRpcMethods,
-    PortRpcRouter<P2pRuntimeHostRoot>
+    RpcRouter<P2pRuntimeHostRoot, any>
 > {
     constructor(
-        router: PortRpcRouter<P2pRuntimeHostRoot>,
+        router: RpcRouter<P2pRuntimeHostRoot, any>,
         readonly host: RuntimeHost
     ) {
         super(router, router.logger);

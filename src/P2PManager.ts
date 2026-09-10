@@ -4,9 +4,10 @@ import { P2pSigner } from "@/evm";
 import Holepunch from "@/Holepunch";
 import IOnMessage from "@/IOnMessage";
 import ProfileManager from "@/ProfileManager";
-import ARpcRouter, { type ServiceFailureKind } from "@/rpc/ARpcRouter";
 import MainRpcService from "@/rpc/MainRpcService";
+import type { RemoteRpcServices } from "@/rpc/RemoteRpcProxy";
 import Rpc from "@/rpc/Rpc";
+import { RpcRouter } from "@/rpc/RpcRouter";
 import type StateManager from "@/stateManager";
 import { ATransport, LoopbackTransport, TransportType } from "@/transport";
 import { Status } from "@/types";
@@ -22,11 +23,16 @@ import { ethers } from "ethers";
 
 /** the peers' router: one for the realm, one transport per connected peer */
 class P2PManager<TCustomRpc extends MainRpcService = MainRpcService>
-    extends ARpcRouter<TCustomRpc>
+    extends RpcRouter<TCustomRpc, TCustomRpc>
     implements IOnMessage
 {
     stateManager: StateManager<TCustomRpc>;
-    readonly logger: Logger;
+    /** the peer services as this node calls them. the base cannot resolve
+     *  `RemoteRpcServices<TCustomRpc>` while TCustomRpc is a type parameter, so
+     *  the main services are named beside it -> a custom-rpc manager is still a
+     *  P2PManager. */
+    declare remoteRpc: RemoteRpcServices<MainRpcService> &
+        RemoteRpcServices<TCustomRpc>;
     p2pSigner: P2pSigner<TCustomRpc>;
     profileManager = new ProfileManager();
     /** In-process transport used for "send to self" (no-target) delivery. */
@@ -60,9 +66,40 @@ class P2PManager<TCustomRpc extends MainRpcService = MainRpcService>
         customRpc?: CustomRpcConstructor<TCustomRpc, any>,
         customRpcOptions?: any
     ) {
-        super();
+        // `agreementTime` is in seconds; the RPC timeout is in milliseconds.
+        super(
+            undefined,
+            stateManager.logger.child({ component: "P2PManager" }),
+            {
+                timer: stateManager.timeoutManager,
+                defaultTimeoutMs: stateManager.timeConfig.agreementTime * 1000
+            }
+        );
         this.stateManager = stateManager;
-        this.logger = stateManager.logger.child({ component: "P2PManager" });
+        // ----- peer policy: what the shared router core leaves to its owner -----
+        this.resolveTransport = (address) =>
+            this.profileManager.getTransportByEvmAddress(address) ?? undefined;
+        // Only the peer we sent the request to may settle it. Compare by peer
+        // identity (not transport object) so a transport upgrade for the same
+        // peer (e.g. HOLEPUNCH -> WEBRTC) still settles the pending request.
+        this.isSameSender = ATransport.isSamePeer;
+        // a frame the router refused is a protocol violation: the peer is
+        // dropped and banned, as it was before the router. one of our own
+        // handlers failing is not the peer's doing, so that only drops the line.
+        this.onBadFrame = (transport, _error, kind) => {
+            if (kind === "handler") {
+                this.disconnectConnection(transport);
+                return;
+            }
+            this.disconnectAndBlacklistPeer(transport);
+        };
+        this.onFrameDispatched = (rpc, transport) => {
+            this.logger.verbose("onRpc", {
+                rpc: LoggerUtils.getRpcLogMetadata(rpc),
+                transportType: TransportType[transport.transportType],
+                peerAddress: transport.peerAddress
+            });
+        };
         if (config.DEBUG_LOCAL_TRANSPORT) {
             LocalDiscoveryServer.setLogger(this.logger);
         }
@@ -248,6 +285,9 @@ class P2PManager<TCustomRpc extends MainRpcService = MainRpcService>
             this.stateManager.p2pEventHooks.onConnection?.(peerAddress, false);
         }
     }
+    /** peers are broadcast to over the curated connection set, not over every
+     *  transport this router holds: a lobby or unauthenticated line is not one
+     *  of them yet */
     public broadcastRpc(rpc: Rpc) {
         const debugConnections = this.openConnections.map((transport) => {
             return {
@@ -264,47 +304,9 @@ class P2PManager<TCustomRpc extends MainRpcService = MainRpcService>
         }
     }
 
-    // ----- ARpcRouter hooks: peer policy -----
-
-    protected scheduleTimeout(
-        fn: () => void,
-        ms: number,
-        label: string
-    ): unknown {
-        return this.stateManager.timeoutManager.scheduleTask(fn, ms, label);
-    }
-
-    protected cancelTimeout(handle: unknown): void {
-        this.stateManager.timeoutManager.cancelTask(handle as NodeJS.Timeout);
-    }
-
-    // `agreementTime` is in seconds; the RPC timeout is in milliseconds.
-    protected defaultRequestTimeoutMs(): number {
-        return this.stateManager.timeConfig.agreementTime * 1000;
-    }
-
-    // Only the peer we sent the request to may settle it. Compare by peer
-    // identity (not transport object) so a transport upgrade for the same
-    // peer (e.g. HOLEPUNCH -> WEBRTC) still settles the pending request.
-    protected isResponseFromRequestee(
-        expected: ATransport,
-        actual: ATransport
-    ): boolean {
-        return ATransport.isSamePeer(expected, actual);
-    }
-
-    protected onForeignResponse(transport: ATransport): void {
-        this.disconnectAndBlacklistPeer(transport);
-    }
-
-    public resolveTransport(address: Address): ATransport | undefined {
-        return (
-            this.profileManager.getTransportByEvmAddress(address) ?? undefined
-        );
-    }
-
     /** every peer transport gets its profile as it is built */
     public onTransportCreated(transport: ATransport): void {
+        super.onTransportCreated(transport);
         this.profileManager.registerTransport(transport);
     }
 
@@ -314,30 +316,10 @@ class P2PManager<TCustomRpc extends MainRpcService = MainRpcService>
                 transport.peerAddress as Address
             );
         }
+        // rejects what this line still owed with the peer-facing cause, so the
+        // base is left with nothing to reject
         this.disconnectConnection(transport);
-    }
-
-    /** a frame the router refused is a protocol violation: the peer is dropped
-     *  and banned, as it was before the router. one of our own handlers
-     *  failing is not the peer's doing, so that only drops the line. */
-    public onServiceFailure(
-        transport: ATransport,
-        _error: unknown,
-        kind: ServiceFailureKind = "frame"
-    ): void {
-        if (kind === "handler") {
-            this.disconnectConnection(transport);
-            return;
-        }
-        this.disconnectAndBlacklistPeer(transport);
-    }
-
-    protected onFrameDispatched(rpc: Rpc, transport: ATransport): void {
-        this.logger.verbose("onRpc", {
-            rpc: LoggerUtils.getRpcLogMetadata(rpc),
-            transportType: TransportType[transport.transportType],
-            peerAddress: transport.peerAddress
-        });
+        super.onTransportClosed(transport, isExpected);
     }
 
     public async joinDiscoveryKey(discoveryKey: string): Promise<void> {
@@ -454,7 +436,7 @@ class P2PManager<TCustomRpc extends MainRpcService = MainRpcService>
     public disconnectConnection(transport: ATransport) {
         const profile = this.profileManager.getProfileByTransport(transport);
 
-        this.rejectPendingRpcRequestsForTransport(
+        this.rejectPending(
             transport,
             new Error("Peer disconnected before RPC response arrived")
         );

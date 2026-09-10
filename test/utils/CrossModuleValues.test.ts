@@ -3,28 +3,33 @@ import {
     CrossModuleRpcService,
     CrossModuleTransport
 } from "../../testSupport/CrossModuleValues";
-import RemoteRpcProxy from "@/rpc/RemoteRpcProxy";
+import { RpcRouter } from "@/rpc/RpcRouter";
 
 import { isTransport } from "@/transport/ATransport";
 import {
     convertEthersValue,
     createEthersResultProxy
 } from "@/utils/EthersResultProxy";
+import noOpLogger from "@/utils/logging/noOpLogger";
 import { hasRpcService, isEthersResult } from "@/utils/ObjectChecks";
 import { expect } from "chai";
 import { AbiCoder } from "ethers";
 
+/** a router serving a root loaded from another module graph */
+function routerServing<TRoot extends object>(root: TRoot) {
+    return new RpcRouter<TRoot, TRoot>(() => root, noOpLogger);
+}
+
 describe("cross-module runtime values", function () {
     it("accepts an RPC service with the public service shape", function () {
         const service = new CrossModuleRpcService();
-        const root = { service };
+        const router = routerServing({ service });
 
-        expect(hasRpcService(root, "service")).to.equal(true);
+        expect(hasRpcService(router.localRpc, "service")).to.equal(true);
 
-        const remoteRpc = RemoteRpcProxy.createProxy(root);
-        const firstProxy = Reflect.get(remoteRpc, "service");
+        const firstProxy = Reflect.get(router.remoteRpc, "service");
         expect(firstProxy).to.be.an("object");
-        expect(Reflect.get(remoteRpc, "service")).to.equal(firstProxy);
+        expect(Reflect.get(router.remoteRpc, "service")).to.equal(firstProxy);
     });
 
     it("rejects an object that is missing part of the RPC service shape", function () {
@@ -35,52 +40,25 @@ describe("cross-module runtime values", function () {
             }
         };
 
+        // what dispatch refuses to route to; the far-end proxy is typed, not
+        // guarded, so it never inspects a local object
         expect(hasRpcService(root, "service")).to.equal(false);
-        expect(() =>
-            Reflect.get(RemoteRpcProxy.createProxy(root), "service")
-        ).to.throw("RemoteRpcProxy can only access services");
-    });
-
-    it("passes symbol property access through to the local RPC root", function () {
-        const inspection = Symbol("inspection");
-        const root = {
-            service: new CrossModuleRpcService(),
-            [inspection]: "inspection-value"
-        };
-
-        expect(
-            Reflect.get(RemoteRpcProxy.createProxy(root), inspection)
-        ).to.equal("inspection-value");
-    });
-
-    it("rejects ordinary and missing string properties", function () {
-        const remoteRpc = RemoteRpcProxy.createProxy({
-            service: new CrossModuleRpcService(),
-            internalState: "not-a-service"
-        });
-
-        expect(() => Reflect.get(remoteRpc, "internalState")).to.throw(
-            "RemoteRpcProxy can only access services"
-        );
-        expect(() => Reflect.get(remoteRpc, "missing")).to.throw(
-            "RemoteRpcProxy can only access services"
-        );
     });
 
     it("remains non-thenable during Promise assimilation", async function () {
-        const remoteRpc = RemoteRpcProxy.createProxy({
+        const remoteRpc = routerServing({
             service: new CrossModuleRpcService()
-        });
+        }).remoteRpc;
 
         expect(Reflect.get(remoteRpc, "then")).to.equal(undefined);
         expect((await Promise.resolve(remoteRpc)) === remoteRpc).to.equal(true);
     });
 
     it("keeps separate cached proxies for separate service names", function () {
-        const remoteRpc = RemoteRpcProxy.createProxy({
+        const remoteRpc = routerServing({
             firstService: new CrossModuleRpcService(),
             secondService: new CrossModuleRpcService()
-        });
+        }).remoteRpc;
         const firstProxy = Reflect.get(remoteRpc, "firstService");
         const secondProxy = Reflect.get(remoteRpc, "secondService");
 
