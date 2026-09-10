@@ -189,6 +189,38 @@ describe("LogFlushBus", function () {
         expect(Date.now() - startedAt).to.be.lessThan(SHORT_ACK_TIMEOUT_MS);
     });
 
+    it("a link that closes during the round counts as never answered", async function () {
+        setAckTimeout(SHORT_ACK_TIMEOUT_MS);
+        const held = deferred();
+        await receiver!.close();
+        receiver = await startLogReceiver({
+            respond: async (received) => {
+                if (received.threadName === "sdk") await held.promise;
+                return 200;
+            }
+        });
+
+        const main = realm("main");
+        const sdk = realm("sdk");
+        const link = connect(main, sdk);
+        main.logger.info("main entry");
+        sdk.logger.info("sdk entry");
+
+        // sdk's POST is held open -> the link closes while sdk is still answering
+        const startedAt = Date.now();
+        const round = main.bus.flushAll("test");
+        await receiver!.waitForRequests(2);
+        link.close();
+        held.resolve();
+        const result = await round;
+
+        expect(result.ok).to.equal(1);
+        expect(result.timedOut).to.equal(1);
+        expect(result.entries).to.equal(1);
+        expect(Date.now() - startedAt).to.be.lessThan(SHORT_ACK_TIMEOUT_MS);
+        expect(countMessages(link.toChild, "flushRequest")).to.equal(1);
+    });
+
     it("coalesces concurrent flush requests", async function () {
         const main = realm("main");
         const sdk = realm("sdk");

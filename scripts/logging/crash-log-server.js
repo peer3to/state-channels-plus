@@ -236,28 +236,18 @@ function isAuthorized(req) {
 }
 
 function validateUploadBody(body) {
-    const {
-        channelId,
-        peerAddress,
-        threadName,
-        storeId,
-        compressedLogs,
-        fromSeq,
-        toSeq
-    } = body || {};
+    const { compressedLogs, fromSeq, toSeq } = body || {};
 
-    if (
-        !channelId ||
-        !peerAddress ||
-        !threadName ||
-        !storeId ||
-        !compressedLogs
-    ) {
-        return {
-            ok: false,
-            status: 400,
-            error: "Incorrect request data"
-        };
+    for (const field of [
+        "channelId",
+        "peerAddress",
+        "threadName",
+        "storeId",
+        "compressedLogs"
+    ]) {
+        if (!body?.[field]) {
+            return { ok: false, status: 400, error: `Missing ${field}` };
+        }
     }
 
     if (!isSafeSeq(fromSeq) || !isSafeSeq(toSeq) || toSeq < fromSeq) {

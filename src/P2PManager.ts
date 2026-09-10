@@ -275,11 +275,7 @@ class P2PManager<TCustomRpc extends MainRpcService = MainRpcService>
     }
 
     protected cancelTimeout(handle: unknown): void {
-        this.stateManager.timeoutManager.cancelTask(
-            handle as Parameters<
-                StateManager["timeoutManager"]["cancelTask"]
-            >[0]
-        );
+        this.stateManager.timeoutManager.cancelTask(handle as NodeJS.Timeout);
     }
 
     // `agreementTime` is in seconds; the RPC timeout is in milliseconds.
@@ -321,7 +317,6 @@ class P2PManager<TCustomRpc extends MainRpcService = MainRpcService>
         this.disconnectConnection(transport);
     }
 
-    /** a peer whose frame or handler failed is disconnected */
     /** a frame the router refused is a protocol violation: the peer is dropped
      *  and banned, as it was before the router. one of our own handlers
      *  failing is not the peer's doing, so that only drops the line. */

@@ -99,6 +99,7 @@ describe("crash-log-server validateUploadBody", function () {
         expect(result.ok).to.equal(false);
         if (result.ok) throw new Error("expected a rejection");
         expect(result.status).to.equal(400);
+        expect(result.error).to.equal("Missing storeId");
     });
 
     it("rejects a chunk whose entry count disagrees with its range", function () {
@@ -118,6 +119,7 @@ describe("crash-log-server validateUploadBody", function () {
         expect(result.ok).to.equal(false);
         if (result.ok) throw new Error("expected a rejection");
         expect(result.status).to.equal(400);
+        expect(result.error).to.equal("Missing threadName");
     });
 });
 
