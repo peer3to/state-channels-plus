@@ -66,14 +66,10 @@ class P2PManager<TCustomRpc extends MainRpcService = MainRpcService>
         customRpc?: CustomRpcConstructor<TCustomRpc, any>,
         customRpcOptions?: any
     ) {
-        // `agreementTime` is in seconds; the RPC timeout is in milliseconds.
         super(
             undefined,
             stateManager.logger.child({ component: "P2PManager" }),
-            {
-                timer: stateManager.timeoutManager,
-                defaultTimeoutMs: stateManager.timeConfig.agreementTime * 1000
-            }
+            { timer: stateManager.timeoutManager }
         );
         this.stateManager = stateManager;
         // ----- peer policy: what the shared router core leaves to its owner -----
@@ -302,6 +298,12 @@ class P2PManager<TCustomRpc extends MainRpcService = MainRpcService>
         for (const transport of this.openConnections) {
             transport.send(rpc);
         }
+    }
+
+    // `agreementTime` is in seconds; the RPC timeout is in milliseconds. Read
+    // per request: the time config is settled after this manager is built.
+    protected defaultRequestTimeoutMs(): number {
+        return this.stateManager.timeConfig.agreementTime * 1000;
     }
 
     /** every peer transport gets its profile as it is built */

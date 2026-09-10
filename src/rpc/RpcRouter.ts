@@ -140,6 +140,13 @@ export class RpcRouter<TRoot extends object, TRemote extends object = TRoot> {
         }
     }
 
+    /** the bound on a request that brings none; `null` -> it waits as long as
+     *  it takes. peers read their time config here, so a change to it applies
+     *  to the next request. */
+    protected defaultRequestTimeoutMs(): number | null {
+        return this.defaultTimeoutMs;
+    }
+
     /** the root is built with a reference to the router, so it attaches after
      *  construction */
     protected attachRoot(root: TRoot): void {
@@ -212,7 +219,7 @@ export class RpcRouter<TRoot extends object, TRemote extends object = TRoot> {
         }
         const timeoutMs =
             options?.timeoutMs === undefined
-                ? this.defaultTimeoutMs
+                ? this.defaultRequestTimeoutMs()
                 : options.timeoutMs;
 
         return new Promise<T>((resolve, reject) => {

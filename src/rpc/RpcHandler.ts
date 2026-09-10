@@ -128,13 +128,17 @@ class RpcHandler {
             if (this.router.loopbackTransport) {
                 return this.router.loopbackTransport;
             }
-            const [only] = this.router.transports;
-            if (this.router.transports.size !== 1) {
-                throw new Error(
-                    `RpcHandler: '${this.rpc.service}.${this.rpc.method}' needs a target: this router has no loopback and ${this.router.transports.size} transports`
-                );
-            }
-            return only;
+            const transports = this.router.transports;
+            const [only] = transports;
+            if (transports.size === 1) return only;
+            const operation = `${this.rpc.service}.${this.rpc.method}`;
+            // the line this handle would have taken is gone: the same refusal
+            // a request named on a closed transport gets
+            throw new Error(
+                transports.size === 0
+                    ? `RPC request '${operation}' refused: the transport is closed or disposed`
+                    : `RpcHandler: '${operation}' needs a target: this router has no loopback and ${transports.size} transports`
+            );
         }
         if (isTransport(target)) return target;
         return this.router.resolveTransport(target);
