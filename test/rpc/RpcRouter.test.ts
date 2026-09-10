@@ -108,7 +108,9 @@ describe("RpcRouter", function () {
         let caught: Error | undefined;
         try {
             // a null timeout would otherwise wait forever on a dropped post
-            await link.a.far.probe.sum(1, 2).request({ timeoutMs: null });
+            await link.a.far.probe
+                .sum(1, 2)
+                .request(link.a.transport, { timeoutMs: null });
         } catch (error) {
             caught = error as Error;
         }
