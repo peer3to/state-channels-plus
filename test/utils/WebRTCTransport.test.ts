@@ -60,7 +60,10 @@ function createP2PManager(
         },
         profileManager: new ProfileManager(),
         disconnectConnection: () => undefined,
-        onRpc: options.onRpc || (() => undefined)
+        onRpc: options.onRpc || (() => undefined),
+        // the router hooks every transport calls as it opens and closes
+        onTransportCreated: () => undefined,
+        onTransportClosed: () => undefined
     };
     return manager as any;
 }
