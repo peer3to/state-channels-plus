@@ -14,6 +14,7 @@ import type { Address } from "@/types/types";
 import type { Logger } from "@/utils/logging/Logger";
 import noOpLogger from "@/utils/logging/noOpLogger";
 import { hasRpcService } from "@/utils/ObjectChecks";
+import { Buffer } from "buffer";
 
 /** what failed: a frame the far end sent, a reply for a request this line
  *  never carried, or one of our own handlers */
@@ -26,7 +27,7 @@ export type RpcRequestOptions = {
 
 /** what schedules a request's timeout. `TimeoutManager` is one; plain timers
  *  are the default. */
-export interface RpcTimer {
+interface RpcTimer {
     scheduleTask(
         task: () => void,
         delayMs: number,
@@ -40,10 +41,6 @@ const plainTimer: RpcTimer = {
     cancelTask: (handle) => clearTimeout(handle)
 };
 
-export type RpcRouterOptions = {
-    timer?: RpcTimer;
-};
-
 type PendingRpcRequest = {
     resolve: (value: unknown) => void;
     reject: (reason: Error) => void;
@@ -55,7 +52,7 @@ type PendingRpcRequest = {
 };
 
 /** what a closed line still owed */
-export type PendingOperation = { operation: string; durationMs: number };
+type PendingOperation = { operation: string; durationMs: number };
 
 /**
  * the request/response core every line shares: request ids, the pending map,
@@ -115,10 +112,10 @@ export class RpcRouter<TRoot extends object, TRemote extends object = TRoot> {
     constructor(
         buildRoot: ((router: RpcRouter<TRoot, TRemote>) => TRoot) | undefined,
         logger: Logger | undefined,
-        options: RpcRouterOptions = {}
+        timer: RpcTimer = plainTimer
     ) {
         this.logger = logger ?? noOpLogger;
-        this.timer = options.timer ?? plainTimer;
+        this.timer = timer;
         if (buildRoot) this.attachRoot(buildRoot(this));
     }
 
@@ -248,7 +245,7 @@ export class RpcRouter<TRoot extends object, TRemote extends object = TRoot> {
         if (response.ok) {
             pending.resolve(response.result);
         } else {
-            pending.reject(errorFromReply(response.error));
+            pending.reject(errorFromReply(response.error, transport.isTrusted));
         }
     }
 

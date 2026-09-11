@@ -56,6 +56,36 @@ describe("P2PManager", function () {
         });
     });
 
+    it("takes only the message from a peer's structured error reply", async function () {
+        const forgedPeerAddress = Wallet.createRandom().address;
+        const result = await fixture!
+            .control()
+            .p2pManagerProbe.probeUntrustedErrorReply(forgedPeerAddress)
+            .request();
+
+        expect(result.message).to.equal("crafted failure");
+        expect(result.name).to.equal("Error");
+        expect(result.hasRevertData).to.equal(false);
+        expect(result.peerAddressStamp).to.equal(undefined);
+        // the same reply on a line this realm owns still carries its shape
+        expect(result.trustedName).to.equal("Forged");
+        expect(result.trustedRevertData).to.equal("0xdeadbeef");
+        expect(result.trustedPeerAddressStamp).to.equal(forgedPeerAddress);
+    });
+
+    it("runs an inbound peer frame inside the handler execution context", async function () {
+        const result = await fixture!
+            .control()
+            .p2pManagerProbe.probeInboundWrapper()
+            .request();
+
+        expect(result).to.deep.equal({
+            wrapperRuns: 1,
+            dispatchesInsideWrapper: 1,
+            dispatchCalls: 1
+        });
+    });
+
     it("accepts an exact-limit multibyte frame and rejects the first byte over", async function () {
         const result = await fixture!
             .control()

@@ -69,7 +69,7 @@ class P2PManager<TCustomRpc extends MainRpcService = MainRpcService>
         super(
             undefined,
             stateManager.logger.child({ component: "P2PManager" }),
-            { timer: stateManager.timeoutManager }
+            stateManager.timeoutManager
         );
         this.stateManager = stateManager;
         // ----- peer policy: what the shared router core leaves to its owner -----

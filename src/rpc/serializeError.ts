@@ -177,11 +177,19 @@ export function deserializeError(serialized: SerializedError): Error {
 }
 
 /** the reply's error field as an Error: a peer sends the message alone, a
- *  trusted line the whole shape */
+ *  trusted line the whole shape. a peer controls what arrives, so an untrusted
+ *  reply is read for its message and nothing else - never its name, stack,
+ *  revert data or origin-peer stamp. */
 export function errorFromReply(
-    error: string | SerializedError | undefined
+    error: string | SerializedError | undefined,
+    isTrusted: boolean
 ): Error {
     if (error === undefined) return new Error("RPC request failed on the peer");
+    if (!isTrusted) {
+        return new Error(
+            String(typeof error === "string" ? error : error.message)
+        );
+    }
     return typeof error === "string"
         ? new Error(error)
         : deserializeError(error);
