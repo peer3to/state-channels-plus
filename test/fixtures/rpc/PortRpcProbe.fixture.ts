@@ -103,11 +103,28 @@ export class NoticeService extends ARpcService<NoticeRpcMethods, ProbeRouter> {
 export class ProbeRoot {
     readonly probe: ProbeService;
     readonly notice: NoticeService;
+    /** a root field that is not a service: `setLogger` must leave it alone */
+    readonly notAService = { logger: "untouched" };
 
     constructor(router: ProbeRouter) {
         this.probe = new ProbeService(router, router.logger);
         this.notice = new NoticeService(router, router.logger);
     }
+}
+
+/** a router with no logger and no line: what a worker has until its config
+ *  arrived */
+export function loggerlessRouter(): {
+    router: ProbeRouter;
+    logger: NodeLogger;
+    close: () => void;
+} {
+    const { logger } = createUploaderFixture({ uploadEndpoint: "" });
+    const router = new RpcRouter<ProbeRoot, ProbeRoot>(
+        (self) => new ProbeRoot(self),
+        undefined
+    );
+    return { router, logger, close: () => logger.dispose() };
 }
 
 export type ProbeEnd = {

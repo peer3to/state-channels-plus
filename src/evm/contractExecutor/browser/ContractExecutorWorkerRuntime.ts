@@ -1,8 +1,6 @@
 import type { ContractExecutorWorkerErrorHandler, WorkerLike } from "../types";
 import type { RuntimePort } from "@/transport/RuntimePort";
 
-export type { ContractExecutorWorkerErrorHandler };
-
 export function createContractExecutorWorker(
     onError: ContractExecutorWorkerErrorHandler
 ): WorkerLike {

@@ -1,6 +1,7 @@
 import type { P2pRuntimeHostRoot } from "./P2pRuntimeHostRoot";
-import { RuntimeEventsService } from "./runtimeEvents/RuntimeEventsService";
+import { RuntimeEventsRpcMethods } from "./runtimeEvents/RuntimeEventsRpcMethods";
 import type { BusKind } from "@/events/EventBus";
+import ARpcService from "@/rpc/ARpcService";
 import type { RpcRouter } from "@/rpc/RpcRouter";
 import type { SerializedError } from "@/rpc/serializeError";
 import type { Logger } from "@/utils/logging/Logger";
@@ -14,7 +15,9 @@ export interface RuntimeEventSink {
 
 /** what the main thread serves to the sdk host over the runtime port */
 export class P2pRuntimeClientRoot {
-    readonly runtimeEvents: RuntimeEventsService;
+    /** where the host's one-way traffic lands */
+    readonly sink: RuntimeEventSink;
+    readonly runtimeEvents: ARpcService<RuntimeEventsRpcMethods, any>;
     readonly logControl: LogControlService;
 
     /** `ownerLogger` is the root whose bus the host's link lands on */
@@ -23,7 +26,12 @@ export class P2pRuntimeClientRoot {
         sink: RuntimeEventSink,
         ownerLogger?: Logger
     ) {
-        this.runtimeEvents = new RuntimeEventsService(router, sink);
+        this.sink = sink;
+        this.runtimeEvents = new ARpcService(
+            router,
+            router.logger,
+            RuntimeEventsRpcMethods
+        );
         this.logControl = new LogControlService(
             router,
             router.logger,

@@ -12,6 +12,7 @@ import {
 } from "@/utils/EthersResultProxy";
 import noOpLogger from "@/utils/logging/noOpLogger";
 import { hasRpcService, isEthersResult } from "@/utils/ObjectChecks";
+import { linkedRouters } from "@test/fixtures/rpc/PortRpcProbe.fixture";
 import { expect } from "chai";
 import { AbiCoder } from "ethers";
 
@@ -52,6 +53,39 @@ describe("cross-module runtime values", function () {
 
         expect(Reflect.get(remoteRpc, "then")).to.equal(undefined);
         expect((await Promise.resolve(remoteRpc)) === remoteRpc).to.equal(true);
+    });
+
+    it("returns undefined for symbol property access", function () {
+        const remoteRpc = routerServing({
+            service: new CrossModuleRpcService()
+        }).remoteRpc;
+
+        expect(Reflect.get(remoteRpc, Symbol.iterator)).to.equal(undefined);
+        expect(Reflect.get(remoteRpc, Symbol.toPrimitive)).to.equal(undefined);
+    });
+
+    it("returns a live handle for any string name, leaving refusal to the far end", async function () {
+        const link = linkedRouters();
+        try {
+            const unknown = Reflect.get(link.a.far, "noSuchService") as Record<
+                string,
+                (...params: unknown[]) => { request: () => Promise<unknown> }
+            >;
+            expect(unknown).to.be.an("object");
+
+            let caught: Error | undefined;
+            try {
+                await unknown.noSuchMethod().request();
+            } catch (error) {
+                caught = error as Error;
+            }
+
+            expect(caught?.message).to.equal(
+                "Unknown RPC service 'noSuchService'"
+            );
+        } finally {
+            link.close();
+        }
     });
 
     it("keeps separate cached proxies for separate service names", function () {

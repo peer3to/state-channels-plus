@@ -2,6 +2,7 @@ import { adaptPort } from "@/evm/p2pRuntime/node/P2pRuntimeChannel";
 import MessagePortTransport from "@/transport/MessagePortTransport";
 import {
     linkedRouters,
+    loggerlessRouter,
     type ProbeEnd
 } from "@test/fixtures/rpc/PortRpcProbe.fixture";
 import { waitFor } from "@test/utils/waitFor";
@@ -174,6 +175,25 @@ describe("RpcRouter", function () {
         expect(await link.a.far.probe.echo("still up").request()).to.equal(
             "still up"
         );
+    });
+
+    it("hands a late logger to every service on the root and skips non-service fields", function () {
+        const late = loggerlessRouter();
+        try {
+            const before = late.router.localRpc.probe.logger;
+
+            late.router.setLogger(late.logger);
+
+            expect(late.router.logger).to.equal(late.logger);
+            expect(late.router.localRpc.probe.logger).to.equal(late.logger);
+            expect(late.router.localRpc.notice.logger).to.equal(late.logger);
+            expect(late.router.localRpc.probe.logger).to.not.equal(before);
+            expect(late.router.localRpc.notAService.logger).to.equal(
+                "untouched"
+            );
+        } finally {
+            late.close();
+        }
     });
 
     it("runs every inbound dispatch inside the wrapper", async function () {

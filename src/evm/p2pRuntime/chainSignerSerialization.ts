@@ -10,12 +10,36 @@ import {
     accessListify,
     assert,
     getBigInt,
+    getBytes,
     getNumber,
     hexlify,
     isBytesLike,
     resolveAddress,
     toQuantity
 } from "ethers";
+
+/** a message to sign, as it crosses: text, or bytes as hex. one encoding for
+ *  both host signers - sniffing a bare string signs the UTF-8 text "0x.." as
+ *  the bytes it looks like. */
+export type SignerMessage =
+    | { kind: "string"; value: string }
+    | { kind: "bytes"; encodedBytes: string };
+
+export function serializeSignerMessage(
+    message: string | Uint8Array
+): SignerMessage {
+    return typeof message === "string"
+        ? { kind: "string", value: message }
+        : { kind: "bytes", encodedBytes: hexlify(message) };
+}
+
+export function deserializeSignerMessage(
+    message: SignerMessage
+): string | Uint8Array {
+    return message.kind === "string"
+        ? message.value
+        : getBytes(message.encodedBytes);
+}
 
 interface SerializedBlob {
     data: string;

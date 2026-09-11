@@ -1,8 +1,6 @@
 import type { P2pRuntimeHostRoot } from "../P2pRuntimeHostRoot";
-import type { DeploySignerService } from "./DeploySignerService";
 import ARpcMethods from "@/rpc/ARpcMethods";
 import type { RpcRouter } from "@/rpc/RpcRouter";
-import type ATransport from "@/transport/ATransport";
 import type { ethers } from "ethers";
 
 /** a local-VM deploy, already mined: what the bridge signer's `wait()` returns */
@@ -17,33 +15,26 @@ type DeployedTransaction = {
 export class DeploySignerRpcMethods extends ARpcMethods<
     RpcRouter<P2pRuntimeHostRoot, any>
 > {
-    constructor(
-        transport: ATransport,
-        private readonly service: DeploySignerService
-    ) {
-        super(transport, service.router);
-    }
-
     async getAddress(): Promise<string> {
-        return (await this.service.host.deploySigner()).getAddress();
+        return (await this.localRpc.host.deploySigner()).getAddress();
     }
 
     async getNonce(): Promise<number> {
-        return (await this.service.host.deploySigner()).getNonce();
+        return (await this.localRpc.host.deploySigner()).getNonce();
     }
 
     async resolveName(name: string): Promise<string | null> {
-        return (await this.service.host.deploySigner()).resolveName(name);
+        return (await this.localRpc.host.deploySigner()).resolveName(name);
     }
 
     async call(tx: unknown): Promise<string> {
-        return (await this.service.host.deploySigner()).call(
+        return (await this.localRpc.host.deploySigner()).call(
             tx as ethers.TransactionRequest
         );
     }
 
     async sendTransaction(tx: unknown): Promise<DeployedTransaction> {
-        const signer = await this.service.host.deploySigner();
+        const signer = await this.localRpc.host.deploySigner();
         const deployTx = await signer.sendTransaction(
             tx as ethers.TransactionRequest
         );

@@ -1,28 +1,19 @@
 import type { P2pRuntimeClientRoot } from "../P2pRuntimeClientRoot";
-import type { RuntimeEventsService } from "./RuntimeEventsService";
 import type { BusKind } from "@/events/EventBus";
 import ARpcMethods from "@/rpc/ARpcMethods";
 import type { RpcRouter } from "@/rpc/RpcRouter";
 import type { SerializedError } from "@/rpc/serializeError";
-import type ATransport from "@/transport/ATransport";
 
 export class RuntimeEventsRpcMethods extends ARpcMethods<
     RpcRouter<P2pRuntimeClientRoot, any>
 > {
-    constructor(
-        transport: ATransport,
-        private readonly service: RuntimeEventsService
-    ) {
-        super(transport, service.router);
-    }
-
     /**
      * ONE payload for every forwarded event kind (p2p hooks, contract events,
      * `EventHandler` mirrors). The client re-emits it into its own bus;
      * contract events additionally re-emit on the main-thread contract.
      */
     busEvent(kind: BusKind, eventName: string, args: unknown[]): void {
-        this.service.sink.onBusEvent(kind, eventName, args);
+        this.localRpc.sink.onBusEvent(kind, eventName, args);
     }
 
     /**
@@ -31,7 +22,7 @@ export class RuntimeEventsRpcMethods extends ARpcMethods<
      * orchestrator observes worker-thread errors as if they were local
      */
     hostError(error: SerializedError): void {
-        this.service.sink.onHostErrorReport(error);
+        this.localRpc.sink.onHostErrorReport(error);
     }
 }
 

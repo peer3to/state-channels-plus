@@ -16,6 +16,11 @@ abstract class ARpcMethods<TRouter extends RpcRouter<any, any> = P2PManager> {
         return this.router;
     }
 
+    /** the root this end serves: where a service's collaborators live */
+    get localRpc(): TRouter["localRpc"] {
+        return this.router.localRpc;
+    }
+
     get remoteRpc(): TRouter["remoteRpc"] {
         return this.router.remoteRpc;
     }

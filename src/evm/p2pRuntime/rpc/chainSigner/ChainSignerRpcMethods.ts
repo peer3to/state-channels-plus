@@ -1,35 +1,23 @@
 import {
+    deserializeSignerMessage,
     deserializeTransactionRequest,
     serializeTransactionResponse,
     type SerializedTransactionRequest,
-    type SerializedTransactionResponse
+    type SerializedTransactionResponse,
+    type SignerMessage
 } from "../../chainSignerSerialization";
 import type { P2pRuntimeHostRoot } from "../P2pRuntimeHostRoot";
-import type { ChainSignerService } from "./ChainSignerService";
 import ARpcMethods from "@/rpc/ARpcMethods";
 import type { RpcRouter } from "@/rpc/RpcRouter";
-import type ATransport from "@/transport/ATransport";
 import { ethers } from "ethers";
-
-/** a message to sign, as it crosses: text, or bytes as hex */
-type ChainSignerMessage =
-    | { kind: "string"; value: string }
-    | { kind: "bytes"; encodedBytes: string };
 
 export class ChainSignerRpcMethods extends ARpcMethods<
     RpcRouter<P2pRuntimeHostRoot, any>
 > {
-    constructor(
-        transport: ATransport,
-        private readonly service: ChainSignerService
-    ) {
-        super(transport, service.router);
-    }
-
     signTransaction(
         serializedTransaction: SerializedTransactionRequest
     ): Promise<string> {
-        return this.service.host.chainSigner.signTransaction(
+        return this.localRpc.host.chainSigner.signTransaction(
             deserializeTransactionRequest(serializedTransaction)
         );
     }
@@ -37,29 +25,27 @@ export class ChainSignerRpcMethods extends ARpcMethods<
     async sendTransaction(
         serializedTransaction: SerializedTransactionRequest
     ): Promise<SerializedTransactionResponse> {
-        const response = await this.service.host.chainSigner.sendTransaction(
+        const response = await this.localRpc.host.chainSigner.sendTransaction(
             deserializeTransactionRequest(serializedTransaction)
         );
         return serializeTransactionResponse(response);
     }
 
-    signMessage(message: ChainSignerMessage): Promise<string> {
-        return this.service.host.chainSigner.signMessage(
-            message.kind === "string"
-                ? message.value
-                : ethers.getBytes(message.encodedBytes)
+    signMessage(message: SignerMessage): Promise<string> {
+        return this.localRpc.host.chainSigner.signMessage(
+            deserializeSignerMessage(message)
         );
     }
 
     signTypedData(
-        domain: unknown,
-        types: unknown,
-        value: unknown
+        domain: ethers.TypedDataDomain,
+        types: Record<string, ethers.TypedDataField[]>,
+        value: Record<string, any>
     ): Promise<string> {
-        return this.service.host.chainSigner.signTypedData(
-            domain as ethers.TypedDataDomain,
-            types as Record<string, ethers.TypedDataField[]>,
-            value as Record<string, any>
+        return this.localRpc.host.chainSigner.signTypedData(
+            domain,
+            types,
+            value
         );
     }
 }

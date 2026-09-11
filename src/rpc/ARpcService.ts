@@ -35,7 +35,7 @@ function resolveRpcEndpoint(
     return undefined;
 }
 
-abstract class ARpcService<
+class ARpcService<
     R extends ARpcMethods<TRouter>,
     TRouter extends RpcRouter<any, any> = P2PManager
 > {
@@ -43,10 +43,21 @@ abstract class ARpcService<
     readonly router: TRouter;
     logger: Logger;
     protected guards: AGuard[] = [];
+    /** `any` router: the stored class must not pin this service's own type
+     *  parameter, or a service with a narrower router stops matching the base */
+    private readonly rpcMethods?: new (transport: ATransport, router: any) => R;
 
-    constructor(router: TRouter, logger: Logger) {
+    /** a service with nothing of its own is its endpoints: hand the class
+     *  here. one that carries state overrides `createRPCMethods` and hands
+     *  them itself instead. */
+    constructor(
+        router: TRouter,
+        logger: Logger,
+        rpcMethods?: new (transport: ATransport, router: TRouter) => R
+    ) {
         this.router = router;
         this.logger = logger;
+        this.rpcMethods = rpcMethods;
     }
 
     /** the peer services know their router as the manager; same object */
@@ -54,7 +65,14 @@ abstract class ARpcService<
         return this.router;
     }
 
-    public abstract createRPCMethods(transport: ATransport): R;
+    public createRPCMethods(transport: ATransport): R {
+        if (!this.rpcMethods) {
+            throw new Error(
+                "An RPC service needs a methods class or its own createRPCMethods"
+            );
+        }
+        return new this.rpcMethods(transport, this.router);
+    }
 
     private sendRpcResponseSafely(
         rpc: Rpc,

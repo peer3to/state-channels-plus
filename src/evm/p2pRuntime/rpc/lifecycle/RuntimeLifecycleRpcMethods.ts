@@ -1,5 +1,4 @@
 import type { P2pRuntimeHostRoot } from "../P2pRuntimeHostRoot";
-import type { RuntimeLifecycleService } from "./RuntimeLifecycleService";
 import ARpcMethods from "@/rpc/ARpcMethods";
 import type { RpcRouter } from "@/rpc/RpcRouter";
 import type { SerializedError } from "@/rpc/serializeError";
@@ -11,13 +10,6 @@ export class RuntimeLifecycleRpcMethods extends ARpcMethods<
     /** the host's only line is the port to the thread that built it */
     declare senderTransport: MessagePortTransport;
 
-    constructor(
-        transport: MessagePortTransport,
-        private readonly service: RuntimeLifecycleService
-    ) {
-        super(transport, service.router);
-    }
-
     /** both local state machines are deployed: build the runtime graph. the
      *  reply is the host's readiness; a failure before it tears down what was
      *  built and rejects the same promise the client awaits. */
@@ -25,7 +17,7 @@ export class RuntimeLifecycleRpcMethods extends ARpcMethods<
         localStateMachineAddress: string,
         diamondStateMachineAddress: string
     ): Promise<{ webRTCBridge: boolean }> {
-        const host = this.service.host;
+        const host = this.localRpc.host;
         try {
             return await host.buildRuntime(
                 localStateMachineAddress,
@@ -49,7 +41,7 @@ export class RuntimeLifecycleRpcMethods extends ARpcMethods<
      * work over the port.
      */
     quiesce(): Promise<SerializedError[]> {
-        return this.service.host.quiesce();
+        return this.localRpc.host.quiesce();
     }
 
     /** end the runtime; the link closes once this reply is out. a teardown
@@ -58,9 +50,9 @@ export class RuntimeLifecycleRpcMethods extends ARpcMethods<
      *  exits. */
     async dispose(): Promise<void> {
         try {
-            await this.service.host.disposeRuntime();
+            await this.localRpc.host.disposeRuntime();
         } finally {
-            this.service.host.closeAfterReply(this.senderTransport);
+            this.localRpc.host.closeAfterReply(this.senderTransport);
         }
     }
 }

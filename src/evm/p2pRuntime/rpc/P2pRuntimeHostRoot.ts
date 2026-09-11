@@ -1,12 +1,13 @@
-import { ChainSignerService } from "./chainSigner/ChainSignerService";
-import { DeploySignerService } from "./deploySigner/DeploySignerService";
-import { HostRpcMirrorService } from "./hostRpc/HostRpcMirrorService";
-import { RuntimeLifecycleService } from "./lifecycle/RuntimeLifecycleService";
+import { ChainSignerRpcMethods } from "./chainSigner/ChainSignerRpcMethods";
+import { DeploySignerRpcMethods } from "./deploySigner/DeploySignerRpcMethods";
+import { HostRpcMirrorRpcMethods } from "./hostRpc/HostRpcMirrorRpcMethods";
+import { RuntimeLifecycleRpcMethods } from "./lifecycle/RuntimeLifecycleRpcMethods";
 import type { P2pRuntimeClientRoot } from "./P2pRuntimeClientRoot";
 import { P2pSignerService } from "./p2pSigner/P2pSignerService";
 import type EvmDiamondStateMachine from "@/evm/EvmDiamondStateMachine";
 import type HostNonceManager from "@/evm/signer/HostNonceManager";
 import type LocalContractExecutorSigner from "@/evm/signer/LocalContractExecutorSigner";
+import ARpcService from "@/rpc/ARpcService";
 import type { RpcRouter } from "@/rpc/RpcRouter";
 import type { SerializedError } from "@/rpc/serializeError";
 import type StateManager from "@/stateManager/StateManager";
@@ -46,23 +47,39 @@ export interface RuntimeHost {
 
 /** what the sdk realm serves to the main thread over the runtime port */
 export class P2pRuntimeHostRoot {
-    readonly lifecycle: RuntimeLifecycleService;
+    /** the live pieces every endpoint on this root reaches */
+    readonly host: RuntimeHost;
+    readonly lifecycle: ARpcService<RuntimeLifecycleRpcMethods, any>;
     readonly p2pSigner: P2pSignerService;
-    readonly chainSigner: ChainSignerService;
-    readonly deploySigner: DeploySignerService;
-    readonly hostRpc: HostRpcMirrorService;
+    readonly chainSigner: ARpcService<ChainSignerRpcMethods, any>;
+    readonly deploySigner: ARpcService<DeploySignerRpcMethods, any>;
+    readonly hostRpc: ARpcService<HostRpcMirrorRpcMethods, any>;
     readonly logControl: LogControlService;
 
     constructor(
         router: RpcRouter<P2pRuntimeHostRoot, P2pRuntimeClientRoot>,
         host: RuntimeHost
     ) {
-        this.lifecycle = new RuntimeLifecycleService(router, host);
+        this.host = host;
+        const logger = router.logger;
+        this.lifecycle = new ARpcService(
+            router,
+            logger,
+            RuntimeLifecycleRpcMethods
+        );
         this.p2pSigner = new P2pSignerService(router, host);
-        this.chainSigner = new ChainSignerService(router, host);
-        this.deploySigner = new DeploySignerService(router, host);
-        this.hostRpc = new HostRpcMirrorService(router, host);
-        this.logControl = new LogControlService(router, router.logger);
+        this.chainSigner = new ARpcService(
+            router,
+            logger,
+            ChainSignerRpcMethods
+        );
+        this.deploySigner = new ARpcService(
+            router,
+            logger,
+            DeploySignerRpcMethods
+        );
+        this.hostRpc = new ARpcService(router, logger, HostRpcMirrorRpcMethods);
+        this.logControl = new LogControlService(router, logger);
     }
 }
 

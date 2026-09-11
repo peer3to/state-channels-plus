@@ -7,8 +7,6 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import { Worker } from "node:worker_threads";
 
-export type { ContractExecutorWorkerErrorHandler };
-
 export function createContractExecutorWorker(
     onError: ContractExecutorWorkerErrorHandler
 ): WorkerLike {

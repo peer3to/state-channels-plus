@@ -1,5 +1,6 @@
 import RpcMethodsProxy, { RpcHandleMethods } from "./RpcHandleProxy";
 import type { RpcRouter } from "./RpcRouter";
+import type ARpcMethods from "@/rpc/ARpcMethods";
 import type ARpcService from "@/rpc/ARpcService";
 
 /** every service on a root, seen as its delivery handles */
@@ -19,10 +20,7 @@ export type RemoteRpcServices<T extends object> = {
 export function createRemoteRpcProxy<TRemote extends object>(
     router: RpcRouter<any, any>
 ): RemoteRpcServices<TRemote> {
-    const proxyCache = new Map<
-        string,
-        ReturnType<typeof RpcMethodsProxy.createProxy>
-    >();
+    const proxyCache = new Map<string, RpcHandleMethods<ARpcMethods<any>>>();
 
     return new Proxy(
         {},
