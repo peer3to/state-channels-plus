@@ -318,8 +318,7 @@ contract LocalDiamond is StateChannelManagerProxy {
         );
 
         // Perform the low-level call with a gas limit
-        (bool success, bytes memory returnData) =
-            disputeVerificationFacetAddress.delegatecall{gas: _getGasLimit()}(data);
+        (bool success, bytes memory returnData) = disputeVerificationFacetAddress.delegatecall{gas: _getGasLimit()}(data);
 
         if (!success) {
             assembly ("memory-safe") {
@@ -341,8 +340,7 @@ contract LocalDiamond is StateChannelManagerProxy {
             (disputeInput, latestStateSnapshot, latestStateMachineState, inboundMessageBlocks)
         );
 
-        (bool success, bytes memory returnData) =
-            disputeVerificationFacetAddress.delegatecall{gas: _getGasLimit()}(data);
+        (bool success, bytes memory returnData) = disputeVerificationFacetAddress.delegatecall{gas: _getGasLimit()}(data);
 
         if (!success) {
             assembly ("memory-safe") {
@@ -395,8 +393,7 @@ contract LocalDiamond is StateChannelManagerProxy {
             (dispute, latestStateSnapshot, latestFinalizedStateStateMachineState, inboundMessageBlocks)
         );
         // Perform the low-level call with a gas limit
-        (bool success, bytes memory returnData) =
-            disputeVerificationFacetAddress.delegatecall{gas: _getGasLimit()}(data);
+        (bool success, bytes memory returnData) = disputeVerificationFacetAddress.delegatecall{gas: _getGasLimit()}(data);
         if (!success) {
             assembly ("memory-safe") {
                 revert(add(returnData, 0x20), mload(returnData))
