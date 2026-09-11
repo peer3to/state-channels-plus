@@ -67,7 +67,7 @@ endpoints of a pair may:
 
 What crosses the pair is the SDK's own RPC envelope: a
 [`MessagePortTransport`](../../../../../../src/transport/MessagePortTransport.ts#L1)
-under a [`PortRpcRouter`](../../../../../../src/rpc/PortRpcRouter.ts#L1), with each
+under an [`RpcRouter`](../../../../../../src/rpc/RpcRouter.ts#L70), with each
 side's operations composed as ordinary typed services on a root
 ([`P2pRuntimeHostRoot`](../../../../../../src/evm/p2pRuntime/rpc/P2pRuntimeHostRoot.ts#L1),
 [`P2pRuntimeClientRoot`](../../../../../../src/evm/p2pRuntime/rpc/P2pRuntimeClientRoot.ts#L1)).
@@ -225,10 +225,10 @@ deliberately does not.
   registers the single inbound handler and hands every frame to its router's
   `onRpcFrame`. There is no second listener that could race it.
 - **Correlation ids.** Every request carries the `requestId` the shared router
-  core stamps ([`ARpcRouter.sendRpcRequest`](../../../../../../src/rpc/ARpcRouter.ts#L129)),
+  core stamps ([`RpcRouter.sendRpcRequest`](../../../../../../src/rpc/RpcRouter.ts#L194)),
   the same counter and pending map the peer RPC uses. The reply echoes it and
   settles exactly that entry. The executor boundary is the same core over its own
-  `PortRpcRouter` ([`WorkerContractExecutor`](../../../../../../src/evm/contractExecutor/WorkerContractExecutor.ts#L1));
+  `RpcRouter` ([`WorkerContractExecutor`](../../../../../../src/evm/contractExecutor/WorkerContractExecutor.ts#L1));
   no boundary keeps a counter of its own.
 - **Paired endpoints only.** Because the port pair is 1:1 and never a network,
   correlation needs no authenticity check — the only writer to the other end is
@@ -553,7 +553,7 @@ _Non-normative._
 - **Bespoke port request types are gone (done).** The client→host protocol is now
   the same type-safe RPC abstraction the peer RPC uses: a trusted
   [`MessagePortTransport`](../../../../../../src/transport/MessagePortTransport.ts#L1)
-  under a [`PortRpcRouter`](../../../../../../src/rpc/PortRpcRouter.ts#L1), with the
+  under an [`RpcRouter`](../../../../../../src/rpc/RpcRouter.ts#L70), with the
   host's operations composed as services on
   [`P2pRuntimeHostRoot`](../../../../../../src/evm/p2pRuntime/rpc/P2pRuntimeHostRoot.ts#L1)
   and the client's pushes on

@@ -5,7 +5,8 @@
 
 ## Responsibility and observable boundary
 
-Executor operation types and `WorkerLike`, the port-plus-shutdown a platform runtime hands the executor.
+`WorkerLike`, the port-plus-shutdown a platform runtime hands the executor, and the error handler
+that runtime is built with. Nothing is re-exported through it.
 
 ## Linked requirements
 

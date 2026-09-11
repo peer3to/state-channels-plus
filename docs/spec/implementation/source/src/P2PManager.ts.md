@@ -5,7 +5,7 @@
 
 ## Responsibility and observable boundary
 
-The peers' router: `ARpcRouter` specialised with peer policy. The inherited core runs stages 1–4
+The peers' router: [`RpcRouter`](./rpc/RpcRouter.ts.md) carrying peer policy. The inherited core runs stages 1–4
 of the ingress order (16 MiB UTF-8 byte gate before parsing, response-first classification,
 envelope verification, service resolution) before handing to the service base, and owns the
 pending-request table, per-call timeouts and late-response silent ignore; this file supplies the
@@ -18,7 +18,7 @@ through the profile manager, plus broadcast/addressed delivery and the connectio
 1. **Response-first classification** keeps response frames out of service dispatch entirely ([`REQ-RPC-6-E60S4J`](../../../specification/peer-communication/rpc.md#req-rpc-6-e60s4j)).
 2. **Settlement by peer identity, not transport identity** — a WebRTC upgrade cannot orphan pending requests; a response from any _other_ peer penalizes the responder ([`REQ-RPC-2-SZDTTM`](../../../specification/peer-communication/rpc.md#req-rpc-2-szdttm)).
 3. **Unknown/late responses are penalty-free by design** (must therefore stay cheap; bounded by the frame gate).
-4. **Peer policy is a set of hooks, not a fork of the core.** `defaultRequestTimeoutMs`, `isResponseFromRequestee`, `onForeignResponse`, `resolveTransport`, `onTransportClosed` and `onServiceFailure` are the only places peer semantics enter; the same core serves the worker links under `PortRpcRouter` ([ARpcRouter.ts.md](./rpc/ARpcRouter.ts.md)).
+4. **Peer policy is assigned, not forked.** `requestTimeoutMs`, `isSameSender`, `onBadFrame`, `onFrameDispatched` and `resolveTransport` are set on the router in the constructor, and `onTransportCreated`/`onTransportClosed` are the two overrides left; the same concrete class serves every worker link ([RpcRouter.ts.md](./rpc/RpcRouter.ts.md)).
 5. **Service resolution uses the shared public-shape predicate.** A valid custom root loaded from a separate application module graph reaches the same guard and dispatch pipeline; constructor identity is not part of the wire contract ([#L228](../../../../../src/P2PManager.ts#L228)).
 
 ## Inputs, outputs, state, and side effects

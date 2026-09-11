@@ -15,6 +15,9 @@ returned.
 ## Key design decisions
 
 1. **Signing requests cross the boundary; keys do not** ([`REQ-ID-3-KR0BE3`](../../../../../specification/protocol-model/identity.md#req-id-3-kr0be3)).
+2. **Every host call is a request, so a host-side failure reaches the caller.** `setIsLeader` and
+   `disconnectFromPeers` return the reply's promise rather than posting and forgetting; the local
+   leader flag is still set before the call goes out.
 
 ## Inputs, outputs, state, and side effects
 

@@ -5,8 +5,8 @@
 
 ## Responsibility and observable boundary
 
-One instance per thread. It holds that thread's root loggers and, through its `WorkerLinks`, one
-port per neighbouring thread (each a `logControl` call on the far root), and it runs a log collection: upload this thread's own logs, ask each neighbour to do the
+One instance per thread. It holds that thread's root loggers and the link transports to the
+neighbouring threads (each reached by a `logControl` call on the far root), and it runs a log collection: upload this thread's own logs, ask each neighbour to do the
 same, wait for their answers, and return the totals. It is the only place that knows a thread has
 neighbours; loggers never see ports and ports never see loggers.
 
@@ -116,5 +116,5 @@ neighbours; loggers never see ports and ports never see loggers.
 ## Related source reports
 
 - [Logger.ts.md](./Logger.ts.md) — owns the registration and the per-thread upload this file drives.
-- [logControl.ts.md](./logControl.ts.md) — the message and result shapes crossing between threads.
+- [rpc/logControl/LogControlService.ts.md](./rpc/logControl/LogControlService.ts.md) — what answers an inbound collection on the far side.
 - [LogUploader.ts.md](./LogUploader.ts.md) — performs one thread's upload and classifies its outcome.

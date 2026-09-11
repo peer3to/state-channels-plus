@@ -6,7 +6,7 @@
 ## Responsibility and observable boundary
 
 Browser worker entry point: the node-globals and `Buffer` shims the EVM stack needs, installed before
-anything boots it, then a `PortRpcRouter` serving `ContractExecutorRoot` over the worker's own
+anything boots it, then an `RpcRouter` serving `ContractExecutorRoot` over the worker's own
 scope, a typed endpoint back to the owner's root, and the funnel that reports an error caught
 outside a request while the worker keeps serving.
 

@@ -5,23 +5,27 @@
 
 ## Responsibility and observable boundary
 
-The root typed proxy: substitutes every structurally valid service on the local root with its
-RpcMethods-typed sending surface (`remoteRpc.initHandshakeService.…`), caching one per-service
-proxy even when the service came from another JavaScript module graph. `createEndpoint` builds the
-same proxy for the far end of a worker link, typed by the far root's manifest and bound to that link
-as its default target.
+`createRemoteRpcProxy(router)` builds one router's `remoteRpc`: a proxy that answers every service
+name on the far root with that service's RpcMethods-typed sending surface
+(`remoteRpc.initHandshakeService.…`), caching one per-service proxy even when the service came from
+another JavaScript module graph. The far root is never instantiated here — the type parameter names
+its services and nothing else. It is a function, not a class: the router is its only caller and it
+holds no state of its own.
 
 ## Key design decisions
 
-1. **Normal string property access exposes only services.** Accessing an ordinary or missing string
-   property throws. Symbol reads pass through for JavaScript inspection, while `then` always reads as
+1. **The type is the contract.** Every string property answers with a methods proxy for a service of
+   that name; whether the far root actually serves it is settled by the far end's own refusal, not
+   locally. Symbol reads pass through for JavaScript inspection, while `then` always reads as
    `undefined` so Promise assimilation cannot treat the proxy as a thenable
-   ([#L33](../../../../../../src/rpc/RemoteRpcProxy.ts#L33)). This `get` boundary is a trusted local
+   ([`get`](../../../../../../src/rpc/RemoteRpcProxy.ts#L30)). This `get` boundary is a trusted local
    calling API, not a reflective object sandbox: property enumeration, descriptors, and `in` retain
    ordinary JavaScript proxy behavior.
-2. **Service identity is structural at runtime.** The proxy retains `ARpcService` for compile-time mapping but recognizes the public service operations instead of requiring one constructor object ([#L1](../../../../../../src/rpc/RemoteRpcProxy.ts#L1), [#L41](../../../../../../src/rpc/RemoteRpcProxy.ts#L41)).
+2. **Service identity is structural at runtime.** `RemoteRpcServices` retains `ARpcService` for
+   compile-time mapping; nothing at runtime requires one constructor object
+   ([`RemoteRpcServices`](../../../../../../src/rpc/RemoteRpcProxy.ts#L6)).
 3. **The cache is per service name.** Repeated access to one service returns its existing methods
-   proxy, while different service names receive different proxies ([#L49](../../../../../../src/rpc/RemoteRpcProxy.ts#L49)).
+   proxy, while different service names receive different proxies ([`proxyCache`](../../../../../../src/rpc/RemoteRpcProxy.ts#L22)).
 
 ## Inputs, outputs, state, and side effects
 

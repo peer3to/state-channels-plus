@@ -7,14 +7,15 @@
 
 The one worker-level message: `WorkerBootstrapMessage`, which carries the setup payload, the
 runtime port and the WebRTC bridge port into the worker by transfer — the only thing an RPC envelope
-cannot carry. The port types are re-exported from the transport layer; no request or response
-shapes live here any more.
+cannot carry. Nothing is re-exported: the port types are imported from the transport layer at the
+sites that need them, and no request, response or error shapes live here any more.
 
 ## Key design decisions
 
 1. `SerializedContract.abiJson` carries application ABI metadata across the port. For the manager,
    both runtime sides merge it after the SDK-owned ABI so consumer extensions remain available.
-2. `SerializedError.eventLoopDelay` carries the watchdog's structured sample (`EventLoopDelayDetails`) across the port; structured cloning an `Error` keeps only its standard slots, so the codec projects it explicitly.
+2. The serialized error shape and its `eventLoopDelay` sample belong to the error wire, not to this
+   file; a consumer imports them from [`serializeError`](../../rpc/serializeError.ts.md).
 
 ## Inputs, outputs, state, and side effects
 

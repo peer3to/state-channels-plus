@@ -8,8 +8,9 @@
 The transport base: `send` and `sendRpcResponse` serialization, idempotent close/disconnection
 delivery, the authenticated `peerAddress` used by network transports, `isSamePeer`
 (checksum-address comparison — the settlement identity rule), `isTrusted` (false for every
-network transport), the `router` it delivers to (the peer manager or a port router; `p2pManager`
-remains as the peer-only view), and the module-graph-independent `isTransport` public-shape predicate.
+network transport), the `router` it delivers to — an inbound byte frame goes to `router.onRpc`, so
+a non-peer transport is served too; `p2pManager` remains only as the peer-only view its peer-owned
+readers need — and the module-graph-independent `isTransport` public-shape predicate.
 
 ## Key design decisions
 
@@ -24,7 +25,7 @@ remains as the peer-only view), and the module-graph-independent `isTransport` p
 | ------------ | -------------------------------------------------------------------------------------------------- |
 | Inputs       | RPC envelopes, RPC responses, expected/unexpected close classification, and transport-like values. |
 | Outputs      | Serialized frames, identity/trust predicates, and structural type-guard results.                   |
-| Owned state  | `isClosed`, `peerAddress`, and the owning `p2pManager` reference.                                  |
+| Owned state  | `isClosed`, `peerAddress`, and the `router` this transport delivers to.                           |
 | Side effects | Logging, concrete sends/closes, connection removal, and unexpected-disconnection hooks.            |
 
 ## Linked requirements

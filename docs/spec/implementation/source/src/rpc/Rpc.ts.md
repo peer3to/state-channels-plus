@@ -16,6 +16,7 @@ inbound byte frame meets.
 1. **`requestId` presence selects delivery semantics.** An omitted ID means fire-and-forget. Any present string, including `""`, obliges exactly one correlated response; a present non-string ID is malformed ([#L1](../../../../../../src/rpc/Rpc.ts#L1)).
 2. **Raw `BigInt` throws at the sender.** Params/results must be JSON-serializable; bigint-bearing structs cross as `Codec`-encoded strings, and `JSON.stringify`'s throw surfaces the offending method instead of silently coercing ([#L31](../../../../../../src/rpc/Rpc.ts#L31)).
 3. **Reject-by-`undefined` decoding.** Malformed frames yield `undefined` (never throw), so the dispatcher's disconnect consequence is a decision, not an exception path ([#L41](../../../../../../src/rpc/Rpc.ts#L41)).
+4. **One parse per inbound byte frame.** `deserializeRpcFrame` classifies reply-or-request in a single `JSON.parse`, so a frame up to the cap is never parsed twice on the way in ([`deserializeRpcFrame`](../../../../../../src/rpc/Rpc.ts#L71)).
 
 ## Inputs, outputs, state, and side effects
 

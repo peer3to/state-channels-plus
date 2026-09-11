@@ -11,7 +11,7 @@
 ## Overview
 
 The suite drives a real `P2pRuntimeClient` against a fake host that speaks the runtime port's
-real envelope — a `PortRpcRouter` serving a `lifecycle` service and pushing `runtimeEvents` — so
+real envelope — a real `RpcRouter` serving a stand-in host root and pushing `runtimeEvents` — so
 the client's own decisions are observed through its public surface: what it does with the WebRTC
 bridge candidate depending on the `deployComplete` reply, and how a host error or a failed
 `deployComplete` settles `ready` with the host's error, its name and its revert data intact.
@@ -26,6 +26,6 @@ report but are kept here.
 | Test declaration                                                                                                                                               | Covers                                                                                                                                                             |
 | -------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | [`P2pRuntimeClient > keeps the bridge candidate when the host registered the bridge`](../../../../../../test/evm/P2pRuntimeClient.test.ts#L36) (line 36)       | [`UNIT-TEST-P2P-RUNTIME-CLIENT-1-W13T15.P1`](../../../../implementation/source/src/evm/p2pRuntime/P2pRuntimeClient.ts.md#unit-test-p2p-runtime-client-1-w13t15.p1) |
-| [`P2pRuntimeClient > closes the bridge candidate when the host negotiates WebRTC itself`](../../../../../../test/evm/P2pRuntimeClient.test.ts#L62) (line 62)   | [`UNIT-TEST-P2P-RUNTIME-CLIENT-1-W13T15.P2`](../../../../implementation/source/src/evm/p2pRuntime/P2pRuntimeClient.ts.md#unit-test-p2p-runtime-client-1-w13t15.p2) |
-| [`P2pRuntimeClient > a host error pushed before deployComplete rejects ready with it`](../../../../../../test/evm/P2pRuntimeClient.test.ts#L92) (line 92)      | [`UNIT-TEST-P2P-RUNTIME-CLIENT-1-W13T15.P3`](../../../../implementation/source/src/evm/p2pRuntime/P2pRuntimeClient.ts.md#unit-test-p2p-runtime-client-1-w13t15.p3) |
-| [`P2pRuntimeClient > a failed deployComplete rejects with the host's error and its data`](../../../../../../test/evm/P2pRuntimeClient.test.ts#L114) (line 114) | [`UNIT-TEST-P2P-RUNTIME-CLIENT-1-W13T15.P4`](../../../../implementation/source/src/evm/p2pRuntime/P2pRuntimeClient.ts.md#unit-test-p2p-runtime-client-1-w13t15.p4) |
+| [`P2pRuntimeClient > closes the bridge candidate when the host negotiates WebRTC itself`](../../../../../../test/evm/P2pRuntimeClient.test.ts#L61) (line 61)   | [`UNIT-TEST-P2P-RUNTIME-CLIENT-1-W13T15.P2`](../../../../implementation/source/src/evm/p2pRuntime/P2pRuntimeClient.ts.md#unit-test-p2p-runtime-client-1-w13t15.p2) |
+| [`P2pRuntimeClient > a host error pushed before deployComplete rejects ready with it`](../../../../../../test/evm/P2pRuntimeClient.test.ts#L90) (line 90)      | [`UNIT-TEST-P2P-RUNTIME-CLIENT-1-W13T15.P3`](../../../../implementation/source/src/evm/p2pRuntime/P2pRuntimeClient.ts.md#unit-test-p2p-runtime-client-1-w13t15.p3) |
+| [`P2pRuntimeClient > a failed deployComplete rejects with the host's error and its data`](../../../../../../test/evm/P2pRuntimeClient.test.ts#L110) (line 110) | [`UNIT-TEST-P2P-RUNTIME-CLIENT-1-W13T15.P4`](../../../../implementation/source/src/evm/p2pRuntime/P2pRuntimeClient.ts.md#unit-test-p2p-runtime-client-1-w13t15.p4) |

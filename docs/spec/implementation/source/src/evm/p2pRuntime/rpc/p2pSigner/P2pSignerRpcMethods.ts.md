@@ -7,15 +7,17 @@
 
 The p2p signer's operations as endpoints: send a transaction into the channel, a read-only call,
 connect, join, top up, collect a join confirmation, set the channel id, read the status, sign a
-message or typed data, and the two flags nobody waits on.
+message or typed data, and the leader flag and peer disconnect.
 
 ## Key design decisions
 
 - **Structs cross encoded.** Join confirmations and join requests are `Codec`-encoded strings on the
   wire and decoded here, as the encoding rule requires.
-- **`Promise<void>` is still a reply.** `sendTransaction`, `connectToChannel`, `joinChannel`,
-  `topUpBalance` and `setChannelId` return `Promise<void>` so the caller can await "done"; only
-  `setIsLeader` and `disconnectFromPeers` are `void`, and so casts.
+- **`Promise<void>` is still a reply.** Every mutating endpoint returns `Promise<void>` so the
+  caller can await "done" — `setIsLeader` and `disconnectFromPeers` included, so a host that cannot
+  serve them reaches the caller rather than only the log.
+- **Typed data crosses as its own types.** `signTypedData` takes the ethers domain, types and value
+  parameters directly; they are structured-clone-safe, so nothing is cast.
 
 ## Inputs, outputs, state, and side effects
 

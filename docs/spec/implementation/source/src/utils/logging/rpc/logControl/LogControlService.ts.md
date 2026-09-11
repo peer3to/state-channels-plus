@@ -60,5 +60,4 @@ one in a fixture — so a call arriving on a link runs on the bus that holds the
 ## Related source reports
 
 - [LogControlRpcMethods.ts.md](./LogControlRpcMethods.ts.md) — the endpoints.
-- [logControlPort.ts.md](./logControlPort.ts.md) — the far end as a port.
 - [../../LogFlushBus.ts.md](../../LogFlushBus.ts.md) — the bus.

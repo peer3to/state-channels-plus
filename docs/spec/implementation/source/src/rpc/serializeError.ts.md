@@ -50,7 +50,7 @@ only the message; this shape is for this process's own threads, which need to cl
 ## Related source reports
 
 - [ARpcService.ts.md](./ARpcService.ts.md) — serializes a handler failure for a trusted caller.
-- [ARpcRouter.ts.md](./ARpcRouter.ts.md) — restores it for the awaiting caller.
+- [RpcRouter.ts.md](./RpcRouter.ts.md) — restores it for the awaiting caller.
 
 ## Component test obligations
 

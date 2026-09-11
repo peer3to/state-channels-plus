@@ -5,23 +5,20 @@
 
 ## Responsibility and observable boundary
 
-The executor's operations as endpoints. `init` rebuilds config and logger in the worker, registers
-the link to the thread above before anything that can fail, files the worker under the owner's
-identity carried in the call, builds the EVM, and its reply is the worker's readiness. `dispose` ends the executor and closes the link once its reply is out. `deploy`,
-`executeCall` and `simulateCall` run on the executor.
+The executor's operations as endpoints, and nothing else — every body is one call into
+[ContractExecutorService](./ContractExecutorService.ts.md), which owns the worker's state. `init`'s
+reply is the worker's readiness; `dispose` ends the executor and the link closes once its reply is
+out; `deploy`, `executeCall` and `simulateCall` run on the executor the service built.
 
 ## Key design decisions
 
+- **Endpoints only.** The dispatcher routes by name on this object, so nothing but a wire endpoint
+  may live here; the bootstrap and the teardown are the service's
+  ([`init`](../../../../../../../../../src/evm/contractExecutor/rpc/contractExecutor/ContractExecutorRpcMethods.ts#L32),
+  [`dispose`](../../../../../../../../../src/evm/contractExecutor/rpc/contractExecutor/ContractExecutorRpcMethods.ts#L53)).
 - **Configuration crosses explicitly** — the worker rebuilds its local logger and timing
-  configuration instead of reading main-thread process state, with the same configured fatal-delay
-  threshold as the rest of the runtime ([`init`](../../../../../../../../../src/evm/contractExecutor/rpc/contractExecutor/ContractExecutorRpcMethods.ts#L40)).
-- **The link before the EVM.** A crash while the EVM is still being built already has a way up.
-- **The owner's identity is a parameter, not a race.** The cast the owner's link makes on
-  registration may cross before this link exists; `init` carries the same context, applied by tree
-  side like any inbound one, so link and init may be posted in either order.
+  configuration from the `init` parameters instead of reading main-thread process state.
 - **Readiness is the `init` reply**; there is no `ready` frame.
-- **Close after the reply**: `dispose` schedules the port's close for after its own return, so the
-  drained loop exits on its own ([`dispose`](../../../../../../../../../src/evm/contractExecutor/rpc/contractExecutor/ContractExecutorRpcMethods.ts#L85)).
 
 ## Inputs, outputs, state, and side effects
 
@@ -30,7 +27,7 @@ identity carried in the call, builds the EVM, and its reply is the worker's read
 | Inputs       | Precompile manifests and config; hex calldata and addresses.                          |
 | Outputs      | Nothing for `init`/`dispose`; execution results otherwise.                            |
 | Owned state  | None; the service holds it.                                                           |
-| Side effects | Config rebuilt; logger, link, EVM and monitor created and torn down; the port closed. |
+| Side effects | None of its own; every body delegates to the service.                                 |
 
 ## Linked requirements
 

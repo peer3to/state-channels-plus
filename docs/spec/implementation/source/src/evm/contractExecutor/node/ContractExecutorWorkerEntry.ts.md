@@ -5,7 +5,7 @@
 
 ## Responsibility and observable boundary
 
-Node worker entry point: a `PortRpcRouter` serving `ContractExecutorRoot` over the parent port, a
+Node worker entry point: an `RpcRouter` serving `ContractExecutorRoot` over the parent port, a
 typed endpoint back to the owner's root, and the funnel that reports an error caught outside a
 request. The worker keeps serving; the report crosses and every realm is asked to upload.
 

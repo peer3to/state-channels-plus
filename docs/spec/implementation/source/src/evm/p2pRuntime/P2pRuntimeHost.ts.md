@@ -7,7 +7,7 @@
 
 The runtime host: owns the full node state (managers, storage, EVM) and the signing authority in
 the host context, serves the main thread over the paired port as ordinary services on
-[`P2pRuntimeHostRoot`](./rpc/P2pRuntimeHostRoot.ts.md) under a `PortRpcRouter`, pushes bus events
+[`P2pRuntimeHostRoot`](./rpc/P2pRuntimeHostRoot.ts.md) under an `RpcRouter`, pushes bus events
 and its own failures at the client's `runtimeEvents` service, and drives lifecycle (startup
 readiness as the `deployComplete` reply, disposal drain, restart).
 
@@ -15,8 +15,8 @@ readiness as the `deployComplete` reply, disposal drain, restart).
 
 1. **The host signs; the client never holds the key** — signing authority stays in one trusted context ([`REQ-ID-3-KR0BE3`](../../../../../specification/protocol-model/identity.md#req-id-3-kr0be3)).
 2. **Everything crosses as RPC envelopes over the pair** — inline and worker deployments share the protocol (the transport-neutrality decision of the review §44), and the protocol is the root's services, not a message union.
-3. **Inbound requests are held until the root can answer.** The router attaches the port at once so nothing posted early is lost, holds requests until `buildRuntime` is defined, then releases them in order ([`holdInbound`](../../../../../../../src/evm/p2pRuntime/P2pRuntimeHost.ts#L228)).
-4. **The WebRTC bridge port arrives with the bootstrap**, not in a message of its own; the `deployComplete` reply tells the client whether the host registered it ([`registerWebRTCBridgeIfNeeded`](../../../../../../../src/evm/p2pRuntime/P2pRuntimeHost.ts#L420)).
+3. **Only the late accessor waits, not the whole line.** The router attaches the port at once so nothing posted early is lost; the client deploys through `deploySigner` while the rest of the host is still being built, so that one accessor awaits `signersReady` and every other endpoint keeps refusing with "Runtime is not ready" ([`deploySigner`](../../../../../../../src/evm/p2pRuntime/P2pRuntimeHost.ts#L183), [`resolveSignersReady`](../../../../../../../src/evm/p2pRuntime/P2pRuntimeHost.ts#L448)).
+4. **The WebRTC bridge port arrives with the bootstrap**, not in a message of its own; the `deployComplete` reply tells the client whether the host registered it ([`registerWebRTCBridgeIfNeeded`](../../../../../../../src/evm/p2pRuntime/P2pRuntimeHost.ts#L468)).
 5. **The host uses the same manager ABI merge as the client.** SDK fragments are installed first,
    then the serialized consumer ABI is appended before the contract enters `StateManager`. Host-side
    custom RPC services can call consumer functions without losing SDK errors.
@@ -68,4 +68,4 @@ readiness as the `deployComplete` reply, disposal drain, restart).
 
 - [P2pRuntimeClient](./P2pRuntimeClient.ts.md), [ClientHostRpc](./ClientHostRpc.ts.md), platform channels.
 - [rpc/P2pRuntimeHostRoot.ts.md](./rpc/P2pRuntimeHostRoot.ts.md) — the services this file builds and feeds.
-- [../../rpc/PortRpcRouter.ts.md](../../rpc/PortRpcRouter.ts.md) — the router over the port.
+- [../../rpc/RpcRouter.ts.md](../../rpc/RpcRouter.ts.md) — the router over the port.

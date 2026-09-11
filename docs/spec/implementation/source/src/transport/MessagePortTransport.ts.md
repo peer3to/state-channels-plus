@@ -12,20 +12,28 @@ and executor results carry byte arrays. The port closing closes the transport.
 ## Key design decisions
 
 - **Objects, not bytes.** `send` and `sendRpcResponse` post the envelope itself; the base class's
-  serialization is bypassed on purpose ([`send`](../../../../../../src/transport/MessagePortTransport.ts#L29)).
+  serialization is bypassed on purpose, and the abstract `_send` it would have used throws rather
+  than posting a string ([`send`](../../../../../../src/transport/MessagePortTransport.ts#L41)).
 - **Trusted by construction.** No guards, no frame bound, full errors: the flag the routers and
   services read is set here and nowhere else.
 - **The far end closing its port closes this end.** `onClose` runs `close(false)`, which the router
   turns into rejected requests and an owner callback.
+- **Closing after a reply is this transport's job.** An endpoint whose reply ends the link asks for
+  `closeAfterReply`: the reply is posted in the microtasks after the endpoint returns, and the
+  macrotask runs after them. One owner for both the runtime host's dispose and the vm worker's
+  ([`closeAfterReply`](../../../../../../src/transport/MessagePortTransport.ts#L61)).
+- **Which realm the far end is is a constructor argument.** `remoteRealm` decides how much of an
+  inbound logging context this realm believes; `ownerLogger` is set by the log flush bus when it
+  takes the link, never by a caller.
 
 ## Inputs, outputs, state, and side effects
 
 | Aspect       | Contents                                                                 |
 | ------------ | ------------------------------------------------------------------------ |
-| Inputs       | A port and the router it delivers to; frames arriving on the port.       |
+| Inputs       | A port, the router it delivers to and which side of the tree the far realm is on; frames arriving on the port. |
 | Outputs      | Frames posted on the port; inbound frames handed to `router.onRpcFrame`. |
-| Owned state  | The port.                                                                |
-| Side effects | Closing the port on `_close`.                                            |
+| Owned state  | The port, the far realm's side and the root logger whose context crosses the link. |
+| Side effects | Closing the port on `_close`, immediately or one macrotask after a reply.                                      |
 
 ## Linked requirements
 
@@ -60,5 +68,5 @@ and executor results carry byte arrays. The port closing closes the transport.
 ## Related source reports
 
 - [ATransport.ts.md](./ATransport.ts.md) — the base every transport shares.
-- [../rpc/PortRpcRouter.ts.md](../rpc/PortRpcRouter.ts.md) — attaches it.
+- [../rpc/RpcRouter.ts.md](../rpc/RpcRouter.ts.md) — attaches it.
 - [RuntimePort.ts.md](./RuntimePort.ts.md) — the port it wraps.

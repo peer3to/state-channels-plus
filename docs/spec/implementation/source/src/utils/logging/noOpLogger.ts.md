@@ -30,4 +30,4 @@ factory without a caller-supplied logger, and a port router before its worker's 
 ## Related source reports
 
 - [Logger.ts.md](./Logger.ts.md) — the contract it satisfies.
-- [../../rpc/PortRpcRouter.ts.md](../../rpc/PortRpcRouter.ts.md) — starts on it.
+- [../../rpc/RpcRouter.ts.md](../../rpc/RpcRouter.ts.md) — starts on it.

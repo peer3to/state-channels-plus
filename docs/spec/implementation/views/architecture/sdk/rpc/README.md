@@ -261,7 +261,7 @@ service's method names.
 **Trusted-transport exception.** Guards are skipped entirely when `transport.isTrusted` — true
 for [`LoopbackTransport`](../../../../../../../src/transport/LoopbackTransport.ts#L13) (self-delivery,
 and likewise for [`MessagePortTransport`](../../../../../../../src/transport/MessagePortTransport.ts#L1), the
-process's own worker threads under a [`PortRpcRouter`](../../../../../../../src/rpc/PortRpcRouter.ts#L1) —
+process's own worker threads under an [`RpcRouter`](../../../../../../../src/rpc/RpcRouter.ts#L70) —
 §2.4/§3); every network transport reports `false`
 ([`ATransport.isTrusted`](../../../../../../../src/transport/ATransport.ts#L49)).
 

@@ -12,6 +12,9 @@ transaction that is mined before it is answered.
 
 - **A deploy reply is the mined transaction**, hash, addresses, data and receipt, so the bridge
   signer's `wait()` has nothing left to wait for.
+- **Every endpoint awaits the signer.** This is the one service the client calls while the host is
+  still starting, so `host.deploySigner()` settles when the signer exists instead of throwing
+  "Runtime is not ready" at a caller that is simply early.
 
 ## Inputs, outputs, state, and side effects
 

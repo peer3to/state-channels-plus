@@ -10,7 +10,6 @@ _Pending authoring: shared responsibility, design decisions, assumptions, cross-
 - [AContractExecutor.ts](./AContractExecutor.ts.md)
 - [ContractExecutor.ts](./ContractExecutor.ts.md)
 - [ContractExecutorFactory.ts](./ContractExecutorFactory.ts.md)
-- [NoOpLogger.ts](./NoOpLogger.ts.md)
 - [WorkerContractExecutor.ts](./WorkerContractExecutor.ts.md)
 - [browser/](./browser/README.md)
 - [index.ts](./index.ts.md)

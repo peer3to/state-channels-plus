@@ -11,7 +11,7 @@
 ## Overview
 
 The suite drives real `LogFlushBus` instances joined by real `MessageChannel` pairs under
-`PortRpcRouter`s serving `logControl` — the same link the runtime and executor ports are — against a
+`RpcRouter`s serving `logControl` — the same link the runtime and executor ports are — against a
 real HTTP receiver. No mocks: each fake thread
 gets its own bus, logger, store and uploader, and every assertion is made on what reached the
 receiver or on the totals a round returned, never on the in-memory store.

@@ -5,7 +5,7 @@
 
 ## Responsibility and observable boundary
 
-The main-thread client: a `PortRpcRouter` over the runtime port serving
+The main-thread client: an `RpcRouter` over the runtime port serving
 [`P2pRuntimeClientRoot`](./rpc/P2pRuntimeClientRoot.ts.md) (the host's pushes and log control) and
 holding `host`, the typed endpoint on the host's root that the signers, `hostRpc` and
 `EvmDiamondStateMachine` call. `ready` is the `deployComplete` reply; a host error pushed before it
@@ -20,6 +20,10 @@ over in the bootstrap, and keeps or closes its own end by what the reply says.
    events, and errors remain available.
 3. **Readiness is a reply.** There is no `ready` message to match by hand; `deployComplete` resolving is the signal, and a `hostError` cast before it rejects the same promise.
 4. **The bridge candidate is decided by the reply.** `deployComplete` returns whether the host registered the bridge; the client keeps its end as `webRTCBridgePort` or closes it.
+5. **A pushed host error and an app subscription are two methods.** `onHostErrorReport` is the sink
+   the host's `runtimeEvents` service calls; `onHostError` is what an application subscribes with
+   and gets its unsubscribe from. With no subscriber, a pushed error is re-thrown as a main-thread
+   unhandled rejection, so it surfaces the way an inline host's error would.
 
 ## Inputs, outputs, state, and side effects
 
@@ -57,7 +61,7 @@ over in the bootstrap, and keeps or closes its own end by what the reply says.
 
 | Unit test ID                                                                              | Obligation                                                                  | Public entry and setup                                                                                                                                    | Oracle and forbidden effects                                                                                                                  | Required permutations                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
 | ----------------------------------------------------------------------------------------- | --------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| <a id="unit-test-p2p-runtime-client-1-w13t15"></a>`UNIT-TEST-P2P-RUNTIME-CLIENT-1-W13T15` | The client's own decisions: the bridge candidate and how readiness settles. | A real client over a `MessageChannel` against a fake host that speaks the real envelope (a `PortRpcRouter` serving `lifecycle`, pushing `runtimeEvents`). | `webRTCBridgePort` kept or closed by the reply; `ready` rejects with the host's error, its name and revert data; nothing leaks after dispose. | <a id="unit-test-p2p-runtime-client-1-w13t15.p1"></a>`UNIT-TEST-P2P-RUNTIME-CLIENT-1-W13T15.P1` — bridge kept when the host registered it; <a id="unit-test-p2p-runtime-client-1-w13t15.p2"></a>`UNIT-TEST-P2P-RUNTIME-CLIENT-1-W13T15.P2` — bridge closed when the host negotiates itself; <a id="unit-test-p2p-runtime-client-1-w13t15.p3"></a>`UNIT-TEST-P2P-RUNTIME-CLIENT-1-W13T15.P3` — host error before deployComplete rejects ready; <a id="unit-test-p2p-runtime-client-1-w13t15.p4"></a>`UNIT-TEST-P2P-RUNTIME-CLIENT-1-W13T15.P4` — failed deployComplete rejects with error and data |
+| <a id="unit-test-p2p-runtime-client-1-w13t15"></a>`UNIT-TEST-P2P-RUNTIME-CLIENT-1-W13T15` | The client's own decisions: the bridge candidate and how readiness settles. | A real client over a `MessageChannel` against a fake host that speaks the real envelope (a real `RpcRouter` serving a stand-in host root, pushing `runtimeEvents`). | `webRTCBridgePort` kept or closed by the reply; `ready` rejects with the host's error, its name and revert data; nothing leaks after dispose. | <a id="unit-test-p2p-runtime-client-1-w13t15.p1"></a>`UNIT-TEST-P2P-RUNTIME-CLIENT-1-W13T15.P1` — bridge kept when the host registered it; <a id="unit-test-p2p-runtime-client-1-w13t15.p2"></a>`UNIT-TEST-P2P-RUNTIME-CLIENT-1-W13T15.P2` — bridge closed when the host negotiates itself; <a id="unit-test-p2p-runtime-client-1-w13t15.p3"></a>`UNIT-TEST-P2P-RUNTIME-CLIENT-1-W13T15.P3` — host error before deployComplete rejects ready; <a id="unit-test-p2p-runtime-client-1-w13t15.p4"></a>`UNIT-TEST-P2P-RUNTIME-CLIENT-1-W13T15.P4` — failed deployComplete rejects with error and data |
 
 ## Related source reports
 

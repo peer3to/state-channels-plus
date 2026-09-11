@@ -8,7 +8,9 @@
 What the sdk realm serves to the main thread over the runtime port, composed in one place: the
 runtime's lifecycle, the three signers, the mirror onto the host's peer RPC, and log control. The
 manifest of its names is what the main thread types its endpoint from. `RuntimeHost` is the set of
-live pieces the services reach, behind accessors that throw until each exists.
+live pieces the services reach, behind accessors that throw until each exists — except
+`deploySigner`, which is awaited because the client deploys through it before the host has
+finished starting.
 
 ## Key design decisions
 
@@ -17,7 +19,8 @@ live pieces the services reach, behind accessors that throw until each exists.
 - **The manifest is checked against the root type**, so a renamed service fails to compile on the
   client too.
 - **Not-ready is an accessor, not a case.** The former per-case `Runtime is not ready` guard is one
-  `required()` on each late-built piece.
+  `required()` on each late-built piece; the one piece the client legitimately reaches early —
+  `deploySigner` — waits for it instead, so no line-wide inbound hold is needed.
 
 ## Inputs, outputs, state, and side effects
 
