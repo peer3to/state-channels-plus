@@ -22,9 +22,7 @@ export function emptyFlushResult(): LogFlushResult {
 }
 
 /** roll a subtree's parts into one result */
-export function sumFlushResults(
-    parts: readonly LogFlushResult[]
-): LogFlushResult {
+function sumFlushResults(parts: readonly LogFlushResult[]): LogFlushResult {
     const total = emptyFlushResult();
     for (const part of parts) {
         total.ok += part.ok;

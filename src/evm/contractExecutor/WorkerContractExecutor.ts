@@ -72,7 +72,15 @@ export default class WorkerContractExecutor extends AContractExecutor {
     ): Promise<WorkerContractExecutor> {
         const executor = new WorkerContractExecutor(logger, dependencies);
         try {
-            executor.link();
+            // a child of this realm's log tree, filed under the host's
+            // identity. nothing to collect from the vm realm when this realm
+            // uploads nothing: the link would only carry context nobody ships
+            if (executor.logger?.isUploadEnabled()) {
+                executor.logger.logFlushBus?.addLink(
+                    executor.transport,
+                    executor.logger
+                );
+            }
             // the owner's log identity rides in init, so the order of the link
             // and the init does not matter; a later change is cast over the link
             await executor.vm.contractExecutor
@@ -116,7 +124,7 @@ export default class WorkerContractExecutor extends AContractExecutor {
         this.transport = new MessagePortTransport(
             this.worker.port,
             this.router,
-            { remoteRealm: "child" }
+            "child"
         );
         // the runtime reports the exit with its code first, so this only names
         // a close that arrived on its own; a close this executor asked for is
@@ -230,14 +238,5 @@ export default class WorkerContractExecutor extends AContractExecutor {
         globalThis.queueMicrotask(() => {
             throw error;
         });
-    }
-
-    /** a child of this realm's log tree, filed under the host's identity */
-    private link(): void {
-        if (!this.logger) return;
-        // nothing to collect from the vm realm when this realm uploads
-        // nothing: the link would only carry context nobody ships
-        if (!this.logger.isUploadEnabled()) return;
-        this.logger.logFlushBus?.addLink(this.transport, this.logger);
     }
 }

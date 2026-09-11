@@ -1,4 +1,4 @@
-import type { RuntimeChannel, RuntimePort } from "../types";
+import type { RuntimeChannel, RuntimePort } from "@/transport/RuntimePort";
 import {
     MessageChannel,
     parentPort,

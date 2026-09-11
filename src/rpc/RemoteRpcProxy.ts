@@ -11,39 +11,38 @@ export type RemoteRpcServices<T extends object> = {
         : never;
 };
 
-class RemoteRpcProxy {
-    /**
-     * the far end of this router's lines, typed by the root it serves. the far
-     * root is never instantiated here: `TRemote` names its services and every
-     * property is a handle for the service of that name.
-     */
-    public static createProxy<TRemote extends object>(
-        router: RpcRouter<any, any>
-    ): RemoteRpcServices<TRemote> {
-        const proxyCache = new Map<
-            string,
-            ReturnType<typeof RpcMethodsProxy.createProxy>
-        >();
+/**
+ * the far end of this router's lines, typed by the root it serves. the far
+ * root is never instantiated here: `TRemote` names its services and every
+ * property is a handle for the service of that name.
+ */
+export function createRemoteRpcProxy<TRemote extends object>(
+    router: RpcRouter<any, any>
+): RemoteRpcServices<TRemote> {
+    const proxyCache = new Map<
+        string,
+        ReturnType<typeof RpcMethodsProxy.createProxy>
+    >();
 
-        return new Proxy(
-            {},
-            {
-                get(_target, prop) {
-                    // Avoid breaking common JS runtime inspection paths.
-                    if (typeof prop === "symbol") return undefined;
-                    if (prop === "then") return undefined;
+    return new Proxy(
+        {},
+        {
+            get(_target, prop) {
+                // Avoid breaking common JS runtime inspection paths.
+                if (typeof prop === "symbol") return undefined;
+                if (prop === "then") return undefined;
 
-                    const serviceName = prop.toString();
-                    if (!proxyCache.has(serviceName)) {
-                        proxyCache.set(
-                            serviceName,
-                            RpcMethodsProxy.createProxy({ serviceName, router })
-                        );
-                    }
-                    return proxyCache.get(serviceName)!;
+                const serviceName = prop.toString();
+                if (!proxyCache.has(serviceName)) {
+                    proxyCache.set(
+                        serviceName,
+                        RpcMethodsProxy.createProxy({ serviceName, router })
+                    );
                 }
+                return proxyCache.get(serviceName)!;
             }
-        ) as RemoteRpcServices<TRemote>;
-    }
+        }
+    ) as RemoteRpcServices<TRemote>;
 }
-export default RemoteRpcProxy;
+
+export default createRemoteRpcProxy;

@@ -115,9 +115,9 @@ class ClientP2pSigner implements Signer {
             .request();
     }
 
-    setIsLeader(value: boolean): void {
+    setIsLeader(value: boolean): Promise<void> {
         this.isLeader = value;
-        this.host.p2pSigner.setIsLeader(value).sendOne();
+        return this.host.p2pSigner.setIsLeader(value).request();
     }
 
     getIsLeader(): boolean {
@@ -287,8 +287,8 @@ class ClientP2pSigner implements Signer {
         };
     }
 
-    disconnectFromPeers(): void {
-        this.host.p2pSigner.disconnectFromPeers().sendOne();
+    disconnectFromPeers(): Promise<void> {
+        return this.host.p2pSigner.disconnectFromPeers().request();
     }
 
     getChannelStatus(): Promise<Status> {

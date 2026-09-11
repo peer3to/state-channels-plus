@@ -3,11 +3,8 @@ import { startCpuProfilerIfEnabled } from "../../node/workerCpuProfiler";
 import { resolveWorkerResourceLimits } from "../../node/workerResourceLimits";
 import { createWorkerShutdown } from "../../node/workerShutdown";
 import { instrumentWorkerStartup } from "../../node/workerStartupTiming";
-import type {
-    P2pRuntimeWorker,
-    RuntimePort,
-    WorkerBootstrapMessage
-} from "../types";
+import type { P2pRuntimeWorker, WorkerBootstrapMessage } from "../types";
+import type { RuntimePort } from "@/transport/RuntimePort";
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { parentPort, Worker, type MessagePort } from "node:worker_threads";

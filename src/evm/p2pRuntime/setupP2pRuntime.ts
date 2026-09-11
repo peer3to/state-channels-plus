@@ -5,7 +5,6 @@ import P2pRuntimeClient from "./P2pRuntimeClient";
 import { startP2pRuntimeHost, type HostContext } from "./P2pRuntimeHost";
 import type {
     P2pRuntimeWorker,
-    RuntimePort,
     SerializedContract,
     SetupPayload,
     WorkerBootstrapMessage
@@ -13,6 +12,7 @@ import type {
 import DeploymentBridgeSigner from "../signer/DeploymentBridgeSigner";
 import type MainRpcService from "@/rpc/MainRpcService";
 import type { CustomRpcManifest } from "@/rpc/registry";
+import type { RuntimePort } from "@/transport/RuntimePort";
 import { createLogger, Logger } from "@/utils";
 import { createConfig, Config } from "@/utils/config";
 import {

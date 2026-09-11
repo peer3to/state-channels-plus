@@ -4,7 +4,7 @@ import { adaptPort } from "@/evm/p2pRuntime/node/P2pRuntimeChannel";
 import ARpcMethods from "@/rpc/ARpcMethods";
 import ARpcService from "@/rpc/ARpcService";
 import type { RemoteRpcServices } from "@/rpc/RemoteRpcProxy";
-import { RpcRouter, type RpcRouterOptions } from "@/rpc/RpcRouter";
+import { RpcRouter } from "@/rpc/RpcRouter";
 import MessagePortTransport from "@/transport/MessagePortTransport";
 import type { LogStore } from "@/utils/logging/logStore";
 import type { NodeLogger } from "@/utils/logging/node/NodeLogger";
@@ -119,23 +119,27 @@ export type ProbeEnd = {
 };
 
 /** two routers on the two ends of a real MessageChannel, each serving a probe
- *  root and typed by the other's */
+ *  root and typed by the other's. `a`/`b` set that end's router policy before
+ *  its line is up. */
 export function linkedRouters(
-    options: { a?: RpcRouterOptions; b?: RpcRouterOptions } = {}
+    options: {
+        a?: (router: ProbeRouter) => void;
+        b?: (router: ProbeRouter) => void;
+    } = {}
 ): { a: ProbeEnd; b: ProbeEnd; close: () => void } {
     const channel = new MessageChannel();
     const build = (
         port: NodeMessagePort,
-        routerOptions: RpcRouterOptions | undefined
+        setPolicy: ((router: ProbeRouter) => void) | undefined
     ): ProbeEnd => {
         const { logger, logStore } = createUploaderFixture({
             uploadEndpoint: ""
         });
         const router = new RpcRouter<ProbeRoot, ProbeRoot>(
             (self) => new ProbeRoot(self),
-            logger,
-            routerOptions
+            logger
         );
+        setPolicy?.(router);
         const transport = new MessagePortTransport(adaptPort(port), router);
         return {
             router,

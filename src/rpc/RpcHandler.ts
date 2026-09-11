@@ -101,11 +101,12 @@ class RpcHandler {
             return Promise.reject(e as Error);
         }
         if (!transport) {
+            const operation = `${this.rpc.service}.${this.rpc.method}`;
             return Promise.reject(
                 new Error(
-                    `RpcHandler.request: no open transport for target '${String(
-                        target
-                    )}'`
+                    target === undefined
+                        ? `RPC request '${operation}' refused: the transport is closed or disposed`
+                        : `RpcHandler.request: no open transport for target '${String(target)}'`
                 )
             );
         }
@@ -131,13 +132,13 @@ class RpcHandler {
             const transports = this.router.transports;
             const [only] = transports;
             if (transports.size === 1) return only;
+            // the line this handle would have taken is gone: a fire-and-forget
+            // send drops, and `request` refuses the way one named on a closed
+            // transport does
+            if (transports.size === 0) return undefined;
             const operation = `${this.rpc.service}.${this.rpc.method}`;
-            // the line this handle would have taken is gone: the same refusal
-            // a request named on a closed transport gets
             throw new Error(
-                transports.size === 0
-                    ? `RPC request '${operation}' refused: the transport is closed or disposed`
-                    : `RpcHandler: '${operation}' needs a target: this router has no loopback and ${transports.size} transports`
+                `RpcHandler: '${operation}' needs a target: this router has no loopback and ${transports.size} transports`
             );
         }
         if (isTransport(target)) return target;

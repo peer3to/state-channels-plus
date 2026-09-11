@@ -20,6 +20,10 @@ export class HostRpcMirrorRpcMethods extends ARpcMethods<
      * the result. The port is a pure proxy; all target semantics (omitted
      * target = loopback to self, peer address = relay) are handled by the RPC
      * handler.
+     *
+     * `delivery` is whatever method the caller invoked on the RPC handle (e.g.
+     * `request`/`sendOne`/`broadcast`); it is forwarded verbatim so new handler
+     * methods need no changes here.
      */
     async call(
         service: string,

@@ -65,6 +65,16 @@ describe("P2pRuntimeHost readiness", function () {
             host.p2pSigner.getChannelStatus().request()
         );
     });
+    it("rejects setIsLeader before deployment", async function () {
+        await checkPreDeploymentRequest((host) =>
+            host.p2pSigner.setIsLeader(true).request()
+        );
+    });
+    it("rejects disconnectFromPeers before deployment", async function () {
+        await checkPreDeploymentRequest((host) =>
+            host.p2pSigner.disconnectFromPeers().request()
+        );
+    });
     it("rejects hostRpc before deployment", async function () {
         await checkPreDeploymentRequest((host) =>
             host.hostRpc.call("query", "getForkId", [], "request", []).request()

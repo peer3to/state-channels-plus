@@ -2,9 +2,6 @@ import type { EvmCustomPrecompileManifest } from "@/evm/EvmFactory";
 import type { CustomRpcManifest } from "@/rpc/registry";
 import type { Config } from "@/utils/config";
 
-/** the port surface a runtime link runs on; owned by the transport layer */
-export type { RuntimePort, RuntimeChannel } from "@/transport/RuntimePort";
-
 /** Serializable description of a deployed contract the host can rebuild. */
 export interface SerializedContract {
     address: string;
@@ -58,6 +55,3 @@ export interface P2pRuntimeWorker {
     postMessage(value: unknown, transfer?: unknown[]): void;
     shutdown(): Promise<void>;
 }
-
-/** Serializable error shape carried in failed runtime replies. */
-export type { SerializedError } from "@/rpc/serializeError";

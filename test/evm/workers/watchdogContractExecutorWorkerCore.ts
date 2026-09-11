@@ -107,7 +107,7 @@ export function startWatchdogContractExecutorWorker(
             }),
         undefined
     );
-    new MessagePortTransport(port.port, router, { remoteRealm: "parent" });
+    new MessagePortTransport(port.port, router, "parent");
     const owner = router.remoteRpc;
     // Same order as the production entries: the funnel is registered with the
     // line already up, before anything can fail.

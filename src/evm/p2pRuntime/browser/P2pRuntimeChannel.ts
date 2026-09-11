@@ -1,4 +1,4 @@
-import type { RuntimeChannel, RuntimePort } from "../types";
+import type { RuntimeChannel, RuntimePort } from "@/transport/RuntimePort";
 
 /**
  * Adapt a browser {@link MessagePort} to the platform-neutral

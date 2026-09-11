@@ -1,10 +1,9 @@
 import type ARpcService from "./ARpcService";
-import RemoteRpcProxy, { type RemoteRpcServices } from "./RemoteRpcProxy";
+import { createRemoteRpcProxy, type RemoteRpcServices } from "./RemoteRpcProxy";
 import Rpc, {
     isRpc,
     isRpcResponse,
-    deserializeRpc,
-    deserializeRpcResponse,
+    deserializeRpcFrame,
     MAX_RPC_FRAME_BYTES,
     RpcResponse
 } from "./Rpc";
@@ -18,7 +17,7 @@ import { hasRpcService } from "@/utils/ObjectChecks";
 
 /** what failed: a frame the far end sent, a reply for a request this line
  *  never carried, or one of our own handlers */
-export type ServiceFailureKind = "frame" | "handler" | "foreign-response";
+type ServiceFailureKind = "frame" | "handler" | "foreign-response";
 
 export type RpcRequestOptions = {
     /** `null` -> no timer: the operation owns its own bound */
@@ -43,10 +42,6 @@ const plainTimer: RpcTimer = {
 
 export type RpcRouterOptions = {
     timer?: RpcTimer;
-    /** bound on every request that does not bring its own; `null` -> none */
-    defaultTimeoutMs?: number | null;
-    /** runs every inbound dispatch, e.g. inside a handler execution context */
-    wrapInbound?: <T>(run: () => T) => T;
 };
 
 type PendingRpcRequest = {
@@ -97,23 +92,23 @@ export class RpcRouter<TRoot extends object, TRemote extends object = TRoot> {
         transport: ATransport,
         error: unknown,
         kind: ServiceFailureKind
-    ) => void = (_transport, error) => {
-        this.logger.error("Worker RPC handler failed", {
+    ) => void = (_transport, error, kind) => {
+        this.logger.error("Worker RPC frame failed", {
+            kind,
             error: error instanceof Error ? error.message : String(error),
             stack: error instanceof Error ? error.stack : undefined
         });
     };
     /** an inbound request about to be dispatched; peers log it */
     onFrameDispatched?: (rpc: Rpc, transport: ATransport) => void;
+    /** the bound on a request that brings none; `null` -> it waits as long as
+     *  it takes. read per request, so peers pick up a time-config change. */
+    requestTimeoutMs: () => number | null = () => null;
+    /** runs every inbound dispatch, e.g. inside a handler execution context */
+    wrapInbound?: <T>(run: () => T) => T;
     private readonly timer: RpcTimer;
-    private readonly defaultTimeoutMs: number | null;
-    private readonly wrapInbound?: <T>(run: () => T) => T;
     private rpcRequestCounter = 0;
     private readonly pendingRpcRequests = new Map<string, PendingRpcRequest>();
-    /** requests that arrived while this end was still being built; a port
-     *  queues what is posted before anyone listens, and this keeps that
-     *  promise once every service can answer */
-    private heldRequests?: { frame: Rpc; transport: ATransport }[];
 
     /** the root needs the router and the router the root -> built here. a root
      *  that cannot be built before its owner's fields exist attaches later. */
@@ -124,8 +119,6 @@ export class RpcRouter<TRoot extends object, TRemote extends object = TRoot> {
     ) {
         this.logger = logger ?? noOpLogger;
         this.timer = options.timer ?? plainTimer;
-        this.defaultTimeoutMs = options.defaultTimeoutMs ?? null;
-        this.wrapInbound = options.wrapInbound;
         if (buildRoot) this.attachRoot(buildRoot(this));
     }
 
@@ -140,34 +133,11 @@ export class RpcRouter<TRoot extends object, TRemote extends object = TRoot> {
         }
     }
 
-    /** the bound on a request that brings none; `null` -> it waits as long as
-     *  it takes. peers read their time config here, so a change to it applies
-     *  to the next request. */
-    protected defaultRequestTimeoutMs(): number | null {
-        return this.defaultTimeoutMs;
-    }
-
     /** the root is built with a reference to the router, so it attaches after
      *  construction */
     protected attachRoot(root: TRoot): void {
         this.localRpc = root;
-        this.remoteRpc = RemoteRpcProxy.createProxy<TRemote>(this);
-    }
-
-    /** queue inbound requests until `releaseInbound`: the services behind the
-     *  root are not all built yet. replies to this end's own requests still
-     *  settle. */
-    holdInbound(): void {
-        this.heldRequests ??= [];
-    }
-
-    /** dispatch what was held, in arrival order, and stop holding */
-    releaseInbound(): void {
-        const held = this.heldRequests;
-        this.heldRequests = undefined;
-        for (const { frame, transport } of held ?? []) {
-            this.deliverFrame(frame, transport);
-        }
+        this.remoteRpc = createRemoteRpcProxy<TRemote>(this);
     }
 
     public broadcastRpc(rpc: Rpc): void {
@@ -219,7 +189,7 @@ export class RpcRouter<TRoot extends object, TRemote extends object = TRoot> {
         }
         const timeoutMs =
             options?.timeoutMs === undefined
-                ? this.defaultRequestTimeoutMs()
+                ? this.requestTimeoutMs()
                 : options.timeoutMs;
 
         return new Promise<T>((resolve, reject) => {
@@ -328,13 +298,8 @@ export class RpcRouter<TRoot extends object, TRemote extends object = TRoot> {
                     return;
                 }
             }
-            const response = deserializeRpcResponse(serializedRpc);
-            if (response) {
-                this.handleRpcResponse(response, transport);
-                return;
-            }
-            const rpc = deserializeRpc(serializedRpc);
-            if (!rpc) {
+            const frame = deserializeRpcFrame(serializedRpc);
+            if (!frame) {
                 this.onBadFrame(
                     transport,
                     new Error("Undecodable RPC frame"),
@@ -342,7 +307,11 @@ export class RpcRouter<TRoot extends object, TRemote extends object = TRoot> {
                 );
                 return;
             }
-            this.dispatch(rpc, transport);
+            this.runInbound(() =>
+                frame.kind === "response"
+                    ? this.handleRpcResponse(frame.response, transport)
+                    : this.dispatch(frame.rpc, transport)
+            );
         } catch (e) {
             // an exception escaping dispatch is our own handler failing, not
             // a frame the peer got wrong
@@ -358,15 +327,16 @@ export class RpcRouter<TRoot extends object, TRemote extends object = TRoot> {
 
     /** a frame that arrived as an object (a port): validated, then dispatched */
     public onRpcFrame(frame: Rpc | RpcResponse, transport: ATransport): void {
-        if (this.heldRequests && isRpc(frame)) {
-            this.heldRequests.push({ frame, transport });
-            return;
-        }
+        this.runInbound(() => this.deliverFrame(frame, transport));
+    }
+
+    /** every inbound delivery, inside the execution context the policy wants */
+    private runInbound(deliver: () => void): void {
         if (this.wrapInbound) {
-            this.wrapInbound(() => this.deliverFrame(frame, transport));
+            this.wrapInbound(deliver);
             return;
         }
-        this.deliverFrame(frame, transport);
+        deliver();
     }
 
     private deliverFrame(

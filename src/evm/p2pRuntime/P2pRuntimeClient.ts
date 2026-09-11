@@ -5,7 +5,7 @@ import {
     type RuntimeEventSink
 } from "./rpc/P2pRuntimeClientRoot";
 import type { P2pRuntimeHostRoot } from "./rpc/P2pRuntimeHostRoot";
-import type { RuntimePort, SerializedContract } from "./types";
+import type { SerializedContract } from "./types";
 import {
     attachContractEvents,
     EventBus,
@@ -15,6 +15,7 @@ import type { RemoteRpcServices } from "@/rpc/RemoteRpcProxy";
 import { RpcRouter } from "@/rpc/RpcRouter";
 import { deserializeError, type SerializedError } from "@/rpc/serializeError";
 import MessagePortTransport from "@/transport/MessagePortTransport";
+import type { RuntimePort } from "@/transport/RuntimePort";
 import type { Address } from "@/types/types";
 import type { Logger } from "@/utils";
 import { maybeStampErrorWithPeerAddress } from "@/utils/errorPeerAddress";
@@ -112,13 +113,12 @@ class P2pRuntimeClient<T = ethers.Contract> implements RuntimeEventSink {
 
         this.router = new RpcRouter<P2pRuntimeClientRoot, P2pRuntimeHostRoot>(
             (self) => new P2pRuntimeClientRoot(self, this, options.logger),
-            options.logger,
-            { defaultTimeoutMs: P2pRuntimeClient.DEFAULT_REQUEST_TIMEOUT_MS }
+            options.logger
         );
+        this.router.requestTimeoutMs = () =>
+            P2pRuntimeClient.DEFAULT_REQUEST_TIMEOUT_MS;
         // host is a child -> its peer identity stays off the shared main realm
-        this.transport = new MessagePortTransport(port, this.router, {
-            remoteRealm: "child"
-        });
+        this.transport = new MessagePortTransport(port, this.router, "child");
         // the port is where the client hears that the host went away without a
         // clean dispose; the transport's own close rejects what was pending
         port.onClose(() => this.handlePortClosed());
@@ -246,29 +246,23 @@ class P2pRuntimeClient<T = ethers.Contract> implements RuntimeEventSink {
         for (const listener of this.hostErrorListeners) listener(error);
     }
 
-    /**
-     * Two faces of one name. The app subscribes to autonomous host-side errors
-     * (worker unhandledRejection / uncaughtException funnelled over the port)
-     * and gets an unsubscribe fn; the host's `runtimeEvents` service pushes
-     * one. With no subscriber, a pushed error is re-thrown as a main-thread
-     * unhandled rejection, so it surfaces the same way an inline host's error
-     * would.
-     */
-    onHostError(error: SerializedError): void;
-    onHostError(listener: (error: Error) => void): () => void;
-    onHostError(
-        arg: SerializedError | ((error: Error) => void)
-    ): void | (() => void) {
-        if (typeof arg === "function") {
-            this.hostErrorListeners.add(arg);
-            return () => this.hostErrorListeners.delete(arg);
-        }
-        const error = deserializeError(arg);
+    /** the host's `runtimeEvents` service pushes an autonomous host-side error
+     *  (worker unhandledRejection / uncaughtException funnelled over the port) */
+    onHostErrorReport(error: SerializedError): void {
+        const restored = deserializeError(error);
         // deserializeError only restores a stamp the wire carried - hostError
         // comes from a worker, which never stamps -> attribute it here (the
         // whole worker is this one peer)
-        maybeStampErrorWithPeerAddress(error, String(this.signerAddress));
-        this.onHostErrorPushed(error);
+        maybeStampErrorWithPeerAddress(restored, String(this.signerAddress));
+        this.onHostErrorPushed(restored);
+    }
+
+    /** the app subscribes to those errors and gets an unsubscribe fn. With no
+     *  subscriber, a pushed error is re-thrown as a main-thread unhandled
+     *  rejection, so it surfaces the same way an inline host's error would. */
+    onHostError(listener: (error: Error) => void): () => void {
+        this.hostErrorListeners.add(listener);
+        return () => this.hostErrorListeners.delete(listener);
     }
 }
 

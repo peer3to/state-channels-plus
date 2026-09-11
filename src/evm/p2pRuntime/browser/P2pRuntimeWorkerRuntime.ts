@@ -1,9 +1,6 @@
-import type {
-    P2pRuntimeWorker,
-    RuntimePort,
-    WorkerBootstrapMessage
-} from "../types";
+import type { P2pRuntimeWorker, WorkerBootstrapMessage } from "../types";
 import { adaptPort } from "./P2pRuntimeChannel";
+import type { RuntimePort } from "@/transport/RuntimePort";
 
 export function createP2pRuntimeWorker(): P2pRuntimeWorker {
     const worker = new Worker(

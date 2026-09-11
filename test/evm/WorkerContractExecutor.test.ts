@@ -9,6 +9,7 @@ import {
     createContractExecutorWorker,
     createContractExecutorWorkerFromPath
 } from "@/evm/contractExecutor/node/ContractExecutorWorkerRuntime";
+import type { ContractExecutorWorkerErrorHandler } from "@/evm/contractExecutor/types";
 import WorkerContractExecutor from "@/evm/contractExecutor/WorkerContractExecutor";
 import type { RuntimePort } from "@/transport/RuntimePort";
 import type { Logger } from "@/utils";
@@ -71,9 +72,7 @@ function watchdogWorkerRuntime(mode: WatchdogWorkerData["mode"]) {
     const workerData: WatchdogWorkerData = { mode, armChannel };
     return {
         armChannel,
-        createWorkerRuntime: (
-            onError: Parameters<typeof createContractExecutorWorkerFromPath>[1]
-        ) =>
+        createWorkerRuntime: (onError: ContractExecutorWorkerErrorHandler) =>
             createContractExecutorWorkerFromPath(
                 WATCHDOG_WORKER_ENTRY,
                 onError,

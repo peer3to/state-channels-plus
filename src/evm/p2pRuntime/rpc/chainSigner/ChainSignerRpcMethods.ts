@@ -12,7 +12,7 @@ import type ATransport from "@/transport/ATransport";
 import { ethers } from "ethers";
 
 /** a message to sign, as it crosses: text, or bytes as hex */
-export type ChainSignerMessage =
+type ChainSignerMessage =
     | { kind: "string"; value: string }
     | { kind: "bytes"; encodedBytes: string };
 

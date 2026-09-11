@@ -10,7 +10,7 @@ import { Codec, Type } from "@/utils";
 import { ethers } from "ethers";
 
 /** the connect options as they cross the port: the balance encoded */
-export type ConnectToChannelWireOptions = {
+type ConnectToChannelWireOptions = {
     autoOpen?: boolean;
     shouldJoin?: boolean;
     encodedBalance?: string;
@@ -18,13 +18,13 @@ export type ConnectToChannelWireOptions = {
 };
 
 /** the lobby options as they cross the port: the balance encoded */
-export type JoinLobbyWireOptions = {
+type JoinLobbyWireOptions = {
     encodedBalance?: string;
     matchTimeoutMs?: number | null;
 };
 
 /** the join confirmation the host prepared, with its structs encoded */
-export type EncodedPreparedJoinChannelConfirmation = {
+type EncodedPreparedJoinChannelConfirmation = {
     encodedJoinChannelConfirmation: string;
     expectedSnapshotHash: string;
     expectedForkId: string;
@@ -146,12 +146,12 @@ export class P2pSignerRpcMethods extends ARpcMethods<
         return this.service.p2pSigner.getChannelStatus();
     }
 
-    /** a flag nobody waits on */
-    setIsLeader(value: boolean): void {
+    /** the reply is the ack: a host that cannot serve it must reach the caller */
+    async setIsLeader(value: boolean): Promise<void> {
         this.service.p2pSigner.setIsLeader(value);
     }
 
-    disconnectFromPeers(): void {
+    async disconnectFromPeers(): Promise<void> {
         this.service.p2pSigner.disconnectFromPeers();
     }
 
@@ -163,15 +163,11 @@ export class P2pSignerRpcMethods extends ARpcMethods<
     }
 
     signTypedData(
-        domain: unknown,
-        types: unknown,
-        value: unknown
+        domain: ethers.TypedDataDomain,
+        types: Record<string, ethers.TypedDataField[]>,
+        value: Record<string, any>
     ): Promise<string> {
-        return this.service.host.signer.signTypedData(
-            domain as never,
-            types as never,
-            value as never
-        );
+        return this.service.host.signer.signTypedData(domain, types, value);
     }
 }
 

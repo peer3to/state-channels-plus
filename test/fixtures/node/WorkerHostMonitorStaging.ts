@@ -59,9 +59,7 @@ export async function assertWorkerHostMonitor(
             }),
         undefined
     );
-    new MessagePortTransport(channel.port2, workerRouter, {
-        remoteRealm: "parent"
-    });
+    new MessagePortTransport(channel.port2, workerRouter, "parent");
     const ownerRouter = new RpcRouter<
         ContractExecutorClientRoot,
         ContractExecutorRoot
@@ -72,9 +70,7 @@ export async function assertWorkerHostMonitor(
             }),
         undefined
     );
-    new MessagePortTransport(channel.port1, ownerRouter, {
-        remoteRealm: "child"
-    });
+    new MessagePortTransport(channel.port1, ownerRouter, "child");
     const vm = ownerRouter.remoteRpc;
 
     try {

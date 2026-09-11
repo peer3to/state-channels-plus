@@ -3,13 +3,16 @@ import type { RuntimeLifecycleService } from "./RuntimeLifecycleService";
 import ARpcMethods from "@/rpc/ARpcMethods";
 import type { RpcRouter } from "@/rpc/RpcRouter";
 import type { SerializedError } from "@/rpc/serializeError";
-import type ATransport from "@/transport/ATransport";
+import type MessagePortTransport from "@/transport/MessagePortTransport";
 
 export class RuntimeLifecycleRpcMethods extends ARpcMethods<
     RpcRouter<P2pRuntimeHostRoot, any>
 > {
+    /** the host's only line is the port to the thread that built it */
+    declare senderTransport: MessagePortTransport;
+
     constructor(
-        transport: ATransport,
+        transport: MessagePortTransport,
         private readonly service: RuntimeLifecycleService
     ) {
         super(transport, service.router);

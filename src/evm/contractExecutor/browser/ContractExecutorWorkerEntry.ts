@@ -18,9 +18,7 @@ const router = new RpcRouter<ContractExecutorRoot, ContractExecutorClientRoot>(
     undefined
 );
 // the thread that spawned this worker is its parent realm
-new MessagePortTransport(adaptWorkerScope(), router, {
-    remoteRealm: "parent"
-});
+new MessagePortTransport(adaptWorkerScope(), router, "parent");
 const owner = router.remoteRpc;
 
 // Same policy as the sdk worker: an error outside a request is reported to

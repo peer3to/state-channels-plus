@@ -40,11 +40,10 @@ describe("P2pRuntimeClient", function () {
             channel.port1,
             bridge.port1 as unknown as MessagePort
         );
-        fakeHost(channel.port2, (rpc) =>
-            rpc.method === "deployComplete"
-                ? { ok: true, result: { webRTCBridge: true } }
-                : undefined
-        );
+        const host = fakeHost(channel.port2);
+        host.script.answers.set("lifecycle.deployComplete", {
+            webRTCBridge: true
+        });
 
         try {
             await client.deployComplete("0x01", "0x02");
@@ -70,11 +69,10 @@ describe("P2pRuntimeClient", function () {
             channel.port1,
             bridge.port1 as unknown as MessagePort
         );
-        fakeHost(channel.port2, (rpc) =>
-            rpc.method === "deployComplete"
-                ? { ok: true, result: { webRTCBridge: false } }
-                : undefined
-        );
+        const host = fakeHost(channel.port2);
+        host.script.answers.set("lifecycle.deployComplete", {
+            webRTCBridge: false
+        });
 
         try {
             await client.deployComplete("0x01", "0x02");
@@ -92,13 +90,11 @@ describe("P2pRuntimeClient", function () {
     it("a host error pushed before deployComplete rejects ready with it", async function () {
         const channel = createRuntimeChannel();
         const client = clientOver(channel.port1);
-        const host = fakeHost(channel.port2, () => undefined);
+        const host = fakeHost(channel.port2);
 
-        host.push({
-            service: "runtimeEvents",
-            method: "hostError",
-            params: [serializeError(new Error("provider exploded"))]
-        });
+        host.client.runtimeEvents
+            .hostError(serializeError(new Error("provider exploded")))
+            .sendOne();
 
         let caught: Error | undefined;
         try {
@@ -116,11 +112,8 @@ describe("P2pRuntimeClient", function () {
         const client = clientOver(channel.port1);
         const revert = new Error("root ready boom") as Error & { data: string };
         revert.data = "0xabcd";
-        fakeHost(channel.port2, (rpc) =>
-            rpc.method === "deployComplete"
-                ? { ok: false, error: serializeError(revert) }
-                : undefined
-        );
+        const host = fakeHost(channel.port2);
+        host.script.answers.set("lifecycle.deployComplete", revert);
 
         let caught: (Error & { data?: string }) | undefined;
         try {

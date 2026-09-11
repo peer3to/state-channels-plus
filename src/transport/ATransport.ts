@@ -52,7 +52,7 @@ abstract class ATransport {
     abstract _send(serializedRPC: string): void;
     onMessage(data: any): void {
         const serializedRPC = data.toString();
-        this.p2pManager.onRpc(serializedRPC, this);
+        this.router.onRpc(serializedRPC, this);
     }
     protected abstract _close(): void;
 

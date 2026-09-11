@@ -138,12 +138,12 @@ export function connectRealms(
     const parentTransport = new MessagePortTransport(
         recordingPort(channel.port1, toChild),
         parent.router,
-        { remoteRealm: "child" }
+        "child"
     );
     const childTransport = new MessagePortTransport(
         recordingPort(channel.port2, toParent),
         child.router,
-        { remoteRealm: "parent" }
+        "parent"
     );
 
     // like the real transports -> each link lands on the bus of the realm that
@@ -172,7 +172,7 @@ export function addDeadPort(realm: TestRealm): {
     const transport = new MessagePortTransport(
         recordingPort(channel.port1, posted),
         realm.router,
-        { remoteRealm: "child" }
+        "child"
     );
     realm.bus.addLink(transport, realm.logger);
     return {
@@ -184,12 +184,11 @@ export function addDeadPort(realm: TestRealm): {
     };
 }
 
-/** the log-control calls in a recorded stream, by their old names */
+/** the log-control calls in a recorded stream */
 export function countMessages(
     messages: LinkFrame[],
-    type: "flushRequest" | "contextUpdate"
+    method: "flush" | "contextUpdate"
 ): number {
-    const method = type === "flushRequest" ? "flush" : "contextUpdate";
     return messages.filter(
         (frame) =>
             "service" in frame &&

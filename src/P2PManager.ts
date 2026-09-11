@@ -75,6 +75,11 @@ class P2PManager<TCustomRpc extends MainRpcService = MainRpcService>
         // ----- peer policy: what the shared router core leaves to its owner -----
         this.resolveTransport = (address) =>
             this.profileManager.getTransportByEvmAddress(address) ?? undefined;
+        // `agreementTime` is in seconds; the RPC timeout is in milliseconds.
+        // Read per request: the time config is settled after this manager is
+        // built.
+        this.requestTimeoutMs = () =>
+            this.stateManager.timeConfig.agreementTime * 1000;
         // Only the peer we sent the request to may settle it. Compare by peer
         // identity (not transport object) so a transport upgrade for the same
         // peer (e.g. HOLEPUNCH -> WEBRTC) still settles the pending request.
@@ -298,12 +303,6 @@ class P2PManager<TCustomRpc extends MainRpcService = MainRpcService>
         for (const transport of this.openConnections) {
             transport.send(rpc);
         }
-    }
-
-    // `agreementTime` is in seconds; the RPC timeout is in milliseconds. Read
-    // per request: the time config is settled after this manager is built.
-    protected defaultRequestTimeoutMs(): number {
-        return this.stateManager.timeConfig.agreementTime * 1000;
     }
 
     /** every peer transport gets its profile as it is built */

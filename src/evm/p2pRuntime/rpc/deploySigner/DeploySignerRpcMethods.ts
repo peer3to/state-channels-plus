@@ -6,7 +6,7 @@ import type ATransport from "@/transport/ATransport";
 import type { ethers } from "ethers";
 
 /** a local-VM deploy, already mined: what the bridge signer's `wait()` returns */
-export type DeployedTransaction = {
+type DeployedTransaction = {
     hash: string;
     to: string | null;
     from: string;
@@ -24,26 +24,27 @@ export class DeploySignerRpcMethods extends ARpcMethods<
         super(transport, service.router);
     }
 
-    getAddress(): Promise<string> {
-        return this.service.host.deploySigner.getAddress();
+    async getAddress(): Promise<string> {
+        return (await this.service.host.deploySigner()).getAddress();
     }
 
-    getNonce(): Promise<number> {
-        return this.service.host.deploySigner.getNonce();
+    async getNonce(): Promise<number> {
+        return (await this.service.host.deploySigner()).getNonce();
     }
 
-    resolveName(name: string): Promise<string | null> {
-        return this.service.host.deploySigner.resolveName(name);
+    async resolveName(name: string): Promise<string | null> {
+        return (await this.service.host.deploySigner()).resolveName(name);
     }
 
-    call(tx: unknown): Promise<string> {
-        return this.service.host.deploySigner.call(
+    async call(tx: unknown): Promise<string> {
+        return (await this.service.host.deploySigner()).call(
             tx as ethers.TransactionRequest
         );
     }
 
     async sendTransaction(tx: unknown): Promise<DeployedTransaction> {
-        const deployTx = await this.service.host.deploySigner.sendTransaction(
+        const signer = await this.service.host.deploySigner();
+        const deployTx = await signer.sendTransaction(
             tx as ethers.TransactionRequest
         );
         return {

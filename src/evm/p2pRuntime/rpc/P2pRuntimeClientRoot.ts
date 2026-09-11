@@ -9,7 +9,7 @@ import { LogControlService } from "@/utils/logging/rpc/logControl/LogControlServ
 /** what the host pushes at the client: bus emissions and its own failures */
 export interface RuntimeEventSink {
     onBusEvent(kind: BusKind, eventName: string, args: unknown[]): void;
-    onHostError(error: SerializedError): void;
+    onHostErrorReport(error: SerializedError): void;
 }
 
 /** what the main thread serves to the sdk host over the runtime port */

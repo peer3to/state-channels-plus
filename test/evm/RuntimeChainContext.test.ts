@@ -2,43 +2,14 @@ import Clock from "@/Clock";
 import P2pRuntimeClient from "@/evm/p2pRuntime/P2pRuntimeClient";
 import { startP2pRuntimeHost } from "@/evm/p2pRuntime/P2pRuntimeHost";
 import { resolveWebSocketProviderUrl } from "@/evm/p2pRuntime/RuntimeChainContext";
-import type Rpc from "@/rpc/Rpc";
-import type { RpcResponse } from "@/rpc/Rpc";
 import { createConfig } from "@/utils/config";
 import { stateChannelManagerAbi } from "@/utils/stateChannelManager";
 import { createRuntimeChannel } from "@platform/p2pRuntimeChannel";
+import { fakeHost } from "@test/fixtures/p2pRuntime/fakeHost.fixture";
 import { expect } from "chai";
 import { type Interface, WebSocketProvider } from "ethers";
 import { ethers } from "hardhat";
 import sinon from "sinon";
-
-/** a fake host on the far port: answers one named call by hand, every other
- *  request at once */
-function fakeHost(
-    port: {
-        onMessage(handler: (raw: unknown) => void): void;
-        post(message: unknown): void;
-        start(): void;
-    },
-    held: { service: string; method: string },
-    onHeld: (requestId: string) => void
-): void {
-    port.onMessage((raw) => {
-        const rpc = raw as Rpc;
-        if (rpc.requestId === undefined) return;
-        if (rpc.service === held.service && rpc.method === held.method) {
-            onHeld(rpc.requestId);
-            return;
-        }
-        port.post({
-            rpcResponse: true,
-            requestId: rpc.requestId,
-            ok: true,
-            result: undefined
-        } satisfies RpcResponse);
-    });
-    port.start();
-}
 
 describe("RuntimeChainContext", () => {
     it("accepts WebSocket URLs and optimistically converts HTTP URLs", () => {
@@ -158,31 +129,14 @@ describe("RuntimeChainContext", () => {
         expect(managerInterface.getError("ECDSAInvalidSignature")).to.not.equal(
             null
         );
-        let quiesceRequestId: string | undefined;
-        let resolveQuiesceReceived!: () => void;
-        const quiesceReceived = new Promise<void>((resolve) => {
-            resolveQuiesceReceived = resolve;
-        });
-
-        fakeHost(
-            channel.port2,
-            { service: "lifecycle", method: "quiesce" },
-            (requestId) => {
-                quiesceRequestId = requestId;
-                resolveQuiesceReceived();
-            }
-        );
+        const host = fakeHost(channel.port2);
+        const quiesceReceived = host.script.park("lifecycle.quiesce");
 
         try {
             const quiesce = client.quiesce();
             await quiesceReceived;
             await clock.tickAsync(30_001);
-            channel.port2.post({
-                rpcResponse: true,
-                requestId: quiesceRequestId!,
-                ok: true,
-                result: []
-            } satisfies RpcResponse);
+            host.script.settle("lifecycle.quiesce", []);
 
             expect(await quiesce).to.deep.equal([]);
         } finally {
@@ -211,31 +165,14 @@ describe("RuntimeChainContext", () => {
             },
             provider: ethers.provider
         });
-        let sendRequestId: string | undefined;
-        let resolveSendReceived!: () => void;
-        const sendReceived = new Promise<void>((resolve) => {
-            resolveSendReceived = resolve;
-        });
-
-        fakeHost(
-            channel.port2,
-            { service: "p2pSigner", method: "sendTransaction" },
-            (requestId) => {
-                sendRequestId = requestId;
-                resolveSendReceived();
-            }
-        );
+        const host = fakeHost(channel.port2);
+        const sendReceived = host.script.park("p2pSigner.sendTransaction");
 
         try {
             const send = client.signer.sendTransaction({ data: "0x" });
             await sendReceived;
             await clock.tickAsync(30_001);
-            channel.port2.post({
-                rpcResponse: true,
-                requestId: sendRequestId!,
-                ok: true,
-                result: undefined
-            } satisfies RpcResponse);
+            host.script.settle("p2pSigner.sendTransaction", undefined);
 
             expect(await send).to.equal(
                 "There is no TransactionResponse p2p - everything executed locally"

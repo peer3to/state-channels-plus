@@ -3,6 +3,7 @@ import { RuntimeLifecycleRpcMethods } from "./RuntimeLifecycleRpcMethods";
 import ARpcService from "@/rpc/ARpcService";
 import type { RpcRouter } from "@/rpc/RpcRouter";
 import type ATransport from "@/transport/ATransport";
+import type MessagePortTransport from "@/transport/MessagePortTransport";
 
 /** the host's life: build it once the deploys are in, drain it, end it */
 export class RuntimeLifecycleService extends ARpcService<
@@ -17,7 +18,11 @@ export class RuntimeLifecycleService extends ARpcService<
     }
 
     createRPCMethods(transport: ATransport): RuntimeLifecycleRpcMethods {
-        return new RuntimeLifecycleRpcMethods(transport, this);
+        // the host's only line is the port to the thread that built it
+        return new RuntimeLifecycleRpcMethods(
+            transport as MessagePortTransport,
+            this
+        );
     }
 }
 

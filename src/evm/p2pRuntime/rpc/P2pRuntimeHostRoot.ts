@@ -10,7 +10,7 @@ import type LocalContractExecutorSigner from "@/evm/signer/LocalContractExecutor
 import type { RpcRouter } from "@/rpc/RpcRouter";
 import type { SerializedError } from "@/rpc/serializeError";
 import type StateManager from "@/stateManager/StateManager";
-import type ATransport from "@/transport/ATransport";
+import type MessagePortTransport from "@/transport/MessagePortTransport";
 import type { Logger } from "@/utils/logging/Logger";
 import { LogControlService } from "@/utils/logging/rpc/logControl/LogControlService";
 import type { ethers } from "ethers";
@@ -29,7 +29,9 @@ export interface RuntimeHost {
     readonly signer: ethers.Signer;
     /** the managed real-chain signer: owns this account's nonce */
     readonly chainSigner: HostNonceManager;
-    readonly deploySigner: LocalContractExecutorSigner;
+    /** the local-VM deploy signer. the client deploys through this line while
+     *  the host is still being built, so it is awaited rather than thrown for. */
+    deploySigner(): Promise<LocalContractExecutorSigner>;
     /** throws "Runtime is not ready" before `deployComplete` built it */
     runtime(): RuntimeHandle;
     buildRuntime(
@@ -39,7 +41,7 @@ export interface RuntimeHost {
     disposeRuntime(): Promise<void>;
     quiesce(): Promise<SerializedError[]>;
     /** the dispose reply is on its way out on `transport`; end the link after it */
-    closeAfterReply(transport: ATransport): void;
+    closeAfterReply(transport: MessagePortTransport): void;
 }
 
 /** what the sdk realm serves to the main thread over the runtime port */

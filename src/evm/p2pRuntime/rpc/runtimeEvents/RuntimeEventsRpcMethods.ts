@@ -31,7 +31,7 @@ export class RuntimeEventsRpcMethods extends ARpcMethods<
      * orchestrator observes worker-thread errors as if they were local
      */
     hostError(error: SerializedError): void {
-        this.service.sink.onHostError(error);
+        this.service.sink.onHostErrorReport(error);
     }
 }
 

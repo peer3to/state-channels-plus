@@ -48,7 +48,9 @@ describe("RpcRouter", function () {
     });
 
     it("times out with the router's default and clears the pending entry", async function () {
-        link = linkedRouters({ a: { defaultTimeoutMs: 50 } });
+        link = linkedRouters({
+            a: (router) => (router.requestTimeoutMs = () => 50)
+        });
 
         let caught: Error | undefined;
         try {
@@ -67,7 +69,9 @@ describe("RpcRouter", function () {
     });
 
     it("a null timeout outlives a handler slower than the default", async function () {
-        link = linkedRouters({ a: { defaultTimeoutMs: 30 } });
+        link = linkedRouters({
+            a: (router) => (router.requestTimeoutMs = () => 30)
+        });
 
         const result = await link.a.far.probe
             .slow(120)
@@ -175,11 +179,11 @@ describe("RpcRouter", function () {
     it("runs every inbound dispatch inside the wrapper", async function () {
         let entered = 0;
         link = linkedRouters({
-            b: {
-                wrapInbound: (run) => {
+            b: (router) => {
+                router.wrapInbound = (run) => {
                     entered += 1;
                     return run();
-                }
+                };
             }
         });
 
@@ -242,23 +246,22 @@ describe("RpcRouter", function () {
         spare.port2.close();
     });
 
-    it("holds inbound requests until released and dispatches them in order", async function () {
+    it("a targetless send on a closed line drops and a request refuses", async function () {
         link = linkedRouters();
-        link.b.router.holdInbound();
+        link.a.transport.close(true);
 
-        const first = link.a.far.probe.echo("first").request();
-        const second = link.a.far.probe.echo("second").request();
-        await new Promise((resolve) => setTimeout(resolve, 30));
-        // nothing answered while held, and the far root saw nothing
-        expect(link.b.router.localRpc.probe.calls).to.deep.equal([]);
+        // the only line is gone -> nothing to post to, and nothing thrown
+        expect(link.a.router.transports.size).to.equal(0);
+        link.a.far.notice.notice({ n: 1 }).sendOne();
 
-        link.b.router.releaseInbound();
-
-        expect(await first).to.equal("first");
-        expect(await second).to.equal("second");
-        expect(link.b.router.localRpc.probe.calls).to.deep.equal([
-            "echo",
-            "echo"
-        ]);
+        let caught: Error | undefined;
+        try {
+            await link.a.far.probe.echo("no line").request();
+        } catch (error) {
+            caught = error as Error;
+        }
+        expect(caught?.message).to.equal(
+            "RPC request 'probe.echo' refused: the transport is closed or disposed"
+        );
     });
 });

@@ -10,7 +10,7 @@ import {
     createRuntimeChainContext,
     type RuntimeChainContext
 } from "./RuntimeChainContext";
-import type { RuntimePort, SetupPayload } from "./types";
+import type { SetupPayload } from "./types";
 import Clock from "@/Clock";
 import { AContractExecutor } from "@/evm/contractExecutor";
 import type { ContractExecutorFactoryOptions } from "@/evm/contractExecutor";
@@ -22,13 +22,14 @@ import LocalContractExecutorSigner from "@/evm/signer/LocalContractExecutorSigne
 import MainRpcService from "@/rpc/MainRpcService";
 import { resolveCustomRpcConstructor } from "@/rpc/resolveCustomRpcManifest";
 import { RpcRouter } from "@/rpc/RpcRouter";
-import { serializeError, type SerializedError } from "@/rpc/serializeError";
+import { serializeError } from "@/rpc/serializeError";
 import { doesWorkerNeedMainThreadBridge } from "@/rpc/services/WebRTCSetup/connection/WebRTCProvider";
 import WorkerBridgeWebRTCConnectionFactory from "@/rpc/services/WebRTCSetup/connection/WorkerBridgeWebRTCConnectionFactory";
 import StateManager from "@/stateManager/StateManager";
 import Storage from "@/storage";
 import type ATransport from "@/transport/ATransport";
 import MessagePortTransport from "@/transport/MessagePortTransport";
+import type { RuntimePort } from "@/transport/RuntimePort";
 import { TimeConfig } from "@/types";
 import { createLogger, DebugProxy, DetachedPromises } from "@/utils";
 import { LocalDiscoveryServer } from "@/utils";
@@ -38,8 +39,6 @@ import { LoggerUtils } from "@/utils/LoggerUtils";
 import type { Logger } from "@/utils/logging/Logger";
 import { connectStateChannelManager } from "@/utils/stateChannelManager";
 import { ethers, type InterfaceAbi } from "ethers";
-
-export { serializeError };
 
 /**
  * Fully resolved, live context required to build the runtime graph. In inline
@@ -115,6 +114,11 @@ export async function startP2pRuntimeHost<
     let bridgeWorkerPort: MessagePort | undefined;
     let removeLogWiring: (() => void) | undefined;
     let disposed = false;
+    let resolveSignersReady!: () => void;
+    // the client deploys through this line while the host is still being built
+    const signersReady = new Promise<void>((resolve) => {
+        resolveSignersReady = resolve;
+    });
     let buildRuntime:
         | ((
               localStateMachineAddress: string,
@@ -176,7 +180,8 @@ export async function startP2pRuntimeHost<
         get chainSigner() {
             return required(chainSigner, "chain signer");
         },
-        get deploySigner() {
+        deploySigner: async () => {
+            await signersReady;
             return required(deploySigner, "deploy signer");
         },
         runtime: () => required(runtimeHandle, "runtime"),
@@ -198,13 +203,8 @@ export async function startP2pRuntimeHost<
                     serializeError((entry as PromiseRejectedResult).reason)
                 );
         },
-        closeAfterReply: (transport: ATransport) => {
-            // the reply is posted in the microtasks after the endpoint
-            // returns; the macrotask runs after them
-            setTimeout(() => {
-                transport.close(true);
-                void ctx.onDisposed?.();
-            }, 0);
+        closeAfterReply: (transport: MessagePortTransport) => {
+            transport.closeAfterReply(() => void ctx.onDisposed?.());
         }
     };
 
@@ -212,21 +212,13 @@ export async function startP2pRuntimeHost<
     // error has a way out
     const router = new RpcRouter<P2pRuntimeHostRoot, P2pRuntimeClientRoot>(
         (self) => new P2pRuntimeHostRoot(self, host),
-        undefined,
-        {
-            defaultTimeoutMs: null,
-            wrapInbound: handlerExecutionContext
-                ? (run) => handlerExecutionContext.runHandler(run)
-                : undefined
-        }
+        undefined
     );
-    // the client deploys through this line while the host is still being
-    // built; hold its requests until every service can answer
-    router.holdInbound();
+    if (handlerExecutionContext) {
+        router.wrapInbound = (run) => handlerExecutionContext.runHandler(run);
+    }
     // the main thread this host serves is its parent realm
-    const transport = new MessagePortTransport(port, router, {
-        remoteRealm: "parent"
-    });
+    const transport = new MessagePortTransport(port, router, "parent");
     // Client went away without a clean `dispose` (thread died / port closed).
     port.onClose(() => {
         void disposeRuntime().catch((error) => {
@@ -397,8 +389,8 @@ export async function startP2pRuntimeHost<
 
             // The single port bridge: every bus emission crosses as one
             // uniform payload. It runs after all local listeners; a clone
-            // failure propagates to the producer (posting after close is a
-            // silent drop on Node -- remote closure is handled by onClosed).
+            // failure propagates to the producer (a cast with the line already
+            // gone drops -- remote closure is handled by onClosed).
             stateManager.events.setBridgeTap((kind, eventName, args) =>
                 client.runtimeEvents.busEvent(kind, eventName, args).sendOne()
             );
@@ -410,12 +402,8 @@ export async function startP2pRuntimeHost<
             );
 
             if (handlerExecutionContext) {
-                const p2pManager = stateManager.p2pManager;
-                const onRpc = p2pManager.onRpc.bind(p2pManager);
-                p2pManager.onRpc = (serializedRpc, peerTransport) =>
-                    handlerExecutionContext.runHandler(() =>
-                        onRpc(serializedRpc, peerTransport)
-                    );
+                stateManager.p2pManager.wrapInbound = (run) =>
+                    handlerExecutionContext.runHandler(run);
             }
 
             runtimeHandle = { stateManager, evmDiamondStateMachine };
@@ -457,7 +445,7 @@ export async function startP2pRuntimeHost<
             }
             return { webRTCBridge };
         };
-        router.releaseInbound();
+        resolveSignersReady();
     } catch (error) {
         try {
             await disposeRuntime();
@@ -488,5 +476,3 @@ async function registerWebRTCBridgeIfNeeded(
     WorkerBridgeWebRTCConnectionFactory.getInstance().registerPort(bridgePort);
     return bridgePort;
 }
-
-export type { SerializedError };
