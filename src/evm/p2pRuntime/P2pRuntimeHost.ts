@@ -11,6 +11,7 @@ import {
 } from "./RuntimeChainContext";
 import type {
     HostRpcRequest,
+    RuntimeClientMessage,
     RuntimeClientRequest,
     RuntimePort,
     SetupPayload
@@ -44,6 +45,7 @@ import { LocalDiscoveryServer } from "@/utils";
 import { config, isNodeRuntime } from "@/utils/config";
 import { LoggerUtils } from "@/utils/LoggerUtils";
 
+import type { LogPortHandle } from "@/utils/logging/logControl";
 import type { Logger } from "@/utils/logging/Logger";
 import { connectStateChannelManager } from "@/utils/stateChannelManager";
 import { ethers, type InterfaceAbi } from "ethers";
@@ -68,6 +70,9 @@ export interface HostContext {
     handlerExecutionContext?: HostHandlerExecutionContext;
     /** Release worker-only bootstrap resources after replying to dispose. */
     onDisposed?: () => void | Promise<void>;
+    /** logger in this realm whose channel follows this host's. inline only - with
+     *  no port there is nothing to carry the context. */
+    contextFollower?: Logger;
     /**
      * Builds the contract executor. Internal seam: tests supply a factory that
      * loads a scripted contract-executor worker; production leaves it unset
@@ -140,6 +145,8 @@ export async function startP2pRuntimeHost<
     let contractExecutor: AContractExecutor | undefined;
     let runtimeHandle: RuntimeHostState | undefined;
     let bridgeWorkerPort: MessagePort | undefined;
+    let hostLogHandle: LogPortHandle | undefined;
+    let removeLogWiring: (() => void) | undefined;
     let disposed = false;
 
     const disposeRuntime = async (): Promise<void> => {
@@ -155,23 +162,31 @@ export async function startP2pRuntimeHost<
                 await runtimeHandle.stateManager.dispose();
             } else {
                 await contractExecutor?.dispose();
-                logger?.stopPerformanceMonitoring();
             }
         } finally {
-            // Destroy first so ethers marks the provider closed before its
-            // listener cleanup schedules unsubscribe microtasks. Explicitly
-            // removing listeners first leaves eth_unsubscribe requests that
-            // destroy then rejects as unhandled.
-            if (!Clock.ownsProvider(provider)) await provider.destroy();
-            // TODO: Delegate cleanup through the shared Holepunch/local
-            // discovery lifecycle API once the backend is injected.
-            if (
-                ctx.onDisposed &&
-                config.DEBUG_LOCAL_TRANSPORT &&
-                isNodeRuntime() &&
-                config.LOCAL_DISCOVERY_REGISTRY_URL
-            ) {
-                await LocalDiscoveryServer.cleanup();
+            try {
+                // Destroy first so ethers marks the provider closed before its
+                // listener cleanup schedules unsubscribe microtasks. Explicitly
+                // removing listeners first leaves eth_unsubscribe requests that
+                // destroy then rejects as unhandled.
+                if (!Clock.ownsProvider(provider)) await provider.destroy();
+                // TODO: Delegate cleanup through the shared Holepunch/local
+                // discovery lifecycle API once the backend is injected.
+                if (
+                    ctx.onDisposed &&
+                    config.DEBUG_LOCAL_TRANSPORT &&
+                    isNodeRuntime() &&
+                    config.LOCAL_DISCOVERY_REGISTRY_URL
+                ) {
+                    await LocalDiscoveryServer.cleanup();
+                }
+            } finally {
+                // last, but unconditionally: the realm stays reachable by a
+                // flush round for the whole teardown, and a throw above must
+                // not strand its root on the bus
+                removeLogWiring?.();
+                removeLogWiring = undefined;
+                logger?.dispose();
             }
         }
     };
@@ -179,10 +194,26 @@ export async function startP2pRuntimeHost<
     try {
         const signerAddress = await signer.getAddress();
         logger = createLogger(
-            { peerId: payload.peerId, peerAddress: signerAddress },
+            {
+                peerId: payload.peerId,
+                peerAddress: signerAddress,
+                threadName: "sdk"
+            },
             { component: "P2pRuntimeHost" },
-            { attachErrorListener: false }
+            // inline -> the main realm's logger already has the crash hooks
+            { attachErrorListener: Boolean(threadLabel) }
         );
+
+        // threadLabel is set only by startP2pRuntimeWorker -> host is threaded
+        if (threadLabel) {
+            hostLogHandle = logger.addLogPort({
+                post: (message) => port.post({ type: "logControl", message }),
+                remoteRealm: "parent"
+            });
+            removeLogWiring = () => hostLogHandle?.remove();
+        } else if (ctx.contextFollower) {
+            removeLogWiring = logger.followContextTo(ctx.contextFollower);
+        }
 
         // Own this account's nonce so the peer's concurrent async flows can't collide
         // on it (the REPLACEMENT_UNDERPRICED race). Used only for the real-chain SCM
@@ -604,6 +635,12 @@ export async function startP2pRuntimeHost<
         };
 
         const onPortMessage = (raw: unknown): void => {
+            const message = raw as RuntimeClientMessage;
+            if (message.type === "logControl") {
+                // inline host has no port -> handle stays undefined
+                hostLogHandle?.receive(message.message);
+                return;
+            }
             void handleRequest(raw as RuntimeClientRequest);
         };
         port.onMessage(

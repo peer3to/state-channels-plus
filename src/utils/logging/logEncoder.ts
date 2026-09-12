@@ -10,7 +10,24 @@ export function decodeLogs(encodedLogs: string): LogEntry[] {
     const parsed = JSON.parse(encodedLogs) as string[] | null;
     if (!parsed) throw new Error("Failed to deserialize log entries");
 
-    return parsed.map((encodedLog) => decodeLogEntry(encodedLog));
+    // one unreadable entry drops itself, not the file: this is the last read of
+    // a crash report, and a partial one still answers the question
+    const entries: LogEntry[] = [];
+    for (const encodedLog of parsed) {
+        try {
+            entries.push(decodeLogEntry(encodedLog));
+        } catch {
+            continue;
+        }
+    }
+    // nothing readable at all is a format mismatch, not a partial read -> say so
+    // instead of handing back an empty file the caller reports as "0 entries"
+    if (parsed.length > 0 && entries.length === 0) {
+        throw new Error(
+            `Failed to deserialize log entries - none of ${parsed.length} decoded`
+        );
+    }
+    return entries;
 }
 
 // Reads one allowlisted Error field defensively. A hostile error can define a
@@ -98,8 +115,36 @@ function sanitizeForEncoding(value: unknown, seen: WeakSet<object>): unknown {
     return sanitized;
 }
 
+// `message` is typed string but call sites pass anything - SpectateService does
+// `logger.warn(e)`. the decoder requires a string, so coerce at the boundary
+// rather than let one entry fail its whole chunk. nothing here runs the value's
+// own code: a getter, toJSON or Symbol.toPrimitive on a hostile message would
+// otherwise throw inside the logger, at the call site that was reporting it.
+function toMessageString(value: unknown): string {
+    if (typeof value === "string") return value;
+    if (typeof value === "function") return "[function]";
+    if (value === null || typeof value !== "object") return String(value);
+    try {
+        const safe = sanitizeForEncoding(value, new WeakSet<object>());
+        if (safe && typeof safe === "object" && !Array.isArray(safe)) {
+            const message = (safe as { message?: unknown }).message;
+            if (typeof message === "string") return message;
+        }
+        return (
+            JSON.stringify(safe, (_key, item) =>
+                typeof item === "bigint" ? item.toString() : item
+            ) ?? "[unserializable]"
+        );
+    } catch {
+        return "[unreadable]";
+    }
+}
+
 export function encodeLogEntry(logEntry: LogEntry): string {
-    const sanitized = sanitizeForEncoding(logEntry, new WeakSet<object>());
+    const sanitized = sanitizeForEncoding(
+        { ...logEntry, message: toMessageString(logEntry.message) },
+        new WeakSet<object>()
+    );
     return JSON.stringify(sanitized, (_key, value) =>
         typeof value === "bigint" ? value.toString() : value
     );
@@ -110,11 +155,20 @@ export function decodeLogEntry(encodedLogEntry: string): LogEntry {
     if (!parsed || typeof parsed !== "object")
         throw new Error("Failed to deserialize log entry");
 
-    const { time, level, context, sharedContext, message, meta, stack } =
-        parsed;
+    const {
+        time,
+        wallTimeMs,
+        level,
+        context,
+        sharedContext,
+        message,
+        meta,
+        stack
+    } = parsed;
     if (
         typeof time !== "string" ||
         !time ||
+        typeof wallTimeMs !== "number" ||
         typeof level !== "string" ||
         !level ||
         !context ||
@@ -131,6 +185,7 @@ export function decodeLogEntry(encodedLogEntry: string): LogEntry {
 
     return {
         time,
+        wallTimeMs,
         level: level as LogLevel,
         context,
         sharedContext,

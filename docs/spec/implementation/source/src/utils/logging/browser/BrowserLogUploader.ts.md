@@ -23,7 +23,7 @@ Browser log-upload transport.
 
 ## Key design decisions
 
-_None — the file is declarative/mechanical; behavior-shaping decisions live with its consumers._
+- **Crash hooks go on whichever scope is running.** `error` and `unhandledrejection` are taken from the global scope's own `addEventListener`, so a page's window and a vm worker's scope both capture a crash the same way; a worker no longer needs a `window` shim to be collected.
 
 ## Inputs, outputs, state, and side effects
 

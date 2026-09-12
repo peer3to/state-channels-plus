@@ -3,7 +3,11 @@ import {
     assertCustomRootReadiness,
     assertGeneratedHostSigner,
     assertRejectedCustomRootReadiness,
+    assertDisposedSessionLeavesTheFlushTree,
+    assertFailedSetupLeavesNoRootOnTheFlushBus,
+    assertReportABugReportsItsThreads,
     assertRpcHandlerEntersWithoutMutex,
+    assertSdkThreadCrashUploadsEveryThread,
     startRuntimeTransportModesFixture,
     stopRuntimeTransportModesFixture
 } from "@test/fixtures/RuntimeTransportModesFixture";
@@ -59,5 +63,21 @@ describe("E2E: p2pSetup runtime modes", function () {
 
     it("generates a host-owned signer when no secret is supplied", async function () {
         await assertGeneratedHostSigner();
+    });
+
+    it("uploads both threads when the sdk thread crashes", async function () {
+        await assertSdkThreadCrashUploadsEveryThread();
+    });
+
+    it("report-a-bug returns the threads it uploaded", async function () {
+        await assertReportABugReportsItsThreads();
+    });
+
+    it("a closed session leaves no root on the flush bus", async function () {
+        await assertDisposedSessionLeavesTheFlushTree();
+    });
+
+    it("a failed setup leaves no root on the flush bus", async function () {
+        await assertFailedSetupLeavesNoRootOnTheFlushBus();
     });
 });

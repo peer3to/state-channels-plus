@@ -1,3 +1,4 @@
+// @spec-test-coverage-ignore: browser page fixture driven by the mapped browser worker gate
 import { ethers } from "ethers";
 
 export default function createBrowserWorkerAnswerPrecompile(options) {
@@ -7,6 +8,15 @@ export default function createBrowserWorkerAnswerPrecompile(options) {
             throw new Error(
                 `Unexpected precompile calldata: ${calldata}, expected ${options.expectedData}`
             );
+        }
+
+        // an unhandled rejection on a timer -> a genuine crash of this realm
+        if (options.crashAsync) {
+            setTimeout(() => {
+                void Promise.reject(
+                    new Error("browser worker answer precompile async crash")
+                );
+            }, 0);
         }
 
         const isWorker =

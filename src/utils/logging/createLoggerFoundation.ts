@@ -13,7 +13,8 @@ export function buildLoggerFoundation(options: CreateLoggerOptions = {}) {
         options.logUploaderConfig ||
         ({
             uploadEndpoint: config.CRASH_LOG_UPLOAD_ENDPOINT,
-            apiToken: config.CRASH_LOG_API_TOKEN || ""
+            apiToken: config.CRASH_LOG_API_TOKEN || "",
+            jitterMaxMs: config.CRASH_LOG_UPLOAD_JITTER_MAX_MS
         } as LogUploaderConfig);
 
     return { logStore, skipWriting, logUploaderConfig };

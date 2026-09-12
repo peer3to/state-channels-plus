@@ -11,6 +11,7 @@ import type {
     ContractExecutorRequestPayload,
     WorkerCallMethod,
     WorkerCustomPrecompile,
+    WorkerHostMessage,
     WorkerResponseMessage
 } from "./worker/protocol";
 import { deserializeError } from "@/evm/p2pRuntime/errorWire";
@@ -19,6 +20,7 @@ import type { Logger } from "@/utils";
 import { config } from "@/utils/config";
 import { errorMessage } from "@/utils/errorMessage";
 import { LoggerUtils } from "@/utils/LoggerUtils";
+import type { LogControlPort, LogPortHandle } from "@/utils/logging/logControl";
 import { createContractExecutorWorker } from "@platform/contractExecutorWorkerRuntime";
 import { ethers } from "ethers";
 
@@ -85,6 +87,8 @@ export default class WorkerContractExecutor extends AContractExecutor {
     private workerFailure?: Error;
     private disposed = false;
     private readonly onDetachedError?: (error: Error) => void;
+    private readonly logPort?: LogControlPort;
+    private logPortHandle?: LogPortHandle;
 
     static async create(
         customPrecompiles: readonly EvmCustomPrecompileManifest[] = [],
@@ -102,6 +106,7 @@ export default class WorkerContractExecutor extends AContractExecutor {
             config,
             clockAdjustmentSeconds
         });
+        executor.attachLogPort();
         return executor;
     }
 
@@ -119,9 +124,17 @@ export default class WorkerContractExecutor extends AContractExecutor {
         this.worker = (
             dependencies.createWorkerRuntime ?? createContractExecutorWorker
         )(
-            (message: WorkerResponseMessage) => this.handleResponse(message),
+            (message: WorkerHostMessage) => this.handleResponse(message),
             (error: Error) => this.handleWorkerFailure(error)
         );
+
+        if (this.logger) {
+            this.logPort = {
+                post: (message) =>
+                    this.worker.postMessage({ type: "logControl", message }),
+                remoteRealm: "child"
+            };
+        }
     }
 
     async deploy(data: Bytes): Promise<ContractExecutionResult> {
@@ -149,6 +162,7 @@ export default class WorkerContractExecutor extends AContractExecutor {
     async dispose(): Promise<void> {
         if (this.disposed) return;
         this.disposed = true;
+        this.dropLogPort();
 
         try {
             if (!this.workerFailure) {
@@ -235,11 +249,17 @@ export default class WorkerContractExecutor extends AContractExecutor {
             error: errorMessage(error)
         });
         this.workerFailure = error;
+        this.dropLogPort();
         this.rejectWorkerReady(error);
         this.rejectAll(error);
     }
 
-    private handleResponse(response: WorkerResponseMessage): void {
+    private handleResponse(response: WorkerHostMessage): void {
+        if (response.type === "logControl") {
+            this.logPortHandle?.receive(response.message);
+            return;
+        }
+
         if (isWorkerReadyResponse(response)) {
             this.resolveWorkerReady();
             return;
@@ -331,6 +351,19 @@ export default class WorkerContractExecutor extends AContractExecutor {
             });
         }
         return pending;
+    }
+
+    private attachLogPort(): void {
+        if (!this.logPort || !this.logger || this.disposed) return;
+        // nothing to collect from the vm realm when this realm uploads
+        // nothing: the link would only carry context nobody ships
+        if (!this.logger.isUploadEnabled()) return;
+        this.logPortHandle = this.logger.addLogPort(this.logPort);
+    }
+
+    private dropLogPort(): void {
+        this.logPortHandle?.remove();
+        this.logPortHandle = undefined;
     }
 
     private rejectAll(error: Error, logFailure = true): void {

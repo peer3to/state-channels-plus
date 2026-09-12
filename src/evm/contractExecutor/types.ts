@@ -1,24 +1,23 @@
-import type {
-    WorkerRequestMessage,
-    WorkerResponseMessage
-} from "./worker/protocol";
+import type { WorkerClientMessage, WorkerHostMessage } from "./worker/protocol";
 
 export type {
     ContractExecutorRequestPayload,
     WorkerCallMethod,
+    WorkerClientMessage,
     WorkerCustomPrecompile,
     WorkerHostMessage,
+    WorkerLogControlMessage,
     WorkerRequestMessage,
     WorkerResponseMessage
 } from "./worker/protocol";
 
 export type WorkerLike = {
-    postMessage(message: WorkerRequestMessage): void;
+    postMessage(message: WorkerClientMessage): void;
     shutdown?: () => Promise<void>;
 };
 
 export type ContractExecutorWorkerMessageHandler = (
-    message: WorkerResponseMessage
+    message: WorkerHostMessage
 ) => void;
 
 export type ContractExecutorWorkerErrorHandler = (error: Error) => void;
