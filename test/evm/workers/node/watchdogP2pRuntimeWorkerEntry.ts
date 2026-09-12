@@ -12,7 +12,6 @@ import {
     closeWorkerBootstrapPort
 } from "@/evm/p2pRuntime/node/P2pRuntimeWorkerRuntime";
 import { startP2pRuntimeHost } from "@/evm/p2pRuntime/P2pRuntimeHost";
-import { serializeError } from "@/rpc/serializeError";
 import { createConfig } from "@/utils/config";
 import * as path from "node:path";
 import { workerData } from "node:worker_threads";
@@ -28,13 +27,13 @@ onWorkerBootstrap(async (message) => {
     const { payload, port } = message;
     createConfig(payload.config);
     const runtimePort = adaptTransferredPort(port);
-    onUnhandledWorkerError((error) => {
-        runtimePort.post({ type: "hostError", error: serializeError(error) });
-    });
 
     await startP2pRuntimeHost(runtimePort, payload, {
         threadLabel: "sdk",
         onDisposed: closeWorkerBootstrapPort,
+        // Funnel autonomous worker-thread errors to the main-thread
+        // orchestrator so they surface as if the host ran inline.
+        onUnhandledError: onUnhandledWorkerError,
         createContractExecutor: (options, dependencies) =>
             createContractExecutor(options, {
                 ...dependencies,
