@@ -1,0 +1,29 @@
+import type { P2pRuntimeClientRoot } from "../P2pRuntimeClientRoot";
+import type { BusKind } from "@/events/EventBus";
+import ARpcMethods from "@/rpc/ARpcMethods";
+import type { RpcRouter } from "@/rpc/RpcRouter";
+import type { SerializedError } from "@/rpc/serializeError";
+
+export class RuntimeEventsRpcMethods extends ARpcMethods<
+    RpcRouter<P2pRuntimeClientRoot, any>
+> {
+    /**
+     * ONE payload for every forwarded event kind (p2p hooks, contract events,
+     * `EventHandler` mirrors). The client re-emits it into its own bus;
+     * contract events additionally re-emit on the main-thread contract.
+     */
+    busEvent(kind: BusKind, eventName: string, args: unknown[]): void {
+        this.localRpc.sink.onBusEvent(kind, eventName, args);
+    }
+
+    /**
+     * an autonomous host-side failure (an unhandledRejection /
+     * uncaughtException not tied to a request), so the main-thread
+     * orchestrator observes worker-thread errors as if they were local
+     */
+    hostError(error: SerializedError): void {
+        this.localRpc.sink.onHostErrorReport(error);
+    }
+}
+
+export default RuntimeEventsRpcMethods;

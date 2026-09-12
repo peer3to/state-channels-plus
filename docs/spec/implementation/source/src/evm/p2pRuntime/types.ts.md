@@ -3,29 +3,19 @@
 > **Source:** [src/evm/p2pRuntime/types.ts](../../../../../../../src/evm/p2pRuntime/types.ts) > **Status:** Authored — engineer verification pending.
 > **Design views:** [architecture/sdk/runtime-and-concurrency.md](../../../../views/architecture/sdk/runtime-and-concurrency.md)
 
-## Contents
-
-- [Responsibility and observable boundary](#responsibility-and-observable-boundary)
-- [Key design decisions](#key-design-decisions)
-- [Inputs, outputs, state, and side effects](#inputs-outputs-state-and-side-effects)
-- [Linked requirements](#linked-requirements)
-- [Assumptions, dependencies, trust boundaries, and limits](#assumptions-dependencies-trust-boundaries-and-limits)
-- [Specification adherence](#specification-adherence)
-- [Specification contradictions](#specification-contradictions)
-- [Missing behavior](#missing-behavior)
-- [Conformance traceability](#conformance-traceability)
-- [Component test obligations](#component-test-obligations)
-- [Related source reports](#related-source-reports)
-
 ## Responsibility and observable boundary
 
-The runtime port protocol types.
+The one worker-level message: `WorkerBootstrapMessage`, which carries the setup payload, the
+runtime port and the WebRTC bridge port into the worker by transfer — the only thing an RPC envelope
+cannot carry. Nothing is re-exported: the port types are imported from the transport layer at the
+sites that need them, and no request, response or error shapes live here any more.
 
 ## Key design decisions
 
 1. `SerializedContract.abiJson` carries application ABI metadata across the port. For the manager,
    both runtime sides merge it after the SDK-owned ABI so consumer extensions remain available.
-2. `SerializedError.eventLoopDelay` carries the watchdog's structured sample (`EventLoopDelayDetails`) across the port; structured cloning an `Error` keeps only its standard slots, so the codec projects it explicitly.
+2. The serialized error shape and its `eventLoopDelay` sample belong to the error wire, not to this
+   file; a consumer imports them from [`serializeError`](../../rpc/serializeError.ts.md).
 
 ## Inputs, outputs, state, and side effects
 
@@ -37,9 +27,6 @@ The runtime port protocol types.
 | Side effects | Per role above. |
 
 ## Linked requirements
-
-A file may contribute to several requirements; this report describes the contribution and never
-claims complete conformance for a requirement that depends on other files.
 
 | Source file                                                  | Specification IDs                                                                                |
 | ------------------------------------------------------------ | ------------------------------------------------------------------------------------------------ |
@@ -53,26 +40,12 @@ claims complete conformance for a requirement that depends on other files.
 
 - Port-protocol semantics identical across platforms.
 
-## Specification contradictions
-
-None demonstrated.
-
-## Missing behavior
-
-None demonstrated.
-
 ## Conformance traceability
-
-Status enum: `Covered` | `Partial` | `Contradicts` | `Missing`. Evidence cells are structured
-**Here:** / **Other files:** so each row is auditable from its links alone; genuine gaps go in the
-Gap column. Audit state is file-level (Status header), never a row status.
 
 | Requirement / invariant | Implementation status | Evidence | Gap / divergence |
 | ----------------------- | --------------------- | -------- | ---------------- |
 
 ## Component test obligations
-
-Exact test evidence is mapped against these IDs in the verification test reports.
 
 | Unit test ID | Obligation | Public entry and setup | Oracle and forbidden effects | Required permutations |
 | ------------ | ---------- | ---------------------- | ---------------------------- | --------------------- |

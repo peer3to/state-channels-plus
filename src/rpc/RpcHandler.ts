@@ -1,9 +1,7 @@
-import type P2PManager from "../P2PManager";
 import Rpc from "./Rpc";
+import type { RpcRequestOptions, RpcRouter } from "./RpcRouter";
 import ATransport, { isTransport } from "../transport/ATransport";
 import { Address } from "../types/types";
-
-export type RpcRequestOptions = { timeoutMs?: number };
 
 /**
  * Type face exposed for RPC methods that return `void`/`Promise<void>`.
@@ -34,14 +32,14 @@ export interface RequestRpcHandler<TResult> {
 
 class RpcHandler {
     rpc: Rpc;
-    p2pManager: P2PManager;
-    constructor(rpc: Rpc, p2pManager: P2PManager) {
+    router: RpcRouter<any, any>;
+    constructor(rpc: Rpc, router: RpcRouter<any, any>) {
         this.rpc = rpc;
-        this.p2pManager = p2pManager;
+        this.router = router;
     }
 
     public broadcast() {
-        this.p2pManager.broadcastRpc(this.rpc);
+        this.router.broadcastRpc(this.rpc);
     }
 
     public sendOne(): void;
@@ -66,10 +64,7 @@ class RpcHandler {
         }
 
         (targets as Address[]).forEach((address) => {
-            const transport =
-                this.p2pManager.profileManager.getTransportByEvmAddress(
-                    address
-                );
+            const transport = this.router.resolveTransport(address);
             if (!transport) return;
             transport.send(this.rpc);
         });
@@ -97,17 +92,23 @@ class RpcHandler {
             ? (targetOrOptions as RpcRequestOptions | undefined)
             : maybeOptions;
 
-        const transport = this.resolveTarget(target);
+        let transport: ATransport | undefined;
+        try {
+            transport = this.resolveTarget(target);
+        } catch (e) {
+            return Promise.reject(e as Error);
+        }
         if (!transport) {
+            const operation = `${this.rpc.service}.${this.rpc.method}`;
             return Promise.reject(
                 new Error(
-                    `RpcHandler.request: no open transport for target '${String(
-                        target
-                    )}'`
+                    target === undefined
+                        ? `RPC request '${operation}' refused: the transport is closed or disposed`
+                        : `RpcHandler.request: no open transport for target '${String(target)}'`
                 )
             );
         }
-        return this.p2pManager.sendRpcRequest<TResult>(
+        return this.router.sendRpcRequest<TResult>(
             this.rpc,
             transport,
             options
@@ -116,17 +117,30 @@ class RpcHandler {
 
     /**
      * Resolves a delivery target to a transport. An omitted target delivers to
-     * self via the in-process loopback transport.
+     * self via the in-process loopback transport, or - on a router that has
+     * none - to its single line, which is the whole far end there.
      */
     private resolveTarget(
         target?: ATransport | Address
     ): ATransport | undefined {
-        if (target === undefined) return this.p2pManager.loopbackTransport;
+        if (target === undefined) {
+            if (this.router.loopbackTransport) {
+                return this.router.loopbackTransport;
+            }
+            const transports = this.router.transports;
+            const [only] = transports;
+            if (transports.size === 1) return only;
+            // the line this handle would have taken is gone: a fire-and-forget
+            // send drops, and `request` refuses the way one named on a closed
+            // transport does
+            if (transports.size === 0) return undefined;
+            const operation = `${this.rpc.service}.${this.rpc.method}`;
+            throw new Error(
+                `RpcHandler: '${operation}' needs a target: this router has no loopback and ${transports.size} transports`
+            );
+        }
         if (isTransport(target)) return target;
-        return (
-            this.p2pManager.profileManager.getTransportByEvmAddress(target) ??
-            undefined
-        );
+        return this.router.resolveTransport(target);
     }
 }
 

@@ -16,7 +16,6 @@ _Pending authoring: shared responsibility, design decisions, assumptions, cross-
 - [createLoggerTypes.ts](./createLoggerTypes.ts.md)
 - [formatUtils.ts](./formatUtils.ts.md)
 - [index.ts](./index.ts.md)
-- [logControl.ts](./logControl.ts.md)
 - [logEncoder.ts](./logEncoder.ts.md)
 - [logStore.ts](./logStore.ts.md)
 - [node/](./node/README.md)

@@ -31,6 +31,7 @@ import {
     Type,
     getChecksumAddress
 } from "@/utils";
+import { getErrorPeerAddress } from "@/utils/errorPeerAddress";
 import {
     RecordingBannablePeerInfo,
     RecordingHolepunchSocket,
@@ -62,6 +63,13 @@ class RecordingTransport extends ATransport {
     }
 }
 
+/** the same recorder on a line this realm owns: what a trusted reply may carry */
+class TrustedRecordingTransport extends RecordingTransport {
+    public get isTrusted(): boolean {
+        return true;
+    }
+}
+
 export type DispatchHeadProbe = {
     oversizedDisconnected: boolean;
     oversizedBlacklisted: boolean;
@@ -71,6 +79,25 @@ export type DispatchHeadProbe = {
     unknownServiceDisconnected: boolean;
     unknownServiceBlacklisted: boolean;
     responseClassifiedBeforeDispatch: boolean;
+};
+
+/** what a crafted structured error reply left of itself after an untrusted
+ *  line delivered it */
+export type UntrustedErrorReplyProbe = {
+    message: string;
+    name: string;
+    hasRevertData: boolean;
+    peerAddressStamp: string | undefined;
+    trustedName: string;
+    trustedRevertData: string | undefined;
+    trustedPeerAddressStamp: string | undefined;
+};
+
+/** what `wrapInbound` saw around one inbound peer frame */
+export type InboundWrapperProbe = {
+    wrapperRuns: number;
+    dispatchesInsideWrapper: number;
+    dispatchCalls: number;
 };
 
 export type FrameByteBoundaryProbe = {
@@ -879,6 +906,112 @@ export class P2PManagerProbeService extends ARpcService<
             sendError: await error(fourth)
         };
         return { ...result, ...this.resourceCounts(resourceBaseline) };
+    }
+
+    /** a peer answers a request with a full `SerializedError` shape. the
+     *  untrusted line may contribute its message and nothing else; the trusted
+     *  loopback still gets the whole shape. */
+    public async probeUntrustedErrorReply(
+        forgedPeerAddress: string
+    ): Promise<UntrustedErrorReplyProbe> {
+        const craftedError = {
+            message: "crafted failure",
+            name: "Forged",
+            stack: "Forged: crafted failure\n    at nowhere",
+            data: "0xdeadbeef",
+            peerAddress: getChecksumAddress(forgedPeerAddress)
+        };
+
+        const untrusted = this.transport(
+            "0x6100000000000000000000000000000000000001"
+        );
+        const untrustedRequest = this.beginRequest(untrusted, 1000);
+        this.p2pManager.onRpc(
+            JSON.stringify({
+                rpcResponse: true,
+                requestId: untrustedRequest.requestId,
+                ok: false,
+                error: craftedError
+            }),
+            untrusted
+        );
+        const fromPeer = await untrustedRequest.promise.then(
+            () => new Error("resolved"),
+            (reason: Error) => reason
+        );
+
+        const trusted = new TrustedRecordingTransport(this.p2pManager);
+        const trustedPromise = this.p2pManager.sendRpcRequest<string>(
+            { service: "pingService", method: "sum", params: [] },
+            trusted,
+            { timeoutMs: 1000 }
+        );
+        this.p2pManager.onRpc(
+            JSON.stringify({
+                rpcResponse: true,
+                requestId: this.requestId(trusted),
+                ok: false,
+                error: craftedError
+            }),
+            trusted
+        );
+        const fromSelf = await trustedPromise.then(
+            () => new Error("resolved"),
+            (reason: Error) => reason
+        );
+
+        return {
+            message: fromPeer.message,
+            name: fromPeer.name,
+            hasRevertData:
+                (fromPeer as Error & { data?: string }).data !== undefined,
+            peerAddressStamp: getErrorPeerAddress(fromPeer),
+            trustedName: fromSelf.name,
+            trustedRevertData: (fromSelf as Error & { data?: string }).data,
+            trustedPeerAddressStamp: getErrorPeerAddress(fromSelf)
+        };
+    }
+
+    /** the peer policy runs every inbound dispatch inside `wrapInbound`; the
+     *  bytes path reaches it through `onRpc`, not only a port's frame path */
+    public probeInboundWrapper(): InboundWrapperProbe {
+        const transport = this.transport(
+            "0x6200000000000000000000000000000000000002"
+        );
+        this.authenticateTransport(
+            transport,
+            getChecksumAddress("0x6200000000000000000000000000000000000002")
+        );
+        const callsBefore = this.dispatchCalls;
+        let wrapperRuns = 0;
+        let dispatchesInsideWrapper = 0;
+        const previousWrapper = this.p2pManager.wrapInbound;
+        this.p2pManager.wrapInbound = <T>(run: () => T): T => {
+            wrapperRuns += 1;
+            const before = this.dispatchCalls;
+            try {
+                return run();
+            } finally {
+                dispatchesInsideWrapper += this.dispatchCalls - before;
+            }
+        };
+        try {
+            this.p2pManager.onRpc(
+                JSON.stringify({
+                    service: "p2pManagerProbe",
+                    method: "recordDispatch",
+                    params: []
+                }),
+                transport
+            );
+        } finally {
+            this.p2pManager.wrapInbound = previousWrapper;
+        }
+        return {
+            wrapperRuns,
+            dispatchesInsideWrapper,
+            dispatchCalls: this.dispatchCalls - callsBefore
+        };
     }
 
     public async probeTimeoutSelection(): Promise<TimeoutSelectionProbe> {

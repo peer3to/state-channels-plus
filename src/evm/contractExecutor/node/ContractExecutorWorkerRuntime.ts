@@ -1,20 +1,13 @@
 import { resolveWorkerResourceLimits } from "../../node/workerResourceLimits";
 import { createWorkerShutdown } from "../../node/workerShutdown";
 import { instrumentWorkerStartup } from "../../node/workerStartupTiming";
-import type { WorkerLike } from "../types";
-import type { WorkerHostMessage } from "../worker/protocol";
+import type { ContractExecutorWorkerErrorHandler, WorkerLike } from "../types";
+import type { RuntimePort } from "@/transport/RuntimePort";
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { Worker } from "node:worker_threads";
 
-export type ContractExecutorWorkerMessageHandler = (
-    message: WorkerHostMessage
-) => void;
-
-export type ContractExecutorWorkerErrorHandler = (error: Error) => void;
-
 export function createContractExecutorWorker(
-    onMessage: ContractExecutorWorkerMessageHandler,
     onError: ContractExecutorWorkerErrorHandler
 ): WorkerLike {
     const jsWorkerPath = path.join(__dirname, "ContractExecutorWorkerEntry.js");
@@ -22,7 +15,7 @@ export function createContractExecutorWorker(
     const workerPath = fs.existsSync(jsWorkerPath)
         ? jsWorkerPath
         : tsWorkerPath;
-    return createContractExecutorWorkerFromPath(workerPath, onMessage, onError);
+    return createContractExecutorWorkerFromPath(workerPath, onError);
 }
 
 /**
@@ -32,7 +25,6 @@ export function createContractExecutorWorker(
  */
 export function createContractExecutorWorkerFromPath(
     workerPath: string,
-    onMessage: ContractExecutorWorkerMessageHandler,
     onError: ContractExecutorWorkerErrorHandler,
     workerData?: unknown
 ): WorkerLike {
@@ -62,7 +54,6 @@ export function createContractExecutorWorkerFromPath(
             ? "ts-node-swc-transpile-only"
             : "compiled-js"
     );
-    worker.on("message", onMessage);
     worker.on("error", onError);
     worker.on("exit", (code: number) => {
         // Any exit the executor did not ask for is fatal, code 0 included: a
@@ -71,8 +62,21 @@ export function createContractExecutorWorkerFromPath(
             onError(new Error(`Contract executor worker exited with ${code}`));
         }
     });
+    // the worker as a port: what it posts is a frame, and its exit is the
+    // line closing - the router settles what was pending on it
+    const port: RuntimePort = {
+        post: (message) => worker.postMessage(message),
+        onMessage: (handler) => {
+            worker.on("message", handler);
+        },
+        start: () => {},
+        onClose: (handler) => {
+            worker.on("exit", () => handler());
+        },
+        close: () => {}
+    };
     return {
-        postMessage: (message) => worker.postMessage(message),
+        port,
         shutdown: async () => {
             shuttingDown = true;
             await shutdownWorker();

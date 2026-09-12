@@ -1,4 +1,4 @@
-import type { RuntimeChannel, RuntimePort } from "../types";
+import type { RuntimeChannel, RuntimePort } from "@/transport/RuntimePort";
 
 /**
  * Adapt a browser {@link MessagePort} to the platform-neutral
@@ -49,5 +49,34 @@ export function createTransferableChannel(): {
     return {
         localPort: adaptPort(channel.port1),
         transferablePort: channel.port2
+    };
+}
+
+/** this worker's global scope, for an entry that serves the thread above it */
+export function adaptWorkerScope(): RuntimePort {
+    const scope = self as unknown as {
+        postMessage: (message: unknown) => void;
+        addEventListener: (
+            type: "message",
+            listener: (event: MessageEvent) => void
+        ) => void;
+        close: () => void;
+    };
+    return {
+        post(message: unknown) {
+            scope.postMessage(message);
+        },
+        onMessage(handler: (message: unknown) => void) {
+            scope.addEventListener("message", (event: MessageEvent) => {
+                handler(event.data);
+            });
+        },
+        start() {},
+        onClose() {
+            // a dedicated worker scope has no close event; the parent ends it
+        },
+        close() {
+            scope.close();
+        }
     };
 }

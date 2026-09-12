@@ -1,4 +1,4 @@
-import type { RemoteRpcProxyType } from "@/rpc/RemoteRpcProxy";
+import type { RemoteRpcServices } from "@/rpc/RemoteRpcProxy";
 import { Status } from "@/types";
 import { sleep } from "@/utils";
 import type { PingPongRpc } from "@test/fixtures/customRpc/PingPongRpcManifest";
@@ -920,7 +920,7 @@ describe("E2E: Targeted channel join", function () {
         });
         const control = h.control(
             h.getPeer(0)
-        ) as unknown as RemoteRpcProxyType<PingPongRpc>;
+        ) as unknown as RemoteRpcServices<PingPongRpc>;
         const probe = await control.p2pManagerProbe
             .probeLobbyProtocol()
             .request();

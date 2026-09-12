@@ -35,13 +35,12 @@ void (async () => {
     const executor = await createContractExecutor(
         { dedicatedThread: true },
         {
-            createWorkerRuntime: (onMessage, onError) =>
+            createWorkerRuntime: (onError) =>
                 createContractExecutorWorkerFromPath(
                     path.join(
                         __dirname,
                         "watchdogContractExecutorWorkerEntry.ts"
                     ),
-                    onMessage,
                     onError,
                     scripted
                 )

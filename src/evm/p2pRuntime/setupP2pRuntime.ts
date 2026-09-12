@@ -5,7 +5,6 @@ import P2pRuntimeClient from "./P2pRuntimeClient";
 import { startP2pRuntimeHost, type HostContext } from "./P2pRuntimeHost";
 import type {
     P2pRuntimeWorker,
-    RuntimePort,
     SerializedContract,
     SetupPayload,
     WorkerBootstrapMessage
@@ -13,6 +12,7 @@ import type {
 import DeploymentBridgeSigner from "../signer/DeploymentBridgeSigner";
 import type MainRpcService from "@/rpc/MainRpcService";
 import type { CustomRpcManifest } from "@/rpc/registry";
+import type { RuntimePort } from "@/transport/RuntimePort";
 import { createLogger, Logger } from "@/utils";
 import { createConfig, Config } from "@/utils/config";
 import {
@@ -143,6 +143,12 @@ export async function setupP2pRuntime<
         let clientPort: RuntimePort;
         let onClose: (() => void) | undefined;
 
+        // the bridge is minted here and its host end is handed over with the
+        // bootstrap or the host context: an RPC frame cannot transfer a port.
+        // an inline host in a realm that cannot reach WebRTC needs it just as
+        // much as a threaded one, so both paths mint it.
+        const webRTCBridge = new MessageChannel();
+
         if (activeConfig.RUN_SDK_IN_THREAD) {
             const { localPort, transferablePort } = createTransferableChannel();
             const worker = (
@@ -152,9 +158,13 @@ export async function setupP2pRuntime<
             const bootstrap: WorkerBootstrapMessage = {
                 type: "connect",
                 payload,
-                port: transferablePort
+                port: transferablePort,
+                webRTCBridgePort: webRTCBridge.port2
             };
-            worker.postMessage(bootstrap, [transferablePort]);
+            worker.postMessage(bootstrap, [
+                transferablePort,
+                webRTCBridge.port2
+            ]);
             clientPort = localPort;
             onClose = () => worker.shutdown();
         } else {
@@ -164,6 +174,7 @@ export async function setupP2pRuntime<
                 handlerExecutionContext: options?.handlerExecutionContext,
                 createContractExecutor:
                     dependencies.hostContext?.createContractExecutor,
+                webRTCBridgePort: webRTCBridge.port2,
                 // same realm, no port -> the app's logger follows the host's channel
                 contextFollower: logger
             }).catch((error) => {
@@ -179,11 +190,12 @@ export async function setupP2pRuntime<
             logger,
             onClose,
             // only a threaded host is a separate realm with its own bus
-            openLogControlPort: activeConfig.RUN_SDK_IN_THREAD
+            openLogControlPort: activeConfig.RUN_SDK_IN_THREAD,
+            webRTCBridgeCandidate: webRTCBridge.port1
         });
 
         const deployBridgeSigner = new DeploymentBridgeSigner(
-            client,
+            client.host,
             resolvedSignerAddress
         );
         // Deploy two independent local state machine instances:
@@ -195,12 +207,10 @@ export async function setupP2pRuntime<
         const diamondStateMachineAddress =
             await deployStateMachine(deployBridgeSigner);
         try {
-            await client.request<void>({
-                type: "deployComplete",
-                localStateMachineAddress: localStateMachineAddress.toString(),
-                diamondStateMachineAddress:
-                    diamondStateMachineAddress.toString()
-            });
+            await client.deployComplete(
+                localStateMachineAddress.toString(),
+                diamondStateMachineAddress.toString()
+            );
             await client.ready;
         } catch (error) {
             await client.dispose();

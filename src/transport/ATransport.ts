@@ -5,7 +5,7 @@ import Rpc, {
     serializeRpc,
     serializeRpcResponse
 } from "@/rpc/Rpc";
-import { Address } from "@/types";
+import type { RpcRouter } from "@/rpc/RpcRouter";
 import { getChecksumAddress } from "@/utils/address";
 import { LoggerUtils } from "@/utils/LoggerUtils";
 import { hasMethod, hasProperty } from "@/utils/ObjectChecks";
@@ -16,14 +16,22 @@ abstract class ATransport {
     // Only ProfileManager.authenticateTransport sets this after proof and admission; trusted loopback names itself.
     // A set address authenticates this exact transport for guarded RPC.
     peerAddress?: string;
-    p2pManager: P2PManager;
+    /** the router this transport delivers to: the peer manager or a port router */
+    readonly router: RpcRouter<any, any>;
     private readonly closedListeners = new Set<
         (transport: ATransport) => void
     >();
 
-    constructor(p2pManager: P2PManager) {
-        this.p2pManager = p2pManager;
-        this.p2pManager.profileManager.registerTransport(this);
+    constructor(router: RpcRouter<any, any>) {
+        this.router = router;
+        // the router tracks the line from here on; a peer router also gives
+        // every transport its profile as it is built
+        this.router.onTransportCreated(this);
+    }
+
+    /** the peer transports live on the peer manager */
+    get p2pManager(): P2PManager {
+        return this.router as P2PManager;
     }
 
     /**
@@ -44,7 +52,7 @@ abstract class ATransport {
     abstract _send(serializedRPC: string): void;
     onMessage(data: any): void {
         const serializedRPC = data.toString();
-        this.p2pManager.onRpc(serializedRPC, this);
+        this.router.onRpc(serializedRPC, this);
     }
     protected abstract _close(): void;
 
@@ -63,16 +71,12 @@ abstract class ATransport {
             this.isClosed = true;
             for (const listener of [...this.closedListeners]) listener(this);
             this.closedListeners.clear();
-            if (!isExpected) {
-                this.p2pManager.stateManager.p2pEventHooks?.onDisconnection?.(
-                    this.peerAddress as Address
-                );
-            }
-            this.p2pManager.disconnectConnection(this);
+            this.router.onTransportClosed(this, isExpected);
             this._close();
         }
     }
 
+    /** run once when this transport closes, or now if it already has */
     onClosed(listener: (transport: ATransport) => void): () => void {
         if (this.isClosed) {
             listener(this);
@@ -83,7 +87,7 @@ abstract class ATransport {
     }
 
     send(rpc: Rpc): void {
-        this.p2pManager.logger.verbose("Sending RPC", {
+        this.router.logger.verbose("Sending RPC", {
             transportType: TransportType[this.transportType],
             peerAddress: this.peerAddress,
             rpc: LoggerUtils.getRpcLogMetadata(rpc)
@@ -93,7 +97,7 @@ abstract class ATransport {
     }
 
     sendRpcResponse(response: RpcResponse): void {
-        this.p2pManager.logger.verbose("Sending RPC response", {
+        this.router.logger.verbose("Sending RPC response", {
             transportType: TransportType[this.transportType],
             peerAddress: this.peerAddress,
             requestId: response.requestId,

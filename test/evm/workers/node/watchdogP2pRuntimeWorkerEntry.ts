@@ -5,7 +5,6 @@ import "@/evm/p2pRuntime/worker/nodeGlobalsShim";
 import type { WatchdogWorkerData } from "./watchdogContractExecutorWorkerEntry";
 import { createContractExecutor } from "@/evm/contractExecutor/createContractExecutor";
 import { createContractExecutorWorkerFromPath } from "@/evm/contractExecutor/node/ContractExecutorWorkerRuntime";
-import { serializeError } from "@/evm/p2pRuntime/errorWire";
 import {
     onWorkerBootstrap,
     adaptTransferredPort,
@@ -28,23 +27,22 @@ onWorkerBootstrap(async (message) => {
     const { payload, port } = message;
     createConfig(payload.config);
     const runtimePort = adaptTransferredPort(port);
-    onUnhandledWorkerError((error) => {
-        runtimePort.post({ type: "hostError", error: serializeError(error) });
-    });
 
     await startP2pRuntimeHost(runtimePort, payload, {
         threadLabel: "sdk",
         onDisposed: closeWorkerBootstrapPort,
+        // Funnel autonomous worker-thread errors to the main-thread
+        // orchestrator so they surface as if the host ran inline.
+        onUnhandledError: onUnhandledWorkerError,
         createContractExecutor: (options, dependencies) =>
             createContractExecutor(options, {
                 ...dependencies,
-                createWorkerRuntime: (onMessage, onError) =>
+                createWorkerRuntime: (onError) =>
                     createContractExecutorWorkerFromPath(
                         path.join(
                             __dirname,
                             "watchdogContractExecutorWorkerEntry.ts"
                         ),
-                        onMessage,
                         onError,
                         data
                     )

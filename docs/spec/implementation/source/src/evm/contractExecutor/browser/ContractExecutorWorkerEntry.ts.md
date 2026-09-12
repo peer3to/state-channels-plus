@@ -3,45 +3,18 @@
 > **Source:** [src/evm/contractExecutor/browser/ContractExecutorWorkerEntry.ts](../../../../../../../../src/evm/contractExecutor/browser/ContractExecutorWorkerEntry.ts) > **Status:** Authored — engineer verification pending.
 > **Design views:** [architecture/sdk/runtime-and-concurrency.md](../../../../../views/architecture/sdk/runtime-and-concurrency.md)
 
-## Contents
-
-- [Responsibility and observable boundary](#responsibility-and-observable-boundary)
-- [Key design decisions](#key-design-decisions)
-- [Inputs, outputs, state, and side effects](#inputs-outputs-state-and-side-effects)
-- [Linked requirements](#linked-requirements)
-- [Assumptions, dependencies, trust boundaries, and limits](#assumptions-dependencies-trust-boundaries-and-limits)
-- [Specification adherence](#specification-adherence)
-- [Specification contradictions](#specification-contradictions)
-- [Missing behavior](#missing-behavior)
-- [Conformance traceability](#conformance-traceability)
-- [Component test obligations](#component-test-obligations)
-- [Related source reports](#related-source-reports)
-
 ## Responsibility and observable boundary
 
-Browser worker entry point.
-
-## Key design decisions
-
-1. **The entry registers the browser error funnel on the host handle.** `onUnhandledWorkerError(host.reportUnhandledError)` runs on the handle from `createContractExecutorWorkerHost` before `host.start` installs request handling and posts readiness, and gives the contract-executor worker the same policy as the sdk worker: an error outside a request is reported and the worker keeps serving.
-
-## Inputs, outputs, state, and side effects
-
-| Aspect       | Contents        |
-| ------------ | --------------- |
-| Inputs       | Per role above. |
-| Outputs      | Per role above. |
-| Owned state  | Per role above. |
-| Side effects | Per role above. |
+Browser worker entry point: the node-globals and `Buffer` shims the EVM stack needs, installed
+before anything boots it, then the browser error funnel handed to the shared bootstrap, which puts
+the router, the parent line, the report path and the flush round in place. The realm's logs now
+leave after a detached vm error here too, which only the node entry used to do.
 
 ## Linked requirements
 
-A file may contribute to several requirements; this report describes the contribution and never
-claims complete conformance for a requirement that depends on other files.
-
-| Source file                                                                                                               | Specification IDs                                                                                   |
-| ------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------- |
-| [ContractExecutorWorkerEntry.ts](../../../../../../../../src/evm/contractExecutor/browser/ContractExecutorWorkerEntry.ts) | [`REQ-RUNTIME-4-B0N70Y`](../../../../../../specification/runtime/execution.md#req-runtime-4-b0n70y) |
+| Source file                                                                                                               | Specification IDs                                                                                                                                                                                       |
+| ------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| [ContractExecutorWorkerEntry.ts](../../../../../../../../src/evm/contractExecutor/browser/ContractExecutorWorkerEntry.ts) | [`REQ-RUNTIME-4-B0N70Y`](../../../../../../specification/runtime/execution.md#req-runtime-4-b0n70y), [`REQ-LOG-10-69CTN1`](../../../../../../specification/runtime/log-collection.md#req-log-10-69ctn1) |
 
 ## Assumptions, dependencies, trust boundaries, and limits
 
@@ -51,30 +24,17 @@ claims complete conformance for a requirement that depends on other files.
 
 - Executor semantics identical across contexts per the runtime equivalence rules.
 
-## Specification contradictions
-
-None demonstrated.
-
-## Missing behavior
-
-None demonstrated.
-
 ## Conformance traceability
-
-Status enum: `Covered` | `Partial` | `Contradicts` | `Missing`. Evidence cells are structured
-**Here:** / **Other files:** so each row is auditable from its links alone; genuine gaps go in the
-Gap column. Audit state is file-level (Status header), never a row status.
 
 | Requirement / invariant | Implementation status | Evidence | Gap / divergence |
 | ----------------------- | --------------------- | -------- | ---------------- |
 
 ## Component test obligations
 
-Exact test evidence is mapped against these IDs in the verification test reports.
-
 | Unit test ID | Obligation | Public entry and setup | Oracle and forbidden effects | Required permutations |
 | ------------ | ---------- | ---------------------- | ---------------------------- | --------------------- |
 
 ## Related source reports
 
+- [worker/bootstrapContractExecutorWorker.ts.md](../worker/bootstrapContractExecutorWorker.ts.md) — what it hands the funnel to.
 - [AContractExecutor](../AContractExecutor.ts.md), [runtime-and-concurrency view](../../../../../views/architecture/sdk/runtime-and-concurrency.md).

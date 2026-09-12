@@ -1,69 +1,152 @@
 // @spec-test-coverage-ignore: real pre-deployment runtime fixture
 import { startP2pRuntimeHost } from "@/evm/p2pRuntime/P2pRuntimeHost";
-import type {
-    RuntimeClientRequest,
-    RuntimeHostMessage
-} from "@/evm/p2pRuntime/types";
-import type { RuntimeRequestInput } from "@/evm/p2pRuntime/worker/protocol";
+import type { P2pRuntimeHostRoot } from "@/evm/p2pRuntime/rpc/P2pRuntimeHostRoot";
+import type { RemoteRpcServices } from "@/rpc/RemoteRpcProxy";
+import { RpcRouter } from "@/rpc/RpcRouter";
+import MessagePortTransport from "@/transport/MessagePortTransport";
 import { config } from "@/utils/config";
 import { createRuntimeChannel } from "@platform/p2pRuntimeChannel";
 import { MathTestSession as TestSession } from "@test/harness";
 import { expect } from "chai";
 import { ethers } from "ethers";
 
-export async function checkPreDeploymentRequest(
-    request: RuntimeRequestInput,
-    succeeds = false
-): Promise<void> {
+/** the host's services as a client before the runtime graph exists */
+export type PreDeploymentHost = RemoteRpcServices<P2pRuntimeHostRoot>;
+
+/** a nothing port: no listener accepts a websocket here */
+const UNREACHABLE_PROVIDER_URL = "ws://127.0.0.1:1";
+
+type Staging = {
+    host: PreDeploymentHost;
+    /** the host's own wallet address, once its chain context built it */
+    signerAddress: string;
+    start: () => Promise<void>;
+    close: () => void;
+};
+
+/** the client end of a real runtime port, and the host start it is waiting on */
+async function stageHost(providerUrl?: string): Promise<Staging> {
     const h = TestSession.getHarness();
     await h.setup(2, { autoConnect: false });
     const channel = createRuntimeChannel();
     const signer = ethers.Wallet.createRandom();
-    // Request IDs map to the callback waiting for that host response.
-    const responses = new Map<number, (message: RuntimeHostMessage) => void>();
-    channel.port1.onMessage((raw) => {
-        const message = raw as RuntimeHostMessage;
-        if (message.type === "response")
-            responses.get(message.requestId)?.(message);
-    });
-    channel.port1.start();
-    const send = (input: RuntimeRequestInput, requestId: number) =>
-        new Promise<RuntimeHostMessage>((resolve) => {
-            responses.set(requestId, resolve);
-            channel.port1.post({ ...input, requestId } as RuntimeClientRequest);
-        });
-    try {
-        await startP2pRuntimeHost(
-            channel.port2,
-            {
-                config: { ...config, VM_DEDICATED_THREAD: false },
-                scm: {
-                    address: await h.channelManager.getAddress(),
-                    abiJson: h.channelManager.interface.formatJson()
+    const clientRouter = new RpcRouter<
+        Record<string, never>,
+        P2pRuntimeHostRoot
+    >(() => ({}), undefined);
+    new MessagePortTransport(channel.port1, clientRouter);
+    const scm = {
+        address: await h.channelManager.getAddress(),
+        abiJson: h.channelManager.interface.formatJson()
+    };
+    const stateMachine = {
+        address: await h.getPeer(0).contractInstance.getAddress(),
+        abiJson: h.getPeer(0).contractInstance.interface.formatJson()
+    };
+    return {
+        host: clientRouter.remoteRpc,
+        signerAddress: signer.address,
+        start: () =>
+            startP2pRuntimeHost(
+                channel.port2,
+                {
+                    config: {
+                        ...config,
+                        VM_DEDICATED_THREAD: false,
+                        ...(providerUrl ? { PROVIDER_URL: providerUrl } : {})
+                    },
+                    scm,
+                    stateMachine,
+                    signerSecret: signer.privateKey
                 },
-                stateMachine: {
-                    address: await h.getPeer(0).contractInstance.getAddress(),
-                    abiJson: h
-                        .getPeer(0)
-                        .contractInstance.interface.formatJson()
-                },
-                signerSecret: signer.privateKey
-            },
-            { threadLabel: "pre-deployment-readiness" }
-        );
-        const response = await send(request, 701);
-        expect(response.type).to.equal("response");
-        if (response.type !== "response") throw new Error("Expected response");
-        expect(response.requestId).to.equal(701);
-        expect(response.ok).to.equal(succeeds);
-        if (response.ok) {
-            expect(response.result).to.equal(signer.address);
-        } else {
-            expect(response.error.message).to.equal("Runtime is not ready");
+                { threadLabel: "pre-deployment-readiness" }
+            ),
+        close: () => {
+            channel.port1.close();
+            channel.port2.close();
         }
-        await send({ type: "dispose" }, 702);
+    };
+}
+
+/** the message an endpoint refused with, or "" when it answered */
+async function refusal(invoke: () => Promise<unknown>): Promise<string> {
+    try {
+        await invoke();
+        return "";
+    } catch (error) {
+        return error instanceof Error ? error.message : String(error);
+    }
+}
+
+/**
+ * Start a real host, stop before `deployComplete`, and invoke one endpoint.
+ * Everything that needs the runtime graph refuses with "Runtime is not ready"
+ * and names the piece it wanted.
+ */
+export async function checkPreDeploymentRequest(
+    invoke: (host: PreDeploymentHost) => Promise<unknown>
+): Promise<void> {
+    const staged = await stageHost();
+    try {
+        await staged.start();
+        expect(await refusal(() => invoke(staged.host))).to.equal(
+            "Runtime is not ready: runtime"
+        );
+        await staged.host.lifecycle.dispose().request({ timeoutMs: null });
     } finally {
-        channel.port1.close();
-        channel.port2.close();
+        staged.close();
+    }
+}
+
+/** the deploy signer answers before deployment: deploying is what it is for */
+export async function checkPreDeploymentAddressRead(): Promise<void> {
+    const staged = await stageHost();
+    try {
+        await staged.start();
+        expect(await staged.host.deploySigner.getAddress().request()).to.equal(
+            staged.signerAddress
+        );
+        await staged.host.lifecycle.dispose().request({ timeoutMs: null });
+    } finally {
+        staged.close();
+    }
+}
+
+/**
+ * The read is on the line before the host exists, so it can only be answered
+ * by the gate the deploy signer waits on: it resolves with the address the
+ * chain context built.
+ */
+export async function checkDeployReadDuringStartup(): Promise<void> {
+    const staged = await stageHost();
+    try {
+        const read = staged.host.deploySigner
+            .getAddress()
+            .request({ timeoutMs: null });
+        await staged.start();
+        expect(await read).to.equal(staged.signerAddress);
+        await staged.host.lifecycle.dispose().request({ timeoutMs: null });
+    } finally {
+        staged.close();
+    }
+}
+
+/**
+ * The same parked read against a host whose chain context never comes up: it
+ * fails with the startup cause, not with the line closing under it.
+ */
+export async function checkDeployReadAgainstFailedStartup(): Promise<void> {
+    const staged = await stageHost(UNREACHABLE_PROVIDER_URL);
+    try {
+        const read = staged.host.deploySigner
+            .getAddress()
+            .request({ timeoutMs: null });
+        const startupFailure = await refusal(staged.start);
+        expect(startupFailure).to.contain(
+            "P2P runtime requires a reachable WebSocket provider"
+        );
+        expect(await refusal(() => read)).to.equal(startupFailure);
+    } finally {
+        staged.close();
     }
 }

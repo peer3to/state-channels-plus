@@ -1,5 +1,5 @@
 // @spec-test-coverage-ignore: shared runtime setup for ARpcService component tests
-import type { RemoteRpcProxyType } from "@/rpc/RemoteRpcProxy";
+import type { RemoteRpcServices } from "@/rpc/RemoteRpcProxy";
 import type { ARpcDispatchProbe } from "@test/fixtures/customRpc/aRpcServiceProbe/ARpcServiceProbeService";
 import type { LoopbackGuardProbeResult } from "@test/fixtures/customRpc/loopbackGuardProbe/LoopbackGuardProbeService";
 import type { PingPongRpc } from "@test/fixtures/customRpc/PingPongRpcManifest";
@@ -49,7 +49,7 @@ export class ARpcServiceFixture {
         const peer = this.harness.getPeer(0);
         const control = this.harness.control(
             peer
-        ) as RemoteRpcProxyType<PingPongRpc>;
+        ) as RemoteRpcServices<PingPongRpc>;
         return control.aRpcServiceProbe
             .probeDispatch(method, {
                 requestId: options.request
@@ -71,7 +71,7 @@ export class ARpcServiceFixture {
         const peer = this.harness.getPeer(0);
         const control = this.harness.control(
             peer
-        ) as RemoteRpcProxyType<PingPongRpc>;
+        ) as RemoteRpcServices<PingPongRpc>;
         return control.loopbackGuardProbe.probe().request();
     }
 }

@@ -19,11 +19,16 @@
 
 ## Responsibility and observable boundary
 
-Serialization of signer/provider capability descriptions across the boundary — capability references, never key material.
+Serialization of signer/provider capability descriptions across the boundary — capability
+references, never key material — and the one encoding a message to sign crosses in.
 
 ## Key design decisions
 
 1. **Keys never serialize** — the boundary carries descriptions that reconstruct against host-held authority ([`REQ-ID-3-KR0BE3`](../../../../../specification/protocol-model/identity.md#req-id-3-kr0be3)).
+2. **A message to sign is tagged, never sniffed.** `SignerMessage` says whether it carries text or
+   bytes, so the UTF-8 string `"0xdeadbeef"` is signed as text rather than as the four bytes it
+   resembles; both host signers decode through the one owner
+   ([`serializeSignerMessage`](../../../../../../../src/evm/p2pRuntime/chainSignerSerialization.ts#L26)).
 
 ## Inputs, outputs, state, and side effects
 
@@ -72,8 +77,9 @@ Gap column. Audit state is file-level (Status header), never a row status.
 
 Exact test evidence is mapped against these IDs in the verification test reports.
 
-| Unit test ID | Obligation | Public entry and setup | Oracle and forbidden effects | Required permutations |
-| ------------ | ---------- | ---------------------- | ---------------------------- | --------------------- |
+| Unit test ID                                                                      | Obligation                                                                       | Public entry and setup                                            | Oracle and forbidden effects                                                                       | Required permutations                                                                                                                                                                                |
+| --------------------------------------------------------------------------------- | -------------------------------------------------------------------------------- | ----------------------------------------------------------------- | -------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| <a id="unit-test-signer-message-1-zv607p"></a>`UNIT-TEST-SIGNER-MESSAGE-1-ZV607P` | One tagged encoding for a message to sign, so text and bytes cannot be confused. | A real p2pSetup instance signing through `p2pInstance.p2pSigner`. | `ethers.verifyMessage` recovers the instance address for each form, and the two signatures differ. | <a id="unit-test-signer-message-1-zv607p.p1"></a>`UNIT-TEST-SIGNER-MESSAGE-1-ZV607P.P1` — the UTF-8 text `"0xdeadbeef"` and the four bytes `0xdeadbeef` sign differently and each verifies as itself |
 
 ## Related source reports
 

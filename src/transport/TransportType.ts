@@ -1,5 +1,7 @@
 export enum TransportType {
     HOLEPUNCH,
     WEBRTC,
-    LOOPBACK
+    LOOPBACK,
+    /** a worker port: this process's own thread on the far end */
+    MESSAGE_PORT
 }

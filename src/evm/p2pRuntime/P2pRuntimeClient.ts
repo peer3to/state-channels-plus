@@ -1,26 +1,30 @@
-import { deserializeError } from "./errorWire";
-import type {
-    RuntimeBusEventMessage,
-    RuntimeClientRequest,
-    RuntimeHostErrorMessage,
-    RuntimeHostMessage,
-    RuntimePort,
-    RuntimeRequestInput,
-    RuntimeResponse,
-    SerializedContract,
-    SerializedError
-} from "./types";
 import ClientChainSigner from "../signer/ClientChainSigner";
 import ClientP2pSigner from "../signer/ClientP2pSigner";
-import { attachContractEvents, EventBus } from "@/events/EventBus";
+import {
+    P2pRuntimeClientRoot,
+    type RuntimeEventSink
+} from "./rpc/P2pRuntimeClientRoot";
+import type { P2pRuntimeHostRoot } from "./rpc/P2pRuntimeHostRoot";
+import type { SerializedContract } from "./types";
+import {
+    attachContractEvents,
+    EventBus,
+    type BusKind
+} from "@/events/EventBus";
+import type { RemoteRpcServices } from "@/rpc/RemoteRpcProxy";
+import { RpcRouter } from "@/rpc/RpcRouter";
+import { deserializeError, type SerializedError } from "@/rpc/serializeError";
+import MessagePortTransport from "@/transport/MessagePortTransport";
+import type { RuntimePort } from "@/transport/RuntimePort";
 import type { Address } from "@/types/types";
 import type { Logger } from "@/utils";
-import { errorMessage } from "@/utils/errorMessage";
 import { maybeStampErrorWithPeerAddress } from "@/utils/errorPeerAddress";
-import type { LogPortHandle } from "@/utils/logging/logControl";
 import { connectStateChannelManager } from "@/utils/stateChannelManager";
 import { StateChannelManagerInterface } from "@typechain-types";
 import { ethers, type InterfaceAbi } from "ethers";
+
+/** the host's services as the client calls them */
+export type RuntimeHostEndpoint = RemoteRpcServices<P2pRuntimeHostRoot>;
 
 export interface P2pRuntimeClientOptions {
     /** Address of the signer that authors transactions in the host. */
@@ -35,73 +39,94 @@ export interface P2pRuntimeClientOptions {
     logger?: Logger;
     /** Invoked after the port is closed (e.g. to terminate a worker). */
     onClose?: () => void | Promise<void>;
-    /** open a log-control port to the host. threaded hosts only - an inline host
-     *  is on this same bus, so a port would loop a round back here. */
+    /** register the host as a child on this realm's log tree. threaded hosts
+     *  only - an inline host is on this same bus, so a link would loop a round
+     *  back here. */
     openLogControlPort?: boolean;
-}
-
-interface PendingRequest {
-    resolve: (value: unknown) => void;
-    reject: (reason: Error) => void;
-    timeout?: ReturnType<typeof setTimeout>;
+    /**
+     * the main-thread end of the WebRTC bridge channel whose other end went to
+     * the worker with the bootstrap. kept only if the host says it registered
+     * the bridge; closed otherwise. threaded only.
+     */
+    webRTCBridgeCandidate?: MessagePort;
 }
 
 /**
- * Main-thread half of the runtime. Owns one {@link RuntimePort}, correlates
- * requests/responses, replays p2p event hooks and contract events, and exposes
- * a {@link ClientP2pSigner} plus a main-thread contract instance to the app.
+ * Main-thread half of the runtime. Owns one {@link RuntimePort} through a port
+ * router, holds a typed endpoint for the host's services, serves the host's
+ * pushes (bus events, host errors, log control), and exposes a
+ * {@link ClientP2pSigner} plus a main-thread contract instance to the app.
  *
  * Works identically whether the host is inline (same process) or inside a
  * worker thread.
  */
-class P2pRuntimeClient<T = ethers.Contract> {
+class P2pRuntimeClient<T = ethers.Contract> implements RuntimeEventSink {
     private static readonly DEFAULT_REQUEST_TIMEOUT_MS = 30_000;
 
     readonly signer: ClientP2pSigner;
     readonly contract: T;
     readonly chainSigner: ClientChainSigner;
     readonly stateChannelManagerContract: StateChannelManagerInterface;
+    /** settles with the `deployComplete` reply, or with a host error before it */
     readonly ready: Promise<void>;
+    /** the host's services; every call targets the host */
+    readonly host: RuntimeHostEndpoint;
 
     /**
-     * Main-thread end of the WebRTC bridge port, handed over by the host when it
-     * runs in a worker that can't negotiate WebRTC itself. Arrives before
-     * `ready` resolves; undefined when the host negotiates WebRTC locally.
+     * Main-thread end of the WebRTC bridge port, kept when the host runs in a
+     * worker that can't negotiate WebRTC itself. Set once `deployComplete`
+     * reports the bridge in use; undefined when the host negotiates WebRTC
+     * locally.
      */
     webRTCBridgePort?: MessagePort;
 
-    private readonly port: RuntimePort;
+    private readonly router: RpcRouter<
+        P2pRuntimeClientRoot,
+        P2pRuntimeHostRoot
+    >;
+    private readonly transport: MessagePortTransport;
     private readonly signerAddress: Address;
-    private readonly pending = new Map<number, PendingRequest>();
-    private nextRequestId = 1;
     readonly events: EventBus;
     private readonly hostErrorListeners = new Set<(error: Error) => void>();
     private readonly onClose?: () => void | Promise<void>;
+    private readonly bridgeCandidate?: MessagePort;
     private resolveReady!: () => void;
     private rejectReady!: (error: Error) => void;
     private readySettled = false;
     private disposed = false;
-    private logPortHandle?: LogPortHandle;
 
     constructor(port: RuntimePort, options: P2pRuntimeClientOptions) {
         this.events = new EventBus((kind, eventName, error) =>
             options.logger?.error("Event bus listener failed", {
                 kind,
                 eventName,
-                error: errorMessage(error)
+                error: error instanceof Error ? error.message : String(error)
             })
         );
-        this.port = port;
         this.signerAddress = options.signerAddress;
         this.onClose = options.onClose;
+        this.bridgeCandidate = options.webRTCBridgeCandidate;
         this.ready = new Promise<void>((resolve, reject) => {
             this.resolveReady = resolve;
             this.rejectReady = reject;
         });
 
-        this.signer = new ClientP2pSigner(this, options.signerAddress);
+        this.router = new RpcRouter<P2pRuntimeClientRoot, P2pRuntimeHostRoot>(
+            (self) => new P2pRuntimeClientRoot(self, this, options.logger),
+            options.logger
+        );
+        this.router.requestTimeoutMs = () =>
+            P2pRuntimeClient.DEFAULT_REQUEST_TIMEOUT_MS;
+        // host is a child -> its peer identity stays off the shared main realm
+        this.transport = new MessagePortTransport(port, this.router, "child");
+        // the port is where the client hears that the host went away without a
+        // clean dispose; the transport's own close rejects what was pending
+        port.onClose(() => this.handlePortClosed());
+        this.host = this.router.remoteRpc;
+
+        this.signer = new ClientP2pSigner(this.host, options.signerAddress);
         this.chainSigner = new ClientChainSigner(
-            this,
+            this.host,
             options.provider,
             options.signerAddress.toString()
         );
@@ -128,85 +153,40 @@ class P2pRuntimeClient<T = ethers.Contract> {
         });
 
         if (options.openLogControlPort && options.logger) {
-            // host is a child -> its peer identity stays off the shared main realm
-            this.logPortHandle = options.logger.addLogPort({
-                post: (message) =>
-                    this.port.post({ type: "logControl", message }),
-                remoteRealm: "child"
-            });
+            options.logger.logFlushBus?.addLink(this.transport, options.logger);
         }
-
-        this.port.onMessage((message) =>
-            this.handleMessage(message as RuntimeHostMessage)
-        );
-        this.port.onClose(() => this.handlePortClosed());
-        this.port.start();
     }
 
     private handlePortClosed(): void {
         if (this.disposed) return;
-        this.dropLogPort();
         const error = new Error("P2P runtime host closed the connection");
         for (const listener of this.hostErrorListeners) listener(error);
         void this.dispose();
     }
 
-    /** Send a request to the host; rejects on host error or after `timeoutMs`. */
-    request<TResult>(
-        request: RuntimeRequestInput,
-        options?: { timeoutMs?: number | null }
-    ): Promise<TResult> {
-        if (this.disposed) {
-            return Promise.reject(
-                new Error("P2P runtime client has been disposed")
-            );
-        }
-        const requestId = this.nextRequestId++;
-        const message = { ...request, requestId } as RuntimeClientRequest;
-        const timeoutMs =
-            options?.timeoutMs === null
-                ? null
-                : (options?.timeoutMs ??
-                  P2pRuntimeClient.DEFAULT_REQUEST_TIMEOUT_MS);
-        return new Promise<TResult>((resolve, reject) => {
-            const timeout =
-                timeoutMs === null
-                    ? undefined
-                    : setTimeout(() => {
-                          if (this.pending.delete(requestId)) {
-                              reject(
-                                  new Error(
-                                      `P2P runtime request '${request.type}' timed out after ${timeoutMs}ms`
-                                  )
-                              );
-                          }
-                      }, timeoutMs);
-
-            this.pending.set(requestId, {
-                resolve: resolve as (value: unknown) => void,
-                reject,
-                timeout
-            });
-            try {
-                this.port.post(message);
-            } catch (error) {
-                if (this.pending.delete(requestId)) {
-                    if (timeout) clearTimeout(timeout);
-                    reject(error as Error);
-                }
-            }
-        });
-    }
-
     /**
-     * Subscribe to autonomous host-side errors (worker unhandledRejection /
-     * uncaughtException funnelled over the port). With no subscriber, such an
-     * error is re-thrown as a main-thread unhandled rejection, so it surfaces
-     * the same way an inline host's error would. Returns an unsubscribe fn.
+     * Both local state machines are deployed: have the host build the runtime.
+     * The reply is the host's readiness, so `ready` settles with it.
      */
-    onHostError(listener: (error: Error) => void): () => void {
-        this.hostErrorListeners.add(listener);
-        return () => this.hostErrorListeners.delete(listener);
+    async deployComplete(
+        localStateMachineAddress: string,
+        diamondStateMachineAddress: string
+    ): Promise<void> {
+        const { webRTCBridge } = await this.host.lifecycle
+            .deployComplete(
+                localStateMachineAddress,
+                diamondStateMachineAddress
+            )
+            .request();
+        if (webRTCBridge) {
+            this.webRTCBridgePort = this.bridgeCandidate;
+        } else {
+            this.bridgeCandidate?.close();
+        }
+        if (!this.readySettled) {
+            this.readySettled = true;
+            this.resolveReady();
+        }
     }
 
     /**
@@ -218,108 +198,68 @@ class P2pRuntimeClient<T = ethers.Contract> {
         // The host-side detached-work drain owns its timeout and returns the
         // unresolved promise origins. A second client timeout at the same
         // boundary can hide that result by winning the race.
-        const serialized = await this.request<SerializedError[]>(
-            { type: "quiesce" },
-            { timeoutMs: null }
-        );
+        const serialized = await this.host.lifecycle
+            .quiesce()
+            .request({ timeoutMs: null });
         return serialized.map(deserializeError);
     }
 
     /** Tear down the runtime: dispose the host, reject pending work, close. */
     async dispose(): Promise<void> {
         if (this.disposed) return;
-        // Send the dispose request before flipping `disposed` so it isn't
-        // rejected by the guard in `request` — the host needs it to gracefully
-        // close its transport/timers before the worker exits.
+        // Send the dispose request before flipping `disposed` so the line is
+        // still open — the host needs it to gracefully close its
+        // transport/timers before the worker exits.
         try {
             // Disposal owns its cleanup bounds. The generic request timeout can
             // otherwise force shutdown while provider/DHT handles are still
             // closing, which can make Node abort in uv_loop_close().
-            await this.request<void>({ type: "dispose" }, { timeoutMs: null });
+            await this.host.lifecycle.dispose().request({ timeoutMs: null });
         } catch {
             // The host may already be gone; proceed with local teardown.
         }
         this.disposed = true;
-        this.dropLogPort();
-        this.rejectAllPending(new Error("P2P runtime client disposed"));
-        this.port.close();
+        this.bridgeCandidate?.close();
+        this.transport.close(true);
         await this.onClose?.();
     }
 
-    private handleMessage(message: RuntimeHostMessage): void {
-        switch (message.type) {
-            case "ready":
-                this.readySettled = true;
-                this.resolveReady();
-                return;
-            case "response":
-                this.handleResponse(message);
-                return;
-            case "busEvent":
-                this.dispatchBusEvent(message);
-                return;
-            case "hostError":
-                this.dispatchHostError(message);
-                return;
-            case "webRTCBridgePort":
-                this.webRTCBridgePort = message.port;
-                return;
-            case "logControl":
-                this.logPortHandle?.receive(message.message);
-                return;
-        }
+    // ----- what the host pushes -----
+
+    onBusEvent(kind: BusKind, eventName: string, args: unknown[]): void {
+        this.events.emit(kind, eventName, args);
     }
 
-    private dropLogPort(): void {
-        this.logPortHandle?.remove();
-        this.logPortHandle = undefined;
-    }
-
-    private dispatchHostError(message: RuntimeHostErrorMessage): void {
-        const error = deserializeError(message.error);
+    /** the host's `runtimeEvents` service pushes an autonomous host-side error
+     *  (worker unhandledRejection / uncaughtException funnelled over the port) */
+    onHostErrorReport(error: SerializedError): void {
+        const restored = deserializeError(error);
         // deserializeError only restores a stamp the wire carried - hostError
         // comes from a worker, which never stamps -> attribute it here (the
         // whole worker is this one peer)
-        maybeStampErrorWithPeerAddress(error, String(this.signerAddress));
+        maybeStampErrorWithPeerAddress(restored, String(this.signerAddress));
 
         if (!this.readySettled) {
             this.readySettled = true;
-            this.rejectReady(error);
-            this.rejectAllPending(error);
+            this.rejectReady(restored);
             return;
         }
 
         if (this.hostErrorListeners.size === 0) {
             // No orchestrator hook: surface as a main-thread unhandled rejection
             // (matches an inline host throwing in its own event loop).
-            void Promise.reject(error);
+            void Promise.reject(restored);
             return;
         }
-        for (const listener of this.hostErrorListeners) listener(error);
+        for (const listener of this.hostErrorListeners) listener(restored);
     }
 
-    private dispatchBusEvent(message: RuntimeBusEventMessage): void {
-        this.events.emit(message.kind, message.eventName, message.args);
-    }
-
-    private handleResponse(message: RuntimeResponse): void {
-        const pending = this.pending.get(message.requestId);
-        if (!pending) return;
-        this.pending.delete(message.requestId);
-        if (pending.timeout) clearTimeout(pending.timeout);
-        if (message.ok) {
-            pending.resolve(message.result);
-        } else {
-            pending.reject(deserializeError(message.error));
-        }
-    }
-
-    private rejectAllPending(reason: Error): void {
-        for (const pending of this.pending.values()) {
-            if (pending.timeout) clearTimeout(pending.timeout);
-            pending.reject(reason);
-        }
-        this.pending.clear();
+    /** the app subscribes to those errors and gets an unsubscribe fn. With no
+     *  subscriber, a pushed error is re-thrown as a main-thread unhandled
+     *  rejection, so it surfaces the same way an inline host's error would. */
+    onHostError(listener: (error: Error) => void): () => void {
+        this.hostErrorListeners.add(listener);
+        return () => this.hostErrorListeners.delete(listener);
     }
 }
 

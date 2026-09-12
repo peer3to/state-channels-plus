@@ -8,7 +8,9 @@ import Clock from "@/Clock";
 import { Block, StateSnapshot, StateProof } from "@/models";
 import type PeerProfile from "@/PeerProfile";
 import type Rpc from "@/rpc/Rpc";
+import type { RpcRouter } from "@/rpc/RpcRouter";
 import type { NormalizedDisputeCommitment } from "@/stateManager/eventSync/EventSyncService";
+import type StateManager from "@/stateManager/StateManager";
 import Storage from "@/storage";
 import type ATransport from "@/transport/ATransport";
 import { TransportType } from "@/transport/TransportType";
@@ -77,6 +79,13 @@ export type InitHandshakeLogArgs = {
     remotePreferred?: TransportType;
     reason?: string;
 };
+
+/** a peer router carries the channel it serves; a port router carries none */
+function namesChannel(
+    router: RpcRouter<any, any>
+): router is RpcRouter<any, any> & { stateManager: StateManager } {
+    return "stateManager" in router;
+}
 
 export class LoggerUtils {
     private static readonly MESSAGE_TYPE_LABELS: Record<string, string> = {
@@ -432,7 +441,7 @@ export class LoggerUtils {
         isInfoLevel = false
     ): void {
         const meta = this.getTransportMetadata(transport);
-        const logger = transport.p2pManager.logger;
+        const logger = transport.router.logger;
 
         logger[isInfoLevel ? "info" : "warn"]("🔌 Peer disconnected", {
             ...meta
@@ -465,14 +474,17 @@ export class LoggerUtils {
 
     static getTransportMetadata(transport: ATransport) {
         const peerAddress = transport.peerAddress || "unknown";
-        const stateManager = transport.p2pManager.stateManager;
         const transportType = TransportType[transport.transportType];
+        // a port router has no state manager -> no channel to name
+        const stateManager = namesChannel(transport.router)
+            ? transport.router.stateManager
+            : undefined;
 
         return {
             peerAddress,
             transportType,
-            channelId: stateManager.channelId,
-            forkId: stateManager.forkId.toString()
+            channelId: stateManager?.channelId,
+            forkId: stateManager?.forkId.toString()
         };
     }
     static getBlockMetadata(block: Block, storage?: Storage) {

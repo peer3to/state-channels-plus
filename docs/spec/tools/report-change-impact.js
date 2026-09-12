@@ -23,6 +23,21 @@ const PLAN_GLOBAL_RE = new RegExp(
     "g"
 );
 
+/**
+ * A deleted source is accounted for once its source report is gone too. That
+ * pairing is what the rule asks for, and it stays loud the other way round: a
+ * report left behind after its source went is still reported as unmapped.
+ */
+function deletionIsAccountedFor(repoRoot, changedPath) {
+    if (fs.existsSync(path.join(repoRoot, changedPath))) return false;
+    const report = path.join(
+        repoRoot,
+        "docs/spec/implementation/source",
+        `${changedPath}.md`
+    );
+    return !fs.existsSync(report);
+}
+
 function fail(message) {
     process.stderr.write(`${message}\n`);
     process.exit(2);
@@ -248,7 +263,8 @@ function main() {
         (target) =>
             /^(?:src|contracts|test)\//.test(target) &&
             !accountedFiles.has(target) &&
-            !mappedReasons.has(target)
+            !mappedReasons.has(target) &&
+            !deletionIsAccountedFor(graph.roots.repo, target)
     );
 
     process.stdout.write(`# Specification change impact\n\n`);

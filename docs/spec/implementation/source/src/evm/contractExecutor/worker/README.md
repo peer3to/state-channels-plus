@@ -7,5 +7,4 @@ _Pending authoring: shared responsibility, design decisions, assumptions, cross-
 
 ## Contents
 
-- [ContractExecutorWorkerHostCore.ts](./ContractExecutorWorkerHostCore.ts.md)
-- [protocol.ts](./protocol.ts.md)
+- [bootstrapContractExecutorWorker.ts](./bootstrapContractExecutorWorker.ts.md)

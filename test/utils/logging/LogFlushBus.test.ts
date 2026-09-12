@@ -136,10 +136,10 @@ describe("LogFlushBus", function () {
 
         await main.bus.flushAll("test");
 
-        expect(countMessages(upper.toChild, "flushRequest")).to.equal(1);
-        expect(countMessages(lower.toChild, "flushRequest")).to.equal(1);
+        expect(countMessages(upper.toChild, "flush")).to.equal(1);
+        expect(countMessages(lower.toChild, "flush")).to.equal(1);
         // the middle realm must not send the round back where it came from
-        expect(countMessages(upper.toParent, "flushRequest")).to.equal(0);
+        expect(countMessages(upper.toParent, "flush")).to.equal(0);
     });
 
     it("resolves after every connected realm has uploaded", async function () {
@@ -189,10 +189,45 @@ describe("LogFlushBus", function () {
         expect(Date.now() - startedAt).to.be.lessThan(SHORT_ACK_TIMEOUT_MS);
     });
 
+    it("a link that closes during the round counts as never answered", async function () {
+        setAckTimeout(SHORT_ACK_TIMEOUT_MS);
+        const held = deferred();
+        await receiver!.close();
+        receiver = await startLogReceiver({
+            respond: async (received) => {
+                if (received.threadName === "sdk") await held.promise;
+                return 200;
+            }
+        });
+
+        const main = realm("main");
+        const sdk = realm("sdk");
+        const link = connect(main, sdk);
+        main.logger.info("main entry");
+        sdk.logger.info("sdk entry");
+
+        // sdk's POST is held open -> the link closes while sdk is still answering
+        const startedAt = Date.now();
+        const round = main.bus.flushAll("test");
+        await receiver!.waitForRequests(2);
+        link.close();
+        held.resolve();
+        const result = await round;
+
+        expect(result.ok).to.equal(1);
+        expect(result.timedOut).to.equal(1);
+        expect(result.entries).to.equal(1);
+        expect(Date.now() - startedAt).to.be.lessThan(SHORT_ACK_TIMEOUT_MS);
+        expect(countMessages(link.toChild, "flush")).to.equal(1);
+    });
+
     it("coalesces concurrent flush requests", async function () {
         const main = realm("main");
         const sdk = realm("sdk");
         const upper = connect(main, sdk);
+
+        main.logger.info("main entry");
+        sdk.logger.info("sdk entry");
 
         await Promise.all([
             main.bus.flushAll("one"),
@@ -200,8 +235,11 @@ describe("LogFlushBus", function () {
             main.bus.flushAll("three")
         ]);
 
-        // the active round plus at most one queued follow-up
-        expect(countMessages(upper.toChild, "flushRequest")).to.equal(2);
+        // every request is forwarded; what coalesces is the upload: one in
+        // flight plus one queued behind it, and the queued one posts nothing
+        // when the first already shipped every entry
+        expect(countMessages(upper.toChild, "flush")).to.equal(3);
+        expect(threadNamesOf(receiver!)).to.deep.equal(["main", "sdk"]);
     });
 
     it("acks a request that arrives while a round is in flight", async function () {
@@ -256,7 +294,7 @@ describe("LogFlushBus", function () {
         expect(elapsedMs).to.be.lessThan(SHORT_ACK_TIMEOUT_MS);
     });
 
-    it("a round folded from two children forwards back to neither", async function () {
+    it("two children asking during a hub round are each told the whole tree", async function () {
         const held = deferred();
         await receiver!.close();
         receiver = await startLogReceiver({
@@ -268,12 +306,14 @@ describe("LogFlushBus", function () {
 
         const main = realm("main");
         const childA = realm("sdk");
-        const childB = realm("sdk");
+        const childB = realm("vm");
         const toA = connect(main, childA);
         const toB = connect(main, childB);
         main.logger.info("main entry");
+        childA.logger.info("child a entry");
+        childB.logger.info("child b entry");
 
-        // main's POST is held open, so both children fold into one queued round
+        // main's POST is held open, so both children's requests queue behind it
         const mainRound = main.bus.flushAll("main");
         await receiver!.waitForRequests(1);
         const childRounds = Promise.all([
@@ -282,10 +322,26 @@ describe("LogFlushBus", function () {
         ]);
 
         held.resolve();
-        await Promise.all([mainRound, childRounds]);
+        const [fromMain, [fromA, fromB]] = await Promise.all([
+            mainRound,
+            childRounds
+        ]);
 
-        expect(countMessages(toA.toChild, "flushRequest")).to.equal(1);
-        expect(countMessages(toB.toChild, "flushRequest")).to.equal(1);
+        // a's request is not echoed to a, but it does reach b, and vice versa
+        expect(countMessages(toA.toChild, "flush")).to.equal(2);
+        expect(countMessages(toB.toChild, "flush")).to.equal(2);
+        // whoever asked counts all three realms, not only itself and the hub
+        expect(fromMain.ok).to.equal(3);
+        expect(fromA.ok).to.equal(3);
+        expect(fromB.ok).to.equal(3);
+        expect(fromA.timedOut + fromB.timedOut).to.equal(0);
+        const stored = receiver!.requests.flatMap(decodeUpload);
+        for (const marker of ["main entry", "child a entry", "child b entry"]) {
+            expect(
+                stored.some((entry) => entry.message === marker),
+                `${marker} not stored`
+            ).to.equal(true);
+        }
     });
 
     it("error() uploads only this realm's store", async function () {
@@ -298,7 +354,7 @@ describe("LogFlushBus", function () {
         await receiver!.waitForRequests(1);
 
         expect(threadNamesOf(receiver!)).to.deep.equal(["main"]);
-        expect(countMessages(upper.toChild, "flushRequest")).to.equal(0);
+        expect(countMessages(upper.toChild, "flush")).to.equal(0);
     });
 
     it("a child logger does not add a second upload", async function () {
@@ -526,7 +582,7 @@ describe("LogFlushBus", function () {
         const own = await vm.bus.flushOwnRealm();
 
         expect(Date.now() - startedAt).to.be.lessThan(SHORT_ACK_TIMEOUT_MS);
-        expect(countMessages(dead.posted, "flushRequest")).to.equal(1);
+        expect(countMessages(dead.posted, "flush")).to.equal(1);
         // the round already shipped the entry -> this realm has nothing left
         expect(own).to.deep.equal({
             ok: 1,

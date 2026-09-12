@@ -42,7 +42,9 @@ import type {
     LobbyRoleTimerProbe,
     LobbyRetryEpochProbe,
     LobbyExhaustionTimerProbe,
-    LobbyLatePickProbe
+    LobbyLatePickProbe,
+    UntrustedErrorReplyProbe,
+    InboundWrapperProbe
 } from "./P2PManagerProbeService";
 import type P2PManager from "@/P2PManager";
 import ARpcMethods from "@/rpc/ARpcMethods";
@@ -76,6 +78,16 @@ export class P2PManagerProbeRpcMethods extends ARpcMethods<
 
     public probeRequestSettlement(): Promise<RequestSettlementProbe> {
         return this.service.probeRequestSettlement();
+    }
+
+    public probeUntrustedErrorReply(
+        forgedPeerAddress: string
+    ): Promise<UntrustedErrorReplyProbe> {
+        return this.service.probeUntrustedErrorReply(forgedPeerAddress);
+    }
+
+    public probeInboundWrapper(): InboundWrapperProbe {
+        return this.service.probeInboundWrapper();
     }
 
     public probeTimeoutSelection(): Promise<TimeoutSelectionProbe> {

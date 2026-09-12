@@ -38,13 +38,12 @@ async function runMode(mode) {
     const armChannel = `watchdog-arm-${crypto.randomUUID()}`;
     const reports = [];
     const executor = await WorkerContractExecutor.create([], undefined, {
-        createWorkerRuntime: (onMessage, onError) =>
+        createWorkerRuntime: (onError) =>
             createContractExecutorWorkerFromUrl(
                 new URL(
                     "../evm/workers/browser/watchdogContractExecutorWorkerEntry.ts",
                     import.meta.url
                 ),
-                onMessage,
                 onError,
                 JSON.stringify({ mode, armChannel })
             ),

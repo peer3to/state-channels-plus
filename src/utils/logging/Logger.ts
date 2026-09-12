@@ -2,13 +2,8 @@ import type { LogStore } from "./logStore";
 import type { LogUploader, LogUploadOutcome } from "./LogUploader";
 import type { PerformanceMonitorInternalOptions } from "./performanceMonitorInternal";
 import { DetachedPromises } from "../DetachedPromises";
-import { emptyFlushResult } from "./logControl";
-import type {
-    LogControlPort,
-    LogFlushResult,
-    LogPortHandle
-} from "./logControl";
-import type { LogFlushBus } from "./LogFlushBus";
+import { emptyFlushResult } from "./LogFlushBus";
+import type { LogFlushBus, LogFlushResult } from "./LogFlushBus";
 import { LoggerUtils } from "../LoggerUtils";
 import Clock from "@/Clock";
 import { Address } from "@/types/types";
@@ -126,11 +121,9 @@ export abstract class Logger {
         this.flushBusRegistration = { bus, unregister };
     }
 
-    /** attach a port to an adjacent realm, owned by this logger -> the port lands
-     *  on whichever bus this root belongs to. undefined when this logger is on no
-     *  bus, so there is no flush tree to join. */
-    public addLogPort(port: LogControlPort): LogPortHandle | undefined {
-        return this.flushBus?.addPort(port, this);
+    /** the bus this root is registered on, if any */
+    public get logFlushBus(): LogFlushBus | undefined {
+        return this.flushBus;
     }
 
     /** make `target`'s channel follow this one's, both roots of this realm */

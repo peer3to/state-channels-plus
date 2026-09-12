@@ -103,7 +103,7 @@ TStateMachine>` — the base is `HarnessControlRpc` (not `MainRpcService`), so
 
 ### Typing model — why `control()` has the one cast
 
-`peer.p2pInstance.hostRpc` is `RemoteRpcProxyType<TCustomRpc>`. That proxy type is
+`peer.p2pInstance.hostRpc` is `RemoteRpcServices<TCustomRpc>`. That proxy type is
 a **non-homomorphic mapped type** (it filters keys with an `as` clause), and TS
 will **not** expand it over a generic `TCustomRpc` — so even though
 `TCustomRpc extends HarnessControlRpc`, `.query`/`.network`/… are invisible on a
@@ -115,7 +115,7 @@ Resolution (don't re-litigate this):
 - The generic is propagated through every action class so `new XActions(this)`
   type-checks with no cast.
 - `PeerTestHarness.control(peer)` holds the **single** bridge cast
-  (`hostRpc as unknown as RemoteRpcProxyType<HarnessControlRpc>`) — the one spot
+  (`hostRpc as unknown as RemoteRpcServices<HarnessControlRpc>`) — the one spot
   that narrows a generic peer to the services it actually runs. Member access
   goes through `control()`; `SyncCoordinator` receives `control` as an injected
   fn so it needs no cast of its own.

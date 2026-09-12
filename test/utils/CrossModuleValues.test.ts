@@ -3,7 +3,6 @@ import {
     CrossModuleRpcService,
     CrossModuleTransport
 } from "../../testSupport/CrossModuleValues";
-import RemoteRpcProxy from "@/rpc/RemoteRpcProxy";
 
 import { isTransport } from "@/transport/ATransport";
 import {
@@ -11,20 +10,23 @@ import {
     createEthersResultProxy
 } from "@/utils/EthersResultProxy";
 import { hasRpcService, isEthersResult } from "@/utils/ObjectChecks";
+import {
+    linkedRouters,
+    routerServing
+} from "@test/fixtures/rpc/PortRpcProbe.fixture";
 import { expect } from "chai";
 import { AbiCoder } from "ethers";
 
 describe("cross-module runtime values", function () {
     it("accepts an RPC service with the public service shape", function () {
         const service = new CrossModuleRpcService();
-        const root = { service };
+        const router = routerServing({ service });
 
-        expect(hasRpcService(root, "service")).to.equal(true);
+        expect(hasRpcService(router.localRpc, "service")).to.equal(true);
 
-        const remoteRpc = RemoteRpcProxy.createProxy(root);
-        const firstProxy = Reflect.get(remoteRpc, "service");
+        const firstProxy = Reflect.get(router.remoteRpc, "service");
         expect(firstProxy).to.be.an("object");
-        expect(Reflect.get(remoteRpc, "service")).to.equal(firstProxy);
+        expect(Reflect.get(router.remoteRpc, "service")).to.equal(firstProxy);
     });
 
     it("rejects an object that is missing part of the RPC service shape", function () {
@@ -35,52 +37,58 @@ describe("cross-module runtime values", function () {
             }
         };
 
+        // what dispatch refuses to route to; the far-end proxy is typed, not
+        // guarded, so it never inspects a local object
         expect(hasRpcService(root, "service")).to.equal(false);
-        expect(() =>
-            Reflect.get(RemoteRpcProxy.createProxy(root), "service")
-        ).to.throw("RemoteRpcProxy can only access services");
-    });
-
-    it("passes symbol property access through to the local RPC root", function () {
-        const inspection = Symbol("inspection");
-        const root = {
-            service: new CrossModuleRpcService(),
-            [inspection]: "inspection-value"
-        };
-
-        expect(
-            Reflect.get(RemoteRpcProxy.createProxy(root), inspection)
-        ).to.equal("inspection-value");
-    });
-
-    it("rejects ordinary and missing string properties", function () {
-        const remoteRpc = RemoteRpcProxy.createProxy({
-            service: new CrossModuleRpcService(),
-            internalState: "not-a-service"
-        });
-
-        expect(() => Reflect.get(remoteRpc, "internalState")).to.throw(
-            "RemoteRpcProxy can only access services"
-        );
-        expect(() => Reflect.get(remoteRpc, "missing")).to.throw(
-            "RemoteRpcProxy can only access services"
-        );
     });
 
     it("remains non-thenable during Promise assimilation", async function () {
-        const remoteRpc = RemoteRpcProxy.createProxy({
+        const remoteRpc = routerServing({
             service: new CrossModuleRpcService()
-        });
+        }).remoteRpc;
 
         expect(Reflect.get(remoteRpc, "then")).to.equal(undefined);
         expect((await Promise.resolve(remoteRpc)) === remoteRpc).to.equal(true);
     });
 
+    it("returns undefined for symbol property access", function () {
+        const remoteRpc = routerServing({
+            service: new CrossModuleRpcService()
+        }).remoteRpc;
+
+        expect(Reflect.get(remoteRpc, Symbol.iterator)).to.equal(undefined);
+        expect(Reflect.get(remoteRpc, Symbol.toPrimitive)).to.equal(undefined);
+    });
+
+    it("returns a live handle for any string name, leaving refusal to the far end", async function () {
+        const link = linkedRouters();
+        try {
+            const unknown = Reflect.get(link.a.far, "noSuchService") as Record<
+                string,
+                (...params: unknown[]) => { request: () => Promise<unknown> }
+            >;
+            expect(unknown).to.be.an("object");
+
+            let caught: Error | undefined;
+            try {
+                await unknown.noSuchMethod().request();
+            } catch (error) {
+                caught = error as Error;
+            }
+
+            expect(caught?.message).to.equal(
+                "Unknown RPC service 'noSuchService'"
+            );
+        } finally {
+            link.close();
+        }
+    });
+
     it("keeps separate cached proxies for separate service names", function () {
-        const remoteRpc = RemoteRpcProxy.createProxy({
+        const remoteRpc = routerServing({
             firstService: new CrossModuleRpcService(),
             secondService: new CrossModuleRpcService()
-        });
+        }).remoteRpc;
         const firstProxy = Reflect.get(remoteRpc, "firstService");
         const secondProxy = Reflect.get(remoteRpc, "secondService");
 

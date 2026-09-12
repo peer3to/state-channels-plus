@@ -2,11 +2,11 @@ import createEvm from "../EvmFactory";
 import type AContractExecutor from "./AContractExecutor";
 import InlineContractExecutor from "./ContractExecutor";
 import type { ContractExecutorFactoryOptions } from "./ContractExecutorFactory";
-import noOpLogger from "./NoOpLogger";
 import WorkerContractExecutor, {
     type WorkerContractExecutorDependencies
 } from "./WorkerContractExecutor";
 import Clock from "@/Clock";
+import noOpLogger from "@/utils/logging/noOpLogger";
 
 /**
  * Internal constructor behind the package's one-argument factory. The second

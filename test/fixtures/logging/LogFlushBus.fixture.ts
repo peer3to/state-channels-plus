@@ -1,39 +1,62 @@
 // @spec-test-coverage-ignore: developer diagnostics tooling; not protocol behavior, no specification or implementation IDs apply
-import { createUploaderFixture } from "./LogUploader.fixture";
-import type {
-    LogControlMessage,
-    LogControlPort,
-    LogPortHandle
-} from "@/utils/logging/logControl";
+
+import { applyCrashLogConfig, crashLogUploadOverrides } from "./crashLogConfig";
+import { createUploaderFixture, type LogReceiver } from "./LogUploader.fixture";
+import { adaptPort } from "@/evm/p2pRuntime/node/P2pRuntimeChannel";
+import type Rpc from "@/rpc/Rpc";
+import type { RpcResponse } from "@/rpc/Rpc";
+import { RpcRouter } from "@/rpc/RpcRouter";
+import MessagePortTransport from "@/transport/MessagePortTransport";
+import type { RuntimePort } from "@/transport/RuntimePort";
 import { LogFlushBus } from "@/utils/logging/LogFlushBus";
 import type { LogThreadName } from "@/utils/logging/Logger";
 import type { LogStore } from "@/utils/logging/logStore";
 import type { NodeLogger } from "@/utils/logging/node/NodeLogger";
 import type { NodeLogUploader } from "@/utils/logging/node/NodeLogUploader";
-import { ethers } from "ethers";
-import { MessageChannel } from "node:worker_threads";
+import { LogControlService } from "@/utils/logging/rpc/logControl/LogControlService";
 
-/** one realm's logging state: its own bus, logger, store, uploader */
+import { ethers } from "ethers";
+import {
+    MessageChannel,
+    type MessagePort as NodeMessagePort
+} from "node:worker_threads";
+
+/** what a realm serves over its links: the log tree only */
+class TestRealmRoot {
+    readonly logControl: LogControlService;
+
+    constructor(
+        router: RpcRouter<TestRealmRoot, TestRealmRoot>,
+        bus: LogFlushBus
+    ) {
+        this.logControl = new LogControlService(router, router.logger, bus);
+    }
+}
+
+/** one realm's logging state: its own bus, its router, its logger, store and
+ *  uploader */
 export type TestRealm = {
     bus: LogFlushBus;
+    router: RpcRouter<TestRealmRoot, TestRealmRoot>;
     logger: NodeLogger;
     logStore: LogStore;
     logUploader: NodeLogUploader;
     threadName: LogThreadName;
 };
 
+/** a frame as it crossed a link, either way */
+export type LinkFrame = Rpc | RpcResponse;
+
 export type RealmConnection = {
     /** everything the parent sent down, in order */
-    toChild: LogControlMessage[];
+    toChild: LinkFrame[];
     /** everything the child sent up, in order */
-    toParent: LogControlMessage[];
-    removeFromParent: () => void;
-    removeFromChild: () => void;
+    toParent: LinkFrame[];
     close: () => void;
 };
 
-/** a realm as a thread has it: one bus, one registered root, a real uploader on a
- *  real endpoint. `uploadEndpoint` of "" means uploads are off. */
+/** a realm as a thread has it: one bus, one registered root, a real uploader
+ *  on a real endpoint. `uploadEndpoint` of "" means uploads are off. */
 export function createTestRealm(opts: {
     threadName: LogThreadName;
     uploadEndpoint: string;
@@ -54,14 +77,52 @@ export function createTestRealm(opts: {
     });
     const bus = new LogFlushBus();
     bus.registerLogger(logger);
-    return { bus, logger, logStore, logUploader, threadName: opts.threadName };
+    const router = new RpcRouter<TestRealmRoot, TestRealmRoot>(
+        (self) => new TestRealmRoot(self, bus),
+        logger
+    );
+    return {
+        bus,
+        router,
+        logger,
+        logStore,
+        logUploader,
+        threadName: opts.threadName
+    };
 }
 
-/** fixture realms always register, so a port always attaches */
-function attachPort(logger: NodeLogger, port: LogControlPort): LogPortHandle {
-    const handle = logger.addLogPort(port);
-    if (!handle) throw new Error("fixture logger is not on a flush bus");
-    return handle;
+/** an sdk realm on a real receiver, with the config a worker rebuilds from its
+ *  init payload pointed at the same receiver. `dispose` puts the config back. */
+export function hostRealmOn(receiver: LogReceiver): {
+    realm: TestRealm;
+    dispose: () => void;
+} {
+    const restoreConfig = applyCrashLogConfig(
+        crashLogUploadOverrides(receiver.url)
+    );
+    const realm = createTestRealm({
+        threadName: "sdk",
+        uploadEndpoint: receiver.url
+    });
+    return {
+        realm,
+        dispose: () => {
+            realm.logger.dispose();
+            restoreConfig();
+        }
+    };
+}
+
+/** a port that records every frame posted through it before it crosses */
+function recordingPort(port: NodeMessagePort, sent: LinkFrame[]): RuntimePort {
+    const adapted = adaptPort(port);
+    return {
+        ...adapted,
+        post: (message, transfer) => {
+            sent.push(message as LinkFrame);
+            adapted.post(message, transfer);
+        }
+    };
 }
 
 /** join two realms over a real MessageChannel pair, the shape the runtime and
@@ -71,85 +132,69 @@ export function connectRealms(
     child: TestRealm
 ): RealmConnection {
     const channel = new MessageChannel();
-    const toChild: LogControlMessage[] = [];
-    const toParent: LogControlMessage[] = [];
+    const toChild: LinkFrame[] = [];
+    const toParent: LinkFrame[] = [];
 
-    const portToChild: LogControlPort = {
-        post: (message) => {
-            toChild.push(message);
-            channel.port1.postMessage(message);
-        },
-        remoteRealm: "child"
-    };
-    const portToParent: LogControlPort = {
-        post: (message) => {
-            toParent.push(message);
-            channel.port2.postMessage(message);
-        },
-        remoteRealm: "parent"
-    };
-
-    // through the loggers, like the real transports -> ports land on the bus this
-    // fixture built
-    let parentHandle: LogPortHandle | undefined;
-    let childHandle: LogPortHandle | undefined;
-
-    // port1 is the parent's end -> what it posts arrives at port2
-    channel.port2.on("message", (message) =>
-        childHandle?.receive(message as LogControlMessage)
+    const parentTransport = new MessagePortTransport(
+        recordingPort(channel.port1, toChild),
+        parent.router,
+        "child"
     );
-    channel.port1.on("message", (message) =>
-        parentHandle?.receive(message as LogControlMessage)
+    const childTransport = new MessagePortTransport(
+        recordingPort(channel.port2, toParent),
+        child.router,
+        "parent"
     );
 
-    parentHandle = attachPort(parent.logger, portToChild);
-    childHandle = attachPort(child.logger, portToParent);
+    // like the real transports -> each link lands on the bus of the realm that
+    // holds it, and leaves it when the link closes
+    parent.bus.addLink(parentTransport, parent.logger);
+    child.bus.addLink(childTransport, child.logger);
 
     return {
         toChild,
         toParent,
-        removeFromParent: parentHandle.remove,
-        removeFromChild: childHandle.remove,
         close: () => {
-            parentHandle?.remove();
-            childHandle?.remove();
-            channel.port1.close();
-            channel.port2.close();
+            parentTransport.close(true);
+            childTransport.close(true);
         }
     };
 }
 
-/** a port whose far end never answers - the "thread died" case. nothing listens
- *  on port2, so no ack comes back. */
+/** a link whose far end never answers - the "thread died" case. nothing
+ *  listens on port2, so no reply comes back. */
 export function addDeadPort(realm: TestRealm): {
-    posted: LogControlMessage[];
+    posted: LinkFrame[];
     remove: () => void;
 } {
     const channel = new MessageChannel();
-    const posted: LogControlMessage[] = [];
-    const deadPort: LogControlPort = {
-        post: (message) => {
-            posted.push(message);
-            channel.port1.postMessage(message);
-        },
-        remoteRealm: "child"
-    };
-    const handle = attachPort(realm.logger, deadPort);
+    const posted: LinkFrame[] = [];
+    const transport = new MessagePortTransport(
+        recordingPort(channel.port1, posted),
+        realm.router,
+        "child"
+    );
+    realm.bus.addLink(transport, realm.logger);
     return {
         posted,
         remove: () => {
-            handle.remove();
-            channel.port1.close();
+            transport.close(true);
             channel.port2.close();
         }
     };
 }
 
+/** the log-control calls in a recorded stream */
 export function countMessages(
-    messages: LogControlMessage[],
-    type: LogControlMessage["type"]
+    messages: LinkFrame[],
+    method: "flush" | "contextUpdate"
 ): number {
-    return messages.filter((message) => message.type === type).length;
+    return messages.filter(
+        (frame) =>
+            "service" in frame &&
+            frame.service === "logControl" &&
+            frame.method === method
+    ).length;
 }
 
 /** a promise a test resolves by hand, e.g. to hold a response open */

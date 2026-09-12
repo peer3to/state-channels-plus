@@ -1,19 +1,11 @@
-import type { WorkerLike } from "../types";
-import type { WorkerHostMessage } from "../worker/protocol";
-
-export type ContractExecutorWorkerMessageHandler = (
-    message: WorkerHostMessage
-) => void;
-
-export type ContractExecutorWorkerErrorHandler = (error: Error) => void;
+import type { ContractExecutorWorkerErrorHandler, WorkerLike } from "../types";
+import type { RuntimePort } from "@/transport/RuntimePort";
 
 export function createContractExecutorWorker(
-    onMessage: ContractExecutorWorkerMessageHandler,
     onError: ContractExecutorWorkerErrorHandler
 ): WorkerLike {
     return createContractExecutorWorkerFromUrl(
         new URL("./ContractExecutorWorkerEntry.js", import.meta.url),
-        onMessage,
         onError
     );
 }
@@ -26,14 +18,14 @@ export function createContractExecutorWorker(
  */
 export function createContractExecutorWorkerFromUrl(
     workerUrl: URL,
-    onMessage: ContractExecutorWorkerMessageHandler,
     onError: ContractExecutorWorkerErrorHandler,
     name?: string
 ): WorkerLike {
     const worker = new Worker(workerUrl, { type: "module", name });
-
-    worker.onmessage = (event: MessageEvent<WorkerHostMessage>) => {
-        onMessage(event.data);
+    const closeHandlers: (() => void)[] = [];
+    const messageHandlers: ((message: unknown) => void)[] = [];
+    worker.onmessage = (event: MessageEvent) => {
+        for (const handler of messageHandlers) handler(event.data);
     };
     worker.onerror = (event: ErrorEvent) => {
         const details = [
@@ -43,14 +35,28 @@ export function createContractExecutorWorkerFromUrl(
             event.colno ? `column: ${event.colno}` : undefined
         ].filter(Boolean);
         onError(new Error(details.join(" ")));
+        for (const handler of closeHandlers) handler();
     };
     worker.onmessageerror = () => {
         onError(
             new Error("Contract executor worker message could not be cloned")
         );
     };
+    // the worker as a port. a browser worker has no exit event: an error
+    // closes the line, and a clean end comes through dispose
+    const port: RuntimePort = {
+        post: (message) => worker.postMessage(message),
+        onMessage: (handler) => {
+            messageHandlers.push(handler);
+        },
+        start: () => {},
+        onClose: (handler) => {
+            closeHandlers.push(handler);
+        },
+        close: () => {}
+    };
     return {
-        postMessage: (message) => worker.postMessage(message),
+        port,
         shutdown: async () => worker.terminate()
     };
 }

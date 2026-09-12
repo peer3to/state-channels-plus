@@ -4,16 +4,19 @@ import RpcHandler, {
     FireAndForgetRpcHandler,
     RequestRpcHandler
 } from "./RpcHandler";
-import ARpcService from "@/rpc/ARpcService";
+import type { RpcRouter } from "./RpcRouter";
 
 /**
  * Picks the delivery API based on a method's return type:
- * - `void`/`Promise<void>` -> fire-and-forget (broadcast/sendOne/sendMultiple)
- * - any other value        -> request/response (`request(target)` returning that value)
+ * - `void`          -> fire-and-forget (broadcast/sendOne/sendMultiple)
+ * - `Promise<void>` -> both: nothing comes back, but "done" can be awaited
+ * - any other value -> request/response (`request(target)` returning that value)
  */
-type RpcCallHandler<R> = [Awaited<R>] extends [void]
+type RpcCallHandler<R> = [R] extends [void]
     ? FireAndForgetRpcHandler
-    : RequestRpcHandler<Awaited<R>>;
+    : [Awaited<R>] extends [void]
+      ? FireAndForgetRpcHandler & RequestRpcHandler<void>
+      : RequestRpcHandler<Awaited<R>>;
 
 /**
  * Transforms a function's return type into the matching RPC delivery handler
@@ -36,7 +39,7 @@ export type RpcHandleMethods<T extends ARpcMethods> = {
  */
 export type RpcMethodsContextObject = {
     serviceName: string;
-    service: ARpcService<any>; // don't care for the type here -> so any
+    router: RpcRouter<any, any>;
 };
 class RpcMethodsProxy {
     public static createProxy(ctx: RpcMethodsContextObject) {
@@ -55,11 +58,11 @@ class RpcMethodsProxy {
                             method: prop.toString(),
                             params: args
                         };
-                        return new RpcHandler(rpc, ctx.service.p2pManager);
+                        return new RpcHandler(rpc, ctx.router);
                     };
                 }
             }
-        ) as RpcHandleMethods<ReturnType<typeof ctx.service.createRPCMethods>>;
+        ) as RpcHandleMethods<ARpcMethods<any>>;
     }
 }
 export default RpcMethodsProxy;

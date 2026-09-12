@@ -1,9 +1,10 @@
 import RpcMethodsProxy, { RpcHandleMethods } from "./RpcHandleProxy";
+import type { RpcRouter } from "./RpcRouter";
+import type ARpcMethods from "@/rpc/ARpcMethods";
 import type ARpcService from "@/rpc/ARpcService";
-import type MainRpcService from "@/rpc/MainRpcService";
-import { hasRpcService } from "@/utils/ObjectChecks";
 
-type RemoteRpcServices<T extends object> = {
+/** every service on a root, seen as its delivery handles */
+export type RemoteRpcServices<T extends object> = {
     [K in keyof T as T[K] extends ARpcService<any, any>
         ? K
         : never]: T[K] extends ARpcService<infer R, any>
@@ -12,56 +13,35 @@ type RemoteRpcServices<T extends object> = {
 };
 
 /**
- * Substitue the type of every 'service' in MainRpcService to the type of the coresponding 'RpcMethods' class
- * E.g. initService: InitService -> initService : InitRpcMethods
- * Now we can use a simple interface: remoteProxy.initService.initHandshakre(...)
+ * the far end of this router's lines, typed by the root it serves. the far
+ * root is never instantiated here: `TRemote` names its services and every
+ * property is a handle for the service of that name.
  */
-export type RemoteRpcProxyType<T extends object> =
-    RemoteRpcServices<MainRpcService> & RemoteRpcServices<T>;
+export function createRemoteRpcProxy<TRemote extends object>(
+    router: RpcRouter<any, any>
+): RemoteRpcServices<TRemote> {
+    // service name -> the handle proxy already built for it
+    const proxyCache = new Map<string, RpcHandleMethods<ARpcMethods<any>>>();
 
-class RemoteRpcProxy {
-    public static createProxy<TLocalRpcRoot extends object>(
-        localRpcRoot: TLocalRpcRoot
-    ): RemoteRpcProxyType<TLocalRpcRoot> {
-        const proxyCache = new Map<
-            string,
-            ReturnType<typeof RpcMethodsProxy.createProxy>
-        >();
-
-        return new Proxy(localRpcRoot, {
-            get(target, prop, receiver) {
+    return new Proxy(
+        {},
+        {
+            get(_target, prop) {
                 // Avoid breaking common JS runtime inspection paths.
-                if (typeof prop === "symbol") {
-                    return Reflect.get(target, prop, receiver);
-                }
-                if (prop === "then") {
-                    return undefined;
-                }
+                if (typeof prop === "symbol") return undefined;
+                if (prop === "then") return undefined;
 
-                if (!hasRpcService(target, prop)) {
-                    throw new Error("RemoteRpcProxy can only access services");
-                }
-
-                const val = Reflect.get(target, prop, receiver);
-
-                // val is a service
                 const serviceName = prop.toString();
-
-                // Create and cache proxy per service
                 if (!proxyCache.has(serviceName)) {
-                    const ctx = {
-                        serviceName,
-                        service: val
-                    };
                     proxyCache.set(
                         serviceName,
-                        RpcMethodsProxy.createProxy(ctx)
+                        RpcMethodsProxy.createProxy({ serviceName, router })
                     );
                 }
-
                 return proxyCache.get(serviceName)!;
             }
-        }) as unknown as RemoteRpcProxyType<TLocalRpcRoot>;
-    }
+        }
+    ) as RemoteRpcServices<TRemote>;
 }
-export default RemoteRpcProxy;
+
+export default createRemoteRpcProxy;

@@ -1,23 +1,9 @@
-import type { WorkerClientMessage, WorkerHostMessage } from "./worker/protocol";
+import type { RuntimePort } from "@/transport/RuntimePort";
 
-export type {
-    ContractExecutorRequestPayload,
-    WorkerCallMethod,
-    WorkerClientMessage,
-    WorkerCustomPrecompile,
-    WorkerHostMessage,
-    WorkerLogControlMessage,
-    WorkerRequestMessage,
-    WorkerResponseMessage
-} from "./worker/protocol";
-
+/** a running vm worker: the port its router speaks on, and how to end it */
 export type WorkerLike = {
-    postMessage(message: WorkerClientMessage): void;
+    port: RuntimePort;
     shutdown?: () => Promise<void>;
 };
-
-export type ContractExecutorWorkerMessageHandler = (
-    message: WorkerHostMessage
-) => void;
 
 export type ContractExecutorWorkerErrorHandler = (error: Error) => void;

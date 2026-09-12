@@ -1,9 +1,10 @@
 import {
     SerializedTransactionResponse,
     deserializeTransactionResponse,
+    serializeSignerMessage,
     serializeTransactionRequest
 } from "../p2pRuntime/chainSignerSerialization";
-import type { RuntimeRequester } from "../p2pRuntime/types";
+import type { RuntimeHostEndpoint } from "../p2pRuntime/P2pRuntimeClient";
 import {
     AbstractSigner,
     Provider,
@@ -11,22 +12,21 @@ import {
     TransactionResponse,
     TypedDataDomain,
     TypedDataField,
-    assert,
-    hexlify
+    assert
 } from "ethers";
 
 /** Real-chain signer whose key-bearing operations execute on the runtime host. */
 class ClientChainSigner extends AbstractSigner {
-    private readonly requester: RuntimeRequester;
+    private readonly host: RuntimeHostEndpoint;
     private readonly signerAddress: string;
 
     constructor(
-        requester: RuntimeRequester,
+        host: RuntimeHostEndpoint,
         provider: Provider,
         signerAddress: string
     ) {
         super(provider);
-        this.requester = requester;
+        this.host = host;
         this.signerAddress = signerAddress;
     }
 
@@ -49,10 +49,9 @@ class ClientChainSigner extends AbstractSigner {
             tx,
             this.provider
         );
-        return this.requester.request<string>({
-            type: "chainSignerSignTransaction",
-            serializedTransaction
-        });
+        return this.host.chainSigner
+            .signTransaction(serializedTransaction)
+            .request();
     }
 
     async sendTransaction(
@@ -64,14 +63,10 @@ class ClientChainSigner extends AbstractSigner {
         );
         // TODO: Revisit recovery for a port that dies while the host broadcast
         // outcome is unknown. A timeout cannot cancel an in-progress send.
-        const serializedResponse =
-            await this.requester.request<SerializedTransactionResponse>(
-                {
-                    type: "chainSignerSendTransaction",
-                    serializedTransaction
-                },
-                { timeoutMs: null }
-            );
+        const serializedResponse: SerializedTransactionResponse =
+            await this.host.chainSigner
+                .sendTransaction(serializedTransaction)
+                .request({ timeoutMs: null });
         return deserializeTransactionResponse(
             serializedResponse,
             this.provider!
@@ -79,13 +74,9 @@ class ClientChainSigner extends AbstractSigner {
     }
 
     signMessage(message: string | Uint8Array): Promise<string> {
-        return this.requester.request<string>({
-            type: "chainSignerSignMessage",
-            message:
-                typeof message === "string"
-                    ? { kind: "string", value: message }
-                    : { kind: "bytes", encodedBytes: hexlify(message) }
-        });
+        return this.host.chainSigner
+            .signMessage(serializeSignerMessage(message))
+            .request();
     }
 
     signTypedData(
@@ -93,12 +84,9 @@ class ClientChainSigner extends AbstractSigner {
         types: Record<string, TypedDataField[]>,
         value: Record<string, any>
     ): Promise<string> {
-        return this.requester.request<string>({
-            type: "chainSignerSignTypedData",
-            domain,
-            types,
-            value
-        });
+        return this.host.chainSigner
+            .signTypedData(domain, types, value)
+            .request();
     }
 }
 

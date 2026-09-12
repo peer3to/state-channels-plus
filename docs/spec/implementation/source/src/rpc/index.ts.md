@@ -19,7 +19,10 @@
 
 ## Responsibility and observable boundary
 
-Public RPC surface re-exports, ordered to avoid CommonJS circular-init issues. No behavior of its own.
+The RPC barrel: the service base class first (so a service importing it during CommonJS
+circular init finds it), then the main service and the custom-RPC registry. It carries only what a
+consumer outside `src/rpc` names; the router, the handles and the error wire are imported from
+their own modules. No behavior of its own.
 
 ## Key design decisions
 

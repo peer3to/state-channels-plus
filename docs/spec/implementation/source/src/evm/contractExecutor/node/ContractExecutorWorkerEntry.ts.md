@@ -3,41 +3,14 @@
 > **Source:** [src/evm/contractExecutor/node/ContractExecutorWorkerEntry.ts](../../../../../../../../src/evm/contractExecutor/node/ContractExecutorWorkerEntry.ts) > **Status:** Authored — engineer verification pending.
 > **Design views:** [architecture/sdk/runtime-and-concurrency.md](../../../../../views/architecture/sdk/runtime-and-concurrency.md)
 
-## Contents
-
-- [Responsibility and observable boundary](#responsibility-and-observable-boundary)
-- [Key design decisions](#key-design-decisions)
-- [Inputs, outputs, state, and side effects](#inputs-outputs-state-and-side-effects)
-- [Linked requirements](#linked-requirements)
-- [Assumptions, dependencies, trust boundaries, and limits](#assumptions-dependencies-trust-boundaries-and-limits)
-- [Specification adherence](#specification-adherence)
-- [Specification contradictions](#specification-contradictions)
-- [Missing behavior](#missing-behavior)
-- [Conformance traceability](#conformance-traceability)
-- [Component test obligations](#component-test-obligations)
-- [Related source reports](#related-source-reports)
-
 ## Responsibility and observable boundary
 
-Node worker entry point.
-
-## Key design decisions
-
-1. **The entry registers the node error funnel on the host handle.** `onUnhandledWorkerError(host.reportUnhandledError)` runs on the handle from `createContractExecutorWorkerHost` before `host.start` installs request handling and posts readiness, and gives the contract-executor worker the same policy as the sdk worker: an error outside a request is reported and the worker keeps serving.
-
-## Inputs, outputs, state, and side effects
-
-| Aspect       | Contents        |
-| ------------ | --------------- |
-| Inputs       | Per role above. |
-| Outputs      | Per role above. |
-| Owned state  | Per role above. |
-| Side effects | Per role above. |
+Node worker entry point: hands the node error funnel to the shared bootstrap, which puts the
+router, the parent line, the report path and the flush round in place and asserts this really is a
+worker thread when it adapts the scope. Everything observable about the worker lives in that one
+shared function.
 
 ## Linked requirements
-
-A file may contribute to several requirements; this report describes the contribution and never
-claims complete conformance for a requirement that depends on other files.
 
 | Source file                                                                                                            | Specification IDs                                                                                                                                                                                       |
 | ---------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -50,33 +23,21 @@ claims complete conformance for a requirement that depends on other files.
 ## Specification adherence
 
 - Executor semantics identical across contexts per the runtime equivalence rules.
-- On an error this thread asks every reachable thread to send its logs, waits only for its own send,
-  then ends with a non-zero exit ([`REQ-LOG-10-69CTN1`](../../../../../../specification/runtime/log-collection.md#req-log-10-69ctn1)).
-
-## Specification contradictions
-
-None demonstrated.
-
-## Missing behavior
-
-None demonstrated.
+- An error outside a request is reported to the owner over the worker-errors endpoint and this
+  thread keeps serving; it also asks every reachable thread to send its logs, waiting for none of
+  them ([`REQ-LOG-10-69CTN1`](../../../../../../specification/runtime/log-collection.md#req-log-10-69ctn1)).
 
 ## Conformance traceability
-
-Status enum: `Covered` | `Partial` | `Contradicts` | `Missing`. Evidence cells are structured
-**Here:** / **Other files:** so each row is auditable from its links alone; genuine gaps go in the
-Gap column. Audit state is file-level (Status header), never a row status.
 
 | Requirement / invariant | Implementation status | Evidence | Gap / divergence |
 | ----------------------- | --------------------- | -------- | ---------------- |
 
 ## Component test obligations
 
-Exact test evidence is mapped against these IDs in the verification test reports.
-
 | Unit test ID | Obligation | Public entry and setup | Oracle and forbidden effects | Required permutations |
 | ------------ | ---------- | ---------------------- | ---------------------------- | --------------------- |
 
 ## Related source reports
 
+- [worker/bootstrapContractExecutorWorker.ts.md](../worker/bootstrapContractExecutorWorker.ts.md) — what it hands the funnel to.
 - [AContractExecutor](../AContractExecutor.ts.md), [runtime-and-concurrency view](../../../../../views/architecture/sdk/runtime-and-concurrency.md).

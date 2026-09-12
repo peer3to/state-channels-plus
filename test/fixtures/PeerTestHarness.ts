@@ -18,8 +18,8 @@ import type { BusEventMaps } from "@/events/EventBus";
 import { EvmStateMachine } from "@/evm";
 import P2pEventHooks from "@/P2pEventHooks";
 import type { CustomRpcManifest } from "@/rpc/registry";
-import type { RemoteRpcProxyType } from "@/rpc/RemoteRpcProxy";
-import type { RpcRequestOptions } from "@/rpc/RpcHandler";
+import type { RemoteRpcServices } from "@/rpc/RemoteRpcProxy";
+import type { RpcRequestOptions } from "@/rpc/RpcRouter";
 import type StateManager from "@/stateManager/StateManager";
 import { TimeConfig } from "@/types";
 import { Address, ChannelId, ForkId, Hash } from "@/types/types";
@@ -172,9 +172,9 @@ export class PeerTestHarness<
      */
     public control(
         peer: TestPeer<TCustomRpc>
-    ): RemoteRpcProxyType<HarnessControlRpc> {
+    ): RemoteRpcServices<HarnessControlRpc> {
         return peer.p2pInstance
-            .hostRpc as unknown as RemoteRpcProxyType<HarnessControlRpc>;
+            .hostRpc as unknown as RemoteRpcServices<HarnessControlRpc>;
     }
 
     /**

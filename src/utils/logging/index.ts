@@ -19,13 +19,6 @@ export type {
     CreateLoggerOptions
 };
 export { decodeLogs, decompressFromBase64, LogFlushBus, realmLogFlushBus };
-export type {
-    FlushId,
-    LogControlMessage,
-    LogControlPort,
-    LogFlushResult,
-    LogPortHandle,
-    LogRemoteRealm
-} from "./logControl";
+export type { LogFlushResult } from "./LogFlushBus";
 export type { LogThreadName } from "./Logger";
 export type { LogUploadOutcome } from "./LogUploader";

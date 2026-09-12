@@ -1,0 +1,60 @@
+import type { P2pRuntimeHostRoot } from "../P2pRuntimeHostRoot";
+import ARpcMethods from "@/rpc/ARpcMethods";
+import type { RpcRouter } from "@/rpc/RpcRouter";
+import type { SerializedError } from "@/rpc/serializeError";
+import type MessagePortTransport from "@/transport/MessagePortTransport";
+
+export class RuntimeLifecycleRpcMethods extends ARpcMethods<
+    RpcRouter<P2pRuntimeHostRoot, any>
+> {
+    /** the host's only line is the port to the thread that built it */
+    declare senderTransport: MessagePortTransport;
+
+    /** both local state machines are deployed: build the runtime graph. the
+     *  reply is the host's readiness; a failure before it tears down what was
+     *  built and rejects the same promise the client awaits. */
+    async deployComplete(
+        localStateMachineAddress: string,
+        diamondStateMachineAddress: string
+    ): Promise<{ webRTCBridge: boolean }> {
+        const host = this.localRpc.host;
+        try {
+            return await host.buildRuntime(
+                localStateMachineAddress,
+                diamondStateMachineAddress
+            );
+        } catch (error) {
+            try {
+                await host.disposeRuntime();
+            } catch (cleanupError) {
+                host.logger.error("Runtime readiness cleanup failed", {
+                    cleanupError
+                });
+            }
+            throw error;
+        }
+    }
+
+    /**
+     * Drain this host realm's detached promises and report the ones that
+     * rejected, so the orchestrator can settle and surface host-side async
+     * work over the port.
+     */
+    quiesce(): Promise<SerializedError[]> {
+        return this.localRpc.host.quiesce();
+    }
+
+    /** end the runtime; the link closes once this reply is out. a teardown
+     *  that rejects still closes it -> the reply carries the failure, but a
+     *  held-open port would strand the client waiting on a worker that never
+     *  exits. */
+    async dispose(): Promise<void> {
+        try {
+            await this.localRpc.host.disposeRuntime();
+        } finally {
+            this.localRpc.host.closeAfterReply(this.senderTransport);
+        }
+    }
+}
+
+export default RuntimeLifecycleRpcMethods;
