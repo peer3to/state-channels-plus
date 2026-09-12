@@ -34,7 +34,9 @@ only the message; this shape is for this process's own threads, which need to cl
 
 ## Assumptions, dependencies, trust boundaries, and limits
 
-- A reply from a peer carries a string; `errorFromReply` handles both shapes.
+- A reply from a peer carries a string; `errorFromReply` handles both shapes, but takes only the
+  message from an untrusted line — a peer choosing the shape must not choose the name, stack,
+  revert `data` or the origin-peer stamp either.
 - What cannot be cloned is dropped, never thrown on.
 
 ## Specification adherence

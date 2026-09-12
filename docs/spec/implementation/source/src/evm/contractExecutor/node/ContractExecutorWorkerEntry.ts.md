@@ -5,9 +5,9 @@
 
 ## Responsibility and observable boundary
 
-Node worker entry point: an `RpcRouter` serving `ContractExecutorRoot` over the parent port, a
-typed endpoint back to the owner's root, and the funnel that reports an error caught outside a
-request. The worker keeps serving; the report crosses and every realm is asked to upload.
+Node worker entry point: asserts this really is a worker thread, then hands the node error funnel
+to the shared bootstrap, which puts the router, the parent line, the report path and the flush
+round in place. Everything observable about the worker lives in that one shared function.
 
 ## Linked requirements
 
@@ -38,4 +38,5 @@ request. The worker keeps serving; the report crosses and every realm is asked t
 
 ## Related source reports
 
+- [worker/bootstrapContractExecutorWorker.ts.md](../worker/bootstrapContractExecutorWorker.ts.md) — what it hands the funnel to.
 - [AContractExecutor](../AContractExecutor.ts.md), [runtime-and-concurrency view](../../../../../views/architecture/sdk/runtime-and-concurrency.md).

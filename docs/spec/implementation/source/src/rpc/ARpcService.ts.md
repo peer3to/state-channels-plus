@@ -5,9 +5,11 @@
 
 ## Responsibility and observable boundary
 
-The service base class: guard evaluation, method resolution, and handler invocation for one
-dispatched frame — the last three stages of the ingress dispatch order. Subclasses declare
-`guards` and a per-dispatch `createRPCMethods(../transport)` factory.
+The service class: guard evaluation, method resolution, and handler invocation for one dispatched
+frame — the last three stages of the ingress dispatch order. It is concrete: a service with no
+state of its own is `new ARpcService(router, logger, XRpcMethods)`, and the class builds the
+endpoints per dispatch from what it was handed. A subclass that carries state declares `guards`
+and overrides `createRPCMethods(transport)` to hand the endpoints itself.
 
 ## Key design decisions
 
@@ -17,6 +19,7 @@ dispatched frame — the last three stages of the ingress dispatch order. Subcla
 4. **Guard failure still settles requests.** A refused request gets a deterministic `rejected by guard` response instead of a timeout ([#L52](../../../../../../src/rpc/ARpcService.ts#L52)).
 5. **Only declared application endpoints resolve.** Descriptor lookup walks own properties and application prototypes, then stops before either `ARpcMethods.prototype` or `Object.prototype`; accessors, base members, non-functions, and `constructor` reject without evaluation ([#L11](../../../../../../src/rpc/ARpcService.ts#L11)).
 6. **Authorization captures the callable.** Both delivery paths invoke the resolved function with `Reflect.apply`, so property replacement cannot change the endpoint between authorization and execution ([#L76](../../../../../../src/rpc/ARpcService.ts#L76)).
+7. **A service with nothing of its own is not a subclass.** The methods class passed to the constructor is what `createRPCMethods` builds, handing it the router; the endpoints reach their collaborators through the root on `localRpc`. The stored constructor's router parameter is deliberately untyped so a service with a narrower router still matches the base ([#L44](../../../../../../src/rpc/ARpcService.ts#L44)).
 
 ## Inputs, outputs, state, and side effects
 

@@ -7,20 +7,22 @@
 
 What the main thread serves to the sdk host over the runtime port: the host's one-way pushes (bus
 events, host errors) and log control. `RuntimeEventSink` is what the client implements to receive
-the pushes.
+the pushes; the root holds it, so the endpoints read it off `localRpc`.
 
 ## Key design decisions
 
 - **Pushes are services too.** What used to be two message types and a switch on the client is one
   service with two `void` methods, delivered as casts.
+- **The push service has no class of its own**: it is a plain `ARpcService` built with
+  `RuntimeEventsRpcMethods`, and the sink it delivers to is a field on this root.
 
 ## Inputs, outputs, state, and side effects
 
 | Aspect       | Contents                                |
 | ------------ | --------------------------------------- |
 | Inputs       | The router, the sink, the owner logger. |
-| Outputs      | The composed services; the manifest.    |
-| Owned state  | The service instances.                  |
+| Outputs      | The composed services.                  |
+| Owned state  | The sink and the service instances.     |
 | Side effects | None of its own.                        |
 
 ## Linked requirements
@@ -45,5 +47,5 @@ the pushes.
 
 ## Related source reports
 
-- [runtimeEvents/RuntimeEventsService.ts.md](./runtimeEvents/RuntimeEventsService.ts.md)
+- [runtimeEvents/RuntimeEventsRpcMethods.ts.md](./runtimeEvents/RuntimeEventsRpcMethods.ts.md)
 - [P2pRuntimeHostRoot.ts.md](./P2pRuntimeHostRoot.ts.md) — the other end.

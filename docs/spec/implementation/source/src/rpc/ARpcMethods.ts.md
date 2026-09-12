@@ -6,9 +6,10 @@
 ## Responsibility and observable boundary
 
 The RpcMethods base: binds a dispatch to its sender transport and exposes the router's typed
-remote surface — the only state an endpoint instance carries. Generic over the router, so the
-same base serves a peer service under `P2PManager` and a worker-link service under a port
-`RpcRouter`.
+remote and local surfaces — the only state an endpoint instance carries. `localRpc` is the root
+this end serves, which is where the endpoints of a service with no class of its own find their
+collaborators. Generic over the router, so the same base serves a peer service under `P2PManager`
+and a worker-link service under a port `RpcRouter`.
 
 ## Key design decisions
 

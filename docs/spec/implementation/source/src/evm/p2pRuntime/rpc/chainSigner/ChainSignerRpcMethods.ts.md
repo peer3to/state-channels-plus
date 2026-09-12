@@ -11,7 +11,10 @@ given as text or hex bytes, sign typed data.
 ## Key design decisions
 
 - **Transactions cross in their serialized form** and responses in theirs, through the existing
-  serialization module; nothing is re-encoded here.
+  serialization module; nothing is re-encoded here. A message to sign crosses as the tagged
+  `SignerMessage` from that same module, which the p2p signer's endpoint now takes too.
+- **Typed data crosses as its own types.** The three `signTypedData` parameters are declared with
+  the ethers types and handed on; they are structured-clone-safe, so nothing is cast.
 
 ## Inputs, outputs, state, and side effects
 

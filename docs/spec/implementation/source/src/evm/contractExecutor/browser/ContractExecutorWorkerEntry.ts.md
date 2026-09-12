@@ -5,16 +5,16 @@
 
 ## Responsibility and observable boundary
 
-Browser worker entry point: the node-globals and `Buffer` shims the EVM stack needs, installed before
-anything boots it, then an `RpcRouter` serving `ContractExecutorRoot` over the worker's own
-scope, a typed endpoint back to the owner's root, and the funnel that reports an error caught
-outside a request while the worker keeps serving.
+Browser worker entry point: the node-globals and `Buffer` shims the EVM stack needs, installed
+before anything boots it, then the browser error funnel handed to the shared bootstrap, which puts
+the router, the parent line, the report path and the flush round in place. The realm's logs now
+leave after a detached vm error here too, which only the node entry used to do.
 
 ## Linked requirements
 
-| Source file                                                                                                               | Specification IDs                                                                                   |
-| ------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------- |
-| [ContractExecutorWorkerEntry.ts](../../../../../../../../src/evm/contractExecutor/browser/ContractExecutorWorkerEntry.ts) | [`REQ-RUNTIME-4-B0N70Y`](../../../../../../specification/runtime/execution.md#req-runtime-4-b0n70y) |
+| Source file                                                                                                               | Specification IDs                                                                                                                                                                                       |
+| ------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| [ContractExecutorWorkerEntry.ts](../../../../../../../../src/evm/contractExecutor/browser/ContractExecutorWorkerEntry.ts) | [`REQ-RUNTIME-4-B0N70Y`](../../../../../../specification/runtime/execution.md#req-runtime-4-b0n70y), [`REQ-LOG-10-69CTN1`](../../../../../../specification/runtime/log-collection.md#req-log-10-69ctn1) |
 
 ## Assumptions, dependencies, trust boundaries, and limits
 
@@ -36,4 +36,5 @@ outside a request while the worker keeps serving.
 
 ## Related source reports
 
+- [worker/bootstrapContractExecutorWorker.ts.md](../worker/bootstrapContractExecutorWorker.ts.md) — what it hands the funnel to.
 - [AContractExecutor](../AContractExecutor.ts.md), [runtime-and-concurrency view](../../../../../views/architecture/sdk/runtime-and-concurrency.md).

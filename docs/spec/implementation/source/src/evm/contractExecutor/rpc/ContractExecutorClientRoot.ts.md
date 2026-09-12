@@ -5,8 +5,11 @@
 
 ## Responsibility and observable boundary
 
-What the owner of a vm worker serves to it: only the log tree, bound to the bus of the logger the
-owner passed, so the worker's link lands where that logger lives.
+What the owner of a vm worker serves to it: the log tree, bound to the bus of the logger the owner
+passed so the worker's link lands where that logger lives, and the worker's one-way error reports.
+`WorkerErrorSink` is what the owner implements to receive them; the root holds it, so the endpoint
+reads it off `localRpc`. The report service has no class of its own — it is a plain `ARpcService`
+built with `WorkerErrorsRpcMethods`.
 
 ## Linked requirements
 

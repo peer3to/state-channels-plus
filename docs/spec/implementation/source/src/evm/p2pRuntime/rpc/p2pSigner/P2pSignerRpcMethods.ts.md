@@ -18,6 +18,9 @@ message or typed data, and the leader flag and peer disconnect.
   serve them reaches the caller rather than only the log.
 - **Typed data crosses as its own types.** `signTypedData` takes the ethers domain, types and value
   parameters directly; they are structured-clone-safe, so nothing is cast.
+- **A message is tagged, never sniffed.** `signMessage` takes the same `SignerMessage` the chain
+  signer takes and decodes through its owner, so the UTF-8 text `"0xdeadbeef"` is no longer signed
+  as the four bytes it resembles.
 
 ## Inputs, outputs, state, and side effects
 

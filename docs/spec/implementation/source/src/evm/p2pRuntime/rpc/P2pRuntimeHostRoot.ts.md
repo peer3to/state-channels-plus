@@ -6,30 +6,31 @@
 ## Responsibility and observable boundary
 
 What the sdk realm serves to the main thread over the runtime port, composed in one place: the
-runtime's lifecycle, the three signers, the mirror onto the host's peer RPC, and log control. The
-manifest of its names is what the main thread types its endpoint from. `RuntimeHost` is the set of
-live pieces the services reach, behind accessors that throw until each exists — except
-`deploySigner`, which is awaited because the client deploys through it before the host has
-finished starting.
+runtime's lifecycle, the three signers, the mirror onto the host's peer RPC, and log control. Its
+own type is what the main thread types its endpoint from. `RuntimeHost` is the set of live pieces
+the endpoints reach — held here on the root, so an endpoint reads it off `localRpc` — behind
+accessors that throw until each exists, except `deploySigner`, which is awaited because the client
+deploys through it before the host has finished starting.
 
 ## Key design decisions
 
 - **The protocol is the root.** Adding an operation is adding a method to a service here; nothing
   else changes ([`P2pRuntimeHostRoot`](../../../../../../../../src/evm/p2pRuntime/rpc/P2pRuntimeHostRoot.ts#L45)).
-- **The manifest is checked against the root type**, so a renamed service fails to compile on the
-  client too.
+- **A service with nothing of its own is not a class.** Every name here but `p2pSigner` and
+  `logControl` is a plain `ARpcService` built with its methods class; the endpoints reach the host
+  through `localRpc.host`. The two that carry state of their own keep their own service.
 - **Not-ready is an accessor, not a case.** The former per-case `Runtime is not ready` guard is one
   `required()` on each late-built piece; the one piece the client legitimately reaches early —
   `deploySigner` — waits for it instead, so no line-wide inbound hold is needed.
 
 ## Inputs, outputs, state, and side effects
 
-| Aspect       | Contents                             |
-| ------------ | ------------------------------------ |
-| Inputs       | The router; the live host pieces.    |
-| Outputs      | The composed services; the manifest. |
-| Owned state  | The service instances.               |
-| Side effects | None of its own.                     |
+| Aspect       | Contents                          |
+| ------------ | --------------------------------- |
+| Inputs       | The router; the live host pieces. |
+| Outputs      | The composed services.            |
+| Owned state  | The host handle and the services. |
+| Side effects | None of its own.                  |
 
 ## Linked requirements
 
@@ -55,9 +56,9 @@ finished starting.
 
 ## Related source reports
 
-- [lifecycle/RuntimeLifecycleService.ts.md](./lifecycle/RuntimeLifecycleService.ts.md)
+- [lifecycle/RuntimeLifecycleRpcMethods.ts.md](./lifecycle/RuntimeLifecycleRpcMethods.ts.md)
 - [p2pSigner/P2pSignerService.ts.md](./p2pSigner/P2pSignerService.ts.md)
-- [chainSigner/ChainSignerService.ts.md](./chainSigner/ChainSignerService.ts.md)
-- [deploySigner/DeploySignerService.ts.md](./deploySigner/DeploySignerService.ts.md)
-- [hostRpc/HostRpcMirrorService.ts.md](./hostRpc/HostRpcMirrorService.ts.md)
+- [chainSigner/ChainSignerRpcMethods.ts.md](./chainSigner/ChainSignerRpcMethods.ts.md)
+- [deploySigner/DeploySignerRpcMethods.ts.md](./deploySigner/DeploySignerRpcMethods.ts.md)
+- [hostRpc/HostRpcMirrorRpcMethods.ts.md](./hostRpc/HostRpcMirrorRpcMethods.ts.md)
 - [P2pRuntimeClientRoot.ts.md](./P2pRuntimeClientRoot.ts.md) — the other end.
