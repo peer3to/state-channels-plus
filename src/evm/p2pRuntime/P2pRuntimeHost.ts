@@ -115,10 +115,15 @@ export async function startP2pRuntimeHost<
     let removeLogWiring: (() => void) | undefined;
     let disposed = false;
     let resolveSignersReady!: () => void;
+    let rejectSignersReady!: (error: unknown) => void;
     // the client deploys through this line while the host is still being built
-    const signersReady = new Promise<void>((resolve) => {
+    const signersReady = new Promise<void>((resolve, reject) => {
         resolveSignersReady = resolve;
+        rejectSignersReady = reject;
     });
+    // a startup that fails before any deploy request arrived has nobody
+    // awaiting this; the rejection is the deploy handler's, not a crash
+    signersReady.catch(() => undefined);
     let buildRuntime:
         | ((
               localStateMachineAddress: string,
@@ -180,6 +185,8 @@ export async function startP2pRuntimeHost<
         get chainSigner() {
             return required(chainSigner, "chain signer");
         },
+        // the only accessor that waits instead of throwing: `setupP2pRuntime`
+        // deploys the two state machines while this host is still building
         deploySigner: async () => {
             await signersReady;
             return required(deploySigner, "deploy signer");
@@ -243,20 +250,10 @@ export async function startP2pRuntimeHost<
 
     let provider: RuntimeChainContext["provider"] | undefined;
     try {
-        let chainContext: RuntimeChainContext;
-        try {
-            chainContext = await createRuntimeChainContext(
-                payload.config,
-                payload.signerSecret
-            );
-        } catch (error) {
-            // Provider creation happens before the rest of the runtime graph
-            // exists, but its failure must still settle the paired client's
-            // `ready` promise.
-            reportHostError(error);
-            transport.close(true);
-            throw error;
-        }
+        const chainContext = await createRuntimeChainContext(
+            payload.config,
+            payload.signerSecret
+        );
         provider = chainContext.provider;
         signer = chainContext.signer;
 
@@ -447,13 +444,19 @@ export async function startP2pRuntimeHost<
         };
         resolveSignersReady();
     } catch (error) {
+        // every deploy request parked on the gate fails with the startup
+        // cause. Provider creation happens before the rest of the runtime
+        // graph exists, but its failure must still settle the paired client's
+        // `ready` promise.
+        rejectSignersReady(error);
         try {
             await disposeRuntime();
         } catch (cleanupError) {
             logger?.error("Runtime startup cleanup failed", { cleanupError });
         }
         reportHostError(error);
-        transport.close(true);
+        // a macrotask later: the parked rejections are on the wire first
+        transport.closeAfterReply();
         throw error;
     }
 }
