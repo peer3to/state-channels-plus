@@ -49,6 +49,9 @@ describe("P2pRuntimeClient", function () {
             await client.deployComplete("0x01", "0x02");
             await client.ready;
 
+            expect(
+                host.seen.find((rpc) => rpc.method === "deployComplete")?.params
+            ).to.deep.equal(["0x01", "0x02"]);
             expect(client.webRTCBridgePort).to.equal(bridge.port1);
         } finally {
             await client.dispose();
@@ -77,6 +80,9 @@ describe("P2pRuntimeClient", function () {
         try {
             await client.deployComplete("0x01", "0x02");
 
+            expect(
+                host.seen.find((rpc) => rpc.method === "deployComplete")?.params
+            ).to.deep.equal(["0x01", "0x02"]);
             expect(client.webRTCBridgePort).to.equal(undefined);
             // the far port learns of the close on its own message loop
             await waitFor(() => closed, 2000);
