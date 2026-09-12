@@ -6,7 +6,6 @@ import type { RemoteRpcServices } from "@/rpc/RemoteRpcProxy";
 import type Rpc from "@/rpc/Rpc";
 import { RpcRouter } from "@/rpc/RpcRouter";
 import type { SerializedError } from "@/rpc/serializeError";
-import type ATransport from "@/transport/ATransport";
 import MessagePortTransport from "@/transport/MessagePortTransport";
 import type { RuntimePort } from "@/transport/RuntimePort";
 
@@ -21,7 +20,7 @@ type ParkedCall = {
 
 /** what the host's endpoints do. an operation the script does not name answers
  *  `undefined` at once; `park` makes it wait for `settle`. */
-export class FakeHostScript {
+class FakeHostScript {
     /** `service.method` -> the value it answers with, or the error it throws */
     readonly answers = new Map<string, unknown>();
     /** `service.method` -> the call parked until the test answers it */
@@ -55,80 +54,45 @@ export class FakeHostScript {
     }
 }
 
-export class FakeLifecycleRpcMethods extends ARpcMethods<FakeHostRouter> {
-    constructor(
-        transport: ATransport,
-        private readonly service: FakeLifecycleService
-    ) {
-        super(transport, service.router);
-    }
-
+class FakeLifecycleRpcMethods extends ARpcMethods<FakeHostRouter> {
     deployComplete(): Promise<{ webRTCBridge: boolean }> {
-        return this.service.script.run("lifecycle.deployComplete");
+        return this.localRpc.script.run("lifecycle.deployComplete");
     }
 
     quiesce(): Promise<SerializedError[]> {
-        return this.service.script.run("lifecycle.quiesce");
+        return this.localRpc.script.run("lifecycle.quiesce");
     }
 
     async dispose(): Promise<void> {
-        await this.service.script.run("lifecycle.dispose");
+        await this.localRpc.script.run("lifecycle.dispose");
     }
 }
 
-export class FakeLifecycleService extends ARpcService<
-    FakeLifecycleRpcMethods,
-    FakeHostRouter
-> {
-    constructor(
-        router: FakeHostRouter,
-        readonly script: FakeHostScript
-    ) {
-        super(router, router.logger);
-    }
-
-    createRPCMethods(transport: ATransport): FakeLifecycleRpcMethods {
-        return new FakeLifecycleRpcMethods(transport, this);
-    }
-}
-
-export class FakeP2pSignerRpcMethods extends ARpcMethods<FakeHostRouter> {
-    constructor(
-        transport: ATransport,
-        private readonly service: FakeP2pSignerService
-    ) {
-        super(transport, service.router);
-    }
-
+class FakeP2pSignerRpcMethods extends ARpcMethods<FakeHostRouter> {
     sendTransaction(): Promise<unknown> {
-        return this.service.script.run("p2pSigner.sendTransaction");
-    }
-}
-
-export class FakeP2pSignerService extends ARpcService<
-    FakeP2pSignerRpcMethods,
-    FakeHostRouter
-> {
-    constructor(
-        router: FakeHostRouter,
-        readonly script: FakeHostScript
-    ) {
-        super(router, router.logger);
-    }
-
-    createRPCMethods(transport: ATransport): FakeP2pSignerRpcMethods {
-        return new FakeP2pSignerRpcMethods(transport, this);
+        return this.localRpc.script.run("p2pSigner.sendTransaction");
     }
 }
 
 /** the far end of a runtime port, under the names the client calls */
-export class FakeHostRoot {
-    readonly lifecycle: FakeLifecycleService;
-    readonly p2pSigner: FakeP2pSignerService;
+class FakeHostRoot {
+    readonly lifecycle: ARpcService<FakeLifecycleRpcMethods, FakeHostRouter>;
+    readonly p2pSigner: ARpcService<FakeP2pSignerRpcMethods, FakeHostRouter>;
 
-    constructor(router: FakeHostRouter, script: FakeHostScript) {
-        this.lifecycle = new FakeLifecycleService(router, script);
-        this.p2pSigner = new FakeP2pSignerService(router, script);
+    constructor(
+        router: FakeHostRouter,
+        readonly script: FakeHostScript
+    ) {
+        this.lifecycle = new ARpcService(
+            router,
+            router.logger,
+            FakeLifecycleRpcMethods
+        );
+        this.p2pSigner = new ARpcService(
+            router,
+            router.logger,
+            FakeP2pSignerRpcMethods
+        );
     }
 }
 

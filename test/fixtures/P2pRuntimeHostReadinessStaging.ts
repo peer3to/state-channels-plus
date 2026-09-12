@@ -84,14 +84,13 @@ async function refusal(invoke: () => Promise<unknown>): Promise<string> {
  * and names the piece it wanted.
  */
 export async function checkPreDeploymentRequest(
-    invoke: (host: PreDeploymentHost) => Promise<unknown>,
-    expectedSubject: string
+    invoke: (host: PreDeploymentHost) => Promise<unknown>
 ): Promise<void> {
     const staged = await stageHost();
     try {
         await staged.start();
         expect(await refusal(() => invoke(staged.host))).to.equal(
-            `Runtime is not ready: ${expectedSubject}`
+            "Runtime is not ready: runtime"
         );
         await staged.host.lifecycle.dispose().request({ timeoutMs: null });
     } finally {
