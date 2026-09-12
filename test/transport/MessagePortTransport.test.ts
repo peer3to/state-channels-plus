@@ -1,12 +1,15 @@
 import { adaptPort } from "@/evm/p2pRuntime/node/P2pRuntimeChannel";
 import MessagePortTransport from "@/transport/MessagePortTransport";
 import { TransportType } from "@/transport/TransportType";
-import { linkedRouters } from "@test/fixtures/rpc/PortRpcProbe.fixture";
+import {
+    linkedRouters,
+    type ProbeLink
+} from "@test/fixtures/rpc/PortRpcProbe.fixture";
 import { expect } from "chai";
 import { MessageChannel } from "node:worker_threads";
 
 describe("MessagePortTransport", function () {
-    let link: ReturnType<typeof linkedRouters> | undefined;
+    let link: ProbeLink | undefined;
 
     afterEach(function () {
         link?.close();

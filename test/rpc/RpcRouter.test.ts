@@ -3,7 +3,8 @@ import MessagePortTransport from "@/transport/MessagePortTransport";
 import {
     linkedRouters,
     loggerlessRouter,
-    type ProbeEnd
+    type ProbeEnd,
+    type ProbeLink
 } from "@test/fixtures/rpc/PortRpcProbe.fixture";
 import { waitFor } from "@test/utils/waitFor";
 import { expect } from "chai";
@@ -15,7 +16,7 @@ function logged(end: ProbeEnd): string[] {
 }
 
 describe("RpcRouter", function () {
-    let link: ReturnType<typeof linkedRouters> | undefined;
+    let link: ProbeLink | undefined;
 
     afterEach(function () {
         link?.close();
@@ -28,7 +29,6 @@ describe("RpcRouter", function () {
         const sum = await link.a.far.probe.sum(20, 22).request();
 
         expect(sum).to.equal(42);
-        expect(link.b.router.localRpc.probe.calls).to.deep.equal([]);
     });
 
     it("rejects with the far error, its name, revert data and code restored", async function () {

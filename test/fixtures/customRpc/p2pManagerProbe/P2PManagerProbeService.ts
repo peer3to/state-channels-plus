@@ -986,14 +986,13 @@ export class P2PManagerProbeService extends ARpcService<
         let wrapperRuns = 0;
         let dispatchesInsideWrapper = 0;
         const previousWrapper = this.p2pManager.wrapInbound;
-        const dispatchesAtEntry = () => this.dispatchCalls;
         this.p2pManager.wrapInbound = <T>(run: () => T): T => {
             wrapperRuns += 1;
-            const before = dispatchesAtEntry();
+            const before = this.dispatchCalls;
             try {
                 return run();
             } finally {
-                dispatchesInsideWrapper += dispatchesAtEntry() - before;
+                dispatchesInsideWrapper += this.dispatchCalls - before;
             }
         };
         try {

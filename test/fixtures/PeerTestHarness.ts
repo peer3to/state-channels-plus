@@ -19,7 +19,7 @@ import { EvmStateMachine } from "@/evm";
 import P2pEventHooks from "@/P2pEventHooks";
 import type { CustomRpcManifest } from "@/rpc/registry";
 import type { RemoteRpcServices } from "@/rpc/RemoteRpcProxy";
-import type { RpcRequestOptions } from "@/rpc/RpcHandler";
+import type { RpcRequestOptions } from "@/rpc/RpcRouter";
 import type StateManager from "@/stateManager/StateManager";
 import { TimeConfig } from "@/types";
 import { Address, ChannelId, ForkId, Hash } from "@/types/types";

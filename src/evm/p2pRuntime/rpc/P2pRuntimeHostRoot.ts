@@ -67,7 +67,7 @@ export class P2pRuntimeHostRoot {
             logger,
             RuntimeLifecycleRpcMethods
         );
-        this.p2pSigner = new P2pSignerService(router, host);
+        this.p2pSigner = new P2pSignerService(router, logger);
         this.chainSigner = new ARpcService(
             router,
             logger,

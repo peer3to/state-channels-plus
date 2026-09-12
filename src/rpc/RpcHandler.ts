@@ -3,8 +3,6 @@ import type { RpcRequestOptions, RpcRouter } from "./RpcRouter";
 import ATransport, { isTransport } from "../transport/ATransport";
 import { Address } from "../types/types";
 
-export type { RpcRequestOptions } from "./RpcRouter";
-
 /**
  * Type face exposed for RPC methods that return `void`/`Promise<void>`.
  * Fire-and-forget delivery only — no reply is expected. Omitting the target on

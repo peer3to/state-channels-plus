@@ -1,4 +1,4 @@
-import type { P2pRuntimeHostRoot, RuntimeHost } from "../P2pRuntimeHostRoot";
+import type { P2pRuntimeHostRoot } from "../P2pRuntimeHostRoot";
 import { P2pSignerRpcMethods } from "./P2pSignerRpcMethods";
 import ARpcService from "@/rpc/ARpcService";
 import type { RpcRouter } from "@/rpc/RpcRouter";
@@ -9,16 +9,10 @@ export class P2pSignerService extends ARpcService<
     P2pSignerRpcMethods,
     RpcRouter<P2pRuntimeHostRoot, any>
 > {
-    constructor(
-        router: RpcRouter<P2pRuntimeHostRoot, any>,
-        readonly host: RuntimeHost
-    ) {
-        super(router, router.logger);
-    }
-
     /** the live host-side signer; throws until the runtime graph exists */
     get p2pSigner() {
-        return this.host.runtime().stateManager.p2pManager.p2pSigner;
+        return this.router.localRpc.host.runtime().stateManager.p2pManager
+            .p2pSigner;
     }
 
     createRPCMethods(transport: ATransport): P2pSignerRpcMethods {

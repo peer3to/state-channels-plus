@@ -161,7 +161,7 @@ export class P2pSignerRpcMethods extends ARpcMethods<
 
     /** text or bytes, told apart by the encoding, signed by the host wallet */
     signMessage(message: SignerMessage): Promise<string> {
-        return this.service.host.signer.signMessage(
+        return this.localRpc.host.signer.signMessage(
             deserializeSignerMessage(message)
         );
     }
@@ -171,7 +171,7 @@ export class P2pSignerRpcMethods extends ARpcMethods<
         types: Record<string, ethers.TypedDataField[]>,
         value: Record<string, any>
     ): Promise<string> {
-        return this.service.host.signer.signTypedData(domain, types, value);
+        return this.localRpc.host.signer.signTypedData(domain, types, value);
     }
 }
 

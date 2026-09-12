@@ -9,8 +9,8 @@ import Rpc, {
 } from "./Rpc";
 import { errorFromReply, serializeError } from "./serializeError";
 import type ATransport from "@/transport/ATransport";
-import { TransportType } from "@/transport/TransportType";
 import type { Address } from "@/types/types";
+import { LoggerUtils } from "@/utils/LoggerUtils";
 import type { Logger } from "@/utils/logging/Logger";
 import noOpLogger from "@/utils/logging/noOpLogger";
 import { hasRpcService } from "@/utils/ObjectChecks";
@@ -105,6 +105,7 @@ export class RpcRouter<TRoot extends object, TRemote extends object = TRoot> {
     wrapInbound?: <T>(run: () => T) => T;
     private readonly timer: RpcTimer;
     private rpcRequestCounter = 0;
+    /** request id -> the request still waiting for its reply */
     private readonly pendingRpcRequests = new Map<string, PendingRpcRequest>();
 
     /** the root needs the router and the router the root -> built here. a root
@@ -261,7 +262,7 @@ export class RpcRouter<TRoot extends object, TRemote extends object = TRoot> {
     }
 
     /** what a closed transport still owed: for the failure log */
-    protected pendingOperationsOn(transport: ATransport): PendingOperation[] {
+    private pendingOperationsOn(transport: ATransport): PendingOperation[] {
         const now = Date.now();
         const operations: PendingOperation[] = [];
         for (const pending of this.pendingRpcRequests.values()) {
@@ -284,8 +285,7 @@ export class RpcRouter<TRoot extends object, TRemote extends object = TRoot> {
                 if (frameBytes > MAX_RPC_FRAME_BYTES) {
                     this.logger.warn("Oversized RPC frame; disconnecting", {
                         bytes: frameBytes,
-                        transportType: TransportType[transport.transportType],
-                        peerAddress: transport.peerAddress
+                        ...LoggerUtils.getTransportMetadata(transport)
                     });
                     this.onBadFrame(
                         transport,
@@ -316,8 +316,7 @@ export class RpcRouter<TRoot extends object, TRemote extends object = TRoot> {
             this.logger.error("onRpc - error handling RPC frame", {
                 error: e instanceof Error ? e.message : String(e),
                 stack: e instanceof Error ? e.stack : undefined,
-                transportType: TransportType[transport.transportType],
-                peerAddress: transport.peerAddress
+                ...LoggerUtils.getTransportMetadata(transport)
             });
         }
     }
@@ -359,7 +358,7 @@ export class RpcRouter<TRoot extends object, TRemote extends object = TRoot> {
             this.logger.error("onRpcFrame - error handling RPC frame", {
                 error: e instanceof Error ? e.message : String(e),
                 stack: e instanceof Error ? e.stack : undefined,
-                transportType: TransportType[transport.transportType]
+                ...LoggerUtils.getTransportMetadata(transport)
             });
         }
     }

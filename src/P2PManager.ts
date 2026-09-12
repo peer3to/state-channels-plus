@@ -85,8 +85,8 @@ class P2PManager<TCustomRpc extends MainRpcService = MainRpcService>
         // peer (e.g. HOLEPUNCH -> WEBRTC) still settles the pending request.
         this.isSameSender = ATransport.isSamePeer;
         // a frame the router refused is a protocol violation: the peer is
-        // dropped and banned, as it was before the router. one of our own
-        // handlers failing is not the peer's doing, so that only drops the line.
+        // dropped and banned. one of our own handlers failing is not the
+        // peer's doing, so that only drops the line.
         this.onBadFrame = (transport, _error, kind) => {
             if (kind === "handler") {
                 this.disconnectConnection(transport);

@@ -8,6 +8,7 @@ import { RpcRouter } from "@/rpc/RpcRouter";
 import MessagePortTransport from "@/transport/MessagePortTransport";
 import type { LogStore } from "@/utils/logging/logStore";
 import type { NodeLogger } from "@/utils/logging/node/NodeLogger";
+import noOpLogger from "@/utils/logging/noOpLogger";
 import { createUploaderFixture } from "@test/fixtures/logging/LogUploader.fixture";
 import {
     MessageChannel,
@@ -17,7 +18,7 @@ import {
 type ProbeRouter = RpcRouter<ProbeRoot, ProbeRoot>;
 
 /** request/response endpoints: every return type but void */
-export class ProbeRpcMethods extends ARpcMethods<ProbeRouter> {
+class ProbeRpcMethods extends ARpcMethods<ProbeRouter> {
     constructor(
         transport: MessagePortTransport,
         private readonly service: ProbeService
@@ -26,7 +27,6 @@ export class ProbeRpcMethods extends ARpcMethods<ProbeRouter> {
     }
 
     echo(value: unknown): unknown {
-        this.service.calls.push("echo");
         return value;
     }
 
@@ -40,10 +40,6 @@ export class ProbeRpcMethods extends ARpcMethods<ProbeRouter> {
 
     sum(a: number, b: number): number {
         return a + b;
-    }
-
-    throws(message: string): string {
-        throw new Error(message);
     }
 
     /** a contract revert: the caller needs `.data` back to decode it */
@@ -66,16 +62,14 @@ export class ProbeRpcMethods extends ARpcMethods<ProbeRouter> {
     }
 }
 
-export class ProbeService extends ARpcService<ProbeRpcMethods, ProbeRouter> {
-    readonly calls: string[] = [];
-
+class ProbeService extends ARpcService<ProbeRpcMethods, ProbeRouter> {
     createRPCMethods(transport: MessagePortTransport): ProbeRpcMethods {
         return new ProbeRpcMethods(transport, this);
     }
 }
 
 /** one-way endpoints: void returns, nothing pending on the caller */
-export class NoticeRpcMethods extends ARpcMethods<ProbeRouter> {
+class NoticeRpcMethods extends ARpcMethods<ProbeRouter> {
     constructor(
         transport: MessagePortTransport,
         private readonly service: NoticeService
@@ -92,7 +86,7 @@ export class NoticeRpcMethods extends ARpcMethods<ProbeRouter> {
     }
 }
 
-export class NoticeService extends ARpcService<NoticeRpcMethods, ProbeRouter> {
+class NoticeService extends ARpcService<NoticeRpcMethods, ProbeRouter> {
     readonly received: unknown[] = [];
 
     createRPCMethods(transport: MessagePortTransport): NoticeRpcMethods {
@@ -100,7 +94,7 @@ export class NoticeService extends ARpcService<NoticeRpcMethods, ProbeRouter> {
     }
 }
 
-export class ProbeRoot {
+class ProbeRoot {
     readonly probe: ProbeService;
     readonly notice: NoticeService;
     /** a root field that is not a service: `setLogger` must leave it alone */
@@ -110,6 +104,11 @@ export class ProbeRoot {
         this.probe = new ProbeService(router, router.logger);
         this.notice = new NoticeService(router, router.logger);
     }
+}
+
+/** a router serving a root loaded from another module graph */
+export function routerServing<TRoot extends object>(root: TRoot) {
+    return new RpcRouter<TRoot, TRoot>(() => root, noOpLogger);
 }
 
 /** a router with no logger and no line: what a worker has until its config
@@ -135,6 +134,8 @@ export type ProbeEnd = {
     logStore: LogStore;
 };
 
+export type ProbeLink = { a: ProbeEnd; b: ProbeEnd; close: () => void };
+
 /** two routers on the two ends of a real MessageChannel, each serving a probe
  *  root and typed by the other's. `a`/`b` set that end's router policy before
  *  its line is up. */
@@ -143,7 +144,7 @@ export function linkedRouters(
         a?: (router: ProbeRouter) => void;
         b?: (router: ProbeRouter) => void;
     } = {}
-): { a: ProbeEnd; b: ProbeEnd; close: () => void } {
+): ProbeLink {
     const channel = new MessageChannel();
     const build = (
         port: NodeMessagePort,

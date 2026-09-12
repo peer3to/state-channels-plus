@@ -23,6 +23,15 @@ export const VM_SELF_PEER_ADDRESS =
 export const CHANNEL_ID = `0x${"11".repeat(32)}`;
 export const MAIN_MARKER = "browser main entry";
 
+/** one precompile that crashes asynchronously: what both smokes run on */
+const CRASHING_PRECOMPILES = [
+    {
+        address: CRASH_ADDRESS,
+        module: new URL("./worker-precompile.js", import.meta.url).href,
+        options: { expectedData: "0x1234", value: "42", crashAsync: true }
+    }
+];
+
 /** a browser main realm with a vm worker beneath it: the worker crashes and
  *  collects on its own, then the main realm asks for a collection over the
  *  port. the runner reads what the real server stored. */
@@ -39,17 +48,7 @@ globalThis.runCrashLogBrowserSmoke = async (uploadEndpoint) => {
         { component: "BrowserCrashLogSmoke" }
     );
     const executor = await WorkerContractExecutor.create(
-        [
-            {
-                address: CRASH_ADDRESS,
-                module: new URL("./worker-precompile.js", import.meta.url).href,
-                options: {
-                    expectedData: "0x1234",
-                    value: "42",
-                    crashAsync: true
-                }
-            }
-        ],
+        CRASHING_PRECOMPILES,
         logger
     );
 
@@ -89,17 +88,7 @@ globalThis.startCrashLogVmSelfUploadBrowserSmoke = async (uploadEndpoint) => {
         { component: "BrowserVmSelfUploadSmoke" }
     );
     const executor = await WorkerContractExecutor.create(
-        [
-            {
-                address: CRASH_ADDRESS,
-                module: new URL("./worker-precompile.js", import.meta.url).href,
-                options: {
-                    expectedData: "0x1234",
-                    value: "42",
-                    crashAsync: true
-                }
-            }
-        ],
+        CRASHING_PRECOMPILES,
         logger,
         // the report is taken here, so nothing on this thread crashes and
         // collects: any stored vm chunk is the worker's own round

@@ -6,7 +6,7 @@ import type { Logger } from "@/utils/logging/Logger";
 import { LogControlService } from "@/utils/logging/rpc/logControl/LogControlService";
 
 /** where a report from the worker goes once it is back on the owning thread */
-export type WorkerErrorSink = {
+type WorkerErrorSink = {
     onDetachedError(error: Error): void;
 };
 

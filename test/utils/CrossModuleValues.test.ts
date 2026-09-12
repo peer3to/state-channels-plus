@@ -3,23 +3,19 @@ import {
     CrossModuleRpcService,
     CrossModuleTransport
 } from "../../testSupport/CrossModuleValues";
-import { RpcRouter } from "@/rpc/RpcRouter";
 
 import { isTransport } from "@/transport/ATransport";
 import {
     convertEthersValue,
     createEthersResultProxy
 } from "@/utils/EthersResultProxy";
-import noOpLogger from "@/utils/logging/noOpLogger";
 import { hasRpcService, isEthersResult } from "@/utils/ObjectChecks";
-import { linkedRouters } from "@test/fixtures/rpc/PortRpcProbe.fixture";
+import {
+    linkedRouters,
+    routerServing
+} from "@test/fixtures/rpc/PortRpcProbe.fixture";
 import { expect } from "chai";
 import { AbiCoder } from "ethers";
-
-/** a router serving a root loaded from another module graph */
-function routerServing<TRoot extends object>(root: TRoot) {
-    return new RpcRouter<TRoot, TRoot>(() => root, noOpLogger);
-}
 
 describe("cross-module runtime values", function () {
     it("accepts an RPC service with the public service shape", function () {

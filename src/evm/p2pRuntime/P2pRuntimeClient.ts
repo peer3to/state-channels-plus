@@ -230,22 +230,6 @@ class P2pRuntimeClient<T = ethers.Contract> implements RuntimeEventSink {
         this.events.emit(kind, eventName, args);
     }
 
-    onHostErrorPushed(error: Error): void {
-        if (!this.readySettled) {
-            this.readySettled = true;
-            this.rejectReady(error);
-            return;
-        }
-
-        if (this.hostErrorListeners.size === 0) {
-            // No orchestrator hook: surface as a main-thread unhandled rejection
-            // (matches an inline host throwing in its own event loop).
-            void Promise.reject(error);
-            return;
-        }
-        for (const listener of this.hostErrorListeners) listener(error);
-    }
-
     /** the host's `runtimeEvents` service pushes an autonomous host-side error
      *  (worker unhandledRejection / uncaughtException funnelled over the port) */
     onHostErrorReport(error: SerializedError): void {
@@ -254,7 +238,20 @@ class P2pRuntimeClient<T = ethers.Contract> implements RuntimeEventSink {
         // comes from a worker, which never stamps -> attribute it here (the
         // whole worker is this one peer)
         maybeStampErrorWithPeerAddress(restored, String(this.signerAddress));
-        this.onHostErrorPushed(restored);
+
+        if (!this.readySettled) {
+            this.readySettled = true;
+            this.rejectReady(restored);
+            return;
+        }
+
+        if (this.hostErrorListeners.size === 0) {
+            // No orchestrator hook: surface as a main-thread unhandled rejection
+            // (matches an inline host throwing in its own event loop).
+            void Promise.reject(restored);
+            return;
+        }
+        for (const listener of this.hostErrorListeners) listener(restored);
     }
 
     /** the app subscribes to those errors and gets an unsubscribe fn. With no

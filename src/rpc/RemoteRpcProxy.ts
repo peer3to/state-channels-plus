@@ -20,6 +20,7 @@ export type RemoteRpcServices<T extends object> = {
 export function createRemoteRpcProxy<TRemote extends object>(
     router: RpcRouter<any, any>
 ): RemoteRpcServices<TRemote> {
+    // service name -> the handle proxy already built for it
     const proxyCache = new Map<string, RpcHandleMethods<ARpcMethods<any>>>();
 
     return new Proxy(
