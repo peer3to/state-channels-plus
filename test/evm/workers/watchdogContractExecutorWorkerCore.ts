@@ -1,9 +1,5 @@
 // @spec-test-coverage-ignore: shared test-worker core exercised by the mapped watchdog test declarations
-import type { ContractExecutorClientRoot } from "@/evm/contractExecutor/rpc/ContractExecutorClientRoot";
-import { ContractExecutorRoot } from "@/evm/contractExecutor/rpc/ContractExecutorRoot";
-import { RpcRouter } from "@/rpc/RpcRouter";
-import { serializeError } from "@/rpc/serializeError";
-import MessagePortTransport from "@/transport/MessagePortTransport";
+import { bootstrapContractExecutorWorker } from "@/evm/contractExecutor/worker/bootstrapContractExecutorWorker";
 import type { RuntimePort } from "@/transport/RuntimePort";
 import type {
     PerformanceSample,
@@ -87,33 +83,22 @@ export function startWatchdogContractExecutorWorker(
     port: WatchdogWorkerPort
 ): void {
     const sampleSource = createScriptedSampleSource();
-    const router = new RpcRouter<
-        ContractExecutorRoot,
-        ContractExecutorClientRoot
-    >(
-        (self) =>
-            new ContractExecutorRoot(self, {
-                monitorOptions: {
-                    threadLabel: "vm",
-                    sampleSource,
-                    delayErrorThresholdMs:
-                        WATCHDOG_WORKER_DELAY_ERROR_THRESHOLD_MS,
-                    intervalMs: 50
-                },
-                configOverrides: {
-                    LOG_SKIP_WRITING: true,
-                    EVENT_LOOP_DELAY_ERROR_THRESHOLD_SECONDS: 0
-                }
-            }),
-        undefined
+    bootstrapContractExecutorWorker(
+        port.onUnhandledWorkerError,
+        {
+            monitorOptions: {
+                threadLabel: "vm",
+                sampleSource,
+                delayErrorThresholdMs: WATCHDOG_WORKER_DELAY_ERROR_THRESHOLD_MS,
+                intervalMs: 50
+            },
+            configOverrides: {
+                LOG_SKIP_WRITING: true,
+                EVENT_LOOP_DELAY_ERROR_THRESHOLD_SECONDS: 0
+            }
+        },
+        port.port
     );
-    new MessagePortTransport(port.port, router, "parent");
-    const owner = router.remoteRpc;
-    // Same order as the production entries: the funnel is registered with the
-    // line already up, before anything can fail.
-    port.onUnhandledWorkerError((error) => {
-        owner.workerErrors.detachedError(serializeError(error)).sendOne();
-    });
     if (mode === "post-start") {
         queueMicrotask(() => {
             throw new Error(WATCHDOG_WORKER_ORIGINAL_ERROR);
