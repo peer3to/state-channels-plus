@@ -415,9 +415,13 @@ describe("WorkerContractExecutor", function () {
             expect(
                 receiver.requests.map((request) => request.threadName)
             ).to.include("sdk");
+
+            // report-and-continue: the thread kept its canonical state, so the
+            // next call is answered by the same worker
+            await executor.simulateCall("0x1234", customAddress.toString());
         } finally {
-            // the crash ends the worker -> dispose meets a failed executor
-            await Promise.resolve(executor.dispose()).catch(() => undefined);
+            // the worker kept serving -> an ordinary dispose
+            await executor.dispose();
             dispose();
             await receiver.close();
         }
