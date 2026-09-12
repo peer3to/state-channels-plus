@@ -1,3 +1,7 @@
+import {
+    deserializeSignerMessage,
+    type SignerMessage
+} from "../../chainSignerSerialization";
 import type { P2pRuntimeHostRoot } from "../P2pRuntimeHostRoot";
 import type { P2pSignerService } from "./P2pSignerService";
 import ARpcMethods from "@/rpc/ARpcMethods";
@@ -155,10 +159,10 @@ export class P2pSignerRpcMethods extends ARpcMethods<
         this.service.p2pSigner.disconnectFromPeers();
     }
 
-    /** hex bytes or a UTF-8 string, signed by the host wallet */
-    signMessage(message: string): Promise<string> {
+    /** text or bytes, told apart by the encoding, signed by the host wallet */
+    signMessage(message: SignerMessage): Promise<string> {
         return this.service.host.signer.signMessage(
-            ethers.isHexString(message) ? ethers.getBytes(message) : message
+            deserializeSignerMessage(message)
         );
     }
 

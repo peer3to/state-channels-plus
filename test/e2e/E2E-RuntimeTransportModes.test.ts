@@ -7,6 +7,7 @@ import {
     assertFailedSetupLeavesNoRootOnTheFlushBus,
     assertReportABugReportsItsThreads,
     assertRpcHandlerEntersWithoutMutex,
+    assertSignerMessageEncodingIsUnambiguous,
     assertSdkThreadCrashUploadsEveryThread,
     startRuntimeTransportModesFixture,
     stopRuntimeTransportModesFixture
@@ -63,6 +64,10 @@ describe("E2E: p2pSetup runtime modes", function () {
 
     it("generates a host-owned signer when no secret is supplied", async function () {
         await assertGeneratedHostSigner();
+    });
+
+    it("signs the text 0xdeadbeef differently from the bytes 0xdeadbeef", async function () {
+        await assertSignerMessageEncodingIsUnambiguous();
     });
 
     it("uploads both threads when the sdk thread crashes", async function () {

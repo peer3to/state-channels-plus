@@ -1,3 +1,4 @@
+import { serializeSignerMessage } from "../p2pRuntime/chainSignerSerialization";
 import type { RuntimeHostEndpoint } from "../p2pRuntime/P2pRuntimeClient";
 import {
     ethers,
@@ -76,9 +77,7 @@ class DeploymentBridgeSigner implements Signer {
 
     signMessage(message: string | Uint8Array): Promise<string> {
         return this.host.p2pSigner
-            .signMessage(
-                typeof message === "string" ? message : ethers.hexlify(message)
-            )
+            .signMessage(serializeSignerMessage(message))
             .request();
     }
 

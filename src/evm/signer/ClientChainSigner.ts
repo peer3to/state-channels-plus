@@ -1,6 +1,7 @@
 import {
     SerializedTransactionResponse,
     deserializeTransactionResponse,
+    serializeSignerMessage,
     serializeTransactionRequest
 } from "../p2pRuntime/chainSignerSerialization";
 import type { RuntimeHostEndpoint } from "../p2pRuntime/P2pRuntimeClient";
@@ -11,8 +12,7 @@ import {
     TransactionResponse,
     TypedDataDomain,
     TypedDataField,
-    assert,
-    hexlify
+    assert
 } from "ethers";
 
 /** Real-chain signer whose key-bearing operations execute on the runtime host. */
@@ -75,11 +75,7 @@ class ClientChainSigner extends AbstractSigner {
 
     signMessage(message: string | Uint8Array): Promise<string> {
         return this.host.chainSigner
-            .signMessage(
-                typeof message === "string"
-                    ? { kind: "string", value: message }
-                    : { kind: "bytes", encodedBytes: hexlify(message) }
-            )
+            .signMessage(serializeSignerMessage(message))
             .request();
     }
 

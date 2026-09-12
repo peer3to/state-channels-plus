@@ -5,7 +5,6 @@ import { deployFullStack } from "../../scripts/V1/deploy";
 import { EvmStateMachine } from "@/evm";
 import { createContractExecutor } from "@/evm/contractExecutor/createContractExecutor";
 import { createContractExecutorWorkerFromPath } from "@/evm/contractExecutor/node/ContractExecutorWorkerRuntime";
-import type P2pInstance from "@/evm/P2pInstance";
 import { createP2pRuntimeWorkerFromPath } from "@/evm/p2pRuntime/node/P2pRuntimeWorkerRuntime";
 import {
     setupP2pRuntime,
@@ -448,6 +447,33 @@ export async function assertRejectedCustomRootReadiness(
         message = error instanceof Error ? error.message : String(error);
     }
     expect(message).to.equal("root ready boom");
+}
+
+/** the p2p signer takes text and bytes as two different things: the UTF-8
+ *  string "0xdeadbeef" is not the four bytes it looks like */
+export async function assertSignerMessageEncodingIsUnambiguous(): Promise<void> {
+    const p2pInstance = await setupP2pInstance({
+        runSdkInThread: false,
+        vmDedicatedThread: false
+    });
+    try {
+        const signerAddress = await p2pInstance.p2pSigner.getAddress();
+        const looksLikeBytes = "0xdeadbeef";
+        const asText = await p2pInstance.p2pSigner.signMessage(looksLikeBytes);
+        const asBytes = await p2pInstance.p2pSigner.signMessage(
+            ethers.getBytes(looksLikeBytes)
+        );
+
+        expect(asText).to.not.equal(asBytes);
+        expect(ethers.verifyMessage(looksLikeBytes, asText)).to.equal(
+            signerAddress
+        );
+        expect(
+            ethers.verifyMessage(ethers.getBytes(looksLikeBytes), asBytes)
+        ).to.equal(signerAddress);
+    } finally {
+        await p2pInstance.dispose();
+    }
 }
 
 export async function assertGeneratedHostSigner(): Promise<void> {
