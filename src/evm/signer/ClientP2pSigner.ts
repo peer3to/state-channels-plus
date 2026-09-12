@@ -1,5 +1,6 @@
 import type { ConnectToChannelOptions } from "./ConnectToChannelOptions";
 import NoopEventProvider from "./NoopEventProvider";
+import { serializeSignerMessage } from "../p2pRuntime/chainSignerSerialization";
 import type { RuntimeHostEndpoint } from "../p2pRuntime/P2pRuntimeClient";
 import type {
     LobbyJoinOptions,
@@ -99,9 +100,7 @@ class ClientP2pSigner implements Signer {
 
     signMessage(message: string | Uint8Array): Promise<string> {
         return this.host.p2pSigner
-            .signMessage(
-                typeof message === "string" ? message : ethers.hexlify(message)
-            )
+            .signMessage(serializeSignerMessage(message))
             .request();
     }
 
@@ -115,9 +114,11 @@ class ClientP2pSigner implements Signer {
             .request();
     }
 
-    setIsLeader(value: boolean): Promise<void> {
+    /** the local flag follows the host's ack, so a refused call leaves
+     *  `getIsLeader()` reporting what the host actually has */
+    async setIsLeader(value: boolean): Promise<void> {
+        await this.host.p2pSigner.setIsLeader(value).request();
         this.isLeader = value;
-        return this.host.p2pSigner.setIsLeader(value).request();
     }
 
     getIsLeader(): boolean {
@@ -205,7 +206,8 @@ class ClientP2pSigner implements Signer {
             .request({ timeoutMs: null });
     }
 
-    /** Internal route for `P2pInstance.leaveChannel`. */
+    /** Internal route for `P2pInstance.leaveChannel`. Direct callers wait for
+     *  settled removal but do not dispose the runtime. */
     leaveChannel(): Promise<void> {
         return this.host.p2pSigner.leaveChannel().request({ timeoutMs: null });
     }
