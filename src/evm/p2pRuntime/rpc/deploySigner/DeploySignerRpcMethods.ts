@@ -27,22 +27,20 @@ export class DeploySignerRpcMethods extends ARpcMethods<
         return (await this.localRpc.host.deploySigner()).resolveName(name);
     }
 
-    async call(tx: unknown): Promise<string> {
-        return (await this.localRpc.host.deploySigner()).call(
-            tx as ethers.TransactionRequest
-        );
+    async call(tx: ethers.TransactionRequest): Promise<string> {
+        return (await this.localRpc.host.deploySigner()).call(tx);
     }
 
-    async sendTransaction(tx: unknown): Promise<DeployedTransaction> {
+    async sendTransaction(
+        tx: ethers.TransactionRequest
+    ): Promise<DeployedTransaction> {
         const signer = await this.localRpc.host.deploySigner();
-        const deployTx = await signer.sendTransaction(
-            tx as ethers.TransactionRequest
-        );
+        const deployTx = await signer.sendTransaction(tx);
         return {
             hash: deployTx.hash,
             to: deployTx.to,
             from: deployTx.from,
-            data: (deployTx as any).data,
+            data: deployTx.data,
             receipt: await deployTx.wait()
         };
     }
