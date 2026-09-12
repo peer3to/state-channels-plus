@@ -5,9 +5,10 @@
 
 ## Responsibility and observable boundary
 
-Node worker entry point: asserts this really is a worker thread, then hands the node error funnel
-to the shared bootstrap, which puts the router, the parent line, the report path and the flush
-round in place. Everything observable about the worker lives in that one shared function.
+Node worker entry point: hands the node error funnel to the shared bootstrap, which puts the
+router, the parent line, the report path and the flush round in place and asserts this really is a
+worker thread when it adapts the scope. Everything observable about the worker lives in that one
+shared function.
 
 ## Linked requirements
 

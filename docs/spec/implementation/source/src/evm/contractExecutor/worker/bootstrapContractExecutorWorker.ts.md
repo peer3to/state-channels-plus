@@ -15,6 +15,8 @@ realm is asked to upload.
 - **One bootstrap, two entries.** The node and browser entries differ only in the platform funnel
   they hand in, so the router, the transport, the report and the flush round live here once; a
   behaviour added to one platform can no longer go missing on the other.
+- **The scripted test worker runs this same function**, handing in its own executor options and
+  its own port, so a fixture can script the monitor without re-implementing the bootstrap.
 - **Shared, so browser-compiled.** Nothing here reaches a `node:` module: the worker's own scope
   arrives through the `@platform/p2pRuntimeChannel` alias and the error funnel is a parameter.
 - **The flush round is deferred by a macrotask**, because the logger's own hook records the failure
@@ -25,7 +27,7 @@ realm is asked to upload.
 
 | Aspect       | Contents                                                               |
 | ------------ | ---------------------------------------------------------------------- |
-| Inputs       | The platform's unhandled-error funnel.                                 |
+| Inputs       | The platform's funnel, the executor options, and the worker's port.    |
 | Outputs      | None; the line and the funnel are installed as side effects.           |
 | Owned state  | The router and the transport for this worker's lifetime.               |
 | Side effects | Opens the parent line; reports detached errors; asks realms to upload. |
