@@ -142,14 +142,15 @@ export async function setupP2pRuntime<
 
         let clientPort: RuntimePort;
         let onClose: (() => void) | undefined;
-        let webRTCBridgeCandidate: MessagePort | undefined;
+
+        // the bridge is minted here and its host end is handed over with the
+        // bootstrap or the host context: an RPC frame cannot transfer a port.
+        // an inline host in a realm that cannot reach WebRTC needs it just as
+        // much as a threaded one, so both paths mint it.
+        const webRTCBridge = new MessageChannel();
 
         if (activeConfig.RUN_SDK_IN_THREAD) {
             const { localPort, transferablePort } = createTransferableChannel();
-            // the bridge is minted here and its worker end goes down with
-            // the bootstrap: an RPC frame cannot transfer a port
-            const bridge = new MessageChannel();
-            webRTCBridgeCandidate = bridge.port1;
             const worker = (
                 dependencies.createP2pRuntimeWorker ??
                 createProductionP2pRuntimeWorker
@@ -158,9 +159,12 @@ export async function setupP2pRuntime<
                 type: "connect",
                 payload,
                 port: transferablePort,
-                webRTCBridgePort: bridge.port2
+                webRTCBridgePort: webRTCBridge.port2
             };
-            worker.postMessage(bootstrap, [transferablePort, bridge.port2]);
+            worker.postMessage(bootstrap, [
+                transferablePort,
+                webRTCBridge.port2
+            ]);
             clientPort = localPort;
             onClose = () => worker.shutdown();
         } else {
@@ -170,6 +174,7 @@ export async function setupP2pRuntime<
                 handlerExecutionContext: options?.handlerExecutionContext,
                 createContractExecutor:
                     dependencies.hostContext?.createContractExecutor,
+                webRTCBridgePort: webRTCBridge.port2,
                 // same realm, no port -> the app's logger follows the host's channel
                 contextFollower: logger
             }).catch((error) => {
@@ -186,7 +191,7 @@ export async function setupP2pRuntime<
             onClose,
             // only a threaded host is a separate realm with its own bus
             openLogControlPort: activeConfig.RUN_SDK_IN_THREAD,
-            webRTCBridgeCandidate
+            webRTCBridgeCandidate: webRTCBridge.port1
         });
 
         const deployBridgeSigner = new DeploymentBridgeSigner(

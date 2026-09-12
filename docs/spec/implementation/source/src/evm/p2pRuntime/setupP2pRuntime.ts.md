@@ -24,7 +24,8 @@ The runtime construction behind `EvmStateMachine.p2pSetup`: config, the serializ
 ## Key design decisions
 
 1. **Dependencies are a second, internal argument.** `P2pSetupDependencies` carries `hostContext.createContractExecutor` (inline host) and `createP2pRuntimeWorker` (threaded host); production passes neither and gets the platform defaults. `P2pSetupOptions` is the unchanged public option shape.
-2. **The body is the former `p2pSetup` body, moved verbatim.** Only the two dependency seams were added; readiness, disposal on failure, and the main-thread bridge wiring are unchanged.
+2. **The body is the former `p2pSetup` body, moved verbatim.** Only the two dependency seams were added; readiness and disposal on failure are unchanged.
+3. **The WebRTC bridge channel is minted here for both hosts.** An RPC frame cannot transfer a port, so the host end goes over with the worker bootstrap or in the inline host's context, and the host's `deployComplete` reply says whether it registered it. An inline host in a realm that cannot reach WebRTC — `p2pSetup` called inside an application worker — needs the bridge exactly as a threaded one does, so neither path is special-cased.
 
 ## Inputs, outputs, state, and side effects
 
