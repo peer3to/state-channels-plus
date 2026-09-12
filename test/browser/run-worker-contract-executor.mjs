@@ -17,6 +17,8 @@ const BROWSER_WORKER_CRASH_MESSAGE =
 // what the crash-log smoke files under; must match crash-log-smoke.js
 const CRASH_LOG_MAIN_PEER = "0x00000000000000000000000000000000000000c1";
 const CRASH_LOG_MAIN_MARKER = "browser main entry";
+// what the vm-self-upload smoke files under; must match crash-log-smoke.js
+const CRASH_LOG_VM_SELF_PEER = "0x00000000000000000000000000000000000000c2";
 
 /** the real receiver, on a fresh directory it reads at require time */
 async function startCrashLogServer() {
@@ -202,7 +204,9 @@ try {
                 Boolean(globalThis.runWebRTCMainThreadBrowserSmoke) &&
                 Boolean(globalThis.runWebRTCDedicatedWorkerBrowserSmoke) &&
                 Boolean(globalThis.runWebRTCProxyWorkerBrowserSmoke) &&
-                Boolean(globalThis.runCrashLogBrowserSmoke)
+                Boolean(globalThis.runCrashLogBrowserSmoke) &&
+                Boolean(globalThis.runRpcRouterFrameBrowserSmoke) &&
+                Boolean(globalThis.startCrashLogVmSelfUploadBrowserSmoke)
         );
     } catch (error) {
         if (browserErrors.length) {
@@ -314,6 +318,12 @@ try {
         assert.equal(browserErrors.length, 0, browserErrors[0]?.stack);
     });
 
+    await test("browser router dispatches a peer frame with no Buffer global", async () => {
+        const result = await runSmoke("runRpcRouterFrameBrowserSmoke");
+        assert.deepEqual(result.received, ["dispatched"]);
+        assert.equal(browserErrors.length, 0, browserErrors[0]?.stack);
+    });
+
     await test("browser main-thread WebRTC exchanges messages", async () => {
         const result = {
             webRTCMainThread: await runSmoke("runWebRTCMainThreadBrowserSmoke")
@@ -342,6 +352,38 @@ try {
         };
         assert.equal(result.webRTCProxyWorker.receivedByMain, 1);
         assert.equal(result.webRTCProxyWorker.receivedByWorker, 1);
+        assert.equal(browserErrors.length, 0, browserErrors[0]?.stack);
+    });
+
+    await test("a detached vm error uploads the worker's own round", async () => {
+        const started = await page.evaluate(
+            (endpoint) =>
+                globalThis.startCrashLogVmSelfUploadBrowserSmoke(endpoint),
+            crashLogServer.uploadEndpoint
+        );
+        assert.equal(started.crashed, true);
+        try {
+            // nothing asked for a collection: a stored vm chunk under this
+            // identity is the worker's own flush after its detached error
+            const chunks = await waitForStoredThreads(
+                crashLogServer.logDir,
+                ["vm"],
+                15_000
+            );
+            assert.ok(
+                chunks.some(
+                    (chunk) =>
+                        chunk.threadName === "vm" &&
+                        chunk.peerAddress.toLowerCase() ===
+                            CRASH_LOG_VM_SELF_PEER
+                ),
+                "no vm chunk under the self-upload peer"
+            );
+        } finally {
+            await page.evaluate(() =>
+                globalThis.stopCrashLogVmSelfUploadBrowserSmoke()
+            );
+        }
         assert.equal(browserErrors.length, 0, browserErrors[0]?.stack);
     });
 

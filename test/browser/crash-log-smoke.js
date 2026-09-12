@@ -16,6 +16,10 @@ const { applyCrashLogConfig, crashLogUploadOverrides } = await import(
 
 const CRASH_ADDRESS = "0x00000000000000000000000000000000000000bc";
 export const MAIN_PEER_ADDRESS = "0x00000000000000000000000000000000000000c1";
+/** the vm-self-upload smoke files under its own identity, so the chunk the
+ *  runner finds can only have come from the worker's own round */
+export const VM_SELF_PEER_ADDRESS =
+    "0x00000000000000000000000000000000000000c2";
 export const CHANNEL_ID = `0x${"11".repeat(32)}`;
 export const MAIN_MARKER = "browser main entry";
 
@@ -64,4 +68,54 @@ globalThis.runCrashLogBrowserSmoke = async (uploadEndpoint) => {
         logger.dispose();
         restoreConfig();
     }
+};
+
+/** the crashing vm worker, kept alive: nothing on this page asks for a
+ *  collection, so a stored vm chunk is the worker's own flush round after its
+ *  detached error */
+let vmSelfUpload;
+
+globalThis.startCrashLogVmSelfUploadBrowserSmoke = async (uploadEndpoint) => {
+    const reports = [];
+    const restoreConfig = applyCrashLogConfig(
+        crashLogUploadOverrides(uploadEndpoint)
+    );
+    const logger = createLogger(
+        {
+            threadName: "main",
+            peerAddress: VM_SELF_PEER_ADDRESS,
+            channelId: CHANNEL_ID
+        },
+        { component: "BrowserVmSelfUploadSmoke" }
+    );
+    const executor = await WorkerContractExecutor.create(
+        [
+            {
+                address: CRASH_ADDRESS,
+                module: new URL("./worker-precompile.js", import.meta.url).href,
+                options: {
+                    expectedData: "0x1234",
+                    value: "42",
+                    crashAsync: true
+                }
+            }
+        ],
+        logger,
+        // the report is taken here, so nothing on this thread crashes and
+        // collects: any stored vm chunk is the worker's own round
+        { onDetachedError: (error) => reports.push(error.message) }
+    );
+    vmSelfUpload = { executor, logger, restoreConfig };
+    await executor.simulateCall("0x1234", CRASH_ADDRESS);
+    return { crashed: true, reports };
+};
+
+globalThis.stopCrashLogVmSelfUploadBrowserSmoke = async () => {
+    if (!vmSelfUpload) return { stopped: false };
+    const { executor, logger, restoreConfig } = vmSelfUpload;
+    vmSelfUpload = undefined;
+    await executor.dispose();
+    logger.dispose();
+    restoreConfig();
+    return { stopped: true };
 };
