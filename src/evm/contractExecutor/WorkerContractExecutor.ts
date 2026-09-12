@@ -90,7 +90,7 @@ export default class WorkerContractExecutor extends AContractExecutor {
                     executor.logger?.getSharedContext() ?? {},
                     clockAdjustmentSeconds
                 )
-                .request({ timeoutMs: null });
+                .request();
         } catch (error) {
             // a worker that failed to init has no owner to dispose it, and a
             // live worker at process exit aborts the process
@@ -107,6 +107,8 @@ export default class WorkerContractExecutor extends AContractExecutor {
         super();
         this.logger = logger?.child({ component: "WorkerContractExecutor" });
         this.onDetachedError = dependencies.onDetachedError;
+        // a vm call is unbounded by design: the router's default timeout is
+        // `null` and this router never assigns one
         this.router = new RpcRouter<
             ContractExecutorClientRoot,
             ContractExecutorRoot
@@ -120,29 +122,29 @@ export default class WorkerContractExecutor extends AContractExecutor {
         this.worker = (
             dependencies.createWorkerRuntime ?? createContractExecutorWorker
         )((error) => this.handleWorkerFailure(error));
-        // the vm worker is a child of this realm
-        this.transport = new MessagePortTransport(
-            this.worker.port,
-            this.router,
-            "child"
-        );
         // the runtime reports the exit with its code first, so this only names
         // a close that arrived on its own; a close this executor asked for is
-        // not a failure
+        // not a failure. registered before the transport, whose own close
+        // handler rejects with a generic cause -> the exit stays authoritative
+        // whichever of the two the port notifies first
         this.worker.port.onClose(() => {
             if (this.disposed) return;
             this.handleWorkerFailure(
                 new Error("Contract executor worker closed the connection")
             );
         });
+        // the vm worker is a child of this realm
+        this.transport = new MessagePortTransport(
+            this.worker.port,
+            this.router,
+            "child"
+        );
         this.vm = this.router.remoteRpc;
     }
 
     async deploy(data: Bytes): Promise<ContractExecutionResult> {
         this.assertOpen();
-        return this.vm.contractExecutor
-            .deploy(ethers.hexlify(data))
-            .request({ timeoutMs: null });
+        return this.vm.contractExecutor.deploy(ethers.hexlify(data)).request();
     }
 
     async executeCall(
@@ -152,7 +154,7 @@ export default class WorkerContractExecutor extends AContractExecutor {
         this.assertOpen();
         return this.vm.contractExecutor
             .executeCall(ethers.hexlify(data), contractAddress.toString())
-            .request({ timeoutMs: null });
+            .request();
     }
 
     async simulateCall(
@@ -162,7 +164,7 @@ export default class WorkerContractExecutor extends AContractExecutor {
         this.assertOpen();
         return this.vm.contractExecutor
             .simulateCall(ethers.hexlify(data), contractAddress.toString())
-            .request({ timeoutMs: null });
+            .request();
     }
 
     async dispose(): Promise<void> {
@@ -171,9 +173,7 @@ export default class WorkerContractExecutor extends AContractExecutor {
 
         try {
             if (!this.workerFailure) {
-                await this.vm.contractExecutor
-                    .dispose()
-                    .request({ timeoutMs: null });
+                await this.vm.contractExecutor.dispose().request();
             }
         } finally {
             this.transport.close(true);

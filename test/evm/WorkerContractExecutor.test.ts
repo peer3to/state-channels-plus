@@ -902,6 +902,57 @@ describe("WorkerContractExecutor", function () {
             }
         });
 
+        it("fails a request that is in flight when the worker port closes with no error event", async function () {
+            const { armChannel, createWorkerRuntime } =
+                watchdogWorkerRuntime("exit-pending");
+            const reports: Error[] = [];
+            const executor = await createContractExecutor(
+                { dedicatedThread: true },
+                {
+                    // the runtime's own funnel says nothing here, so the port
+                    // closing is the only notice of the worker going away
+                    createWorkerRuntime: () =>
+                        createWorkerRuntime(() => undefined),
+                    onDetachedError: (error) => {
+                        reports.push(error);
+                    }
+                }
+            );
+            const sender = new BroadcastChannel(armChannel);
+            try {
+                const pending = executor.executeCall(
+                    "0x",
+                    "0x0000000000000000000000000000000000000001"
+                );
+                let settled = false;
+                void pending.then(
+                    () => {
+                        settled = true;
+                    },
+                    () => {
+                        settled = true;
+                    }
+                );
+                await sleep(300);
+                expect(settled).to.equal(false);
+                sender.postMessage({ type: "arm" });
+                let failure: unknown;
+                try {
+                    await pending;
+                    expect.fail("the in-flight call must reject on the close");
+                } catch (error) {
+                    failure = error;
+                }
+                expect((failure as Error).message).to.equal(
+                    "Contract executor worker closed the connection"
+                );
+                expect(reports.length).to.equal(0);
+            } finally {
+                sender.close();
+                await executor.dispose();
+            }
+        });
+
         it("reports an error thrown right after the host starts, before any request", async function () {
             const { createWorkerRuntime } = watchdogWorkerRuntime("post-start");
             const reports: Error[] = [];
