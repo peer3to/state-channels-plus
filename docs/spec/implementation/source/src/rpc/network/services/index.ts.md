@@ -1,7 +1,9 @@
 # index.ts — Source Report
 
 > **Source:** [src/rpc/network/services/index.ts](../../../../../../../../src/rpc/network/services/index.ts) > **Status:** Authored — engineer verification pending.
-> **Design views:** [architecture/sdk/rpc/README.md](../../../../../views/architecture/sdk/rpc/README.md) > **Replaces:** `src/rpc/services/index.ts`
+> **Design views:** [architecture/sdk/rpc/README.md](../../../../../views/architecture/sdk/rpc/README.md)
+>
+> **Replaces:** `src/rpc/services/index.ts`
 
 ## Contents
 
