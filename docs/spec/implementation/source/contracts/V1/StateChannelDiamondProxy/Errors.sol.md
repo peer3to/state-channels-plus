@@ -32,7 +32,9 @@ The conditional-window refusal has its own channel/fork error, `RaceConditionDis
    off-chain log reconstructs the on-chain state at the point of failure without a follow-up
    chain read. Adding arguments changes the error selector but not its name, so name-keyed
    client handling is unaffected; the decoded argument names come from the error's own ABI, so
-   no client-side decoder is added per error.
+   no client-side decoder is added per error. Arguments are evaluated eagerly, so an argument the
+   guard's own condition did not already compute is raised from an `if (!cond) revert Err(args);`
+   branch rather than from inside `require` — the happy path never pays for a failure operand.
 3. **One cause, one name; bare only when there is nothing to carry:** a name covers exactly one
    failing comparison, so a guard that folded two causes is split into two names rather than
    reusing one (the genesis-snapshot check, the join-confirmation signature check, and the two

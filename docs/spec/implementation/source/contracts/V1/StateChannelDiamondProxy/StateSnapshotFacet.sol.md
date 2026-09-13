@@ -33,7 +33,7 @@ deletes the snapshot, using the common idempotent swap-and-pop helper.
 2. **The state-proof self-call is typed by the manager interface.** Verification of the incoming
    proof is reached on `address(this)` through
    [StateChannelManagerInterface](../../StateChannelManagerInterface.sol.md)
-   ([#L122](../../../../../../../contracts/V1/StateChannelDiamondProxy/StateSnapshotFacet.sol#L122)) instead of the proxy contract type; the call itself is
+   ([#L135](../../../../../../../contracts/V1/StateChannelDiamondProxy/StateSnapshotFacet.sol#L135)) instead of the proxy contract type; the call itself is
    unchanged, and this facet no longer imports the proxy.
 3. **Final close updates enumeration in the snapshot transaction.** Registry removal, snapshot
    deletion, balance cleanup, and `StateSnapshotUpdated` either commit together or all revert.

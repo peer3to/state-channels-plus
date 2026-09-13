@@ -33,8 +33,8 @@ The race-error union includes `RaceConditionDisputeWindowNotOpen`. Generic ABI d
 1. **Errors-as-protocol-signals:** race classification keys on custom-error names from [Errors.sol](../../contracts/V1/StateChannelDiamondProxy/Errors.sol.md) — the client/contract error vocabulary is one contract.
 2. **The union mirrors only constructible errors:** a name the contracts no longer declare is
    removed from `RaceConditionErrorName` in the same change, so a handler map can never name a
-   revert that cannot happen. `RaceConditionDisputeAuditingRequired` was removed on those
-   grounds; its planned permutation is retired, not renumbered or reused.
+   revert that cannot happen. A retired name's planned permutation is retired with it, not
+   renumbered or reused.
 
 ## Inputs, outputs, state, and side effects
 
