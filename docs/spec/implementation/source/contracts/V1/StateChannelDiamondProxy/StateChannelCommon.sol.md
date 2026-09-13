@@ -69,6 +69,16 @@ Current upload eligibility is the snapshot participant set plus JOINs after its 
    `reduce` is the one reader that keeps the unbounded walk for slash eligibility: after a reduction is
    mined the snapshot lists only the survivors, and a late reducer must still fold the same slashes
    ([DisputeVerificationFacet.sol.md](DisputeVerificationFacet.sol.md)).
+5. **The reduced-result commit names a missing window before it names a deadline.**
+   `_commitToDisputeReducedResult` checks window existence first
+   ([#L641](../../../../../../../contracts/V1/StateChannelDiamondProxy/StateChannelCommon.sol#L641)),
+   because `_isKillPeriodExpired` derives its deadline from a zero
+   `lastEvidenceSubmissionTimestamp` when no window was created and would report a deadline that
+   reads as long past for a call refused precisely because nothing has expired. Every production
+   caller creates the window or checks it first, so this is defence in depth for a future caller,
+   not a reachable path today. Written as `if (!…) revert` rather than inside `require` because
+   the operand `disputeWindow.forkId` is a storage read the condition itself does not perform, and
+   error arguments are evaluated eagerly.
 
 ## Inputs, outputs, state, and side effects
 

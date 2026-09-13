@@ -35,6 +35,13 @@ The race-error union includes `RaceConditionDisputeWindowNotOpen`. Generic ABI d
    removed from `RaceConditionErrorName` in the same change, so a handler map can never name a
    revert that cannot happen. A retired name's planned permutation is retired with it, not
    renumbered or reused.
+3. **The unhandled-error log delegates its metadata to `LoggerUtils`.** When no handler matches
+   the decoded name, the log line carries
+   `LoggerUtils.getCustomEvmErrorMetadata(customError)`
+   ([#L140](../../../../../../src/utils/evmErrorHandler.ts#L140)) rather than a hand-built
+   `{name, args}` object. This is the sink every argument-carrying error without a handler lands
+   in, and an ethers `Result` serializes positionally, so the hand-built object logged the
+   operands as a bare array; the shared helper converts them to the ABI's own field names.
 
 ## Inputs, outputs, state, and side effects
 

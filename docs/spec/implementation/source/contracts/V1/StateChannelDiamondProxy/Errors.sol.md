@@ -79,8 +79,13 @@ claims complete conformance for a requirement that depends on other files.
   rejection required by [`REQ-ENFADM-2-K6K9SP`](../../../../../specification/enforcement/admission-and-funds.md#req-enfadm-2-k6k9sp).
 - Argument-carrying errors on the dispute-upload, reduction and snapshot paths name their
   operands `expected*`/`actual*` (or `current*`/`submitted*`) so the pair reads unambiguously
-  once decoded. Errors whose failure carries no operand — an empty-array guard, for example —
-  stay argument-less on purpose.
+  once decoded. The pair is always ordered required side first, supplied side second — the
+  chain's value, then the caller's — so adjacent reverts read the same way without consulting
+  the ABI: `RaceConditionJoinChannelSnapshotMismatch(currentSnapshotHash, submittedSnapshotHash)`
+  matches its neighbour `RaceConditionSnapshotForkMismatch(currentForkId, submittedForkId)`, and
+  `ErrorDisputeCommitmentNotAvailable(channelId, forkId, committedDisputeCount, submittedDisputeCount)`
+  reports the window's committed count before the caller's. Errors whose failure carries no
+  operand — an empty-array guard, for example — stay argument-less on purpose.
 
 ## Specification contradictions
 
