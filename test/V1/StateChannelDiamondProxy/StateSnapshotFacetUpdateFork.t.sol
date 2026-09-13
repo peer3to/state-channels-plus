@@ -25,14 +25,15 @@ contract StateSnapshotFacetUpdateForkTest is DiamondHarness {
     // the target snapshot must commit to its own snapshotData at height 0
     function test_updateStateSnapshotFork_snapshotNotGenesis_revertsCarryingBothForkIdsAndHeight() public {
         StateSnapshot memory target = _genesisShapedSnapshot();
+        // the fixture built forkId as the hash of the snapshot data, so capture
+        // it before overwriting: the error's expected side must stay that hash
+        bytes32 snapshotDataHash = target.forkId;
         target.blockHeight = 1;
+        target.forkId = keccak256("a fork the snapshot data does not hash to");
 
         vm.expectRevert(
             abi.encodeWithSelector(
-                ErrorNotGenesisSnapshot.selector,
-                keccak256(abi.encode(target.snapshotData)),
-                target.forkId,
-                target.blockHeight
+                ErrorNotGenesisSnapshot.selector, snapshotDataHash, target.forkId, target.blockHeight
             )
         );
         diamond.updateStateSnapshotFork(CHANNEL_ID, target, new MessageBlock[](0));

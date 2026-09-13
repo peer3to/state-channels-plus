@@ -150,6 +150,10 @@ contract DisputeVerificationFacetTest is DiamondHarness {
     bytes32 internal constant CHANNEL_ID = keccak256("dv-channel");
     bytes32 internal constant FORK_ID = keccak256("dv-fork");
     bytes32 internal constant SNAPSHOT_HEAD = keccak256("dv-inbound-head");
+    /// Absolute base for the kill-period cases. A local copy of `block.timestamp`
+    /// is not safe to reuse across `vm.warp`: the optimizer may re-read TIMESTAMP
+    /// after the warp, so the expected operands are derived from this constant.
+    uint256 internal constant KILL_PERIOD_BASE_TIMESTAMP = 1_000;
 
     function setUp() public {
         diamond = deployDiamond();
@@ -577,7 +581,8 @@ contract DisputeVerificationFacetTest is DiamondHarness {
     function test_applyDisputeFraudProofs_expiredDispute_reverts() public {
         DisputeExpiryGuardHarness harness = new DisputeExpiryGuardHarness();
         Dispute memory dispute = _structurallyInvalidDispute(keccak256("expired-apply"), address(0xA1));
-        uint256 seededAt = block.timestamp;
+        uint256 seededAt = KILL_PERIOD_BASE_TIMESTAMP;
+        vm.warp(seededAt);
         harness.seedDispute(dispute, seededAt);
         // the harness kill period is 10s, so warping to its end expires it
         vm.warp(seededAt + 10);
@@ -594,12 +599,15 @@ contract DisputeVerificationFacetTest is DiamondHarness {
     function test_killDispute_expiredDispute_reverts() public {
         DisputeExpiryGuardHarness harness = new DisputeExpiryGuardHarness();
         Dispute memory dispute = _structurallyInvalidDispute(keccak256("expired-kill"), address(0xA1));
-        uint256 seededAt = block.timestamp;
+        uint256 seededAt = KILL_PERIOD_BASE_TIMESTAMP;
+        vm.warp(seededAt);
         harness.seedDispute(dispute, seededAt);
-        vm.warp(seededAt + 10);
+        // the harness kill period is 10s, so it ended at seededAt + 10 and the
+        // call lands 5s later: the two reported timestamps are distinct
+        vm.warp(seededAt + 15);
 
         vm.expectRevert(
-            abi.encodeWithSelector(RaceConditionDisputeKillPeriodExpired.selector, seededAt + 10, seededAt + 10)
+            abi.encodeWithSelector(RaceConditionDisputeKillPeriodExpired.selector, seededAt + 10, seededAt + 15)
         );
         harness.killDispute(dispute);
         assertEq(harness.commitmentCount(CHANNEL_ID, dispute.input.forkId), 1);
@@ -609,17 +617,21 @@ contract DisputeVerificationFacetTest is DiamondHarness {
         DisputeExpiryGuardHarness harness = new DisputeExpiryGuardHarness();
         Dispute memory active = _structurallyInvalidDispute(keccak256("active"), address(0xA1));
         Dispute memory expired = _structurallyInvalidDispute(keccak256("expired"), address(0xA2));
-        uint256 seededAt = block.timestamp;
+        uint256 seededAt = KILL_PERIOD_BASE_TIMESTAMP;
+        vm.warp(seededAt);
         harness.seedDispute(expired, seededAt);
-        vm.warp(seededAt + 10);
-        harness.seedDispute(active, block.timestamp);
+        // the second dispute is seeded 5s later, so its kill period ends at
+        // seededAt + 15 and it is still live when the batch runs at seededAt + 12
+        vm.warp(seededAt + 5);
+        harness.seedDispute(active, seededAt + 5);
+        vm.warp(seededAt + 12);
 
         DisputeFraudProof[] memory proofs = new DisputeFraudProof[](2);
         proofs[0] = _structuralProof(active);
         proofs[1] = _structuralProof(expired);
         // only the second entry is past its kill period
         vm.expectRevert(
-            abi.encodeWithSelector(RaceConditionDisputeKillPeriodExpired.selector, seededAt + 10, seededAt + 10)
+            abi.encodeWithSelector(RaceConditionDisputeKillPeriodExpired.selector, seededAt + 10, seededAt + 12)
         );
         harness.applyDisputeFraudProofs(proofs);
 

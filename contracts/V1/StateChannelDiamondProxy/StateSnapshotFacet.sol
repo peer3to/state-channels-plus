@@ -15,14 +15,15 @@ contract StateSnapshotFacet is StateChannelCommon {
         DisputeData storage disputeData = disputeData[channelId];
         bytes32 targetForkId = newStateSnapshot.forkId;
         if (currentStateSnapshot.forkId == targetForkId) return; // already on the correct fork
-        require(
-            UtilityFacet(utilityFacetAddress).isGenesisSnapshotWithoutTimeCheck(newStateSnapshot),
-            ErrorNotGenesisSnapshot(
+        // error args are evaluated eagerly, so the snapshot-data hash is raised
+        // inside the failure branch and never computed on the happy path
+        if (!UtilityFacet(utilityFacetAddress).isGenesisSnapshotWithoutTimeCheck(newStateSnapshot)) {
+            revert ErrorNotGenesisSnapshot(
                 keccak256(abi.encode(newStateSnapshot.snapshotData)),
                 newStateSnapshot.forkId,
                 newStateSnapshot.blockHeight
-            )
-        );
+            );
+        }
         bytes32 originForkId = newStateSnapshot.snapshotData.originForkId;
         (bool hasGenesis, uint256 genesisTimestamp) = _getGenesisTimestamp(channelId, originForkId, targetForkId);
         require(hasGenesis, RaceConditionGenesisTimestampNotAvailable(channelId, originForkId, targetForkId));

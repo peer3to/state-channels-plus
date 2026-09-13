@@ -23,6 +23,8 @@ describe("E2E: Malicious updateSnapshot", function () {
         await h.lifecycle.start(3, 1);
 
         const initialBalance = h.options.initialBalance!;
+        // every peer in this scenario joined the channel at open (no spectator),
+        // each funding `initialBalance`, so this is the channel's deposit total
         const totalDeposits = BigInt(initialBalance) * BigInt(h.peers.length);
         const inflatedAmount = totalDeposits + 500n;
         const recipient = h.getPeer(0).address;
@@ -89,10 +91,9 @@ describe("E2E: Malicious updateSnapshot", function () {
         const args = customError.errorDescription.args;
         // the running withdrawal total is exactly the forged exit message
         expect(args.totalWithdrawalAmount).to.equal(inflatedAmount);
-        // and it outgrew the channel's deposits, which is why the chain refused
-        expect(Number(args.totalDepositAmount)).to.be.lessThan(
-            Number(args.totalWithdrawalAmount)
-        );
+        // and the deposit side is exactly what the participants funded at open,
+        // which is what the forged withdrawal outgrew
+        expect(args.totalDepositAmount).to.equal(totalDeposits);
     });
 
     it("outbound block messages sum exceeds snapshot.totalWithdrawals → updateStateSnapshotSameFork reverts with ErrorOutboundMessageBlocksInvalid", async function () {

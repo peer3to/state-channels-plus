@@ -50,9 +50,17 @@ contract StateChannelManagerProxyDepositTest is DiamondHarness {
     StateChannelManagerInterface internal diamond;
 
     bytes32 internal constant CHANNEL_ID = keccak256("composable-deposit");
+    bytes32 internal constant JOIN_CHANNEL_ID = keccak256("composable-deposit-join");
+
+    uint256 internal constant ALICE_PK = 0xA11CE;
+    uint256 internal constant BOB_PK = 0xB0B;
+    uint256 internal constant JOINER_PK = 0xCAFE;
 
     function setUp() public {
         diamond = deployDiamond();
+        // opened while the real consumer is still installed, so the join path
+        // starts from an open channel with a two-address threshold set
+        _openChannel(JOIN_CHANNEL_ID, _participantPrivateKeys());
 
         SelectiveDepositConsumerFacet selectiveConsumer = new SelectiveDepositConsumerFacet();
         vm.etch(address(consumerFacet), address(selectiveConsumer).code);
@@ -62,7 +70,7 @@ contract StateChannelManagerProxyDepositTest is DiamondHarness {
         JoinChannel[] memory joins = _joins(100, 0);
 
         // the zero-amount join is the second one, so index 1 is what fails
-        vm.expectRevert(abi.encodeWithSelector(ErrorJoinChannelAtomicFailure.selector, uint256(1), vm.addr(0xB0B)));
+        vm.expectRevert(abi.encodeWithSelector(ErrorJoinChannelAtomicFailure.selector, uint256(1), vm.addr(BOB_PK)));
         vm.prank(address(diamond));
         diamond.depositAssetsComposable(joins, true);
 
@@ -124,17 +132,52 @@ contract StateChannelManagerProxyDepositTest is DiamondHarness {
         assertEq(_depositCount(), 0);
     }
 
+    /// The join reaches the real deposit loop through the deployed diamond, so
+    /// the failing index and participant come from an actual failing iteration.
+    function test_joinChannel_atomicDepositFailure_revertsNamingTheFailingJoin() public {
+        // the consumer rejects a zero-amount deposit, so this join genuinely
+        // fails inside the proxy's atomic loop
+        JoinChannel memory join = JoinChannel({
+            channelId: JOIN_CHANNEL_ID,
+            participant: vm.addr(JOINER_PK),
+            deadlineTimestamp: block.timestamp + 120,
+            balance: Balance({amount: 0, data: ""})
+        });
+        bytes memory encodedJoin = abi.encode(join);
+
+        JoinChannelConfirmation memory confirmation;
+        confirmation.signedJoinChannel =
+            SignedJoinChannel({encodedJoinChannel: encodedJoin, signature: _sign(JOINER_PK, encodedJoin)});
+        confirmation.signatures = new bytes[](2);
+        confirmation.signatures[0] = _sign(ALICE_PK, encodedJoin);
+        confirmation.signatures[1] = _sign(BOB_PK, encodedJoin);
+
+        StateSnapshot memory snapshot = diamond.getStateSnapshot(JOIN_CHANNEL_ID);
+        // the facet submits this single join as index 0 of the batch
+        vm.expectRevert(abi.encodeWithSelector(ErrorJoinChannelAtomicFailure.selector, uint256(0), join.participant));
+        vm.prank(join.participant);
+        diamond.joinChannel(confirmation, keccak256(abi.encode(snapshot)), snapshot.forkId);
+
+        assertEq(_depositCount(), 0);
+    }
+
+    function _participantPrivateKeys() internal pure returns (uint256[] memory pks) {
+        pks = new uint256[](2);
+        pks[0] = ALICE_PK;
+        pks[1] = BOB_PK;
+    }
+
     function _joins(uint256 firstAmount, uint256 secondAmount) internal view returns (JoinChannel[] memory joins) {
         joins = new JoinChannel[](2);
         joins[0] = JoinChannel({
             channelId: CHANNEL_ID,
-            participant: vm.addr(0xA11CE),
+            participant: vm.addr(ALICE_PK),
             deadlineTimestamp: block.timestamp + 120,
             balance: Balance({amount: firstAmount, data: ""})
         });
         joins[1] = JoinChannel({
             channelId: CHANNEL_ID,
-            participant: vm.addr(0xB0B),
+            participant: vm.addr(BOB_PK),
             deadlineTimestamp: block.timestamp + 120,
             balance: Balance({amount: secondAmount, data: ""})
         });
