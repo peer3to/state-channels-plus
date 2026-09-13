@@ -1,9 +1,21 @@
 // SPDX-License-Identifier: UNLICENSED
 
 import {DiamondHarness} from "../harness/DiamondHarness.sol";
+import {FraudProofFacet} from "../../../contracts/V1/StateChannelDiamondProxy/FraudProofFacet.sol";
+import {RaceConditionDisputeWindowNotOpen} from "../../../contracts/V1/StateChannelDiamondProxy/Errors.sol";
 import {StateChannelManagerInterface} from "../../../contracts/V1/StateChannelManagerInterface.sol";
+import {UtilityFacet} from "../../../contracts/V1/StateChannelDiamondProxy/UtilityFacet.sol";
 import "../../../contracts/V1/types/DataTypes.sol";
 import "../../../contracts/V1/types/FraudProofTypes.sol";
+import "../../../contracts/V1/types/ProofTypes.sol";
+
+/// Runs the fraud-proof handlers against the facet's own storage: no channel,
+/// no dispute window, and a real UtilityFacet so block authenticity resolves.
+contract WrongGenesisHarness is FraudProofFacet {
+    constructor() {
+        utilityFacetAddress = address(new UtilityFacet());
+    }
+}
 
 // test naming: testFuzz_<targetFunction>_<property>
 contract FraudProofFacetTest is DiamondHarness {
@@ -124,6 +136,32 @@ contract FraudProofFacetTest is DiamondHarness {
         InvalidTimestampProof memory proof = _genesisProof(fraudTimestamp, prev, CHANNEL_ID, FORK_ID);
         proof.invalidBlock.signature = abi.encodePacked(keccak256("bad-r"), keccak256("bad-s"), uint8(27));
         assertFalse(diamond.hasInvalidTimestamp(proof), "forged-signature block treated as authentic");
+    }
+
+    // the submitter names originForkId, so a fork with no window must say so
+    function test_runFraudProof_wrongGenesisWithoutDisputeWindow_revertsNamingTheMissingWindow() public {
+        WrongGenesisHarness harness = new WrongGenesisHarness();
+        bytes32 channelId = keccak256("wrong-genesis-channel");
+        bytes32 originForkId = keccak256("wrong-genesis-origin-fork");
+
+        SnapshotData memory genesisSnapshotData;
+        genesisSnapshotData.originForkId = originForkId;
+        // the handler only reaches the window lookup for a genesis snapshot that
+        // hashes to the block's fork
+        bytes32 forkId = keccak256(abi.encode(genesisSnapshotData));
+
+        WrongGenesisProof memory proof;
+        proof.invalidBlock = _makeSignedGenesisBlock(AUTHOR_PK, channelId, forkId, 1, bytes32(0));
+        proof.genesisSnapshot.snapshotData = genesisSnapshotData;
+
+        FraudProof memory fraudProof = FraudProof({
+            proofType: FraudProofType.WrongGenesis,
+            participant: vm.addr(AUTHOR_PK),
+            encodedProof: abi.encode(proof)
+        });
+
+        vm.expectRevert(abi.encodeWithSelector(RaceConditionDisputeWindowNotOpen.selector, channelId, originForkId));
+        harness.runFraudProof(fraudProof, FraudProofVerificationContext({channelId: channelId}));
     }
 
     function _sort3(uint256 x, uint256 y, uint256 z) internal pure returns (uint256, uint256, uint256) {

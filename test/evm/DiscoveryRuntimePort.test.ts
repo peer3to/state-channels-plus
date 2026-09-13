@@ -1304,7 +1304,10 @@ describe("discovery runtime port", function () {
             {
                 failWith: {
                     customError: "RaceConditionDisputeEvidencePeriodExpired",
-                    customErrorArgs: [],
+                    // (evidencePeriodEnd, currentTimestamp): the window closed
+                    // ten minutes before the staged submission, so the fake
+                    // revert carries the same shape the chain would.
+                    customErrorArgs: ["1700000000", "1700000600"],
                     at: "send"
                 }
             }

@@ -53,7 +53,7 @@ contract JoinChannelFacet is StateChannelCommon {
         bytes32 currentSnapshotHash = keccak256(abi.encode(currentSnapshot));
         require(
             expectedSnapshotHash == currentSnapshotHash,
-            RaceConditionJoinChannelSnapshotMismatch(expectedSnapshotHash, currentSnapshotHash)
+            RaceConditionJoinChannelSnapshotMismatch(currentSnapshotHash, expectedSnapshotHash)
         );
 
         address[] memory participantUnion = UtilityFacet(utilityFacetAddress).concatAddressArraysNoDuplicates(

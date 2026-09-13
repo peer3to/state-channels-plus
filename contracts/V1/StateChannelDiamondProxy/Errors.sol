@@ -66,7 +66,7 @@ error ErrorNoDisputesProvided();
 //Auditing errors
 /// The submitted dispute set does not match the window's commitment list.
 error ErrorDisputeCommitmentNotAvailable(
-    bytes32 channelId, bytes32 forkId, uint256 submittedDisputeCount, uint256 committedDisputeCount
+    bytes32 channelId, bytes32 forkId, uint256 committedDisputeCount, uint256 submittedDisputeCount
 );
 /// One specific dispute commitment is absent from the window.
 error ErrorDisputeCommitmentNotFound(bytes32 channelId, bytes32 forkId, bytes32 commitment);
@@ -123,7 +123,7 @@ error RaceConditionUnexpectedBlockCalldataPosted(
 );
 error RaceConditionGenesisTimestampNotAvailable(bytes32 channelId, bytes32 originForkId, bytes32 forkId);
 error RaceConditionOnChainSlashes(bytes32 channelId, uint256 disputeSlashCount, uint256 onChainSlashCount);
-error RaceConditionJoinChannelSnapshotMismatch(bytes32 expectedSnapshotHash, bytes32 actualSnapshotHash);
+error RaceConditionJoinChannelSnapshotMismatch(bytes32 currentSnapshotHash, bytes32 submittedSnapshotHash);
 error RaceConditionPendingInboundNotConsumed(
     bytes32 submittedInboundMessageBlockHash, bytes32 onChainInboundMessageBlockHash
 );

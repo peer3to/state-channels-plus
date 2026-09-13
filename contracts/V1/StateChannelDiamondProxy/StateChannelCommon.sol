@@ -634,6 +634,13 @@ contract StateChannelCommon is StateChannelManagerStorage, StateChannelManagerEv
         bytes32 reducedForkId,
         uint256 reductionTimestamp
     ) internal {
+        // A window that was never created has a zero kill-period deadline; report the
+        // missing window rather than a deadline that reads as long past.
+        // `if (!...) revert` because `disputeWindow.forkId` is a storage read the
+        // condition itself does not perform (P4).
+        if (!_isDisputeWidnowCreated(disputeWindow)) {
+            revert RaceConditionDisputeWindowNotOpen(channelId, disputeWindow.forkId);
+        }
         (bool isExpired, uint256 killPeriodEnd) = _isKillPeriodExpired(disputeWindow, _getEvidenceTime());
         require(isExpired, RaceConditionDisputeKillPeriodNotExpired(killPeriodEnd, block.timestamp));
         require(

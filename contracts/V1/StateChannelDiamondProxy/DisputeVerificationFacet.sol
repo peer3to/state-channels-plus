@@ -200,12 +200,13 @@ contract DisputeVerificationFacet is StateChannelCommon {
         DisputeData storage disputeData = disputeData[channelId];
         DisputeWindow storage disputeWindow = disputeData.disputeWindowMap[disputes[0].input.forkId];
         //require all disputes are part of commitment
-        require(
-            areDisputesCommitted(disputeWindow, disputes),
-            ErrorDisputeCommitmentNotAvailable(
-                channelId, forkId, disputes.length, disputeWindow.evidence.disputeCommitments.length
-            )
-        );
+        // `if (!...) revert` because the committed count is a storage read
+        // `areDisputesCommitted` makes internally and the caller does not (P4).
+        if (!areDisputesCommitted(disputeWindow, disputes)) {
+            revert ErrorDisputeCommitmentNotAvailable(
+                channelId, forkId, disputeWindow.evidence.disputeCommitments.length, disputes.length
+            );
+        }
         //require reduce challenge period is not expired - this also assures it's committed
         (bool challengePeriodExpired, uint256 challengePeriodEnd) =
             _isReduceChallengePeriodExpired(disputeWindow, _getEvidenceTime());
@@ -262,12 +263,13 @@ contract DisputeVerificationFacet is StateChannelCommon {
         }
 
         // require that provided disputes correspond to committed set
-        require(
-            areDisputesCommitted(disputeWindow, disputes),
-            ErrorDisputeCommitmentNotAvailable(
-                channelId, forkId, disputes.length, disputeWindow.evidence.disputeCommitments.length
-            )
-        );
+        // `if (!...) revert` because the committed count is a storage read
+        // `areDisputesCommitted` makes internally and the caller does not (P4).
+        if (!areDisputesCommitted(disputeWindow, disputes)) {
+            revert ErrorDisputeCommitmentNotAvailable(
+                channelId, forkId, disputeWindow.evidence.disputeCommitments.length, disputes.length
+            );
+        }
 
         // compute reduced output and derive snapshot data
         ReduceOutput memory reducedOutput = reduce(disputes);

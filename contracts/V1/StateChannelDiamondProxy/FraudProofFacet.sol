@@ -304,6 +304,10 @@ contract FraudProofFacet is StateChannelCommon {
         DisputeData storage _disputeData = disputeData[channelId];
         DisputeWindow storage disputeWindow =
             _disputeData.disputeWindowMap[correctGenesisSnapshot.snapshotData.originForkId];
+        // The submitter picks originForkId, so it may name a fork with no window at all.
+        // Say that, instead of reporting the zero kill-period deadline of a window that
+        // never existed as if the period were simply not over yet.
+        require(_isDisputeWidnowCreated(disputeWindow), RaceConditionDisputeWindowNotOpen(channelId, originForkId));
         (bool isExpired, uint256 killPeriodEnd) = _isKillPeriodExpired(disputeWindow, _getEvidenceTime());
         require(isExpired, RaceConditionDisputeKillPeriodNotExpired(killPeriodEnd, block.timestamp));
         (bool isAvailable, uint256 timestamp) = _getGenesisTimestamp(channelId, originForkId, forkId);

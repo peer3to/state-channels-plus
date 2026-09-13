@@ -408,9 +408,10 @@ describe("parallel forge task discovery", function () {
             "StateChannelManagerProxyOpenTest",
             "StateChannelManagerProxyRegistrationTest",
             "StateSnapshotFacetOpenChannelRegistryTest",
+            "StateSnapshotFacetUpdateForkTest",
             "UtilityFacetTest"
         ]);
-        expect(tasks).to.have.lengthOf(10);
+        expect(tasks).to.have.lengthOf(11);
     });
 
     it("includes a test contract declared in a .test.sol file", function () {

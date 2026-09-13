@@ -16,7 +16,8 @@ import {
     INBOUND_FAILURE_HASH_LINK,
     INBOUND_FAILURE_HEIGHT_SEQUENCE,
     RaceConditionDisputeKillPeriodExpired,
-    RaceConditionDisputeTimeoutWindowCreatedTooEarly
+    RaceConditionDisputeTimeoutWindowCreatedTooEarly,
+    RaceConditionDisputeWindowNotOpen
 } from "../../../contracts/V1/StateChannelDiamondProxy/Errors.sol";
 import {_isKillPeriodExpired} from "../../../contracts/V1/StateChannelDiamondProxy/utils/DisputeUtils.sol";
 import {
@@ -57,6 +58,15 @@ contract DisputeExpiryGuardHarness is DisputeFraudProofFacet, DisputeVerificatio
 
     function commitmentCount(bytes32 channelId, bytes32 forkId) external view returns (uint256) {
         return disputeData[channelId].disputeWindowMap[forkId].evidence.disputeCommitments.length;
+    }
+
+    /// Drives the reduced-result commit against an arbitrary window slot, so the
+    /// missing-window branch is reachable; every production caller creates the
+    /// window or checks it first.
+    function commitReducedResult(bytes32 channelId, bytes32 forkId, bytes32 reducedForkId) external {
+        _commitToDisputeReducedResult(
+            channelId, disputeData[channelId].disputeWindowMap[forkId], reducedForkId, block.timestamp
+        );
     }
 
     function handleBlockAuthorNotParticipant(bytes memory encodedProof, Dispute memory dispute)
@@ -1271,6 +1281,18 @@ contract DisputeVerificationFacetTest is DiamondHarness {
         );
         harness.killDispute(uncommitted);
         assertEq(harness.commitmentCount(CHANNEL_ID, committed.input.forkId), 1);
+    }
+
+    function test_commitToDisputeReducedResult_noDisputeWindow_revertsNamingTheMissingWindow() public {
+        DisputeExpiryGuardHarness harness = new DisputeExpiryGuardHarness();
+        bytes32 channelId = keccak256("commit-no-window-channel");
+        bytes32 forkId = keccak256("commit-no-window-fork");
+
+        // A window that was never created carries no fork id of its own, so the
+        // revert reports the zero fork next to the channel it was looked up in -
+        // never a kill-period deadline derived from an empty slot.
+        vm.expectRevert(abi.encodeWithSelector(RaceConditionDisputeWindowNotOpen.selector, channelId, bytes32(0)));
+        harness.commitReducedResult(channelId, forkId, keccak256("commit-no-window-reduced-fork"));
     }
 
     /// `count` blocks each chained to the previous, heights ascending from
