@@ -5,6 +5,7 @@ import {JoinChannelFacet} from "../../../contracts/V1/StateChannelDiamondProxy/J
 import {UtilityFacet} from "../../../contracts/V1/StateChannelDiamondProxy/UtilityFacet.sol";
 import {
     ErrorJoinChannelAtomicFailure,
+    ErrorJoinChannelConfirmationNotThresholdSigned,
     ErrorJoinChannelInvalidSignature,
     ErrorJoinChannelParticipantAlreadyExists,
     ErrorTopUpBalanceParticipantNotFound,
@@ -46,7 +47,9 @@ contract JoinChannelFacetHarness is JoinChannelFacet {
             JoinChannel[] memory successfulJoins
         )
     {
-        if (depositShouldFail) revert ErrorJoinChannelAtomicFailure();
+        if (depositShouldFail) {
+            revert ErrorJoinChannelAtomicFailure(0, joinChannels[0].participant);
+        }
         depositCalled = true;
         depositedParticipant = joinChannels[0].participant;
         successfulJoins = joinChannels;
@@ -92,9 +95,8 @@ contract JoinChannelFacetTest is Test {
         bytes memory encodedJoinChannel = abi.encode(joinChannel);
 
         JoinChannelConfirmation memory confirmation;
-        confirmation.signedJoinChannel = SignedJoinChannel({
-            encodedJoinChannel: encodedJoinChannel, signature: _sign(JOINER_PK, encodedJoinChannel)
-        });
+        confirmation.signedJoinChannel =
+            SignedJoinChannel({encodedJoinChannel: encodedJoinChannel, signature: _sign(JOINER_PK, encodedJoinChannel)});
         confirmation.signatures = new bytes[](1);
         confirmation.signatures[0] = _sign(ELIGIBLE_PK, encodedJoinChannel);
 
@@ -143,9 +145,8 @@ contract JoinChannelFacetTest is Test {
         bytes memory encodedJoinChannel = abi.encode(joinChannel);
 
         JoinChannelConfirmation memory confirmation;
-        confirmation.signedJoinChannel = SignedJoinChannel({
-            encodedJoinChannel: encodedJoinChannel, signature: _sign(JOINER_PK, encodedJoinChannel)
-        });
+        confirmation.signedJoinChannel =
+            SignedJoinChannel({encodedJoinChannel: encodedJoinChannel, signature: _sign(JOINER_PK, encodedJoinChannel)});
         confirmation.signatures = new bytes[](1);
         confirmation.signatures[0] = _sign(ELIGIBLE_PK, encodedJoinChannel);
 
@@ -175,7 +176,9 @@ contract JoinChannelFacetTest is Test {
         confirmation.signatures[0] = _sign(ELIGIBLE_PK, encodedTopUp);
 
         StateSnapshot memory snapshot = harness.getStateSnapshot(CHANNEL_ID);
-        vm.expectRevert(ErrorTopUpBalanceParticipantNotFound.selector);
+        vm.expectRevert(
+            abi.encodeWithSelector(ErrorTopUpBalanceParticipantNotFound.selector, CHANNEL_ID, topUp.participant)
+        );
         vm.prank(topUp.participant);
         harness.topUpBalance(confirmation, keccak256(abi.encode(snapshot)), FORK_ID);
 
@@ -193,13 +196,17 @@ contract JoinChannelFacetTest is Test {
 
         JoinChannelConfirmation memory confirmation;
         confirmation.signedJoinChannel = SignedJoinChannel({
-            encodedJoinChannel: encodedJoinChannel, signature: _sign(ELIGIBLE_PK, encodedJoinChannel)
+            encodedJoinChannel: encodedJoinChannel,
+            signature: _sign(ELIGIBLE_PK, encodedJoinChannel)
         });
         confirmation.signatures = new bytes[](1);
         confirmation.signatures[0] = _sign(ELIGIBLE_PK, encodedJoinChannel);
 
         StateSnapshot memory snapshot = harness.getStateSnapshot(CHANNEL_ID);
-        vm.expectRevert(ErrorJoinChannelInvalidSignature.selector);
+        // the confirmation is signed by ELIGIBLE, so the recovered signer is not the declared participant
+        vm.expectRevert(
+            abi.encodeWithSelector(ErrorJoinChannelInvalidSignature.selector, vm.addr(JOINER_PK), vm.addr(ELIGIBLE_PK))
+        );
         vm.prank(joinChannel.participant);
         harness.joinChannel(confirmation, keccak256(abi.encode(snapshot)), FORK_ID);
 
@@ -217,13 +224,16 @@ contract JoinChannelFacetTest is Test {
 
         JoinChannelConfirmation memory confirmation;
         confirmation.signedJoinChannel = SignedJoinChannel({
-            encodedJoinChannel: encodedJoinChannel, signature: _sign(ELIGIBLE_PK, encodedJoinChannel)
+            encodedJoinChannel: encodedJoinChannel,
+            signature: _sign(ELIGIBLE_PK, encodedJoinChannel)
         });
         confirmation.signatures = new bytes[](1);
         confirmation.signatures[0] = _sign(ELIGIBLE_PK, encodedJoinChannel);
 
         StateSnapshot memory snapshot = harness.getStateSnapshot(CHANNEL_ID);
-        vm.expectRevert(ErrorJoinChannelParticipantAlreadyExists.selector);
+        vm.expectRevert(
+            abi.encodeWithSelector(ErrorJoinChannelParticipantAlreadyExists.selector, CHANNEL_ID, vm.addr(ELIGIBLE_PK))
+        );
         vm.prank(joinChannel.participant);
         harness.joinChannel(confirmation, keccak256(abi.encode(snapshot)), FORK_ID);
 
@@ -240,9 +250,8 @@ contract JoinChannelFacetTest is Test {
         bytes memory encodedJoinChannel = abi.encode(joinChannel);
 
         JoinChannelConfirmation memory confirmation;
-        confirmation.signedJoinChannel = SignedJoinChannel({
-            encodedJoinChannel: encodedJoinChannel, signature: _sign(JOINER_PK, encodedJoinChannel)
-        });
+        confirmation.signedJoinChannel =
+            SignedJoinChannel({encodedJoinChannel: encodedJoinChannel, signature: _sign(JOINER_PK, encodedJoinChannel)});
         confirmation.signatures = new bytes[](1);
         confirmation.signatures[0] = _sign(ELIGIBLE_PK, encodedJoinChannel);
 
@@ -264,20 +273,48 @@ contract JoinChannelFacetTest is Test {
         bytes memory encodedJoinChannel = abi.encode(joinChannel);
 
         JoinChannelConfirmation memory confirmation;
-        confirmation.signedJoinChannel = SignedJoinChannel({
-            encodedJoinChannel: encodedJoinChannel, signature: _sign(JOINER_PK, encodedJoinChannel)
-        });
+        confirmation.signedJoinChannel =
+            SignedJoinChannel({encodedJoinChannel: encodedJoinChannel, signature: _sign(JOINER_PK, encodedJoinChannel)});
         confirmation.signatures = new bytes[](1);
         confirmation.signatures[0] = _sign(ELIGIBLE_PK, encodedJoinChannel);
 
         harness.setDepositShouldFail(true);
         StateSnapshot memory snapshot = harness.getStateSnapshot(CHANNEL_ID);
-        vm.expectRevert(ErrorJoinChannelAtomicFailure.selector);
+        vm.expectRevert(abi.encodeWithSelector(ErrorJoinChannelAtomicFailure.selector, 0, joinChannel.participant));
         vm.prank(joinChannel.participant);
         harness.joinChannel(confirmation, keccak256(abi.encode(snapshot)), FORK_ID);
 
         assertFalse(harness.depositCalled());
         assertEq(harness.depositedParticipant(), address(0));
+    }
+
+    function test_joinChannel_confirmationNotThresholdSignedRejected() public {
+        JoinChannel memory joinChannel = JoinChannel({
+            channelId: CHANNEL_ID,
+            participant: vm.addr(JOINER_PK),
+            deadlineTimestamp: block.timestamp + 120,
+            balance: Balance({amount: 500, data: ""})
+        });
+        bytes memory encodedJoinChannel = abi.encode(joinChannel);
+
+        JoinChannelConfirmation memory confirmation;
+        confirmation.signedJoinChannel =
+            SignedJoinChannel({encodedJoinChannel: encodedJoinChannel, signature: _sign(JOINER_PK, encodedJoinChannel)});
+        // the threshold set is {ELIGIBLE} (SLASHED is slashed on chain), and the
+        // joiner cannot sign for it, so the confirmation stays under threshold
+        confirmation.signatures = new bytes[](1);
+        confirmation.signatures[0] = _sign(JOINER_PK, encodedJoinChannel);
+
+        StateSnapshot memory snapshot = harness.getStateSnapshot(CHANNEL_ID);
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                ErrorJoinChannelConfirmationNotThresholdSigned.selector, joinChannel.participant, uint256(1), uint256(1)
+            )
+        );
+        vm.prank(joinChannel.participant);
+        harness.joinChannel(confirmation, keccak256(abi.encode(snapshot)), FORK_ID);
+
+        assertFalse(harness.depositCalled());
     }
 
     function _sign(uint256 privateKey, bytes memory encodedData) internal pure returns (bytes memory) {

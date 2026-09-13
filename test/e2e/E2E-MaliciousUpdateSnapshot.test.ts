@@ -1,6 +1,7 @@
 import { Status } from "@/types";
-import { Codec, Type, hash, tryDecodeCustomError } from "@/utils";
+import { Codec, Type, hash } from "@/utils";
 import { MathTestSession as TestSession } from "@test/harness";
+import { expectDecodedError } from "@test/test_utils/customErrorAssertions";
 import {
     MESSAGE_TYPE_EXIT,
     decodeMathState,
@@ -80,10 +81,17 @@ describe("E2E: Malicious updateSnapshot", function () {
             revertError = e;
         }
 
-        const customError = tryDecodeCustomError(revertError);
-        expect(customError, "expected decodable custom error").to.not.be.null;
-        expect(customError!.errorDescription.name).to.equal(
-            "CantWithdrawMoreThanDeposits"
+        const customError = expectDecodedError(
+            revertError,
+            "CantWithdrawMoreThanDeposits",
+            "expected CantWithdrawMoreThanDeposits"
+        );
+        const args = customError.errorDescription.args;
+        // the running withdrawal total is exactly the forged exit message
+        expect(args.totalWithdrawalAmount).to.equal(inflatedAmount);
+        // and it outgrew the channel's deposits, which is why the chain refused
+        expect(Number(args.totalDepositAmount)).to.be.lessThan(
+            Number(args.totalWithdrawalAmount)
         );
     });
 
@@ -149,11 +157,25 @@ describe("E2E: Malicious updateSnapshot", function () {
             revertError = e;
         }
 
-        const customError = tryDecodeCustomError(revertError);
-        expect(customError, "expected decodable custom error").to.not.be.null;
-        expect(customError!.errorDescription.name).to.equal(
-            "ErrorOutboundMessageBlocksInvalid"
+        const customError = expectDecodedError(
+            revertError,
+            "ErrorOutboundMessageBlocksInvalid",
+            "expected ErrorOutboundMessageBlocksInvalid"
         );
+        // the update reverted, so the chain still holds the pre-attempt snapshot
+        // the error reported as the lower bound of the outbound chain
+        const onChainSnapshot = await h.channelManager.getStateSnapshot(
+            h.channelId
+        );
+        const args = customError.errorDescription.args;
+        expect(args.lowerLatestOutboundMessageBlockHash).to.equal(
+            onChainSnapshot.snapshotData.latestOutboundMessageBlockHash
+        );
+        expect(args.lowerLatestOutboundMessageBlockHeight).to.equal(
+            onChainSnapshot.snapshotData.latestOutboundMessageBlockHeight
+        );
+        // the single forged block survived pruning and was the one rejected
+        expect(args.outboundMessageBlockCount).to.equal(1n);
     });
 
     it("colluded inflated stateMachineState balance → updateStateSnapshotSameFork succeeds, spectator aborts on balance invariant", async function () {

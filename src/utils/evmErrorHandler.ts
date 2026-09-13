@@ -20,7 +20,6 @@ export type RaceConditionErrorName =
     | "RaceConditionDisputeKillPeriodExpired"
     | "RaceConditionDisputeAlreadyReduced"
     | "RaceConditionReductionExpectationDoesntMatch"
-    | "RaceConditionDisputeAuditingRequired"
     | "RaceConditionDisputeTimeoutCalldataPosted"
     | "RaceConditionDisputeTimeoutPreviousBlockProducerPostedCalldataMismatch"
     | "RaceConditionDisputeTimeoutNotMinTimestamp"

@@ -27,7 +27,7 @@ contract StateChannelManagerProxyOpenTest is DiamondHarness {
         confirmation.signatures[0] = sig;
         confirmation.signatures[1] = sig;
 
-        vm.expectRevert(ErrorDuplicateParticipant.selector);
+        vm.expectRevert(abi.encodeWithSelector(ErrorDuplicateParticipant.selector, signer));
         diamond.open(confirmation);
     }
 

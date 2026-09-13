@@ -86,9 +86,13 @@ function _getUnfinalizedBlockConfirmationsFromStateProof(StateProof memory state
     return blockConfirmations;
 }
 
-function _isEvidencePeriodExpired(DisputeWindow storage disputeWindow, uint256 evidenceTime) view returns (bool) {
-    return block.timestamp >= disputeWindow.evidence.creationTimestamp + evidenceTime
-        && _isDisputeWidnowCreated(disputeWindow);
+function _isEvidencePeriodExpired(DisputeWindow storage disputeWindow, uint256 evidenceTime)
+    view
+    returns (bool, uint256 periodEnd)
+{
+    uint256 evidencePeriodEnd = disputeWindow.evidence.creationTimestamp + evidenceTime;
+    bool isExpired = block.timestamp >= evidencePeriodEnd && _isDisputeWidnowCreated(disputeWindow);
+    return (isExpired, evidencePeriodEnd);
 }
 
 function _isKillPeriodExpired(DisputeWindow storage disputeWindow, uint256 evidenceTime) view returns (bool, uint256) {
@@ -99,10 +103,12 @@ function _isKillPeriodExpired(DisputeWindow storage disputeWindow, uint256 evide
 
 function _isReduceChallengePeriodExpired(DisputeWindow storage disputeWindow, uint256 evidenceTime)
     view
-    returns (bool)
+    returns (bool, uint256 periodEnd)
 {
-    return block.timestamp >= disputeWindow.reducedResult.timestamp + evidenceTime
-        && disputeWindow.reducedResult.timestamp != 0 && _isDisputeWidnowCreated(disputeWindow);
+    uint256 challengePeriodEnd = disputeWindow.reducedResult.timestamp + evidenceTime;
+    bool isExpired = block.timestamp >= challengePeriodEnd && disputeWindow.reducedResult.timestamp != 0
+        && _isDisputeWidnowCreated(disputeWindow);
+    return (isExpired, challengePeriodEnd);
 }
 
 function _isDisputeWidnowCreated(DisputeWindow storage disputeWindow) view returns (bool) {

@@ -163,6 +163,7 @@ export default class MembershipService {
                 case "RaceConditionJoinChannelSnapshotMismatch":
                 case "RaceConditionForceInboundJoinForkDisputed":
                 case "ErrorJoinChannelInvalidSignature":
+                case "ErrorJoinChannelConfirmationNotThresholdSigned":
                     this.logger.warn(
                         `joinChannel - race condition: ${custom.name}`,
                         {

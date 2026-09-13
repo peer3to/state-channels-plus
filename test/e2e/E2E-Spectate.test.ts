@@ -946,7 +946,7 @@ describe("E2E: Spectate Service", function () {
             }
         });
 
-        it("forceInboundJoin before joinChannel → joinChannel reverts ErrorJoinChannelInvalidSignature (pending participant did not sign confirmation)", async function () {
+        it("forceInboundJoin before joinChannel → joinChannel reverts ErrorJoinChannelConfirmationNotThresholdSigned (pending participant did not sign confirmation)", async function () {
             const h = TestSession.getHarness();
             await h.lifecycle.start(3, 0, {
                 timeConfig: concurrentTimeConfig

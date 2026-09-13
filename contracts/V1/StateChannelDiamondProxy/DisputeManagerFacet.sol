@@ -51,10 +51,11 @@ contract DisputeManagerFacet is StateChannelCommon {
         if (dispute.input.requireExistingDisputeWindow) {
             DisputeWindow storage existingWindow =
                 disputeData[dispute.input.channelId].disputeWindowMap[dispute.input.forkId];
+            (bool existingWindowEvidenceExpired,) = _isEvidencePeriodExpired(existingWindow, _getEvidenceTime());
             require(
                 // The reduced-fork check is defense in depth: a finalized window has already expired.
                 _isDisputeWidnowCreated(existingWindow) && existingWindow.reducedResult.forkId == bytes32(0)
-                    && !_isEvidencePeriodExpired(existingWindow, _getEvidenceTime()),
+                    && !existingWindowEvidenceExpired,
                 RaceConditionDisputeWindowNotOpen(dispute.input.channelId, dispute.input.forkId)
             );
         }
@@ -85,9 +86,11 @@ contract DisputeManagerFacet is StateChannelCommon {
         } else {
             bool hasNoCommitments = disputeWindow.evidence.disputeCommitments.length == 0;
 
+            (bool evidencePeriodExpired, uint256 evidencePeriodEnd) =
+                _isEvidencePeriodExpired(disputeWindow, _getEvidenceTime());
             require(
-                !_isEvidencePeriodExpired(disputeWindow, _getEvidenceTime()) || hasNoCommitments,
-                RaceConditionDisputeEvidencePeriodExpired()
+                !evidencePeriodExpired || hasNoCommitments,
+                RaceConditionDisputeEvidencePeriodExpired(evidencePeriodEnd, block.timestamp)
             );
 
             require(

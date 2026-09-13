@@ -8,7 +8,10 @@ import {StateProofFacet} from "../../../contracts/V1/StateChannelDiamondProxy/St
 import {UtilityFacet} from "../../../contracts/V1/StateChannelDiamondProxy/UtilityFacet.sol";
 import {StateChannelCommon} from "../../../contracts/V1/StateChannelDiamondProxy/StateChannelCommon.sol";
 import {
+    ErrorDisputeCommitmentNotFound,
     ErrorDisputeInboundMessageBlocksInvalid,
+    ErrorInvalidStateSnapshotHash,
+    ErrorSnapshotDataForkMismatch,
     INBOUND_FAILURE_FINAL_TARGET,
     INBOUND_FAILURE_HASH_LINK,
     INBOUND_FAILURE_HEIGHT_SEQUENCE,
@@ -574,12 +577,16 @@ contract DisputeVerificationFacetTest is DiamondHarness {
     function test_applyDisputeFraudProofs_expiredDispute_reverts() public {
         DisputeExpiryGuardHarness harness = new DisputeExpiryGuardHarness();
         Dispute memory dispute = _structurallyInvalidDispute(keccak256("expired-apply"), address(0xA1));
-        harness.seedDispute(dispute, block.timestamp);
-        vm.warp(block.timestamp + 10);
+        uint256 seededAt = block.timestamp;
+        harness.seedDispute(dispute, seededAt);
+        // the harness kill period is 10s, so warping to its end expires it
+        vm.warp(seededAt + 10);
 
         DisputeFraudProof[] memory proofs = new DisputeFraudProof[](1);
         proofs[0] = _structuralProof(dispute);
-        vm.expectRevert(RaceConditionDisputeKillPeriodExpired.selector);
+        vm.expectRevert(
+            abi.encodeWithSelector(RaceConditionDisputeKillPeriodExpired.selector, seededAt + 10, seededAt + 10)
+        );
         harness.applyDisputeFraudProofs(proofs);
         assertEq(harness.commitmentCount(CHANNEL_ID, dispute.input.forkId), 1);
     }
@@ -587,10 +594,13 @@ contract DisputeVerificationFacetTest is DiamondHarness {
     function test_killDispute_expiredDispute_reverts() public {
         DisputeExpiryGuardHarness harness = new DisputeExpiryGuardHarness();
         Dispute memory dispute = _structurallyInvalidDispute(keccak256("expired-kill"), address(0xA1));
-        harness.seedDispute(dispute, block.timestamp);
-        vm.warp(block.timestamp + 10);
+        uint256 seededAt = block.timestamp;
+        harness.seedDispute(dispute, seededAt);
+        vm.warp(seededAt + 10);
 
-        vm.expectRevert(RaceConditionDisputeKillPeriodExpired.selector);
+        vm.expectRevert(
+            abi.encodeWithSelector(RaceConditionDisputeKillPeriodExpired.selector, seededAt + 10, seededAt + 10)
+        );
         harness.killDispute(dispute);
         assertEq(harness.commitmentCount(CHANNEL_ID, dispute.input.forkId), 1);
     }
@@ -599,14 +609,18 @@ contract DisputeVerificationFacetTest is DiamondHarness {
         DisputeExpiryGuardHarness harness = new DisputeExpiryGuardHarness();
         Dispute memory active = _structurallyInvalidDispute(keccak256("active"), address(0xA1));
         Dispute memory expired = _structurallyInvalidDispute(keccak256("expired"), address(0xA2));
-        harness.seedDispute(expired, block.timestamp);
-        vm.warp(block.timestamp + 10);
+        uint256 seededAt = block.timestamp;
+        harness.seedDispute(expired, seededAt);
+        vm.warp(seededAt + 10);
         harness.seedDispute(active, block.timestamp);
 
         DisputeFraudProof[] memory proofs = new DisputeFraudProof[](2);
         proofs[0] = _structuralProof(active);
         proofs[1] = _structuralProof(expired);
-        vm.expectRevert(RaceConditionDisputeKillPeriodExpired.selector);
+        // only the second entry is past its kill period
+        vm.expectRevert(
+            abi.encodeWithSelector(RaceConditionDisputeKillPeriodExpired.selector, seededAt + 10, seededAt + 10)
+        );
         harness.applyDisputeFraudProofs(proofs);
 
         assertEq(harness.commitmentCount(CHANNEL_ID, active.input.forkId), 1);
@@ -1172,6 +1186,79 @@ contract DisputeVerificationFacetTest is DiamondHarness {
         diamond.reduceOutputToSnapshotData(
             keccak256(abi.encode(snapshot.snapshotData)), reducedOutput, snapshot, encodedState, blocks
         );
+    }
+
+    // genesis branch: no block in the reduced output, so the snapshot data has
+    // to hash to the disputed fork itself
+    function test_reduceOutputToSnapshotData_genesisSnapshotDataNotLinkedToFork_revertsCarryingBothForkIds() public {
+        MathState memory state;
+        state.participants = _participants();
+        state.balances = new uint256[](state.participants.length);
+        bytes memory encodedState = abi.encode(state);
+
+        StateSnapshot memory snapshot;
+        snapshot.snapshotData.stateMachineStateHash = keccak256(encodedState);
+        snapshot.snapshotData.latestInboundMessageBlockHash = SNAPSHOT_HEAD;
+
+        ReduceOutput memory reducedOutput;
+        reducedOutput.latestInboundMessageBlockHash = SNAPSHOT_HEAD;
+
+        bytes32 expectedForkId = keccak256("a fork the snapshot data does not hash to");
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                ErrorSnapshotDataForkMismatch.selector, expectedForkId, keccak256(abi.encode(snapshot.snapshotData))
+            )
+        );
+        diamond.reduceOutputToSnapshotData(expectedForkId, reducedOutput, snapshot, encodedState, new MessageBlock[](0));
+    }
+
+    // block branch: the reduced output has a block, so the block's
+    // stateSnapshotHash has to be the hash of the supplied snapshot
+    function test_reduceOutputToSnapshotData_latestBlockNotLinkedToSnapshot_revertsCarryingBothSnapshotHashes()
+        public
+    {
+        MathState memory state;
+        state.participants = _participants();
+        state.balances = new uint256[](state.participants.length);
+        bytes memory encodedState = abi.encode(state);
+
+        StateSnapshot memory snapshot;
+        snapshot.snapshotData.stateMachineStateHash = keccak256(encodedState);
+        snapshot.snapshotData.latestInboundMessageBlockHash = SNAPSHOT_HEAD;
+
+        bytes32 claimedStateSnapshotHash = keccak256("a snapshot the block links to instead");
+        ReduceOutput memory reducedOutput;
+        reducedOutput.latestInboundMessageBlockHash = SNAPSHOT_HEAD;
+        reducedOutput.latestBlock.transaction.header.forkId = FORK_ID;
+        reducedOutput.latestBlock.stateSnapshotHash = claimedStateSnapshotHash;
+
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                ErrorInvalidStateSnapshotHash.selector, claimedStateSnapshotHash, keccak256(abi.encode(snapshot))
+            )
+        );
+        diamond.reduceOutputToSnapshotData(
+            keccak256(abi.encode(snapshot.snapshotData)), reducedOutput, snapshot, encodedState, new MessageBlock[](0)
+        );
+    }
+
+    function test_killDispute_disputeNotInWindowCommitments_revertsCarryingCommitment() public {
+        DisputeExpiryGuardHarness harness = new DisputeExpiryGuardHarness();
+        Dispute memory committed = _structurallyInvalidDispute(keccak256("kill-committed"), address(0xA1));
+        // same window, different dispute -> its commitment was never pushed
+        Dispute memory uncommitted = _structurallyInvalidDispute(keccak256("kill-committed"), address(0xA2));
+        harness.seedDispute(committed, block.timestamp);
+
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                ErrorDisputeCommitmentNotFound.selector,
+                CHANNEL_ID,
+                uncommitted.input.forkId,
+                keccak256(abi.encode(uncommitted))
+            )
+        );
+        harness.killDispute(uncommitted);
+        assertEq(harness.commitmentCount(CHANNEL_ID, committed.input.forkId), 1);
     }
 
     /// `count` blocks each chained to the previous, heights ascending from

@@ -304,10 +304,10 @@ contract FraudProofFacet is StateChannelCommon {
         DisputeData storage _disputeData = disputeData[channelId];
         DisputeWindow storage disputeWindow =
             _disputeData.disputeWindowMap[correctGenesisSnapshot.snapshotData.originForkId];
-        (bool isExpired,) = _isKillPeriodExpired(disputeWindow, _getEvidenceTime());
-        require(isExpired, RaceConditionDisputeKillPeriodNotExpired());
+        (bool isExpired, uint256 killPeriodEnd) = _isKillPeriodExpired(disputeWindow, _getEvidenceTime());
+        require(isExpired, RaceConditionDisputeKillPeriodNotExpired(killPeriodEnd, block.timestamp));
         (bool isAvailable, uint256 timestamp) = _getGenesisTimestamp(channelId, originForkId, forkId);
-        require(isAvailable, RaceConditionGenesisTimestampNotAvailable());
+        require(isAvailable, RaceConditionGenesisTimestampNotAvailable(channelId, originForkId, forkId));
         if (timestamp != correctGenesisSnapshot.timestamp) return _invalid();
         if (!UtilityFacet(utilityFacetAddress).isGenesisSnapshotWithoutTimeCheck(correctGenesisSnapshot)) {
             return _invalid();

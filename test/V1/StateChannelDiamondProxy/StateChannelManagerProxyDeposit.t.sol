@@ -61,7 +61,8 @@ contract StateChannelManagerProxyDepositTest is DiamondHarness {
     function test_depositAssetsComposable_atomicFailureRollsBack() public {
         JoinChannel[] memory joins = _joins(100, 0);
 
-        vm.expectRevert(ErrorJoinChannelAtomicFailure.selector);
+        // the zero-amount join is the second one, so index 1 is what fails
+        vm.expectRevert(abi.encodeWithSelector(ErrorJoinChannelAtomicFailure.selector, uint256(1), vm.addr(0xB0B)));
         vm.prank(address(diamond));
         diamond.depositAssetsComposable(joins, true);
 
