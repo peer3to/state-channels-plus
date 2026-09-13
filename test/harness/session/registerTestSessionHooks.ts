@@ -18,10 +18,8 @@ function hookTrace(message: string): void {
 }
 
 declare global {
-    // eslint-disable-next-line no-var
     var __peer3SessionHooksRegistered__: boolean | undefined;
 
-    // eslint-disable-next-line no-var
     var __peer3UnhandledRejectionHookRegistered__: boolean | undefined;
 }
 
@@ -88,8 +86,7 @@ export function registerTestSessionHooks(testSession: TestSessionClass): void {
             if (this.currentTest?.state === "failed" || firstDetachedError) {
                 hookTrace("Test failed - trying to upload logs!");
                 const h = testSession.getHarness();
-                // markers only - the harness upload below fans out to every peer
-                // and root, so a per-peer upload here would run N rounds
+                // The harness explicitly triggers each independent peer root below.
                 h.peers.forEach((peer, index) => {
                     peer.logger.warn(
                         `FAILED (Peer ${index}): ${this.currentTest?.title}`,
@@ -99,7 +96,7 @@ export function registerTestSessionHooks(testSession: TestSessionClass): void {
                         }
                     );
                 });
-                const promise = h.logger.uploadLogs(
+                const promise = h.uploadLogs(
                     `FAILED (Harness): ${this.currentTest?.title}`,
                     {
                         testError: this.currentTest?.err || "N/A",

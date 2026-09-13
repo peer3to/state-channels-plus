@@ -1,22 +1,22 @@
 // @spec-test-coverage-ignore: host-side lifecycle staging used by mapped tests
 import LifecycleRpcMethods from "./LifecycleRpcMethods";
 import type P2PManager from "@/P2PManager";
-import ARpcService from "@/rpc/ARpcService";
-import type ATransport from "@/transport/ATransport";
+import ANetworkRpcService from "@/rpc/network/ANetworkRpcService";
+import type NetworkTransport from "@/transport/NetworkTransport";
 import type { ChannelId } from "@/types/types";
 
 /** Private host-side lifecycle controls for external channel setup. */
-export class LifecycleService extends ARpcService<LifecycleRpcMethods> {
+export class LifecycleService extends ANetworkRpcService<LifecycleRpcMethods> {
     constructor(p2pManager: P2PManager) {
         super(
-            p2pManager,
+            p2pManager.rpcRouter,
             p2pManager.stateManager.logger.child({
                 component: "HarnessLifecycleService"
             })
         );
     }
 
-    public createRPCMethods(transport: ATransport): LifecycleRpcMethods {
+    public createRPCMethods(transport: NetworkTransport): LifecycleRpcMethods {
         return new LifecycleRpcMethods(transport, this);
     }
 

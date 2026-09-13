@@ -33,7 +33,7 @@ deflate plus base64 for a batch.
 - **A non-string message is coerced at the boundary.** Call sites pass anything; the decoder requires
   a string, and one bad entry must not fail its whole batch.
 - **Decode requires the wall clock.** It is the one field that orders lines from different threads
-  ([`REQ-LOG-4-W5XR7Q`](../../../../../specification/runtime/log-collection.md#req-log-4-w5xr7q)).
+  ([`REQ-LOG-4-W5XR7Q` (Every line says where it came from)](../../../../../specification/runtime/log-collection.md#req-log-4-w5xr7q)).
 
 - **Message coercion runs none of the value's code.** A non-string message goes through the same accessor-refusing sanitizer as meta: a getter, `toJSON` or `Symbol.toPrimitive` on a hostile message is never invoked, so reporting it can not itself throw inside the logger.
 
@@ -63,7 +63,7 @@ claims complete conformance for a requirement that depends on other files.
 ## Specification adherence
 
 - Every encoded line carries the wall clock a reader orders threads by, and a line without one is
-  refused on decode ([`REQ-LOG-4-W5XR7Q`](../../../../../specification/runtime/log-collection.md#req-log-4-w5xr7q)).
+  refused on decode ([`REQ-LOG-4-W5XR7Q` (Every line says where it came from)](../../../../../specification/runtime/log-collection.md#req-log-4-w5xr7q)).
 - Secrets carried by an error are not copied out of it, at any depth (the security considerations of
   the log collection specification).
 

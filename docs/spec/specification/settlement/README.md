@@ -40,8 +40,8 @@ spectate-before-join admission flow.
 - **Resource bounds.** Proven ranges are bounded by gas and calldata limits; batch splitting keeps
   each submission within deployable bounds without changing the result.
 - **Verification evidence.** Requirement matrices in the owned documents; the settlement edges are
-  proven under [`REQ-IX-3-H8WCVY`](../interactions.md#req-ix-3-h8wcvy) and
-  [`REQ-IX-6-A4Y7KB`](../interactions.md#req-ix-6-a4y7kb).
+  proven under [`REQ-IX-3-H8WCVY` (Inbound inclusion and join flow)](../interactions.md#req-ix-3-h8wcvy) and
+  [`REQ-IX-6-A4Y7KB` (Snapshot adoption and outbound processing)](../interactions.md#req-ix-6-a4y7kb).
 
 ## Owned documents
 
@@ -53,5 +53,5 @@ spectate-before-join admission flow.
 ## Interaction contracts
 
 Producer of the snapshot-adoption edge into enforcement
-([`REQ-IX-6-A4Y7KB`](../interactions.md#req-ix-6-a4y7kb)); consumer of inbound-inclusion service from block
-progression ([`REQ-IX-3-H8WCVY`](../interactions.md#req-ix-3-h8wcvy)) and of reduced successor forks from disputes.
+([`REQ-IX-6-A4Y7KB` (Snapshot adoption and outbound processing)](../interactions.md#req-ix-6-a4y7kb)); consumer of inbound-inclusion service from block
+progression ([`REQ-IX-3-H8WCVY` (Inbound inclusion and join flow)](../interactions.md#req-ix-3-h8wcvy)) and of reduced successor forks from disputes.

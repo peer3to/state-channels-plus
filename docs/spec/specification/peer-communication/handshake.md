@@ -6,7 +6,7 @@
 > **Scope:** The authentication service: how a raw transport becomes a session bound to a proven
 > protocol identity with compatible protocol time. The handshake contract ends at that session;
 > post-authentication engagement and catch-up are owned by
-> [synchronization.md](./synchronization.md) ([`REQ-AUTH-5-BQG9AG`](synchronization.md#req-auth-5-bqg9ag)).
+> [synchronization.md](./synchronization.md) ([`REQ-AUTH-5-BQG9AG` (Post-authentication engagement follows the local lifecycle)](synchronization.md#req-auth-5-bqg9ag)).
 > Shared communication rules: [rpc.md](./rpc.md).
 
 ## Contents
@@ -33,7 +33,7 @@ identity but proves nothing. The handshake establishes exactly two objective fac
 Clock compatibility is part of authentication because peers with incompatible clocks would later
 disagree about protocol state and time; excessive skew therefore prevents the session, exactly as a
 failed proof does. Completion produces the one authenticated session every gated service requires
-([`INV-RPC-1-SJS2T6`](rpc.md#inv-rpc-1-sjs2t6)) and binds the identity to that exact transport for
+([`INV-RPC-1-SJS2T6` (Identity-bound dispatch)](rpc.md#inv-rpc-1-sjs2t6)) and binds the identity to that exact transport for
 addressed delivery and response correlation. The identity profile survives transport replacement;
 each replacement must authenticate separately. This is the only service that accepts pre-session traffic.
 
@@ -42,7 +42,7 @@ eligibility, no authorization, and no subjective standing of the proven identity
 ([`INV-AUTH-3-0QP5E9`](handshake.md#inv-auth-3-0qp5e9)); at the current baseline every completed
 peer proceeds to continued interaction ([`REQ-AUTH-7-VJFSD5`](handshake.md#req-auth-7-vjfsd5)),
 and what happens next is owned downstream
-([`REQ-AUTH-5-BQG9AG`](synchronization.md#req-auth-5-bqg9ag)).
+([`REQ-AUTH-5-BQG9AG` (Post-authentication engagement follows the local lifecycle)](synchronization.md#req-auth-5-bqg9ag)).
 
 ## Algorithm
 
@@ -81,7 +81,7 @@ symmetric exchange gives the peer the same pair. Completion is idempotent and es
 one live authenticated session by writing the proven identity onto the exact transport. The
 churn-surviving peer record owns identity policy but does not duplicate transport authentication.
 The handshake takes no further decision: continued engagement, participation resolution,
-and catch-up begin downstream ([`REQ-AUTH-5-BQG9AG`](synchronization.md#req-auth-5-bqg9ag)).
+and catch-up begin downstream ([`REQ-AUTH-5-BQG9AG` (Post-authentication engagement follows the local lifecycle)](synchronization.md#req-auth-5-bqg9ag)).
 Completion may also trigger a transport upgrade by deterministic tie-break
 ([transport-upgrade.md](./transport-upgrade.md)). An exchange that stalls past the agreement window
 times out: a peer already verified but never acknowledging is excluded by identity; an unverified
@@ -155,7 +155,7 @@ engagement policy exists, every peer that completes mutual proof and the timing 
 continued interaction at this layer; the handshake applies no identity-specific opinion or
 participation filter. A peer that fails any objective check never reaches continued interaction.
 This states current observable behavior, not a promise that every identity must remain acceptable
-under a future policy ([`OQ-45-ACZCDE`](../open-questions.md#oq-45-aczcde)).
+under a future policy ([`OQ-45-ACZCDE` (Subjective post-authentication engagement policy)](../open-questions.md#oq-45-aczcde)).
 
 ## Assumptions and constraints
 
@@ -163,8 +163,8 @@ under a future policy ([`OQ-45-ACZCDE`](../open-questions.md#oq-45-aczcde)).
   exempt ([rpc.md](./rpc.md)).
 - Timing bounds derive from the protocol's agreement window
   ([time.md](../protocol-model/time.md)); honest peers within stated skew must complete.
-- Protocol-version compatibility should bind into this exchange ([`REQ-RPC-8-44XECF`](rpc.md#req-rpc-8-44xecf)); the scheme is open
-  ([`OQ-34-FY08V2`](../open-questions.md#oq-34-fy08v2)).
+- Protocol-version compatibility should bind into this exchange ([`REQ-RPC-8-44XECF` (Compatibility before protected calls)](rpc.md#req-rpc-8-44xecf)); the scheme is open
+  ([`OQ-34-FY08V2` (RPC boundary decisions)](../open-questions.md#oq-34-fy08v2)).
 - The handshake authenticates _identity and clock compatibility_, not authorization: whether the
   identity may join, sync, or dispute is each downstream service's own check
   ([`INV-AUTH-3-0QP5E9`](handshake.md#inv-auth-3-0qp5e9)).
@@ -182,7 +182,7 @@ participation, catch-up, and authorization are decided by their own owners
 ([`INV-AUTH-3-0QP5E9`](handshake.md#inv-auth-3-0qp5e9)). Residual: the responder in a single
 direction signs for an unauthenticated caller by design; the cost is bounded by validation-before-
 signing and the domain tag. Exclusion durability and its interaction with deferred-call queues are
-open ([`OQ-34-FY08V2`](../open-questions.md#oq-34-fy08v2)).
+open ([`OQ-34-FY08V2` (RPC boundary decisions)](../open-questions.md#oq-34-fy08v2)).
 
 ## Verification and test plan
 
@@ -205,11 +205,11 @@ round-trip/freshness bound, and `ε` the smallest meaningful positive interval.
 
 ## Future Work
 
-_Non-normative._ Bind protocol-version negotiation into the signed handshake ([`REQ-RPC-8-44XECF`](rpc.md#req-rpc-8-44xecf),
-[`OQ-34-FY08V2`](../open-questions.md#oq-34-fy08v2)); align with the signature-domain decision for all protocol objects
-([`OQ-29-EFY4NF`](../open-questions.md#oq-29-efy4nf)); define exclusion persistence and appeal semantics.
+_Non-normative._ Bind protocol-version negotiation into the signed handshake ([`REQ-RPC-8-44XECF` (Compatibility before protected calls)](rpc.md#req-rpc-8-44xecf),
+[`OQ-34-FY08V2` (RPC boundary decisions)](../open-questions.md#oq-34-fy08v2)); align with the signature-domain decision for all protocol objects
+([`OQ-29-EFY4NF` (Signature domain separation)](../open-questions.md#oq-29-efy4nf)); define exclusion persistence and appeal semantics.
 
-**Subjective engagement after authentication** ([`OQ-45-ACZCDE`](../open-questions.md#oq-45-aczcde)).
+**Subjective engagement after authentication** ([`OQ-45-ACZCDE` (Subjective post-authentication engagement policy)](../open-questions.md#oq-45-aczcde)).
 A later specification should define how a node forms a local, subjective opinion about whether to
 continue interacting with a proven identity. That opinion may differ between nodes, must not erase
 or contradict the objective facts authentication established, and must remain separate from channel

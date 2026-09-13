@@ -62,9 +62,9 @@ claims complete conformance for a requirement that depends on other files.
 | ----------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | [UtilityFacetInterface.sol](../../../../../../../contracts/V1/StateChannelDiamondProxy/UtilityFacetInterface.sol) | [`REQ-CONTRACT-ARCH-4-FZ3CJE`](../../../../../specification/enforcement/contracts.md#req-contract-arch-4-fz3cje), [`INV-ENFPROOF-1-DR1N9B`](../../../../../specification/enforcement/proof-verification.md#inv-enfproof-1-dr1n9b) |
 
-Contribution per ID: [`REQ-CONTRACT-ARCH-4-FZ3CJE`](../../../../../specification/enforcement/contracts.md#req-contract-arch-4-fz3cje) — the composition's required helper module is
+Contribution per ID: [`REQ-CONTRACT-ARCH-4-FZ3CJE` (Upgrade and deployment integrity)](../../../../../specification/enforcement/contracts.md#req-contract-arch-4-fz3cje) — the composition's required helper module is
 identified by type, and an incompatible utility facet is rejected at compile time instead of
-failing at run time; [`INV-ENFPROOF-1-DR1N9B`](../../../../../specification/enforcement/proof-verification.md#inv-enfproof-1-dr1n9b) — every declared helper is `pure`/`view`, so the
+failing at run time; [`INV-ENFPROOF-1-DR1N9B` (Side-effect-free verification)](../../../../../specification/enforcement/proof-verification.md#inv-enfproof-1-dr1n9b) — every declared helper is `pure`/`view`, so the
 stateless contract of this helper set is part of its type.
 
 ## Assumptions, dependencies, trust boundaries, and limits

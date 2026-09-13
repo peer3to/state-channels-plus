@@ -5,8 +5,8 @@ import { expect } from "chai";
 /**
  * E2E Tests for Handshake Initialization
  *
- * Maps to: src/rpc/services/initHandshake/InitHandshakeService.ts
- *          src/rpc/services/initHandshake/InitHandshakeRpcMethods.ts
+ * Maps to: src/rpc/network/services/initHandshake/InitHandshakeService.ts
+ *          src/rpc/network/services/initHandshake/InitHandshakeRpcMethods.ts
  *          src/ProfileManager.ts
  *
  * Tests the handshake protocol, peer profile creation, and time validation.

@@ -1,3 +1,4 @@
+// @spec-test-coverage-ignore: harness storage assertions; executable evidence belongs to the calling test declarations
 import { ForkId, Hash } from "@/types";
 import {
     DisputeFraudProofType,
@@ -309,6 +310,23 @@ export class AssertStorageActions<
         DetachedPromises.collect(
             this.honestPeersStoredDisputeFraudProofWait(options)
         );
+    }
+
+    /** Honest auditors must not accuse a peer merely because an inbound log is missing. */
+    async honestPeersStoredNoDisputeFraudProofs(): Promise<void> {
+        const peers = this.harness.getHonestPeers();
+        if (peers.length === 0)
+            throw new Error("No honest auditors to inspect");
+        for (const peer of peers) {
+            const types = await this.harness
+                .control(peer)
+                .query.getDisputeFraudProofTypes()
+                .request();
+            if (types.length)
+                throw new Error(
+                    `Peer ${peer.index} stored dispute fraud proofs: ${types.join(", ")}`
+                );
+        }
     }
 
     async storedTimeout(options: {

@@ -12,8 +12,8 @@
 > restated. Shared RPC mechanics (envelope, guards, delivery modes, outcome table): [./README.md](./README.md).
 
 Implementation:
-[`StateTransitionService`](../../../../../../../src/rpc/services/stateTransition/StateTransitionService.ts#L7),
-[`StateTransitionRpcMethods`](../../../../../../../src/rpc/services/stateTransition/StateTransitionRpcMethods.ts#L6).
+[`StateTransitionService`](../../../../../../../src/rpc/network/services/stateTransition/StateTransitionService.ts#L7),
+[`StateTransitionRpcMethods`](../../../../../../../src/rpc/network/services/stateTransition/StateTransitionRpcMethods.ts#L6).
 Primary consumer: [`BlockQueueManager.ingestBlockConfirmation`](../../../../../../../src/stateManager/BlockQueueManager.ts#L56)
 via [`StateManager.ingestBlockConfirmation`](../../../../../../../src/stateManager/StateManager.ts#L478).
 
@@ -60,7 +60,7 @@ All state a frame touches lives downstream and is specified there:
 | Peer profiles, blacklist                                           | [`ProfileManager`](../../../../../../../src/ProfileManager.ts#L7)      | this service's penalty mapping | [./README.md](./README.md) §8                                                   |
 
 Statelessness is load-bearing: the handler runs without the `StateManager` mutex
-([./README.md](./README.md) §6.6, [`REQ-BLOCK-PIPE-5-WJ31RG`](../../../../../specification/block-progression/block-processing.md#req-block-pipe-5-wj31rg)) and can be dispatched concurrently for many frames;
+([./README.md](./README.md) §6.6, [`REQ-BLOCK-PIPE-5-WJ31RG` (Pre-execution merge layer)](../../../../../specification/block-progression/block-processing.md#req-block-pipe-5-wj31rg)) and can be dispatched concurrently for many frames;
 all merge atomicity is the queue's responsibility ([`REQ-BCP-3-1GCEH9`](../block-confirmation-pipeline.md#req-bcp-3-1gceh9)).
 
 ## 3. Public method: `onBlockConfirmation(blockConfirmation)`
@@ -76,16 +76,16 @@ Ordered stages, with the RPC-layer / pipeline split marked:
    guard exists: **any** handshake-authenticated identity, participant or not, may invoke this
    method (see §4.2, §4.7).
 2. **Sender attribution** _(RPC layer,
-   [`StateTransitionRpcMethods`](../../../../../../../src/rpc/services/stateTransition/StateTransitionRpcMethods.ts#L6))_:
+   [`StateTransitionRpcMethods`](../../../../../../../src/rpc/network/services/stateTransition/StateTransitionRpcMethods.ts#L6))_:
    read `senderTransport.peerAddress` (written onto the transport by handshake completion). If
    absent — unreachable behind the guard, kept as a defensive check — `disconnectAndBlacklistPeer(transport)`
    and return. The addressless transport profile still records the verdict and bans its Holepunch
    handle; durability across a new SDK handle remains open ([./README.md](./README.md) §8,
-   [`OQ-34-FY08V2`](../../../../../specification/open-questions.md#oq-34-fy08v2)).
+   [`OQ-34-FY08V2` (RPC boundary decisions)](../../../../../specification/open-questions.md#oq-34-fy08v2)).
 3. **Delegation** _(pipeline)_:
    `stateManager.ingestBlockConfirmation(blockConfirmation, { senderAddress: peerAddress })`.
    The struct is passed **raw** — no Codec decode, no shape check at the RPC layer. Everything
-   [`REQ-RPC-2-SZDTTM`](../../../../../specification/peer-communication/rpc.md#req-rpc-2-szdttm) demands is discharged inside intake
+   [`REQ-RPC-2-SZDTTM` (Request lifecycle)](../../../../../specification/peer-communication/rpc.md#req-rpc-2-szdttm) demands is discharged inside intake
    ([../block-confirmation-pipeline.md](../block-confirmation-pipeline.md) §4): authenticity via
    the canonical Solidity predicate (`LocalDiamond.isBlockAuthentic`), dedup → stored-merge,
    channel gate, disputed-fork gate, non-current-fork recovery scheduling, queueing with the
@@ -152,7 +152,7 @@ engineer decision on the error partition. Same family as [`DEF-5-E8TP9N`](../../
 
 ### 4.2 Flooding
 
-**Unhandled — the canonical [`OQ-6-4JPNE5`](../../../../../specification/open-questions.md#oq-6-4jpne5) surface.** This is the highest-volume method on the node and
+**Unhandled — the canonical [`OQ-6-4JPNE5` (P2P gossip rate limiting)](../../../../../specification/open-questions.md#oq-6-4jpne5) surface.** This is the highest-volume method on the node and
 there is no rate limiting anywhere in the RPC layer ([./README.md](./README.md) §9). Per-frame
 attacker-imposed cost: JSON parse (bounded by the 16 MiB frame cap), guard lookup, one ECDSA
 recovery inside `isBlockAuthentic` (memoized per `(blockHash, signature)` with a bounded cache —
@@ -172,22 +172,22 @@ The attack shapes and their current bounds:
   deliberately **no cap on distinct entries** — boundedness is designed to come transitively
   from the central RPC rate limiter, which does not exist yet
   ([../block-confirmation-pipeline.md](../block-confirmation-pipeline.md) §3.1,
-  [`OQ-6-4JPNE5`](../../../../../specification/open-questions.md#oq-6-4jpne5)). Until then, memory and task-queue growth during one
+  [`OQ-6-4JPNE5` (P2P gossip rate limiting)](../../../../../specification/open-questions.md#oq-6-4jpne5)). Until then, memory and task-queue growth during one
   `agreementTime` window is bounded only by link bandwidth. The per-entry caps (128 tracked
   sources, [`INV-BCP-4-16TP2N`](../block-confirmation-pipeline.md#inv-bcp-4-16tp2n)) bound _each entry_, not the entry count. Mitigations that do exist: the
   fork-recovery gate memoizes kill-period chain reads (a junk-fork flood costs O(1) chain reads
   per window), and the unknown-fork sync probe eventually blacklists the supplier when its sync
   fails.
 - **Duplicate replay of a valid confirmation** — penalty-free by design (§4.3); infinite
-  replays are a pure flooding vector with zero per-frame penalty, again deferred to [`OQ-6-4JPNE5`](../../../../../specification/open-questions.md#oq-6-4jpne5).
+  replays are a pure flooding vector with zero per-frame penalty, again deferred to [`OQ-6-4JPNE5` (P2P gossip rate limiting)](../../../../../specification/open-questions.md#oq-6-4jpne5).
 
 Verdict: **accepted-missing** with a decided direction — the single central limiter at
-`P2PManager.onRpc` (engineer direction 2026-08-10, [`OQ-6-4JPNE5`](../../../../../specification/open-questions.md#oq-6-4jpne5)); required
+`NetworkRpcRouter.onRpc` (engineer direction 2026-08-10, [`OQ-6-4JPNE5` (P2P gossip rate limiting)](../../../../../specification/open-questions.md#oq-6-4jpne5)); required
 before production. No flood test exists (gap, §7).
 
 ### 4.3 Replay / duplicate delivery
 
-**Handled — idempotent-by-merge** ([`REQ-RPC-6-E60S4J`](../../../../../specification/peer-communication/rpc.md#req-rpc-6-e60s4j) pattern 1, [./README.md](./README.md) §6.7).
+**Handled — idempotent-by-merge** ([`REQ-RPC-6-E60S4J` (Ordered ingress verification)](../../../../../specification/peer-communication/rpc.md#req-rpc-6-e60s4j) pattern 1, [./README.md](./README.md) §6.7).
 Re-delivery of a known confirmation merges signature sets (set union; `incoming − existing`
 empty → `DUPLICATE` no-op); duplicates never extend the queue entry's fixed lifetime
 ([`INV-BCP-4-16TP2N`](../block-confirmation-pipeline.md#inv-bcp-4-16tp2n)). Persist-before-gossip ([`INV-BCP-5-NGASJJ`](../block-confirmation-pipeline.md#inv-bcp-5-ngasjj)) makes the node's own echoes merge as duplicates
@@ -236,7 +236,7 @@ Accepted residual, worth stating: the guard proves _identity_, not _membership_.
 keypair can complete a handshake and gossip freely; the pipeline rejects non-participant-authored
 blocks (`blockAuthorIsNotParticipant` → cut author and suppliers, evidence:
 E2E-BlockQueueManager "outsider-authored block") and the signer-union check strips stranger
-signatures. A participant-authorization guard is future work under [`REQ-RPC-5-CV1R1Y`](../../../../../specification/peer-communication/rpc.md#req-rpc-5-cv1r1y)
+signatures. A participant-authorization guard is future work under [`REQ-RPC-5-CV1R1Y` (Resource bounds)](../../../../../specification/peer-communication/rpc.md#req-rpc-5-cv1r1y)
 ([./README.md](./README.md) §5.3); until then the cost of stranger traffic is the flooding
 budget of §4.2.
 
@@ -281,18 +281,18 @@ These are concrete component-level tests required by the implementation obligati
 
 _Non-normative._
 
-- Central RPC rate limiter ([`OQ-6-4JPNE5`](../../../../../specification/open-questions.md#oq-6-4jpne5)) — this endpoint is its primary beneficiary and the block
+- Central RPC rate limiter ([`OQ-6-4JPNE5` (P2P gossip rate limiting)](../../../../../specification/open-questions.md#oq-6-4jpne5)) — this endpoint is its primary beneficiary and the block
   queue's boundedness argument depends on it.
-- Participant/membership guard ([`REQ-RPC-5-CV1R1Y`](../../../../../specification/peer-communication/rpc.md#req-rpc-5-cv1r1y)) to shrink the stranger-traffic surface of §4.7.
+- Participant/membership guard ([`REQ-RPC-5-CV1R1Y` (Resource bounds)](../../../../../specification/peer-communication/rpc.md#req-rpc-5-cv1r1y)) to shrink the stranger-traffic surface of §4.7.
 - Split intake's catch-all into input-fault vs. local-fault outcomes (§4.1).
 - Direct unit coverage of the RpcMethods shim (§7 gaps).
 
 ## Implementation traceability
 
-| Requirement / invariant                                    | Statement                                                                                                                                                                                                  | Implementation status | Implementation evidence                                                                                                                                                                                                                                         | Gap / divergence |
-| ---------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------- |
-| [`REQ-STS-1-15EQRF`](state-transition.md#req-sts-1-15eqrf) | `onBlockConfirmation` delegates all payload judgment to `ingestBlockConfirmation`, passing the handshake-verified sender address for attribution; the RPC layer performs no payload validation of its own. | Covered               | [src/rpc/services/stateTransition/StateTransitionRpcMethods.ts](../../../../../../../src/rpc/services/stateTransition/StateTransitionRpcMethods.ts#L1), [src/stateManager/BlockQueueManager.ts](../../../../../../../src/stateManager/BlockQueueManager.ts#L48) | None.            |
-| [`REQ-STS-2-XNG7BN`](state-transition.md#req-sts-2-xng7bn) | A `false` keep-connection verdict disconnects and blacklists the sender by EVM address; `true` has no RPC-layer side effect.                                                                               | Covered               | [src/rpc/services/stateTransition/StateTransitionRpcMethods.ts](../../../../../../../src/rpc/services/stateTransition/StateTransitionRpcMethods.ts#L1)                                                                                                          | None.            |
-| [`INV-STS-1-8R3GC1`](state-transition.md#inv-sts-1-8r3gc1) | Handler holds no mutex and mutates no live state inline.                                                                                                                                                   | Covered               | [src/rpc/services/stateTransition](../../../../../../../src/rpc/services/stateTransition), pipeline mutex sites in [src/stateManager/StateManager.ts](../../../../../../../src/stateManager/StateManager.ts#L1)                                                 | None.            |
-| [`INV-STS-2-D88T1S`](state-transition.md#inv-sts-2-d88t1s) | Peer-RPC ingest is always source-attributed.                                                                                                                                                               | Covered               | [src/rpc/services/stateTransition/StateTransitionRpcMethods.ts](../../../../../../../src/rpc/services/stateTransition/StateTransitionRpcMethods.ts#L1)                                                                                                          | None.            |
-| [`INV-STS-3-GMDEY8`](state-transition.md#inv-sts-3-gmdey8) | Verdict-to-penalty mapping as stated.                                                                                                                                                                      | Covered               | [src/rpc/services/stateTransition/StateTransitionRpcMethods.ts](../../../../../../../src/rpc/services/stateTransition/StateTransitionRpcMethods.ts#L1)                                                                                                          | None.            |
+| Requirement / invariant                                    | Statement                                                                                                                                                                                                  | Implementation status | Implementation evidence                                                                                                                                                                                                                                                         | Gap / divergence |
+| ---------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------- |
+| [`REQ-STS-1-15EQRF`](state-transition.md#req-sts-1-15eqrf) | `onBlockConfirmation` delegates all payload judgment to `ingestBlockConfirmation`, passing the handshake-verified sender address for attribution; the RPC layer performs no payload validation of its own. | Covered               | [src/rpc/network/services/stateTransition/StateTransitionRpcMethods.ts](../../../../../../../src/rpc/network/services/stateTransition/StateTransitionRpcMethods.ts#L1), [src/stateManager/BlockQueueManager.ts](../../../../../../../src/stateManager/BlockQueueManager.ts#L48) | None.            |
+| [`REQ-STS-2-XNG7BN`](state-transition.md#req-sts-2-xng7bn) | A `false` keep-connection verdict disconnects and blacklists the sender by EVM address; `true` has no RPC-layer side effect.                                                                               | Covered               | [src/rpc/network/services/stateTransition/StateTransitionRpcMethods.ts](../../../../../../../src/rpc/network/services/stateTransition/StateTransitionRpcMethods.ts#L1)                                                                                                          | None.            |
+| [`INV-STS-1-8R3GC1`](state-transition.md#inv-sts-1-8r3gc1) | Handler holds no mutex and mutates no live state inline.                                                                                                                                                   | Covered               | [src/rpc/network/services/stateTransition](../../../../../../../src/rpc/network/services/stateTransition), pipeline mutex sites in [src/stateManager/StateManager.ts](../../../../../../../src/stateManager/StateManager.ts#L1)                                                 | None.            |
+| [`INV-STS-2-D88T1S`](state-transition.md#inv-sts-2-d88t1s) | Peer-RPC ingest is always source-attributed.                                                                                                                                                               | Covered               | [src/rpc/network/services/stateTransition/StateTransitionRpcMethods.ts](../../../../../../../src/rpc/network/services/stateTransition/StateTransitionRpcMethods.ts#L1)                                                                                                          | None.            |
+| [`INV-STS-3-GMDEY8`](state-transition.md#inv-sts-3-gmdey8) | Verdict-to-penalty mapping as stated.                                                                                                                                                                      | Covered               | [src/rpc/network/services/stateTransition/StateTransitionRpcMethods.ts](../../../../../../../src/rpc/network/services/stateTransition/StateTransitionRpcMethods.ts#L1)                                                                                                          | None.            |

@@ -10,7 +10,7 @@ import {
 } from "./p2pRuntime/setupP2pRuntime";
 import LocalContractExecutorSigner from "./signer/LocalContractExecutorSigner";
 import ADiamondStateMachine from "@/ADiamondStateMachine";
-import MainRpcService from "@/rpc/MainRpcService";
+import MainRpcService from "@/rpc/network/MainRpcService";
 import { TimeConfig } from "@/types";
 import { BalanceEthersType, MessageEthersType } from "@/types/ethers";
 import { Address, Bytes } from "@/types/types";
@@ -83,7 +83,7 @@ class EvmDiamondStateMachine extends ADiamondStateMachine {
     }
 
     public async dispose(): Promise<void> {
-        await this.contractExecutor.dispose();
+        // The owning runtime root disposes its executor child.
     }
 
     /**

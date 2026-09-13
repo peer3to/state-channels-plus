@@ -1,14 +1,8 @@
 import type { LogStore } from "./logStore";
 import type { LogUploader, LogUploadOutcome } from "./LogUploader";
 import type { PerformanceMonitorInternalOptions } from "./performanceMonitorInternal";
+import type { LoggerService } from "../../rpc/internal/services/logger/LoggerService";
 import { DetachedPromises } from "../DetachedPromises";
-import { emptyFlushResult } from "./logControl";
-import type {
-    LogControlPort,
-    LogFlushResult,
-    LogPortHandle
-} from "./logControl";
-import type { LogFlushBus } from "./LogFlushBus";
 import { LoggerUtils } from "../LoggerUtils";
 import Clock from "@/Clock";
 import { Address } from "@/types/types";
@@ -19,7 +13,7 @@ export type ExclusiveLoggerContext = {
     [key: string]: any;
 };
 
-export type LogThreadName = "main" | "sdk" | "vm";
+export type LogThreadName = string;
 
 //The context shared among all child loggers
 export type SharedLoggerContext = {
@@ -68,9 +62,13 @@ export abstract class Logger {
     protected parent?: Logger;
     protected readonly children: Set<Logger> = new Set();
     private destroyed = false;
-    private performanceMonitorStop?: () => void;
-    /** set by registerLogger, dropped by dispose */
-    private flushBusRegistration?: { bus: LogFlushBus; unregister: () => void };
+    private static performanceMonitorStop?: () => void;
+    private static performanceMonitorOwner?: Logger;
+    // Children share resources even after disposal separates their parent links.
+    private sharedResources: {
+        loggers: Set<Logger>;
+        loggerService?: LoggerService;
+    } = { loggers: new Set([this]) };
 
     constructor(
         context: ExclusiveLoggerContext,
@@ -87,7 +85,10 @@ export abstract class Logger {
     }
 
     public child(context: ExclusiveLoggerContext): Logger {
+        this.assertActive();
         const child = this.createChild({ ...this.context, ...(context || {}) });
+        child.sharedResources = this.sharedResources;
+        this.sharedResources.loggers.add(child);
         this.linkChild(child);
         return child;
     }
@@ -101,11 +102,10 @@ export abstract class Logger {
         // real changes only -> an update that bounces back stops here
         if (changes.length === 0) return;
         Object.assign(this.sharedContext, Object.fromEntries(changes));
-        this.flushBus?.postContext(this.rootLogger, update);
+        this.sharedResources.loggerService?.postContext(update);
     }
 
-    /** owns the store and uploader this one writes through. children share both,
-     *  so the bus keys on the root. */
+    /** The current parent at the top of this logger's graph. */
     public get rootLogger(): Logger {
         let logger: Logger = this;
         while (logger.parent) logger = logger.parent;
@@ -116,34 +116,37 @@ export abstract class Logger {
         return this.sharedContext;
     }
 
-    public isUploadEnabled(): boolean {
-        return this.logUploader?.isEnabled() ?? false;
+    public get loggerService(): LoggerService | undefined {
+        return this.sharedResources.loggerService;
     }
 
-    /** called by registerLogger when this becomes a root */
-    public attachFlushBus(bus: LogFlushBus, unregister: () => void): void {
-        this.flushBusRegistration?.unregister();
-        this.flushBusRegistration = { bus, unregister };
+    /** Attach this shared store once; every child uses the same service reference. */
+    public attachLoggerService(service: LoggerService): void {
+        this.assertActive();
+        if (this.loggerService === service) return;
+        if (this.loggerService)
+            throw new Error(
+                "Logger store is already attached to another service"
+            );
+        service.attachStore(this.logStore, {
+            updateContext: (context) => {
+                Object.assign(this.sharedContext, context);
+            },
+            upload: () =>
+                this.logUploader?.uploadLogs() ??
+                Promise.resolve({ ok: true, entries: 0 }),
+            detach: () => {
+                this.sharedResources.loggerService = undefined;
+            }
+        });
+        this.sharedResources.loggerService = service;
     }
 
-    /** attach a port to an adjacent realm, owned by this logger -> the port lands
-     *  on whichever bus this root belongs to. undefined when this logger is on no
-     *  bus, so there is no flush tree to join. */
-    public addLogPort(port: LogControlPort): LogPortHandle | undefined {
-        return this.flushBus?.addPort(port, this);
-    }
-
-    /** make `target`'s channel follow this one's, both roots of this realm */
-    public followContextTo(target: Logger): () => void {
-        return this.flushBus?.followContext(this, target) ?? (() => {});
-    }
-
-    /** upload every realm reachable from this one, and report what that achieved */
-    public flushAllRealms(reason: string): Promise<LogFlushResult> {
-        return (
-            this.flushBus?.flushAll(reason) ??
-            Promise.resolve(emptyFlushResult())
-        );
+    /** Schedule local uploading and notify the optional service without waiting for neighbours. */
+    public upload(reason = "log upload"): Promise<LogUploadOutcome> {
+        this.assertActive();
+        this.loggerService?.uploadStarted(this.logStore, reason);
+        return this.uploadOwnLogs();
     }
 
     /** upload only this realm's store */
@@ -152,11 +155,6 @@ export abstract class Logger {
             this.logUploader?.uploadLogs() ??
             Promise.resolve({ ok: true, entries: 0 })
         );
-    }
-
-    // set by whichever bus registered this root; undefined if none did
-    private get flushBus(): LogFlushBus | undefined {
-        return this.rootLogger.flushBusRegistration?.bus;
     }
 
     protected storeLog(logEntry: LogEntry): void {
@@ -173,7 +171,8 @@ export abstract class Logger {
         }
 
         this.destroyed = true;
-        this.stopPerformanceMonitoring();
+        if (Logger.performanceMonitorOwner === this)
+            this.stopPerformanceMonitoring();
 
         if (options.cascadeChildren) {
             for (const child of Array.from(this.children)) {
@@ -185,13 +184,26 @@ export abstract class Logger {
             this.parent.dispose(options);
         }
 
-        this.flushBusRegistration?.unregister();
-        this.flushBusRegistration = undefined;
-        this.logUploader?.destroy();
+        this.sharedResources.loggers.delete(this);
         this.unlinkAll();
+        const survivor = this.sharedResources.loggers.values().next().value;
+        if (survivor) {
+            this.logUploader?.setLogger(survivor);
+        } else {
+            this.loggerService?.detachStore(this.logStore);
+            this.logUploader?.destroy();
+        }
+    }
+
+    private assertActive(): void {
+        if (this.destroyed)
+            throw new Error(
+                `Logger "${this.context.component ?? this.constructor.name}" has been disposed`
+            );
     }
 
     private log(level: LogLevel, message: string, meta: any[]): void {
+        this.assertActive();
         if (!this.shouldProcessLevel(level)) return;
         const stack = new Error().stack!;
 
@@ -227,23 +239,22 @@ export abstract class Logger {
     }
     public error(message: any, ...meta: any[]): void {
         this.log("error", message, meta);
-        const prommise = this.logUploader?.uploadLogs();
-        if (prommise) DetachedPromises.collect(prommise);
+        DetachedPromises.collect(this.upload(String(message)));
     }
     public verbose(message: any, ...meta: any[]): void {
         this.log("verbose", message, meta);
     }
     // Directly log an entry without any processing - useful for replaying logs
     public logEntry(logEntry: LogEntry): void {
+        this.assertActive();
         this.write(logEntry);
     }
 
-    /** report-a-bug entry point: write the marker, upload every reachable realm,
-     *  then record what that round reached and ship that record too */
+    /** Write the report marker, upload locally and gossip through the optional service. */
     public async uploadLogs(
         message: any,
         ...meta: any[]
-    ): Promise<LogFlushResult> {
+    ): Promise<LogUploadOutcome> {
         try {
             await LoggerUtils.logTimestamp(this);
         } catch {
@@ -251,21 +262,22 @@ export abstract class Logger {
         }
         const localTime = new Date().getTime() / 1000;
         this.warn(message, ...meta, localTime);
-        const result = await this.flushAllRealms(String(message));
-        await this.flushBus?.recordRoundResult(String(message), result);
-        return result;
+        return this.upload(String(message));
     }
 
     public startPerformanceMonitoring(
         options: PerformanceMonitorInternalOptions = {}
     ): void {
-        this.stopPerformanceMonitoring();
-        this.performanceMonitorStop = this.createPerformanceMonitor(options);
+        if (Logger.performanceMonitorStop || this.destroyed) return;
+        Logger.performanceMonitorStop = this.createPerformanceMonitor(options);
+        Logger.performanceMonitorOwner = this;
     }
 
     public stopPerformanceMonitoring(): void {
-        this.performanceMonitorStop?.();
-        this.performanceMonitorStop = undefined;
+        const stop = Logger.performanceMonitorStop;
+        Logger.performanceMonitorStop = undefined;
+        Logger.performanceMonitorOwner = undefined;
+        stop?.();
     }
 
     private linkChild(child: Logger): void {
@@ -282,7 +294,8 @@ export abstract class Logger {
 
         for (const child of this.children) {
             if (child.parent === this) {
-                child.parent = undefined;
+                child.parent = parentRef;
+                parentRef?.children.add(child);
             }
         }
         this.children.clear();

@@ -23,7 +23,11 @@ Client-side chain signer proxy for transaction signing via host authority.
 
 ## Key design decisions
 
+The facade selects chainSigner methods on the concrete bound SDK host root and explicitly requests responses. Transaction request/response serialization and native ethers response reconstruction remain unchanged; sendTransaction retains its unbounded outer request. See [ChainSignerRpcMethods.ts](../../rpc/internal/services/chainSigner/ChainSignerRpcMethods.ts.md).
+
 _None — the file is declarative/mechanical; behavior-shaping decisions live with its consumers._
+
+Message signing preserves text versus byte input through the shared tagged message serializer.
 
 ## Inputs, outputs, state, and side effects
 
@@ -77,4 +81,4 @@ Exact test evidence is mapped against these IDs in the verification test reports
 
 ## Related source reports
 
-- [identity.md](../../../../../specification/protocol-model/identity.md), [P2pRuntimeHost](../p2pRuntime/P2pRuntimeHost.ts.md).
+- [identity.md](../../../../../specification/protocol-model/identity.md), [P2pRuntimeHost](../../rpc/internal/roots/P2pRuntimeHostRoot.ts.md).

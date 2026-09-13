@@ -23,7 +23,7 @@ The strategy base: the verdict vocabulary (SUCCESS/NOT_READY/DISCONNECT/DISPUTE/
 
 ## Key design decisions
 
-1. **Strategy-complete deviations by construction:** every validation failure has a named hook, so adding a predicate without deciding its consequences per context cannot compile ([`REQ-BLOCK-PIPE-3-WW2SB7`](../../../../../specification/block-progression/block-processing.md#req-block-pipe-3-ww2sb7)).
+1. **Strategy-complete deviations by construction:** every validation failure has a named hook, so adding a predicate without deciding its consequences per context cannot compile ([`REQ-BLOCK-PIPE-3-WW2SB7` (Strategy-complete deviations)](../../../../../specification/block-progression/block-processing.md#req-block-pipe-3-ww2sb7)).
 
 ## Inputs, outputs, state, and side effects
 
@@ -49,7 +49,7 @@ claims complete conformance for a requirement that depends on other files.
 
 ## Specification adherence
 
-- Context-complete consequence profile ([`REQ-BLOCK-PIPE-3-WW2SB7`](../../../../../specification/block-progression/block-processing.md#req-block-pipe-3-ww2sb7)) — the hook vocabulary and interpretation seam.
+- Context-complete consequence profile ([`REQ-BLOCK-PIPE-3-WW2SB7` (Strategy-complete deviations)](../../../../../specification/block-progression/block-processing.md#req-block-pipe-3-ww2sb7)) — the hook vocabulary and interpretation seam.
 
 ## Specification contradictions
 

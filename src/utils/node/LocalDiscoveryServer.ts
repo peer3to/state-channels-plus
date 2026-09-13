@@ -1,7 +1,7 @@
 import type P2PManager from "@/P2PManager";
 import { LocalTransport } from "@/transport";
 import type { Address } from "@/types/types";
-import type { Logger } from "@/utils";
+import { createLogger, type Logger } from "@/utils";
 import { addressesEqual, getChecksumAddress } from "@/utils/address";
 import { config } from "@/utils/config";
 import WebSocket, { WebSocketServer, AddressInfo } from "ws";
@@ -54,18 +54,9 @@ type DiscoverySession = {
  *    - Connects directly to other Peers upon receiving announcements.
  */
 export class LocalDiscoveryServer {
+    private static cleanupPromise?: Promise<void>;
     private static _logger?: Logger;
 
-    public static setLogger(logger: Logger): void {
-        this._logger = logger.child({ component: "LocalDiscovery" });
-    }
-
-    private static get logger(): Logger {
-        if (!this._logger) {
-            throw new Error("LocalDiscoveryServer logger not initialized");
-        }
-        return this._logger;
-    }
     // --- Registry State ---
     private static discoveryServer: WebSocketServer | null = null;
     private static discoveryPort: number | null = null;
@@ -76,7 +67,7 @@ export class LocalDiscoveryServer {
     private static peerServers: Set<WebSocketServer> = new Set();
 
     /** Active connections from Peers to the Registry */
-    private static activeDiscoveryConnections: Set<WebSocket> = new Set();
+    private static activeClientConnections: Set<WebSocket> = new Set();
 
     /** Tracks active connections for any server (Registry or Peer) */
     private static serverConnections: Map<WebSocketServer, Set<WebSocket>> =
@@ -107,6 +98,22 @@ export class LocalDiscoveryServer {
     /** Prevent reconnect loops during/after cleanup */
     private static _cleanupRequested: boolean = false;
 
+    public static setLogger(logger: Logger): void {
+        this._logger?.dispose();
+        // Discovery outlives individual state managers in this physical thread.
+        this._logger = createLogger(
+            { ...logger.getSharedContext() },
+            { component: "LocalDiscovery" },
+            { loggerService: logger.loggerService }
+        );
+    }
+
+    private static get logger(): Logger {
+        if (!this._logger) {
+            throw new Error("LocalDiscoveryServer logger not initialized");
+        }
+        return this._logger;
+    }
     private constructor() {}
 
     private static scheduleTimer(callback: () => void, delayMs: number): void {
@@ -181,6 +188,7 @@ export class LocalDiscoveryServer {
         });
 
         const ws = new WebSocket(url);
+        this.activeClientConnections.add(ws);
 
         const failOnce = (
             reason: string,
@@ -223,6 +231,7 @@ export class LocalDiscoveryServer {
         });
 
         ws.on("close", (code: number, reason: Buffer) => {
+            this.activeClientConnections.delete(ws);
             clearTimeout(connectTimeoutId);
 
             // If we never opened, treat it as a connect failure.
@@ -672,6 +681,7 @@ export class LocalDiscoveryServer {
                     // state managers).
                     if (
                         this._cleanupRequested ||
+                        p2pManager.isDisposed ||
                         message.toString() !==
                             LOCAL_TRANSPORT_CLIENT_READY_MESSAGE
                     ) {
@@ -683,7 +693,7 @@ export class LocalDiscoveryServer {
                     // handshake RPCs. WebSocket ordering then guarantees both
                     // LocalTransport listeners are installed first.
                     ws.send(LOCAL_TRANSPORT_SERVER_READY_MESSAGE);
-                    const lt = new LocalTransport(ws, p2pManager);
+                    const lt = new LocalTransport(ws, p2pManager.rpcRouter);
                     p2pManager.localRpc.initHandshakeService.initHandshake(lt);
                     this.logger.debug("Inbound peer connection accepted", {
                         ...peerLog,
@@ -809,7 +819,6 @@ export class LocalDiscoveryServer {
                     });
                 },
                 onClose: () => {
-                    this.activeDiscoveryConnections.delete(discoveryWs);
                     this.logger.debug("Discovery connection closed", {
                         ...peerLog,
                         registryUrl,
@@ -828,7 +837,6 @@ export class LocalDiscoveryServer {
                     });
                 },
                 onConnectFailure: (reason, details) => {
-                    this.activeDiscoveryConnections.delete(discoveryWs);
                     this.logger.warn(
                         "Discovery registry connect failed; retrying",
                         {
@@ -849,7 +857,6 @@ export class LocalDiscoveryServer {
                 }
             });
 
-            this.activeDiscoveryConnections.add(discoveryWs);
             const activeSession = this.getDiscoverySession(
                 p2pManager,
                 rendezvousKey
@@ -1180,7 +1187,7 @@ export class LocalDiscoveryServer {
                 }
 
                 clearTimeout(transportReadyTimeout);
-                const lt = new LocalTransport(ws, p2pManager);
+                const lt = new LocalTransport(ws, p2pManager.rpcRouter);
                 transport = lt;
                 const handshakeService =
                     p2pManager.localRpc.initHandshakeService;
@@ -1253,7 +1260,16 @@ export class LocalDiscoveryServer {
         // If we do open, we keep the ws alive for LocalTransport.
     }
 
-    public static async cleanup(): Promise<void> {
+    public static cleanup(): Promise<void> {
+        return (this.cleanupPromise ??= this.cleanupOwnedResources().finally(
+            () => {
+                this.cleanupPromise = undefined;
+            }
+        ));
+    }
+
+    private static async cleanupOwnedResources(): Promise<void> {
+        if (!this._logger) return;
         this._cleanupRequested = true;
         const closePromises: Promise<void>[] = [];
 
@@ -1263,7 +1279,15 @@ export class LocalDiscoveryServer {
                 new Promise<void>((resolve) => {
                     // Close all connections first
                     const connections = this.serverConnections.get(server);
-                    connections?.forEach((ws) => ws.terminate());
+                    connections?.forEach((ws) => {
+                        if (ws.readyState === WebSocket.CLOSED) return;
+                        closePromises.push(
+                            new Promise<void>((closed) => {
+                                ws.prependOnceListener("close", closed);
+                                ws.terminate();
+                            })
+                        );
+                    });
                     connections?.clear();
                     this.serverConnections.delete(server);
 
@@ -1279,17 +1303,17 @@ export class LocalDiscoveryServer {
             count: closePromises.length
         });
 
-        // 2. Close all discovery connections (outgoing from peers)
-        this.activeDiscoveryConnections.forEach((ws) => {
+        // 2. Close all outgoing discovery and peer connections before releasing the logger.
+        this.activeClientConnections.forEach((ws) => {
             if (ws.readyState === WebSocket.CLOSED) return;
             closePromises.push(
                 new Promise<void>((resolve) => {
-                    ws.once("close", () => resolve());
+                    ws.prependOnceListener("close", () => resolve());
                     ws.terminate();
                 })
             );
         });
-        this.activeDiscoveryConnections.clear();
+        this.activeClientConnections.clear();
 
         for (const timer of this.pendingTimers) {
             clearTimeout(timer);
@@ -1329,5 +1353,7 @@ export class LocalDiscoveryServer {
         await Promise.all(closePromises);
 
         this._cleanupRequested = false;
+        this._logger.dispose({ cascadeChildren: true });
+        this._logger = undefined;
     }
 }

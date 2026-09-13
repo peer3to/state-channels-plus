@@ -3,9 +3,12 @@
 
 const fs = require("node:fs");
 const path = require("node:path");
+const os = require("node:os");
+const { REPO_ROOT, localTargets } = require("./shared/traceability-utils");
 const {
     REQUIREMENT_PATTERN,
-    SPECIFICATION_PLAN_PATTERN
+    SPECIFICATION_PLAN_PATTERN,
+    IMPLEMENTATION_TEST_PATTERN
 } = require("./shared/id-utils");
 const { execFileSync } = require("node:child_process");
 const {
@@ -57,32 +60,216 @@ function nulList(value) {
 }
 
 function changes(repo, options) {
-    if (options.base) {
-        const range = `${options.base}...HEAD`;
-        return {
-            label: range,
-            files: nulList(git(repo, ["diff", "--name-only", "-z", range])),
-            patch: git(repo, ["diff", "--unified=0", range])
-        };
-    }
-    if (options.staged) {
-        return {
-            label: "staged changes",
-            files: nulList(
-                git(repo, ["diff", "--cached", "--name-only", "-z"])
-            ),
-            patch: git(repo, ["diff", "--cached", "--unified=0"])
-        };
-    }
-    const tracked = nulList(git(repo, ["diff", "--name-only", "-z", "HEAD"]));
-    const untracked = nulList(
-        git(repo, ["ls-files", "--others", "--exclude-standard", "-z"])
+    const comparison = options.base
+        ? [`${options.base}...HEAD`]
+        : options.staged
+          ? ["--cached"]
+          : ["HEAD"];
+    const status = nulList(
+        git(repo, [
+            "diff",
+            ...comparison,
+            "--name-status",
+            "-z",
+            "--find-renames"
+        ])
     );
+    const removedSources = [];
+    const removedTests = [];
+    const files = [];
+    for (let index = 0; index < status.length; ) {
+        const kind = status[index++];
+        const oldPath = status[index++];
+        files.push(oldPath);
+        if (kind.startsWith("R") || kind.startsWith("C"))
+            files.push(status[index++]);
+        if (
+            (kind === "D" || kind.startsWith("R")) &&
+            /^(?:src|contracts)\//.test(oldPath)
+        )
+            removedSources.push(oldPath);
+        if (
+            (kind === "D" || kind.startsWith("R")) &&
+            oldPath.startsWith("test/")
+        )
+            removedTests.push(oldPath);
+    }
+    if (!options.base && !options.staged)
+        files.push(
+            ...nulList(
+                git(repo, ["ls-files", "--others", "--exclude-standard", "-z"])
+            )
+        );
     return {
-        label: "working tree against HEAD",
-        files: sorted(new Set([...tracked, ...untracked])),
-        patch: git(repo, ["diff", "--unified=0", "HEAD"])
+        label: options.base
+            ? `${options.base}...HEAD`
+            : options.staged
+              ? "staged changes"
+              : "working tree against HEAD",
+        files: sorted(new Set(files)),
+        removedSources,
+        removedTests,
+        oldSide: options.base
+            ? git(repo, ["merge-base", options.base, "HEAD"]).trim()
+            : "HEAD",
+        patch: git(repo, ["diff", ...comparison, "--unified=0"])
     };
+}
+
+// Build the graph from the selected side too: an unstaged report must not
+// supply missing migration evidence to an index-only check.
+function selectedSnapshot(options) {
+    if (
+        (!options.staged && !options.base) ||
+        process.env.SPEC_IMPACT_SNAPSHOT_ROOT === REPO_ROOT
+    )
+        return false;
+    const snapshot = fs.mkdtempSync(path.join(os.tmpdir(), "spec-impact-"));
+    try {
+        if (options.staged)
+            git(REPO_ROOT, [
+                "checkout-index",
+                "--all",
+                `--prefix=${snapshot}${path.sep}`
+            ]);
+        else {
+            const archive = execFileSync("git", ["archive", "HEAD"], {
+                cwd: REPO_ROOT,
+                maxBuffer: 256 * 1024 * 1024
+            });
+            execFileSync("tar", ["-xf", "-", "-C", snapshot], {
+                input: archive
+            });
+        }
+        fs.symlinkSync(
+            git(REPO_ROOT, ["rev-parse", "--absolute-git-dir"]).trim(),
+            path.join(snapshot, ".git")
+        );
+        const modules = path.join(REPO_ROOT, "node_modules");
+        if (fs.existsSync(modules))
+            fs.symlinkSync(modules, path.join(snapshot, "node_modules"));
+        fs.cpSync(__dirname, path.join(snapshot, "docs/spec/tools"), {
+            recursive: true
+        });
+        const result = require("node:child_process").spawnSync(
+            process.execPath,
+            [
+                path.join(snapshot, "docs/spec/tools/report-change-impact.js"),
+                ...process.argv.slice(2)
+            ],
+            {
+                cwd: snapshot,
+                encoding: "utf8",
+                maxBuffer: 64 * 1024 * 1024,
+                env: {
+                    ...process.env,
+                    SPEC_IMPACT_SNAPSHOT_ROOT: fs.realpathSync(snapshot)
+                }
+            }
+        );
+        if (result.error) throw result.error;
+        process.stdout.write(result.stdout || "");
+        process.stderr.write(result.stderr || "");
+        process.exitCode = result.status ?? 2;
+    } finally {
+        fs.rmSync(snapshot, { recursive: true, force: true });
+    }
+    return true;
+}
+
+// A current source report can explicitly own a declaration whose old report had no IDs.
+// This fallback never replaces obligations that were actually recorded in the old report.
+function replacementOwners(graph, sourcePath) {
+    const owners = new Set();
+    for (const document of graph.documents.implementationDocs) {
+        const content = fs.readFileSync(document, "utf8");
+        const replaces = content
+            .split("\n")
+            .find((line) => /^> \*\*Replaces:\*\*/.test(line));
+        if (!replaces || !replaces.includes("`" + sourcePath + "`")) continue;
+        const sourceHeader = content
+            .split("\n")
+            .find((line) => /\*\*Source:\*\*/.test(line));
+        if (
+            !sourceHeader ||
+            !localTargets(sourceHeader, document).some((target) =>
+                graph.sources.includes(target)
+            )
+        )
+            continue;
+        for (const id of idsIn(content))
+            if (graph.nodes.has(id)) owners.add(id);
+    }
+    return owners;
+}
+
+function priorSourceReasons(graph, change, directReasons) {
+    const issues = [];
+    for (const sourcePath of change.removedSources) {
+        const reportPath = `docs/spec/implementation/source/${sourcePath}.md`;
+        let report;
+        try {
+            git(graph.roots.repo, [
+                "cat-file",
+                "-e",
+                `${change.oldSide}:${sourcePath}`
+            ]);
+            report = git(graph.roots.repo, [
+                "show",
+                `${change.oldSide}:${reportPath}`
+            ]);
+        } catch {
+            issues.push(
+                `${sourcePath}: missing prior source/report pair at ${change.oldSide}`
+            );
+            continue;
+        }
+        const reportTarget = path.join(graph.roots.repo, reportPath);
+        const sourceTarget = path.join(graph.roots.repo, sourcePath);
+        const sourceHeader = report
+            .split("\n")
+            .find((line) => /\*\*Source:\*\*/.test(line));
+        if (
+            !sourceHeader ||
+            !localTargets(sourceHeader, reportTarget).includes(sourceTarget)
+        ) {
+            issues.push(
+                `${sourcePath}: prior report does not identify this source`
+            );
+            continue;
+        }
+        if (
+            fs.existsSync(reportTarget) &&
+            localTargets(
+                fs.readFileSync(reportTarget, "utf8"),
+                reportTarget
+            ).includes(sourceTarget)
+        ) {
+            issues.push(
+                `${sourcePath}: surviving report still links the removed source`
+            );
+        }
+        const owners = new Set([
+            ...idsIn(report),
+            ...(report.match(
+                new RegExp(`${IMPLEMENTATION_TEST_PATTERN}(?:\\.P\\d+)?`, "g")
+            ) || [])
+        ]);
+        if (!owners.size)
+            for (const id of replacementOwners(graph, sourcePath))
+                owners.add(id);
+        let recovered = false;
+        for (const id of owners) {
+            if (!graph.nodes.has(id)) continue;
+            addReason(directReasons, id, sourcePath);
+            recovered = true;
+        }
+        if (!recovered)
+            issues.push(
+                `${sourcePath}: no surviving requirement or test owner from its prior report`
+            );
+    }
+    return issues;
 }
 
 function idsIn(value) {
@@ -123,11 +310,48 @@ function owningRequirement(id) {
 
 function main() {
     const options = parseArgs();
+    if (selectedSnapshot(options)) return;
     const graph = buildDocumentationGraph();
     const change = changes(graph.roots.repo, options);
     const changed = new Set(change.files);
     const directReasons = new Map();
     const accountedFiles = new Set();
+    const deletedSourceIssues = priorSourceReasons(
+        graph,
+        change,
+        directReasons
+    );
+
+    for (const testPath of change.removedTests) {
+        const content = git(graph.roots.repo, [
+            "show",
+            `${change.oldSide}:${testPath}`
+        ]);
+        if (ignoreDisposition(testPath, content).ignored) {
+            accountedFiles.add(testPath);
+            continue;
+        }
+        const reportPath = `docs/spec/verification/tests/${testPath}.md`;
+        let report;
+        try {
+            report = git(graph.roots.repo, [
+                "show",
+                `${change.oldSide}:${reportPath}`
+            ]);
+        } catch {
+            continue;
+        }
+        for (const id of report.match(
+            new RegExp(
+                `${IMPLEMENTATION_TEST_PATTERN}(?:\\.P\\d+)?|${SPECIFICATION_PLAN_PATTERN}(?:\\.P\\d+)?`,
+                "g"
+            )
+        ) || []) {
+            if (!graph.nodes.has(id)) continue;
+            addReason(directReasons, id, testPath);
+            accountedFiles.add(testPath);
+        }
+    }
 
     for (const changedPath of changed) {
         if (!changedPath.startsWith("test/")) continue;
@@ -164,6 +388,23 @@ function main() {
         for (const mapping of mappings) {
             if (mapping.owner)
                 addReason(directReasons, mapping.owner, testPath);
+        }
+        // Unassigned evidence remains a coverage gap, but its report may identify
+        // the requirement affected by editing this test without claiming full coverage.
+        const reportPath = path.join(
+            graph.roots.spec,
+            "verification/tests",
+            `${testPath}.md`
+        );
+        if (fs.existsSync(reportPath)) {
+            const report = fs.readFileSync(reportPath, "utf8");
+            if (localTargets(report, reportPath).includes(test.target)) {
+                for (const id of idsIn(report)) {
+                    if (!graph.nodes.has(id)) continue;
+                    addReason(directReasons, id, testPath);
+                    accountedFiles.add(testPath);
+                }
+            }
         }
         if (mappings.length || graph.tests.ignores.has(test.target))
             accountedFiles.add(testPath);
@@ -280,6 +521,14 @@ function main() {
         process.stdout.write(
             `- Mapped tests to rerun/review: ${requirement.tests.length}\n\n`
         );
+    }
+    if (deletedSourceIssues.length) {
+        process.stdout.write(
+            "## Deleted source migration issues — review blocked\n"
+        );
+        for (const issue of deletedSourceIssues)
+            process.stdout.write(`- ${issue}\n`);
+        process.exitCode = 1;
     }
     if (relevantUnaccounted.length) {
         process.stdout.write("## Unmapped changed files — review blocked\n");

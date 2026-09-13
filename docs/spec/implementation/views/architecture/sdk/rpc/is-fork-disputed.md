@@ -11,8 +11,8 @@
 > The off-chain dispute flow around it: [../dispute-pipeline.md](../dispute-pipeline.md).
 
 Implementation:
-[`IsForkDisputedService`](../../../../../../../src/rpc/services/isForkDisputedService/IsForkDisputedService.ts#L9),
-[`IsForkDisputedRpcMethods`](../../../../../../../src/rpc/services/isForkDisputedService/IsForkDisputedRpcMethods.ts#L6).
+[`IsForkDisputedService`](../../../../../../../src/rpc/network/services/isForkDisputedService/IsForkDisputedService.ts#L9),
+[`IsForkDisputedRpcMethods`](../../../../../../../src/rpc/network/services/isForkDisputedService/IsForkDisputedRpcMethods.ts#L6).
 Trigger: [`EventHandler.handleDisputeCommitted`](../../../../../../../src/eventHandlers/EventHandler.ts#L299).
 Evidence consumer:
 [`BlockValidationStrategy.blockForkIsDisputed`](../../../../../../../src/stateManager/validationStrategy/BlockValidationStrategy.ts#L220).
@@ -61,7 +61,7 @@ fork, or the dispute is final and the node has a pending reduction operation for
 ([`handleDisputeCommitted`](../../../../../../../src/eventHandlers/EventHandler.ts#L299)); late non-final
 events for already-resolved forks do not restart it. Dispute-event ordering and
 kill/counter-dispute sequencing around this trigger have known lifecycle races —
-[`OQ-25-E09XFR`](../../../../open-questions.md#oq-25-e09xfr).
+[`OQ-25-E09XFR` (Minor SDK lifecycle races)](../../../../open-questions.md#oq-25-e09xfr).
 
 ## 2. Owned state
 
@@ -97,7 +97,7 @@ delegated to a downstream pipeline:
 1. **Dispatch preconditions** _(dispatcher + guard, [./README.md](./README.md) §6.4/§5)_.
 2. **Sender attribution**: `senderTransport.peerAddress`; missing (unreachable behind the
    guard) → disconnect + blacklist of the addressless transport profile + throw (the requester's promise rejects).
-3. **Duplicate check** _(replay-rejecting, [`REQ-RPC-6-E60S4J`](../../../../../specification/peer-communication/rpc.md#req-rpc-6-e60s4j) pattern 2)_:
+3. **Duplicate check** _(replay-rejecting, [`REQ-RPC-6-E60S4J` (Ordered ingress verification)](../../../../../specification/peer-communication/rpc.md#req-rpc-6-e60s4j) pattern 2)_:
    `didIAcknowledgeDisputedFork(peerAddress, forkId)` — a second request for a fork already
    acknowledged **to this peer** is a protocol violation → disconnect + blacklist by address +
    throw. Note the key is `(peerAddress, forkId)` only; `channelId` does not participate (§4.6).
@@ -118,7 +118,7 @@ connection kept (§4.1, §5).
 
 ## 4. Local API: `requestDisputeAcknowledgment(channelId, forkId)` — requester
 
-Not remotely callable (lives on the service, not the RpcMethods class — [`REQ-RPC-1-FF89Z0`](../../../../../specification/peer-communication/rpc.md#req-rpc-1-ff89z0)); invoked by
+Not remotely callable (lives on the service, not the RpcMethods class — [`REQ-RPC-1-FF89Z0` (Typed wire contract)](../../../../../specification/peer-communication/rpc.md#req-rpc-1-ff89z0)); invoked by
 the dispute event handler. Algorithm:
 
 1. **Round dedup**: `disputedForks.has(forkId)` → return `false` (round already ran; the event
@@ -137,7 +137,7 @@ the dispute event handler. Algorithm:
 4. Returns `true` (first occurrence) synchronously; outcomes land asynchronously.
 
 Response authenticity rests entirely on the correlation layer: only the addressed peer can
-settle the request ([`REQ-RPC-2-SZDTTM`](../../../../../specification/peer-communication/rpc.md#req-rpc-2-szdttm), [./README.md](./README.md) §6.5). The reply payload is untrusted
+settle the request ([`REQ-RPC-2-SZDTTM` (Request lifecycle)](../../../../../specification/peer-communication/rpc.md#req-rpc-2-szdttm), [./README.md](./README.md) §6.5). The reply payload is untrusted
 JSON — the code checks `!acknowledged`, so any truthy junk counts as an ack (accepted residual:
 its only effect is the same record a truthful `true` produces).
 
@@ -158,7 +158,7 @@ attributable_ misbehavior → local disconnect/blacklist, one tier below the pro
 fraud-proof evidence ([../../protocol/fraud-proofs.md](../../../../../specification/disputes/fraud-proofs.md)).
 Whether acknowledgments should be signed statements (making dead-fork building slashable
 evidence rather than a local opinion) is an engineer decision; until then the wording
-"provable" overstates. (Observed: [`IsForkDisputedRpcMethods`](../../../../../../../src/rpc/services/isForkDisputedService/IsForkDisputedRpcMethods.ts#L6)
+"provable" overstates. (Observed: [`IsForkDisputedRpcMethods`](../../../../../../../src/rpc/network/services/isForkDisputedService/IsForkDisputedRpcMethods.ts#L6)
 returns a bare boolean.)
 
 ## 6. Byzantine assessment
@@ -176,7 +176,7 @@ record. The throw takes the generic request path: `{ok: false, error}` to the ca
 probing of this endpoint is penalty-free and infinitely repeatable, while a _well-formed but
 false_ claim is an instant blacklist — an inverted severity ordering. This is an instance of
 the endpoint-inconsistent failure-outcome policy already tracked in
-[`OQ-34-FY08V2`](../../../../../specification/open-questions.md#oq-34-fy08v2) (failure-outcome policy consistency); classified there as
+[`OQ-34-FY08V2` (RPC boundary decisions)](../../../../../specification/open-questions.md#oq-34-fy08v2) (failure-outcome policy consistency); classified there as
 decision pending. **Handled** in the sense that nothing corrupts state (no record is written on
 the throw path); **unhandled** as a policy gap.
 
@@ -192,11 +192,11 @@ non-disputed claim or first duplicate is a blacklist. The residual costs before 
   (fired before the first verdict's disconnect lands) schedules N handler tasks and up to N
   chain reads; the disconnect only stops _subsequent_ frames. Bounded per identity, but
   identities are free. No rate limiter exists at this boundary — the missing central RPC
-  limiter ([`OQ-6-4JPNE5`](../../../../../specification/open-questions.md#oq-6-4jpne5), [./README.md](./README.md) §9) is the intended fix;
+  limiter ([`OQ-6-4JPNE5` (P2P gossip rate limiting)](../../../../../specification/open-questions.md#oq-6-4jpne5), [./README.md](./README.md) §9) is the intended fix;
   unlike [state-transition](./state-transition.md) §4.2 this surface is low-volume by protocol
   design, so it rides on the same decision rather than driving it.
 - **Malformed-payload spam** (§6.1) is the only penalty-free repeatable shape; its per-frame
-  cost is one thrown ABI encode — cheap, but unmetered until [`OQ-6-4JPNE5`](../../../../../specification/open-questions.md#oq-6-4jpne5).
+  cost is one thrown ABI encode — cheap, but unmetered until [`OQ-6-4JPNE5` (P2P gossip rate limiting)](../../../../../specification/open-questions.md#oq-6-4jpne5).
 
 Note the responder-side queue caps of
 [../block-confirmation-pipeline.md](../block-confirmation-pipeline.md) §3.1 do not apply here —
@@ -217,7 +217,7 @@ is therefore treated as Byzantine. The abuse analysis:
   a request error → the requester blacklists it). Both conflate **unavailability with
   Byzantine behavior** — the same fault-taxonomy violation as [`DEF-5-E8TP9N`](../../../../../audit/open-findings.md#def-5-e8tp9n)
   ([../../open-questions.md](../../../../../specification/open-questions.md)); classified decision pending under the
-  [`OQ-34-FY08V2`](../../../../../specification/open-questions.md#oq-34-fy08v2) failure-outcome policy.
+  [`OQ-34-FY08V2` (RPC boundary decisions)](../../../../../specification/open-questions.md#oq-34-fy08v2) failure-outcome policy.
 - **Can an adversary _time_ the round to hit a known-offline victim?** Partially. Round timing
   is controlled by whoever uploads a dispute, and any dispute-eligible participant can open one
   (throttled to one per `evidenceTime` per channel, [`REQ-DIS-2-PKVZ7E`](../../../../../specification/disputes/disputes.md#req-dis-2-pkvz7e) —
@@ -242,7 +242,7 @@ is therefore treated as Byzantine. The abuse analysis:
   ("non-disputed fork" case).
 - **Ack forgery** (settling someone else's pending request): impossible below the handler —
   only the addressed peer settles a request; a response from any other peer blacklists the
-  responder ([`REQ-RPC-2-SZDTTM`](../../../../../specification/peer-communication/rpc.md#req-rpc-2-szdttm), [./README.md](./README.md) §6.5). **Handled.**
+  responder ([`REQ-RPC-2-SZDTTM` (Request lifecycle)](../../../../../specification/peer-communication/rpc.md#req-rpc-2-szdttm), [./README.md](./README.md) §6.5). **Handled.**
 - **Forged ack content**: any truthy reply records an ack — but only _against the responder
   itself_, which is exactly what a truthful ack does. No third-party attribution exists to
   corrupt (§5). **Accepted residual.**
@@ -301,7 +301,7 @@ Against the model doc's table ([./README.md](./README.md) §8):
 - Peer identity/blacklist state per `ProfileManager`; ack state deliberately address-keyed to
   survive transport churn ([./README.md](./README.md) §6.8).
 - The round trigger depends on dispute-event delivery and ordering
-  ([`OQ-25-E09XFR`](../../../../open-questions.md#oq-25-e09xfr), [`OQ-30-2G0Q5M`](../../../../open-questions.md#oq-30-2g0q5m)); a node that never
+  ([`OQ-25-E09XFR` (Minor SDK lifecycle races)](../../../../open-questions.md#oq-25-e09xfr), [`OQ-30-2G0Q5M` (Chain-reorg handling and canonical event ordering)](../../../../open-questions.md#oq-30-2g0q5m)); a node that never
   observes `DisputeCommitted` never asks — its protection then degrades to the disputed-fork
   intake gate alone.
 
@@ -341,20 +341,20 @@ _Non-normative._
   (§5) — would connect dead-fork building to the fraud-proof layer.
 - Channel binding on the request (§6.6) and an explicit `(channelId, forkId)` record key.
 - Soft consequence for missed ack windows (re-handshake + late ack) instead of in-session
-  permanent blacklist (§6.4), aligned with the [`OQ-34-FY08V2`](../../../../../specification/open-questions.md#oq-34-fy08v2) failure-outcome policy decision.
+  permanent blacklist (§6.4), aligned with the [`OQ-34-FY08V2` (RPC boundary decisions)](../../../../../specification/open-questions.md#oq-34-fy08v2) failure-outcome policy decision.
 - Ack-state pruning once a fork's successor finalizes (§2).
-- Rate/burst metering under the central limiter ([`OQ-6-4JPNE5`](../../../../../specification/open-questions.md#oq-6-4jpne5)), including a
+- Rate/burst metering under the central limiter ([`OQ-6-4JPNE5` (P2P gossip rate limiting)](../../../../../specification/open-questions.md#oq-6-4jpne5)), including a
   cost weight for the chain-read fallback (§6.2).
 
 ## Implementation traceability
 
-| Requirement / invariant                                    | Statement                                                                                                                                                                                 | Implementation status | Implementation evidence                                                                                                                                                                                                                                                               | Gap / divergence |
-| ---------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------- |
-| [`REQ-IFD-1-X2VCJW`](is-fork-disputed.md#req-ifd-1-x2vcjw) | On a relevant `DisputeCommitted` event, the node requests acknowledgment from every connected peer exactly once per fork, with a `2 × agreementTime` reply window.                        | Covered               | [src/eventHandlers/EventHandler.ts](../../../../../../../src/eventHandlers/EventHandler.ts#L1) (`handleDisputeCommitted`), [src/rpc/services/isForkDisputedService/IsForkDisputedService.ts](../../../../../../../src/rpc/services/isForkDisputedService/IsForkDisputedService.ts#L1) | None.            |
-| [`REQ-IFD-2-13862Z`](is-fork-disputed.md#req-ifd-2-13862z) | A responder acknowledges only a fork verified disputed (local mirror, then chain); a false claim, duplicate request, or missing sender identity disconnects and blacklists the requester. | Covered               | [src/rpc/services/isForkDisputedService/IsForkDisputedRpcMethods.ts](../../../../../../../src/rpc/services/isForkDisputedService/IsForkDisputedRpcMethods.ts#L1)                                                                                                                      | None.            |
-| [`REQ-IFD-3-QXNCN9`](is-fork-disputed.md#req-ifd-3-qxncn9) | A peer that rejects, errors, replies `false`, or exceeds the window is disconnected and blacklisted by the requester.                                                                     | Covered               | [src/rpc/services/isForkDisputedService/IsForkDisputedService.ts](../../../../../../../src/rpc/services/isForkDisputedService/IsForkDisputedService.ts#L1) (`requestDisputeAcknowledgment`)                                                                                           | None.            |
-| [`REQ-IFD-4-26FWYZ`](is-fork-disputed.md#req-ifd-4-26fwyz) | Recorded peer acknowledgments gate the dead-fork punishment: acknowledged suppliers of disputed-fork blocks are cut; unacknowledged suppliers retain straggler tolerance.                 | Covered               | [src/stateManager/validationStrategy/BlockValidationStrategy.ts](../../../../../../../src/stateManager/validationStrategy/BlockValidationStrategy.ts#L1) (`blockForkIsDisputed`)                                                                                                      | None.            |
-| [`INV-IFD-1-HBJR2P`](is-fork-disputed.md#inv-ifd-1-hbjr2p) | One recorded ack per direction per `(peer, fork)`; replays are violations.                                                                                                                | Covered               | [src/rpc/services/isForkDisputedService](../../../../../../../src/rpc/services/isForkDisputedService)                                                                                                                                                                                 | None.            |
-| [`INV-IFD-2-6N9G29`](is-fork-disputed.md#inv-ifd-2-6n9g29) | Verify-then-record-then-reply ordering on the responder.                                                                                                                                  | Covered               | [src/rpc/services/isForkDisputedService/IsForkDisputedRpcMethods.ts](../../../../../../../src/rpc/services/isForkDisputedService/IsForkDisputedRpcMethods.ts#L1)                                                                                                                      | None.            |
-| [`INV-IFD-3-DZ83BB`](is-fork-disputed.md#inv-ifd-3-dz83bb) | One outgoing round per fork; snapshot peer set.                                                                                                                                           | Covered               | [src/rpc/services/isForkDisputedService/IsForkDisputedService.ts](../../../../../../../src/rpc/services/isForkDisputedService/IsForkDisputedService.ts#L1)                                                                                                                            | None.            |
-| [`INV-IFD-4-5J5W3T`](is-fork-disputed.md#inv-ifd-4-5j5w3t) | Address-keyed ack state survives transport churn.                                                                                                                                         | Covered               | [src/rpc/services/isForkDisputedService/IsForkDisputedService.ts](../../../../../../../src/rpc/services/isForkDisputedService/IsForkDisputedService.ts#L1)                                                                                                                            | None.            |
+| Requirement / invariant                                    | Statement                                                                                                                                                                                 | Implementation status | Implementation evidence                                                                                                                                                                                                                                                                               | Gap / divergence |
+| ---------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------- |
+| [`REQ-IFD-1-X2VCJW`](is-fork-disputed.md#req-ifd-1-x2vcjw) | On a relevant `DisputeCommitted` event, the node requests acknowledgment from every connected peer exactly once per fork, with a `2 × agreementTime` reply window.                        | Covered               | [src/eventHandlers/EventHandler.ts](../../../../../../../src/eventHandlers/EventHandler.ts#L1) (`handleDisputeCommitted`), [src/rpc/network/services/isForkDisputedService/IsForkDisputedService.ts](../../../../../../../src/rpc/network/services/isForkDisputedService/IsForkDisputedService.ts#L1) | None.            |
+| [`REQ-IFD-2-13862Z`](is-fork-disputed.md#req-ifd-2-13862z) | A responder acknowledges only a fork verified disputed (local mirror, then chain); a false claim, duplicate request, or missing sender identity disconnects and blacklists the requester. | Covered               | [src/rpc/network/services/isForkDisputedService/IsForkDisputedRpcMethods.ts](../../../../../../../src/rpc/network/services/isForkDisputedService/IsForkDisputedRpcMethods.ts#L1)                                                                                                                      | None.            |
+| [`REQ-IFD-3-QXNCN9`](is-fork-disputed.md#req-ifd-3-qxncn9) | A peer that rejects, errors, replies `false`, or exceeds the window is disconnected and blacklisted by the requester.                                                                     | Covered               | [src/rpc/network/services/isForkDisputedService/IsForkDisputedService.ts](../../../../../../../src/rpc/network/services/isForkDisputedService/IsForkDisputedService.ts#L1) (`requestDisputeAcknowledgment`)                                                                                           | None.            |
+| [`REQ-IFD-4-26FWYZ`](is-fork-disputed.md#req-ifd-4-26fwyz) | Recorded peer acknowledgments gate the dead-fork punishment: acknowledged suppliers of disputed-fork blocks are cut; unacknowledged suppliers retain straggler tolerance.                 | Covered               | [src/stateManager/validationStrategy/BlockValidationStrategy.ts](../../../../../../../src/stateManager/validationStrategy/BlockValidationStrategy.ts#L1) (`blockForkIsDisputed`)                                                                                                                      | None.            |
+| [`INV-IFD-1-HBJR2P`](is-fork-disputed.md#inv-ifd-1-hbjr2p) | One recorded ack per direction per `(peer, fork)`; replays are violations.                                                                                                                | Covered               | [src/rpc/network/services/isForkDisputedService](../../../../../../../src/rpc/network/services/isForkDisputedService)                                                                                                                                                                                 | None.            |
+| [`INV-IFD-2-6N9G29`](is-fork-disputed.md#inv-ifd-2-6n9g29) | Verify-then-record-then-reply ordering on the responder.                                                                                                                                  | Covered               | [src/rpc/network/services/isForkDisputedService/IsForkDisputedRpcMethods.ts](../../../../../../../src/rpc/network/services/isForkDisputedService/IsForkDisputedRpcMethods.ts#L1)                                                                                                                      | None.            |
+| [`INV-IFD-3-DZ83BB`](is-fork-disputed.md#inv-ifd-3-dz83bb) | One outgoing round per fork; snapshot peer set.                                                                                                                                           | Covered               | [src/rpc/network/services/isForkDisputedService/IsForkDisputedService.ts](../../../../../../../src/rpc/network/services/isForkDisputedService/IsForkDisputedService.ts#L1)                                                                                                                            | None.            |
+| [`INV-IFD-4-5J5W3T`](is-fork-disputed.md#inv-ifd-4-5j5w3t) | Address-keyed ack state survives transport churn.                                                                                                                                         | Covered               | [src/rpc/network/services/isForkDisputedService/IsForkDisputedService.ts](../../../../../../../src/rpc/network/services/isForkDisputedService/IsForkDisputedService.ts#L1)                                                                                                                            | None.            |

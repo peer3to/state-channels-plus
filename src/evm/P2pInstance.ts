@@ -1,15 +1,9 @@
-import { createHostRpc } from "./p2pRuntime/ClientHostRpc";
-import type P2pRuntimeClient from "./p2pRuntime/P2pRuntimeClient";
 import type ClientChainSigner from "./signer/ClientChainSigner";
 import type ClientP2pSigner from "./signer/ClientP2pSigner";
 import type { EventBus } from "@/events/EventBus";
-import MainRpcService from "@/rpc/MainRpcService";
-import type { RemoteRpcProxyType } from "@/rpc/RemoteRpcProxy";
-import {
-    installWebRTCMainThreadBridge,
-    type WebRTCMainThreadBridgeHandle
-} from "@/rpc/services/WebRTCSetup/connection/WebRTCMainThreadBridge";
-import { isWorkerRuntime } from "@/rpc/services/WebRTCSetup/connection/WebRTCProvider";
+import type { P2pRuntimeClientRoot } from "@/rpc/internal/roots/P2pRuntimeClientRoot";
+import MainRpcService from "@/rpc/network/MainRpcService";
+import type { RemoteRpcProxyType } from "@/rpc/network/RemoteRpcProxy";
 import type StateManager from "@/stateManager/StateManager";
 import { Logger } from "@/utils";
 import type { StateChannelManagerInterface } from "@typechain-types";
@@ -24,7 +18,6 @@ export default class P2pInstance<
     chainSigner: ClientChainSigner;
     stateChannelManagerContract: StateChannelManagerInterface;
     logger: Logger;
-    private readonly ownsLogger: boolean;
 
     /**
      * Typed mirror of the host's `remoteRpc`. Calls are forwarded over the
@@ -36,14 +29,14 @@ export default class P2pInstance<
     hostRpc: RemoteRpcProxyType<TCustomRpc>;
 
     /**
-     * Main-thread event surface: `events.on(kind, eventName, listener)` for
+     * Client event surface: `events.on(kind, eventName, listener)` for
      * p2p hooks, contract events, and mirrored `EventHandler` events — the
      * same bus shape the worker realm exposes on `stateManager.events`.
      */
     readonly events: EventBus;
 
-    private webRTCBridgeHandle?: WebRTCMainThreadBridgeHandle;
-    private readonly client: P2pRuntimeClient<T>;
+    private readonly p2pRuntimeClientRoot: P2pRuntimeClientRoot;
+    private disposal?: Promise<void>;
     private terminalLeavePromise?: Promise<void>;
 
     /**
@@ -53,7 +46,7 @@ export default class P2pInstance<
      * main thread and pass it to `installWebRTCMainThreadBridge(port)`.
      */
     get webRTCBridgePort(): MessagePort | undefined {
-        return this.client.webRTCBridgePort;
+        return this.p2pRuntimeClientRoot.webRTCBridgePort;
     }
 
     /**
@@ -64,45 +57,51 @@ export default class P2pInstance<
      * and install on the main thread. A no-op when no bridge port was surfaced.
      */
     public installMainThreadBridgeIfOnMainThread(): void {
-        if (this.webRTCBridgeHandle) return;
-        const port = this.webRTCBridgePort;
-        if (!port || isWorkerRuntime()) return;
-        this.webRTCBridgeHandle = installWebRTCMainThreadBridge(port, {
-            logger: this.logger
-        });
+        this.p2pRuntimeClientRoot.installMainThreadBridgeIfOnMainThread();
     }
 
     constructor(
-        client: P2pRuntimeClient<T>,
-        logger: Logger,
-        ownsLogger = false
+        client: P2pRuntimeClientRoot,
+        application: {
+            contract: T;
+            signer: ClientP2pSigner;
+            chainSigner: ClientChainSigner;
+            stateChannelManagerContract: StateChannelManagerInterface;
+            logger: Logger;
+            hostRpc: RemoteRpcProxyType<TCustomRpc>;
+        }
     ) {
-        this.ownsLogger = ownsLogger;
-        this.client = client;
-        this.p2pContractInstance = client.contract;
-        this.p2pSigner = client.signer;
-        this.chainSigner = client.chainSigner;
-        this.stateChannelManagerContract = client.stateChannelManagerContract;
-        this.logger = logger;
+        this.p2pRuntimeClientRoot = client;
+        this.p2pContractInstance = application.contract;
+        this.p2pSigner = application.signer;
+        this.chainSigner = application.chainSigner;
+        this.stateChannelManagerContract =
+            application.stateChannelManagerContract;
+        this.logger = application.logger;
         this.events = client.events;
-        this.hostRpc = createHostRpc<TCustomRpc>(client);
+        this.hostRpc = application.hostRpc;
+        client.onClosed(() => {
+            if (!this.disposal) void this.dispose();
+        });
     }
 
-    public async dispose() {
+    public dispose(): Promise<void> {
+        return (this.disposal ??= this.disposeApplication());
+    }
+
+    private async disposeApplication(): Promise<void> {
         // every teardown runs to the end before the logger goes: a listener
         // removal that rejects must not take the realm off the bus while the
         // client is still closing and may still log
         const outcomes = await Promise.allSettled([
             this.p2pContractInstance.removeAllListeners(),
             this.stateChannelManagerContract.removeAllListeners(),
-            this.client.dispose()
+            this.p2pRuntimeClientRoot.dispose()
         ]);
-        this.webRTCBridgeHandle?.dispose();
-        this.webRTCBridgeHandle = undefined;
         // leaves the realm bus with the session: otherwise every closed
         // session keeps its store and its process crash hooks, and every
         // later round re-uploads it
-        if (this.ownsLogger) this.logger.dispose();
+        this.logger.dispose({ cascadeChildren: true });
         for (const outcome of outcomes) {
             if (outcome.status === "rejected") throw outcome.reason;
         }
@@ -122,11 +121,11 @@ export default class P2pInstance<
 
     /**
      * Observe autonomous host-side errors (e.g. a worker-thread
-     * unhandledRejection) on the main thread. With no subscriber the error is
-     * re-thrown as a main-thread unhandled rejection. Returns an unsubscribe fn.
+     * unhandledRejection) in the client runtime. With no subscriber the error is
+     * re-thrown as a client-runtime unhandled rejection. Returns an unsubscribe fn.
      */
     public onHostError(listener: (error: Error) => void): () => void {
-        return this.client.onHostError(listener);
+        return this.p2pRuntimeClientRoot.onHostError(listener);
     }
 
     /**
@@ -135,7 +134,7 @@ export default class P2pInstance<
      * the host is inline, in a worker, or remote.
      */
     public quiesce(): Promise<Error[]> {
-        return this.client.quiesce();
+        return this.p2pRuntimeClientRoot.quiesce();
     }
 
     /**

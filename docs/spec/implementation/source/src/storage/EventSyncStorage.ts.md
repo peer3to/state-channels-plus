@@ -55,8 +55,8 @@ claims complete conformance for a requirement that depends on other files.
 
 ## Specification adherence
 
-- Monotone per-channel progress ([`REQ-RMSTORE-1-BWKVBG`](../../../../specification/storage/progress-markers.md#req-rmstore-1-bwkvbg)).
-- Normalized key comparison ([`REQ-ID-2-F3Y8J4`](../../../../specification/protocol-model/identity.md#req-id-2-f3y8j4) applied to channel ids).
+- Monotone per-channel progress ([`REQ-RMSTORE-1-BWKVBG` (Monotone observation progress)](../../../../specification/storage/progress-markers.md#req-rmstore-1-bwkvbg)).
+- Normalized key comparison ([`REQ-ID-2-F3Y8J4` (Normalized identity comparison)](../../../../specification/protocol-model/identity.md#req-id-2-f3y8j4) applied to channel ids).
 
 ## Specification contradictions
 

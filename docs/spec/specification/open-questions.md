@@ -210,7 +210,7 @@ an already proposed timeout.
    period — intended; the observation moment of non-slash inputs is immaterial.
 
 [protocol/disputes.md](./disputes/disputes.md) §5, §6.1, and §6.2 record the decisions.
-Remaining mechanics are implementation-tracked in [`OQ-14-5C8KV7`](../implementation/open-questions.md#oq-14-5c8kv7): the fold fix
+Remaining mechanics are implementation-tracked in [`OQ-14-5C8KV7` (Empty-timeout fold can suppress a real timeout)](../implementation/open-questions.md#oq-14-5c8kv7): the fold fix
 (empty timeout structs must not participate — a defect in the slash-free case) and the exact
 inclusive/exclusive boundary comparisons of the `Timeout*` dispute-fraud-proof rules.
 Unquantified underlying-chain timestamp-manipulation bounds relative to the protocol windows
@@ -256,7 +256,7 @@ withdrawals under the application's balance algebra) protects late joiners synci
 snapshot against undercollateralized colluding states. Unresolved: the precise invariant per
 supported balance model (integer, composite, non-fungible), its snapshot proof inputs, exactly
 when it is checked, and how it treats joins, deposits, withdrawals, and exits.
-Where it is enforced today is itself a gap — see [`OQ-19-Y8FDQX`](../implementation/open-questions.md#oq-19-y8fdqx).
+Where it is enforced today is itself a gap — see [`OQ-19-Y8FDQX` (Channel-balance invariant enforcement points)](../implementation/open-questions.md#oq-19-y8fdqx).
 
 <a id="oq-12-b45q7n"></a>
 
@@ -363,7 +363,7 @@ verifying-contract address, no protocol version, no object-type tag beyond the s
 deployments and across chains that host the same channelId. Decide the signed-domain policy
 (bind protocol version, chain, manager deployment, object type; keep on-chain verification
 affordable) and the migration plan for proofs signed under the old scheme. Feeds the
-completeness review ([`OQ-5-4Q38M5`](../audit/open-questions.md#oq-5-4q38m5)). See
+completeness review ([`OQ-5-4Q38M5` (Fraud-proof completeness security review)](../audit/open-questions.md#oq-5-4q38m5)). See
 security/open-security-review.md.
 
 <a id="oq-31-eb892q"></a>
@@ -570,11 +570,11 @@ alongside the spectator status or after it.
 The handshake establishes objective facts only — proven key control and clock compatibility — and
 at the current baseline every completed peer proceeds to continued interaction
 ([`REQ-AUTH-7-VJFSD5`](peer-communication/handshake.md#req-auth-7-vjfsd5),
-[`INV-AUTH-3-0QP5E9`](peer-communication/handshake.md#inv-auth-3-0qp5e9)). No specification yet
+[`INV-AUTH-3-0QP5E9` (Objective facts only)](peer-communication/handshake.md#inv-auth-3-0qp5e9)). No specification yet
 defines how a node forms a local, subjective opinion about whether to keep interacting with a
 proven identity. Such an opinion may differ between nodes, must not erase or contradict the
 objective authentication facts, and must remain separate from channel participation
-([`REQ-AUTH-5-BQG9AG`](peer-communication/synchronization.md#req-auth-5-bqg9ag)).
+([`REQ-AUTH-5-BQG9AG` (Post-authentication engagement follows the local lifecycle)](peer-communication/synchronization.md#req-auth-5-bqg9ag)).
 
 The future owning specification must define: admissible evidence inputs; decision outcomes and
 their effect on later interaction; default behavior and policy-unavailable or policy-error

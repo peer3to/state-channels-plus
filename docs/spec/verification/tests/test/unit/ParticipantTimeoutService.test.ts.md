@@ -5,7 +5,7 @@
 
 ## Overview
 
-Real sessions exercise timeout checks, accepted-block and membership guards, and timer scheduling. Named contract failures at send and receipt re-enter the real scheduler, with later submissions forwarded to chain. Controlled block arrival, disposal and verified synchronization exercise obsolete checks. Private constructor entry is used only to place a real early timeout before its local deadline; the normal recheck is the behavior under test.
+Real sessions exercise timeout checks, accepted-block and membership guards, and timer scheduling. Named contract failures at send and receipt re-enter the real scheduler, with later submissions forwarded to chain. Controlled block arrival, disposal and verified synchronization exercise obsolete checks. Private constructor entry is used only to place a real early timeout before its local deadline; the normal recheck is the behavior under test. The disposal case retains the real inline host endpoint, runs the held retry after abort and checks its submission record after root cleanup; it sends no query through a closed port.
 
 ## Tests and covered test IDs
 

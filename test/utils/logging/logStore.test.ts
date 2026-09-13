@@ -1,25 +1,31 @@
-import type { LogEntry } from "@/utils/logging/Logger";
 import { LogStore } from "@/utils/logging/logStore";
+import { logStoreEntry as entry } from "@test/fixtures/logging/LogStoreFixture";
 import { expect } from "chai";
-
-function entry(message: string): LogEntry {
-    return {
-        time: "1",
-        wallTimeMs: 1,
-        level: "info",
-        context: { component: "LogStoreTest" },
-        sharedContext: { threadName: "main" },
-        message,
-        meta: [],
-        stack: "stack"
-    };
-}
 
 // a few hundred bytes per entry -> this store holds a handful, so eviction is
 // reachable without thousands of writes
 const SMALL_STORE_BYTES = 2000;
 
 describe("LogStore", function () {
+    it("rejects an infinite storage limit", function () {
+        expect(() => new LogStore(Infinity, true)).to.throw("must be finite");
+    });
+    it("rejects a NaN storage limit", function () {
+        expect(() => new LogStore(NaN, true)).to.throw("must be finite");
+    });
+    it("rejects a negative storage limit", function () {
+        expect(() => new LogStore(-1, true)).to.throw("must be finite");
+    });
+    it("evicts an entry larger than the entire storage limit", function () {
+        const store = new LogStore(1, true);
+        store.store(entry("oversized entry"));
+        expect(store.getAllLogs()).to.have.length(0);
+    });
+    it("retains no entries with a zero storage limit", function () {
+        const store = new LogStore(0, true);
+        store.store(entry("zero capacity"));
+        expect(store.getAllLogs()).to.have.length(0);
+    });
     it("draws a 64-bit store id that no two stores share", function () {
         const ids = new Set(
             Array.from(

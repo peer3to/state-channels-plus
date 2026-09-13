@@ -1,4 +1,4 @@
-import { deserializeError, serializeError } from "@/evm/p2pRuntime/errorWire";
+import { deserializeError, serializeError } from "@/rpc/internal/errorWire";
 import {
     getErrorPeerAddress,
     maybeStampErrorWithPeerAddress

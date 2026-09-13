@@ -1,13 +1,13 @@
-// @spec-test-coverage-ignore: host-side support service for ARpcService component tests
+// @spec-test-coverage-ignore: host-side support service for ANetworkRpcService component tests
 import type { PingPongRpc } from "../PingPongRpcManifest";
 import { ARpcServiceProbeRpcMethods } from "./ARpcServiceProbeRpcMethods";
 import type P2PManager from "@/P2PManager";
-import ARpcMethods from "@/rpc/ARpcMethods";
-import ARpcService from "@/rpc/ARpcService";
-import { AGuard } from "@/rpc/guards/AGuard";
+import ANetworkRpcMethods from "@/rpc/network/ANetworkRpcMethods";
+import ANetworkRpcService from "@/rpc/network/ANetworkRpcService";
+import { AGuard } from "@/rpc/network/guards/AGuard";
 import type Rpc from "@/rpc/Rpc";
 import type { RpcResponse } from "@/rpc/Rpc";
-import ATransport from "@/transport/ATransport";
+import NetworkTransport from "@/transport/NetworkTransport";
 import { TransportType } from "@/transport/TransportType";
 
 export type ARpcDispatchProbe = {
@@ -35,7 +35,7 @@ export type ARpcDispatchProbeOptions = {
     params: Rpc["params"];
 };
 
-class ProbeTransport extends ATransport {
+class ProbeTransport extends NetworkTransport {
     public transportType = TransportType.HOLEPUNCH;
     public readonly serializedFrames: string[] = [];
     public responseSendAttempts = 0;
@@ -47,7 +47,7 @@ class ProbeTransport extends ATransport {
         trusted: boolean,
         responseSendThrows: boolean
     ) {
-        super(p2pManager);
+        super(p2pManager.rpcRouter);
         this.trusted = trusted;
         this.responseSendThrows = responseSendThrows;
     }
@@ -62,7 +62,8 @@ class ProbeTransport extends ATransport {
         this.serializedFrames.push(serializedRPC);
     }
 
-    public onMessage(): void {}
+    // Overrides NetworkTransport.onMessage: deliver through this probe transport.
+    public override onMessage(): void {}
 
     protected _close(): void {}
 }
@@ -78,12 +79,9 @@ class ProbeGuard extends AGuard<ProbeTargetService> {
     }
 }
 
-class ParentProbeRpcMethods extends ARpcMethods<P2PManager<PingPongRpc>> {
-    protected readonly service: ProbeTargetService;
-
-    constructor(transport: ATransport, service: ProbeTargetService) {
-        super(transport, service.p2pManager);
-        this.service = service;
+class ParentProbeRpcMethods extends ANetworkRpcMethods<ProbeTargetService> {
+    constructor(transport: NetworkTransport, service: ProbeTargetService) {
+        super(transport, service);
     }
 
     public parentEndpoint(): string {
@@ -136,7 +134,7 @@ class ProbeTargetRpcMethods extends ParentProbeRpcMethods {
     }
 }
 
-class ProbeTargetService extends ARpcService<
+class ProbeTargetService extends ANetworkRpcService<
     ProbeTargetRpcMethods,
     P2PManager<PingPongRpc>
 > {
@@ -154,7 +152,7 @@ class ProbeTargetService extends ARpcService<
 
     constructor(p2pManager: P2PManager<PingPongRpc>) {
         super(
-            p2pManager,
+            p2pManager.rpcRouter,
             p2pManager.stateManager.logger.child({
                 component: "ProbeTargetService"
             })
@@ -163,7 +161,9 @@ class ProbeTargetService extends ARpcService<
         this.guards = [this.guard];
     }
 
-    public createRPCMethods(transport: ATransport): ProbeTargetRpcMethods {
+    public createRPCMethods(
+        transport: NetworkTransport
+    ): ProbeTargetRpcMethods {
         this.methodConstructions += 1;
         const methods = new ProbeTargetRpcMethods(transport, this);
         if (this.shadowMode === "accessor") {
@@ -237,7 +237,7 @@ class ProbeTargetService extends ARpcService<
     }
 }
 
-export class ARpcServiceProbeService extends ARpcService<
+export class ARpcServiceProbeService extends ANetworkRpcService<
     ARpcServiceProbeRpcMethods,
     P2PManager<PingPongRpc>
 > {
@@ -245,7 +245,7 @@ export class ARpcServiceProbeService extends ARpcService<
 
     constructor(p2pManager: P2PManager<PingPongRpc>) {
         super(
-            p2pManager,
+            p2pManager.rpcRouter,
             p2pManager.stateManager.logger.child({
                 component: "ARpcServiceProbeService"
             })
@@ -253,7 +253,9 @@ export class ARpcServiceProbeService extends ARpcService<
         this.targetService = new ProbeTargetService(p2pManager);
     }
 
-    public createRPCMethods(transport: ATransport): ARpcServiceProbeRpcMethods {
+    public createRPCMethods(
+        transport: NetworkTransport
+    ): ARpcServiceProbeRpcMethods {
         return new ARpcServiceProbeRpcMethods(transport, this);
     }
 
@@ -295,7 +297,7 @@ export class ARpcServiceProbeService extends ARpcService<
                 params: options.params,
                 requestId: options.requestId
             };
-            consumed = this.targetService.runRPC(rpc, transport);
+            consumed = await this.targetService.runRPC(rpc, transport);
             await new Promise<void>((resolve) => setTimeout(resolve, 0));
         } finally {
             process.off("unhandledRejection", onUnhandledRejection);

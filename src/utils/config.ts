@@ -32,9 +32,8 @@ export type Config = {
     CRASH_LOG_UPLOAD_ENDPOINT: string;
     CRASH_LOG_API_TOKEN: string;
     CRASH_LOG_MAX_SIZE_MB: number;
-    // bounds each hop of a flush round. one realm's worst case is ~24s: jitter 3s
-    // + 10s POST + 1s retry delay + 10s POST.
-    CRASH_LOG_FLUSH_TIMEOUT_MS: number;
+    // Minimum spacing between coordinated upload attempts.
+    CRASH_LOG_UPLOAD_COALESCE_MS: number;
     // upper bound of the random per-upload jitter that spreads realms apart
     CRASH_LOG_UPLOAD_JITTER_MAX_MS: number;
 };
@@ -62,7 +61,7 @@ const DEFAULT_CONFIG: Config = {
     CRASH_LOG_UPLOAD_ENDPOINT: "",
     CRASH_LOG_API_TOKEN: "",
     CRASH_LOG_MAX_SIZE_MB: 10,
-    CRASH_LOG_FLUSH_TIMEOUT_MS: 30_000,
+    CRASH_LOG_UPLOAD_COALESCE_MS: 3000,
     CRASH_LOG_UPLOAD_JITTER_MAX_MS: 3000
 };
 

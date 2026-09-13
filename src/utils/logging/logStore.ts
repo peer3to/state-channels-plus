@@ -28,7 +28,10 @@ export class LogStore {
     constructor(
         private readonly maxSize: number,
         private readonly enabled: boolean
-    ) {}
+    ) {
+        if (!Number.isFinite(maxSize) || maxSize < 0)
+            throw new Error("Log store size must be finite and non-negative");
+    }
 
     store(logEntry: LogEntry): void {
         if (!this.enabled) return;

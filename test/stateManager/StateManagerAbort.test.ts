@@ -1,38 +1,20 @@
-import { Status } from "@/types";
-import { MathTestSession as TestSession } from "@test/harness";
-import { expect } from "chai";
+import {
+    assertAbortClosesRuntime,
+    assertAbortCancelsTimeout,
+    assertProviderShutdownOrder
+} from "@test/fixtures/RuntimeAbortFixture";
 
 describe("StateManager abort", function () {
+    it("stops host work before provider destruction and final listener removal", async function () {
+        await assertProviderShutdownOrder();
+    });
+    it("disposes the inline host and executor roots on abort", async function () {
+        await assertAbortClosesRuntime(false);
+    });
+    it("disposes the worker host and executor roots on abort", async function () {
+        await assertAbortClosesRuntime(true);
+    });
     it("cancels session-owned timeout work", async function () {
-        const h = TestSession.getHarness();
-        await h.lifecycle.start(4, 0);
-
-        const result = await h.execOnHost(
-            h.getPeer(0),
-            async (sm) => {
-                let taskRan = false;
-                sm.timeoutManager.scheduleTask(
-                    () => {
-                        taskRan = true;
-                    },
-                    100,
-                    "StateManagerAbort.test"
-                );
-
-                sm.abort();
-                await new Promise((resolve) => setTimeout(resolve, 200));
-                return {
-                    status: sm.status,
-                    taskRan,
-                    connectedPeerCount: sm.p2pManager.getConnectedPeers().size
-                };
-            },
-            {}
-        );
-
-        await h.event.waitForPeers("onAbort", [0], 1);
-        expect(result.status).to.equal(Status.OPENED);
-        expect(result.taskRan).to.equal(false);
-        expect(result.connectedPeerCount).to.equal(0);
+        await assertAbortCancelsTimeout();
     });
 });

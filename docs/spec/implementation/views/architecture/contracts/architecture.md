@@ -249,7 +249,7 @@ What keeps the sizes where they are, observed in source:
   dispute-fraud-proof family is the first thing that will break the budget again. `LocalDiamond`
   (27,985) is over and stays over; it is test-only and never targets mainnet. Both implementation
   requirements refine
-  [`REQ-CONTRACT-SIZE-1-881Q6E`](../../../../specification/enforcement/contracts.md#req-contract-size-1-881q6e).
+  [`REQ-CONTRACT-SIZE-1-881Q6E` (Deployment size enforcement)](../../../../specification/enforcement/contracts.md#req-contract-size-1-881q6e).
 
 - **<a id="req-con-2-cbvfv9"></a>`REQ-CON-2-CBVFV9`.** The build and artifact-backed deployment pipeline MUST verify [`REQ-CON-1-ER48S7`](architecture.md#req-con-1-er48s7) automatically and fail on violation. `Current:` covered by the compiled-artifact scan and `deployArtifact` runtime/full-initcode checks. Network enforcement remains final for deployment paths without full artifacts. `LocalDiamond` is the exact local-only exemption while the Hardhat network keeps `allowUnlimitedContractSize: true`.
 - **SHOULD:** production builds SHOULD reject any `hardhat/console.sol` import (a cheap grep-level

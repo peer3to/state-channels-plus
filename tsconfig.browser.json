@@ -10,14 +10,17 @@
             "@platform/createLogger": [
                 "src/utils/logging/browser/createLogger"
             ],
-            "@platform/contractExecutorWorkerRuntime": [
-                "src/evm/contractExecutor/browser/ContractExecutorWorkerRuntime"
+            "@platform/contractExecutorRootUrl": [
+                "src/rpc/internal/browser/ContractExecutorRootUrl"
+            ],
+            "@platform/p2pRuntimeHostRootUrl": [
+                "src/rpc/internal/browser/P2pRuntimeHostRootUrl"
+            ],
+            "@platform/rootWorkerRuntime": [
+                "src/rpc/internal/browser/RootWorkerRuntime"
             ],
             "@platform/p2pRuntimeChannel": [
-                "src/evm/p2pRuntime/browser/P2pRuntimeChannel"
-            ],
-            "@platform/p2pRuntimeWorkerRuntime": [
-                "src/evm/p2pRuntime/browser/P2pRuntimeWorkerRuntime"
+                "src/transport/browser/RuntimeChannel"
             ],
             "@platform/DeployUtils": ["src/utils/browser/DeployUtils"],
             "@platform/LocalDiscoveryServer": [
@@ -33,14 +36,15 @@
         }
     },
     "exclude": [
+        "src/utils/moduleLoader/node",
+        "src/rpc/internal/node",
+        "src/transport/node",
         "examples",
         "dist",
         "logs",
         "temp",
         "node_modules",
         "src/evm/node",
-        "src/evm/contractExecutor/node",
-        "src/evm/p2pRuntime/node",
         "src/utils/node",
         "src/utils/logging/node",
         "test/evm/workers/node"

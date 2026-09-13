@@ -33,8 +33,8 @@ Staleness delegates to the state manager live-fork predicate. A leaving signer a
 
 Error text delegates to the dependency-free errorMessage helper. Existing catch policy, stack fields, log messages and error propagation remain at this call site. See [ReductionExecutor.ts](../../../../../../../src/stateManager/reduction/ReductionExecutor.ts#L1).
 
-1. **Install before submit.** The local fork transition happens once the deterministic result is known; the transaction is detached — another reducer's identical result is convergence, not conflict ([`REQ-DISPUTE-PIPE-6-6FZB9M`](../../../../../specification/disputes/dispute-processing.md#req-dispute-pipe-6-6fzb9m)).
-2. **Chain-backed dispute set only:** missing events are recovered by bounded targeted queries before any reduce ([`REQ-DISPUTE-PIPE-3-PHE3SQ`](../../../../../specification/disputes/dispute-processing.md#req-dispute-pipe-3-phe3sq) input discipline).
+1. **Install before submit.** The local fork transition happens once the deterministic result is known; the transaction is detached — another reducer's identical result is convergence, not conflict ([`REQ-DISPUTE-PIPE-6-6FZB9M` (Minimal intervention and convergence)](../../../../../specification/disputes/dispute-processing.md#req-dispute-pipe-6-6fzb9m)).
+2. **Chain-backed dispute set only:** missing events are recovered by bounded targeted queries before any reduce ([`REQ-DISPUTE-PIPE-3-PHE3SQ` (Deterministic reduction)](../../../../../specification/disputes/dispute-processing.md#req-dispute-pipe-3-phe3sq) input discipline).
 3. **Kill-period memoization is one-directional:** 'expired' is terminal; 'not yet' rechecks.
 4. **One staleness guard after every await.** `isStale(forkId)` ("fork changed or manager disposed") replaces the scattered fork comparisons and runs at every boundary that precedes a reduction-owned effect: after the cached and the fresh kill-period reads, after the synced dispute read and after candidate preparation (before their reschedule branches), inside candidate preparation after the computation resolves and before the terminal outbound block is persisted, and before submission preparation, simulation, and completion; the post-install submit is guarded by disposal only and re-checks it after the gas limit resolves, right before the chain write. Apart from the terminal outbound block below, no reduction-owned write happens after disposal.
 5. **Storage contract for the early outbound write.** `prepareLocalCandidate` persists the deterministic terminal outbound block through `justPersist` before building the fork calldata, because the calldata builder walks the persisted outbound chain. That write stays: it is idempotent and deterministic for its fork, does not move the outbound head, and `Storage` has no delete, so on a disposed runtime the orphan block stays readable by hash until the runtime object is collected and cannot affect the head or any later protocol action.
@@ -64,7 +64,7 @@ claims complete conformance for a requirement that depends on other files.
 
 ## Specification adherence
 
-- Deterministic order-independent reduction via the mirrored fold; races classified as convergence ([`REQ-DISPUTE-PIPE-6-6FZB9M`](../../../../../specification/disputes/dispute-processing.md#req-dispute-pipe-6-6fzb9m)).
+- Deterministic order-independent reduction via the mirrored fold; races classified as convergence ([`REQ-DISPUTE-PIPE-6-6FZB9M` (Minimal intervention and convergence)](../../../../../specification/disputes/dispute-processing.md#req-dispute-pipe-6-6fzb9m)).
 
 ## Specification contradictions
 
@@ -99,6 +99,6 @@ Exact test evidence is mapped against these IDs in the verification test reports
 
 # Terminal leave contribution
 
-After a settled self-removal reduction installs a successor where the leaving signer is `SYNCED`, the removed runtime does not submit a redundant reduction transaction. This prevents terminal disposal from interrupting an obsolete provider transaction while remaining participants retain normal reduction submission. This contributes to [`REQ-LIF-10-QR8NQ9`](../../../../../specification/settlement/lifecycle.md#req-lif-10-qr8nq9).
+After a settled self-removal reduction installs a successor where the leaving signer is `SYNCED`, the removed runtime does not submit a redundant reduction transaction. This prevents terminal disposal from interrupting an obsolete provider transaction while remaining participants retain normal reduction submission. This contributes to [`REQ-LIF-10-QR8NQ9` (Terminal runtime departure)](../../../../../specification/settlement/lifecycle.md#req-lif-10-qr8nq9).
 
 Shared operation owners: [errorMessage.ts.md](../../utils/errorMessage.ts.md).

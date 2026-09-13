@@ -30,7 +30,7 @@ joiner submits on-chain with its deposit. This service is
 exactly the collect-signatures hop: the joiner fans out one request per threshold member and
 assembles the confirmation, or the collection fails as a whole. Deciding _whether_ to admit is not
 part of this service's current contract — a structurally and contextually valid request is signed —
-and the admission-policy filter is an open decision ([`OQ-10-04YNC4`](../open-questions.md#oq-10-04ync4)).
+and the admission-policy filter is an open decision ([`OQ-10-04YNC4` (Spectate/join failure-point details)](../open-questions.md#oq-10-04ync4)).
 
 ## Collector algorithm
 
@@ -146,7 +146,7 @@ obligation whose refusal is slashable.
   so replay of a still-valid request yields another signature over the same bytes — idempotent by
   content.
 - Admission policy (who _should_ be admitted, beyond structural validity) is deliberately outside
-  this contract and open ([`OQ-10-04YNC4`](../open-questions.md#oq-10-04ync4)).
+  this contract and open ([`OQ-10-04YNC4` (Spectate/join failure-point details)](../open-questions.md#oq-10-04ync4)).
 
 ## Security considerations
 
@@ -156,7 +156,7 @@ byte-exact signing over the canonical encoding stops substitution between what w
 what was signed; state pinning stops authorization against a moved or forked state; threshold
 membership stops non-members from manufacturing authority. Residual: unconditional signing of valid
 requests means membership control is purely structural until the admission filter is decided
-([`OQ-10-04YNC4`](../open-questions.md#oq-10-04ync4)); a malicious joiner can burn responder attention (rate bounds per [`REQ-RPC-5-CV1R1Y`](rpc.md#req-rpc-5-cv1r1y)).
+([`OQ-10-04YNC4` (Spectate/join failure-point details)](../open-questions.md#oq-10-04ync4)); a malicious joiner can burn responder attention (rate bounds per [`REQ-RPC-5-CV1R1Y` (Resource bounds)](rpc.md#req-rpc-5-cv1r1y)).
 
 ## Verification and test plan
 
@@ -173,5 +173,5 @@ requests means membership control is purely structural until the admission filte
 ## Future Work
 
 _Non-normative._ The configurable admission filter, including snapshot-scoped consent
-([`OQ-10-04YNC4`](../open-questions.md#oq-10-04ync4)); collection retry strategy against churn between pin and
+([`OQ-10-04YNC4` (Spectate/join failure-point details)](../open-questions.md#oq-10-04ync4)); collection retry strategy against churn between pin and
 submission.

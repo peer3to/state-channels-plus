@@ -2,7 +2,7 @@
 
 > **Test file:** [test/rpc/guards/DeferredAdmissionGuard.test.ts](../../../../../../../test/rpc/guards/DeferredAdmissionGuard.test.ts)  
 > **Status:** Authored — engineer verification pending.  
-> **Exercises:** [DeferredAdmissionGuard.ts](../../../../../implementation/source/src/rpc/guards/DeferredAdmissionGuard.ts.md)
+> **Exercises:** [DeferredAdmissionGuard.ts](../../../../../implementation/source/src/rpc/network/guards/DeferredAdmissionGuard.ts.md)
 
 ## Overview
 
@@ -10,6 +10,6 @@ The worker-hosted probe installs the production guard on a real RPC service and 
 
 ## Tests and covered test IDs
 
-| Test declaration                                                                                                                                                                               | Covers                                                                                                                                                                  |
-| ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| [`DeferredAdmissionGuard > passes ready work, replays one FIFO queue, and separates rejection from expiry`](../../../../../../../test/rpc/guards/DeferredAdmissionGuard.test.ts#L16) (line 16) | [`UNIT-TEST-DEFERRED-ADMISSION-1-12GVZ7.P1`](../../../../../implementation/source/src/rpc/guards/DeferredAdmissionGuard.ts.md#unit-test-deferred-admission-1-12gvz7.p1) |
+| Test declaration                                                                                                                                                                               | Covers                                                                                                                                                                          |
+| ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| [`DeferredAdmissionGuard > passes ready work, replays one FIFO queue, and separates rejection from expiry`](../../../../../../../test/rpc/guards/DeferredAdmissionGuard.test.ts#L16) (line 16) | [`UNIT-TEST-DEFERRED-ADMISSION-1-12GVZ7.P1`](../../../../../implementation/source/src/rpc/network/guards/DeferredAdmissionGuard.ts.md#unit-test-deferred-admission-1-12gvz7.p1) |

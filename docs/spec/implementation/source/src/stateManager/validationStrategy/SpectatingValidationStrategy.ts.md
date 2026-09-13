@@ -27,7 +27,7 @@ The disputed-fork hook discards entries with `NOT_READY` without requeueing or a
 
 The subjective hook accepts proved history. The constructor receives the live strategy; double-sign, invalid-transition, forged-inbound, objective-timestamp, known-genesis and disputed-fork hooks delegate to it for committed peers. See [SpectatingValidationStrategy.ts](../../../../../../../src/stateManager/validationStrategy/SpectatingValidationStrategy.ts#L245).
 
-1. **The abort/drop split is the fail-closed rule:** provable fraud → stop following; unattributable junk → keep spectating ([`INV-SYNC-3-A7A2ED`](../../../../../specification/peer-communication/synchronization.md#inv-sync-3-a7a2ed) consumer side).
+1. **The abort/drop split is the fail-closed rule:** provable fraud → stop following; unattributable junk → keep spectating ([`INV-SYNC-3-A7A2ED` (Fail-closed with caller-owned consequence)](../../../../../specification/peer-communication/synchronization.md#inv-sync-3-a7a2ed) consumer side).
 
 ## Inputs, outputs, state, and side effects
 
@@ -53,7 +53,7 @@ claims complete conformance for a requirement that depends on other files.
 
 ## Specification adherence
 
-- Context-complete consequence profile ([`REQ-BLOCK-PIPE-3-WW2SB7`](../../../../../specification/block-progression/block-processing.md#req-block-pipe-3-ww2sb7)) — the spectating consequence profile.
+- Context-complete consequence profile ([`REQ-BLOCK-PIPE-3-WW2SB7` (Strategy-complete deviations)](../../../../../specification/block-progression/block-processing.md#req-block-pipe-3-ww2sb7)) — the spectating consequence profile.
 
 ## Specification contradictions
 

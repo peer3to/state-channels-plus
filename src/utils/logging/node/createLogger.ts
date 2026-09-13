@@ -1,6 +1,5 @@
 import { buildLoggerFoundation } from "../createLoggerFoundation";
 import type { CreateLoggerOptions } from "../createLoggerTypes";
-import { realmLogFlushBus } from "../LogFlushBus";
 import {
     type ExclusiveLoggerContext,
     type LogLevel,
@@ -18,7 +17,7 @@ export const createLogger = (
     // every realm files under a thread role; main is the default.
     const shared: SharedLoggerContext = {
         ...sharedContext,
-        threadName: sharedContext.threadName ?? "main"
+        threadName: sharedContext.threadName ?? globalThis.threadName
     };
     const { logStore, skipWriting, logUploaderConfig } =
         buildLoggerFoundation(options);
@@ -39,7 +38,7 @@ export const createLogger = (
         excludedTags,
         skipWriting
     );
-    // roots only -> a registered child would upload the same store twice
-    realmLogFlushBus.registerLogger(logger);
+    if (options.loggerService)
+        logger.attachLoggerService(options.loggerService);
     return logger;
 };

@@ -42,7 +42,7 @@ export class LocalDiscoveryServer {
         }
 
         // Imported lazily (before the socket opens) so `@/utils` — which
-        // re-exports this module — doesn't pull ATransport into a load-time
+        // re-exports this module — doesn't pull NetworkTransport into a load-time
         // import cycle, and so there's no async gap between the socket opening
         // and the announce listener attaching (the hub's peer announce fires
         // the instant both peers are present and would be missed in a gap).
@@ -88,7 +88,10 @@ export class LocalDiscoveryServer {
                 ws.removeEventListener("error", onError);
 
                 const remoteAddress = announce.address;
-                const transport = new BrowserLocalTransport(ws, p2pManager);
+                const transport = new BrowserLocalTransport(
+                    ws,
+                    p2pManager.rpcRouter
+                );
                 // Both ends initiate: the handshake is a mutual challenge, so a
                 // peer only finalizes once it has BOTH verified the remote (via
                 // its own challenge) and received the remote's ack.

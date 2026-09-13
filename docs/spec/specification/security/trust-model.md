@@ -155,7 +155,7 @@ watchtower design:
   which key material; a delegate that can submit contests but not steal funds is the target shape.
   Which of those actions a keyless delegate can be authorized for, and whether killing invalid
   actions without ever opening a valid one is sufficient, is
-  [`OQ-43-HWRTNF`](../open-questions.md#oq-43-hwrtnf).
+  [`OQ-43-HWRTNF` (Delegated contest authorization)](../open-questions.md#oq-43-hwrtnf).
 - **Timeouts:** the delegate must act within the same on-chain windows as the participant
   ([../protocol/disputes.md](../disputes/disputes.md), [../protocol/time.md](../protocol-model/time.md)).
 - **Failure:** what the participant's exposure is if the delegate fails, and how failure is
@@ -163,7 +163,7 @@ watchtower design:
 
 The delegate's concrete shape — how it is deployed, what channel access it holds, and how it
 appears to other participants — is not yet decided:
-[`OQ-44-3Y5MD7`](../open-questions.md#oq-44-3y5md7).
+[`OQ-44-3Y5MD7` (Watchtower deployment shape)](../open-questions.md#oq-44-3y5md7).
 
 **Required verification:** offline-participant tests (honest participant
 offline while a counterparty submits an invalid dispute/timeout; delegate contests in time) and

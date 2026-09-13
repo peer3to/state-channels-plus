@@ -19,7 +19,7 @@ Existing `OQ-*` IDs are preserved; new questions use the layer-scoped namespace 
 | [`OQ-22-99DDSZ`](open-questions.md#oq-22-99ddsz) | Inauthentic on-chain block calldata: escalation is signalled but no proof is built                                                | Code   | [sdk/block-confirmation-pipeline.md](./views/architecture/sdk/block-confirmation-pipeline.md), [security/open-security-review.md](../audit/security-assessment.md)                                    | Open                              |
 | [`OQ-23-SDBGYB`](open-questions.md#oq-23-sdbgyb) | SDK restart/recovery semantics: storage is fully in-memory                                                                        | Code   | [sdk/components.md](./views/architecture/sdk/components.md)                                                                                                                                           | Open                              |
 | [`OQ-24-A4XRTB`](open-questions.md#oq-24-a4xrtb) | `shouldSignBlock` refuses to sign an on-chain-posted block when the local node is next-to-write                                   | Code   | [protocol/finality.md](../specification/protocol-model/finality.md), [protocol/block-processing.md](../specification/block-progression/block-processing.md)                                           | Open                              |
-| [`OQ-25-E09XFR`](open-questions.md#oq-25-e09xfr) | Minor SDK lifecycle races: `abort()` residual queryability, TS snapshot-event ordering, kill/counter-dispute sequencing           | Code   | [sdk/architecture.md](./views/architecture/sdk/architecture.md), [sdk/components.md](./views/architecture/sdk/components.md), [sdk/dispute-pipeline.md](./views/architecture/sdk/dispute-pipeline.md) | Open                              |
+| [`OQ-25-E09XFR`](open-questions.md#oq-25-e09xfr) | Minor SDK lifecycle races: TS snapshot-event ordering, kill/counter-dispute sequencing                                            | Code   | [sdk/architecture.md](./views/architecture/sdk/architecture.md), [sdk/components.md](./views/architecture/sdk/components.md), [sdk/dispute-pipeline.md](./views/architecture/sdk/dispute-pipeline.md) | Open                              |
 | [`OQ-30-2G0Q5M`](open-questions.md#oq-30-2g0q5m) | Chain-reorg handling and canonical per-channel event ordering in the SDK                                                          | Code   | [sdk/components.md](./views/architecture/sdk/components.md), [security/open-security-review.md](../audit/security-assessment.md)                                                                      | Open                              |
 | [`OQ-35-E5RRDF`](open-questions.md#oq-35-e5rrdf) | Handshake has no channel/identity binding — relay/reflection MITM; the signature is the whole root of trust                       | Code   | [sdk/rpc/handshake.md](./views/architecture/sdk/rpc/handshake.md), [security/trust-model.md](../specification/security/trust-model.md)                                                                | Open                              |
 | [`OQ-36-WEN9T1`](open-questions.md#oq-36-wen9t1) | `onDisputeAcknowledgmentRequest` never binds `channelId` to the local channel — cross-channel ack pollution and chain-read oracle | Code   | [sdk/rpc/is-fork-disputed.md](./views/architecture/sdk/rpc/is-fork-disputed.md)                                                                                                                       | Open                              |
@@ -59,13 +59,13 @@ extend the proof format, or amend the model. See
 
 `DisputeVerificationFacet.reduce()` folds timeouts by taking the minimum `blockHeight` without
 checking `participant != address(0)`, so any committed dispute _without_ a timeout (height 0)
-wipes a real timeout claim. This conflicts with the lowest-real-height rule tracked by [`OQ-9-XR1MFS`](../specification/open-questions.md#oq-9-xr1mfs).
+wipes a real timeout claim. This conflicts with the lowest-real-height rule tracked by [`OQ-9-XR1MFS` (Timeout precedence edge rules)](../specification/open-questions.md#oq-9-xr1mfs).
 Decide whether this is a bug (likely) or intended "any non-timeout dispute cancels the timeout"
 semantics, then fix and test accordingly. See [protocol/disputes.md](../specification/disputes/disputes.md) §6.
 
 **Resolved (2026-08-14, engineer decision — implementation pending):** only a slash cancels a
 proposed timeout ([`INV-DIS-7-9GGZSD`](../specification/disputes/disputes.md#inv-dis-7-9ggzsd)); a slash-free dispute with no timeout
-claim MUST NOT cancel a real timeout ([`OQ-9-XR1MFS`](../specification/open-questions.md#oq-9-xr1mfs),
+claim MUST NOT cancel a real timeout ([`OQ-9-XR1MFS` (Timeout precedence edge rules)](../specification/open-questions.md#oq-9-xr1mfs),
 [`INV-DIS-8-1GY6Q5`](../specification/disputes/disputes.md#inv-dis-8-1gy6q5) amended). The fold's empty-timeout reset is therefore
 confirmed a **bug**: the fold must skip candidates with an unset `participant`, keeping the
 minimum over real timeout claims only — which also removes the last-alternation-wins order
@@ -73,7 +73,7 @@ dependence noted under [`INV-DIS-5-J1QZ92`](../specification/disputes/disputes.m
 dispute reducer/verifier, cover permutation [`INV-DIS-8-1GY6Q5.T1.P19`](../specification/disputes/disputes.md#inv-dis-8-1gy6q5.t1.p19) (slash-free dispute
 without a timeout claim leaves the lowest real timeout applied) plus order-permutation tests,
 and pin down the exact inclusive/exclusive boundary comparisons of the `Timeout*`
-dispute-fraud-proof rules (inherited here from the resolution of [`OQ-9-XR1MFS`](../specification/open-questions.md#oq-9-xr1mfs)).
+dispute-fraud-proof rules (inherited here from the resolution of [`OQ-9-XR1MFS` (Timeout precedence edge rules)](../specification/open-questions.md#oq-9-xr1mfs)).
 
 <a id="oq-15-2j4y1z"></a>
 
@@ -108,7 +108,7 @@ The aggregate balance invariant is currently checked only at spectate sync (clie
 call) and via the `DisputeInvalidBalanceInvariant` fraud proof. It is not run on snapshot update
 — despite a code comment declaring that intent — and not at on-chain join. Confirm and implement
 the intended check sites, or record the omission as an accepted limitation with its risk. See
-[protocol/cross-layer-messages.md](../specification/settlement/cross-layer-messages.md) §6. Pairs with [`OQ-11-38S3SE`](../specification/open-questions.md#oq-11-38s3se).
+[protocol/cross-layer-messages.md](../specification/settlement/cross-layer-messages.md) §6. Pairs with [`OQ-11-38S3SE` (Channel-balance invariant definition)](../specification/open-questions.md#oq-11-38s3se).
 
 Additional unchecked site: at `open()`, the consumer facet's
 `openChannelGenesis` return — the genesis state and participant list — is adopted without
@@ -137,7 +137,7 @@ Recorded normatively in [`REQ-SM-4-Z32M0W`](../specification/protocol-model/stat
 When a block delivered via a `BlockCalldataPosted` event fails authenticity checks — an objective
 fault committed on-chain — `CalldataCommittedStrategy` signals escalation but builds no fraud
 proof and opens no dispute (two code TODOs). The required proof type is unresolved. Feeds the
-completeness review ([`OQ-5-4Q38M5`](../audit/open-questions.md#oq-5-4q38m5)). See
+completeness review ([`OQ-5-4Q38M5` (Fraud-proof completeness security review)](../audit/open-questions.md#oq-5-4q38m5)). See
 [sdk/block-confirmation-pipeline.md](./views/architecture/sdk/block-confirmation-pipeline.md) §4.1.
 
 <a id="oq-23-sdbgyb"></a>
@@ -171,7 +171,7 @@ the next-to-write. The rule is not stated anywhere as intended protocol behavior
 and specify it (or remove it). See [protocol/finality.md](../specification/protocol-model/finality.md) §8.
 
 The counter-signing policy is now recorded normatively as
-[`REQ-BLOCK-PIPE-10-PHAKE2`](../specification/block-progression/block-processing.md#req-block-pipe-10-phake2)
+[`REQ-BLOCK-PIPE-10-PHAKE2` (Counter-signing policy)](../specification/block-progression/block-processing.md#req-block-pipe-10-phake2)
 in [protocol/block-processing.md](../specification/block-progression/block-processing.md), with the
 next-author refusal clause marked as this open decision.
 
@@ -179,10 +179,9 @@ next-author refusal clause marked as this open decision.
 
 ## OQ-25-E09XFR — Minor SDK lifecycle races
 
-Grouped smaller items, each a code TODO or observed race: `abort()` disposes the manager graph
-but not the runtime control port (residual queryability); the TypeScript
+Grouped smaller items, each a code TODO or observed race: the TypeScript
 `onStateSnapshotUpdated` handler is not `(blockNumber, logIndex)`-ordered, unlike the
-LocalDiamond mirror; and kill/counter-dispute sequencing (see [`OQ-1-NTJBA1`](../specification/open-questions.md#oq-1-ntjba1)). See
+LocalDiamond mirror; and kill/counter-dispute sequencing (see [`OQ-1-NTJBA1` (Kill-period and dispute-fraud-proof slashing semantics)](../specification/open-questions.md#oq-1-ntjba1)). See
 [sdk/architecture.md](./views/architecture/sdk/architecture.md), [sdk/components.md](./views/architecture/sdk/components.md), and
 [sdk/dispute-pipeline.md](./views/architecture/sdk/dispute-pipeline.md).
 
@@ -211,8 +210,8 @@ root of trust for peer identity. An on-path attacker can forward a victim's live
 the initiator's random challenge and make the initiator believe it is authenticated to the victim
 over the attacker's transport (relay/reflection MITM); the only limiter is the `agreementTime`
 skew window. Decide the binding: include the two EVM identities and a transport/session binding in
-the signed payload (EIP-712 or a domain-tagged struct), coordinated with [`OQ-29-EFY4NF`](../specification/open-questions.md#oq-29-efy4nf) (signature domains)
-and [`OQ-34-FY08V2`](../specification/open-questions.md#oq-34-fy08v2) (protocol versioning) so one scheme covers all three. Until resolved, the trust model
+the signed payload (EIP-712 or a domain-tagged struct), coordinated with [`OQ-29-EFY4NF` (Signature domain separation)](../specification/open-questions.md#oq-29-efy4nf) (signature domains)
+and [`OQ-34-FY08V2` (RPC boundary decisions)](../specification/open-questions.md#oq-34-fy08v2) (protocol versioning) so one scheme covers all three. Until resolved, the trust model
 MUST state that peer authentication assumes no on-path adversary between two honest peers — a
 strong assumption for a p2p system. See [sdk/rpc/handshake.md](./views/architecture/sdk/rpc/handshake.md) §4.1 and
 [security/trust-model.md](../specification/security/trust-model.md).
@@ -240,7 +239,7 @@ lifetime relative to fork finalization is undefined.
 ## OQ-37-0Y7YWS — Harness-control surface exposure
 
 The test harness registers `HarnessControlRpc` as an ordinary custom-RPC root: **11 services, 207
-public endpoints, zero guards** (`ARpcService.guards` defaults to `[]` and no harness service
+public endpoints, zero guards** (`ANetworkRpcService.guards` defaults to `[]` and no harness service
 overrides it). Because service resolution is structural over any transport, any peer connected to
 a harness-built peer can invoke them — including `scenario.exec`, which rebuilds a supplied source
 string with `new Function` and runs it against the live `StateManager` (arbitrary code execution in
@@ -265,7 +264,7 @@ Each sync currently establishes its own chain-finality decisions and builds its 
 snapshot-update simulation. This deliberately keeps calldata inclusion independent of another
 sync's local verification progress. A matching locally proven successor is reusable evidence,
 but it does not prove that the chain has executed the reduction. See the
-[SpectateService report](./source/src/rpc/services/spectate/SpectateService.ts.md#key-design-decisions).
+[SpectateService report](source/src/rpc/network/services/spectate/SpectateService.ts.md#key-design-decisions).
 
 Design a way to reuse already verified reductions and fetched chain windows without repeating
 unnecessary proof work or chain reads. Keep local proof validity separate from the reductions

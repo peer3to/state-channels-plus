@@ -66,16 +66,16 @@ claims complete conformance for a requirement that depends on other files.
 ## Assumptions, dependencies, trust boundaries, and limits
 
 - Holds unvalidated knowledge by design; everything read back re-enters pipeline validation.
-- Frequency bounding is the communication layer's duty ([`REQ-RPC-5-CV1R1Y`](../../../../specification/peer-communication/rpc.md#req-rpc-5-cv1r1y)); this store bounds per-entry structure only.
+- Frequency bounding is the communication layer's duty ([`REQ-RPC-5-CV1R1Y` (Resource bounds)](../../../../specification/peer-communication/rpc.md#req-rpc-5-cv1r1y)); this store bounds per-entry structure only.
 - In-memory medium for this protocol version: durability across restart is not yet provided; the
   target contract is [durability.md](../../../../specification/storage/durability.md).
 
 ## Specification adherence
 
 - Attributed signature/source merge with earliest-first-seen; signatures and attribution converge independently of copy order ([`REQ-QSTORE-1-PS769J`](../../../../specification/peer-communication/block-gossip.md#req-qstore-1-ps769j)).
-- Overflow markers without eviction or rejection ([`REQ-QSTORE-2-VYWJAQ`](../../../../specification/storage/queue.md#req-qstore-2-vywjaq)).
-- Exact-coordinate dequeue, lowest-height-≤-bound priority dequeue, complete fork clear ([`REQ-QSTORE-3-DEKYG6`](../../../../specification/storage/queue.md#req-qstore-3-dekyg6)).
-- Mutex-free intake share of [`REQ-BLOCK-PIPE-5-WJ31RG`](../../../../specification/block-progression/block-processing.md#req-block-pipe-5-wj31rg): all operations are plain map mutations.
+- Overflow markers without eviction or rejection ([`REQ-QSTORE-2-VYWJAQ` (Structural caps as markers, not rejections)](../../../../specification/storage/queue.md#req-qstore-2-vywjaq)).
+- Exact-coordinate dequeue, lowest-height-≤-bound priority dequeue, complete fork clear ([`REQ-QSTORE-3-DEKYG6` (Coordinate dequeue rules)](../../../../specification/storage/queue.md#req-qstore-3-dekyg6)).
+- Mutex-free intake share of [`REQ-BLOCK-PIPE-5-WJ31RG` (Pre-execution merge layer)](../../../../specification/block-progression/block-processing.md#req-block-pipe-5-wj31rg): all operations are plain map mutations.
 
 ## Specification contradictions
 
@@ -91,12 +91,12 @@ Status enum: `Covered` | `Partial` | `Contradicts` | `Missing`. Evidence cells a
 **Here:** / **Other files:** so each row is auditable from its links alone; genuine gaps go in the
 Gap column. Audit state is file-level (Status header), never a row status.
 
-| Requirement / invariant                                                                                              | Implementation status | Evidence                                                                                                                                                                                                                                                                                     | Gap / divergence |
-| -------------------------------------------------------------------------------------------------------------------- | --------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------- |
-| [`REQ-QSTORE-1-PS769J`](../../../../specification/peer-communication/block-gossip.md#req-qstore-1-ps769j)            | Covered               | **Here:** copy-scoped `trackSource`, signature-set expansion, earliest `firstSeenAt`, defined on-chain-timestamp overwrite ([#L54](../../../../../../src/storage/QueueStorage.ts#L54), [#L138](../../../../../../src/storage/QueueStorage.ts#L138)).                                         | None.            |
-| [`REQ-QSTORE-2-VYWJAQ`](../../../../specification/storage/queue.md#req-qstore-2-vywjaq)                              | Covered               | **Here:** capped inserts flip the marker, never evict or reject ([#L292](../../../../../../src/storage/QueueStorage.ts#L286)).                                                                                                                                                               | None.            |
-| [`REQ-QSTORE-3-DEKYG6`](../../../../specification/storage/queue.md#req-qstore-3-dekyg6)                              | Covered               | **Here:** `tryDequeueAt` exact, `tryDequeuePriority` lowest ≤ bound, `clearFork` reports removals ([#L81](../../../../../../src/storage/QueueStorage.ts#L75)).                                                                                                                               | None.            |
-| [`REQ-BLOCK-PIPE-5-WJ31RG`](../../../../specification/block-progression/block-processing.md#req-block-pipe-5-wj31rg) | Covered               | **Here:** merge layer data rules (monotone, idempotent, attributed, capped). **Other files:** [BlockQueueManager](../stateManager/BlockQueueManager.ts.md) owns scheduling/lifetime; [StateManager](../stateManager/StateManager.ts.md) owns the execution boundary the queue stays outside. | None.            |
+| Requirement / invariant                                                                                              | Implementation status | Evidence                                                                                                                                                                                                                                                                                            | Gap / divergence |
+| -------------------------------------------------------------------------------------------------------------------- | --------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------- |
+| [`REQ-QSTORE-1-PS769J`](../../../../specification/peer-communication/block-gossip.md#req-qstore-1-ps769j)            | Covered               | **Here:** copy-scoped `trackSource`, signature-set expansion, earliest `firstSeenAt`, defined on-chain-timestamp overwrite ([#L54](../../../../../../src/storage/QueueStorage.ts#L54), [#L138](../../../../../../src/storage/QueueStorage.ts#L138)).                                                | None.            |
+| [`REQ-QSTORE-2-VYWJAQ`](../../../../specification/storage/queue.md#req-qstore-2-vywjaq)                              | Covered               | **Here:** capped inserts flip the marker, never evict or reject ([#L292](../../../../../../src/storage/QueueStorage.ts#L286)).                                                                                                                                                                      | None.            |
+| [`REQ-QSTORE-3-DEKYG6`](../../../../specification/storage/queue.md#req-qstore-3-dekyg6)                              | Covered               | **Here:** `tryDequeueAt` exact, `tryDequeuePriority` lowest ≤ bound, `clearFork` reports removals ([#L81](../../../../../../src/storage/QueueStorage.ts#L75)).                                                                                                                                      | None.            |
+| [`REQ-BLOCK-PIPE-5-WJ31RG`](../../../../specification/block-progression/block-processing.md#req-block-pipe-5-wj31rg) | Covered               | **Here:** merge layer data rules (monotone, idempotent, attributed, capped). **Other files:** [BlockQueueManager](../stateManager/ingest/BlockQueueManager.ts.md) owns scheduling/lifetime; [StateManager](../stateManager/StateManager.ts.md) owns the execution boundary the queue stays outside. | None.            |
 
 ## Component test obligations
 
@@ -111,6 +111,6 @@ Exact test evidence is mapped against these IDs in the verification test reports
 
 ## Related source reports
 
-- [BlockQueueManager](../stateManager/BlockQueueManager.ts.md) (the scheduler over this store), [BlockStorage](./BlockStorage.ts.md) (post-commit destination).
+- [BlockQueueManager](../stateManager/ingest/BlockQueueManager.ts.md) (the scheduler over this store), [BlockStorage](./BlockStorage.ts.md) (post-commit destination).
 
 Shared operation owners: [Block.ts.md](../models/Block.ts.md), [StoredBlockMergeService.ts.md](../stateManager/ingest/StoredBlockMergeService.ts.md), [keys.ts.md](keys.ts.md).

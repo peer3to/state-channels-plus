@@ -1,7 +1,7 @@
 // @spec-test-coverage-ignore: shared join test setup exercised by owning mapped test declarations
 import Clock from "@/Clock";
 import StateSnapshot from "@/models/StateSnapshot";
-import type { PreparedJoinChannelConfirmation } from "@/rpc/services";
+import type { PreparedJoinChannelConfirmation } from "@/rpc/network/services";
 import { Status } from "@/types";
 import {
     addressesEqual,

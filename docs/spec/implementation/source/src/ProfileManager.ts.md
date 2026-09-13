@@ -25,9 +25,11 @@ address-to-live-transport resolution, and all Holepunch ban/unban policy.
 
 ## Key design decisions
 
+Transport disposal uses [runCleanupSync](utils/runCleanup.ts.md) so every transport is attempted and all maps are cleared before the first failure is thrown. Disposal remains synchronous.
+
 Registration, authentication refusals, transport retirement and upgrade-ban release use the existing owner logger and shared metadata. Replacing a transport still attaches the replacement before retiring the old transport. See [ProfileManager.ts](../../../../../src/ProfileManager.ts#L19).
 
-1. **Identity outlives connection.** Profiles and exclusion state key by normalized address ([`REQ-ID-2-F3Y8J4`](../../../specification/protocol-model/identity.md#req-id-2-f3y8j4)); `updateTransport` keeps profile object identity across upgrades ([`REQ-UPG-2-WH7BC7`](../../../specification/peer-communication/transport-upgrade.md#req-upg-2-wh7bc7)).
+1. **Identity outlives connection.** Profiles and exclusion state key by normalized address ([`REQ-ID-2-F3Y8J4` (Normalized identity comparison)](../../../specification/protocol-model/identity.md#req-id-2-f3y8j4)); `updateTransport` keeps profile object identity across upgrades ([`REQ-UPG-2-WH7BC7` (Re-authentication before cutover)](../../../specification/peer-communication/transport-upgrade.md#req-upg-2-wh7bc7)).
 2. **Removal is transport-specific.** Every live transport attaches to its profile. Removing one
    pipe promotes another live fallback when available and emits profile loss only after the last
    transport detaches.
@@ -43,6 +45,8 @@ Registration, authentication refusals, transport retirement and upgrade-ban rele
    but `authenticateTransport` is the only writer that gives a network transport its verified address.
 7. **Policy release has one owner.** `unblacklistPeer` clears the address exclusion, inspects every
    live transport, and releases the Holepunch ban only when no WebRTC transport remains.
+
+Disposal attempts every registered transport, including unpromoted transports. A close failure does not stop later closes; after clearing profile state it rethrows the first failure.
 
 ## Inputs, outputs, state, and side effects
 
@@ -74,7 +78,7 @@ claims complete conformance for a requirement that depends on other files.
 
 ## Specification adherence
 
-- Normalized-address keying; churn-surviving exclusion ([`REQ-AUTH-4-JWCF71`](../../../specification/peer-communication/handshake.md#req-auth-4-jwcf71) consequence store).
+- Normalized-address keying; churn-surviving exclusion ([`REQ-AUTH-4-JWCF71` (Penalty requires proof)](../../../specification/peer-communication/handshake.md#req-auth-4-jwcf71) consequence store).
 
 ## Specification contradictions
 
@@ -82,7 +86,7 @@ None demonstrated.
 
 ## Missing behavior
 
-Blacklist persistence across restarts is undefined (in-memory) — ban-persistence question in [`OQ-34-FY08V2`](../../../specification/open-questions.md#oq-34-fy08v2).
+Blacklist persistence across restarts is undefined (in-memory) — ban-persistence question in [`OQ-34-FY08V2` (RPC boundary decisions)](../../../specification/open-questions.md#oq-34-fy08v2).
 
 ## Conformance traceability
 
@@ -94,7 +98,7 @@ Gap column. Audit state is file-level (Status header), never a row status.
 | ------------------------------------------------------------------------------------------------------ | --------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------- |
 | [`REQ-ID-2-F3Y8J4`](../../../specification/protocol-model/identity.md#req-id-2-f3y8j4)                 | Covered               | **Here:** checksum normalization at every keyed structure.                                                                                                                                                                                                                                                                                                   | None.                                                                                                                        |
 | [`REQ-UPG-2-WH7BC7`](../../../specification/peer-communication/transport-upgrade.md#req-upg-2-wh7bc7)  | Covered               | **Here:** profile-preserving replacement and graced retirement preserve both authenticated transport addresses during overlap.                                                                                                                                                                                                                               | None.                                                                                                                        |
-| [`REQ-RPC-7-9CBSHK`](../../../specification/peer-communication/rpc.md#req-rpc-7-9cbshk)                | Covered               | **Here:** final admission writes the verified address onto the exact transport. **Other files:** [HandshakeCompletedGuard](./rpc/guards/HandshakeCompletedGuard.ts.md) reads that field and owns queue and punishment behavior.                                                                                                                              | None.                                                                                                                        |
+| [`REQ-RPC-7-9CBSHK`](../../../specification/peer-communication/rpc.md#req-rpc-7-9cbshk)                | Covered               | **Here:** final admission writes the verified address onto the exact transport. **Other files:** [HandshakeCompletedGuard](rpc/network/guards/HandshakeCompletedGuard.ts.md) reads that field and owns queue and punishment behavior.                                                                                                                        | None.                                                                                                                        |
 | [`REQ-UPG-4-M2XDBA`](../../../specification/peer-communication/transport-upgrade.md#req-upg-4-m2xdba)  | Covered               | **Here:** immediate profile registration, final authenticated fallback admission, full-live-set fallback release, and explicit-blacklist precedence. **Other files:** [PeerProfile](./PeerProfile.ts.md) stores every live transport and the handle before and after authentication; [HolepunchTransport](./transport/HolepunchTransport.ts.md) supplies it. | Hyperswarm's internal ban enforcement is outside the repository harness; application admission no longer relies on it alone. |
 | [`REQ-LOBBY-8-31BE0F`](../../../specification/peer-communication/lobby-matching.md#req-lobby-8-31be0f) | Covered               | **Here:** attach/detach on registration, authentication rebinding, upgrade, fallback promotion, and final removal. **Other files:** PeerProfile emits the final-loss callback.                                                                                                                                                                               | None.                                                                                                                        |
 
@@ -109,4 +113,12 @@ Exact test evidence is mapped against these IDs in the verification test reports
 
 ## Related source reports
 
-- [PeerProfile](./PeerProfile.ts.md), [P2PManager](./P2PManager.ts.md), [InitHandshakeService](./rpc/services/initHandshake/InitHandshakeService.ts.md).
+- [PeerProfile](./PeerProfile.ts.md), [P2PManager](./P2PManager.ts.md), [InitHandshakeService](rpc/network/services/initHandshake/InitHandshakeService.ts.md).
+
+## Runtime disposal
+
+The manager owns every registered network transport, including unauthenticated transports. Its enumerable transport map is the cleanup inventory. `dispose()` retires those transports and clears both identity indexes before the runtime logger is disposed. Internal RPC transports never enter this inventory.
+
+| Unit test ID                                                                          | Trigger                                             | Expected result                                 | Required permutations                                                                                                                                                                                                                                                                                                                                                                   |
+| ------------------------------------------------------------------------------------- | --------------------------------------------------- | ----------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| <a id="unit-test-profile-disposal-1-hpxawa"></a>`UNIT-TEST-PROFILE-DISPOSAL-1-HPXAWA` | Dispose a manager with an unauthenticated transport | The transport closes and its profile is removed | <a id="unit-test-profile-disposal-1-hpxawa.p1"></a>`UNIT-TEST-PROFILE-DISPOSAL-1-HPXAWA.P1` — real WebRTC channel before authentication; <a id="unit-test-profile-disposal-1-hpxawa.p2"></a>`UNIT-TEST-PROFILE-DISPOSAL-1-HPXAWA.P2` — A throwing transport does not prevent later unpromoted transports or Holepunch from closing; repeated manager disposal shares the first failure. |

@@ -24,6 +24,8 @@ pipeline with guards bypassed.
 
 ## Key design decisions
 
+- `_send` calls `router.onRpc` synchronously with the already serialized string; external `onMessage` remains a no-op.
+
 1. **One dispatch path for local and remote** — loopback is a transport, not a special case in services.
 
 ## Inputs, outputs, state, and side effects
@@ -78,4 +80,6 @@ Exact test evidence is mapped against these IDs in the verification test reports
 
 ## Related source reports
 
-- [ATransport](./ATransport.ts.md), [RpcHandler](../rpc/RpcHandler.ts.md).
+- [NetworkTransport](./NetworkTransport.ts.md), [RpcHandler](../rpc/network/RpcHandler.ts.md).
+
+Loopback close remains a no-op: disposal can be invoked through loopback and must return its response. There is no physical resource to release.

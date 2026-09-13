@@ -4,20 +4,24 @@ import { TransportType } from "@/transport";
 
 export class CrossModuleRpcService {
     p2pManager = {};
+    router = this.p2pManager;
 
     createRPCMethods(): object {
         return {};
     }
 
-    runRPC(): boolean {
+    async runRPC(): Promise<boolean> {
         return true;
     }
 }
 
 export class CrossModuleTransport {
     transportType = TransportType.LOOPBACK;
+    peerAddress: string | undefined = undefined;
     sent: Rpc[] = [];
     responses: RpcResponse[] = [];
+
+    close(): void {}
 
     send(rpc: Rpc): void {
         this.sent.push(rpc);

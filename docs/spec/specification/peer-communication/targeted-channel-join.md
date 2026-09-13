@@ -95,7 +95,7 @@ asynchronous boundary that may send it. It remains protected from synced-state a
 receipt is pending. Only a failure that proves no commitment exists restores `SYNCED`; uncertain outcomes
 preserve pending protection and reconcile from authoritative chain state. Force-join escalation waits for
 authoritative on-chain membership and a usable dispute window. The canonical cross-flow invariant is
-[`INV-MEMBERSHIP-PENDING-1-2H1T75`](join-authorization.md#inv-membership-pending-1-2h1t75).
+[`INV-MEMBERSHIP-PENDING-1-2H1T75` (Submitted joins are locally)](join-authorization.md#inv-membership-pending-1-2h1t75).
 
 **<a id="req-tjoin-1-5vgr1f"></a>`REQ-TJOIN-1-5VGR1F` — Independent public options.** Opening permission,
 membership intent, full balance, and unmatched timeout are independent. Balance alone has no effect, and

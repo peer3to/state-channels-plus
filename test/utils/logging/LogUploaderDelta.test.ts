@@ -1,16 +1,13 @@
-import { deferred } from "@test/fixtures/logging/LogFlushBus.fixture";
 import {
+    messagesOf,
     createUploaderFixture,
     decodeUpload,
     startLogReceiver,
     type LogReceiver
 } from "@test/fixtures/logging/LogUploader.fixture";
+import { deferred } from "@test/fixtures/node/LoggerServiceFixture";
 import { expect } from "chai";
 import { ethers } from "ethers";
-
-function messagesOf(receiver: LogReceiver, index: number): string[] {
-    return decodeUpload(receiver.requests[index]).map((entry) => entry.message);
-}
 
 describe("LogUploader delta uploads", function () {
     let receiver: LogReceiver | undefined;
@@ -182,5 +179,33 @@ describe("LogUploader delta uploads", function () {
         expect(outcome).to.deep.equal({ ok: true, entries: 1 });
         expect(receiver!.requests).to.have.length(2);
         expect(messagesOf(receiver!, 1)).to.deep.equal(["second"]);
+    });
+    it("finishes an awaited local upload after its last logger is disposed", async function () {
+        const held = deferred();
+        await receiver!.close();
+        receiver = await startLogReceiver({
+            respond: async (_received, index) => {
+                if (index === 0) {
+                    await held.promise;
+                    return 500;
+                }
+                return 200;
+            }
+        });
+        const { logger } = createUploaderFixture({
+            uploadEndpoint: receiver!.url
+        });
+        logger.info("retain in-flight entries");
+        const upload = logger.upload();
+        try {
+            await receiver!.waitForRequests(1);
+            logger.dispose();
+            held.resolve();
+            expect(await upload).to.deep.equal({ ok: true, entries: 1 });
+            expect(receiver!.requests).to.have.length(2);
+        } finally {
+            held.resolve();
+            logger.dispose();
+        }
     });
 });

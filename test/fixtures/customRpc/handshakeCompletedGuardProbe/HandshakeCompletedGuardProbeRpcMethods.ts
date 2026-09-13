@@ -1,5 +1,4 @@
 // @spec-test-coverage-ignore: loopback endpoints for HandshakeCompletedGuard component tests
-import type { PingPongRpc } from "../PingPongRpcManifest";
 import type {
     CompletedGuardProbe,
     AddresslessGuardProbe,
@@ -18,18 +17,15 @@ import type {
     TimeoutGuardProbe,
     DeferredAdmissionProbe
 } from "./HandshakeCompletedGuardProbeService";
-import type P2PManager from "@/P2PManager";
-import ARpcMethods from "@/rpc/ARpcMethods";
-import type ATransport from "@/transport/ATransport";
+import ANetworkRpcMethods from "@/rpc/network/ANetworkRpcMethods";
+import type NetworkTransport from "@/transport/NetworkTransport";
 
-export class HandshakeCompletedGuardProbeRpcMethods extends ARpcMethods<
-    P2PManager<PingPongRpc>
-> {
+export class HandshakeCompletedGuardProbeRpcMethods extends ANetworkRpcMethods<HandshakeCompletedGuardProbeService> {
     constructor(
-        transport: ATransport,
-        private readonly service: HandshakeCompletedGuardProbeService
+        transport: NetworkTransport,
+        service: HandshakeCompletedGuardProbeService
     ) {
-        super(transport, service.p2pManager);
+        super(transport, service);
     }
 
     public probeCompleted(): Promise<CompletedGuardProbe> {

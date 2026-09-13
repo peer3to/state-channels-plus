@@ -9,7 +9,7 @@ The tests prove explicit host/orchestrator settlement, ordered detached-error re
 claimed expected error from an unrelated later rejection. Teardown remains a leak detector and does not cancel,
 dispose, or otherwise finish production feature work.
 
-This evidence supports [`REQ-TJOIN-5-Q795M7`](../../../../../specification/peer-communication/targeted-channel-join.md#req-tjoin-5-q795m7).
+This evidence supports [`REQ-TJOIN-5-Q795M7` (Phase-specific failure)](../../../../../specification/peer-communication/targeted-channel-join.md#req-tjoin-5-q795m7).
 
 ## Tests and covered test IDs
 

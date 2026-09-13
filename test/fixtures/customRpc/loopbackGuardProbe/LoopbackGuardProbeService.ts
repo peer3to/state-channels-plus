@@ -2,9 +2,9 @@
 import type { PingPongRpc } from "../PingPongRpcManifest";
 import { LoopbackGuardProbeRpcMethods } from "./LoopbackGuardProbeRpcMethods";
 import type P2PManager from "@/P2PManager";
-import ARpcService from "@/rpc/ARpcService";
-import { AGuard } from "@/rpc/guards/AGuard";
-import type ATransport from "@/transport/ATransport";
+import ANetworkRpcService from "@/rpc/network/ANetworkRpcService";
+import { AGuard } from "@/rpc/network/guards/AGuard";
+import type NetworkTransport from "@/transport/NetworkTransport";
 
 export type LoopbackGuardProbeResult = {
     guardChecks: number;
@@ -20,7 +20,7 @@ class RejectingGuard extends AGuard<LoopbackGuardProbeService> {
     public onFailure(): void {}
 }
 
-export class LoopbackGuardProbeService extends ARpcService<
+export class LoopbackGuardProbeService extends ANetworkRpcService<
     LoopbackGuardProbeRpcMethods,
     P2PManager<PingPongRpc>
 > {
@@ -29,7 +29,7 @@ export class LoopbackGuardProbeService extends ARpcService<
 
     constructor(p2pManager: P2PManager<PingPongRpc>) {
         super(
-            p2pManager,
+            p2pManager.rpcRouter,
             p2pManager.stateManager.logger.child({
                 component: "LoopbackGuardProbeService"
             })
@@ -38,7 +38,7 @@ export class LoopbackGuardProbeService extends ARpcService<
     }
 
     public createRPCMethods(
-        transport: ATransport
+        transport: NetworkTransport
     ): LoopbackGuardProbeRpcMethods {
         return new LoopbackGuardProbeRpcMethods(transport, this);
     }

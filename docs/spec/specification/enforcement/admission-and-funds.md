@@ -61,12 +61,12 @@ fail the affected join per the composition mode with no partial escrow or unback
 ## Assumptions and constraints
 
 - The unanimity threshold and signature form come from [identity.md](../protocol-model/identity.md)
-  and the shared validation rule ([`REQ-CONTRACT-ARCH-2-BE651C`](contracts.md#req-contract-arch-2-be651c)).
+  and the shared validation rule ([`REQ-CONTRACT-ARCH-2-BE651C` (Shared validation)](contracts.md#req-contract-arch-2-be651c)).
 - The consumer adapter is integrator code inside the trust boundary of escrowed funds; its
   obligations are part of the integration contract
   ([state-machines.md](../protocol-model/state-machines.md)).
 - Off-chain application of appended blocks is settlement's inbound-inclusion obligation
-  ([`REQ-IX-3-H8WCVY`](../interactions.md#req-ix-3-h8wcvy)); this module only guarantees the on-chain record.
+  ([`REQ-IX-3-H8WCVY` (Inbound inclusion and join flow)](../interactions.md#req-ix-3-h8wcvy)); this module only guarantees the on-chain record.
 
 ## Security considerations
 
@@ -93,4 +93,4 @@ radius to the submitted batch.
 
 _Non-normative._ Treasury destination for residual funds when a channel closes at zero
 participants (open design note in the current snapshot-housekeeping path); admission-policy hooks
-once the off-chain admission filter is decided ([`OQ-10-04YNC4`](../open-questions.md#oq-10-04ync4)).
+once the off-chain admission filter is decided ([`OQ-10-04YNC4` (Spectate/join failure-point details)](../open-questions.md#oq-10-04ync4)).

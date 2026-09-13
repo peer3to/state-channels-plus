@@ -1,48 +1,46 @@
-import createEvm from "../EvmFactory";
+import type { EvmCustomPrecompileManifest } from "../EvmFactory";
 import type AContractExecutor from "./AContractExecutor";
-import InlineContractExecutor from "./ContractExecutor";
-import type { ContractExecutorFactoryOptions } from "./ContractExecutorFactory";
-import noOpLogger from "./NoOpLogger";
-import WorkerContractExecutor, {
-    type WorkerContractExecutorDependencies
-} from "./WorkerContractExecutor";
+import RpcContractExecutor from "./RpcContractExecutor";
 import Clock from "@/Clock";
+import { createRoot } from "@/rpc/internal/createRoot";
+import { ContractExecutorRoot } from "@/rpc/internal/roots/ContractExecutorRoot";
+import type { P2pRuntimeHostRoot } from "@/rpc/internal/roots/P2pRuntimeHostRoot";
+import type { Logger } from "@/utils";
+import { config } from "@/utils/config";
+import workerUrl from "@platform/contractExecutorRootUrl";
 
-/**
- * Internal constructor behind the package's one-argument factory. The second
- * argument carries the internal seams (a scripted worker runtime, the host's
- * detached-error route); it is not exported from the package root, and the
- * exported options type stays exactly what it was before these seams existed.
- */
+export type ContractExecutorFactoryOptions = {
+    logger?: Logger;
+    dedicatedThread: boolean;
+    customPrecompiles?: EvmCustomPrecompileManifest[];
+};
+
 export async function createContractExecutor(
     options: ContractExecutorFactoryOptions,
-    dependencies: WorkerContractExecutorDependencies = {}
+    owner: P2pRuntimeHostRoot
 ): Promise<AContractExecutor> {
-    if (!options.dedicatedThread) {
-        const evm = await createEvm(
-            {
-                allowUnlimitedContractSize: true,
-                customPrecompiles: options.customPrecompiles
-            },
-            options.logger ?? noOpLogger
-        );
-
-        // Every call observes the runtime's estimated chain time as ambient
-        // block time, read at call time so it keeps advancing. A runtime
-        // initializes the Clock before it builds its executor; an executor
-        // built without one (a bare unit test) keeps time zero.
-        return new InlineContractExecutor(evm, options.logger, {
-            clock: Clock.isInitialized()
-                ? () => Clock.getTimeInSeconds()
-                : undefined
-        });
-    }
-    // A dedicated executor has no Clock singleton: it receives the host's
-    // adjustment at initialization and builds the same perception locally.
-    return WorkerContractExecutor.create(
-        options.customPrecompiles,
-        options.logger,
-        dependencies,
-        Clock.isInitialized() ? Clock.getClockAdjustmentSeconds() : undefined
-    );
+    const contractExecutorRemoteRoot = await createRoot(ContractExecutorRoot, {
+        workerUrl,
+        logger: options.dedicatedThread ? undefined : options.logger,
+        parent: owner,
+        mode: options.dedicatedThread ? "worker" : "inline",
+        // A dedicated executor has no Clock singleton: it receives the host's
+        // adjustment at initialization and builds the same perception locally.
+        args: {
+            customPrecompiles: (options.customPrecompiles ?? []).map(
+                (precompile) => ({
+                    address: precompile.address.toString(),
+                    module: precompile.module,
+                    exportName: precompile.exportName,
+                    options: precompile.options
+                })
+            ),
+            config,
+            clockAdjustmentSeconds:
+                options.dedicatedThread && Clock.isInitialized()
+                    ? Clock.getClockAdjustmentSeconds()
+                    : undefined
+        }
+    });
+    return new RpcContractExecutor(contractExecutorRemoteRoot);
 }

@@ -4,11 +4,12 @@ import {
     type WatchdogArmMessage,
     type WatchdogWorkerMode
 } from "../watchdogContractExecutorWorkerCore";
-import type {
-    WorkerHostMessage,
-    WorkerRequestMessage
-} from "@/evm/contractExecutor/worker/protocol";
-import { onUnhandledWorkerError } from "@/evm/p2pRuntime/browser/P2pRuntimeWorkerRuntime";
+import { onUnhandledWorkerError } from "@/rpc/internal/browser/RootWorkerRuntime";
+import type { ContractExecutorInitialization } from "@/rpc/internal/services/contractExecutor/ContractExecutorService";
+import {
+    onRootBootstrap,
+    adaptTransferredPort
+} from "@platform/rootWorkerRuntime";
 
 // Construction-time selection rides in the worker name as JSON.
 const selection = JSON.parse(self.name || "{}") as {
@@ -19,22 +20,26 @@ const mode = selection.mode ?? "watchdog";
 const armChannel = selection.armChannel ?? "watchdog-arm";
 const channel = new BroadcastChannel(armChannel);
 
-startWatchdogContractExecutorWorker(mode, {
-    post: (response: WorkerHostMessage) => {
-        globalThis.postMessage(response);
-    },
-    onMessage: (handler: (message: WorkerRequestMessage) => void) => {
-        globalThis.onmessage = (event: MessageEvent<WorkerRequestMessage>) => {
-            handler(event.data);
-        };
-    },
-    onDisposed: () => globalThis.close(),
-    subscribeArm: (handler) => {
-        channel.onmessage = (event: MessageEvent<WatchdogArmMessage>) => {
-            if (event.data?.type !== "arm") return;
-            handler();
-        };
-        return () => channel.close();
-    },
-    onUnhandledWorkerError
-});
+globalThis.threadName = "vm";
+onRootBootstrap<ContractExecutorInitialization>(
+    async ({ port: transferredPort, payload }) => {
+        await startWatchdogContractExecutorWorker(
+            mode,
+            {
+                runtimePort: adaptTransferredPort(transferredPort),
+                onDisposed: () => globalThis.close(),
+                subscribeArm: (handler) => {
+                    channel.onmessage = (
+                        event: MessageEvent<WatchdogArmMessage>
+                    ) => {
+                        if (event.data?.type !== "arm") return;
+                        handler();
+                    };
+                    return () => channel.close();
+                },
+                onUnhandledWorkerError
+            },
+            payload
+        );
+    }
+);

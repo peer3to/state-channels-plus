@@ -8,23 +8,24 @@ globalThis.window ||= globalThis;
 // Registers the watchdog smoke on the same page.
 import "./worker-watchdog.js";
 
-const { default: WorkerContractExecutor } = await import(
-    "../../src/evm/contractExecutor/WorkerContractExecutor.ts"
-);
+const { createBrowserSdkExecutor } = await import("./sdkSetup.js");
 
 const CUSTOM_ADDRESS = "0x00000000000000000000000000000000000000bb";
 
 globalThis.runContractExecutorWorkerBrowserSmoke = async () => {
-    const executor = await WorkerContractExecutor.create([
-        {
-            address: CUSTOM_ADDRESS,
-            module: new URL("./worker-precompile.js", import.meta.url).href,
-            options: {
-                expectedData: "0x1234",
-                value: "42"
+    const sdk = await createBrowserSdkExecutor({
+        customPrecompiles: [
+            {
+                address: CUSTOM_ADDRESS,
+                module: new URL("./worker-precompile.js", import.meta.url).href,
+                options: {
+                    expectedData: "0x1234",
+                    value: "42"
+                }
             }
-        }
-    ]);
+        ]
+    });
+    const { executor } = sdk;
 
     try {
         const result = await executor.simulateCall("0x1234", CUSTOM_ADDRESS);
@@ -38,7 +39,7 @@ globalThis.runContractExecutorWorkerBrowserSmoke = async () => {
             value: value.toString()
         };
     } finally {
-        await executor.dispose();
+        await sdk.dispose();
     }
 };
 
@@ -51,12 +52,10 @@ const TIMESTAMP_INIT_CODE = "0x684260005260206000f3600052600960" + "17f3";
 // adjustment, and it advances.
 globalThis.runContractExecutorWorkerClockBrowserSmoke = async () => {
     const adjustmentSeconds = 600;
-    const executor = await WorkerContractExecutor.create(
-        [],
-        undefined,
-        {},
-        adjustmentSeconds
-    );
+    const sdk = await createBrowserSdkExecutor({
+        clockAdjustmentSeconds: adjustmentSeconds
+    });
+    const { executor } = sdk;
     try {
         const deployed = await executor.deploy(TIMESTAMP_INIT_CODE);
         const address = String(deployed.createdAddress);
@@ -73,7 +72,7 @@ globalThis.runContractExecutorWorkerClockBrowserSmoke = async () => {
             advanced: second > first
         };
     } finally {
-        await executor.dispose();
+        await sdk.dispose();
     }
 };
 

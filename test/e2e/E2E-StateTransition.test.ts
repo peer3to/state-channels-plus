@@ -3,7 +3,7 @@ import { MathTestSession as TestSession } from "@test/harness";
 /**
  * E2E Tests for State Transitions
  *
- * Maps to: src/rpc/services/stateTransition/
+ * Maps to: src/rpc/network/services/stateTransition/
  *          src/stateManager/StateManager.ts
  *
  * Tests the core state transition mechanism, block creation, and state advancement.

@@ -1,6 +1,6 @@
 // @spec-test-coverage-ignore: typed SDK-edge recorders for transport component tests
 import type { BannablePeerInfo } from "@/PeerProfile";
-import type { WebRTCDataChannelLike } from "@/rpc/services/WebRTCSetup/connection/WebRTCConnectionTypes";
+import type { WebRTCDataChannelLike } from "@/rpc/network/services/WebRTCSetup/connection/WebRTCConnectionTypes";
 
 type HolepunchSocketEvent = "data" | "close" | "error";
 

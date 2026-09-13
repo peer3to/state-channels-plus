@@ -527,8 +527,8 @@ describe("distributed parallel runner", function () {
         const originalStderrWrite = process.stderr.write;
         const originalConsoleLog = console.log;
         preparationBackend.preparationFailuresRemaining = 2;
-        preparationBackend.preparationFailureDelayMs = 50;
-        protocolBackend.preparationDelayMs = 2000;
+        // Keep a live worker until the other worker has completed quarantine.
+        protocolBackend.respondToWorkspaceOffer = false;
         fs.writeFileSync(path.join(root, "source.txt"), "source");
         const manifest = {
             version: 3,
@@ -590,15 +590,18 @@ describe("distributed parallel runner", function () {
                 baseEnv: {},
                 dht: pool.createOrchestratorDht()
             });
-            // The quarantine worker's connection lives only for its 50 ms
-            // failing preparation, so both workers are active together only
-            // in a short window; poll fast enough to observe it.
+            // Observe quarantine and its rejected reconnect before removing the
+            // remaining worker; a short connection-overlap window cannot prove either.
             await waitFor(
                 () =>
-                    preparationWorker.manager.active !== null &&
-                    protocolWorker.manager.active !== null,
-                TEST_DISTRIBUTED_CONNECTION_TIMEOUT_MS,
-                5
+                    protocolWorker.manager.active !== null &&
+                    terminal
+                        .join("")
+                        .includes("Quarantined after 2 failure(s)") &&
+                    dialActivity.some((line) =>
+                        line.includes("worker is quarantined for this run")
+                    ),
+                TEST_DISTRIBUTED_CONNECTION_TIMEOUT_MS
             );
             const malformed = Buffer.alloc(5);
             malformed.writeUInt32BE(1, 0);

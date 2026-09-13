@@ -55,7 +55,7 @@ erased by advancing past it.
 
 - Proof verification is delegated to the [proof-verification module](./proof-verification.md) and
   dispute-window state to the [dispute-window module](./dispute-window.md); this module composes
-  their verdicts ([`REQ-CONTRACT-ARCH-2-BE651C`](contracts.md#req-contract-arch-2-be651c): shared validation, identical on every path).
+  their verdicts ([`REQ-CONTRACT-ARCH-2-BE651C` (Shared validation)](contracts.md#req-contract-arch-2-be651c): shared validation, identical on every path).
 - The consumer adapter executes during withdrawal release; a broken or malicious adapter blocking
   the advance is a known open question
   ([cross-layer-messages.md](../settlement/cross-layer-messages.md) — blocked-withdrawal handling).
@@ -70,7 +70,7 @@ gapped outbound ranges (linkage verification), double-release across overlapping
 sideways adoption (monotonicity and the two proof paths), and admission erasure (the inbound-
 consumption gate). Housekeeping that clears consumed data must never clear anything a still-open
 window could need — retention obligations mirror
-[durability.md](../storage/durability.md) [`REQ-STOR-4-MF6FT6`](../storage/durability.md#req-stor-4-mf6ft6) on-chain.
+[durability.md](../storage/durability.md) [`REQ-STOR-4-MF6FT6` (Obligation-bounded retention)](../storage/durability.md#req-stor-4-mf6ft6) on-chain.
 
 ## Verification and test plan
 

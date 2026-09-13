@@ -1,219 +1,113 @@
 // @spec-test-coverage-ignore: browser worker script for the WebRTC worker smokes; evidence is mapped from run-worker-contract-executor.mjs
-import WorkerBridgeWebRTCConnectionFactory from "../../src/rpc/services/WebRTCSetup/connection/WorkerBridgeWebRTCConnectionFactory.ts";
-import WebRTCSetupService from "../../src/rpc/services/WebRTCSetup/WebRTCSetupService.ts";
-import { TransportType } from "../../src/transport/TransportType.ts";
+import "@test/fixtures/NodeGlobalsShim";
+import { createBrowserSdkExecutor } from "./sdkSetup.js";
+import { ethers } from "ethers";
 
 // Force the SDK down the main-thread bridge path even in browsers that expose
 // native RTCPeerConnection inside dedicated workers.
 Object.defineProperties(globalThis, {
-    RTCPeerConnection: {
-        configurable: true,
-        value: undefined
-    },
-    RTCIceCandidate: {
-        configurable: true,
-        value: undefined
-    }
+    RTCPeerConnection: { configurable: true, value: undefined },
+    RTCIceCandidate: { configurable: true, value: undefined }
 });
 
-const WORKER_ADDRESS = "0x00000000000000000000000000000000000000a1";
-const MAIN_ADDRESS = "0x00000000000000000000000000000000000000b2";
-
-function createLogger() {
-    const logger = {
-        child: () => logger,
-        debug: (...args) => {
-            globalThis.postMessage({
-                type: "progress",
-                message: `worker debug:${args.map(String).join(" ")}`
-            });
-        },
-        info: (...args) => {
-            globalThis.postMessage({
-                type: "progress",
-                message: `worker info:${args.map(String).join(" ")}`
-            });
-        },
-        warn: (...args) => {
-            globalThis.postMessage({
-                type: "progress",
-                message: `worker warn:${args.map(String).join(" ")}`
-            });
-        },
-        error: (...args) => {
-            globalThis.postMessage({
-                type: "logError",
-                message: args.map(String).join(" ")
-            });
-        },
-        verbose: () => undefined
-    };
-    return logger;
-}
-
-function createRemoteRpc() {
-    const send = (type, payload) => ({
-        sendOne: () => {
-            globalThis.postMessage({ type, ...payload });
-        }
-    });
-
-    return {
-        webRTCSetupService: {
-            onOfferWebRTC: (serializedOffer) =>
-                send("offer", { serializedOffer }),
-            onAnswerWebRTC: (serializedAnswer) =>
-                send("answer", { serializedAnswer }),
-            onIceCandidate: (serializedCandidate) =>
-                send("iceCandidate", { serializedCandidate })
-        }
-    };
-}
-
-function createP2PManager() {
-    const logger = createLogger();
-    const manager = {
-        logger,
-        openConnections: [],
-        receivedMessages: [],
-        webRTCTransports: [],
-        stateManager: {
-            logger,
-            forkId: 0n,
-            getChannelId: () => "browser-webrtc-worker-smoke"
-        },
-        profileManager: {
-            // Every transport registers itself with the profile manager on
-            // construction (ATransport); the smoke tracks open transports
-            // through the handshake hook instead.
-            registerTransport: () => undefined,
-            getProfileByTransport: (transport) => {
-                if (transport.__baseTransport) {
-                    return { evmAddress: MAIN_ADDRESS };
-                }
-                return undefined;
-            }
-        },
-        localRpc: {
-            initHandshakeService: {
-                initHandshake: (transport) => {
-                    transport.peerAddress ||= MAIN_ADDRESS;
-                    if (!manager.webRTCTransports.includes(transport)) {
-                        manager.webRTCTransports.push(transport);
-                    }
-                    if (!manager.openConnections.includes(transport)) {
-                        manager.openConnections.push(transport);
-                    }
-                    globalThis.postMessage({ type: "transportOpen" });
-                }
-            }
-        },
-        remoteRpc: createRemoteRpc(),
-        onRpc: (serializedRPC) => {
-            manager.receivedMessages.push(serializedRPC);
-            globalThis.postMessage({
-                type: "transportMessage",
-                data: serializedRPC
-            });
-        },
-        disconnectConnection: (transport) => {
-            manager.openConnections = manager.openConnections.filter(
-                (t) => t !== transport
-            );
-        }
-    };
-    return manager;
-}
-
-const p2pManager = createP2PManager();
-const service = new WebRTCSetupService(p2pManager);
-p2pManager.localRpc.webRTCSetupService = service;
-
-function postConnectionState(label) {
-    globalThis.postMessage({
-        type: "progress",
-        message: `${label} ${JSON.stringify(
-            service.getWebRTCConnectionState(MAIN_ADDRESS)
-        )}`
-    });
-}
+let factory;
+const peerAddress = ethers.Wallet.createRandom().address;
+const candidates = [];
+const received = [];
+let sdk;
+let answerApplied = false;
+let channel;
+let starting;
 
 async function handleMessage(message) {
     if (message.type === "start") {
-        globalThis.postMessage({
-            type: "progress",
-            message: "worker start received"
-        });
-        await service.initiateWebRTC({
-            __baseTransport: true,
-            peerAddress: MAIN_ADDRESS,
-            transportType: TransportType.HOLEPUNCH
-        });
-        globalThis.postMessage({
-            type: "progress",
-            message: "worker initiate finished"
-        });
-        globalThis.postMessage({ type: "started" });
-        return;
-    }
-
-    if (message.type === "answer") {
-        globalThis.postMessage({
-            type: "progress",
-            message: "worker answer received"
-        });
-        await service.applyWebRTCAnswer(
-            MAIN_ADDRESS,
-            JSON.parse(message.serializedAnswer)
-        );
-        globalThis.postMessage({
-            type: "progress",
-            message: "worker answer applied"
-        });
-        postConnectionState("worker state after answer");
-        return;
-    }
-
-    if (message.type === "iceCandidate") {
-        globalThis.postMessage({
-            type: "progress",
-            message: "worker ICE received"
-        });
-        await service.addWebRTCIceCandidate(
-            MAIN_ADDRESS,
-            JSON.parse(message.serializedCandidate)
-        );
-        globalThis.postMessage({
-            type: "progress",
-            message: "worker ICE applied"
-        });
-        postConnectionState("worker state after ICE");
-        return;
-    }
-
-    if (message.type === "send") {
-        const [transport] = p2pManager.webRTCTransports;
-        if (!transport) {
-            throw new Error("Worker WebRTC transport is not open");
+        globalThis.__SDK_RUNTIME__ = message.runtime;
+        const hosts = [];
+        const count = message.disposeIndex === undefined ? 1 : 2;
+        for (let index = 0; index < count; index++) {
+            let host;
+            const instance = await createBrowserSdkExecutor({
+                config: { VM_DEDICATED_THREAD: false },
+                onRuntimeRoot(root) {
+                    if (root.constructor.name === "P2pRuntimeHostRoot")
+                        host = root;
+                }
+            });
+            const port = instance.instance.webRTCBridgePort;
+            if (!port)
+                throw new Error(
+                    "SDK worker did not supply its WebRTC bridge port"
+                );
+            globalThis.postMessage({ type: "bridge", port }, [port]);
+            globalThis.postMessage({ type: "host-ready", index });
+            hosts.push({
+                sdk: instance,
+                factory: await host.hostRpc
+                    .requireManager()
+                    .localRpc.webRTCSetupService.getConnectionFactory()
+            });
         }
-        transport._send(message.data);
+        if (message.disposeIndex !== undefined) {
+            if (hosts[0].factory === hosts[1].factory)
+                throw new Error("SDK hosts share a bridge factory");
+            await hosts[message.disposeIndex].sdk.dispose();
+        }
+        const survivor = hosts[message.disposeIndex === 0 ? 1 : 0];
+        sdk = survivor.sdk;
+        factory = survivor.factory;
+        const offer = await factory.createOffer(peerAddress, {
+            onDataChannel(value) {
+                channel = value;
+                channel.onmessage = ({ data }) => {
+                    received.push(data);
+                    if (data === "main-to-worker") {
+                        channel.send("worker-to-main");
+                        globalThis.postMessage({
+                            type: "result",
+                            received: received.length,
+                            transferredChannel:
+                                typeof RTCDataChannel !== "undefined" &&
+                                channel instanceof RTCDataChannel
+                        });
+                    }
+                };
+            },
+            onIceCandidate(candidate) {
+                globalThis.postMessage({ type: "ice", candidate });
+            },
+            onConnectionStateChange() {},
+            onError(error) {
+                globalThis.postMessage({
+                    type: "error",
+                    message: error.message
+                });
+            }
+        });
+        globalThis.postMessage({ type: "offer", offer });
+    } else if (message.type === "answer") {
+        await factory.applyAnswer(peerAddress, message.answer);
+        answerApplied = true;
+        for (const candidate of candidates.splice(0))
+            await factory.addIceCandidate(peerAddress, candidate);
+    } else if (message.type === "ice") {
+        if (answerApplied)
+            await factory.addIceCandidate(peerAddress, message.candidate);
+        else candidates.push(message.candidate);
+    } else if (message.type === "dispose") {
+        await starting;
+        try {
+            await factory.close(peerAddress);
+            await sdk?.dispose();
+        } finally {
+            globalThis.postMessage({ type: "disposed" });
+        }
     }
 }
 
-globalThis.onmessage = (event) => {
-    // The main thread hands the bridge port over once; register it directly
-    // (the SDK host does this internally via registerPort).
-    if (event.data?.type === "bridgePort") {
-        WorkerBridgeWebRTCConnectionFactory.getInstance().registerPort(
-            event.ports[0]
-        );
-        return;
-    }
-    Promise.resolve(handleMessage(event.data)).catch((error) => {
-        globalThis.postMessage({
-            type: "workerError",
-            message: error instanceof Error ? error.message : String(error),
-            stack: error instanceof Error ? error.stack : undefined
-        });
-    });
+globalThis.onmessage = ({ data }) => {
+    const work = handleMessage(data);
+    if (data.type === "start") starting = work;
+    work.catch((error) =>
+        globalThis.postMessage({ type: "error", message: error.message })
+    );
 };

@@ -102,4 +102,4 @@ recovery, final profile loss, transport upgrade, channel opening, and automatic 
 
 Positive-balance comparison belongs to the application state machine. Negotiation retains the policy for each failure, raw commitment identity checks and signed-attempt lifetime; detachment shares only the identical teardown statements.
 
-[ADiamondStateMachine.ts.md](../../../../source/src/ADiamondStateMachine.ts.md), [OpenChannelNegotiationService.ts.md](../../../../source/src/rpc/services/openChannelNegotiation/OpenChannelNegotiationService.ts.md).
+[ADiamondStateMachine.ts.md](../../../../source/src/ADiamondStateMachine.ts.md), [OpenChannelNegotiationService.ts.md](../../../../source/src/rpc/network/services/openChannelNegotiation/OpenChannelNegotiationService.ts.md).

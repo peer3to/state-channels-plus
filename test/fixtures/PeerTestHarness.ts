@@ -4,6 +4,7 @@ import testConfig from "../peer3.test.config";
 import HarnessControlRpc from "./customRpc/harnessControl/HarnessControlRpc";
 
 import { HarnessDebug } from "./HarnessDebug";
+import { RootCreationControl } from "./runtimeRpc/RootCreationControl";
 import {
     deployFacets,
     type LocalStateMachineDeployer
@@ -17,9 +18,9 @@ import { EVENT_HANDLER_HOOK_NAMES } from "@/eventHandlers/EventHandlerHooks";
 import type { BusEventMaps } from "@/events/EventBus";
 import { EvmStateMachine } from "@/evm";
 import P2pEventHooks from "@/P2pEventHooks";
-import type { CustomRpcManifest } from "@/rpc/registry";
-import type { RemoteRpcProxyType } from "@/rpc/RemoteRpcProxy";
-import type { RpcRequestOptions } from "@/rpc/RpcHandler";
+import type { CustomRpcManifest } from "@/rpc/network/registry";
+import type { RemoteRpcProxyType } from "@/rpc/network/RemoteRpcProxy";
+import type { RpcRequestOptions } from "@/rpc/network/RpcHandler";
 import type StateManager from "@/stateManager/StateManager";
 import { TimeConfig } from "@/types";
 import { Address, ChannelId, ForkId, Hash } from "@/types/types";
@@ -139,9 +140,6 @@ export class PeerTestHarness<
     public readonly debug: HarnessDebug<TCustomRpc>;
 
     /**
-     * First honest peer's fork ID is considered the active fork ID for the channel.
-     */
-    /**
      * Per-peer fork-id cache. The live fork id lives host-side behind the
      * runtime port, so it cannot be read synchronously. The cache is refreshed
      * by {@link peerForkIds} (after channel open/join, transitions, disputes)
@@ -149,7 +147,11 @@ export class PeerTestHarness<
      */
     private forkIdCache = new Map<number, ForkId>();
     private peerSignersRegistered = new Set<number>();
+    private cleanupPromise?: Promise<void>;
 
+    /**
+     * First honest peer's fork ID is considered the active fork ID for the channel.
+     */
     public get activeForkId(): ForkId | undefined {
         const honestPeers = this.getHonestPeers();
 
@@ -175,6 +177,19 @@ export class PeerTestHarness<
     ): RemoteRpcProxyType<HarnessControlRpc> {
         return peer.p2pInstance
             .hostRpc as unknown as RemoteRpcProxyType<HarnessControlRpc>;
+    }
+
+    /** Harness peers have independent top-level roots, so each starts its own gossip. */
+    public async uploadLogs(
+        message: string,
+        ...meta: unknown[]
+    ): Promise<void> {
+        await Promise.all([
+            this.logger.uploadLogs(message, ...meta),
+            ...this.peers.map((peer) =>
+                peer.logger.uploadLogs(message, ...meta)
+            )
+        ]);
     }
 
     /**
@@ -736,24 +751,23 @@ export class PeerTestHarness<
             );
         }
 
-        const p2pInstance = await EvmStateMachine.p2pSetup<
-            TStateMachine,
-            TCustomRpc
-        >(
-            this.channelManager,
-            contractInstanceMock,
-            this.sharedStateMachineDeployer,
-            {
-                peerId: index,
-                peerLogger: peerLogger,
-                customPrecompiles: this.options.customPrecompiles!,
-                customRpcManifest: this.resolveHarnessRpcManifest(),
-                signerSecret,
-                config: this.harnessConfig,
-                handlerExecutionContext: useWorker
-                    ? undefined
-                    : new PeerIdentityExecutionContext(address)
-            }
+        const p2pInstance = await RootCreationControl.observe(() =>
+            EvmStateMachine.p2pSetup<TStateMachine, TCustomRpc>(
+                this.channelManager,
+                contractInstanceMock,
+                this.sharedStateMachineDeployer,
+                {
+                    peerId: index,
+                    peerLogger: peerLogger,
+                    customPrecompiles: this.options.customPrecompiles!,
+                    customRpcManifest: this.resolveHarnessRpcManifest(),
+                    signerSecret,
+                    config: this.harnessConfig,
+                    handlerExecutionContext: useWorker
+                        ? undefined
+                        : new PeerIdentityExecutionContext(address)
+                }
+            )
         );
 
         const peer: TestPeer<TCustomRpc, TStateMachine> = {
@@ -834,7 +848,13 @@ export class PeerTestHarness<
 
     // ===== PRIVATE HELPERS =====
 
-    async cleanup(): Promise<void> {
+    cleanup(): Promise<void> {
+        return (this.cleanupPromise ??= Promise.resolve().then(() =>
+            this.cleanupOnce()
+        ));
+    }
+
+    private async cleanupOnce(): Promise<void> {
         this.logger.debug("Starting cleanup...");
         this.logger.stopPerformanceMonitoring();
 

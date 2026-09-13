@@ -1,9 +1,11 @@
 // @spec-test-coverage-ignore: real double-sign input shared by strategy cases
+import { clientRootFor } from "./RuntimeRootObservation";
 import { Status } from "@/types";
 import { FraudProofType, toSolidityFraudProofType } from "@/types/sol-enums";
 import { Codec, Type } from "@/utils";
 import * as factory from "@test/factory";
 import { MathTestSession as TestSession } from "@test/harness";
+import { waitFor } from "@test/utils/waitFor";
 import type {
     SignedBlockStruct,
     BlockStruct
@@ -50,6 +52,7 @@ export async function assertSpectatingFraud(
         },
         previousBlockHash: block.previousBlockHash
     });
+    const host = clientRootFor(victim.p2pInstance).p2pRuntimeHostRemoteRoot!;
     const result = await h
         .control(victim)
         .validation.runBlockValidation(encoded, {
@@ -61,9 +64,7 @@ export async function assertSpectatingFraud(
     if (status === "observer") {
         expect(result.disputedForkIds).to.deep.equal([]);
         expect(result.fraudProofType).to.equal(null);
-        expect(await h.control(victim).query.getStatus().request()).to.equal(
-            Status.OPENED
-        );
+        await waitFor(() => host.isClosed, h.event.protocolEventTimeoutMs());
     } else {
         expect(result.disputedForkIds).to.deep.equal([forkId]);
         expect(result.fraudProofType).to.equal(
@@ -99,6 +100,7 @@ export async function assertObserverHook(
             participant: source.address
         }
     });
+    const host = clientRootFor(joiner.p2pInstance).p2pRuntimeHostRemoteRoot!;
     const result = await h
         .control(joiner)
         .validation.runBlockValidation(encoded, {
@@ -117,8 +119,6 @@ export async function assertObserverHook(
     } else {
         expect(result.resultName).to.equal("DISPUTE");
         expect(result.abortCalled).to.equal(true);
-        expect(await h.control(joiner).query.getStatus().request()).to.equal(
-            Status.OPENED
-        );
+        await waitFor(() => host.isClosed, h.event.protocolEventTimeoutMs());
     }
 }
