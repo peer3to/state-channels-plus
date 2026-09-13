@@ -25,6 +25,12 @@ mismatch, and the positional committed-set matching `areDisputesCommitted`.
 ## Key design decisions
 
 1. **Positional set matching** is where the post-kill order sensitivity ([`OQ-4-JGDCNX`](../../../../../../verification/open-questions.md#oq-4-jgdcnx) input) is anchored.
+2. **Every period predicate returns its deadline alongside the verdict:**
+   `_isEvidencePeriodExpired`, `_isKillPeriodExpired` and `_isReduceChallengePeriodExpired` all
+   return `(bool, uint256 periodEnd)`. The caller that reverts on the verdict needs the deadline
+   it compared `block.timestamp` against, and recomputing it at the call site would duplicate the
+   `+ evidenceTime` arithmetic in every guard. Callers that only need the verdict discard the
+   second value.
 
 ## Inputs, outputs, state, and side effects
 

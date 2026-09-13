@@ -166,12 +166,12 @@ success — a `false` return reverts the manager with
 
 ### 3.3 Guarded wrappers used during on-chain re-execution
 
-| Wrapper                                                                                 | Behavior (verified)                                                                                                    |
-| --------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------- |
-| `setState(bytes) external _nonReentrant`                                                | Calls `_setState`. The manager's precursor to every re-execution.                                                      |
-| `joinChannel(JoinChannel) external _nonReentrant returns (bool)`                        | Calls `_joinChannel` directly (used by `applyJoinChannelToStateMachine`).                                              |
-| `slashParticipant(address) external _nonReentrant returns (bool, ExitChannel)`          | Calls `_slashParticipant`; on success **also** appends the `ExitChannel` to `_outboundMessages` via `_addExitChannel`. |
-| `removeParticipant(address) external virtual _nonReentrant returns (bool, ExitChannel)` | Calls `_removeParticipant`; on success appends the exit through `_addExitChannel`.                                     |
+| Wrapper                                                                                 | Behavior (verified)                                                                                                                                                             |
+| --------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `setState(bytes) external _nonReentrant`                                                | Calls `_setState`. The manager's precursor to every re-execution.                                                                                                               |
+| `joinChannel(JoinChannel) external _nonReentrant returns (bool)`                        | Calls `_joinChannel` directly. Part of the state-machine public ABI; the manager has no on-chain caller for it — joins reach the state machine through `processInboundMessage`. |
+| `slashParticipant(address) external _nonReentrant returns (bool, ExitChannel)`          | Calls `_slashParticipant`; on success **also** appends the `ExitChannel` to `_outboundMessages` via `_addExitChannel`.                                                          |
+| `removeParticipant(address) external virtual _nonReentrant returns (bool, ExitChannel)` | Calls `_removeParticipant`; on success appends the exit through `_addExitChannel`.                                                                                              |
 
 Both wrappers return and record a successful exit through `_addExitChannel`. This implements [`REQ-SM-8-8CHSQ8`](../../../../specification/protocol-model/state-machines.md#req-sm-8-8chsq8) and closes [`OQ-18-2NK97T`](../../../../specification/open-questions.md#oq-18-2nk97t). Application hooks retain their balance semantics. The dispute pipeline builds its outbound block from returned exits and does not read the buffer. The SDK clears the buffer before its next state transition, preventing duplicate delivery. Absent or repeated targets add no exit under [`REQ-SM-10-JD8TSF`](../../../../specification/protocol-model/state-machines.md#req-sm-10-jd8tsf).
 

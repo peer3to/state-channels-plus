@@ -33,9 +33,18 @@ The conditional-window refusal has its own channel/fork error, `RaceConditionDis
    chain read. Adding arguments changes the error selector but not its name, so name-keyed
    client handling is unaffected; the decoded argument names come from the error's own ABI, so
    no client-side decoder is added per error.
-3. **Duplicate selector registration is exact:** `ErrorDuplicateSelectorRegistration(bytes4)`
+3. **One cause, one name; bare only when there is nothing to carry:** a name covers exactly one
+   failing comparison, so a guard that folded two causes is split into two names rather than
+   reusing one (the genesis-snapshot check, the join-confirmation signature check, and the two
+   dispute-commitment checks each became their own error). A boolean predicate whose helper
+   returns only `true`/`false` carries the identity keys that locate the state instead —
+   `channelId`/`forkId`/`participant`/loop index — plus whatever value the helper already
+   returned. Empty-array, zero-count and `!= bytes32(0)` guards have no operand to report and
+   stay argument-less on purpose. Errors that no code path constructs are deleted rather than
+   kept as dead vocabulary, since an unreachable name cannot classify anything.
+4. **Duplicate selector registration is exact:** `ErrorDuplicateSelectorRegistration(bytes4)`
    identifies the constructor entry that collided, so deployment failures are auditable.
-4. **Codeless route rejection is exact:** `ErrorRouteTargetHasNoCode(bytes4,address)` identifies
+5. **Codeless route rejection is exact:** `ErrorRouteTargetHasNoCode(bytes4,address)` identifies
    both the selector being installed and the empty target address.
 
 ## Inputs, outputs, state, and side effects
