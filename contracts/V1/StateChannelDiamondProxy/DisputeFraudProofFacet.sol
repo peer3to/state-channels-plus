@@ -21,9 +21,9 @@ contract DisputeFraudProofFacet is StateChannelCommon {
             if (!isDisputeCommitted(dispute)) continue;
             DisputeWindow storage disputeWindow =
                 disputeData[dispute.input.channelId].disputeWindowMap[dispute.input.forkId];
-            (bool isExpired,) = _isKillPeriodExpired(disputeWindow, _getEvidenceTime());
+            (bool isExpired, uint256 killPeriodEnd) = _isKillPeriodExpired(disputeWindow, _getEvidenceTime());
             // A successful batch means every committed proof was eligible and applied.
-            require(!isExpired, RaceConditionDisputeKillPeriodExpired());
+            require(!isExpired, RaceConditionDisputeKillPeriodExpired(killPeriodEnd, block.timestamp));
             address slashedParticipant = _getHandle(proofs[i].proofType)(proofs[i].encodedProof, dispute);
             if (slashedParticipant == proofs[i].participant) {
                 _delegatecall(
@@ -170,7 +170,9 @@ contract DisputeFraudProofFacet is StateChannelCommon {
         if (invalidBlock.stateSnapshotHash != keccak256(abi.encode(proof.resultingStateSnapshot))) return _invalid();
 
         if (invalidBlock.transaction.header.transactionCnt == 0) {
-            if (invalidBlock.previousBlockHash != keccak256(abi.encode(proof.previousStateSnapshot))) return _invalid();
+            if (invalidBlock.previousBlockHash != keccak256(abi.encode(proof.previousStateSnapshot))) {
+                return _invalid();
+            }
         } else {
             (bool previousDecoded, Block memory previousBlock) =
                 UtilityFacet(utilityFacetAddress).tryDecodeBlock(proof.previousBlock.encodedBlock);
@@ -382,7 +384,7 @@ contract DisputeFraudProofFacet is StateChannelCommon {
             if (!found) return _valid(dispute.input.disputer);
         }
 
-        revert RaceConditionOnChainSlashes();
+        revert RaceConditionOnChainSlashes(dispute.input.channelId, disputeSlashes.length, onChainSlashes.length);
     }
 
     function _handleTimeoutThreshold(bytes memory encodedFraudProof, Dispute memory dispute)
@@ -487,9 +489,9 @@ contract DisputeFraudProofFacet is StateChannelCommon {
         if (!hasBlock) {
             // genesis
             if (!_isGenesisSnapshotDataLinkedToFork(forkId, proof.genesisStateSnapshotData)) return _invalid();
-            (bool hasGenesis, uint256 genesisTimestamp) =
-                _getGenesisTimestamp(channelId, proof.genesisStateSnapshotData.originForkId, forkId);
-            require(hasGenesis, RaceConditionGenesisTimestampNotAvailable());
+            bytes32 originForkId = proof.genesisStateSnapshotData.originForkId;
+            (bool hasGenesis, uint256 genesisTimestamp) = _getGenesisTimestamp(channelId, originForkId, forkId);
+            require(hasGenesis, RaceConditionGenesisTimestampNotAvailable(channelId, originForkId, forkId));
             previousTimestamp = genesisTimestamp;
         } else {
             // at least 1 block exists
@@ -510,7 +512,10 @@ contract DisputeFraudProofFacet is StateChannelCommon {
                 (bool found, bytes32 commitment) = _getBlockCallDataCommitment(channelId, forkId, blockHeight, author);
                 if (found) {
                     // check is the caller aware of race condition
-                    require(proof.previousBlockOnChainTimestamp != 0, RaceConditionUnexpectedBlockCalldataPosted());
+                    require(
+                        proof.previousBlockOnChainTimestamp != 0,
+                        RaceConditionUnexpectedBlockCalldataPosted(forkId, blockHeight, author, commitment)
+                    );
                     bytes32 _commitment = keccak256(abi.encode(latestSignedBlock, proof.previousBlockOnChainTimestamp));
                     if (commitment != _commitment) return _invalid();
                     else previousTimestamp = proof.previousBlockOnChainTimestamp;
@@ -584,12 +589,15 @@ contract DisputeFraudProofFacet is StateChannelCommon {
             ) {
                 return false;
             }
-            (bool hasGenesis, uint256 genesisTimestamp) = _getGenesisTimestamp(
-                dispute.input.channelId,
-                timeoutCalldataPostedProof.genesisStateSnapshotData.originForkId,
-                dispute.input.forkId
+            bytes32 genesisOriginForkId = timeoutCalldataPostedProof.genesisStateSnapshotData.originForkId;
+            (bool hasGenesis, uint256 genesisTimestamp) =
+                _getGenesisTimestamp(dispute.input.channelId, genesisOriginForkId, dispute.input.forkId);
+            require(
+                hasGenesis,
+                RaceConditionGenesisTimestampNotAvailable(
+                    dispute.input.channelId, genesisOriginForkId, dispute.input.forkId
+                )
             );
-            require(hasGenesis, RaceConditionGenesisTimestampNotAvailable());
             previousTimestamp = genesisTimestamp;
         } else {
             // check is calldata posted and if block is the same as stateProof latest block
@@ -604,7 +612,12 @@ contract DisputeFraudProofFacet is StateChannelCommon {
                 previousTimestamp = latestBlock.transaction.header.timestamp;
             } else {
                 if (timeoutCalldataPostedProof.previousBlockOnChainTimestamp == 0) {
-                    revert RaceConditionUnexpectedBlockCalldataPosted();
+                    revert RaceConditionUnexpectedBlockCalldataPosted(
+                        dispute.input.forkId,
+                        latestBlock.transaction.header.transactionCnt,
+                        latestBlock.transaction.header.participant,
+                        previousBlockCommitment
+                    );
                 }
 
                 bytes32 _previousBlockCommitment = keccak256(

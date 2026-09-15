@@ -35,9 +35,9 @@ merged ABI in [localDiamond.ts](../../../src/utils/localDiamond.ts.md).
 2. **`isBlockAuthentic` is declared here so the debug override still wins.** In production that
    selector routes to [UtilityFacet](./UtilityFacet.sol.md); a declared function dispatches before
    the fallback, so declaring a thin `public` entry point
-   ([#L442](../../../../../../../contracts/V1/StateChannelDiamondProxy/LocalDiamond.sol#L442))
+   ([#L445](../../../../../../../contracts/V1/StateChannelDiamondProxy/LocalDiamond.sol#L445))
    keeps local deployments on this contract's `_isBlockAuthentic` override
-   ([#L446](../../../../../../../contracts/V1/StateChannelDiamondProxy/LocalDiamond.sol#L446)),
+   ([#L449](../../../../../../../contracts/V1/StateChannelDiamondProxy/LocalDiamond.sol#L449)),
    whose body and comment are unchanged. Without the declaration the mirror would answer with the
    routed production implementation and lose its debug logging.
 3. **Channel-open event order preserves genesis deposits.** `InboundMessagesProcessed` is mirrored

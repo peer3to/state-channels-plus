@@ -415,7 +415,8 @@ contract UtilityFacet is UtilityFacetInterface, StateChannelCommon {
     function isReduceChallengePeriodExpired(bytes32 channelId, bytes32 forkId) public view returns (bool) {
         DisputeData storage _disputeData = disputeData[channelId];
         DisputeWindow storage disputeWindow = _disputeData.disputeWindowMap[forkId];
-        return _isReduceChallengePeriodExpired(disputeWindow, _getEvidenceTime());
+        (bool isExpired,) = _isReduceChallengePeriodExpired(disputeWindow, _getEvidenceTime());
+        return isExpired;
     }
 
     function getDisputeWindows(bytes32 channelId, bytes32[] memory forkIds)

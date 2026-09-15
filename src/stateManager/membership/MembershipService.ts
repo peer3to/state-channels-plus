@@ -9,6 +9,7 @@ import { Address, ChannelId, ForkId, Hash } from "@/types/types";
 import { addressesEqual, Logger, union } from "@/utils";
 import { errorMessage } from "@/utils/errorMessage";
 import { tryDecodeCustomError } from "@/utils/evmErrorHandler";
+import { LoggerUtils } from "@/utils/LoggerUtils";
 import type {
     JoinChannelConfirmationStruct,
     MessageBlockStruct
@@ -163,11 +164,12 @@ export default class MembershipService {
                 case "RaceConditionJoinChannelSnapshotMismatch":
                 case "RaceConditionForceInboundJoinForkDisputed":
                 case "ErrorJoinChannelInvalidSignature":
+                case "ErrorJoinChannelConfirmationNotThresholdSigned":
                     this.logger.warn(
                         `joinChannel - race condition: ${custom.name}`,
                         {
-                            name: custom.name,
-                            args: custom.errorDescription.args
+                            customError:
+                                LoggerUtils.getCustomEvmErrorMetadata(custom)
                         }
                     );
                     sm.abort();
@@ -204,8 +206,7 @@ export default class MembershipService {
             const custom = tryDecodeCustomError(error);
             if (custom) {
                 this.logger.warn(`topUpBalance failed: ${custom.name}`, {
-                    name: custom.name,
-                    args: custom.errorDescription.args
+                    customError: LoggerUtils.getCustomEvmErrorMetadata(custom)
                 });
                 return false;
             }

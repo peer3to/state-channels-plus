@@ -3,6 +3,7 @@ import { Status } from "@/types";
 import { Codec, Type } from "@/utils";
 import { expectSyncPayloadAboveRequestedHeightWhileAhead } from "@test/fixtures/PinnedSyncStaging";
 import { MathTestSession as TestSession } from "@test/harness";
+import { expectDecodedError } from "@test/test_utils/customErrorAssertions";
 import { waitFor } from "@test/utils/waitFor";
 import { expect } from "chai";
 import { ethers } from "ethers";
@@ -946,7 +947,7 @@ describe("E2E: Spectate Service", function () {
             }
         });
 
-        it("forceInboundJoin before joinChannel → joinChannel reverts ErrorJoinChannelInvalidSignature (pending participant did not sign confirmation)", async function () {
+        it("forceInboundJoin before joinChannel → joinChannel reverts ErrorJoinChannelConfirmationNotThresholdSigned (pending participant did not sign confirmation)", async function () {
             const h = TestSession.getHarness();
             await h.lifecycle.start(3, 0, {
                 timeConfig: concurrentTimeConfig
@@ -976,6 +977,34 @@ describe("E2E: Spectate Service", function () {
             await h.join.forceInboundJoinObserveDetached({
                 participant: joinerB.address
             });
+
+            // Pin which revert the client path is reacting to. Every name in
+            // the MembershipService abort switch produces the same
+            // OPENED/disposed pair, so the status assertions below cannot tell
+            // them apart; this static call does.
+            let thresholdRevert: unknown;
+            try {
+                await h.channelManager
+                    .connect(joinerA.signer)
+                    .joinChannel.staticCall(
+                        prepared.confirmation,
+                        prepared.expectedSnapshotHash,
+                        prepared.expectedForkId
+                    );
+                expect.fail(
+                    "expected joinChannel to revert: joinerA's pre-signed confirmation is missing the pending participant's signature"
+                );
+            } catch (e) {
+                thresholdRevert = e;
+            }
+            const thresholdError = expectDecodedError(
+                thresholdRevert,
+                "ErrorJoinChannelConfirmationNotThresholdSigned",
+                "joinChannel must reject the sub-threshold confirmation by name"
+            );
+            expect(thresholdError.errorDescription.args.participant).to.equal(
+                joinerA.address
+            );
 
             expect(
                 await joinerA.p2pInstance.p2pSigner.joinChannel(

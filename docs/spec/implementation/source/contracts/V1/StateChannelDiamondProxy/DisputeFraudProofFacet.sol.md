@@ -31,9 +31,9 @@ Dispute-fraud targets use the same bounded current eligibility as ordinary fraud
 1. **Kill is the only commitment-removal path**, pairing with the window bookkeeping's swap-removal — the order perturbation input to [`OQ-4-JGDCNX` (Dispute-reduction order-independence)](../../../../../verification/open-questions.md#oq-4-jgdcnx) originates here.
 2. **Typed self-calls go through the manager interface, not the proxy contract.** The three
    operations this facet reaches on `address(this)` — the dispute-window creation timestamp
-   ([#L479](../../../../../../../contracts/V1/StateChannelDiamondProxy/DisputeFraudProofFacet.sol#L479)), the state transition
-   ([#L638](../../../../../../../contracts/V1/StateChannelDiamondProxy/DisputeFraudProofFacet.sol#L638)) and the milestone finality check
-   ([#L792](../../../../../../../contracts/V1/StateChannelDiamondProxy/DisputeFraudProofFacet.sol#L792)) — are typed by
+   ([#L482](../../../../../../../contracts/V1/StateChannelDiamondProxy/DisputeFraudProofFacet.sol#L482)), the state transition
+   ([#L652](../../../../../../../contracts/V1/StateChannelDiamondProxy/DisputeFraudProofFacet.sol#L652)) and the milestone finality check
+   ([#L806](../../../../../../../contracts/V1/StateChannelDiamondProxy/DisputeFraudProofFacet.sol#L806)) — are typed by
    [StateChannelManagerInterface](../../StateChannelManagerInterface.sol.md). The calls are
    unchanged; only the compile-time type is, which removes this facet's dependency on
    [StateChannelManagerProxy](./StateChannelManagerProxy.sol.md) now that the proxy no longer

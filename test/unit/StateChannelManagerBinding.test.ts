@@ -81,12 +81,17 @@ describe("stateChannelManager binding", function () {
         );
         expect(keys.actual).to.deep.equal(keys.expected);
 
-        for (const errorName of [
-            "RaceConditionChannelAlreadyOpen",
-            "ECDSAInvalidSignature"
-        ]) {
-            const data = reconstructed.encodeErrorResult(errorName);
-            expect(reconstructed.parseError(data)?.name).to.equal(errorName);
+        // one error with arguments and one without, so the round trip covers
+        // both shapes the reconstructed interface has to encode and parse
+        const errorCases: [string, unknown[]][] = [
+            ["RaceConditionChannelAlreadyOpen", [ethers.ZeroHash]],
+            ["ECDSAInvalidSignature", []]
+        ];
+        for (const [errorName, args] of errorCases) {
+            const data = reconstructed.encodeErrorResult(errorName, args);
+            const parsed = reconstructed.parseError(data);
+            expect(parsed?.name).to.equal(errorName);
+            expect(parsed?.args.length).to.equal(args.length);
         }
     });
 

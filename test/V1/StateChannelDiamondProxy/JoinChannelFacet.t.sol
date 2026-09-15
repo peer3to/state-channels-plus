@@ -5,6 +5,7 @@ import {JoinChannelFacet} from "../../../contracts/V1/StateChannelDiamondProxy/J
 import {UtilityFacet} from "../../../contracts/V1/StateChannelDiamondProxy/UtilityFacet.sol";
 import {
     ErrorJoinChannelAtomicFailure,
+    ErrorJoinChannelConfirmationNotThresholdSigned,
     ErrorJoinChannelInvalidSignature,
     ErrorJoinChannelParticipantAlreadyExists,
     ErrorTopUpBalanceParticipantNotFound,
@@ -14,6 +15,12 @@ import {
 import "../../../contracts/V1/types/DataTypes.sol";
 
 contract JoinChannelFacetHarness is JoinChannelFacet {
+    /// The failure payload the stub injects. Deliberately unreachable for a
+    /// real single-join batch (index 0, the joining participant), so a test can
+    /// tell "bubbled unchanged" from "rebuilt by the facet".
+    uint256 public constant STUB_FAILURE_INDEX = 7;
+    address public constant STUB_FAILURE_PARTICIPANT = address(0xDEAD);
+
     bool public depositCalled;
     bool public depositShouldFail;
     address public depositedParticipant;
@@ -46,7 +53,9 @@ contract JoinChannelFacetHarness is JoinChannelFacet {
             JoinChannel[] memory successfulJoins
         )
     {
-        if (depositShouldFail) revert ErrorJoinChannelAtomicFailure();
+        if (depositShouldFail) {
+            revert ErrorJoinChannelAtomicFailure(STUB_FAILURE_INDEX, STUB_FAILURE_PARTICIPANT);
+        }
         depositCalled = true;
         depositedParticipant = joinChannels[0].participant;
         successfulJoins = joinChannels;
@@ -72,6 +81,8 @@ contract JoinChannelFacetTest is Test {
     uint256 internal constant JOINER_PK = 0xCAFE;
     bytes32 internal constant CHANNEL_ID = keccak256("join-after-slash");
     bytes32 internal constant FORK_ID = keccak256("join-after-slash-fork");
+    bytes32 internal constant THRESHOLD_CHANNEL_ID = keccak256("join-threshold-set-of-two");
+    bytes32 internal constant THRESHOLD_FORK_ID = keccak256("join-threshold-set-of-two-fork");
 
     function setUp() public {
         harness = new JoinChannelFacetHarness();
@@ -173,7 +184,9 @@ contract JoinChannelFacetTest is Test {
         confirmation.signatures[0] = _sign(ELIGIBLE_PK, encodedTopUp);
 
         StateSnapshot memory snapshot = harness.getStateSnapshot(CHANNEL_ID);
-        vm.expectRevert(ErrorTopUpBalanceParticipantNotFound.selector);
+        vm.expectRevert(
+            abi.encodeWithSelector(ErrorTopUpBalanceParticipantNotFound.selector, CHANNEL_ID, topUp.participant)
+        );
         vm.prank(topUp.participant);
         harness.topUpBalance(confirmation, keccak256(abi.encode(snapshot)), FORK_ID);
 
@@ -198,7 +211,10 @@ contract JoinChannelFacetTest is Test {
         confirmation.signatures[0] = _sign(ELIGIBLE_PK, encodedJoinChannel);
 
         StateSnapshot memory snapshot = harness.getStateSnapshot(CHANNEL_ID);
-        vm.expectRevert(ErrorJoinChannelInvalidSignature.selector);
+        // the confirmation is signed by ELIGIBLE, so the recovered signer is not the declared participant
+        vm.expectRevert(
+            abi.encodeWithSelector(ErrorJoinChannelInvalidSignature.selector, vm.addr(JOINER_PK), vm.addr(ELIGIBLE_PK))
+        );
         vm.prank(joinChannel.participant);
         harness.joinChannel(confirmation, keccak256(abi.encode(snapshot)), FORK_ID);
 
@@ -223,7 +239,9 @@ contract JoinChannelFacetTest is Test {
         confirmation.signatures[0] = _sign(ELIGIBLE_PK, encodedJoinChannel);
 
         StateSnapshot memory snapshot = harness.getStateSnapshot(CHANNEL_ID);
-        vm.expectRevert(ErrorJoinChannelParticipantAlreadyExists.selector);
+        vm.expectRevert(
+            abi.encodeWithSelector(ErrorJoinChannelParticipantAlreadyExists.selector, CHANNEL_ID, vm.addr(ELIGIBLE_PK))
+        );
         vm.prank(joinChannel.participant);
         harness.joinChannel(confirmation, keccak256(abi.encode(snapshot)), FORK_ID);
 
@@ -253,7 +271,10 @@ contract JoinChannelFacetTest is Test {
         assertEq(harness.depositedParticipant(), joinChannel.participant);
     }
 
-    function test_joinChannel_atomicDepositFailureRejected() public {
+    /// Facet-level propagation shape only: a revert from the composable deposit
+    /// reaches the caller unchanged. The payload the real loop builds is proven
+    /// against the deployed diamond in StateChannelManagerProxyDeposit.t.sol.
+    function test_joinChannel_depositRevertBubblesUnchanged() public {
         JoinChannel memory joinChannel = JoinChannel({
             channelId: CHANNEL_ID,
             participant: vm.addr(JOINER_PK),
@@ -270,12 +291,54 @@ contract JoinChannelFacetTest is Test {
 
         harness.setDepositShouldFail(true);
         StateSnapshot memory snapshot = harness.getStateSnapshot(CHANNEL_ID);
-        vm.expectRevert(ErrorJoinChannelAtomicFailure.selector);
+        // neither operand is one this join could produce, so an unchanged bubble
+        // is distinguishable from a payload the facet rebuilt itself
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                ErrorJoinChannelAtomicFailure.selector, harness.STUB_FAILURE_INDEX(), harness.STUB_FAILURE_PARTICIPANT()
+            )
+        );
         vm.prank(joinChannel.participant);
         harness.joinChannel(confirmation, keccak256(abi.encode(snapshot)), FORK_ID);
 
         assertFalse(harness.depositCalled());
         assertEq(harness.depositedParticipant(), address(0));
+    }
+
+    function test_joinChannel_confirmationNotThresholdSignedRejected() public {
+        // a second channel whose two participants are both eligible (nothing is
+        // slashed on it), so the threshold set holds 2 addresses
+        address[] memory participants = new address[](2);
+        participants[0] = vm.addr(ELIGIBLE_PK);
+        participants[1] = vm.addr(SLASHED_PK);
+        harness.seedChannel(THRESHOLD_CHANNEL_ID, THRESHOLD_FORK_ID, participants, address(0));
+
+        JoinChannel memory joinChannel = JoinChannel({
+            channelId: THRESHOLD_CHANNEL_ID,
+            participant: vm.addr(JOINER_PK),
+            deadlineTimestamp: block.timestamp + 120,
+            balance: Balance({amount: 500, data: ""})
+        });
+        bytes memory encodedJoinChannel = abi.encode(joinChannel);
+
+        JoinChannelConfirmation memory confirmation;
+        confirmation.signedJoinChannel =
+            SignedJoinChannel({encodedJoinChannel: encodedJoinChannel, signature: _sign(JOINER_PK, encodedJoinChannel)});
+        // only one of the two threshold participants countersigned, so the
+        // confirmation stays under threshold: required 2, supplied 1
+        confirmation.signatures = new bytes[](1);
+        confirmation.signatures[0] = _sign(ELIGIBLE_PK, encodedJoinChannel);
+
+        StateSnapshot memory snapshot = harness.getStateSnapshot(THRESHOLD_CHANNEL_ID);
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                ErrorJoinChannelConfirmationNotThresholdSigned.selector, joinChannel.participant, uint256(2), uint256(1)
+            )
+        );
+        vm.prank(joinChannel.participant);
+        harness.joinChannel(confirmation, keccak256(abi.encode(snapshot)), THRESHOLD_FORK_ID);
+
+        assertFalse(harness.depositCalled());
     }
 
     function _sign(uint256 privateKey, bytes memory encodedData) internal pure returns (bytes memory) {

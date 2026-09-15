@@ -20,7 +20,6 @@ export type RaceConditionErrorName =
     | "RaceConditionDisputeKillPeriodExpired"
     | "RaceConditionDisputeAlreadyReduced"
     | "RaceConditionReductionExpectationDoesntMatch"
-    | "RaceConditionDisputeAuditingRequired"
     | "RaceConditionDisputeTimeoutCalldataPosted"
     | "RaceConditionDisputeTimeoutPreviousBlockProducerPostedCalldataMismatch"
     | "RaceConditionDisputeTimeoutNotMinTimestamp"
@@ -138,8 +137,7 @@ async function _tryHandleEvmError(
         logger?.error(
             `tryHandleEvmError - Unhandled custom EVM error for fork ${forkId ? LoggerUtils.formatHash(forkId) : "N/A"}`,
             {
-                name: customError.name,
-                args: customError.errorDescription.args,
+                customError: LoggerUtils.getCustomEvmErrorMetadata(customError),
                 txHash: tx?.hash
             }
         );
