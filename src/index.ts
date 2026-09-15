@@ -4,17 +4,16 @@ import {
     ContractExecutor,
     EvmStateMachine,
     LocalDiamondSigner,
-    P2pSigner,
-    createContractExecutorFactory
+    P2pSigner
 } from "@/evm";
 import P2pEventHooks from "@/P2pEventHooks";
 import P2PManager from "@/P2PManager";
 
-import ARpcMethods from "@/rpc/ARpcMethods";
-import ARpcService from "@/rpc/ARpcService";
-import { HandshakeCompletedGuard } from "@/rpc/guards";
-import MainRpcService from "@/rpc/MainRpcService";
-import { ATransport } from "@/transport";
+import ANetworkRpcMethods from "@/rpc/network/ANetworkRpcMethods";
+import ANetworkRpcService from "@/rpc/network/ANetworkRpcService";
+import { HandshakeCompletedGuard } from "@/rpc/network/guards";
+import MainRpcService from "@/rpc/network/MainRpcService";
+import { NetworkTransport } from "@/transport";
 import {
     Codec,
     DeployUtils,
@@ -23,7 +22,7 @@ import {
     config,
     getChecksumAddress
 } from "@/utils";
-export * from "@/rpc/services";
+export * from "@/rpc/network/services";
 export type { CustomRpcConstructor } from "@/rpc";
 
 export { ethers } from "ethers";
@@ -38,7 +37,6 @@ export type {
 export type {
     ContractExecutionLog,
     ContractExecutionResult,
-    ContractExecutorFactoryOptions,
     EvmCustomPrecompile,
     EvmCustomPrecompileFactory,
     EvmCustomPrecompileManifest,
@@ -61,13 +59,12 @@ export {
     SignatureUtils,
     Type,
     config as config,
-    ARpcMethods,
-    ARpcService,
+    ANetworkRpcMethods,
+    ANetworkRpcService,
     MainRpcService,
     HandshakeCompletedGuard,
-    ATransport,
-    getChecksumAddress,
-    createContractExecutorFactory
+    NetworkTransport,
+    getChecksumAddress
 };
 export { Status } from "@/types";
 export type { ChannelId } from "@/types";
@@ -79,12 +76,10 @@ export {
     type ContractEventTarget
 } from "@/events/EventBus";
 
-export { startP2pRuntimeWorker } from "@/evm/p2pRuntime/worker/startP2pRuntimeWorker";
 export { default as ClientP2pSigner } from "@/evm/signer/ClientP2pSigner";
 export { default as ClientChainSigner } from "@/evm/signer/ClientChainSigner";
 export type { ConnectToChannelOptions } from "@/evm/signer/ConnectToChannelOptions";
 export type {
-    P2pRuntimeWorker,
     SetupPayload,
     SerializedContract,
     WorkerBootstrapMessage
@@ -110,3 +105,5 @@ export * as DataTypes from "../typechain-types/contracts/V1/types/DataTypes";
 export * as DisputeTypes from "../typechain-types/contracts/V1/types/DisputeTypes";
 
 export * from "../scripts/V1/deploy";
+
+export { default as ATransport } from "./transport/ATransport";

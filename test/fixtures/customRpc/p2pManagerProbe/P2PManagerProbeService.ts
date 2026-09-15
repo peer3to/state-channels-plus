@@ -4,23 +4,24 @@ import { P2PManagerProbeRpcMethods } from "./P2PManagerProbeRpcMethods";
 import Clock from "@/Clock";
 import type P2PManager from "@/P2PManager";
 import PeerProfile from "@/PeerProfile";
-import ARpcService from "@/rpc/ARpcService";
-import type Rpc from "@/rpc/Rpc";
-import { MAX_RPC_FRAME_BYTES } from "@/rpc/Rpc";
-import InitHandshakeService from "@/rpc/services/initHandshake/InitHandshakeService";
-import LobbyMatchingService from "@/rpc/services/lobbyMatching/LobbyMatchingService";
-import type { LobbyMatch } from "@/rpc/services/lobbyMatching/LobbyMatchingTypes";
+import ANetworkRpcService from "@/rpc/network/ANetworkRpcService";
+import InitHandshakeService from "@/rpc/network/services/initHandshake/InitHandshakeService";
+import LobbyMatchingService from "@/rpc/network/services/lobbyMatching/LobbyMatchingService";
+import type { LobbyMatch } from "@/rpc/network/services/lobbyMatching/LobbyMatchingTypes";
 import {
     compareAddresses,
     deriveNegotiatedChannelId
-} from "@/rpc/services/openChannelNegotiation/OpenChannelNegotiationHelpers";
-import OpenChannelNegotiationService from "@/rpc/services/openChannelNegotiation/OpenChannelNegotiationService";
+} from "@/rpc/network/services/openChannelNegotiation/OpenChannelNegotiationHelpers";
+import OpenChannelNegotiationService from "@/rpc/network/services/openChannelNegotiation/OpenChannelNegotiationService";
 import type {
     MatchedNegotiationOptions,
     NegotiationOutcome
-} from "@/rpc/services/openChannelNegotiation/OpenChannelNegotiationService";
+} from "@/rpc/network/services/openChannelNegotiation/OpenChannelNegotiationService";
+import type { RpcRequestId } from "@/rpc/router/ARpcRouter";
+import { MAX_RPC_FRAME_BYTES } from "@/rpc/Rpc";
+import type Rpc from "@/rpc/Rpc";
 import { HolepunchTransport, WebRTCTransport } from "@/transport";
-import ATransport from "@/transport/ATransport";
+import NetworkTransport from "@/transport/NetworkTransport";
 import { TransportType } from "@/transport/TransportType";
 import { Status } from "@/types";
 import type { Address } from "@/types/types";
@@ -45,7 +46,7 @@ import { Buffer } from "buffer";
 import { ethers } from "ethers";
 import sinon from "sinon";
 
-class RecordingTransport extends ATransport {
+class RecordingTransport extends NetworkTransport {
     public transportType = TransportType.HOLEPUNCH;
     public readonly frames: string[] = [];
     public closeCalls = 0;
@@ -57,7 +58,8 @@ class RecordingTransport extends ATransport {
         this.frames.push(frame);
     }
 
-    public onMessage(): void {}
+    // Overrides NetworkTransport.onMessage: deliver through this probe transport.
+    public override onMessage(): void {}
 
     protected _close(): void {
         this.closeCalls += 1;
@@ -198,6 +200,8 @@ export type LobbyRecoveryProbe = {
     reservedAfterFinalLoss: boolean;
     matchingAfterFinalLoss: boolean;
     disconnectedPeerBlacklisted: boolean;
+    openAtRejectionLimit: boolean;
+    notificationReplies: number;
     abusiveTransportClosed: boolean;
     abusivePeerReconnectBanned: boolean;
     abusivePeerBlacklisted: boolean;
@@ -590,25 +594,77 @@ export type ReplacementAdmissionGateProbe = {
     freshIdentityTransportClosed: boolean;
 };
 
-export class P2PManagerProbeService extends ARpcService<
+export class P2PManagerProbeService extends ANetworkRpcService<
     P2PManagerProbeRpcMethods,
     P2PManager<PingPongRpc>
 > {
+    // Real endpoint holds keyed by the test invocation token.
+    private readonly networkReplyHolds = new Map<string, () => void>();
     public dispatchCalls = 0;
     /** Profile of the selector staged by probeLobbyRecovery. */
     private lobbyRecoveryProfile?: PeerProfile;
 
     constructor(p2pManager: P2PManager<PingPongRpc>) {
         super(
-            p2pManager,
+            p2pManager.rpcRouter,
             p2pManager.stateManager.logger.child({
                 component: "P2PManagerProbeService"
             })
         );
     }
 
-    public createRPCMethods(transport: ATransport): P2PManagerProbeRpcMethods {
+    public createRPCMethods(
+        transport: NetworkTransport
+    ): P2PManagerProbeRpcMethods {
         return new P2PManagerProbeRpcMethods(transport, this);
+    }
+
+    public holdNetworkReply(token: string): Promise<string> {
+        if (this.networkReplyHolds.has(token))
+            throw new Error("Network reply already held");
+        return new Promise((resolve) =>
+            this.networkReplyHolds.set(token, () => resolve(token))
+        );
+    }
+
+    public releaseNetworkReply(token: string): boolean {
+        const release = this.networkReplyHolds.get(token);
+        this.networkReplyHolds.delete(token);
+        release?.();
+        return release !== undefined;
+    }
+
+    public networkReplyState(token: string, foreignAddress: string) {
+        // Observe the production registry; no fixture correlates or settles responses.
+        const pending = Reflect.get(
+            this.p2pManager.rpcRouter,
+            "pendingRpcRequests"
+        ) as Map<RpcRequestId, { rpc: Rpc }>;
+        const requestId = [...pending].find(
+            ([, entry]) =>
+                entry.rpc.method === "holdNetworkReply" &&
+                entry.rpc.params[0] === token
+        )?.[0];
+        return {
+            held: this.networkReplyHolds.has(token),
+            requestId,
+            foreignBlacklisted: this.p2pManager.isBlacklisted(foreignAddress)
+        };
+    }
+
+    public sendNetworkReply(peerAddress: string, requestId: string): void {
+        const transport =
+            this.p2pManager.profileManager.getTransportByEvmAddress(
+                peerAddress
+            );
+        if (!transport || transport.isClosed)
+            throw new Error("Real peer transport is not connected");
+        transport.sendRpcResponse({
+            rpcResponse: true,
+            requestId,
+            ok: true,
+            result: "foreign reply"
+        });
     }
 
     public recordDispatch(): void {
@@ -616,13 +672,13 @@ export class P2PManagerProbeService extends ARpcService<
     }
 
     private transport(address?: string): RecordingTransport {
-        const transport = new RecordingTransport(this.p2pManager);
+        const transport = new RecordingTransport(this.p2pManager.rpcRouter);
         transport.peerAddress = address;
         return transport;
     }
 
     private registerProfile(
-        transport: ATransport,
+        transport: NetworkTransport,
         address: Address
     ): PeerProfile {
         const profile = new PeerProfile(transport, address);
@@ -677,7 +733,7 @@ export class P2PManagerProbeService extends ARpcService<
         const transport = new HolepunchTransport(
             socket,
             peerInfo,
-            this.p2pManager
+            this.p2pManager.rpcRouter
         );
         return { transport, peerInfo, socket };
     }
@@ -698,7 +754,7 @@ export class P2PManagerProbeService extends ARpcService<
     }
 
     private authenticateTransport(
-        transport: ATransport,
+        transport: NetworkTransport,
         address: string
     ): PeerProfile {
         const profile = this.p2pManager.profileManager.authenticateTransport(
@@ -715,7 +771,7 @@ export class P2PManagerProbeService extends ARpcService<
         ok: boolean,
         value?: string
     ): void {
-        this.p2pManager.onRpc(
+        this.p2pManager.rpcRouter.onRpc(
             JSON.stringify({
                 rpcResponse: true,
                 requestId,
@@ -738,23 +794,24 @@ export class P2PManagerProbeService extends ARpcService<
             timerCount: 0
         }
     ): { pendingCount: number; timerCount: number } {
-        const manager = this.p2pManager as unknown as {
-            pendingRpcRequests: Map<string, unknown>;
-        };
         return {
             pendingCount:
-                manager.pendingRpcRequests.size - baseline.pendingCount,
+                this.p2pManager.rpcRouter.pendingRequestCount -
+                baseline.pendingCount,
             timerCount: this.timerCount() - baseline.timerCount
         };
     }
 
-    public probeDispatchHead(): DispatchHeadProbe {
+    public async probeDispatchHead(): Promise<DispatchHeadProbe> {
         const { transport: oversized, profile: oversizedProfile } =
             this.registeredTransport(
                 "0x5100000000000000000000000000000000000001"
             );
         this.p2pManager.addConnection(oversized);
-        this.p2pManager.onRpc("x".repeat(MAX_RPC_FRAME_BYTES + 1), oversized);
+        await this.p2pManager.rpcRouter.onRpc(
+            "x".repeat(MAX_RPC_FRAME_BYTES + 1),
+            oversized
+        );
 
         const exact = this.transport();
         this.p2pManager.addConnection(exact);
@@ -763,7 +820,7 @@ export class P2PManagerProbeService extends ARpcService<
             requestId: "not-pending",
             ok: true
         });
-        this.p2pManager.onRpc(
+        await this.p2pManager.rpcRouter.onRpc(
             response + " ".repeat(MAX_RPC_FRAME_BYTES - response.length),
             exact
         );
@@ -773,14 +830,14 @@ export class P2PManagerProbeService extends ARpcService<
                 "0x5100000000000000000000000000000000000002"
             );
         this.p2pManager.addConnection(malformed);
-        this.p2pManager.onRpc("{", malformed);
+        await this.p2pManager.rpcRouter.onRpc("{", malformed);
 
         const { transport: unknownService, profile: unknownServiceProfile } =
             this.registeredTransport(
                 "0x5100000000000000000000000000000000000003"
             );
         this.p2pManager.addConnection(unknownService);
-        this.p2pManager.onRpc(
+        await this.p2pManager.rpcRouter.onRpc(
             JSON.stringify({ service: "absent", method: "call", params: [] }),
             unknownService
         );
@@ -788,7 +845,7 @@ export class P2PManagerProbeService extends ARpcService<
         const responseFirst = this.transport();
         this.p2pManager.addConnection(responseFirst);
         const callsBefore = this.dispatchCalls;
-        this.p2pManager.onRpc(
+        await this.p2pManager.rpcRouter.onRpc(
             JSON.stringify({
                 rpcResponse: true,
                 requestId: "not-pending-either",
@@ -841,25 +898,25 @@ export class P2PManagerProbeService extends ARpcService<
         return frame;
     }
 
-    public probeFrameByteBoundaries(): FrameByteBoundaryProbe {
+    public async probeFrameByteBoundaries(): Promise<FrameByteBoundaryProbe> {
         const exact = this.transport();
         this.p2pManager.addConnection(exact);
         const exactFrame = this.exactMultibyteFrame();
-        this.p2pManager.onRpc(exactFrame, exact);
+        await this.p2pManager.rpcRouter.onRpc(exactFrame, exact);
 
         const { transport: over, profile: overProfile } =
             this.registeredTransport(
                 "0x5200000000000000000000000000000000000001"
             );
         this.p2pManager.addConnection(over);
-        this.p2pManager.onRpc(`${exactFrame}x`, over);
+        await this.p2pManager.rpcRouter.onRpc(`${exactFrame}x`, over);
 
         const { transport: invalidEnvelope, profile: invalidEnvelopeProfile } =
             this.registeredTransport(
                 "0x5200000000000000000000000000000000000002"
             );
         this.p2pManager.addConnection(invalidEnvelope);
-        this.p2pManager.onRpc(
+        await this.p2pManager.rpcRouter.onRpc(
             JSON.stringify({ service: "p2pManagerProbe" }),
             invalidEnvelope
         );
@@ -877,11 +934,11 @@ export class P2PManagerProbeService extends ARpcService<
         };
     }
 
-    public probeDispatchOutcomes(): DispatchOutcomeProbe {
+    public async probeDispatchOutcomes(): Promise<DispatchOutcomeProbe> {
         const valid = this.transport();
         this.p2pManager.addConnection(valid);
         const callsBefore = this.dispatchCalls;
-        this.p2pManager.onRpc(
+        await this.p2pManager.rpcRouter.onRpc(
             JSON.stringify({
                 service: "p2pManagerProbe",
                 method: "recordDispatch",
@@ -895,7 +952,7 @@ export class P2PManagerProbeService extends ARpcService<
                 "0x5300000000000000000000000000000000000001"
             );
         this.p2pManager.addConnection(unknownMethod);
-        this.p2pManager.onRpc(
+        await this.p2pManager.rpcRouter.onRpc(
             JSON.stringify({
                 service: "p2pManagerProbe",
                 method: "absent",
@@ -911,20 +968,20 @@ export class P2PManagerProbeService extends ARpcService<
         this.p2pManager.addConnection(throwing);
         const root = this.p2pManager.localRpc as PingPongRpc & {
             throwingProbe?: {
-                p2pManager: object;
+                router: object;
                 createRPCMethods(): object;
-                runRPC(): boolean;
+                runRPC: P2PManagerProbeService["runRPC"];
             };
         };
         root.throwingProbe = {
-            p2pManager: this.p2pManager,
+            router: this.p2pManager.rpcRouter,
             createRPCMethods: () => ({}),
             runRPC: () => {
                 throw new Error("dispatch failed");
             }
         };
         try {
-            this.p2pManager.onRpc(
+            await this.p2pManager.rpcRouter.onRpc(
                 JSON.stringify({
                     service: "throwingProbe",
                     method: "call",
@@ -953,7 +1010,7 @@ export class P2PManagerProbeService extends ARpcService<
         transport: RecordingTransport,
         timeoutMs = 100
     ): { requestId: string; promise: Promise<string> } {
-        const promise = this.p2pManager.sendRpcRequest<string>(
+        const promise = this.p2pManager.rpcRouter.sendRpcRequest<string>(
             { service: "pingService", method: "sum", params: [] },
             transport,
             { timeoutMs }
@@ -983,7 +1040,7 @@ export class P2PManagerProbeService extends ARpcService<
 
         const sendFailure = this.transport();
         sendFailure.sendError = new Error("send failed");
-        const fourth = this.p2pManager.sendRpcRequest<string>(
+        const fourth = this.p2pManager.rpcRouter.sendRpcRequest<string>(
             { service: "pingService", method: "sum", params: [] },
             sendFailure,
             { timeoutMs: 20 }
@@ -1016,16 +1073,18 @@ export class P2PManagerProbeService extends ARpcService<
         this.p2pManager.stateManager.timeConfig.agreementTime = 0.02;
         try {
             const defaultTransport = this.transport();
-            const defaultPromise = this.p2pManager.sendRpcRequest<string>(
-                { service: "pingService", method: "never", params: [] },
-                defaultTransport
-            );
+            const defaultPromise =
+                this.p2pManager.rpcRouter.sendRpcRequest<string>(
+                    { service: "pingService", method: "never", params: [] },
+                    defaultTransport
+                );
             const explicitTransport = this.transport();
-            const explicitPromise = this.p2pManager.sendRpcRequest<string>(
-                { service: "pingService", method: "never", params: [] },
-                explicitTransport,
-                { timeoutMs: 7 }
-            );
+            const explicitPromise =
+                this.p2pManager.rpcRouter.sendRpcRequest<string>(
+                    { service: "pingService", method: "never", params: [] },
+                    explicitTransport,
+                    { timeoutMs: 7 }
+                );
             const outcomes = await Promise.all([
                 defaultPromise.catch((error: Error) => error.message),
                 explicitPromise.catch((error: Error) => error.message)
@@ -1178,6 +1237,7 @@ export class P2PManagerProbeService extends ARpcService<
         );
         this.p2pManager.addConnection(transport);
         const request = this.beginRequest(transport, timeoutFirst ? 15 : 100);
+        const outcome = request.promise.catch((error: Error) => error.message);
         if (timeoutFirst) {
             await new Promise((resolve) => setTimeout(resolve, 25));
             this.p2pManager.disconnectConnection(transport);
@@ -1186,9 +1246,7 @@ export class P2PManagerProbeService extends ARpcService<
             await new Promise((resolve) => setTimeout(resolve, 25));
         }
         return {
-            firstOutcome: await request.promise.catch(
-                (error: Error) => error.message
-            ),
+            firstOutcome: await outcome,
             connectionPresent:
                 this.p2pManager.openConnections.includes(transport),
             ...this.resourceCounts(resourceBaseline)
@@ -1222,6 +1280,45 @@ export class P2PManagerProbeService extends ARpcService<
             secondValue: await second.promise,
             racedValue: await raced.promise,
             ...this.resourceCounts(resourceBaseline)
+        };
+    }
+
+    public async probeDisposalFailure() {
+        const first = this.transport(ethers.Wallet.createRandom().address);
+        const second = this.transport(ethers.Wallet.createRandom().address);
+        this.p2pManager.profileManager.registerTransport(first);
+        this.p2pManager.profileManager.registerTransport(second);
+        first.closeError = new Error("first transport close failed");
+        const holepunch = this.p2pManager.holepunch;
+        const dispose = holepunch.dispose.bind(holepunch);
+        let holepunchDisposed = false;
+        holepunch.dispose = async () => {
+            await dispose();
+            holepunchDisposed = true;
+        };
+        const firstDisposal = this.p2pManager.dispose();
+        const samePromise = firstDisposal === this.p2pManager.dispose();
+        const failure = await firstDisposal.catch((error: Error) => error);
+        // The real owner remains failed on later disposal; consume that same expected
+        // failure at fixture teardown after verifying its public promise below.
+        const originalDispose = this.p2pManager.dispose.bind(this.p2pManager);
+        this.p2pManager.dispose = async () => {
+            try {
+                await originalDispose();
+            } catch (error) {
+                if (error !== failure) throw error;
+            }
+        };
+        return {
+            message: failure instanceof Error ? failure.message : undefined,
+            failedTransportReleased:
+                this.p2pManager.profileManager.getProfileByTransport(first) ===
+                undefined,
+            firstCloseCalls: first.closeCalls,
+            secondCloseCalls: second.closeCalls,
+            secondClosed: second.isClosed,
+            holepunchDisposed,
+            samePromise
         };
     }
 
@@ -1625,7 +1722,7 @@ export class P2PManagerProbeService extends ARpcService<
         const duplicateAddCount = this.p2pManager.openConnections.filter(
             (transport) => transport === first
         ).length;
-        this.p2pManager.broadcastRpc({
+        this.p2pManager.rpcRouter.broadcastRpc({
             service: "pingService",
             method: "recordPing",
             params: ["broadcast"]
@@ -1752,7 +1849,7 @@ export class P2PManagerProbeService extends ARpcService<
         // the WebRTC route an identity holds is one it had before the ban.
         const webRTC = new WebRTCTransport(
             new RecordingWebRTCDataChannel(),
-            this.p2pManager
+            this.p2pManager.rpcRouter
         );
         this.authenticateTransport(webRTC, address);
         this.p2pManager.banReconnect(address);
@@ -1770,14 +1867,14 @@ export class P2PManagerProbeService extends ARpcService<
         const { peerInfo } = this.registeredHolepunchTransport(address);
         const firstWebRTC = new WebRTCTransport(
             new RecordingWebRTCDataChannel(),
-            this.p2pManager
+            this.p2pManager.rpcRouter
         );
         this.authenticateTransport(firstWebRTC, address);
         const banCallsAfterUpgrade = [...peerInfo.banCalls];
 
         const secondWebRTC = new WebRTCTransport(
             new RecordingWebRTCDataChannel(),
-            this.p2pManager
+            this.p2pManager.rpcRouter
         );
         this.authenticateTransport(secondWebRTC, address);
         this.p2pManager.profileManager.releaseHolepunchBanOnWebRtcClose(
@@ -1804,7 +1901,7 @@ export class P2PManagerProbeService extends ARpcService<
             this.registeredHolepunchTransport(address);
         const webRTC = new WebRTCTransport(
             new RecordingWebRTCDataChannel(),
-            this.p2pManager
+            this.p2pManager.rpcRouter
         );
         this.authenticateTransport(webRTC, address);
         peerInfo.banCalls.length = 0;
@@ -1826,7 +1923,7 @@ export class P2PManagerProbeService extends ARpcService<
             this.registeredHolepunchTransport(address);
         const webRTC = new WebRTCTransport(
             new RecordingWebRTCDataChannel(),
-            this.p2pManager
+            this.p2pManager.rpcRouter
         );
         this.authenticateTransport(webRTC, address);
 
@@ -1866,7 +1963,7 @@ export class P2PManagerProbeService extends ARpcService<
             this.registeredHolepunchTransport(address);
         const webRTC = new WebRTCTransport(
             new RecordingWebRTCDataChannel(),
-            this.p2pManager
+            this.p2pManager.rpcRouter
         );
         this.authenticateTransport(webRTC, address);
         this.p2pManager.addConnection(webRTC);
@@ -1901,7 +1998,7 @@ export class P2PManagerProbeService extends ARpcService<
                 this.registeredHolepunchTransport(address);
             const webRTC = new WebRTCTransport(
                 new RecordingWebRTCDataChannel(),
-                this.p2pManager
+                this.p2pManager.rpcRouter
             );
             this.authenticateTransport(webRTC, address);
             this.p2pManager.addConnection(webRTC);
@@ -1945,7 +2042,7 @@ export class P2PManagerProbeService extends ARpcService<
             this.registeredHolepunchTransport(address);
         const webRTC = new WebRTCTransport(
             new RecordingWebRTCDataChannel(),
-            this.p2pManager
+            this.p2pManager.rpcRouter
         );
         this.authenticateTransport(webRTC, address);
         this.p2pManager.addConnection(webRTC);
@@ -2021,7 +2118,7 @@ export class P2PManagerProbeService extends ARpcService<
     }
 
     private async finalizeAndCountDisconnections(
-        transport: ATransport,
+        transport: NetworkTransport,
         address: string
     ): Promise<number> {
         let disconnectionHookCalls = 0;
@@ -2041,7 +2138,7 @@ export class P2PManagerProbeService extends ARpcService<
     }
 
     private async finalizeTransportIdentity(
-        transport: ATransport,
+        transport: NetworkTransport,
         address: string
     ): Promise<void> {
         const initHandshake = this.p2pManager.localRpc.initHandshakeService;
@@ -2055,7 +2152,9 @@ export class P2PManagerProbeService extends ARpcService<
         await initHandshake.maybeFinalizeHandshakeOnceFromTransport(transport);
     }
 
-    private isAuthenticatedCurrentTransport(transport: ATransport): boolean {
+    private isAuthenticatedCurrentTransport(
+        transport: NetworkTransport
+    ): boolean {
         const profile =
             this.p2pManager.profileManager.getProfileByTransport(transport);
         return (
@@ -2604,7 +2703,7 @@ export class P2PManagerProbeService extends ARpcService<
         const nonSelectedTransportClosed = second.isClosed;
         const ordinaryHookCountAfterCommitBeforeCompletion = ordinaryHookCount;
         const discardedFramesBeforeBroadcast = second.frames.length;
-        this.p2pManager.broadcastRpc({
+        this.p2pManager.rpcRouter.broadcastRpc({
             service: "pingService",
             method: "recordPing",
             params: ["post-lobby"]
@@ -2681,15 +2780,21 @@ export class P2PManagerProbeService extends ARpcService<
             method: "advertise",
             params: [`0x${"34".repeat(32)}`, "advertiser", 1, true]
         };
-        for (let rejected = 0; rejected < 9; rejected += 1) {
-            service.runRPC(wrongTopicRpc, abusive);
+        const framesBefore = abusive.frames.length;
+        for (let rejected = 0; rejected < 8; rejected += 1) {
+            await service.runRPC(wrongTopicRpc, abusive);
         }
+        const openAtRejectionLimit = !abusive.isClosed;
+        const notificationReplies = abusive.frames.length - framesBefore;
+        await service.runRPC(wrongTopicRpc, abusive);
 
         return {
             reservationAccepted: pick.status === "accepted",
             reservedAfterFinalLoss: afterLoss.reserved,
             matchingAfterFinalLoss: afterLoss.matching,
             disconnectedPeerBlacklisted: blacklistedAtLoss,
+            openAtRejectionLimit,
+            notificationReplies,
             abusiveTransportClosed: abusive.isClosed,
             abusivePeerReconnectBanned:
                 this.p2pManager.isReconnectBanned(abusiveAddress),
@@ -2737,7 +2842,7 @@ export class P2PManagerProbeService extends ARpcService<
             await new Promise((resolve) => setTimeout(resolve, 0));
         }
         const pickRequestId = this.requestId(transport);
-        this.p2pManager.onRpc(
+        this.p2pManager.rpcRouter.onRpc(
             JSON.stringify({
                 rpcResponse: true,
                 requestId: pickRequestId,
@@ -2760,7 +2865,7 @@ export class P2PManagerProbeService extends ARpcService<
         const commitRequestId = this.requestId(transport);
         const cancellation = service.cancelMatching(topic);
         this.p2pManager.profileManager.removeTransport(transport);
-        this.p2pManager.onRpc(
+        this.p2pManager.rpcRouter.onRpc(
             JSON.stringify({
                 rpcResponse: true,
                 requestId: commitRequestId,
@@ -4780,7 +4885,7 @@ export class P2PManagerProbeService extends ARpcService<
 
             const webRTC = new WebRTCTransport(
                 new RecordingWebRTCDataChannel(),
-                this.p2pManager
+                this.p2pManager.rpcRouter
             );
             this.authenticateTransport(webRTC, webRtcAddress);
             await this.completeHandshakeFor(webRtcAddress);

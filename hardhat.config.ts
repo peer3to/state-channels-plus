@@ -8,7 +8,7 @@ import "./tasks/forgeTest";
 // Go to https://hardhat.org/config/ to learn more
 
 /**
- * @type import('hardhat/config').HardhatUserConfig
+ * @type {HardhatUserConfig}
  */
 const config: HardhatUserConfig = {
     defaultNetwork: "hardhat",

@@ -26,10 +26,12 @@ mirror, and controls the local execution context (time) for window predicates.
 
 ## Key design decisions
 
+Executor lifetime belongs to the owning runtime root. Domain disposal does not dispose that child again; final root disposal retires the executor in both placements. StateManager abort invokes that host-root disposal, so executor queries then reject in both placements.
+
 Error text delegates to the dependency-free errorMessage helper. Existing catch policy, stack fields, log messages and error propagation remain at this call site. See [EvmDiamondStateMachine.ts](../../../../../../src/evm/EvmDiamondStateMachine.ts#L1).
 
-1. **The mirror deployment is the check engine** — every service's staticCall lands here; nothing protocol-shaped is evaluated outside contract logic ([`INV-MIRROR-1-VAF778`](../../../../specification/enforcement/local-mirror.md#inv-mirror-1-vaf778)).
-2. **Local context control is explicit** so time-driven predicates evaluate under the intended clock (the equivalence constraint of [`REQ-MIRROR-1-XCY9CB`](../../../../specification/enforcement/local-mirror.md#req-mirror-1-xcy9cb)).
+1. **The mirror deployment is the check engine** — every service's staticCall lands here; nothing protocol-shaped is evaluated outside contract logic ([`INV-MIRROR-1-VAF778` (Single implementation)](../../../../specification/enforcement/local-mirror.md#inv-mirror-1-vaf778)).
+2. **Local context control is explicit** so time-driven predicates evaluate under the intended clock (the equivalence constraint of [`REQ-MIRROR-1-XCY9CB` (Constrained equivalence)](../../../../specification/enforcement/local-mirror.md#req-mirror-1-xcy9cb)).
 3. **`p2pSetup` is a wrapper over `setupP2pRuntime`** ([setupP2pRuntime.ts](./p2pRuntime/setupP2pRuntime.ts.md)) with the production dependencies; its public signature (`P2pSetupOptions`) is unchanged. The construction returns only after host readiness and disposes the runtime client if deployment completion or application readiness rejects.
 
 ## Inputs, outputs, state, and side effects

@@ -43,14 +43,14 @@ the observable boundary behavior is what conformance is judged against.
 ## Requirements and invariants
 
 **<a id="req-ix-1-wtj0d1"></a>`REQ-IX-1-WTJ0D1` — Peer block ingress.** Block confirmations reaching block progression from a peer MUST
-have passed, in order: session authentication ([`INV-RPC-1-SJS2T6`](peer-communication/rpc.md#inv-rpc-1-sjs2t6)), envelope
-and frame validation ([`REQ-RPC-1-FF89Z0`](peer-communication/rpc.md#req-rpc-1-ff89z0)), and canonical struct decoding — and MUST then receive the full
-pipeline validation of [`REQ-BLOCK-PIPE-2-PCXNT6`](block-progression/block-processing.md#req-block-pipe-2-pcxnt6) as if the
+have passed, in order: session authentication ([`INV-RPC-1-SJS2T6` (Identity-bound dispatch)](peer-communication/rpc.md#inv-rpc-1-sjs2t6)), envelope
+and frame validation ([`REQ-RPC-1-FF89Z0` (Typed wire contract)](peer-communication/rpc.md#req-rpc-1-ff89z0)), and canonical struct decoding — and MUST then receive the full
+pipeline validation of [`REQ-BLOCK-PIPE-2-PCXNT6` (Complete pre-execution validation)](block-progression/block-processing.md#req-block-pipe-2-pcxnt6) as if the
 transport had proven nothing. Data: an encoded signed block plus its confirmation signature set, with
-source attribution retained ([`REQ-BLOCK-PIPE-1-SS24D1`](block-progression/block-processing.md#req-block-pipe-1-ss24d1)). Ordering: none promised — duplicated, unordered,
+source attribution retained ([`REQ-BLOCK-PIPE-1-SS24D1` (Unified work item)](block-progression/block-processing.md#req-block-pipe-1-ss24d1)). Ordering: none promised — duplicated, unordered,
 partial delivery is in-contract. Trust boundary: untrusted peer ingress. Failure: every deviation is
-classified by [`REQ-BLOCK-PIPE-3-WW2SB7`](block-progression/block-processing.md#req-block-pipe-3-ww2sb7) with its context consequence; transport-level failure consequences
-(disconnect/blacklist) are owned by [`REQ-RPC-6-E60S4J`](peer-communication/rpc.md#req-rpc-6-e60s4j) and never substitute for pipeline validation.
+classified by [`REQ-BLOCK-PIPE-3-WW2SB7` (Strategy-complete deviations)](block-progression/block-processing.md#req-block-pipe-3-ww2sb7) with its context consequence; transport-level failure consequences
+(disconnect/blacklist) are owned by [`REQ-RPC-6-E60S4J` (Ordered ingress verification)](peer-communication/rpc.md#req-rpc-6-e60s4j) and never substitute for pipeline validation.
 
 **<a id="req-ix-2-2py2ef"></a>`REQ-IX-2-2PY2EF` — Deterministic execution and commitment.** Block progression executes state transitions
 only through the protocol model's injected execution context
@@ -82,18 +82,18 @@ finality anchors, membership hops, linkage — without dispute-side reinterpreta
 is admissible relative to the dispute window's chain-time bounds. Trust boundary: proof material is
 adversarial input to on-chain verification even when produced honestly. Failure: insufficient or
 invalid material yields a rejected or killed claim; it MUST NOT corrupt the audit of other claims
-([`REQ-DISPUTE-PIPE-2-MJRJV1`](disputes/dispute-processing.md#req-dispute-pipe-2-mjrjv1)).
+([`REQ-DISPUTE-PIPE-2-MJRJV1` (Ordered complete verification)](disputes/dispute-processing.md#req-dispute-pipe-2-mjrjv1)).
 
 **<a id="req-ix-5-6xhjjb"></a>`REQ-IX-5-6XHJJB` — On-chain adjudication.** Disputes drive enforcement through the adjudication operations
 (upload, kill, reduce/finalize, challenge). Data: signed dispute claims, auditing data committed by
 hash and posted as calldata when required, fraud proofs, and the exact committed dispute set at
 reduction. Validity: enforcement recomputes every protocol predicate itself
-([`REQ-CONTRACT-ARCH-2-BE651C`](enforcement/contracts.md#req-contract-arch-2-be651c)); the off-chain auditor's conclusion is advice,
-never authority — both MUST reach the same result from the same inputs ([`INV-DISPUTE-PIPE-1-BN0K81`](disputes/dispute-processing.md#inv-dispute-pipe-1-bn0k81)).
+([`REQ-CONTRACT-ARCH-2-BE651C` (Shared validation)](enforcement/contracts.md#req-contract-arch-2-be651c)); the off-chain auditor's conclusion is advice,
+never authority — both MUST reach the same result from the same inputs ([`INV-DISPUTE-PIPE-1-BN0K81` (Equivalent audit)](disputes/dispute-processing.md#inv-dispute-pipe-1-bn0k81)).
 Ordering: the chain serializes submissions, but the reduced result MUST be order-independent
 ([`INV-DIS-5-J1QZ92`](disputes/disputes.md#inv-dis-5-j1qz92)). Trust boundary: every submission is adversarial. Failure: invalid submissions revert
 atomically or are killed with the submitter slashed; duplicate chain actions MUST be idempotent or
-rejected ([`REQ-DISPUTE-PIPE-4-3YVDSA`](disputes/dispute-processing.md#req-dispute-pipe-4-3yvdsa)).
+rejected ([`REQ-DISPUTE-PIPE-4-3YVDSA` (Atomic recovery)](disputes/dispute-processing.md#req-dispute-pipe-4-3yvdsa)).
 
 **<a id="req-ix-6-a4y7kb"></a>`REQ-IX-6-A4Y7KB` — Snapshot adoption and outbound processing.** Settlement advances the on-chain snapshot
 by same-fork finality proof or along expired reduced-result links
@@ -108,8 +108,8 @@ snapshot and tip authoritative with no partial release.
 
 **<a id="req-ix-7-a004vz"></a>`REQ-IX-7-A004VZ` — Chain observation.** Runtime observes enforcement's events and calldata through RPC
 providers and feeds every system. Data: contract events, posted calldata, and chain timestamps.
-Validity: observed intake re-enters the owning system's validation ([`REQ-BLOCK-PIPE-4-CF52J6`](block-progression/block-processing.md#req-block-pipe-4-cf52j6) for recovered
-blocks, [`REQ-DISPUTE-PIPE-1-HRBFP7`](disputes/dispute-processing.md#req-dispute-pipe-1-hrbfp7) for observed disputes) — observation grants no trust. Timing: freshness
+Validity: observed intake re-enters the owning system's validation ([`REQ-BLOCK-PIPE-4-CF52J6` (Recovery without bypass)](block-progression/block-processing.md#req-block-pipe-4-cf52j6) for recovered
+blocks, [`REQ-DISPUTE-PIPE-1-HRBFP7` (Bound intake)](disputes/dispute-processing.md#req-dispute-pipe-1-hrbfp7) for observed disputes) — observation grants no trust. Timing: freshness
 is bounded by the trust model's honest-RPC assumption
 ([trust-model.md](./security/trust-model.md)); protocol windows MUST tolerate the stated observation
 lag. Trust boundary: RPC providers may be unavailable, lagging, or dishonest; redundancy reduces but
@@ -118,24 +118,24 @@ protocol reactions; its recovery path after reconnection is bounded sync, not si
 
 **<a id="req-ix-8-fy54av"></a>`REQ-IX-8-FY54AV` — Execution equivalence.** Runtime hosts every system inline or across isolated contexts;
 given the same inputs and state, results, committed effects, events, and failure classification MUST
-be identical ([`INV-RUNTIME-1-AKRHAK`](runtime/execution.md#inv-runtime-1-akrhak)). Data: every cross-context protocol value
-crosses in the canonical transfer-safe encoding ([`REQ-RUNTIME-1-RSM6MZ`](runtime/execution.md#req-runtime-1-rsm6mz)). Ordering: ownership and causal
-order per [`REQ-RUNTIME-2-KBXKTG`](runtime/execution.md#req-runtime-2-kbxktg). Trust boundary: isolation contains faults but never launders untrusted
+be identical ([`INV-RUNTIME-1-AKRHAK` (Execution equivalence)](runtime/execution.md#inv-runtime-1-akrhak)). Data: every cross-context protocol value
+crosses in the canonical transfer-safe encoding ([`REQ-RUNTIME-1-RSM6MZ` (Transfer-safe boundary)](runtime/execution.md#req-runtime-1-rsm6mz)). Ordering: ownership and causal
+order per [`REQ-RUNTIME-2-KBXKTG` (Ownership and ordering)](runtime/execution.md#req-runtime-2-kbxktg). Trust boundary: isolation contains faults but never launders untrusted
 protocol data into trusted state. Failure: context failure settles or rejects owned work exactly
-once ([`REQ-RUNTIME-3-VQXW59`](runtime/execution.md#req-runtime-3-vqxw59)); it MUST NOT surface as a protocol-level disagreement between two honest
+once ([`REQ-RUNTIME-3-VQXW59` (Lifecycle convergence)](runtime/execution.md#req-runtime-3-vqxw59)); it MUST NOT surface as a protocol-level disagreement between two honest
 deployments of the same node.
 
 **<a id="req-ix-9-av56nr"></a>`REQ-IX-9-AV56NR` — Storage fidelity.** Every system persists and reads its local protocol knowledge
 through the storage system ([storage/README.md](./storage/README.md)). Data: each module's defined
 records and keys. Validity: storage returns exactly what its producer committed — no fabrication,
 substitution, reinterpretation, or gap-bridging — and grants no validity: read-back data re-enters
-the owning system's validation ([`REQ-STOR-3-4RJGER`](storage/durability.md#req-stor-3-4rjger)). Ordering: single operations are atomic; merge
+the owning system's validation ([`REQ-STOR-3-4RJGER` (Restart recovery without trust)](storage/durability.md#req-stor-3-4rjger)). Ordering: single operations are atomic; merge
 operations are monotone, idempotent, and arrival-order independent; multi-module consistency at an
-operation boundary is the calling system's commit obligation ([`REQ-STOR-2-TARP8S`](storage/durability.md#req-stor-2-tarp8s)). Trust boundary:
+operation boundary is the calling system's commit obligation ([`REQ-STOR-2-TARP8S` (Commit-aligned durability)](storage/durability.md#req-stor-2-tarp8s)). Trust boundary:
 storage is inside the node, but what flows into it originates from untrusted sources — attribution
 and evidence MUST survive storage exactly so they remain usable as evidence. Failure: an absent
 record reads as nothing rather than a default that masquerades as protocol state; a failed
-multi-module write leaves the operation retryable per [`REQ-STOR-2-TARP8S`](storage/durability.md#req-stor-2-tarp8s).
+multi-module write leaves the operation retryable per [`REQ-STOR-2-TARP8S` (Commit-aligned durability)](storage/durability.md#req-stor-2-tarp8s).
 
 ## Assumptions and constraints
 

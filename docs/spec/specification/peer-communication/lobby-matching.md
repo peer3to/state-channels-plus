@@ -308,4 +308,4 @@ suspension: a peer that exhausted the bound in one session is reachable again in
 _Non-normative._ A verified light client can query the authoritative open-channel set from its latest
 verified manager state, replacing RPC-dependent discovery reads. Persistent availability and multi-party
 formation need separate protocols. The per-transport pre-readiness queue cap and overflow outcome remain
-open under [`OQ-SPEC-LOBBY-1-D65YTT`](../open-questions.md#oq-spec-lobby-1-d65ytt).
+open under [`OQ-SPEC-LOBBY-1-D65YTT` (Deferred-admission queue bound)](../open-questions.md#oq-spec-lobby-1-d65ytt).

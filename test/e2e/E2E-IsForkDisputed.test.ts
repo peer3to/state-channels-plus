@@ -4,8 +4,8 @@ import { expect } from "chai";
 /**
  * E2E Tests for Fork Dispute Detection
  *
- * Maps to: src/rpc/services/isForkDisputedService/IsForkDisputedService.ts
- *          src/rpc/services/isForkDisputedService/IsForkDisputedRpcMethods.ts
+ * Maps to: src/rpc/network/services/isForkDisputedService/IsForkDisputedService.ts
+ *          src/rpc/network/services/isForkDisputedService/IsForkDisputedRpcMethods.ts
  *
  * Tests the fork dispute acknowledgment mechanism and peer disconnection logic.
  */

@@ -3,12 +3,19 @@ import {
     deserializeTransactionResponse,
     serializeTransactionRequest,
     serializeTransactionResponse
-} from "@/evm/p2pRuntime/chainSignerSerialization";
+} from "@/rpc/internal/services/chainSigner/chainSignerSerialization";
+import { assertIsolatedReplacementDetection } from "@test/fixtures/node/IsolatedReplacementFixture";
+import { assertRuntimeSignerFields } from "@test/fixtures/RuntimeSignerFixture";
 import { expect } from "chai";
-import type { TransactionResponse } from "ethers";
 import { ethers } from "hardhat";
 
 describe("chain signer serialization", () => {
+    it("preserves full transaction fields and byte message signatures through an inline SDK", async () => {
+        await assertRuntimeSignerFields(true);
+    });
+    it("preserves full transaction fields and byte message signatures through an SDK worker", async () => {
+        await assertRuntimeSignerFields(false);
+    });
     it("round-trips a normalized transaction request", async () => {
         const [sender, recipient] = await ethers.getSigners();
         const storageKey = ethers.zeroPadValue("0x01", 32);
@@ -65,51 +72,7 @@ describe("chain signer serialization", () => {
     });
 
     it("allows explicit client-side replacement detection", async () => {
-        const [sender, recipient] = await ethers.getSigners();
-        const gasPrice = (await ethers.provider.getFeeData()).gasPrice!;
-        const startBlock = await ethers.provider.getBlockNumber();
-
-        await ethers.provider.send("evm_setAutomine", [false]);
-        try {
-            const original = await sender.sendTransaction({
-                type: 0,
-                to: recipient.address,
-                value: 5n,
-                gasPrice
-            });
-            const restored = deserializeTransactionResponse(
-                serializeTransactionResponse(original),
-                sender.provider
-            ).replaceableTransaction(startBlock);
-            const replacement = await sender.sendTransaction({
-                type: 0,
-                to: recipient.address,
-                value: 5n,
-                nonce: original.nonce,
-                gasPrice: gasPrice * 2n
-            });
-            await ethers.provider.send("hardhat_mine", ["0x1"]);
-
-            let replacementError: unknown;
-            try {
-                await restored.wait();
-            } catch (error) {
-                replacementError = error;
-            }
-            expect(replacementError).to.be.instanceOf(Error);
-            expect(
-                (replacementError as Error & { code?: string }).code
-            ).to.equal("TRANSACTION_REPLACED");
-            expect(
-                (
-                    replacementError as Error & {
-                        replacement?: TransactionResponse;
-                    }
-                ).replacement?.hash
-            ).to.equal(replacement.hash);
-        } finally {
-            await ethers.provider.send("evm_setAutomine", [true]);
-        }
+        await assertIsolatedReplacementDetection();
     });
 
     it("rejects fields that cannot cross the runtime port", async () => {

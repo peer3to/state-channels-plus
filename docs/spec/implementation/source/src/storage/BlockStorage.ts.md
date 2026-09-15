@@ -30,7 +30,7 @@ deleteBlock and insertSignature remain on the public production surface for thei
 storeBlock owns insertion directly and delegates copy merging to Block.mergeFrom. Signature and timestamp overloads reuse getBlock; explicit keys, missing-target results and proxy mutation behavior remain intact. See [BlockStorage.ts](../../../../../../src/storage/BlockStorage.ts#L35).
 
 1. **One object, two indexes.** Hash map and coordinate map point at the _same_ `Block`
-   instance ([#L48](../../../../../../src/storage/BlockStorage.ts#L48)), so index consistency ([`INV-BLKSTORE-1-MK4W8D`](../../../../specification/storage/blocks.md#inv-blkstore-1-mk4w8d)) holds by
+   instance ([#L48](../../../../../../src/storage/BlockStorage.ts#L48)), so index consistency ([`INV-BLKSTORE-1-MK4W8D` (Index consistency)](../../../../specification/storage/blocks.md#inv-blkstore-1-mk4w8d)) holds by
    construction; deletes remove from both.
 2. **Refuse, then merge.** A store at occupied coordinates aborts (returns absence) when the
    incoming block differs, and merges signatures when equal ([#L65](../../../../../../src/storage/BlockStorage.ts#L65)) —
@@ -62,20 +62,20 @@ claims complete conformance for a requirement that depends on other files.
 ## Assumptions, dependencies, trust boundaries, and limits
 
 - Callers store only pipeline-accepted blocks; the store checks keys and equality, not protocol validity.
-- Caller-supplied hash/coordinate overrides are trusted to match content to the extent the producer guarantees (same trust rule as [`INV-SNAPSTORE-1-DPHPJE`](../../../../specification/storage/snapshots-and-states.md#inv-snapstore-1-dphpje)).
+- Caller-supplied hash/coordinate overrides are trusted to match content to the extent the producer guarantees (same trust rule as [`INV-SNAPSTORE-1-DPHPJE` (Content addressing)](../../../../specification/storage/snapshots-and-states.md#inv-snapstore-1-dphpje)).
 - In-memory medium for this protocol version: durability across restart is not yet provided; the
   target contract is [durability.md](../../../../specification/storage/durability.md).
 
 ## Specification adherence
 
-- Dual-index consistency including deletes ([`INV-BLKSTORE-1-MK4W8D`](../../../../specification/storage/blocks.md#inv-blkstore-1-mk4w8d)).
-- Same-coordinate conflict refusal with original intact; equal-block signature merge ([`REQ-BLKSTORE-1-KYHTWT`](../../../../specification/storage/blocks.md#req-blkstore-1-kyhtwt)).
-- Monotone signature merge via set expansion ([`REQ-BLKSTORE-2-VWXP2C`](../../../../specification/storage/blocks.md#req-blkstore-2-vwxp2c), signature clause).
-- Tip advances only on non-`justPersist` stores that raise the height; traversal clamped ([`REQ-BLKSTORE-3-S9V2KC`](../../../../specification/storage/blocks.md#req-blkstore-3-s9v2kc)).
+- Dual-index consistency including deletes ([`INV-BLKSTORE-1-MK4W8D` (Index consistency)](../../../../specification/storage/blocks.md#inv-blkstore-1-mk4w8d)).
+- Same-coordinate conflict refusal with original intact; equal-block signature merge ([`REQ-BLKSTORE-1-KYHTWT` (Same-coordinate conflict is not resolved here)](../../../../specification/storage/blocks.md#req-blkstore-1-kyhtwt)).
+- Monotone signature merge via set expansion ([`REQ-BLKSTORE-2-VWXP2C` (Monotone signature merge)](../../../../specification/storage/blocks.md#req-blkstore-2-vwxp2c), signature clause).
+- Tip advances only on non-`justPersist` stores that raise the height; traversal clamped ([`REQ-BLKSTORE-3-S9V2KC` (Tip tracking and bounded traversal)](../../../../specification/storage/blocks.md#req-blkstore-3-s9v2kc)).
 
 ## Specification contradictions
 
-**Iterator aliasing.** [`REQ-STOR-6-SKP0KM`](../../../../specification/storage/durability.md#req-stor-6-skp0km)
+**Iterator aliasing.** [`REQ-STOR-6-SKP0KM` (Value semantics at the store boundary)](../../../../specification/storage/durability.md#req-stor-6-skp0km)
 requires sequential reads to yield copies like every other read shape. `getIterator`
 ([L234-268](../../../../../../src/storage/BlockStorage.ts#L253-L268)) yields the store's own `Block`
 objects straight out of `coordinatesToBlockMap`, and the wrapping proxy exempts generators, so a
@@ -84,7 +84,7 @@ caller can mutate stored blocks without a store operation
 `getLatestBlock` ([L272-276](../../../../../../src/storage/BlockStorage.ts#L291-L276)) consumes the
 same generator but returns across the proxy, so its result is copied.
 
-**Timestamp overwrite.** [`REQ-BLKSTORE-2-VWXP2C`](../../../../specification/storage/blocks.md#req-blkstore-2-vwxp2c) requires the _earliest_ observed on-chain timestamp to
+**Timestamp overwrite.** [`REQ-BLKSTORE-2-VWXP2C` (Monotone signature merge)](../../../../specification/storage/blocks.md#req-blkstore-2-vwxp2c) requires the _earliest_ observed on-chain timestamp to
 win, but both `setOnChainTimestamp` ([#L159](../../../../../../src/storage/BlockStorage.ts#L159)) and the equal-block merge
 ([#L64](../../../../../../src/storage/BlockStorage.ts#L64)) overwrite unconditionally — a later timestamp replaces an earlier
 one. Earliest-wins is enforced only upstream in the queue's merge

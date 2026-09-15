@@ -151,6 +151,8 @@ describe("LobbyMatchingService", function () {
             .request();
         expect(afterBound.reserved).to.equal(false);
         expect(afterBound.matching).to.equal(true);
+        expect(result.openAtRejectionLimit).to.equal(true);
+        expect(result.notificationReplies).to.equal(0);
         expect(result.abusiveTransportClosed).to.equal(true);
         expect(result.abusivePeerReconnectBanned).to.equal(true);
         expect(result.abusivePeerBlacklisted).to.equal(false);

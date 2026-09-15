@@ -1,8 +1,8 @@
 // @spec-test-coverage-ignore: harness network setup exercised by owning mapped test declarations
 import type { NetworkService } from "./NetworkService";
 import type { ConnectToChannelOptions } from "@/evm/signer/ConnectToChannelOptions";
-import ARpcMethods from "@/rpc/ARpcMethods";
-import type ATransport from "@/transport/ATransport";
+import ANetworkRpcMethods from "@/rpc/network/ANetworkRpcMethods";
+import type NetworkTransport from "@/transport/NetworkTransport";
 import type { Address, ChannelId } from "@/types/types";
 import { DetachedPromises } from "@/utils";
 import { Codec, Type } from "@/utils";
@@ -15,12 +15,9 @@ export type HarnessConnectToChannelOptions = Omit<
 };
 
 /** Connection / network control operations for the test harness. */
-export class NetworkRpcMethods extends ARpcMethods {
-    constructor(
-        transport: ATransport,
-        private readonly service: NetworkService
-    ) {
-        super(transport, service.p2pManager);
+export class NetworkRpcMethods extends ANetworkRpcMethods<NetworkService> {
+    constructor(transport: NetworkTransport, service: NetworkService) {
+        super(transport, service);
     }
 
     /** Connect this peer to the selected channel. */

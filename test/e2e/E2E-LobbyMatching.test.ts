@@ -1,4 +1,4 @@
-import { compareAddresses } from "@/rpc/services/openChannelNegotiation/OpenChannelNegotiationHelpers";
+import { compareAddresses } from "@/rpc/network/services/openChannelNegotiation/OpenChannelNegotiationHelpers";
 import { TransportType } from "@/transport/TransportType";
 import { Status } from "@/types";
 import { sleep } from "@/utils";

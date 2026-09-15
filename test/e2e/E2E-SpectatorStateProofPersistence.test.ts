@@ -1,5 +1,7 @@
 import { Status } from "@/types";
+import { runtimeIsClosed } from "@test/fixtures/RuntimeRootObservation";
 import { MathTestSession as TestSession } from "@test/harness";
+import { waitFor } from "@test/utils/waitFor";
 import { expect } from "chai";
 
 describe("E2E: Join/Leave Sequence", function () {
@@ -92,7 +94,10 @@ describe("E2E: Join/Leave Sequence", function () {
         await h.byzantine.submitInvalidStateTransitionBlock(maliciousPeerIndex);
         await h.event.waitForPeers("onAbort", spectatorIndices, 1);
         for (const spectatorIndex of spectatorIndices)
-            await h.event.waitUntilPeerStatus(spectatorIndex, Status.OPENED);
+            await waitFor(
+                () => runtimeIsClosed(h.getPeer(spectatorIndex).p2pInstance),
+                h.event.protocolEventTimeoutMs()
+            );
 
         await h.assert.dispute.initiatedAndCommitedWait({
             peersIndices: honestPeerIndices,

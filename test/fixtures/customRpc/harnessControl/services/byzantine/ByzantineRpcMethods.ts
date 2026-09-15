@@ -7,9 +7,9 @@ import type {
 } from "./ByzantineService";
 import Clock from "@/Clock";
 import Block from "@/models/Block";
-import ARpcMethods from "@/rpc/ARpcMethods";
+import ANetworkRpcMethods from "@/rpc/network/ANetworkRpcMethods";
 import type Rpc from "@/rpc/Rpc";
-import type ATransport from "@/transport/ATransport";
+import type NetworkTransport from "@/transport/NetworkTransport";
 import type { Bytes, ForkId, Hash, BlockHeight } from "@/types/types";
 import { Codec, Type, hash } from "@/utils";
 import type {
@@ -24,12 +24,9 @@ import { ethers } from "ethers";
  * live here (every method is routable by name at runtime); shared accessors and
  * helpers are on {@link ByzantineService}.
  */
-export class ByzantineRpcMethods extends ARpcMethods {
-    constructor(
-        transport: ATransport,
-        private readonly service: ByzantineService
-    ) {
-        super(transport, service.p2pManager);
+export class ByzantineRpcMethods extends ANetworkRpcMethods<ByzantineService> {
+    constructor(transport: NetworkTransport, service: ByzantineService) {
+        super(transport, service);
     }
 
     /**

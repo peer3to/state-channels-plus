@@ -26,7 +26,7 @@ below-snapshot skips, and per-block structure checks reporting the first invalid
 ## Key design decisions
 
 1. **Milestones XOR trailing signed blocks:** proofs carrying both are rejected — the suffix rides inside the last milestone on this path (flagged constraint pending engineer decision).
-2. **First-invalid-index reporting** gives fraud-proof construction its objective citation ([`REQ-ENFPROOF-3-EEDR2Y`](../../../../../specification/enforcement/proof-verification.md#req-enfproof-3-eedr2y)).
+2. **First-invalid-index reporting** gives fraud-proof construction its objective citation ([`REQ-ENFPROOF-3-EEDR2Y` (Falsifying detail on failure)](../../../../../specification/enforcement/proof-verification.md#req-enfproof-3-eedr2y)).
 
 ## Inputs, outputs, state, and side effects
 

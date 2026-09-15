@@ -128,7 +128,9 @@ handing off.
 
 ### RPC services (`*Service` + `*RpcMethods`)
 
-Applies to `src/rpc/services/*` and `test/fixtures/customRpc/**`.
+Applies to `src/rpc/network/services/**`, `src/rpc/internal/services/**`,
+`test/fixtures/customRpc/**`, and runtime probe pairs under
+`test/fixtures/runtimeRpc/probe/**`.
 
 - A `*RpcMethods` class must contain **only the public endpoint functions**. At
   runtime `private` does not exist, and the dispatcher routes by name
@@ -192,6 +194,10 @@ methods }`. Never interleave a field declaration between methods. When adding a
   files, and CI checks it before running the distributed suite.
 
 ### Comments
+
+- When overriding inherited behavior, use TypeScript `override` and add a short
+  comment naming the base member and explaining what changes. Apply this to new
+  or modified overrides; implementing an abstract member is not replacing a default.
 
 - Keep comments simple and to the point. No long essays.
 - When refactoring or moving code (extracting a method, moving a body to another
@@ -305,7 +311,7 @@ limit, so it implements only what needs its own storage and composition (`open`,
 { ... }` structural shapes that re-state an existing type. Reach the real type
   instead: type the entry point so the concrete type flows through. E.g. a
   harness-control `*Service`/`*RpcMethods` should declare its `p2pManager` as
-  `P2PManager<HarnessControlRpc>` (via the `ARpcService`/`ARpcMethods`
+  `P2PManager<HarnessControlRpc>` (via the `ANetworkRpcService`/`ANetworkRpcMethods`
   `TP2PManager` param) — then `localRpc`/`remoteRpc` are fully typed (the SDK's
   own services included) with no casts. Generic helpers should be generic over
   their args (e.g. `execOnHost<T, A>(…, args: A)`) so call sites are checked

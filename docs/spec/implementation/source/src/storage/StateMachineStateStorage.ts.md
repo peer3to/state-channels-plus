@@ -52,7 +52,7 @@ claims complete conformance for a requirement that depends on other files.
 
 ## Specification adherence
 
-- Exact content addressing with explicit absence ([`INV-SNAPSTORE-1-DPHPJE`](../../../../specification/storage/snapshots-and-states.md#inv-snapstore-1-dphpje)).
+- Exact content addressing with explicit absence ([`INV-SNAPSTORE-1-DPHPJE` (Content addressing)](../../../../specification/storage/snapshots-and-states.md#inv-snapstore-1-dphpje)).
 
 ## Specification contradictions
 

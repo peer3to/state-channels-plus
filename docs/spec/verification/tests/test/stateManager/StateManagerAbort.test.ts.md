@@ -1,30 +1,17 @@
 # test/stateManager/StateManagerAbort.test.ts — Test Report
 
 > **Test file:** [test/stateManager/StateManagerAbort.test.ts](../../../../../../test/stateManager/StateManagerAbort.test.ts) > **Status:** Authored — engineer verification pending.
-> **Exercises:** [StateManager.ts](../../../../implementation/source/src/stateManager/StateManager.ts.md)
-
-## Contents
-
-- [Overview](#overview)
-- [Tests and covered test IDs](#tests-and-covered-test-ids)
+> **Exercises:** [StateManager](../../../../implementation/source/src/stateManager/StateManager.ts.md)
 
 ## Overview
 
-The single case drives `StateManager.abort()` on a live four-peer harness session, executed in
-the peer's worker realm via `execOnHost`. It schedules a task through the session-owned
-`timeoutManager`, aborts, and then waits past the task's due time. The oracles assert that abort
-cancels session-owned timeout work (the task never runs), leaves the manager's status at
-`OPENED`, disconnects every peer (`getConnectedPeers` is empty), and fires the `onAbort` hook on
-the main thread. Full disposal semantics (worker teardown, storage release) are out of scope —
-the case isolates abort's cancellation and disconnect effects.
+Real SDK abort closes the host and executor in inline and worker placement, rejects late queries and preserves a sibling SDK. The inline fixture retains local endpoint observations for closure assertions. A separate timer case proves scheduled work is cancelled before its due time, status becomes OPENED and peer connections close.
 
 ## Tests and covered test IDs
 
-A row lists only test IDs this test covers **in full** — partial credit is never recorded. Each
-test ID may be assigned to at most one test across the whole tree; static analysis reports
-duplicate assignments, and tests with no assigned ID are listed in the verification-coverage
-report but are kept here.
-
-| Test declaration                                                                                                                       | Covers |
-| -------------------------------------------------------------------------------------------------------------------------------------- | ------ |
-| [`StateManager abort > cancels session-owned timeout work`](../../../../../../test/stateManager/StateManagerAbort.test.ts#L6) (line 6) | —      |
+| Test                                                                                                                                                                     | Covers                                                                                                                                                                                                                                                                      |
+| ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| [StateManager abort > disposes the inline host and executor roots on abort](../../../../../../test/stateManager/StateManagerAbort.test.ts#L11) (line 11)                 | [`UNIT-TEST-STATE-MANAGER-ABORT-1-ZDYEFE.P1`](../../../../implementation/source/src/stateManager/StateManager.ts.md#unit-test-state-manager-abort-1-zdyefe.p1), [`REQ-RUNTIME-3-VQXW59.T1.P48`](../../../../specification/runtime/execution.md#req-runtime-3-vqxw59.t1.p48) |
+| [StateManager abort > disposes the worker host and executor roots on abort](../../../../../../test/stateManager/StateManagerAbort.test.ts#L14) (line 14)                 | [`UNIT-TEST-STATE-MANAGER-ABORT-1-ZDYEFE.P2`](../../../../implementation/source/src/stateManager/StateManager.ts.md#unit-test-state-manager-abort-1-zdyefe.p2), [`REQ-RUNTIME-3-VQXW59.T1.P49`](../../../../specification/runtime/execution.md#req-runtime-3-vqxw59.t1.p49) |
+| [StateManager abort > cancels session-owned timeout work](../../../../../../test/stateManager/StateManagerAbort.test.ts#L17) (line 17)                                   | [`UNIT-TEST-STATE-MANAGER-ABORT-1-ZDYEFE.P3`](../../../../implementation/source/src/stateManager/StateManager.ts.md#unit-test-state-manager-abort-1-zdyefe.p3)                                                                                                              |
+| [StateManager abort > stops host work before provider destruction and final listener removal](../../../../../../test/stateManager/StateManagerAbort.test.ts#L8) (line 8) | [`UNIT-TEST-STATE-MANAGER-ABORT-1-ZDYEFE.P4`](../../../../implementation/source/src/stateManager/StateManager.ts.md#unit-test-state-manager-abort-1-zdyefe.p4)                                                                                                              |

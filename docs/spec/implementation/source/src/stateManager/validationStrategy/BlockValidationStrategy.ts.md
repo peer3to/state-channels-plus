@@ -27,8 +27,8 @@ The disputed-fork hook discards the entry without requeueing. It returns NOT_REA
 
 The live strategy owns the subjective-window failure log and refusal. A replay override can accept history without logging a false validation failure. See [BlockValidationStrategy.ts](../../../../../../../src/stateManager/validationStrategy/BlockValidationStrategy.ts#L287).
 
-1. **Evidence-before-escalation is enforced here:** every DISPUTE verdict stores the proof via the fraud-proof service, then calls `dispute(forkId)` ([`REQ-BLOCK-PIPE-8-N529VH`](../../../../../specification/block-progression/block-processing.md#req-block-pipe-8-n529vh)).
-2. **Acknowledgment-gated tolerance** consumes the dispute-ack records ([`REQ-DACK-3-J4Z33Y`](../../../../../specification/peer-communication/dispute-acknowledgment.md#req-dack-3-j4z33y)).
+1. **Evidence-before-escalation is enforced here:** every DISPUTE verdict stores the proof via the fraud-proof service, then calls `dispute(forkId)` ([`REQ-BLOCK-PIPE-8-N529VH` (Evidence precedes escalation)](../../../../../specification/block-progression/block-processing.md#req-block-pipe-8-n529vh)).
+2. **Acknowledgment-gated tolerance** consumes the dispute-ack records ([`REQ-DACK-3-J4Z33Y` (Knowledge-gated consequences)](../../../../../specification/peer-communication/dispute-acknowledgment.md#req-dack-3-j4z33y)).
 
 ## Inputs, outputs, state, and side effects
 
@@ -48,7 +48,7 @@ claims complete conformance for a requirement that depends on other files.
 | ----------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | [BlockValidationStrategy.ts](../../../../../../../src/stateManager/validationStrategy/BlockValidationStrategy.ts) | [`REQ-BLOCK-PIPE-3-WW2SB7`](../../../../../specification/block-progression/block-processing.md#req-block-pipe-3-ww2sb7), [`REQ-BLOCK-PIPE-8-N529VH`](../../../../../specification/block-progression/block-processing.md#req-block-pipe-8-n529vh), [`REQ-DACK-3-J4Z33Y`](../../../../../specification/peer-communication/dispute-acknowledgment.md#req-dack-3-j4z33y) |
 
-Contribution in this file: [`REQ-DISPUTE-PIPE-8-BVR8XV`](../../../../../specification/disputes/dispute-processing.md#req-dispute-pipe-8-bvr8xv). The conformance rows below name this owner and the other required owners.
+Contribution in this file: [`REQ-DISPUTE-PIPE-8-BVR8XV` (Dispute admission orders block signatures)](../../../../../specification/disputes/dispute-processing.md#req-dispute-pipe-8-bvr8xv). The conformance rows below name this owner and the other required owners.
 
 ## Assumptions, dependencies, trust boundaries, and limits
 
@@ -56,7 +56,7 @@ Contribution in this file: [`REQ-DISPUTE-PIPE-8-BVR8XV`](../../../../../specific
 
 ## Specification adherence
 
-- Context-complete consequence profile ([`REQ-BLOCK-PIPE-3-WW2SB7`](../../../../../specification/block-progression/block-processing.md#req-block-pipe-3-ww2sb7)) — the live consequence profile.
+- Context-complete consequence profile ([`REQ-BLOCK-PIPE-3-WW2SB7` (Strategy-complete deviations)](../../../../../specification/block-progression/block-processing.md#req-block-pipe-3-ww2sb7)) — the live consequence profile.
 
 ## Specification contradictions
 

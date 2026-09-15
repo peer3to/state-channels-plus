@@ -1,0 +1,277 @@
+import JoinChannelRpcMethods from "./JoinChannelRpcMethods";
+import Clock from "@/Clock";
+import StateSnapshot from "@/models/StateSnapshot";
+import type P2PManager from "@/P2PManager";
+import ANetworkRpcService from "@/rpc/network/ANetworkRpcService";
+import { HandshakeCompletedGuard } from "@/rpc/network/guards";
+import type NetworkTransport from "@/transport/NetworkTransport";
+import type { ChannelId, ForkId, Hash, Signature } from "@/types/types";
+import { addressesEqual, Codec, SignatureUtils, Type } from "@/utils";
+import type {
+    BalanceStruct,
+    JoinChannelConfirmationStruct,
+    JoinChannelStruct,
+    SignedJoinChannelStruct
+} from "@typechain-types/contracts/V1/types/DataTypes";
+
+export const DEFAULT_JOIN_CHANNEL_DEADLINE_SECONDS = 120;
+
+export type PreparedJoinChannelConfirmation = {
+    confirmation: JoinChannelConfirmationStruct;
+    expectedSnapshotHash: Hash;
+    expectedForkId: ForkId;
+};
+
+export default class JoinChannelService extends ANetworkRpcService<JoinChannelRpcMethods> {
+    constructor(p2pManager: P2PManager) {
+        super(
+            p2pManager.rpcRouter,
+            p2pManager.stateManager.logger.child({
+                component: "JoinChannelService"
+            })
+        );
+        this.guards = [new HandshakeCompletedGuard(this)];
+    }
+
+    public createRPCMethods(
+        transport: NetworkTransport
+    ): JoinChannelRpcMethods {
+        return new JoinChannelRpcMethods(transport, this);
+    }
+
+    public async prepareJoinChannelConfirmation(
+        balance: BalanceStruct
+    ): Promise<PreparedJoinChannelConfirmation> {
+        const chainTime = await Clock.getBlockchainTime();
+        return this.collectJoinChannelConfirmation({
+            channelId: this.p2pManager.stateManager.channelId,
+            participant: this.p2pManager.stateManager.signerAddress,
+            balance,
+            deadlineTimestamp: BigInt(
+                chainTime.timestamp + DEFAULT_JOIN_CHANNEL_DEADLINE_SECONDS
+            )
+        });
+    }
+
+    public async collectJoinChannelConfirmation(
+        joinChannel: JoinChannelStruct
+    ): Promise<PreparedJoinChannelConfirmation> {
+        const sm = this.p2pManager.stateManager;
+        if (!addressesEqual(joinChannel.participant, sm.signerAddress)) {
+            throw new Error(
+                "collectJoinChannelConfirmation: participant must be the local signer"
+            );
+        }
+
+        const initialChainTime = await Clock.getBlockchainTime();
+        if (
+            Number(joinChannel.deadlineTimestamp) <= initialChainTime.timestamp
+        ) {
+            throw new Error("collectJoinChannelConfirmation: join expired");
+        }
+
+        const snapshot = StateSnapshot.from(
+            await sm.stateChannelManagerContract.getStateSnapshot(
+                joinChannel.channelId
+            )
+        );
+        const expectedSnapshotHash = snapshot.hash;
+        const expectedForkId = snapshot.forkID;
+        const thresholdParticipants =
+            await sm.membershipService.getOnChainThresholdSet(
+                String(joinChannel.channelId) as ChannelId
+            );
+        const localAddress = String(sm.signerAddress);
+
+        await this.waitForThresholdReachability(
+            thresholdParticipants.map(String),
+            localAddress
+        );
+
+        const chainTime = await Clock.getBlockchainTime();
+        const remainingSeconds =
+            Number(joinChannel.deadlineTimestamp) - chainTime.timestamp;
+        if (remainingSeconds <= 0) {
+            throw new Error("collectJoinChannelConfirmation: join expired");
+        }
+        const timeoutMs = Math.min(
+            sm.timeConfig.agreementTime * 1000,
+            remainingSeconds * 1000
+        );
+        const { encoded, signature } = await SignatureUtils.signJoinChannel(
+            joinChannel,
+            sm.signer
+        );
+        const signedJoinChannel: SignedJoinChannelStruct = {
+            encodedJoinChannel: encoded,
+            signature: String(signature)
+        };
+        const encodedSignedJoinChannel = String(
+            Codec.encode(signedJoinChannel, Type.SignedJoinChannel)
+        );
+        const signatures = await Promise.all(
+            thresholdParticipants.map(async (participant) => {
+                const response = addressesEqual(participant, localAddress)
+                    ? {
+                          signature: await SignatureUtils.signMsg(
+                              encoded,
+                              sm.signer
+                          )
+                      }
+                    : await this.remoteRpc.joinChannelService
+                          .requestJoinSignature(
+                              encodedSignedJoinChannel,
+                              String(expectedSnapshotHash),
+                              String(expectedForkId)
+                          )
+                          .request(participant, { timeoutMs });
+                const recovered = SignatureUtils.getSignerAddress(
+                    encoded,
+                    String(response.signature)
+                );
+                if (!addressesEqual(recovered, participant)) {
+                    throw new Error(
+                        `collectJoinChannelConfirmation: invalid signature from ${participant}`
+                    );
+                }
+                return String(response.signature);
+            })
+        );
+
+        return {
+            confirmation: {
+                signedJoinChannel,
+                signatures
+            },
+            expectedSnapshotHash,
+            expectedForkId
+        };
+    }
+
+    public async signJoinRequest(
+        transport: NetworkTransport,
+        encodedSignedJoinChannel: string,
+        expectedSnapshotHash: Hash,
+        expectedForkId: ForkId
+    ): Promise<{ signature: Signature }> {
+        const peerAddress = transport.peerAddress;
+        if (!peerAddress) {
+            throw new Error("requestJoinSignature: missing peer address");
+        }
+        const signedJoinChannel = Codec.decode(
+            encodedSignedJoinChannel,
+            Type.SignedJoinChannel
+        );
+        const encodedJoinChannel = String(signedJoinChannel.encodedJoinChannel);
+        const joinChannel = Codec.decode(encodedJoinChannel, Type.JoinChannel);
+        const signer = SignatureUtils.getSignerAddress(
+            encodedJoinChannel,
+            String(signedJoinChannel.signature) as Signature
+        );
+        if (
+            !addressesEqual(signer, joinChannel.participant) ||
+            !addressesEqual(peerAddress, joinChannel.participant)
+        ) {
+            throw new Error(
+                "requestJoinSignature: invalid participant signature"
+            );
+        }
+
+        const sm = this.p2pManager.stateManager;
+        if (joinChannel.channelId !== sm.channelId) {
+            throw new Error("requestJoinSignature: channel mismatch");
+        }
+        const [chainTime, rawSnapshot, thresholdParticipants] =
+            await Promise.all([
+                Clock.getBlockchainTime(),
+                sm.stateChannelManagerContract.getStateSnapshot(
+                    joinChannel.channelId
+                ),
+                sm.membershipService.getOnChainThresholdSet(
+                    String(joinChannel.channelId) as ChannelId
+                )
+            ]);
+        if (Number(joinChannel.deadlineTimestamp) < chainTime.timestamp) {
+            throw new Error("requestJoinSignature: join expired");
+        }
+
+        const snapshot = StateSnapshot.from(rawSnapshot);
+        if (String(snapshot.forkID) !== String(expectedForkId)) {
+            throw new Error("requestJoinSignature: fork mismatch");
+        }
+        if (String(snapshot.hash) !== String(expectedSnapshotHash)) {
+            throw new Error("requestJoinSignature: snapshot mismatch");
+        }
+        if (!sm.membershipService.includesSigner(thresholdParticipants)) {
+            throw new Error(
+                "requestJoinSignature: local signer not in threshold"
+            );
+        }
+
+        try {
+            await sm.diamondStateMachine.requirePositiveBalance(
+                joinChannel.balance,
+                "join balance"
+            );
+        } catch (error) {
+            this.p2pManager.disconnectAndBlacklistPeerByEvmAddress(peerAddress);
+            throw error;
+        }
+
+        // TODO: add a configurable admission filter, including optional snapshot-scoped consent.
+        const signature = await SignatureUtils.signMsg(
+            encodedJoinChannel,
+            sm.signer
+        );
+        return { signature: String(signature) };
+    }
+
+    private async waitForThresholdReachability(
+        thresholdParticipants: string[],
+        localAddress: string
+    ): Promise<void> {
+        const isReady = () =>
+            thresholdParticipants.every(
+                (participant) =>
+                    addressesEqual(participant, localAddress) ||
+                    !!this.p2pManager.profileManager.getTransportByEvmAddress(
+                        participant
+                    )
+            );
+        if (isReady()) return;
+
+        await new Promise<void>((resolve, reject) => {
+            let settled = false;
+            const unsubscribe = this.p2pManager.stateManager.events.on(
+                "p2pEventHooks",
+                "handshakeCompleted",
+                () => {
+                    if (settled || !isReady()) return;
+                    settled = true;
+                    unsubscribe();
+                    this.p2pManager.stateManager.timeoutManager.cancelTask(
+                        timeout
+                    );
+                    resolve();
+                }
+            );
+            const timeout =
+                this.p2pManager.stateManager.timeoutManager.scheduleTask(
+                    () => {
+                        if (settled) return;
+                        settled = true;
+                        unsubscribe();
+                        reject(
+                            new Error(
+                                "collectJoinChannelConfirmation: threshold participant unavailable"
+                            )
+                        );
+                    },
+                    this.p2pManager.stateManager.timeConfig.agreementTime *
+                        2 *
+                        1000,
+                    "join threshold participant reachability"
+                );
+        });
+    }
+}

@@ -9,6 +9,8 @@
 
 ## Overview
 
+The browser job in the CI workflow runs this gate after installing Chromium and compiling artifacts. Local runs remain available through the package script. CI execution itself is established only after the workflow runs on a pull request.
+
 The runner behind package script `test:browser:webrtc` stands up a hardhat node (switched to
 interval mining so the browser's parallel HTTP nonce ordering works), a local-discovery relay
 hub, and a Vite dev server with browser platform aliases plus a same-origin `/rpc` proxy, then
@@ -28,17 +30,6 @@ such oracles) remain with the targeted Node suites and none is assigned here.
 
 ## Tests and covered test IDs
 
-A row lists only test IDs this test covers **in full** — partial credit is never recorded. Each
-test ID may be assigned to at most one test across the whole tree; static analysis reports
-duplicate assignments, and tests with no assigned ID are listed in the verification-coverage
-report but are kept here.
-
-| Test declaration                                                                                          | Covers                                                                                                                                                                        |
+| Test                                                                                                      | Covers                                                                                                                                                                        |
 | --------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | [`package script test:browser:webrtc`](../../../../../../test/browser/run-p2p-webrtc-e2e.mjs#L1) (line 1) | [`INTEGRATION-TEST-BROWSER-P2P-RUNTIME-1-E8W0M2.P1`](../../../../implementation/source/src/evm/p2pRuntime/browser/README.md#integration-test-browser-p2p-runtime-1-e8w0m2.p1) |
-
-The browser runner now opens the existing-channel fixture on chain before connection. Workers report one
-serializable `{ type: "connectResult", result, status }` message per peer. The runner asserts observer `true`
-at `SYNCED` and targeted `{ autoOpen: true, shouldJoin: true, balance }` success at pending or participating,
-including nonempty balance data and upgraded traffic. This is browser-worker API evidence, not runtime-port
-structured-clone evidence.

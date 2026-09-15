@@ -24,6 +24,10 @@ structured contract-size error classes and limits thrown by exported deployment 
 
 ## Key design decisions
 
+The network service base is exported only as `ANetworkRpcService`. The old `ARpcService` alias is removed by engineer decision; callers use the explicit network name.
+
+The standalone createContractExecutorFactory and ContractExecutorFactoryOptions package exports are removed. Executor creation is internal to SDK setup and requires its owning endpoint. Unrelated exports retain their existing public contracts; the replacement internal factory and owner endpoint are not exported here. See [createContractExecutor.ts](evm/contractExecutor/createContractExecutor.ts.md).
+
 1. Public deployment failures and their error constructors are exported from the same package root,
    so consumers can use `instanceof ContractSizeLimitError` without a private path import.
 

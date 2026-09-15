@@ -1,3 +1,4 @@
+// @spec-test-coverage-ignore: fixture support; executable evidence belongs to its calling test declarations.
 import DisputeRpcMethods from "./DisputeRpcMethods";
 import type { SignerService } from "../signer/SignerService";
 import Clock from "@/Clock";
@@ -6,8 +7,8 @@ import type { ConstructDisputeResult } from "@/disputeManager/DisputeManager";
 import Block from "@/models/Block";
 import StateSnapshot from "@/models/StateSnapshot";
 import type P2PManager from "@/P2PManager";
-import ARpcService from "@/rpc/ARpcService";
-import type ATransport from "@/transport/ATransport";
+import ANetworkRpcService from "@/rpc/network/ANetworkRpcService";
+import type NetworkTransport from "@/transport/NetworkTransport";
 import { DisputeFraudProofType } from "@/types/sol-enums";
 import type { Address, Bytes, ForkId, Hash } from "@/types/types";
 import { SignatureUtils, Codec, Type, hash as keccakHash } from "@/utils";
@@ -101,7 +102,7 @@ export type PersistDisputeDataProjection = {
  * shared state and helpers live here (not on the RpcMethods class) since every
  * RpcMethods method is routable by name at runtime.
  */
-export class DisputeService extends ARpcService<DisputeRpcMethods> {
+export class DisputeService extends ANetworkRpcService<DisputeRpcMethods> {
     /** Disputes produced while `constructDispute` was stubbed (newest last). */
     readonly tamperedDisputes: DisputeStruct[] = [];
     private originalConstructDispute?: (
@@ -116,7 +117,7 @@ export class DisputeService extends ARpcService<DisputeRpcMethods> {
         private readonly signerService: SignerService
     ) {
         super(
-            p2pManager,
+            p2pManager.rpcRouter,
             p2pManager.stateManager.logger.child({
                 component: "HarnessDisputeService"
             })
@@ -806,7 +807,7 @@ export class DisputeService extends ARpcService<DisputeRpcMethods> {
         return commitments ? commitments.length : null;
     }
 
-    public createRPCMethods(transport: ATransport): DisputeRpcMethods {
+    public createRPCMethods(transport: NetworkTransport): DisputeRpcMethods {
         return new DisputeRpcMethods(transport, this);
     }
 }

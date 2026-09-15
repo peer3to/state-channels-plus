@@ -1,7 +1,7 @@
 # test/rpc/initHandshake/InitHandshakeChallenge.test.ts — Test Report
 
 > **Test file:** [test/rpc/initHandshake/InitHandshakeChallenge.test.ts](../../../../../../../test/rpc/initHandshake/InitHandshakeChallenge.test.ts) > **Status:** Authored — engineer verification pending.
-> **Exercises:** [InitHandshakeService.ts](../../../../../implementation/source/src/rpc/services/initHandshake/InitHandshakeService.ts.md)
+> **Exercises:** [InitHandshakeService.ts](../../../../../implementation/source/src/rpc/network/services/initHandshake/InitHandshakeService.ts.md)
 
 ## Contents
 

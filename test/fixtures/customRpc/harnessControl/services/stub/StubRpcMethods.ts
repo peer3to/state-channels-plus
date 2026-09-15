@@ -19,16 +19,15 @@ import type {
     StubService,
     SignatureBlockMatch
 } from "./StubService";
-import type { HarnessControlRpc } from "../../HarnessControlRpc";
-import type P2PManager from "@/P2PManager";
-import ARpcMethods from "@/rpc/ARpcMethods";
-import { HandshakeCompletedGuard } from "@/rpc/guards";
-import InitHandshakeRpcMethods from "@/rpc/services/initHandshake/InitHandshakeRpcMethods";
-import type IsForkDisputedRpcMethods from "@/rpc/services/isForkDisputedService/IsForkDisputedRpcMethods";
-import type JoinChannelRpcMethods from "@/rpc/services/joinChannel/JoinChannelRpcMethods";
-import type SpectateServiceRpcMethods from "@/rpc/services/spectate/SpectateRpcMethods";
-import type { SyncRequest } from "@/rpc/services/spectate/SpectateService";
-import type ATransport from "@/transport/ATransport";
+
+import ANetworkRpcMethods from "@/rpc/network/ANetworkRpcMethods";
+import { HandshakeCompletedGuard } from "@/rpc/network/guards";
+import InitHandshakeRpcMethods from "@/rpc/network/services/initHandshake/InitHandshakeRpcMethods";
+import type IsForkDisputedRpcMethods from "@/rpc/network/services/isForkDisputedService/IsForkDisputedRpcMethods";
+import type JoinChannelRpcMethods from "@/rpc/network/services/joinChannel/JoinChannelRpcMethods";
+import type SpectateServiceRpcMethods from "@/rpc/network/services/spectate/SpectateRpcMethods";
+import type { SyncRequest } from "@/rpc/network/services/spectate/SpectateService";
+import type NetworkTransport from "@/transport/NetworkTransport";
 import type { Status } from "@/types";
 import type { Address, ForkId, Hash, Timestamp } from "@/types/types";
 import { Codec, DetachedPromises, sleep, Type } from "@/utils";
@@ -44,12 +43,9 @@ import { protocolEventTimeoutMs } from "@test/harness/core/testTimeConfig";
  * The registry holds heterogeneous originals as `unknown`, so `restoreX` casts
  * each back to its concrete member type — the only casts here.
  */
-export class StubRpcMethods extends ARpcMethods<P2PManager<HarnessControlRpc>> {
-    constructor(
-        transport: ATransport,
-        private readonly service: StubService
-    ) {
-        super(transport, service.p2pManager);
+export class StubRpcMethods extends ANetworkRpcMethods<StubService> {
+    constructor(transport: NetworkTransport, service: StubService) {
+        super(transport, service);
     }
 
     public scheduleProbe(taskName: string): Promise<boolean> {
@@ -506,7 +502,7 @@ export class StubRpcMethods extends ARpcMethods<P2PManager<HarnessControlRpc>> {
         const original = this.service.stubOriginals.get(
             "spectateCreateRpcMethods"
         ) as typeof service.createRPCMethods;
-        service.createRPCMethods = (transport: ATransport) => {
+        service.createRPCMethods = (transport: NetworkTransport) => {
             const methods = original(transport);
             methods.onSpectateRequest = async () => ({ encodedSyncPayload });
             return methods;
@@ -541,7 +537,7 @@ export class StubRpcMethods extends ARpcMethods<P2PManager<HarnessControlRpc>> {
         const original = this.service.stubOriginals.get(
             "spectateCreateRpcMethods"
         ) as typeof service.createRPCMethods;
-        service.createRPCMethods = (transport: ATransport) => {
+        service.createRPCMethods = (transport: NetworkTransport) => {
             const methods = original(transport);
             methods.onSpectateRequest = async function (
                 this: SpectateServiceRpcMethods
@@ -571,11 +567,10 @@ export class StubRpcMethods extends ARpcMethods<P2PManager<HarnessControlRpc>> {
             );
         }
         this.service.spectateRequestCount = 0;
-        const original = this.service.stubOriginals.get(
-            "spectateCreateRpcMethods"
-        ) as typeof service.createRPCMethods;
+        // Count the installed response behavior, including a staged invalid response.
+        const original = service.createRPCMethods.bind(service);
         const stubService = this.service;
-        service.createRPCMethods = (transport: ATransport) => {
+        service.createRPCMethods = (transport: NetworkTransport) => {
             const methods = original(transport);
             const realOnSpectateRequest =
                 methods.onSpectateRequest.bind(methods);
@@ -608,7 +603,7 @@ export class StubRpcMethods extends ARpcMethods<P2PManager<HarnessControlRpc>> {
         const original = this.service.stubOriginals.get(
             "joinSignatureCreateRpcMethods"
         ) as typeof service.createRPCMethods;
-        service.createRPCMethods = (transport: ATransport) => {
+        service.createRPCMethods = (transport: NetworkTransport) => {
             const methods = original(transport);
             const realRequest = methods.requestJoinSignature.bind(methods);
             methods.requestJoinSignature = async (...args) => {
@@ -632,7 +627,7 @@ export class StubRpcMethods extends ARpcMethods<P2PManager<HarnessControlRpc>> {
         const original = this.service.stubOriginals.get(
             "joinSignatureCreateRpcMethods"
         ) as typeof service.createRPCMethods;
-        service.createRPCMethods = (transport: ATransport) => {
+        service.createRPCMethods = (transport: NetworkTransport) => {
             const methods = original(transport);
             methods.requestJoinSignature = async function (
                 this: JoinChannelRpcMethods
@@ -656,7 +651,7 @@ export class StubRpcMethods extends ARpcMethods<P2PManager<HarnessControlRpc>> {
         const original = this.service.stubOriginals.get(
             "joinSignatureCreateRpcMethods"
         ) as typeof service.createRPCMethods;
-        service.createRPCMethods = (transport: ATransport) => {
+        service.createRPCMethods = (transport: NetworkTransport) => {
             const methods = original(transport);
             methods.requestJoinSignature = async (
                 encodedSignedJoinChannel: string
@@ -686,7 +681,7 @@ export class StubRpcMethods extends ARpcMethods<P2PManager<HarnessControlRpc>> {
             "joinSignatureCreateRpcMethods"
         ) as typeof service.createRPCMethods;
         const stubService = this.service;
-        service.createRPCMethods = (transport: ATransport) => {
+        service.createRPCMethods = (transport: NetworkTransport) => {
             const methods = original(transport);
             const realRequest = methods.requestJoinSignature.bind(methods);
             methods.requestJoinSignature = (...args) => {
@@ -730,7 +725,7 @@ export class StubRpcMethods extends ARpcMethods<P2PManager<HarnessControlRpc>> {
             "disputeAckCreateRpcMethods"
         ) as typeof service.createRPCMethods;
         const stubService = this.service;
-        service.createRPCMethods = (transport: ATransport) => {
+        service.createRPCMethods = (transport: NetworkTransport) => {
             const methods = original(transport);
             methods.onDisputeAcknowledgmentRequest = async function (
                 this: IsForkDisputedRpcMethods
@@ -777,7 +772,7 @@ export class StubRpcMethods extends ARpcMethods<P2PManager<HarnessControlRpc>> {
         const spectateService = this.p2pManager.localRpc.spectateService;
         this.service.spectateGuardBlocked = false;
         const stubService = this.service;
-        // `guards` is protected on ARpcService; cast to install a test guard.
+        // `guards` is protected on ANetworkRpcService; cast to install a test guard.
         (spectateService as unknown as { guards: unknown[] }).guards = [
             new HandshakeCompletedGuard(spectateService, {
                 onFailure: () => {
@@ -799,7 +794,7 @@ export class StubRpcMethods extends ARpcMethods<P2PManager<HarnessControlRpc>> {
         const transport = this.service.capturedInitHandshakeTransport;
         if (!transport) throw new Error("no captured handshake transport");
         try {
-            await this.p2pManager.sendRpcRequest(
+            await this.p2pManager.rpcRouter.sendRpcRequest(
                 {
                     service: "spectateService",
                     method: "onSpectateRequest",
@@ -939,7 +934,7 @@ export class StubRpcMethods extends ARpcMethods<P2PManager<HarnessControlRpc>> {
         ) as typeof service.createRPCMethods;
         const realRequest =
             InitHandshakeRpcMethods.prototype.onInitHandshakeRequest;
-        service.createRPCMethods = (transport: ATransport) => {
+        service.createRPCMethods = (transport: NetworkTransport) => {
             const methods = original(transport);
             methods.onInitHandshakeRequest = async function (
                 this: InitHandshakeRpcMethods,
@@ -1514,9 +1509,12 @@ export class StubRpcMethods extends ARpcMethods<P2PManager<HarnessControlRpc>> {
     }
 
     /** Abort the runtime on the next tick so this request still answers. */
-    public abortDetached(): boolean {
+    public abortDetached(repeat = false): boolean {
         const sm = this.service.sm;
-        setTimeout(() => sm.abort(), 0);
+        setTimeout(() => {
+            sm.abort();
+            if (repeat) sm.abort();
+        }, 0);
         return true;
     }
 

@@ -30,14 +30,16 @@ The client-side signer facade in isolated deployments: forwards signing/collecti
 
 Channel IDs use the shared validation-only bytes32 check. Existing normalization, option decoding and public errors remain at their original boundaries. See [ClientP2pSigner.ts](../../../../../../../src/evm/signer/ClientP2pSigner.ts#L1).
 
-1. **Signing requests cross the boundary; keys do not** ([`REQ-ID-3-KR0BE3`](../../../../../specification/protocol-model/identity.md#req-id-3-kr0be3)).
-2. **`disconnectFromPeers` returns the host's promise instead of firing and forgetting**
-   ([#L227](../../../../../../../src/evm/signer/ClientP2pSigner.ts#L227)). The host operation now leaves every observed discovery key before
+1. **Signing requests cross the boundary; keys do not** ([`REQ-ID-3-KR0BE3` (Confined signing authority)](../../../../../specification/protocol-model/identity.md#req-id-3-kr0be3)).
+2. **`disconnectFromPeers` awaits the host's request instead of firing and forgetting**
+   ([#L272](../../../../../../../src/evm/signer/ClientP2pSigner.ts#L272)). The host operation now leaves every observed discovery key before
    closing transports, so it has a completion the caller needs: until the leave lands, discovery can
-   still re-dial. Returning the request promise makes the client facade's contract identical to the
+   still re-dial. Awaiting the request makes the client facade's contract identical to the
    inline signer's and keeps the isolated and inline deployments observationally equal
    ([`INV-RUNTIME-1-AKRHAK`](../../../../../specification/runtime/execution.md#inv-runtime-1-akrhak),
    [`REQ-UPG-7-KQPXRE`](../../../../../specification/peer-communication/transport-upgrade.md#req-upg-7-kqpxre)).
+
+Message signing preserves text versus byte input through the shared tagged message serializer, so the host signs the same bytes as the public ethers caller.
 
 ## Inputs, outputs, state, and side effects
 
@@ -81,9 +83,9 @@ Status enum: `Covered` | `Partial` | `Contradicts` | `Missing`. Evidence cells a
 **Here:** / **Other files:** so each row is auditable from its links alone; genuine gaps go in the
 Gap column. Audit state is file-level (Status header), never a row status.
 
-| Requirement / invariant                                                                                     | Implementation status | Evidence                                                                                                                                                                                                                                                                                                                                                      | Gap / divergence                             |
-| ----------------------------------------------------------------------------------------------------------- | --------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------- |
-| [`REQ-UPG-7-KQPXRE`](../../../../../specification/peer-communication/transport-upgrade.md#req-upg-7-kqpxre) | Partial               | **Here:** the disconnect request's promise is returned to the caller ([#L227](../../../../../../../src/evm/signer/ClientP2pSigner.ts#L227)), so the client observes the leave-then-close completion. **Other files:** [P2pRuntimeHost](../p2pRuntime/P2pRuntimeHost.ts.md) awaits the host operation; [LocalP2pSigner](./LocalP2pSigner.ts.md) implements it. | The client takes no discovery action itself. |
+| Requirement / invariant                                                                                     | Implementation status | Evidence                                                                                                                                                                                                                                                                                                                                                                                        | Gap / divergence                             |
+| ----------------------------------------------------------------------------------------------------------- | --------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------- |
+| [`REQ-UPG-7-KQPXRE`](../../../../../specification/peer-communication/transport-upgrade.md#req-upg-7-kqpxre) | Partial               | **Here:** the disconnect request is awaited before the call resolves ([#L272](../../../../../../../src/evm/signer/ClientP2pSigner.ts#L272)), so the client observes the leave-then-close completion. **Other files:** [P2pSignerRpcMethods](../../rpc/internal/services/p2pSigner/P2pSignerRpcMethods.ts.md) awaits the host operation; [LocalP2pSigner](./LocalP2pSigner.ts.md) implements it. | The client takes no discovery action itself. |
 
 ## Component test obligations
 
@@ -98,15 +100,15 @@ Exact test evidence is mapped against these IDs in the verification test reports
 
 The client exposes no channel-ID setter and forwards `leaveChannel` with no generic request timeout. Host
 lifecycle failures remain authoritative. The method is an internal route for `P2pInstance.leaveChannel`; a
-direct signer call does not dispose the outer runtime. This contributes to [`REQ-TJOIN-6-0HEVYH`](../../../../../specification/peer-communication/targeted-channel-join.md#req-tjoin-6-0hevyh) and [`REQ-TJOIN-7-NNGTAY`](../../../../../specification/peer-communication/targeted-channel-join.md#req-tjoin-7-nngtay).
+direct signer call does not dispose the outer runtime. This contributes to [`REQ-TJOIN-6-0HEVYH` (Single-channel runtime ownership)](../../../../../specification/peer-communication/targeted-channel-join.md#req-tjoin-6-0hevyh) and [`REQ-TJOIN-7-NNGTAY` (Terminal channel leave)](../../../../../specification/peer-communication/targeted-channel-join.md#req-tjoin-7-nngtay).
 
-- [identity.md](../../../../../specification/protocol-model/identity.md), [P2pRuntimeHost](../p2pRuntime/P2pRuntimeHost.ts.md).
+- [identity.md](../../../../../specification/protocol-model/identity.md), [P2pRuntimeHost](../../rpc/internal/roots/P2pRuntimeHostRoot.ts.md).
 
 ## Targeted connect implementation
 
 The client validates programmer input before port dispatch, encodes full balances with the SDK codec, sends
 one connect request with an optional option record, and keeps the runtime-client deadline disabled. The
 dedicated cancellation request carries the normalized channel ID and cannot route through `leaveLobby`.
-Boolean results are preserved across the port. See [`REQ-TJOIN-1-5VGR1F`](../../../../../specification/peer-communication/targeted-channel-join.md#req-tjoin-1-5vgr1f).
+Boolean results are preserved across the port. See [`REQ-TJOIN-1-5VGR1F` (Independent public options)](../../../../../specification/peer-communication/targeted-channel-join.md#req-tjoin-1-5vgr1f).
 
 Shared operation owners: [bytes32.ts.md](../../utils/bytes32.ts.md).

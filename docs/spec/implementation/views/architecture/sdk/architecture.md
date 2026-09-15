@@ -42,7 +42,7 @@ Parameters:
 | `options.peerLogger`                   | `Logger?`                        | Replaces the default logger.                                                                                                                                                                                                              |
 | `options.config`                       | `Partial<Config>?`               | Runtime config overrides; precedence in [`createConfig`](../../../../../../src/utils/config.ts#L147) is overrides > `process.env` > `peer3.config.ts` > defaults. See [../reference/configuration.md](../../operations/configuration.md). |
 | `options.signerSecret`                 | `string?`                        | Private key (`0x` + 64 hex) or mnemonic. **A random private key is generated when omitted.**                                                                                                                                              |
-| `options.customRpcManifest`            | `CustomRpcManifest?`             | Integrator RPC root, resolved on the host via [`resolveCustomRpcManifest`](../../../../../../src/rpc/resolveCustomRpcManifest.ts#L1) and typed through [`registry.ts`](../../../../../../src/rpc/registry.ts#L1).                         |
+| `options.customRpcManifest`            | `CustomRpcManifest?`             | Integrator RPC root, resolved on the host via [`resolveCustomRpcManifest`](../../../../../../src/rpc/network/resolveCustomRpcManifest.ts#L1) and typed through [`registry.ts`](../../../../../../src/rpc/network/registry.ts#L1).         |
 | `options.customPrecompiles`            | `EvmCustomPrecompileManifest[]?` | Integrator precompiles installed into the local EVM executor.                                                                                                                                                                             |
 | `options.handlerExecutionContext`      | `HostHandlerExecutionContext?`   | Wraps every inline-host handler invocation (port messages, incoming p2p RPC). Ignored in threaded mode — a worker runs exactly one peer's host.                                                                                           |
 
@@ -74,12 +74,13 @@ port.
 
 Top to bottom:
 
-1. **Application (main thread).** Holds `P2pInstance`; calls the enshrined
+1. **Application.** Holds `P2pInstance`; calls the enshrined
    contract, subscribes on `events`, uses `hostRpc` and the client signers.
-2. **Runtime client.** [`P2pRuntimeClient`](../../../../../../src/evm/p2pRuntime/P2pRuntimeClient.ts#L88)
-   speaks a request/response protocol over a `RuntimePort` and mirrors bus
-   events into the client-realm `EventBus`.
-3. **Runtime host.** [`startP2pRuntimeHost`](../../../../../../src/evm/p2pRuntime/P2pRuntimeHost.ts#L199)
+2. **Runtime client.** [`P2pRuntimeClientRoot`](../../../../../../src/rpc/internal/roots/P2pRuntimeClientRoot.ts)
+   owns host communication, domain adapters and cleanup. setupP2pRuntime owns configuration and the two application deployments after communication startup.
+   P2pInstance holds a direct local reference to this initialized root. Its host
+   connection carries RPC and mirrors bus events into the client EventBus.
+3. **Runtime host.** [`startP2pRuntimeHost`](../../../../../../src/rpc/internal/roots/P2pRuntimeHostRoot.ts#L204)
    constructs the live graph: provider + wallet, `Clock` sync, time config from
    the chain (`getAllTimes` → `p2pTime`, `agreementTime`, `chainFallbackTime`,
    `evidenceTime`), the local EVM contract executor, `Storage`, `StateManager`
@@ -95,35 +96,35 @@ Top to bottom:
 
 - **Inline (default).** `createRuntimeChannel()` makes an in-process port pair;
   the host runs on the same thread. `handlerExecutionContext`, when provided,
-  wraps every host handler (port messages and `P2PManager.onRpc`) — used by
+  wraps every host handler (port messages and `NetworkRpcRouter.onRpc`) — used by
   hosts embedding several peers in one thread.
 - **Worker (`RUN_SDK_IN_THREAD=true`).** `createTransferableChannel()` +
-  `createP2pRuntimeWorker()`; a `WorkerBootstrapMessage {type:"connect", payload, port}`
+  `createRootWorker()`; a `WorkerBootstrapMessage {type:"connect", payload, port}`
   transfers the port into the worker. `dispose()` shuts the worker down. WebRTC
   cannot run in a worker, so the host mints a bridge `MessageChannel` and posts
   the main-thread end to the client (`webRTCBridgePort`).
 
-Client → host request types (verified in [`P2pRuntimeHost.handleRequest`](../../../../../../src/evm/p2pRuntime/P2pRuntimeHost.ts#L416)):
-deployment bridge (`deploySigner*`, `deployComplete`), chain signer
-(`chainSignerSignTransaction/SendTransaction/SignMessage/SignTypedData`),
-p2p signer (`signMessage`, `signTypedData`), enshrined-contract execution
-(`sendTransaction`, `callView`), channel lifecycle (`connectToChannel`,
-`leaveChannel`, `joinChannel`, `topUpBalance`, `collectJoinChannelConfirmation`,
-`getChannelStatus`, `setIsLeader`, `disconnectFromPeers`), `hostRpc`, `quiesce`,
-`dispose`. Host → client messages: `ready`, `response`, `busEvent`,
-`hostError`, `webRTCBridgePort`.
+Client → host calls select the typed services on
+[P2pRuntimeHostRoot](../../../source/src/rpc/internal/roots/P2pRuntimeHostRoot.ts.md):
+`deploySigner`, `chainSigner`, `p2pSigner`, `hostRpc` and `lifecycle`. Calls choose
+request or send explicitly after method arguments, with the recipient connection
+already bound. The shared router correlates responses. The client SDK service
+receives `busEvent` and `webRTCBridgePort`; readiness and errors use the common
+lifecycle and error services. Each endpoint also exposes its logger service. Existing operation-specific timeout choices remain at
+the callers.
 
 `disconnectFromPeers` is awaited on both sides: the host leaves every discovery
 key it observes (`P2PManager.leaveAllDiscoveryKeys`) before `disconnectAll`,
 because discovery re-dials any peer that still shares an observed key — closing
-first would make the disconnect a pause. The client facade therefore returns the
-request promise rather than firing and forgetting. It bans nobody; a later
+first would make the disconnect a pause. The client facade therefore awaits the
+host's request rather than firing and forgetting. It bans nobody; a later
 `connectToChannel` re-observes its key and peers reconnect.
 
-Startup sequence: config → resolve signer → start host (inline or worker) →
-client connects → `deployStateMachine` runs twice through the deployment
-bridge signer → `deployComplete` triggers `buildRuntime` → host posts `ready`
-→ `P2pInstance` returned.
+Startup sequence: application config and signer → create client root and its
+host child → host communication ready → application adapters →
+`deployStateMachine` runs twice through the deployment signer →
+`deployComplete` builds the peer runtime → bridge installation → `P2pInstance`
+returned. Application setup owns this sequence; the root owns communication.
 
 ## 3. Assumptions, constraints & dependencies
 
@@ -195,10 +196,10 @@ logged without failing the transition.
 
 ```mermaid
 flowchart TB
-    subgraph Client["Client realm (main thread)"]
+    subgraph Client["Client runtime"]
         App["Application"]
         PI["P2pInstance<br/>enshrined contract · signers · events · hostRpc"]
-        PRC["P2pRuntimeClient"]
+        PRC["P2pRuntimeClientRoot"]
         App --> PI --> PRC
     end
     PRC <-- "RuntimePort (inline or worker)" --> Host
@@ -264,13 +265,10 @@ per-component contracts in [components.md](./components.md).
 - **[`INV-SDK-3-87WK8P`](architecture.md#inv-sdk-3-87wk8p)** — Dispute re-execution never runs against the live replicated
   state machine (two separate deployments; §4).
 - **Failure behavior.** Host construction failures post `hostError` and close
-  the port (the client's `ready` settles rejected). A dead client port triggers
+  the port (client creation rejects). A dead client port triggers
   host self-disposal. `StateManager.abort()` (slashed/removed, unrecoverable
   sync failure, fatal reduction error) fires `onAbort`, drops status to
-  `OPENED`, and disposes the runtime graph; a code TODO notes that abort does
-  not yet tear down the control port, so a disposed peer can still answer host
-  RPC queries. **Open question:** is that residual queryability acceptable, or
-  must abort also close the runtime port?
+  `OPENED`, and disposes the owning root and its children. Final cleanup closes the runtime port; late queries reject in both placements.
 
 ## 8. Verification
 
@@ -295,7 +293,6 @@ _Non-normative._
 - Redundant multi-provider chain observation with cross-checking, and a defined
   degradation mode when providers disagree (see
   [../security/trust-model.md](../../../../specification/security/trust-model.md)).
-- Close the runtime port on `abort()` so disposed peers cannot serve host RPC.
 - A persistence-backed `Storage` (everything is in-memory today), which would
   change restart/recovery behavior of both pipelines.
 - Inject the discovery backend (Holepunch vs local discovery) behind one
@@ -303,10 +300,10 @@ _Non-normative._
 
 ## Implementation traceability
 
-| Requirement / invariant                                | Statement                                                                                                                      | Implementation status | Implementation evidence                                                                                                                                                                                  | Gap / divergence |
-| ------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------ | --------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------- |
-| [`REQ-SDK-1-JKC9W7`](architecture.md#req-sdk-1-jkc9w7) | The runtime owns its signer; `p2pSetup` accepts only `signerSecret` (random when omitted), never an injected `Signer`.         | Covered               | [src/evm/EvmDiamondStateMachine.ts](../../../../../../src/evm/EvmDiamondStateMachine.ts#L1), [src/evm/p2pRuntime/RuntimeChainContext.ts](../../../../../../src/evm/p2pRuntime/RuntimeChainContext.ts#L1) | None.            |
-| [`REQ-SDK-2-M2PGDM`](architecture.md#req-sdk-2-m2pgdm) | The SDK requires at least one available honest RPC endpoint; current implementation uses exactly one WebSocket `PROVIDER_URL`. | Covered               | [src/evm/p2pRuntime/RuntimeChainContext.ts](../../../../../../src/evm/p2pRuntime/RuntimeChainContext.ts#L1), [src/utils/config.ts](../../../../../../src/utils/config.ts#L1)                             | None.            |
-| [`INV-SDK-1-DE9YED`](architecture.md#inv-sdk-1-de9yed) | All app↔runtime interaction crosses the runtime port; `getStateManager()` throws.                                             | Covered               | [src/evm/P2pInstance.ts](../../../../../../src/evm/P2pInstance.ts#L1)                                                                                                                                    | None.            |
-| [`INV-SDK-2-NH0YGE`](architecture.md#inv-sdk-2-nh0yge) | On-chain sends draw nonces from the host-owned nonce manager.                                                                  | Covered               | [src/evm/p2pRuntime/P2pRuntimeHost.ts](../../../../../../src/evm/p2pRuntime/P2pRuntimeHost.ts#L18), [src/evm/signer/HostNonceManager.ts](../../../../../../src/evm/signer/HostNonceManager.ts#L15)       | None.            |
-| [`INV-SDK-3-87WK8P`](architecture.md#inv-sdk-3-87wk8p) | Dispute execution uses a dedicated state-machine instance, never the live one.                                                 | Covered               | [src/evm/EvmDiamondStateMachine.ts](../../../../../../src/evm/EvmDiamondStateMachine.ts#L1) (`createStandaloneFromLocalStateMachineWithExecutor`, `p2pSetup` double deploy)                              | None.            |
+| Requirement / invariant                                | Statement                                                                                                                      | Implementation status | Implementation evidence                                                                                                                                                                                             | Gap / divergence |
+| ------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------ | --------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------- |
+| [`REQ-SDK-1-JKC9W7`](architecture.md#req-sdk-1-jkc9w7) | The runtime owns its signer; `p2pSetup` accepts only `signerSecret` (random when omitted), never an injected `Signer`.         | Covered               | [src/evm/EvmDiamondStateMachine.ts](../../../../../../src/evm/EvmDiamondStateMachine.ts#L1), [src/evm/p2pRuntime/RuntimeChainContext.ts](../../../../../../src/evm/p2pRuntime/RuntimeChainContext.ts#L1)            | None.            |
+| [`REQ-SDK-2-M2PGDM`](architecture.md#req-sdk-2-m2pgdm) | The SDK requires at least one available honest RPC endpoint; current implementation uses exactly one WebSocket `PROVIDER_URL`. | Covered               | [src/evm/p2pRuntime/RuntimeChainContext.ts](../../../../../../src/evm/p2pRuntime/RuntimeChainContext.ts#L1), [src/utils/config.ts](../../../../../../src/utils/config.ts#L1)                                        | None.            |
+| [`INV-SDK-1-DE9YED`](architecture.md#inv-sdk-1-de9yed) | All app↔runtime interaction crosses the runtime port; `getStateManager()` throws.                                             | Covered               | [src/evm/P2pInstance.ts](../../../../../../src/evm/P2pInstance.ts#L1)                                                                                                                                               | None.            |
+| [`INV-SDK-2-NH0YGE`](architecture.md#inv-sdk-2-nh0yge) | On-chain sends draw nonces from the host-owned nonce manager.                                                                  | Covered               | [src/rpc/internal/roots/P2pRuntimeHostRoot.ts](../../../../../../src/rpc/internal/roots/P2pRuntimeHostRoot.ts#L126), [src/evm/signer/HostNonceManager.ts](../../../../../../src/evm/signer/HostNonceManager.ts#L15) | None.            |
+| [`INV-SDK-3-87WK8P`](architecture.md#inv-sdk-3-87wk8p) | Dispute execution uses a dedicated state-machine instance, never the live one.                                                 | Covered               | [src/evm/EvmDiamondStateMachine.ts](../../../../../../src/evm/EvmDiamondStateMachine.ts#L1) (`createStandaloneFromLocalStateMachineWithExecutor`, `p2pSetup` double deploy)                                         | None.            |

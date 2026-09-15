@@ -11,6 +11,55 @@ scores are what they are** and which lever moves each one.
 
 The simplification coverage uses real pre-deployment ports, authenticated host probes, factory-built blocks, actual provider loading and real logger stores. The full distributed gate passed all 1,987 runnable cases; Node and browser typechecks and both real browser gates passed. The review follow-up passed all 1,987 cases again in run-1653 after the separate import-order cleanup; the focused dependency/storage/manager run passed 125 cases. Existing skipped cases and unassigned specification permutations remain gaps, not evidence. New declarations have exact component permutations; moved declarations retain their existing claims only where the actual oracle still matches.
 
+## Runtime cleanup and context regressions
+
+The current verification includes a real delayed socket ready frame after manager disposal and rapid logger-context changes through main, SDK and executor roots. The latter asserts final identity and no echo to the sender. Domain cleanup cases inspect their retained inline endpoints after disposal; they do not use the disposed network for their assertions. The worker shutdown case checks repeated and concurrent cleanup through the harness surface. Exact assignments remain in the affected [logger](../verification/tests/test/utils/logging/LoggerService.test.ts.md), [discovery](../verification/tests/test/utils/LocalDiscoveryServer.test.ts.md), [EventBus](../verification/tests/test/stateManager/EventBus.test.ts.md) and [StateManager](../verification/tests/test/unit/StateManager.test.ts.md) reports. Repository-wide unmapped cases and duplicate assignments remain visible in the generated queues.
+
+## Root lifecycle revision
+
+The revision adds exact cases for standalone, empty, sibling and nested root disposal; second-parent rejection; concrete disposal typing; automatic diagnostics and removal; and broker attachment after readiness or disposal before attachment. Existing worker-failure fixtures now observe the root handle and distinguish fatal closure from detached reports. Browser peer coverage exercises both direct main-thread installation and the nested-worker port handoff. The worker gate covers 11 cases, including real transfer failure and proxy fallback. Final distributed evidence is pending and is not inferred from these focused results.
+
+## Awaited RPC dispatch
+
+The dispatch regression selection includes request and send completion, independent incoming calls, guard suppression/replay, peer error policies, loopback settlement, internal error attribution and custom-RPC E2E traffic. The two new cases observe the actual SDK router promise while a held endpoint is released by another RPC. Exact coverage is recorded in [RpcDispatch.test.ts](../verification/tests/test/rpc/RpcDispatch.test.ts.md). This targeted verification does not renew the full implementation audit or engineer approvals.
+
+## Common lifecycle ownership
+
+The seven [RuntimeLifecycle declarations](../verification/tests/test/rpc/RuntimeLifecycle.test.ts.md) use actual SDK roots and connections to check retained readiness, selected-child close rejection, child-first disposal, local cleanup after a real post failure, held child quiescence and rejection of upward cleanup. Focused run 272 passed 20 cases. Regression run 273 passed 188 cases, including SDK/executor startup and failure, runtime placement, worker shutdown, inline abort, bridge ownership and logger collection. This follow-up does not renew the full-plan audit or engineer approvals.
+
+## Shared runtime RPC verification
+
+The network-router extraction adds exact ownership, input-normalization and late-input cases through actual SDK roots and WebRTC channels. All 111 focused network cases passed, followed by 2,285 passing cases in full run 243. The browser worker gate passed all 11 declarations after replacing stale browser fake-manager staging with actual SDK-owned setup. Both full browser peer workflows passed, including application-worker bridge forwarding. All 11 impact-checker CLI tests also passed. The five WebRTC transport cases now use the real SDK and provider instead of a fake manager/channel; send and handshake observers delegate to production. Compile-time assertions reject unrelated root types and cross-category service/router/transport wiring. Current full-suite and platform evidence for the extraction is recorded in the implementation handoff; the older run below describes the pre-extraction state.
+
+The pre-extraction functional state passed the full distributed gate in run-236: 2,280 passing and zero
+final failures. One worker process termination and one starvation classification passed their
+runner retries. Browser worker coverage passed all 11 cases, and the browser WebRTC gate passed
+main-thread and nested-worker workflows. Both TypeScript builds, import lint, compile and all
+11 isolated impact-checker CLI tests passed. The later callback-type/cast cleanup emits identical
+JavaScript and passed both typechecks plus 39 focused distributed cases in run-237.
+
+Communication fixtures use actual SDK-owned roots and channels. Their controls hold real endpoint
+replies, inject actual frames, trigger synchronous clone/transfer failures and close owned
+connections. The controllers do not implement request IDs, matching, timers or dispatch. Literal
+cases cover pairwise settlement order, sender isolation, duplex calls, transfer detachment,
+readiness, shutdown, worker errors, inline lifetime, logger topology and WebRTC ownership.
+
+Exact Covers rows preserve moved IDs and withdraw only the approved standalone factory/no-route
+credits. The folded logger declaration receives no per-origin summary credit. The former bare
+factory zero-clock declarations have been replaced with SDK clock-initialization cases; those
+cases do not prove an uninitialized Clock through SDK setup and receive no such credit.
+
+Saved pre-extraction comparison runs use the same peer-service test selection, SDK/VM worker placement and worker
+configuration. Accepted-test median runtimeReadyMs was 7,454 ms at the baseline and 7,174 ms after
+the refactor; median test duration was 16,050 ms and 16,377 ms respectively. Neither run recorded
+starvation. Worker assignment and speculative attempts differ, so these samples do not establish
+a performance improvement.
+
+The generated queues still contain pre-existing source/report gaps, unassigned permutations,
+duplicate historical credits and pending engineer review. A successful non-strict refresh is not
+full specification completeness. Changed fingerprints require engineer reverification; no approval
+or review command was invoked.
+
 ## Contents
 
 - [Current state](#current-state)
@@ -38,7 +87,7 @@ byte-equal leave, duplicates, no-op leaves, lazy creation, and restart replay.
 Runtime transport tests cover delayed and rejected custom-root readiness in inline and worker modes. Worker-executor coverage includes delayed precompile readiness before worker return and concurrent success/error response correlation. Eleven direct cases cover complete and incomplete cross-module RPC-service and transport shapes, RPC symbol and `then` behavior, service-cache isolation, non-service rejection, native, compatible, and proxy-wrapped ethers Results, stable normalized output, and ordinary-array rejection. Five worker-hosted `ATransport` cases cover identity boundaries, replacement identity, trust classification, exact request/response serialization, expected and unexpected close behavior, close idempotency, and synchronous failure propagation. Three real-runtime RpcHandler cases plus the custom-RPC typecheck cover every delivery verb and target overload, unresolved fire-and-forget targets, local request rejection, timeout forwarding, compatible transport values, and the compile-time delivery-face split. All 23 EventBus component and runtime declarations map dispatch, subscription lifecycle, contract mirroring, cross-runtime fidelity, clone failures, and StateManager-owned custom-root disposal to exact obligations. The consuming application's production-preview browser test separately proves that a dynamically loaded custom RPC root can complete a real two-peer handshake and reach a playable hand across duplicated bundle graphs.
 
 The ObjectChecks suite now covers every property, method, RPC-service, and Result-shape branch. The
-ARpcService suite drives guard ordering, both delivery paths, every endpoint ownership boundary,
+ANetworkRpcService suite drives guard ordering, both delivery paths, every endpoint ownership boundary,
 accessor non-execution, and capture-once invocation through the real runtime. The authenticated-peer
 custom-RPC E2E rejects an Object-base method, disconnects only its sender, and proves a bystander
 session remains usable.
@@ -152,7 +201,7 @@ membership boundary, timeout/cancellation, explicit retry, failure phase, handof
 Runtime-port cases cover structured-clone options, dedicated cancellation routing, input validation, and
 Boolean propagation. Matcher, negotiation, P2P, membership, state-application, block, harness-session, and
 browser reports map their component boundaries. Participant-lifecycle evidence covers both pending-join fault
-interleavings required by [`INV-MEMBERSHIP-PENDING-1-2H1T75`](../specification/peer-communication/join-authorization.md#inv-membership-pending-1-2h1t75).
+interleavings required by [`INV-MEMBERSHIP-PENDING-1-2H1T75` (Submitted joins are locally)](../specification/peer-communication/join-authorization.md#inv-membership-pending-1-2h1t75).
 
 RO5 is enforced as test architecture: a full connect fixture reaches a real terminal outcome and explicitly
 settles detached work; an intermediate probe never launches the reusable full flow; teardown only reports a
@@ -174,6 +223,38 @@ unknown endpoints, local service exceptions, and stale-transport address fallbac
 separates neutral profile loss from repeated wrong-topic abuse. Handshake E2Es prove blacklist for
 attributable timing, signature, and duplicate-ack faults, while response timeout remains
 disconnect-only. Custom-RPC E2Es prove blacklist without affecting an unrelated session.
+
+## Common root creation follow-up
+
+[RootCreation](../verification/tests/test/rpc/RootCreation.test.ts.md) maps five exact real-SDK cases: both placements return a connection before ready, startup clone failures release their owned resources, and a pre-funnel worker failure preserves its cause while the same parent creates a replacement. Existing lifecycle, SDK, executor and system cases remain the evidence for domain ordering, cleanup, transfers and error behavior. The private root-creation implementation record records fresh command results and source fingerprints.
+
+The first wider run found cleanup regressions; the focused recovery run passed all eight selected cases after preserving the existing inline-close and worker-global distinctions. Both typechecks, compile and import lint passed. The browser worker gate passed all eleven cases. The final distributed gate passed 2,301 tests; the browser P2P gate passed both main-thread and nested-worker paths. Repository-wide specification and impact queues remain visible; these results do not grant engineer fingerprint approval.
+
+## Initialized root creation follow-up
+
+The root-creation follow-up updates exact creation and initialization declarations and adds five RootErrorService cases through real SDK-owned roots. Lifecycle receive-order tests use real ready frames; creation tests await initialized roots. Historical results for the earlier connected-before-ready API do not verify the new readiness contract. Fresh evidence is recorded in the implementation follow-up.
+
+Engineer approvals and review fingerprints remain engineer-owned. This update does not clear unrelated audit queues.
+
+## Explicit root creation API
+
+The free createRoot function now constructs local top-level roots or connected children with an explicit parent. Top-level application handlers stay local; child startup keeps the existing clone boundary. SDK root observation retains connection-before-observer and observer-before-child-start order. RootCreation adds two real SDK placement cases and retains child creation/failure recovery cases. Existing approval and impact queues remain unchanged by this API decision.
+
+## Generic worker creation
+
+Root classes now pass directly to createRoot. One platform worker creator takes an explicit URL, with no per-root factory or entry wrapper. Built-in roots use internal static worker entry URLs. Generic custom-root creation accepts an explicit URL; startup payloads do not carry child entry URLs. The shared worker globals use one path for all launched roots. Relevant startup, error, cleanup and browser evidence is being refreshed; engineer fingerprint approval remains pending.
+
+## Client-root ownership and initialization
+
+The application instance now references its initialized client root directly. The client root owns host communication and bridge resources. Application setup owns deployments and adapters; P2pInstance owns application listeners and logger cleanup. Common creation awaits initialization for every root. Top-level creation is inline and returns the root; worker creation requires a parent and returns that parent's registered connection record. No raw bootstrap port is exposed by that record.
+
+The new creation cases exercise delayed standalone initialization, missing parent rejection before allocation, held host readiness in both placements, independent deployments and cleanup after either deployment or client observation fails. Existing client error, timeout, disposal and browser bridge boundaries remain part of verification. A missing logger connection registration found by the report-a-bug E2E was restored; the focused collection and root-creation cases pass together. The focused teardown cases pass; the final full run is recorded in the implementation handoff. Existing generated queues remain unchanged. This update grants no engineer approval.
+
+The engineer approved host shutdown preparation before the child cascade. Run-310 confirmed the earlier race in discovery fallback cleanup: the test body passed, then reduction calls rejected because the executor was closed. The host now invokes the existing StateManager stop-and-drain owner before common child disposal. Final local cleanup still runs after failure and repeated calls reuse completion. A separate startup cleanup change unregisters a host whose observation callback throws before parent attachment. Focused ordering, preparation-failure and teardown cases pass, including an executor read while preparation is held. Parented inline client creation uses host connection options and sends its disposal acknowledgement before closing the parent connection. Missing connection options reject before allocation. Both browser gates pass on this source state. Final full-run evidence and the unchanged generated queues are recorded in the implementation handoff.
+
+## Application setup ownership correction
+
+The user superseded review 4's application-heavy client root. Application setup now owns config, logger creation, adapters, two deployments and final assembly. The client root owns host communication and common lifecycle only; P2pInstance owns application cleanup. Root readiness means usable communication, while application setup still waits for deployment completion. Existing startup errors, parent-required workers, host preparation before child disposal and bridge behavior remain in scope. The focused and final evidence is recorded in the application-setup implementation follow-up. Engineer approval and existing queues remain unchanged.
 
 ## Refusal-attribution evidence — 2026-09-08
 

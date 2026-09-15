@@ -7,6 +7,7 @@ import { HandshakeService } from "./services/handshake/HandshakeService";
 import { LifecycleService } from "./services/lifecycle/LifecycleService";
 import { NetworkService } from "./services/network/NetworkService";
 import { QueryService } from "./services/query/QueryService";
+import { RuntimeRpcControlService } from "./services/runtimeRpc/RuntimeRpcControlService";
 import { ScenarioService } from "./services/scenario/ScenarioService";
 import { SignerService } from "./services/signer/SignerService";
 import { SpectateControlService } from "./services/spectate/SpectateControlService";
@@ -14,7 +15,7 @@ import { StubService } from "./services/stub/StubService";
 import { TransitionService } from "./services/transition/TransitionService";
 import { ValidationProbeService } from "./services/validationProbe/ValidationProbeService";
 import type P2PManager from "@/P2PManager";
-import MainRpcService from "@/rpc/MainRpcService";
+import MainRpcService from "@/rpc/network/MainRpcService";
 
 /**
  * Host-side harness-control RPC.
@@ -27,7 +28,7 @@ import MainRpcService from "@/rpc/MainRpcService";
  * `harness.control(peer).<service>.<method>(...).request()` (no target =
  * loopback to self).
  *
- * Conventions (mirroring `src/rpc/services/*`):
+ * Conventions (mirroring `src/rpc/network/services/*`):
  * - each service lives in its own directory with a `*Service` + `*RpcMethods`;
  * - methods return serializable projections (hashes, heights, addresses, plain
  *   structs) — never live `Block`/transport/profile instances;
@@ -52,6 +53,7 @@ export class HarnessControlRpc extends MainRpcService {
     balance: BalanceService;
     lifecycle: LifecycleService;
     validation: ValidationProbeService;
+    runtimeRpc: RuntimeRpcControlService;
 
     constructor(p2pManager: P2PManager<HarnessControlRpc>) {
         super(p2pManager);
@@ -68,6 +70,7 @@ export class HarnessControlRpc extends MainRpcService {
         this.balance = new BalanceService(p2pManager);
         this.lifecycle = new LifecycleService(p2pManager);
         this.validation = new ValidationProbeService(p2pManager);
+        this.runtimeRpc = new RuntimeRpcControlService(p2pManager);
     }
 
     /**

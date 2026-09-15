@@ -54,14 +54,22 @@ class StateChannelEventListener {
         this.currentChannelKey = undefined;
     }
 
-    async dispose(): Promise<void> {
+    /** Stop accepting logs and drain work without starting an unsubscribe. */
+    async stop(): Promise<void> {
         this.disposed = true;
         this.generation += 1;
-        await this.removeListener();
-        this.currentChannelKey = undefined;
         await this.eventSyncService.waitForScheduled(
             StateChannelEventListener.DISPOSE_TIMEOUT_MS
         );
+    }
+
+    async dispose(): Promise<void> {
+        try {
+            await this.stop();
+        } finally {
+            await this.removeListener();
+            this.currentChannelKey = undefined;
+        }
     }
 
     private async removeListener(): Promise<void> {

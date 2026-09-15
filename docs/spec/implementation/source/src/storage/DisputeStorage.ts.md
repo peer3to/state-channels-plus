@@ -57,8 +57,8 @@ claims complete conformance for a requirement that depends on other files.
 
 ## Specification adherence
 
-- Monotone, idempotent co-signature merge with immutable signed dispute ([`REQ-DSTORE-1-5AQYJX`](../../../../specification/storage/dispute-evidence.md#req-dstore-1-5aqyjx)).
-- Explicit per-fork flags with absent-as-false ([`REQ-DSTORE-2-H1DAGX`](../../../../specification/storage/dispute-evidence.md#req-dstore-2-h1dagx)).
+- Monotone, idempotent co-signature merge with immutable signed dispute ([`REQ-DSTORE-1-5AQYJX` (Dispute confirmation merge)](../../../../specification/storage/dispute-evidence.md#req-dstore-1-5aqyjx)).
+- Explicit per-fork flags with absent-as-false ([`REQ-DSTORE-2-H1DAGX` (Own-dispute guard)](../../../../specification/storage/dispute-evidence.md#req-dstore-2-h1dagx)).
 
 ## Specification contradictions
 

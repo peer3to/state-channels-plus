@@ -91,8 +91,8 @@ claims complete conformance for a requirement that depends on other files.
 | --------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | [StateChannelManagerInterface.sol](../../../../../../contracts/V1/StateChannelManagerInterface.sol) | [`REQ-CONTRACT-ARCH-1-9W5390`](../../../../specification/enforcement/contracts.md#req-contract-arch-1-9w5390), [`REQ-CONTRACT-ARCH-5-QT17P1`](../../../../specification/enforcement/contracts.md#req-contract-arch-5-qt17p1) |
 
-Contribution per ID: [`REQ-CONTRACT-ARCH-1-9W5390`](../../../../specification/enforcement/contracts.md#req-contract-arch-1-9w5390) — it is the written form of the stable external
-boundary, unchanged across the internal decomposition; [`REQ-CONTRACT-ARCH-5-QT17P1`](../../../../specification/enforcement/contracts.md#req-contract-arch-5-qt17p1) — it enumerates
+Contribution per ID: [`REQ-CONTRACT-ARCH-1-9W5390` (Stable external boundary)](../../../../specification/enforcement/contracts.md#req-contract-arch-1-9w5390) — it is the written form of the stable external
+boundary, unchanged across the internal decomposition; [`REQ-CONTRACT-ARCH-5-QT17P1` (Complete operation ownership)](../../../../specification/enforcement/contracts.md#req-contract-arch-5-qt17p1) — it enumerates
 the externally visible operations and names each one's owner in its section headings.
 
 ## Assumptions, dependencies, trust boundaries, and limits

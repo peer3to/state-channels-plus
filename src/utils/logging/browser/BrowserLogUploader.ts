@@ -1,42 +1,40 @@
 import { LogUploader } from "../LogUploader";
 
 export class BrowserLogUploader extends LogUploader {
-    private onWindowError?: (e: ErrorEvent) => void;
-    private onWindowUnhandledRejection?: (e: PromiseRejectionEvent) => void;
+    private onError?: (e: ErrorEvent) => void;
+    private onUnhandledRejection?: (e: PromiseRejectionEvent) => void;
 
+    /** the page's window or a worker's own scope: both raise these events */
     protected attachListeners(): void {
-        if (typeof window === "undefined") return;
+        if (typeof addEventListener !== "function") return;
 
-        this.onWindowError = (e: ErrorEvent) => {
+        this.onError = (e: ErrorEvent) => {
             if (e.error) {
                 this.captureUnhandled(e.error, "error");
             }
         };
-        window.addEventListener("error", this.onWindowError);
+        addEventListener("error", this.onError);
 
-        this.onWindowUnhandledRejection = (e: PromiseRejectionEvent) => {
+        this.onUnhandledRejection = (e: PromiseRejectionEvent) => {
             this.captureUnhandled(e.reason, "unhandledrejection");
         };
-        window.addEventListener(
-            "unhandledrejection",
-            this.onWindowUnhandledRejection
-        );
+        addEventListener("unhandledrejection", this.onUnhandledRejection);
     }
 
     protected detachListeners(): void {
-        if (typeof window === "undefined") return;
+        if (typeof removeEventListener !== "function") return;
 
-        if (this.onWindowError) {
-            window.removeEventListener("error", this.onWindowError);
-            this.onWindowError = undefined;
+        if (this.onError) {
+            removeEventListener("error", this.onError);
+            this.onError = undefined;
         }
 
-        if (this.onWindowUnhandledRejection) {
-            window.removeEventListener(
+        if (this.onUnhandledRejection) {
+            removeEventListener(
                 "unhandledrejection",
-                this.onWindowUnhandledRejection
+                this.onUnhandledRejection
             );
-            this.onWindowUnhandledRejection = undefined;
+            this.onUnhandledRejection = undefined;
         }
     }
 }

@@ -3,16 +3,16 @@ import StubRpcMethods from "./StubRpcMethods";
 import type { HarnessControlRpc } from "../../HarnessControlRpc";
 import Clock from "@/Clock";
 import type P2PManager from "@/P2PManager";
-import ARpcService from "@/rpc/ARpcService";
-import type LobbyMatchingRpcMethods from "@/rpc/services/lobbyMatching/LobbyMatchingRpcMethods";
-import type { LobbyMatch } from "@/rpc/services/lobbyMatching/LobbyMatchingTypes";
-import type OpenChannelNegotiationRpcMethods from "@/rpc/services/openChannelNegotiation/OpenChannelNegotiationRpcMethods";
+import ANetworkRpcService from "@/rpc/network/ANetworkRpcService";
+import type LobbyMatchingRpcMethods from "@/rpc/network/services/lobbyMatching/LobbyMatchingRpcMethods";
+import type { LobbyMatch } from "@/rpc/network/services/lobbyMatching/LobbyMatchingTypes";
+import type OpenChannelNegotiationRpcMethods from "@/rpc/network/services/openChannelNegotiation/OpenChannelNegotiationRpcMethods";
 import type {
     MatchedNegotiationOptions,
     NegotiationOutcome
-} from "@/rpc/services/openChannelNegotiation/OpenChannelNegotiationService";
-import type SpectateService from "@/rpc/services/spectate/SpectateService";
-import type ATransport from "@/transport/ATransport";
+} from "@/rpc/network/services/openChannelNegotiation/OpenChannelNegotiationService";
+import type SpectateService from "@/rpc/network/services/spectate/SpectateService";
+import type NetworkTransport from "@/transport/NetworkTransport";
 import type { Address, ForkId } from "@/types/types";
 import {
     Codec,
@@ -33,7 +33,7 @@ import { hexlify, resolveAddress } from "ethers";
 import { AsyncLocalStorage } from "node:async_hooks";
 import { WebSocketServer } from "ws";
 
-// `ATransport` is used both for `createRPCMethods` and the captured transport.
+// `NetworkTransport` is used both for `createRPCMethods` and the captured transport.
 
 export type BlockWorkHoldPoint = "authoring" | "commit" | "signature";
 
@@ -295,7 +295,7 @@ export type ChainLogQuerySpan = {
  * directly; private internals use explicit local structural host types at the
  * stub site.
  */
-export class StubService extends ARpcService<
+export class StubService extends ANetworkRpcService<
     StubRpcMethods,
     P2PManager<HarnessControlRpc>
 > {
@@ -337,7 +337,7 @@ export class StubService extends ARpcService<
     /** Set by the recording spectate guard when it blocks an RPC. */
     spectateGuardBlocked = false;
     /** Transport captured by the init-handshake capture stub (pre-handshake). */
-    capturedInitHandshakeTransport?: ATransport;
+    capturedInitHandshakeTransport?: NetworkTransport;
     /** Real init-handshake calls observed by the counting wrapper. */
     private queueProbeHold?: HeldRpcReply & {
         completed: number;
@@ -347,7 +347,7 @@ export class StubService extends ARpcService<
     private timeoutBuildHold?: HeldRpcReply;
     private restoreTimeoutBuild?: () => void;
     private timeoutStoreCalls = 0;
-    private heldHandshakeTransports: ATransport[] = [];
+    private heldHandshakeTransports: NetworkTransport[] = [];
     private releaseHandshakes?: () => void;
     initHandshakeCallCount = 0;
     /** Set by the record-spectate-abort stub when `abort` fires. */
@@ -545,7 +545,7 @@ export class StubService extends ARpcService<
 
     constructor(p2pManager: P2PManager<HarnessControlRpc>) {
         super(
-            p2pManager,
+            p2pManager.rpcRouter,
             p2pManager.stateManager.logger.child({
                 component: "HarnessStubService"
             })
@@ -601,10 +601,10 @@ export class StubService extends ARpcService<
         K extends PropertyKey,
         M extends Record<K, (...args: any[]) => any>
     >(
-        original: (transport: ATransport) => M,
+        original: (transport: NetworkTransport) => M,
         kind: K,
         hold: HeldRpcReply
-    ): (transport: ATransport) => M {
+    ): (transport: NetworkTransport) => M {
         return (transport) => {
             const methods = original(transport);
             const endpoint = methods[kind].bind(methods);
@@ -1539,7 +1539,9 @@ export class StubService extends ARpcService<
         const original = this.stubOriginals.get("lobbyCreateRpcMethods");
         if (original) {
             this.p2pManager.localRpc.lobbyMatchingService.createRPCMethods =
-                original as (transport: ATransport) => LobbyMatchingRpcMethods;
+                original as (
+                    transport: NetworkTransport
+                ) => LobbyMatchingRpcMethods;
             this.stubOriginals.delete("lobbyCreateRpcMethods");
         }
         this.heldLobbyReply = undefined;
@@ -1550,7 +1552,7 @@ export class StubService extends ARpcService<
         if (original) {
             this.p2pManager.localRpc.openChannelNegotiationService.createRPCMethods =
                 original as (
-                    transport: ATransport
+                    transport: NetworkTransport
                 ) => OpenChannelNegotiationRpcMethods;
             this.stubOriginals.delete("negotiationCreateRpcMethods");
         }
@@ -2366,7 +2368,7 @@ export class StubService extends ARpcService<
         return true;
     }
 
-    public createRPCMethods(transport: ATransport): StubRpcMethods {
+    public createRPCMethods(transport: NetworkTransport): StubRpcMethods {
         return new StubRpcMethods(transport, this);
     }
 }

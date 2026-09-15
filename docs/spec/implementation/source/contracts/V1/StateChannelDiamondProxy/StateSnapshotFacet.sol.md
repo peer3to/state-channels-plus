@@ -29,7 +29,7 @@ deletes the snapshot, using the common idempotent swap-and-pop helper.
 
 ## Key design decisions
 
-1. **Coupled adoption+outbound processing in one revertible operation** — a failing consumer withdrawal reverts the whole advance rather than splitting value from state ([`REQ-ENFSNAP-1-FYN3BW`](../../../../../specification/enforcement/snapshot-adoption.md#req-enfsnap-1-fyn3bw)).
+1. **Coupled adoption+outbound processing in one revertible operation** — a failing consumer withdrawal reverts the whole advance rather than splitting value from state ([`REQ-ENFSNAP-1-FYN3BW` (Coupled adoption and outbound processing)](../../../../../specification/enforcement/snapshot-adoption.md#req-enfsnap-1-fyn3bw)).
 2. **The state-proof self-call is typed by the manager interface.** Verification of the incoming
    proof is reached on `address(this)` through
    [StateChannelManagerInterface](../../StateChannelManagerInterface.sol.md)

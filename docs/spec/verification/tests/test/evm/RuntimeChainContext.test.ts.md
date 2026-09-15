@@ -10,35 +10,18 @@
 
 ## Overview
 
-The suite covers the chain-facing edges of the p2p runtime: URL policy, startup failure, and
-client-side request timeouts. `resolveWebSocketProviderUrl` is called directly (ws/wss accepted,
-http/https optimistically converted, anything else throws). The startup case runs the real
-`startP2pRuntimeHost` against a deliberately unreachable provider URL and asserts the original
-connection error (not a timeout) is thrown to the host caller and rejected to the paired
-`P2pRuntimeClient.ready`, with the host's `WebSocketProvider.destroy` called exactly once. Two
-fake-timer cases pair a real client with a scripted host port: `quiesce` must not be failed by a
-client-side timer (the host owns the quiesce timeout). That case supplies only a consumer ABI
-fragment and also proves the client binding retains both that fragment and an SDK facet error. An uncancellable P2P signer
-`sendTransaction` mutation outlives the 30s request timeout and still resolves with the local
-p2p result. The startup case demonstrates the runtime lifecycle startup-phase-failure
-permutation and the host-construction-failure invariant's valid case. Full host request-surface
-behavior (inline/worker equivalence, disposal settlement, signing confinement) is out of scope,
-so the remaining host-protocol permutations stay unassigned.
+The suite checks provider URL conversion and the client boundary through [real SDK staging](../../../../../../test/fixtures/node/RuntimeChainContextFixture.ts). Startup against an unreachable provider rejects setup with ECONNREFUSED, destroys the host provider once and leaves no partial root registered. Held quiesce and leaveLobby responses use real SDK connections: the client keeps one pending request with no timer, then settles it when the response is released. The same fixture checks the consumer ABI and SDK facet error remain available. These cases do not wait thirty seconds or use a replacement RPC implementation.
 
-All three manager payloads serialize `stateChannelManagerAbi`, the same combined ABI production
-sends across the worker port. Host reconstruction therefore retains proxy and facet error fragments.
+Provider cleanup also covers no subscriptions, an active block subscription and repeated destruction through the standard provider API.
 
 ## Tests and covered test IDs
 
-A row lists only test IDs this test covers **in full** — partial credit is never recorded. Each
-test ID may be assigned to at most one test across the whole tree; static analysis reports
-duplicate assignments, and tests with no assigned ID are listed in the verification-coverage
-report but are kept here.
-
-| Test declaration                                                                                                                                                        | Covers                                                                                                                                                                                                                                     |
-| ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| [`RuntimeChainContext > accepts WebSocket URLs and optimistically converts HTTP URLs`](../../../../../../test/evm/RuntimeChainContext.test.ts#L18) (line 18)            | —                                                                                                                                                                                                                                          |
-| [`RuntimeChainContext > rejects non-WebSocket-compatible provider URLs`](../../../../../../test/evm/RuntimeChainContext.test.ts#L33) (line 33)                          | —                                                                                                                                                                                                                                          |
-| [`RuntimeChainContext > destroys the host provider and reports the original startup error`](../../../../../../test/evm/RuntimeChainContext.test.ts#L39) (line 39)       | [`REQ-RUNTIME-3-VQXW59.T1.P1`](../../../../specification/runtime/execution.md#req-runtime-3-vqxw59.t1.p1), [`INV-RUN-3-1AKG2E.T1.P1`](../../../../implementation/views/architecture/sdk/runtime-and-concurrency.md#inv-run-3-1akg2e.t1.p1) |
-| [`RuntimeChainContext > lets the host own the quiesce timeout`](../../../../../../test/evm/RuntimeChainContext.test.ts#L105) (line 105)                                 | [`UNIT-TEST-MANAGER-BINDING-1-WB503Z.P10`](../../../../implementation/source/src/utils/stateChannelManager.ts.md#unit-test-manager-binding-1-wb503z.p10)                                                                                   |
-| [`RuntimeChainContext > lets an uncancellable P2P signer mutation outlive the request timeout`](../../../../../../test/evm/RuntimeChainContext.test.ts#L176) (line 176) | —                                                                                                                                                                                                                                          |
+| Test                                                                                                                                                                       | Covers                                                                                                                                                                                                                                     |
+| -------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| [`RuntimeChainContext > accepts WebSocket URLs and optimistically converts HTTP URLs`](../../../../../../test/evm/RuntimeChainContext.test.ts#L16) (line 16)               | —                                                                                                                                                                                                                                          |
+| [`RuntimeChainContext > rejects non-WebSocket-compatible provider URLs`](../../../../../../test/evm/RuntimeChainContext.test.ts#L31) (line 31)                             | —                                                                                                                                                                                                                                          |
+| [`RuntimeChainContext > destroys the host provider and reports the original startup error`](../../../../../../test/evm/RuntimeChainContext.test.ts#L37) (line 37)          | [`REQ-RUNTIME-3-VQXW59.T1.P1`](../../../../specification/runtime/execution.md#req-runtime-3-vqxw59.t1.p1), [`INV-RUN-3-1AKG2E.T1.P1`](../../../../implementation/views/architecture/sdk/runtime-and-concurrency.md#inv-run-3-1akg2e.t1.p1) |
+| [`RuntimeChainContext > lets the host own the quiesce timeout`](../../../../../../test/evm/RuntimeChainContext.test.ts#L41) (line 41)                                      | [`UNIT-TEST-MANAGER-BINDING-1-WB503Z.P10`](../../../../implementation/source/src/utils/stateChannelManager.ts.md#unit-test-manager-binding-1-wb503z.p10)                                                                                   |
+| [`RuntimeChainContext > lets an uncancellable P2P signer mutation outlive the request timeout`](../../../../../../test/evm/RuntimeChainContext.test.ts#L45) (line 45)      | —                                                                                                                                                                                                                                          |
+| [RuntimeChainContext > destroys its provider without subscriptions and permits repeated cleanup](../../../../../../test/evm/RuntimeChainContext.test.ts#L10) (line 10)     | [`UNIT-TEST-RUNTIME-CHAIN-CLEANUP-1-3H7PT8.P3`](../../../../implementation/source/src/evm/p2pRuntime/RuntimeChainContext.ts.md#unit-test-runtime-chain-cleanup-1-3h7pt8.p3)                                                                |
+| [RuntimeChainContext > destroys its provider with a block subscription and permits repeated cleanup](../../../../../../test/evm/RuntimeChainContext.test.ts#L13) (line 13) | [`UNIT-TEST-RUNTIME-CHAIN-CLEANUP-1-3H7PT8.P4`](../../../../implementation/source/src/evm/p2pRuntime/RuntimeChainContext.ts.md#unit-test-runtime-chain-cleanup-1-3h7pt8.p4)                                                                |

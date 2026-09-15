@@ -1,5 +1,6 @@
 // @spec-test-coverage-ignore: shared timeout-refusal staging exercised by ParticipantTimeoutService cases
 import { syncTargetToUnpostedReduction } from "./ReductionForkSwitchStaging";
+import { runtimeEndpointFor } from "./RuntimeRootObservation";
 import { timeoutWaitTime } from "@/types";
 import { Codec, Type } from "@/utils";
 import type { MathPeerTestHarness } from "@test/fixtures/MathPeerTestHarness";
@@ -87,8 +88,15 @@ export async function assertObsoleteEarlyTimeoutRetry(
     h: MathPeerTestHarness,
     change: "block" | "disposed"
 ): Promise<void> {
-    await h.lifecycle.start(3);
+    await h.lifecycle.start(3, 0, {
+        configOverrides:
+            change === "disposed" ? { RUN_SDK_IN_THREAD: false } : {}
+    });
     const peer = h.getPeer(1);
+    const local =
+        change === "disposed"
+            ? runtimeEndpointFor(peer.p2pInstance)
+            : undefined;
     const forkId = h.activeForkId!;
     const held = await h.rpcStub.holdScheduledTasks(
         1,
@@ -128,17 +136,33 @@ export async function assertObsoleteEarlyTimeoutRetry(
         expect(await recorder.submissions()).to.have.length(1);
         if (change === "block") {
             await h.transition.advanceState();
-        } else {
-            await h.control(peer).stub.abortDetached().request();
-            await waitFor(async () =>
-                h.execOnHost(peer, (sm) => sm.isDisposed)
+        } else if (local) {
+            local.sm.abort();
+            // Run the held retry after abort; observe final cleanup locally.
+            local.stub.restoreHeldScheduledTasks(
+                "timeoutParticipantAfterEarlySubmission",
+                true
             );
+            await local.host.dispose();
+            expect(
+                local.stub.getRecordedDisputeSubmissions().submissions
+            ).to.have.length(1);
+            return;
         }
         await held.release(true);
         expect(await recorder.submissions()).to.have.length(1);
     } finally {
-        await held.release(false);
-        await recorder.restore();
+        if (local) {
+            local.stub.restoreHeldScheduledTasks(
+                "timeoutParticipantAfterEarlySubmission",
+                false
+            );
+            local.stub.restoreDisputeSubmissions();
+            await local.host.dispose();
+        } else {
+            await held.release(false);
+            await recorder.restore();
+        }
     }
 }
 

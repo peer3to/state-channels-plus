@@ -1,5 +1,6 @@
 // @spec-test-coverage-ignore: shared setup for mapped targeted-channel E2E declarations
 import type { PeerTestHarness } from "./PeerTestHarness";
+import { runtimeIsClosed } from "./RuntimeRootObservation";
 import type { ConnectToChannelOptions } from "@/evm/signer/ConnectToChannelOptions";
 import { slotAccountIndex } from "@test/harness/core/slotAccounts";
 import type { TestPeer } from "@test/harness/core/types";
@@ -31,9 +32,15 @@ export class TargetedChannelJoinFixture {
     }
 
     public async isDisposed(peer: TestPeer): Promise<boolean> {
-        return this.harness.execOnHost(peer, async (stateManager) =>
-            Boolean(stateManager.isDisposed)
-        );
+        if (runtimeIsClosed(peer.p2pInstance)) return true;
+        try {
+            return await this.harness.execOnHost(peer, async (stateManager) =>
+                Boolean(stateManager.isDisposed)
+            );
+        } catch (error) {
+            if (runtimeIsClosed(peer.p2pInstance)) return true;
+            throw error;
+        }
     }
 
     public async addFreshPeer(): Promise<TestPeer> {

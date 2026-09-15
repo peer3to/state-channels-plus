@@ -87,3 +87,44 @@ jobs:
                   path: ./logs/
                   if-no-files-found: ignore
                   retention-days: 7
+
+    browser:
+        runs-on: ubuntu-latest
+        timeout-minutes: 20
+        steps:
+            - name: Checkout repository
+              uses: actions/checkout@v4
+              with:
+                  submodules: recursive
+            - name: Set up Node.js
+              uses: actions/setup-node@v4
+              with:
+                  node-version: 20
+                  cache: "yarn"
+            - name: Install dependencies
+              run: yarn install --frozen-lockfile
+            - name: Install Chromium and system dependencies
+              run: yarn playwright install --with-deps chromium
+            - name: Install the distributed runner's pinned Forge binary
+              run: |
+                  foundry_image=$(sed -n 's/^ARG FOUNDRY_IMAGE=//p' scripts/e2e-parallel/distributed/runner-image.Dockerfile)
+                  foundry_container=$(docker create "$foundry_image")
+                  trap 'docker rm "$foundry_container"' EXIT
+                  mkdir -p "$RUNNER_TEMP/foundry"
+                  docker cp "$foundry_container:/usr/local/bin/forge" "$RUNNER_TEMP/foundry/forge"
+                  chmod +x "$RUNNER_TEMP/foundry/forge"
+                  echo "$RUNNER_TEMP/foundry" >> "$GITHUB_PATH"
+            - name: Compile contracts and generated artifacts
+              run: yarn compile
+            - name: Verify browser workers
+              run: yarn test:browser:worker
+            - name: Verify direct and nested WebRTC
+              run: yarn test:browser:webrtc
+            - name: Upload browser logs
+              if: always()
+              uses: actions/upload-artifact@v4
+              with:
+                  name: browser-run-logs
+                  path: ./logs/
+                  if-no-files-found: ignore
+                  retention-days: 7

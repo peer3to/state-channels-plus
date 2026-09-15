@@ -1,11 +1,8 @@
 // @spec-test-coverage-ignore: test-only spectate controls exercised by mapped targeted-channel cases
 import type { SpectateControlService } from "./SpectateControlService";
-import type { HarnessControlRpc } from "../../HarnessControlRpc";
 import Block from "@/models/Block";
-import type P2PManager from "@/P2PManager";
-import ARpcMethods from "@/rpc/ARpcMethods";
-
-import type ATransport from "@/transport/ATransport";
+import ANetworkRpcMethods from "@/rpc/network/ANetworkRpcMethods";
+import type NetworkTransport from "@/transport/NetworkTransport";
 import type { Address, ChannelId, ForkId } from "@/types/types";
 import { Codec, Type } from "@/utils";
 import { ZeroHash } from "ethers";
@@ -16,14 +13,9 @@ import { ZeroHash } from "ethers";
  * decodes/inspects it on the main thread. Helpers/accessors are on
  * {@link SpectateControlService}.
  */
-export class SpectateControlRpcMethods extends ARpcMethods<
-    P2PManager<HarnessControlRpc>
-> {
-    constructor(
-        transport: ATransport,
-        private readonly service: SpectateControlService
-    ) {
-        super(transport, service.p2pManager);
+export class SpectateControlRpcMethods extends ANetworkRpcMethods<SpectateControlService> {
+    constructor(transport: NetworkTransport, service: SpectateControlService) {
+        super(transport, service);
     }
 
     /** Generate a sync payload, returned encoded (or null if not provable). */

@@ -2,31 +2,34 @@
 import type { PingPongRpc } from "../PingPongRpcManifest";
 import { RpcHandlerProbeRpcMethods } from "./RpcHandlerProbeRpcMethods";
 import type P2PManager from "@/P2PManager";
-import ARpcService from "@/rpc/ARpcService";
+import ANetworkRpcService from "@/rpc/network/ANetworkRpcService";
 import type { RpcResponse } from "@/rpc/Rpc";
-import { deserializeRpcResponse, MAX_RPC_FRAME_BYTES } from "@/rpc/Rpc";
-import type ATransport from "@/transport/ATransport";
-import { isTransport } from "@/transport/ATransport";
+import { MAX_RPC_FRAME_BYTES } from "@/rpc/Rpc";
+import type NetworkTransport from "@/transport/NetworkTransport";
+import { isNetworkTransport } from "@/transport/NetworkTransport";
 import type { Address } from "@/types";
+import { deserializeRpcResponse } from "@test/fixtures/RpcFrameProjection";
 
-export class RpcHandlerProbeService extends ARpcService<
+export class RpcHandlerProbeService extends ANetworkRpcService<
     RpcHandlerProbeRpcMethods,
     P2PManager<PingPongRpc>
 > {
     constructor(p2pManager: P2PManager<PingPongRpc>) {
         super(
-            p2pManager,
+            p2pManager.rpcRouter,
             p2pManager.stateManager.logger.child({
                 component: "RpcHandlerProbeService"
             })
         );
     }
 
-    public createRPCMethods(transport: ATransport): RpcHandlerProbeRpcMethods {
+    public createRPCMethods(
+        transport: NetworkTransport
+    ): RpcHandlerProbeRpcMethods {
         return new RpcHandlerProbeRpcMethods(transport, this);
     }
 
-    public getTransport(address: Address): ATransport {
+    public getTransport(address: Address): NetworkTransport {
         const transport =
             this.p2pManager.profileManager.getTransportByEvmAddress(address);
         if (!transport) {
@@ -35,15 +38,16 @@ export class RpcHandlerProbeService extends ARpcService<
         return transport;
     }
 
-    public getCompatibleTransport(address: Address): ATransport {
+    public getCompatibleTransport(address: Address): NetworkTransport {
         const transport = this.getTransport(address);
         const compatibleTransport: unknown = {
             transportType: transport.transportType,
             peerAddress: transport.peerAddress,
             send: transport.send.bind(transport),
-            sendRpcResponse: transport.sendRpcResponse.bind(transport)
+            sendRpcResponse: transport.sendRpcResponse.bind(transport),
+            close: transport.close.bind(transport)
         };
-        if (!isTransport(compatibleTransport)) {
+        if (!isNetworkTransport(compatibleTransport)) {
             throw new Error(
                 "Compatible transport does not satisfy its contract"
             );
@@ -59,7 +63,7 @@ export class RpcHandlerProbeService extends ARpcService<
         address: Address
     ): Promise<RpcResponse> {
         const transport = this.getTransport(address);
-        const originalOnRpc = this.p2pManager.onRpc;
+        const originalOnRpc = this.p2pManager.rpcRouter.onRpc;
         let timeout: ReturnType<typeof setTimeout> | undefined;
         try {
             const response = new Promise<RpcResponse>((resolve, reject) => {
@@ -67,16 +71,17 @@ export class RpcHandlerProbeService extends ARpcService<
                     () => reject(new Error("Empty-id response timed out")),
                     2000
                 );
-                this.p2pManager.onRpc = (
+                this.p2pManager.rpcRouter.onRpc = (
                     serializedRpc: string,
-                    senderTransport: ATransport
-                ): void => {
+                    senderTransport: NetworkTransport
+                ): Promise<void> => {
                     const decoded = deserializeRpcResponse(serializedRpc);
                     if (decoded?.requestId === "") resolve(decoded);
-                    Reflect.apply(originalOnRpc, this.p2pManager, [
-                        serializedRpc,
-                        senderTransport
-                    ]);
+                    return Reflect.apply(
+                        originalOnRpc,
+                        this.p2pManager.rpcRouter,
+                        [serializedRpc, senderTransport]
+                    );
                 };
             });
             transport.send({
@@ -88,7 +93,7 @@ export class RpcHandlerProbeService extends ARpcService<
             return await response;
         } finally {
             if (timeout) clearTimeout(timeout);
-            this.p2pManager.onRpc = originalOnRpc;
+            this.p2pManager.rpcRouter.onRpc = originalOnRpc;
         }
     }
 

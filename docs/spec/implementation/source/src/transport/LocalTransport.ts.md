@@ -80,4 +80,4 @@ Exact test evidence is mapped against these IDs in the verification test reports
 
 ## Related source reports
 
-- [ATransport](./ATransport.ts.md).
+- [NetworkTransport](./NetworkTransport.ts.md).

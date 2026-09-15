@@ -1,21 +1,17 @@
 // @spec-test-coverage-ignore: loopback guard probe endpoint
-import type { PingPongRpc } from "../PingPongRpcManifest";
 import type {
     LoopbackGuardProbeResult,
     LoopbackGuardProbeService
 } from "./LoopbackGuardProbeService";
-import type P2PManager from "@/P2PManager";
-import ARpcMethods from "@/rpc/ARpcMethods";
-import type ATransport from "@/transport/ATransport";
+import ANetworkRpcMethods from "@/rpc/network/ANetworkRpcMethods";
+import type NetworkTransport from "@/transport/NetworkTransport";
 
-export class LoopbackGuardProbeRpcMethods extends ARpcMethods<
-    P2PManager<PingPongRpc>
-> {
+export class LoopbackGuardProbeRpcMethods extends ANetworkRpcMethods<LoopbackGuardProbeService> {
     constructor(
-        transport: ATransport,
-        private readonly service: LoopbackGuardProbeService
+        transport: NetworkTransport,
+        service: LoopbackGuardProbeService
     ) {
-        super(transport, service.p2pManager);
+        super(transport, service);
     }
 
     public probe(): LoopbackGuardProbeResult {

@@ -24,7 +24,7 @@ exits, channel state) — the Solidity side of the canonical encodings.
 
 ## Key design decisions
 
-1. **Struct shape = signature domain** under the current no-domain-tag scheme, which is exactly why [`OQ-29-EFY4NF`](../../../../../specification/open-questions.md#oq-29-efy4nf)] couples versioning to these definitions.
+1. **Struct shape = signature domain** under the current no-domain-tag scheme, which is exactly why [`OQ-29-EFY4NF` (Signature domain separation)](../../../../../specification/open-questions.md#oq-29-efy4nf)] couples versioning to these definitions.
 
 ## Inputs, outputs, state, and side effects
 

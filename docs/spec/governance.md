@@ -170,6 +170,8 @@ declarations through the shared graph and prints every requirement/invariant tha
 rechecked, plus its planned tests and mapped tests. A changed `src/`, `contracts/`, or `test/` file with no path to a
 requirement is a blocking traceability gap.
 
+A current source report may declare `> **Replaces:**` followed by a removed source path in backticks when the prior report had no obligation IDs. The checker requires that report to identify an existing source and link live requirement IDs. This declaration cannot replace IDs that existed in the prior report. Deleted test reports retain their impact through surviving planned-test IDs; deleted support files retain valid prior coverage-ignore reasons. A test report may identify affected requirements without assigning a Covers permutation: this accounts for change impact, not full test coverage.
+
 Agents inspect every reported path, update the maintained layers and current audit, and rerun the mapped
 evidence. If the intended behavior is ambiguous, they raise the appropriate open question and ask an engineer;
 they do not guess. A changed linked plan, source, or test changes its fingerprint, so the aggregate path reads

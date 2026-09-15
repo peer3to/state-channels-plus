@@ -52,7 +52,7 @@ claims complete conformance for a requirement that depends on other files.
 
 ## Specification adherence
 
-- Lowest-height retention independent of arrival order ([`REQ-TOSTORE-1-JQPXBC`](../../../../specification/storage/calldata-and-timeouts.md#req-tostore-1-jqpxbc)).
+- Lowest-height retention independent of arrival order ([`REQ-TOSTORE-1-JQPXBC` (Lowest-height timeout candidate)](../../../../specification/storage/calldata-and-timeouts.md#req-tostore-1-jqpxbc)).
 
 ## Specification contradictions
 

@@ -23,7 +23,7 @@ The executor abstraction: the typed operation surface both inline and worker exe
 
 ## Key design decisions
 
-1. **Transport-neutral interface** — callers cannot tell inline from worker ([`INV-RUNTIME-1-AKRHAK`](../../../../../specification/runtime/execution.md#inv-runtime-1-akrhak)).
+1. **Transport-neutral interface** — callers cannot tell inline from worker ([`INV-RUNTIME-1-AKRHAK` (Execution equivalence)](../../../../../specification/runtime/execution.md#inv-runtime-1-akrhak)).
 
 ## Inputs, outputs, state, and side effects
 

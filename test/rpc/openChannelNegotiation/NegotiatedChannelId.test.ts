@@ -1,5 +1,5 @@
-import type { LobbyMatch } from "@/rpc/services";
-import { deriveNegotiatedChannelId } from "@/rpc/services/openChannelNegotiation/OpenChannelNegotiationHelpers";
+import type { LobbyMatch } from "@/rpc/network/services";
+import { deriveNegotiatedChannelId } from "@/rpc/network/services/openChannelNegotiation/OpenChannelNegotiationHelpers";
 import { expect } from "chai";
 import { ethers } from "ethers";
 

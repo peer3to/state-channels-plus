@@ -2,14 +2,14 @@ import type { ConnectToChannelOptions } from "./ConnectToChannelOptions";
 import NoopEventProvider from "./NoopEventProvider";
 import Clock from "@/Clock";
 import type P2PManager from "@/P2PManager";
-import MainRpcService from "@/rpc/MainRpcService";
+import MainRpcService from "@/rpc/network/MainRpcService";
 import type {
     LobbyJoinOptions,
     LobbyJoinResult,
     PreparedJoinChannelConfirmation
-} from "@/rpc/services";
-import { validateMatchTimeout } from "@/rpc/services/lobbyMatching/LobbyMatchingValidation";
-import { DEFAULT_JOIN_AMOUNT } from "@/rpc/services/openChannelNegotiation/OpenChannelNegotiationHelpers";
+} from "@/rpc/network/services";
+import { validateMatchTimeout } from "@/rpc/network/services/lobbyMatching/LobbyMatchingValidation";
+import { DEFAULT_JOIN_AMOUNT } from "@/rpc/network/services/openChannelNegotiation/OpenChannelNegotiationHelpers";
 import { Status } from "@/types";
 import { isCommittedParticipantStatus } from "@/types/flags";
 import { Address, Bytes } from "@/types/types";

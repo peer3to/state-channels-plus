@@ -61,7 +61,7 @@ the caller-side declaration of the same surface.
    `abi.decode` body per facet function plus its own copies of ~28 state views, and measured 29,342
    deployed bytes — over the 24,576-byte budget. Routing by selector removes ~28 forwarder bodies
    and the constructor-populated map brings the proxy runtime to 12,464 bytes
-   ([`REQ-CONTRACT-ARCH-4-FZ3CJE`](../../../../../specification/enforcement/contracts.md#req-contract-arch-4-fz3cje);
+   ([`REQ-CONTRACT-ARCH-4-FZ3CJE` (Upgrade and deployment integrity)](../../../../../specification/enforcement/contracts.md#req-contract-arch-4-fz3cje);
    measurements in the [architecture view](../../../../views/architecture/contracts/architecture.md) §3).
 2. **The constructor calls `_registerRoute(Facet.fn.selector, facetAddress)`, never a literal hash.**
    The compiler derives every selector. The helper rejects an exact duplicate and rejects a route
@@ -121,14 +121,14 @@ claims complete conformance for a requirement that depends on other files.
 | ----------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | [StateChannelManagerProxy.sol](../../../../../../../contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol) | [`INV-CONTRACT-ARCH-1-TWQHTM`](../../../../../specification/enforcement/contracts.md#inv-contract-arch-1-twqhtm), [`REQ-CONTRACT-ARCH-1-9W5390`](../../../../../specification/enforcement/contracts.md#req-contract-arch-1-9w5390), [`REQ-CONTRACT-ARCH-3-GEGD78`](../../../../../specification/enforcement/contracts.md#req-contract-arch-3-gegd78), [`REQ-CONTRACT-ARCH-4-FZ3CJE`](../../../../../specification/enforcement/contracts.md#req-contract-arch-4-fz3cje), [`REQ-CONTRACT-ARCH-5-QT17P1`](../../../../../specification/enforcement/contracts.md#req-contract-arch-5-qt17p1), [`REQ-ENFADM-1-V926CA`](../../../../../specification/enforcement/admission-and-funds.md#req-enfadm-1-v926ca), [`REQ-ENFADM-3-6A3BEB`](../../../../../specification/enforcement/admission-and-funds.md#req-enfadm-3-6a3beb), [`REQ-LIF-8-2HDG3A`](../../../../../specification/settlement/lifecycle.md#req-lif-8-2hdg3a) |
 
-Contribution per ID: [`INV-CONTRACT-ARCH-1-TWQHTM`](../../../../../specification/enforcement/contracts.md#inv-contract-arch-1-twqhtm) — every route is a delegatecall into this
-contract's own layout; [`REQ-CONTRACT-ARCH-1-9W5390`](../../../../../specification/enforcement/contracts.md#req-contract-arch-1-9w5390) — one address answers the whole surface,
-whichever facet implements it; [`REQ-CONTRACT-ARCH-3-GEGD78`](../../../../../specification/enforcement/contracts.md#req-contract-arch-3-gegd78) — `onlySelf` on the three
-composition-internal operations; [`REQ-CONTRACT-ARCH-4-FZ3CJE`](../../../../../specification/enforcement/contracts.md#req-contract-arch-4-fz3cje) — the constructor names every
+Contribution per ID: [`INV-CONTRACT-ARCH-1-TWQHTM` (Single logical state)](../../../../../specification/enforcement/contracts.md#inv-contract-arch-1-twqhtm) — every route is a delegatecall into this
+contract's own layout; [`REQ-CONTRACT-ARCH-1-9W5390` (Stable external boundary)](../../../../../specification/enforcement/contracts.md#req-contract-arch-1-9w5390) — one address answers the whole surface,
+whichever facet implements it; [`REQ-CONTRACT-ARCH-3-GEGD78` (Internal-call confinement)](../../../../../specification/enforcement/contracts.md#req-contract-arch-3-gegd78) — `onlySelf` on the three
+composition-internal operations; [`REQ-CONTRACT-ARCH-4-FZ3CJE` (Upgrade and deployment integrity)](../../../../../specification/enforcement/contracts.md#req-contract-arch-4-fz3cje) — the constructor names every
 required routed module, rejects duplicate selectors and codeless route targets, and the deployable fits the platform size limit;
-[`REQ-CONTRACT-ARCH-5-QT17P1`](../../../../../specification/enforcement/contracts.md#req-contract-arch-5-qt17p1) — the routing table assigns each externally reachable protocol
+[`REQ-CONTRACT-ARCH-5-QT17P1` (Complete operation ownership)](../../../../../specification/enforcement/contracts.md#req-contract-arch-5-qt17p1) — the routing table assigns each externally reachable protocol
 operation to exactly one owning facet, and `facetAddressForSelector` makes that assignment
-readable; [`REQ-ENFADM-1-V926CA`](../../../../../specification/enforcement/admission-and-funds.md#req-enfadm-1-v926ca)/[`REQ-ENFADM-3-6A3BEB`](../../../../../specification/enforcement/admission-and-funds.md#req-enfadm-3-6a3beb) — the opening path and the composable
+readable; [`REQ-ENFADM-1-V926CA` (Self-submission with pinned state)](../../../../../specification/enforcement/admission-and-funds.md#req-enfadm-1-v926ca)/[`REQ-ENFADM-3-6A3BEB` (Custody through the adapter only)](../../../../../specification/enforcement/admission-and-funds.md#req-enfadm-3-6a3beb) — the opening path and the composable
 deposit batch.
 
 ## Assumptions, dependencies, trust boundaries, and limits
@@ -154,15 +154,15 @@ deposit batch.
 
 ## Specification adherence
 
-- Single logical state via delegatecall-into-own-storage ([`INV-CONTRACT-ARCH-1-TWQHTM`](../../../../../specification/enforcement/contracts.md#inv-contract-arch-1-twqhtm)); stable
-  external boundary ([`REQ-CONTRACT-ARCH-1-9W5390`](../../../../../specification/enforcement/contracts.md#req-contract-arch-1-9w5390)); `onlySelf` confinement for
-  composition-internal operations ([`REQ-CONTRACT-ARCH-3-GEGD78`](../../../../../specification/enforcement/contracts.md#req-contract-arch-3-gegd78)).
+- Single logical state via delegatecall-into-own-storage ([`INV-CONTRACT-ARCH-1-TWQHTM` (Single logical state)](../../../../../specification/enforcement/contracts.md#inv-contract-arch-1-twqhtm)); stable
+  external boundary ([`REQ-CONTRACT-ARCH-1-9W5390` (Stable external boundary)](../../../../../specification/enforcement/contracts.md#req-contract-arch-1-9w5390)); `onlySelf` confinement for
+  composition-internal operations ([`REQ-CONTRACT-ARCH-3-GEGD78` (Internal-call confinement)](../../../../../specification/enforcement/contracts.md#req-contract-arch-3-gegd78)).
 - The external ABI, per-function state mutability, revert-data propagation and the unknown-selector
   fallback are unchanged by the move from forwarders to routing; the revert data of a routed call
   still bubbles through the unchanged `_delegatecall` helper
   ([GeneralUtils.sol#L6](../../../../../../../contracts/V1/StateChannelDiamondProxy/utils/GeneralUtils.sol#L6)).
 - Every deployable in the composition now fits the 24,576-byte platform limit
-  ([`REQ-CONTRACT-ARCH-4-FZ3CJE`](../../../../../specification/enforcement/contracts.md#req-contract-arch-4-fz3cje)).
+  ([`REQ-CONTRACT-ARCH-4-FZ3CJE` (Upgrade and deployment integrity)](../../../../../specification/enforcement/contracts.md#req-contract-arch-4-fz3cje)).
 - Every registered routed facet has deployed code, so a void delegatecall cannot silently succeed
   against an empty account.
 
@@ -172,7 +172,7 @@ None demonstrated.
 
 ## Missing behavior
 
-- **No rejection of an unowned selector.** [`REQ-CONTRACT-ARCH-5-QT17P1`](../../../../../specification/enforcement/contracts.md#req-contract-arch-5-qt17p1) requires that an
+- **No rejection of an unowned selector.** [`REQ-CONTRACT-ARCH-5-QT17P1` (Complete operation ownership)](../../../../../specification/enforcement/contracts.md#req-contract-arch-5-qt17p1) requires that an
   externally reachable operation with no owning group cannot affect channel state. An unrouted
   selector is delegatecalled into the integrator's consumer facet in this contract's storage
   context, so the guarantee rests entirely on the integrator's facet

@@ -422,7 +422,7 @@ _Non-normative._
   (`DisputeValidationStrategy.doubleSignDetected` TODO).
 - Optimistic reduction: commit only the reduced-result hash and finalize after
   a challenge period, and a fast path with threshold peer attestation
-  ([`OQ-15-2J4Y1Z`](../../../open-questions.md#oq-15-2j4y1z)).
+  ([`OQ-15-2J4Y1Z` (`challengeDisputeReduction` is currently unreachable)](../../../open-questions.md#oq-15-2j4y1z)).
 - Re-evaluate `postedAuditingData` under early finalization, and the
   cross-audit race where calldata is posted after a kill decision (code TODOs).
 

@@ -45,7 +45,7 @@ Each report ([canonical example](./tests/test/unit/ValidationService.test.ts.md)
 - Tests with no assigned ID stay listed; static analysis reports them as unreferenced.
 - IDs are always links to their definition anchors.
 - A genuinely out-of-scope test file may use `// @spec-test-coverage-ignore: <reason>` in its
-  first ten lines.
+  first ten lines. HTML page fixtures can use the same marker inside an HTML comment.
 
 ## Static analysis
 

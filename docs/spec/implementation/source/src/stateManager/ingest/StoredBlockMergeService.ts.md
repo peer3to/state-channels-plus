@@ -30,7 +30,7 @@ The caller schedules a QueuedBlockEntry under the ingress owner. This service re
 
 ## Specification adherence
 
-The operation supports [`REQ-BLOCK-PIPE-2-PCXNT6`](../../../../../specification/block-progression/block-processing.md#req-block-pipe-2-pcxnt6) within the caller-owned policy described above.
+The operation supports [`REQ-BLOCK-PIPE-2-PCXNT6` (Complete pre-execution validation)](../../../../../specification/block-progression/block-processing.md#req-block-pipe-2-pcxnt6) within the caller-owned policy described above.
 
 ## Specification contradictions
 

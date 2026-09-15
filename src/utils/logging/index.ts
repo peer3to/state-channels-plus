@@ -18,3 +18,5 @@ export type {
     CreateLoggerOptions
 };
 export { decodeLogs, decompressFromBase64 };
+export type { LogThreadName } from "./Logger";
+export type { LogUploadOutcome } from "./LogUploader";

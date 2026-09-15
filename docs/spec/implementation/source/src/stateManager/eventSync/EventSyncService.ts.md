@@ -28,8 +28,8 @@ spans, capped attempts), and replays events after restart from the progress mark
 
 Channel-key creation delegates to the shared conversion; backfill, live subscription, channel filtering and failure handling remain owned here. See [EventSyncService.ts](../../../../../../../src/stateManager/eventSync/EventSyncService.ts#L22).
 
-1. **Processed-then-marked ordering:** progress advances only after handling, so restart re-processing is safe-by-idempotence rather than skipped ([`REQ-RMSTORE-1-BWKVBG`](../../../../../specification/storage/progress-markers.md#req-rmstore-1-bwkvbg)).
-2. **Targeted recovery, never trust-by-absence:** a reducer's window is loaded from chain queries until local records back every commitment ([`REQ-MIRROR-3-THD7K8`](../../../../../specification/enforcement/local-mirror.md#req-mirror-3-thd7k8)).
+1. **Processed-then-marked ordering:** progress advances only after handling, so restart re-processing is safe-by-idempotence rather than skipped ([`REQ-RMSTORE-1-BWKVBG` (Monotone observation progress)](../../../../../specification/storage/progress-markers.md#req-rmstore-1-bwkvbg)).
+2. **Targeted recovery, never trust-by-absence:** a reducer's window is loaded from chain queries until local records back every commitment ([`REQ-MIRROR-3-THD7K8` (Cache, never authority)](../../../../../specification/enforcement/local-mirror.md#req-mirror-3-thd7k8)).
 
 ## Inputs, outputs, state, and side effects
 
@@ -49,7 +49,7 @@ claims complete conformance for a requirement that depends on other files.
 | ------------------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | [EventSyncService.ts](../../../../../../../src/stateManager/eventSync/EventSyncService.ts) | [`REQ-STOR-3-4RJGER`](../../../../../specification/storage/durability.md#req-stor-3-4rjger), [`REQ-DISPUTE-PIPE-9-TDWQPV`](../../../../../specification/disputes/dispute-processing.md#req-dispute-pipe-9-tdwqpv) |
 
-Contribution in this file: [`REQ-DISPUTE-PIPE-9-TDWQPV`](../../../../../specification/disputes/dispute-processing.md#req-dispute-pipe-9-tdwqpv). The conformance rows below name this owner and the other required owners.
+Contribution in this file: [`REQ-DISPUTE-PIPE-9-TDWQPV` (Existing-window state contributions)](../../../../../specification/disputes/dispute-processing.md#req-dispute-pipe-9-tdwqpv). The conformance rows below name this owner and the other required owners.
 
 ## Assumptions, dependencies, trust boundaries, and limits
 
@@ -57,7 +57,7 @@ Contribution in this file: [`REQ-DISPUTE-PIPE-9-TDWQPV`](../../../../../specific
 
 ## Specification adherence
 
-- Observed intake re-enters owner validation; recovery is bounded and explicit ([`REQ-STOR-3-4RJGER`](../../../../../specification/storage/durability.md#req-stor-3-4rjger) consumer side).
+- Observed intake re-enters owner validation; recovery is bounded and explicit ([`REQ-STOR-3-4RJGER` (Restart recovery without trust)](../../../../../specification/storage/durability.md#req-stor-3-4rjger) consumer side).
 
 ## Specification contradictions
 

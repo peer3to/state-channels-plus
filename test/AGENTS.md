@@ -25,6 +25,30 @@ reference. Consequences for tests:
   an ethers `Result`, a `Map`/`Set`, or a revert that lost its `.data`), not a
   mode difference.
 
+## Controls for actual runtime connections
+
+Communication tests use full SDK setup and its real roots, domain services and
+MessageChannels. `RootCreationControl.observe` exposes the actual endpoint locally during test
+setup. Test worker entries install the same control inside production bootstrap; live roots and callback functions
+never cross a port. Ordinary SDK setup installs no probe service or controller.
+
+`RuntimeRpcControl` under `test/fixtures/runtimeRpc/` is the single owner of
+held deliveries, observed frame projections and restoration handles. The
+`runtimeRpc` service on `HarnessControlRpc` selects the actual client or executor
+connection and exposes typed hold, release, observe and removal controls. Live
+connection references stay inside that controller. Controls must select only
+the intended SDK instance and release or cancel held work in `finally` and on
+SDK disposal.
+
+Fault producers must reach real communication behavior: hold a real endpoint
+or response, release two invocations in reverse order, inject a frame on the
+actual connection, post an uncloneable function or invalid transfer list, or
+close an owned endpoint. A closed far end is not proof of a synchronous post
+failure because MessagePort may silently discard the post. Test probes may join
+actual SDK roots when domain endpoints cannot produce a required case; they
+must not implement dispatch, request IDs, response matching, deadlines or a
+replacement RPC layer. No standalone counterpart roots or mocks are allowed.
+
 ## HarnessControlRpc — the host-side control surface
 
 `test/fixtures/customRpc/harnessControl/HarnessControlRpc.ts` is a custom RPC
@@ -41,14 +65,14 @@ ctl(peer0).pingService.ping("hi").sendOne(peer1.address); // target another peer
 address** (`.sendOne(address)` / `.request(address)`) — never by passing an
 `ATransport` (not serializable).
 
-### Adding / changing a service (mirror `src/rpc/services/*`)
+### Adding / changing a service (mirror the network and internal service directories)
 
 Each service is a directory `services/<name>/` with two classes:
 
-- `<Name>Service extends ARpcService<<Name>RpcMethods>` — holds **all** accessors
+- `<Name>Service extends ANetworkRpcService<<Name>RpcMethods>` — holds **all** accessors
   and shared state (`get sm() { return this.p2pManager.stateManager }`, etc.) and
   `createRPCMethods(transport)`. The service is **not** routable.
-- `<Name>RpcMethods extends ARpcMethods` — **only public endpoint functions**. At
+- `<Name>RpcMethods extends ANetworkRpcMethods` — **only public endpoint functions**. At
   runtime `private` doesn't exist and the dispatcher routes by name, so any
   method here is callable by a crafted payload. Helpers go on the service; reach
   them via `this.service.*`.
@@ -60,7 +84,7 @@ harness `FooActions` drives it, its host methods belong in a `foo` service —
 don't grow a catch-all.
 
 Current services: `query`, `transition`, `balance`, `network`, `byzantine`,
-`stub`, `handshake`, `signer`, `spectate`, `scenario`, `dispute`.
+`stub`, `handshake`, `signer`, `spectate`, `scenario`, `dispute`, `runtimeRpc`.
 
 ### Serialization rules for endpoints
 

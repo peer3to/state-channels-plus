@@ -30,14 +30,14 @@ cancellation inside unmatched rendezvous. RO3 authorizes a pending RPC response 
 a live transport upgrade. RO4 permits one bounded re-entry into the locked target after authoritative open,
 never a general-lobby or target-selection retry. RO5 separates terminal full-flow tests from bounded probes.
 PY1 gives initial load two independent local windows and exact recovery one. RY3 makes fixed-target open win
-after local signing but before submission. [`OQ-10-04YNC4`](../specification/open-questions.md#oq-10-04ync4)
+after local signing but before submission. [`OQ-10-04YNC4` (Spectate/join failure-point details)](../specification/open-questions.md#oq-10-04ync4)
 is partially resolved; [`DEF-5-E8TP9N`](open-findings.md#def-5-e8tp9n),
 [`DEF-6-B4ZN7S`](open-findings.md#def-6-b4zn7s), and
 [`DEF-10-199C7F`](open-findings.md#def-10-199c7f) have dated dispositions. Engineer review remains pending.
 
 ## 2026-09-01 — Discovery replacement and pre-submission membership protection
 
-[`REQ-LOBBY-9-N894C0`](../specification/peer-communication/lobby-matching.md#req-lobby-9-n894c0)
+[`REQ-LOBBY-9-N894C0` (Bounded inactive ingress and cleanup)](../specification/peer-communication/lobby-matching.md#req-lobby-9-n894c0)
 now requires replacement discovery for an eligible closed peer while the caller still observes the exact
 topic, plus a hard stop after leave and under the existing blacklist policy. The membership invariants now
 place `PENDING_PARTICIPANT` before contract invocation, preserve it when submission outcome is uncertain, and

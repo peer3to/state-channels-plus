@@ -23,8 +23,17 @@ if (args.size) {
 }
 
 const ID_RE = () => new RegExp(AUDITABLE_ID_PATTERN, "g");
+// The optional group before the closing bracket absorbs the parenthesised
+// gloss that linkify adds to cross-document references, so --write strips a
+// glossed link back to a bare inline-code ID like any other. Without it each
+// run would nest the previous gloss inside a new one.
+//
+// The gloss is parenthesised rather than em-dashed because an ID followed by
+// " — " at the start of a line is how id-registry.js recognises a definition
+// site; an em-dash gloss on a wrapped reference line registers a competing
+// definition and flips canonical anchor ownership.
 const EXACT_ID_LINK_RE = new RegExp(
-    `(?:\\x60)?\\[+\\x60*(${AUDITABLE_ID_PATTERN})\\x60*\\]\\([^)]+\\)(?:\\x60)?`,
+    `(?:\\x60)?\\[+\\x60*(${AUDITABLE_ID_PATTERN})\\x60*(?:[ \\t]*\\([^)\\]]*\\))?\\]\\([^)]+\\)(?:\\x60)?`,
     "g"
 );
 const ID_ANCHOR_RE =
@@ -46,8 +55,21 @@ function escapeRegExp(value) {
     return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
+// Reports under generated/ are machine output: yarn spec:refresh rewrites them
+// wholesale from source data, and their link shapes are the generators' to
+// choose. Rewriting them here makes the two commands fight -- and worse, the
+// normalizer cannot parse a generator's nested link
+// ([[`ID`](target) · 1 plan](target)), so it strips one bracket per run and
+// settles on malformed markup while still reporting zero issues. Both writers
+// stay out; the generators own these files.
+function maintainedDocuments() {
+    return walkFiles(SPEC_ROOT, { extensions: [".md"] }).filter(
+        (document) => !specRelative(document).startsWith("generated/")
+    );
+}
+
 function normalizeIdMarkup() {
-    for (const document of walkFiles(SPEC_ROOT, { extensions: [".md"] })) {
+    for (const document of maintainedDocuments()) {
         const before = fs.readFileSync(document, "utf8");
         let markdown = before
             .replace(STANDALONE_ANCHOR_BLOCK_RE, "\n\n")
@@ -106,9 +128,51 @@ function addCanonicalAnchors(registry) {
     }
 }
 
-function linkify(registry) {
-    const documents = walkFiles(SPEC_ROOT, { extensions: [".md"] });
-    for (const document of documents) {
+// A definition states its subject once, immediately after the ID, in one of two
+// shapes: a bold statement (**`REQ-X` — Subject.**) or a section heading
+// (## OQ-1-ABC — Subject). Reading that subject lets a reference carry what
+// it points at, so an agent resolving `REQ-RPC-5-CV1R1Y` in another document
+// does not have to open that document to learn it means "Resource bounds".
+const GLOSS_STATEMENT_RE =
+    /^\s*\**\s*\x60?([A-Z][A-Z0-9.-]*)\x60?\s*—\s*([^.*—]+)/;
+const GLOSS_HEADING_RE =
+    /^#{1,4}\s+\x60?([A-Z][A-Z0-9.-]*)\x60?\s*—\s*(.+?)\s*$/;
+
+function buildGlossary(registry) {
+    const glossary = new Map();
+    const cache = new Map();
+    for (const [id, definition] of registry.definitions) {
+        // Permutation and planned-test children (.T1, .T1.P2) restate their
+        // parent and live in dense table cells; glossing them adds bytes
+        // without adding meaning.
+        if (id.includes(".")) continue;
+        if (!cache.has(definition.document))
+            cache.set(
+                definition.document,
+                fs.readFileSync(definition.document, "utf8").split(/\r?\n/)
+            );
+        const line = cache.get(definition.document)[definition.line];
+        if (!line) continue;
+        const stripped = line.replace(ID_ANCHOR_RE, "");
+        const match =
+            stripped.match(GLOSS_HEADING_RE) ||
+            stripped.match(GLOSS_STATEMENT_RE);
+        if (!match || match[1] !== id) continue;
+        const subject = match[2].replace(/\s+/g, " ").trim();
+        // A subject long enough to be prose is a sentence that got captured,
+        // not a title; skip rather than inline a paragraph into every link.
+        if (!subject || subject.length > 60) continue;
+        // The gloss is delimited by parentheses, so a subject that contains
+        // them cannot be stripped back off: the strip pattern would stop at the
+        // inner ")" and the next --write would wrap the link a second time.
+        if (/[()[\]]/.test(subject)) continue;
+        glossary.set(id, subject);
+    }
+    return glossary;
+}
+
+function linkify(registry, glossary = new Map()) {
+    for (const document of maintainedDocuments()) {
         const before = fs.readFileSync(document, "utf8");
         let markdown = before.replace(EXACT_ID_LINK_RE, (_, id) => `\`${id}\``);
         let fenced = false;
@@ -147,10 +211,24 @@ function linkify(registry) {
                     replaceStart -= 1;
                     replaceEnd += 1;
                 }
+                // Gloss only what points out of this document. A same-file
+                // reference is one anchor jump away, so naming its subject
+                // again costs bytes on every mention and saves no lookup.
+                //
+                // Table rows are excluded because the registry reads an ID
+                // column cell as a definition candidate: extra text beside the
+                // ID there registers a competing "table" definition in the
+                // referencing document and flips canonical anchor ownership.
+                const inTableRow = line.trimStart().startsWith("|");
+                const gloss =
+                    inTableRow || definition.document === document
+                        ? null
+                        : glossary.get(id);
+                const label = gloss ? `\`${id}\` (${gloss})` : `\`${id}\``;
                 replacements.push({
                     start: replaceStart,
                     end: replaceEnd,
-                    value: `[\`${id}\`](${canonicalTarget(document, {
+                    value: `[${label}](${canonicalTarget(document, {
                         ...definition,
                         id
                     })})`
@@ -275,7 +353,7 @@ if (write) {
     let registry = buildIdRegistry();
     addCanonicalAnchors(registry);
     registry = buildIdRegistry();
-    linkify(registry);
+    linkify(registry, buildGlossary(registry));
 }
 
 const result = check();

@@ -1,22 +1,15 @@
-// @spec-test-coverage-ignore: loopback control endpoint for ARpcService component tests
-import type { PingPongRpc } from "../PingPongRpcManifest";
+// @spec-test-coverage-ignore: loopback control endpoint for ANetworkRpcService component tests
 import type {
     ARpcDispatchProbe,
     ARpcDispatchProbeOptions,
     ARpcServiceProbeService
 } from "./ARpcServiceProbeService";
-import type P2PManager from "@/P2PManager";
-import ARpcMethods from "@/rpc/ARpcMethods";
-import type ATransport from "@/transport/ATransport";
+import ANetworkRpcMethods from "@/rpc/network/ANetworkRpcMethods";
+import type NetworkTransport from "@/transport/NetworkTransport";
 
-export class ARpcServiceProbeRpcMethods extends ARpcMethods<
-    P2PManager<PingPongRpc>
-> {
-    constructor(
-        transport: ATransport,
-        private readonly service: ARpcServiceProbeService
-    ) {
-        super(transport, service.p2pManager);
+export class ARpcServiceProbeRpcMethods extends ANetworkRpcMethods<ARpcServiceProbeService> {
+    constructor(transport: NetworkTransport, service: ARpcServiceProbeService) {
+        super(transport, service);
     }
 
     public probeDispatch(

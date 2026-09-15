@@ -1,6 +1,6 @@
-import ATransport from "./ATransport";
+import NetworkTransport from "./NetworkTransport";
 import { TransportType } from "./TransportType";
-import type P2PManager from "@/P2PManager";
+import type { NetworkRpcRouter } from "@/rpc/router/NetworkRpcRouter";
 
 /**
  * Base transport over a native browser `WebSocket`, used for local peer
@@ -9,24 +9,25 @@ import type P2PManager from "@/P2PManager";
  * native `WebSocket` API instead of the `ws` package. It carries the handshake
  * and WebRTC signaling frames until the connection upgrades to WebRTC.
  */
-class BrowserLocalTransport extends ATransport {
+class BrowserLocalTransport extends NetworkTransport {
     transportType = TransportType.HOLEPUNCH;
     private readonly ws: WebSocket;
 
-    constructor(ws: WebSocket, p2pManager: P2PManager) {
-        super(p2pManager);
+    constructor(ws: WebSocket, router: NetworkRpcRouter) {
+        super(router);
         this.ws = ws;
         this.ws.onmessage = (event: MessageEvent) => this.onMessage(event.data);
         this.ws.onclose = () => this.close();
         this.ws.onerror = () => this.close();
     }
 
-    _send(serializedRPC: string): void {
-        this.ws.send(serializedRPC);
+    // Overrides NetworkTransport.onMessage to pass browser WebSocket frames.
+    public override onMessage(data: unknown): void {
+        void this.router.onRpc(String(data), this);
     }
 
-    onMessage(data: unknown): void {
-        this.p2pManager.onRpc(String(data), this);
+    _send(serializedRPC: string): void {
+        this.ws.send(serializedRPC);
     }
 
     _close(): void {
