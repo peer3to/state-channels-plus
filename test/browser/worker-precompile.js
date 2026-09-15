@@ -2,6 +2,13 @@
 import { ethers } from "ethers";
 
 export default function createBrowserWorkerAnswerPrecompile(options) {
+    if (options.crashSignal) {
+        const signal = new BroadcastChannel(options.crashSignal);
+        signal.onmessage = () => {
+            signal.close();
+            throw new Error("browser worker answer precompile async crash");
+        };
+    }
     return async function browserWorkerAnswerPrecompile(input) {
         const calldata = ethers.hexlify(input.data);
         if (calldata !== options.expectedData) {

@@ -14,7 +14,7 @@
 Related: [./README.md](./README.md) (peer-RPC model: dispatch, guards, delivery modes, failure
 outcomes), [../../protocol/cross-layer-messages.md](../../../../../specification/settlement/cross-layer-messages.md) §4
 (join/admission as an inbound-stream consumer; [`REQ-MSG-10-7JS45Q`](../../../../../specification/settlement/cross-layer-messages.md#req-msg-10-7js45q)/11), §3 (spectate-before-join),
-[../../open-questions.md](../../../../../specification/open-questions.md) ([`OQ-10-04YNC4`](../../../../../specification/open-questions.md#oq-10-04ync4), [`OQ-19-Y8FDQX`](../../../../open-questions.md#oq-19-y8fdqx), [`OQ-34-FY08V2`](../../../../../specification/open-questions.md#oq-34-fy08v2), [`DEF-6-B4ZN7S`](../../../../../audit/open-findings.md#def-6-b4zn7s)).
+[../../open-questions.md](../../../../../specification/open-questions.md) ([`OQ-10-04YNC4` (Spectate/join failure-point details)](../../../../../specification/open-questions.md#oq-10-04ync4), [`OQ-19-Y8FDQX` (Channel-balance invariant enforcement points)](../../../../open-questions.md#oq-19-y8fdqx), [`OQ-34-FY08V2` (RPC boundary decisions)](../../../../../specification/open-questions.md#oq-34-fy08v2), [`DEF-6-B4ZN7S`](../../../../../audit/open-findings.md#def-6-b4zn7s)).
 
 ---
 
@@ -34,7 +34,7 @@ The service is one half of a client/responder pair over the RPC boundary:
   `JoinChannelConfirmation` (the joiner's `SignedJoinChannel` plus one threshold signature per
   participant).
 - **Responder side (`requestJoinSignature` → `signJoinRequest`).** The one **public RPC endpoint**
-  ([`JoinChannelRpcMethods`](../../../../../../../src/rpc/services/joinChannel/JoinChannelRpcMethods.ts#L6)).
+  ([`JoinChannelRpcMethods`](../../../../../../../src/rpc/network/services/joinChannel/JoinChannelRpcMethods.ts#L6)).
   Every threshold participant runs it when asked. It re-derives and cross-checks the request, then
   returns its own signature over the encoded join.
 
@@ -50,7 +50,7 @@ here.
 each returned signature already verified to recover to its claimed threshold participant, or
 throws. `requestJoinSignature(...)` returns `{ signature }` over the exact encoded join, or throws
 a request error. What it does **not** guarantee: it does not decide _whether_ a peer should be
-admitted — every structurally valid request is signed (§4, the auto-sign behavior, [`OQ-10-04YNC4`](../../../../../specification/open-questions.md#oq-10-04ync4)).
+admitted — every structurally valid request is signed (§4, the auto-sign behavior, [`OQ-10-04YNC4` (Spectate/join failure-point details)](../../../../../specification/open-questions.md#oq-10-04ync4)).
 
 ## 2. Owned state
 
@@ -88,9 +88,9 @@ source, and a slashed participant cannot veto a later join.
 
 Runs on the joiner. Not an RPC endpoint; invoked through the signer facade
 ([`LocalP2pSigner`](../../../../../../../src/evm/signer/LocalP2pSigner.ts#L8) /
-[`ClientP2pSigner`](../../../../../../../src/evm/signer/ClientP2pSigner.ts#L32) → `hostRpc`, §3 of
+[`ClientP2pSigner`](../../../../../../../src/evm/signer/ClientP2pSigner.ts#L33) → `hostRpc`, §3 of
 [./README.md](./README.md)). Ordered stages
-([`JoinChannelService`](../../../../../../../src/rpc/services/joinChannel/JoinChannelService.ts#L28)):
+([`JoinChannelService`](../../../../../../../src/rpc/network/services/joinChannel/JoinChannelService.ts#L28)):
 
 1. **Self-authorization guard.** `joinChannel.participant` must equal the local signer address;
    else throw. The collector only ever collects for the local node's own join.
@@ -111,7 +111,7 @@ Runs on the joiner. Not an RPC endpoint; invoked through the signer facade
    `min(agreementTime, deadlineTimestamp − chainTime) × 1000` ms.
 7. **Self-sign the join.** `SignatureUtils.signJoinChannel(joinChannel, signer)` produces the
    `encoded` join and the joiner's `signature`; package as `SignedJoinChannel` and Codec-encode it
-   (`encodedSignedJoinChannel`), the wire form sent to peers (bigint-safe per [`REQ-RPC-4-9VX0B9`](../../../../../specification/peer-communication/rpc.md#req-rpc-4-9vx0b9)).
+   (`encodedSignedJoinChannel`), the wire form sent to peers (bigint-safe per [`REQ-RPC-4-9VX0B9` (Replay and concurrency)](../../../../../specification/peer-communication/rpc.md#req-rpc-4-9vx0b9)).
 8. **Fan out and verify.** For each threshold participant, in parallel: the local address self-signs
    directly (`signMsg(encoded, signer)`); a remote participant is asked via
    `remoteRpc.joinChannelService.requestJoinSignature(encodedSignedJoinChannel,
@@ -130,7 +130,7 @@ The adversarial ingress point. `JoinChannelRpcMethods.requestJoinSignature` forw
 `JoinChannelService.signJoinRequest(senderTransport, encodedSignedJoinChannel,
 expectedSnapshotHash, expectedForkId)`. Delivery mode: **request/response** (returns a value).
 Guard: `HandshakeCompletedGuard` ([./README.md](./README.md) §5.2) — the caller's EVM identity is
-proven before any method logic runs. Ordered stages (full [`REQ-RPC-2-SZDTTM`](../../../../../specification/peer-communication/rpc.md#req-rpc-2-szdttm) chain):
+proven before any method logic runs. Ordered stages (full [`REQ-RPC-2-SZDTTM` (Request lifecycle)](../../../../../specification/peer-communication/rpc.md#req-rpc-2-szdttm) chain):
 
 1. **Sender identity present.** `transport.peerAddress` must exist; else throw. (Behind the
    handshake guard this should always hold.)
@@ -156,7 +156,7 @@ joinChannel.participant`. This binds three identities: the ECDSA signer, the dec
 9. **Sign (the auto-sign step).** `signMsg(encodedJoinChannel, signer)` and return `{ signature }`.
    A code TODO here marks the missing admission filter:
    `// TODO: add a configurable admission filter, including optional snapshot-scoped consent.`
-   Every structurally valid request that passes stages 1–8 is signed unconditionally (§4, [`OQ-10-04YNC4`](../../../../../specification/open-questions.md#oq-10-04ync4)).
+   Every structurally valid request that passes stages 1–8 is signed unconditionally (§4, [`OQ-10-04YNC4` (Spectate/join failure-point details)](../../../../../specification/open-questions.md#oq-10-04ync4)).
 
 ```mermaid
 flowchart TD
@@ -180,12 +180,12 @@ The core of this document. Vectors classified **handled** (mechanism + code), **
 
 ### 4.1 Forged / malformed join requests — handled
 
-### 4.2 Auto-sign-any-structurally-valid-request — unhandled ([`OQ-10-04YNC4`](../../../../../specification/open-questions.md#oq-10-04ync4), decision pending)
+### 4.2 Auto-sign-any-structurally-valid-request — unhandled ([`OQ-10-04YNC4` (Spectate/join failure-point details)](../../../../../specification/open-questions.md#oq-10-04ync4), decision pending)
 
 **Observed fact.** Stage 9 signs unconditionally once stages 1–8 pass. There is no consent hook,
 no per-peer policy, no rate of admission. Unanimity is therefore **mechanical signature collection,
 not consent** ([../../protocol/cross-layer-messages.md](../../../../../specification/settlement/cross-layer-messages.md)
-§4.2; [`OQ-10-04YNC4`](../../../../../specification/open-questions.md#oq-10-04ync4)).
+§4.2; [`OQ-10-04YNC4` (Spectate/join failure-point details)](../../../../../specification/open-questions.md#oq-10-04ync4)).
 
 **Byzantine consequences — what can an attacker get signed?** The auto-sign is bounded by what
 stages 1–8 admit, so precisely:
@@ -205,9 +205,9 @@ downgraded to "unanimous availability." A colluding/griefing joiner can also obt
 then _not_ submit on-chain (no obligation is created responder-side by signing), so signing is a
 free favor with no accounting. Residual risk severity depends on whether the deployment intends
 join to be permissioned; the protocol's own language ("participants may decline") says it should
-be. **Classified: [`OQ-10-04YNC4`](../../../../../specification/open-questions.md#oq-10-04ync4), decision pending** — the admission-policy hook and whether a decline is
+be. **Classified: [`OQ-10-04YNC4` (Spectate/join failure-point details)](../../../../../specification/open-questions.md#oq-10-04ync4), decision pending** — the admission-policy hook and whether a decline is
 protocol-visible or indistinguishable from unavailability are both unresolved. This service is the
-enforcement seat for that decision (a future admission guard per [`REQ-RPC-5-CV1R1Y`](../../../../../specification/peer-communication/rpc.md#req-rpc-5-cv1r1y) / [./README.md](./README.md)
+enforcement seat for that decision (a future admission guard per [`REQ-RPC-5-CV1R1Y` (Resource bounds)](../../../../../specification/peer-communication/rpc.md#req-rpc-5-cv1r1y) / [./README.md](./README.md)
 §5.3, or the inline filter the TODO anticipates).
 
 ### 4.3 Replaying join signatures — accepted residual (bounded by pinning)
@@ -219,9 +219,9 @@ snapshot/fork pinning lives in the _contract's_ submit path
 `expectedSnapshotHash`/`expectedForkId`, not inside the signed bytes. Consequences:
 
 - **Cross-deployment / cross-chain replay.** The signed message carries no domain separation
-  ([../../open-questions.md](../../../../../specification/open-questions.md) [`OQ-29-EFY4NF`](../../../../../specification/open-questions.md#oq-29-efy4nf)). A join signature is in principle
+  ([../../open-questions.md](../../../../../specification/open-questions.md) [`OQ-29-EFY4NF` (Signature domain separation)](../../../../../specification/open-questions.md#oq-29-efy4nf)). A join signature is in principle
   replayable against another deployment where the same `(channelId, participant, deadline, balance)`
-  is meaningful. Accepted residual **only** insofar as [`OQ-29-EFY4NF`](../../../../../specification/open-questions.md#oq-29-efy4nf) tracks domain separation globally;
+  is meaningful. Accepted residual **only** insofar as [`OQ-29-EFY4NF` (Signature domain separation)](../../../../../specification/open-questions.md#oq-29-efy4nf) tracks domain separation globally;
   flagged here as an instance.
 - **Same-channel replay.** Re-submitting the same confirmation is blocked on-chain: after inclusion
   the participant exists, so a second `joinChannel` reverts `ErrorJoinChannelParticipantAlreadyExists`
@@ -230,7 +230,7 @@ snapshot/fork pinning lives in the _contract's_ submit path
   it grants the attacker nothing new. Accepted residual.
 
 **Open question:** whether join signatures should bind snapshot/fork and a domain tag directly (so
-the signed artifact is self-pinning and not replayable), coupled to [`OQ-29-EFY4NF`](../../../../../specification/open-questions.md#oq-29-efy4nf). (Divergence class:
+the signed artifact is self-pinning and not replayable), coupled to [`OQ-29-EFY4NF` (Signature domain separation)](../../../../../specification/open-questions.md#oq-29-efy4nf). (Divergence class:
 decision pending.)
 
 ### 4.4 Racing concurrent joins — unhandled (decision pending)
@@ -244,9 +244,9 @@ reverts `RaceCondition*` and `StateManager.joinChannel` aborts
 a responder signing two concurrent requests is not itself a fault — it signs both; the contention is
 resolved on-chain. Consequence: concurrent admissions are serialized by chain races, not
 coordinated; honest concurrent joiners can waste a full signature-collection round.
-**Classified: [`OQ-10-04YNC4`](../../../../../specification/open-questions.md#oq-10-04ync4) (concurrent-join semantics undefined), decision pending.**
+**Classified: [`OQ-10-04YNC4` (Spectate/join failure-point details)](../../../../../specification/open-questions.md#oq-10-04ync4) (concurrent-join semantics undefined), decision pending.**
 
-### 4.5 Probing via penalty-free request errors — unhandled ([`OQ-34-FY08V2`](../../../../../specification/open-questions.md#oq-34-fy08v2), decision pending)
+### 4.5 Probing via penalty-free request errors — unhandled ([`OQ-34-FY08V2` (RPC boundary decisions)](../../../../../specification/open-questions.md#oq-34-fy08v2), decision pending)
 
 **Observed fact.** A `requestJoinSignature` that fails validation throws, and the request path
 returns `{ok: false, error}` with the **connection kept, no blacklist** ([./README.md](./README.md)
@@ -255,12 +255,12 @@ free probing of a guarded request endpoint. The error strings are descriptive
 (`fork mismatch`, `snapshot mismatch`, `join expired`, `local signer not in threshold`), which also
 leaks the responder's view of chain state and threshold membership to any handshake-completed peer.
 
-This is the join-side instance of [`OQ-34-FY08V2`](../../../../../specification/open-questions.md#oq-34-fy08v2)'s failure-outcome-policy inconsistency: join-signature abuse
+This is the join-side instance of [`OQ-34-FY08V2` (RPC boundary decisions)](../../../../../specification/open-questions.md#oq-34-fy08v2)'s failure-outcome-policy inconsistency: join-signature abuse
 is penalty-free while an unprovable spectate request is an immediate permanent blacklist
 ([./spectate.md](./spectate.md) §4). Each choice is individually defensible — an honest joiner can
 race a stale snapshot and legitimately get `snapshot mismatch` — but the intended per-class policy
-is unstated. **Classified: [`OQ-34-FY08V2`](../../../../../specification/open-questions.md#oq-34-fy08v2), decision pending.** Mitigation depends on the future central rate
-limiter ([`OQ-6-4JPNE5`](../../../../../specification/open-questions.md#oq-6-4jpne5)): unbounded invalid requests each run chain reads (`getStateSnapshot`,
+is unstated. **Classified: [`OQ-34-FY08V2` (RPC boundary decisions)](../../../../../specification/open-questions.md#oq-34-fy08v2), decision pending.** Mitigation depends on the future central rate
+limiter ([`OQ-6-4JPNE5` (P2P gossip rate limiting)](../../../../../specification/open-questions.md#oq-6-4jpne5)): unbounded invalid requests each run chain reads (`getStateSnapshot`,
 `getOnChainThresholdSet`), so this endpoint carries real per-request cost (§4.7).
 
 ### 4.6 Deadline / top-up abuse — accepted residual + open question
@@ -268,7 +268,7 @@ limiter ([`OQ-6-4JPNE5`](../../../../../specification/open-questions.md#oq-6-4jp
 - **Free deadline choice.** The joiner picks `deadlineTimestamp` freely; the contract only checks
   `deadline ≥ block.timestamp` at submit, and `signJoinRequest` only checks `deadline ≥ chainTime`
   at sign. There is no bound tying the deadline to protocol windows. A far-future deadline keeps a
-  collected authorization valid for a long time. Accepted residual today. **Open question ([`OQ-10-04YNC4`](../../../../../specification/open-questions.md#oq-10-04ync4)):**
+  collected authorization valid for a long time. Accepted residual today. **Open question ([`OQ-10-04YNC4` (Spectate/join failure-point details)](../../../../../specification/open-questions.md#oq-10-04ync4)):**
   required deadline bounds. (Divergence class: decision pending.)
 - **Top-up path.** `topUpBalance` reuses the same confirmation shape and the same
   `signJoinRequest` responder (the RPC endpoint does not distinguish join vs. top-up — the
@@ -279,12 +279,12 @@ limiter ([`OQ-6-4JPNE5`](../../../../../specification/open-questions.md#oq-6-4jp
   remains in the membership union but `topUpBalance` rejects it explicitly. Accepted residual;
   noted because the RPC endpoint is shared and unaware of the intent.
 
-### 4.7 Resource cost per request — unhandled ([`OQ-6-4JPNE5`](../../../../../specification/open-questions.md#oq-6-4jpne5))
+### 4.7 Resource cost per request — unhandled ([`OQ-6-4JPNE5` (P2P gossip rate limiting)](../../../../../specification/open-questions.md#oq-6-4jpne5))
 
 Each `requestJoinSignature` performs two chain/provider reads (`getStateSnapshot` and
 `getOnChainThresholdSet`) plus a Codec decode and an ECDSA recover, then a
 sign. None is bounded per peer. Combined with §4.5 (penalty-free errors), a peer can drive
-unbounded provider load. **Classified: [`OQ-6-4JPNE5`](../../../../../specification/open-questions.md#oq-6-4jpne5)** — the intended single central RPC-level rate limiter
+unbounded provider load. **Classified: [`OQ-6-4JPNE5` (P2P gossip rate limiting)](../../../../../specification/open-questions.md#oq-6-4jpne5)** — the intended single central RPC-level rate limiter
 ([./README.md](./README.md) §9) is the designated fix; not implemented. (Divergence class: missing.)
 
 ### 4.8 Information disclosure / access control
@@ -293,7 +293,7 @@ There is no access control on _who_ may request a join signature beyond `Handsha
 any handshake-completed peer may call it. Because it signs only for the caller's own participant
 identity (§4.2), it does not disclose other participants' authorizations. It does leak, via error
 strings, the responder's current snapshot/fork/threshold view (§4.5). No separate participant-vs-
-outsider authorization guard exists — [`REQ-RPC-5-CV1R1Y`](../../../../../specification/peer-communication/rpc.md#req-rpc-5-cv1r1y) / [./README.md](./README.md) §5.3 names this as the
+outsider authorization guard exists — [`REQ-RPC-5-CV1R1Y` (Resource bounds)](../../../../../specification/peer-communication/rpc.md#req-rpc-5-cv1r1y) / [./README.md](./README.md) §5.3 names this as the
 future guard-library work.
 
 ## 5. Failure outcomes
@@ -311,7 +311,7 @@ Per method, consistent with the model doc's outcome table ([./README.md](./READM
 
 No mismatch with the model table identified: the join row is "Request error only; connection kept,"
 which matches every responder-side failure above. The **policy** question of whether that is the
-right consequence is [`OQ-34-FY08V2`](../../../../../specification/open-questions.md#oq-34-fy08v2) (§4.5), not a table mismatch.
+right consequence is [`OQ-34-FY08V2` (RPC boundary decisions)](../../../../../specification/open-questions.md#oq-34-fy08v2) (§4.5), not a table mismatch.
 
 ## 6. Invariants
 
@@ -346,24 +346,24 @@ These are concrete component-level tests required by the implementation obligati
 
 _Non-normative._
 
-- Admission-policy hook / consent filter for `signJoinRequest` — the code TODO and [`OQ-10-04YNC4`](../../../../../specification/open-questions.md#oq-10-04ync4); likely a
-  participant-admission guard per [`REQ-RPC-5-CV1R1Y`](../../../../../specification/peer-communication/rpc.md#req-rpc-5-cv1r1y).
+- Admission-policy hook / consent filter for `signJoinRequest` — the code TODO and [`OQ-10-04YNC4` (Spectate/join failure-point details)](../../../../../specification/open-questions.md#oq-10-04ync4); likely a
+  participant-admission guard per [`REQ-RPC-5-CV1R1Y` (Resource bounds)](../../../../../specification/peer-communication/rpc.md#req-rpc-5-cv1r1y).
 - Bind snapshot/fork and a domain tag into the signed join artifact so authorizations are
-  self-pinning and non-replayable (couples to [`OQ-29-EFY4NF`](../../../../../specification/open-questions.md#oq-29-efy4nf)).
-- Deadline bounds tied to protocol windows ([`OQ-10-04YNC4`](../../../../../specification/open-questions.md#oq-10-04ync4)).
-- Concurrent-join coordination: collect safe extra signatures before submission (SDK TODO, [`OQ-10-04YNC4`](../../../../../specification/open-questions.md#oq-10-04ync4)).
-- Reconcile the join-signature failure outcome with a uniform failure-outcome policy ([`OQ-34-FY08V2`](../../../../../specification/open-questions.md#oq-34-fy08v2)) and the
-  central RPC rate limiter ([`OQ-6-4JPNE5`](../../../../../specification/open-questions.md#oq-6-4jpne5)), given the per-request chain-read cost.
+  self-pinning and non-replayable (couples to [`OQ-29-EFY4NF` (Signature domain separation)](../../../../../specification/open-questions.md#oq-29-efy4nf)).
+- Deadline bounds tied to protocol windows ([`OQ-10-04YNC4` (Spectate/join failure-point details)](../../../../../specification/open-questions.md#oq-10-04ync4)).
+- Concurrent-join coordination: collect safe extra signatures before submission (SDK TODO, [`OQ-10-04YNC4` (Spectate/join failure-point details)](../../../../../specification/open-questions.md#oq-10-04ync4)).
+- Reconcile the join-signature failure outcome with a uniform failure-outcome policy ([`OQ-34-FY08V2` (RPC boundary decisions)](../../../../../specification/open-questions.md#oq-34-fy08v2)) and the
+  central RPC rate limiter ([`OQ-6-4JPNE5` (P2P gossip rate limiting)](../../../../../specification/open-questions.md#oq-6-4jpne5)), given the per-request chain-read cost.
 
 ## Implementation traceability
 
-| Requirement / invariant                                | Statement                                                                                                                                                                                                                                    | Implementation status | Implementation evidence                                                                                                                                                                                                    | Gap / divergence                                                           |
-| ------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------- |
-| [`INV-JCS-1-SRJKVK`](join-channel.md#inv-jcs-1-srjkvk) | Responder signs only when signer == participant == authenticated peer.                                                                                                                                                                       | Covered               | [JoinChannelService.signJoinRequest](../../../../../../../src/rpc/services/joinChannel/JoinChannelService.ts#L137)                                                                                                         | None.                                                                      |
-| [`INV-JCS-2-95QM5S`](join-channel.md#inv-jcs-2-95qm5s) | Responder signs only a join pinned to its current snapshot/fork with local signer in threshold.                                                                                                                                              | Covered               | [JoinChannelService.signJoinRequest](../../../../../../../src/rpc/services/joinChannel/JoinChannelService.ts#L137); [JoinChannelFacet](../../../../../../../contracts/V1/StateChannelDiamondProxy/JoinChannelFacet.sol#L7) | None.                                                                      |
-| [`INV-JCS-3-XJ8KGX`](join-channel.md#inv-jcs-3-xj8kgx) | Collector requires each signature to recover to its addressed participant; one failure fails unanimity.                                                                                                                                      | Covered               | [JoinChannelService.collectJoinChannelConfirmation](../../../../../../../src/rpc/services/joinChannel/JoinChannelService.ts#L43)                                                                                           | None.                                                                      |
-| [`INV-JCS-4-1FJ7CH`](join-channel.md#inv-jcs-4-1fj7ch) | Collector runs only for the local node's own participant identity.                                                                                                                                                                           | Covered               | [JoinChannelService.collectJoinChannelConfirmation](../../../../../../../src/rpc/services/joinChannel/JoinChannelService.ts#L43)                                                                                           | None.                                                                      |
-| [`INV-JCS-5-16V4VG`](join-channel.md#inv-jcs-5-16v4vg) | Service is stateless across calls; decisions from args + live reads.                                                                                                                                                                         | Covered               | [JoinChannelService](../../../../../../../src/rpc/services/joinChannel/JoinChannelService.ts#L28)                                                                                                                          | None.                                                                      |
-| [`REQ-JCS-1-DDRPA8`](join-channel.md#req-jcs-1-ddrpa8) | `requestJoinSignature` MUST run the full decode + identity + channel + deadline + fork + snapshot + threshold chain before signing ([`REQ-RPC-2-SZDTTM`](../../../../../specification/peer-communication/rpc.md#req-rpc-2-szdttm) instance). | Covered               | [JoinChannelService.signJoinRequest](../../../../../../../src/rpc/services/joinChannel/JoinChannelService.ts#L137)                                                                                                         | None.                                                                      |
-| [`REQ-JCS-2-WMQGWC`](join-channel.md#req-jcs-2-wmqgwc) | Admission MUST be gated by an explicit consent/authorization decision, not auto-sign.                                                                                                                                                        | Missing               | none — not implemented (code TODO; [`OQ-10-04YNC4`](../../../../../specification/open-questions.md#oq-10-04ync4))                                                                                                          | Engineer audit pending; any divergence named in the evidence remains open. |
-| [`REQ-JCS-3-C371C5`](join-channel.md#req-jcs-3-c371c5) | `requestJoinSignature` failure outcomes MUST conform to a decided failure-outcome policy and be resource-bounded per peer.                                                                                                                   | Partial               | penalty-free error today ([./README.md](./README.md) §8); no rate limit                                                                                                                                                    | Partial or divergent — divergence detail pending re-audit.                 |
+| Requirement / invariant                                | Statement                                                                                                                                                                                                                                    | Implementation status | Implementation evidence                                                                                                                                                                                                            | Gap / divergence                                                           |
+| ------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------- |
+| [`INV-JCS-1-SRJKVK`](join-channel.md#inv-jcs-1-srjkvk) | Responder signs only when signer == participant == authenticated peer.                                                                                                                                                                       | Covered               | [JoinChannelService.signJoinRequest](../../../../../../../src/rpc/network/services/joinChannel/JoinChannelService.ts#L137)                                                                                                         | None.                                                                      |
+| [`INV-JCS-2-95QM5S`](join-channel.md#inv-jcs-2-95qm5s) | Responder signs only a join pinned to its current snapshot/fork with local signer in threshold.                                                                                                                                              | Covered               | [JoinChannelService.signJoinRequest](../../../../../../../src/rpc/network/services/joinChannel/JoinChannelService.ts#L137); [JoinChannelFacet](../../../../../../../contracts/V1/StateChannelDiamondProxy/JoinChannelFacet.sol#L7) | None.                                                                      |
+| [`INV-JCS-3-XJ8KGX`](join-channel.md#inv-jcs-3-xj8kgx) | Collector requires each signature to recover to its addressed participant; one failure fails unanimity.                                                                                                                                      | Covered               | [JoinChannelService.collectJoinChannelConfirmation](../../../../../../../src/rpc/network/services/joinChannel/JoinChannelService.ts#L43)                                                                                           | None.                                                                      |
+| [`INV-JCS-4-1FJ7CH`](join-channel.md#inv-jcs-4-1fj7ch) | Collector runs only for the local node's own participant identity.                                                                                                                                                                           | Covered               | [JoinChannelService.collectJoinChannelConfirmation](../../../../../../../src/rpc/network/services/joinChannel/JoinChannelService.ts#L43)                                                                                           | None.                                                                      |
+| [`INV-JCS-5-16V4VG`](join-channel.md#inv-jcs-5-16v4vg) | Service is stateless across calls; decisions from args + live reads.                                                                                                                                                                         | Covered               | [JoinChannelService](../../../../../../../src/rpc/network/services/joinChannel/JoinChannelService.ts#L28)                                                                                                                          | None.                                                                      |
+| [`REQ-JCS-1-DDRPA8`](join-channel.md#req-jcs-1-ddrpa8) | `requestJoinSignature` MUST run the full decode + identity + channel + deadline + fork + snapshot + threshold chain before signing ([`REQ-RPC-2-SZDTTM`](../../../../../specification/peer-communication/rpc.md#req-rpc-2-szdttm) instance). | Covered               | [JoinChannelService.signJoinRequest](../../../../../../../src/rpc/network/services/joinChannel/JoinChannelService.ts#L137)                                                                                                         | None.                                                                      |
+| [`REQ-JCS-2-WMQGWC`](join-channel.md#req-jcs-2-wmqgwc) | Admission MUST be gated by an explicit consent/authorization decision, not auto-sign.                                                                                                                                                        | Missing               | none — not implemented (code TODO; [`OQ-10-04YNC4`](../../../../../specification/open-questions.md#oq-10-04ync4))                                                                                                                  | Engineer audit pending; any divergence named in the evidence remains open. |
+| [`REQ-JCS-3-C371C5`](join-channel.md#req-jcs-3-c371c5) | `requestJoinSignature` failure outcomes MUST conform to a decided failure-outcome policy and be resource-bounded per peer.                                                                                                                   | Partial               | penalty-free error today ([./README.md](./README.md) §8); no rate limit                                                                                                                                                            | Partial or divergent — divergence detail pending re-audit.                 |

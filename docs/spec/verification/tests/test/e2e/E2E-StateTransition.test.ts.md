@@ -22,7 +22,7 @@ windows, and queue behavior are out of scope (owned by the fraud-proof, timestam
 BlockQueueManager suites). After the permutation atomization the round-robin leader-election
 scenarios stand alone, so the full-rotation and post-fork-recovery tests carry their
 [`REQ-FIN-6-YZWJX2.T1`](../../../../specification/protocol-model/finality.md#req-fin-6-yzwjx2.t1) scenarios; the remaining candidates (signature/authentication variants,
-[`UNIT-TEST-STATE-TRANSITION-SERVICE-1-W4MKDS`](../../../../implementation/source/src/rpc/services/stateTransition/StateTransitionService.ts.md#unit-test-state-transition-service-1-w4mkds).\*` gating) still have no dedicated demonstration here and
+[`UNIT-TEST-STATE-TRANSITION-SERVICE-1-W4MKDS`](../../../../implementation/source/src/rpc/network/services/stateTransition/StateTransitionService.ts.md#unit-test-state-transition-service-1-w4mkds).\*` gating) still have no dedicated demonstration here and
 stay unassigned.
 
 ## Tests and covered test IDs

@@ -47,7 +47,7 @@ Two surfaces on one deployment
 1. **The proxy-storage views moved here to fit EIP-170.** They were the bulk of the proxy's
    non-routing code; moving them verbatim took the proxy from 29,342 to 13,779 deployed bytes and
    this facet from 7,702 to 15,166 — both inside the 24,576-byte budget
-   ([`REQ-CONTRACT-ARCH-4-FZ3CJE`](../../../../../specification/enforcement/contracts.md#req-contract-arch-4-fz3cje),
+   ([`REQ-CONTRACT-ARCH-4-FZ3CJE` (Upgrade and deployment integrity)](../../../../../specification/enforcement/contracts.md#req-contract-arch-4-fz3cje),
    measurements in the [architecture view](../../../../views/architecture/contracts/architecture.md) §3).
 2. **That forced the `StateChannelCommon` base.** A delegatecalled view must see the manager's slot
    layout, so the facet now derives from the shared base like every other facet; the stateless
@@ -79,10 +79,10 @@ claims complete conformance for a requirement that depends on other files.
 | ----------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | [UtilityFacet.sol](../../../../../../../contracts/V1/StateChannelDiamondProxy/UtilityFacet.sol) | [`REQ-ENFPROOF-2-YZDCXM`](../../../../../specification/enforcement/proof-verification.md#req-enfproof-2-yzdcxm), [`INV-ENFPROOF-1-DR1N9B`](../../../../../specification/enforcement/proof-verification.md#inv-enfproof-1-dr1n9b), [`REQ-CONTRACT-ARCH-1-9W5390`](../../../../../specification/enforcement/contracts.md#req-contract-arch-1-9w5390), [`REQ-LIF-8-2HDG3A`](../../../../../specification/settlement/lifecycle.md#req-lif-8-2hdg3a) |
 
-Contribution per ID: [`REQ-ENFPROOF-2-YZDCXM`](../../../../../specification/enforcement/proof-verification.md#req-enfproof-2-yzdcxm) — deduplicated exact-set threshold verification;
-[`INV-ENFPROOF-1-DR1N9B`](../../../../../specification/enforcement/proof-verification.md#inv-enfproof-1-dr1n9b) — the helper surface is stateless by construction and the routed
-surface is side-effect-free (`view` only); [`REQ-CONTRACT-ARCH-1-9W5390`](../../../../../specification/enforcement/contracts.md#req-contract-arch-1-9w5390) — the manager's observation
-views remain reachable at the manager address after moving off the proxy; [`REQ-LIF-8-2HDG3A`](../../../../../specification/settlement/lifecycle.md#req-lif-8-2hdg3a) — count and bounded page reads expose the current enumerable set without reverting at page boundaries.
+Contribution per ID: [`REQ-ENFPROOF-2-YZDCXM` (Deduplicated threshold counting)](../../../../../specification/enforcement/proof-verification.md#req-enfproof-2-yzdcxm) — deduplicated exact-set threshold verification;
+[`INV-ENFPROOF-1-DR1N9B` (Side-effect-free verification)](../../../../../specification/enforcement/proof-verification.md#inv-enfproof-1-dr1n9b) — the helper surface is stateless by construction and the routed
+surface is side-effect-free (`view` only); [`REQ-CONTRACT-ARCH-1-9W5390` (Stable external boundary)](../../../../../specification/enforcement/contracts.md#req-contract-arch-1-9w5390) — the manager's observation
+views remain reachable at the manager address after moving off the proxy; [`REQ-LIF-8-2HDG3A` (Enumerable open-channel lifecycle)](../../../../../specification/settlement/lifecycle.md#req-lif-8-2hdg3a) — count and bounded page reads expose the current enumerable set without reverting at page boundaries.
 
 ## Assumptions, dependencies, trust boundaries, and limits
 

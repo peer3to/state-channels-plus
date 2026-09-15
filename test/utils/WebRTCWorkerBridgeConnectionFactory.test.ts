@@ -1,183 +1,213 @@
+import { assertAbnormalBridgeError } from "@test/fixtures/node/WebRTCBridgeFixture";
 import {
-    WEBRTC_BRIDGE_NAMESPACE,
-    type WebRTCBridgePortMessage
-} from "@/rpc/services/WebRTCSetup/connection/WebRTCBridgeProtocol";
-import type { WebRTCDataChannelLike } from "@/rpc/services/WebRTCSetup/connection/WebRTCConnectionFactory";
-import WorkerBridgeWebRTCConnectionFactory from "@/rpc/services/WebRTCSetup/connection/WorkerBridgeWebRTCConnectionFactory";
+    withWebRTCBridge,
+    assertDelayedBridgeAttachment
+} from "@test/fixtures/node/WebRTCBridgeFixture";
+import { waitFor } from "@test/utils/waitFor";
 import { expect } from "chai";
-
-function nextPortMessage(port: MessagePort): Promise<WebRTCBridgePortMessage> {
-    return new Promise((resolve) => {
-        port.addEventListener(
-            "message",
-            (event: MessageEvent<WebRTCBridgePortMessage>) => {
-                resolve(event.data);
-            },
-            { once: true }
-        );
-        port.start();
-    });
-}
+import { ethers } from "ethers";
 
 describe("WorkerBridgeWebRTCConnectionFactory", function () {
-    it("creates a proxy data channel from bridge channel events", async function () {
-        const channel = new MessageChannel();
-        const factory = WorkerBridgeWebRTCConnectionFactory.getInstance();
-        factory.registerPort(channel.port1);
-        try {
-            let dataChannel: WebRTCDataChannelLike | undefined;
-            const offerPromise = factory.createOffer("0xpeer", {
-                onIceCandidate: () => undefined,
-                onDataChannel: (createdChannel) => {
-                    dataChannel = createdChannel;
-                },
-                onConnectionStateChange: () => undefined,
-                onError: (error) => {
-                    throw error;
-                }
-            });
-
-            const request = await nextPortMessage(channel.port2);
-            expect(request.type).to.equal("request");
-            if (request.type !== "request") throw new Error("expected request");
-            expect(request.request.method).to.equal("createOffer");
-
-            channel.port2.postMessage({
-                namespace: WEBRTC_BRIDGE_NAMESPACE,
-                type: "channel",
-                peerAddress: "0xpeer",
-                mode: "proxy",
-                label: "webRTC-DataChannel",
-                readyState: "open"
-            } satisfies WebRTCBridgePortMessage);
-
-            channel.port2.postMessage({
-                namespace: WEBRTC_BRIDGE_NAMESPACE,
-                type: "response",
-                requestId: request.requestId,
-                ok: true,
-                result: { type: "offer", sdp: "fake-offer" }
-            } satisfies WebRTCBridgePortMessage);
-
-            const offer = await offerPromise;
-            expect(offer).to.deep.equal({
-                type: "offer",
-                sdp: "fake-offer"
-            });
-            expect(dataChannel).to.not.equal(undefined);
-            expect(dataChannel?.readyState).to.equal("open");
-
-            dataChannel!.send("hello");
-            const proxySend = await nextPortMessage(channel.port2);
-            expect(proxySend).to.deep.include({
-                namespace: WEBRTC_BRIDGE_NAMESPACE,
-                type: "proxySend",
-                peerAddress: "0xpeer",
-                data: "hello"
-            });
-        } finally {
-            factory.disposeBridge(channel.port1);
-            channel.port2.close();
-        }
+    it("becomes ready before broker attachment and resumes queued negotiation after attachment", async () => {
+        await assertDelayedBridgeAttachment(true);
     });
-
-    it("routes bridge state and ICE events to connection callbacks", async function () {
-        const channel = new MessageChannel();
-        const factory = WorkerBridgeWebRTCConnectionFactory.getInstance();
-        factory.registerPort(channel.port1);
-        try {
-            let iceCandidate: unknown;
-            let state:
-                | {
-                      connectionState: string;
-                      iceState: string;
-                  }
-                | undefined;
-
-            const answerPromise = factory.acceptOffer(
-                "0xpeer",
-                { type: "offer", sdp: "fake-offer" },
-                {
-                    onIceCandidate: (candidate) => {
-                        iceCandidate = candidate;
-                    },
-                    onDataChannel: () => undefined,
-                    onConnectionStateChange: (nextState) => {
-                        state = nextState;
-                    },
-                    onError: (error) => {
-                        throw error;
-                    }
-                }
-            );
-
-            const request = await nextPortMessage(channel.port2);
-            expect(request.type).to.equal("request");
-            if (request.type !== "request") throw new Error("expected request");
-
-            channel.port2.postMessage({
-                namespace: WEBRTC_BRIDGE_NAMESPACE,
-                type: "state",
-                peerAddress: "0xpeer",
-                state: {
-                    connectionState: "connected",
-                    iceState: "connected"
-                }
-            } satisfies WebRTCBridgePortMessage);
-            channel.port2.postMessage({
-                namespace: WEBRTC_BRIDGE_NAMESPACE,
-                type: "iceCandidate",
-                peerAddress: "0xpeer",
-                candidate: { candidate: "candidate:1" }
-            } satisfies WebRTCBridgePortMessage);
-            channel.port2.postMessage({
-                namespace: WEBRTC_BRIDGE_NAMESPACE,
-                type: "response",
-                requestId: request.requestId,
-                ok: true,
-                result: { type: "answer", sdp: "fake-answer" }
-            } satisfies WebRTCBridgePortMessage);
-
-            await answerPromise;
-            expect(state).to.deep.equal({
-                connectionState: "connected",
-                iceState: "connected"
-            });
-            expect(iceCandidate).to.deep.equal({ candidate: "candidate:1" });
-        } finally {
-            factory.disposeBridge(channel.port1);
-            channel.port2.close();
-        }
+    it("disposes an unattached broker connection and rejects queued negotiation", async () => {
+        await assertDelayedBridgeAttachment(false);
     });
-
-    it("rejects in-flight requests when the shared bridge is disposed", async function () {
-        const channel = new MessageChannel();
-        const factory = WorkerBridgeWebRTCConnectionFactory.getInstance();
-        factory.registerPort(channel.port1);
-
-        const offerPromise = factory.createOffer("0xpeer", {
-            onIceCandidate: () => undefined,
-            onDataChannel: () => undefined,
-            onConnectionStateChange: () => undefined,
-            onError: () => undefined
+    it("keeps another bridge usable when the first bridge is disposed", async function () {
+        await withWebRTCBridge(async (bridge) => {
+            const additional = await bridge.addOwner();
+            try {
+                await bridge.dispose();
+                await bridge.dispose();
+                const offer = await additional.factory.createOffer(
+                    bridge.peerAddress,
+                    bridge.callbacks
+                );
+                expect(offer.type).to.equal("offer");
+                expect(bridge.client.connections.size).to.equal(0);
+            } finally {
+                await additional.dispose();
+            }
         });
+    });
+    it("accepts a real remote offer and exchanges channel data", async function () {
+        await withWebRTCBridge(async (bridge) => {
+            const connected = await bridge.negotiate(true);
+            connected.channel.send("answerer data");
+            await waitFor(() => connected.received.length === 1);
+            expect(connected.received).to.deep.equal(["answerer data"]);
+        });
+    });
+    it("keeps missing-peer answer ICE and close operations as no-ops", async function () {
+        await withWebRTCBridge(async (bridge) => {
+            const connected = await bridge.negotiate();
+            const missing = ethers.Wallet.createRandom().address;
+            await bridge.factory.applyAnswer(missing, connected.answer);
+            expect(connected.candidates.length).to.be.greaterThan(0);
+            await bridge.factory.addIceCandidate(
+                missing,
+                connected.candidates[0]
+            );
+            await bridge.factory.close(missing);
+            expect(bridge.factory.getState(missing).connectionState).to.equal(
+                "unknown"
+            );
+            connected.channel.send("unrelated peer still open");
+            await waitFor(() => connected.received.length === 1);
+            expect(connected.received).to.deep.equal([
+                "unrelated peer still open"
+            ]);
+        });
+    });
+    it("recovers negotiation after a synchronous post failure", async function () {
+        await withWebRTCBridge(async (bridge) => {
+            bridge.control.failNextPost("createOffer");
+            const failure = await bridge.factory
+                .createOffer(bridge.peerAddress, bridge.callbacks)
+                .catch((error: Error) => error);
+            expect(failure).to.be.instanceOf(Error);
+            expect(bridge.client.router.pendingRequestCount).to.equal(0);
+            expect((await bridge.negotiate()).channel.readyState).to.equal(
+                "open"
+            );
+        });
+    });
+    it("ignores a late negotiation response after an explicit timeout", async function () {
+        await withWebRTCBridge(async (bridge) => {
+            const received = bridge.control.holdNextResponse("createOffer");
+            const result = bridge.brokerRemoteRoot.rpc.negotiation
+                .createOffer(bridge.peerAddress)
+                .request({ timeoutMs: 1000 })
+                .catch((error: Error) => error.message);
+            await received;
+            expect(await result).to.equal(
+                "RPC request 'negotiation.createOffer' timed out after 1000ms"
+            );
+            bridge.control.release();
+            expect(bridge.client.router.pendingRequestCount).to.equal(0);
+            await bridge.factory.close(bridge.peerAddress);
+            expect((await bridge.negotiate()).channel.readyState).to.equal(
+                "open"
+            );
+        });
+    });
+    it("creates a proxy data channel from bridge channel events", async function () {
+        await withWebRTCBridge(async (bridge) => {
+            const connected = await bridge.negotiate();
+            expect(connected.channel.readyState).to.equal("open");
+            connected.channel.send("hello");
+            await waitFor(() => connected.received.length === 1);
+            expect(connected.received).to.deep.equal(["hello"]);
+        });
+    });
+    it("routes bridge state and ICE events to connection callbacks", async function () {
+        await withWebRTCBridge(async (bridge) => {
+            const connected = await bridge.negotiate();
+            expect(connected.states).to.include("connected");
+            expect(connected.candidates.length).to.be.greaterThan(0);
+            expect(
+                bridge.factory.getState(bridge.peerAddress).connectionState
+            ).to.equal("connected");
+        });
+    });
+    it("rejects in-flight requests when the shared bridge is disposed", async function () {
+        await withWebRTCBridge(async (bridge) => {
+            const received = bridge.control.holdNextResponse("createOffer");
+            const offer = bridge.factory
+                .createOffer(bridge.peerAddress, bridge.callbacks)
+                .catch((error: Error) => error);
+            await received;
+            // Disposing the final owner must reject the abandoned request rather
+            // than leaving its awaiting WebRTC setup call pending forever.
+            await bridge.dispose();
+            const rejection = await offer;
+            expect(rejection).to.be.instanceOf(Error);
+            expect(rejection.message).to.include("disposed");
+            expect(bridge.client.router.pendingRequestCount).to.equal(0);
+        });
+    });
+});
 
-        const request = await nextPortMessage(channel.port2);
-        expect(request.type).to.equal("request");
+describe("WorkerBridgeWebRTCConnectionFactory callback ownership", () => {
+    it("keeps recursive bridge disposal idempotent", async () => {
+        await withWebRTCBridge(async (bridge) => {
+            const first = bridge.dispose();
+            expect(first === bridge.dispose()).to.equal(true);
+            await first;
+            expect(bridge.client.connections.size).to.equal(0);
+            expect(bridge.brokerRemoteRoot.isClosed).to.equal(true);
+            expect(bridge.client.router.pendingRequestCount).to.equal(0);
+        });
+    });
+    it("delivers real connection changes only to replacement callbacks", async () => {
+        await withWebRTCBridge(async (bridge) => {
+            const connected = await bridge.negotiate();
+            const originalCount = connected.states.length;
+            const replacedStates: string[] = [];
+            bridge.factory.setCallbacks(bridge.peerAddress, {
+                ...bridge.callbacks,
+                onConnectionStateChange: (state) => {
+                    replacedStates.push(state.connectionState);
+                }
+            });
+            await bridge.factory.close(bridge.peerAddress);
+            await waitFor(() => replacedStates.length > 0);
+            expect(connected.states.length).to.equal(originalCount);
+            expect(replacedStates).to.include("closed");
+        });
+    });
+    it("ignores retired provider channel callbacks after reconnect", async () => {
+        await withWebRTCBridge(async (bridge) => {
+            await bridge.negotiate();
+            const emitRetired = bridge.captureCurrentChannelCallbacks();
+            await bridge.factory.close(bridge.peerAddress);
+            const reconnected = await bridge.negotiate();
+            const before = bridge.control.events.length;
+            emitRetired();
+            await bridge.factory.addIceCandidate(
+                ethers.Wallet.createRandom().address,
+                reconnected.candidates[0]
+            );
+            const callbacks = bridge.control.events
+                .slice(before)
+                .filter(
+                    (event) => event.direction === "receive" && event.method
+                );
+            expect(
+                callbacks.some(
+                    (event) =>
+                        event.method === "proxyMessage" ||
+                        event.method === "proxyState"
+                )
+            ).to.equal(false);
+            reconnected.channel.send("reconnected channel data");
+            await waitFor(() =>
+                reconnected.received.includes("reconnected channel data")
+            );
+        });
+    });
+    it("sends only one proxy close while closing and after closure", async () => {
+        await withWebRTCBridge(async (bridge) => {
+            const connected = await bridge.negotiate();
+            const before = bridge.control.sent.filter(
+                (frame) => frame.method === "proxyClose"
+            ).length;
+            connected.channel.close();
+            connected.channel.close();
+            await waitFor(() => connected.channel.readyState === "closed");
+            connected.channel.close();
+            expect(
+                bridge.control.sent.filter(
+                    (frame) => frame.method === "proxyClose"
+                ).length - before
+            ).to.equal(1);
+        });
+    });
+});
 
-        // Disposing the final owner must reject the abandoned request rather
-        // than leaving its awaiting WebRTC setup call pending forever.
-        factory.disposeBridge(channel.port1);
-
-        let rejection: Error | undefined;
-        try {
-            await offerPromise;
-        } catch (error) {
-            rejection = error as Error;
-        }
-
-        expect(rejection).to.be.instanceOf(Error);
-        expect(rejection?.message).to.contain("disposed");
-        channel.port2.close();
+describe("WebRTC bridge error boundary", () => {
+    it("delivers broker errors and an abnormal bridge closure to the owner", async () => {
+        await assertAbnormalBridgeError();
     });
 });

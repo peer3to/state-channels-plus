@@ -23,6 +23,8 @@ Runtime configuration surface (env-derived flags incl. VM_DEDICATED_THREAD, debu
 
 ## Key design decisions
 
+CRASH_LOG_UPLOAD_COALESCE_MS defaults to 3,000 ms and controls deterministic gossip coalescing independently of random upload jitter. The obsolete per-hop flush timeout is removed; uploader HTTP deadlines and retries are unchanged.
+
 1. **`EVENT_LOOP_DELAY_ERROR_THRESHOLD_SECONDS` is a per-context throw, not a process kill.** The monitor throws in its own context; the sdk and contract-executor workers report that throw to the host as a detached error and keep serving, inline it surfaces like any uncaught error. The same flag enables the `##E2E_TIMING##` diagnostics.
 
 ## Inputs, outputs, state, and side effects
@@ -81,4 +83,4 @@ Exact test evidence is mapped against these IDs in the verification test reports
 
 # Terminal leave contribution
 
-`LEAVE_CHANNEL_WATCHDOG_MS` is a runtime-local liveness bound with a 15,000 millisecond default. It is configurable and is not an on-chain timing parameter. This contributes to [`REQ-TJOIN-7-NNGTAY`](../../../../specification/peer-communication/targeted-channel-join.md#req-tjoin-7-nngtay).
+`LEAVE_CHANNEL_WATCHDOG_MS` is a runtime-local liveness bound with a 15,000 millisecond default. It is configurable and is not an on-chain timing parameter. This contributes to [`REQ-TJOIN-7-NNGTAY` (Terminal channel leave)](../../../../specification/peer-communication/targeted-channel-join.md#req-tjoin-7-nngtay).

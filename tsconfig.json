@@ -14,14 +14,17 @@
         "paths": {
             "@/*": ["src/*"],
             "@platform/createLogger": ["src/utils/logging/node/createLogger"],
-            "@platform/contractExecutorWorkerRuntime": [
-                "src/evm/contractExecutor/node/ContractExecutorWorkerRuntime"
+            "@platform/contractExecutorRootUrl": [
+                "src/rpc/internal/node/ContractExecutorRootUrl"
+            ],
+            "@platform/p2pRuntimeHostRootUrl": [
+                "src/rpc/internal/node/P2pRuntimeHostRootUrl"
+            ],
+            "@platform/rootWorkerRuntime": [
+                "src/rpc/internal/node/RootWorkerRuntime"
             ],
             "@platform/p2pRuntimeChannel": [
-                "src/evm/p2pRuntime/node/P2pRuntimeChannel"
-            ],
-            "@platform/p2pRuntimeWorkerRuntime": [
-                "src/evm/p2pRuntime/node/P2pRuntimeWorkerRuntime"
+                "src/transport/node/RuntimeChannel"
             ],
             "@platform/DeployUtils": ["src/utils/node/DeployUtils"],
             "@platform/LocalDiscoveryServer": [
@@ -37,14 +40,15 @@
         }
     },
     "exclude": [
+        "src/utils/moduleLoader/browser",
+        "src/rpc/internal/browser",
+        "src/transport/browser",
         "examples",
         "dist",
         "logs",
         "temp",
         "node_modules",
         "src/evm/browser",
-        "src/evm/contractExecutor/browser",
-        "src/evm/p2pRuntime/browser",
         "src/utils/browser",
         "src/utils/logging/browser",
         "test/evm/workers/browser"

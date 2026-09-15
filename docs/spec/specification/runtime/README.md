@@ -27,7 +27,7 @@ operational limits. It hosts every other system without changing their observabl
   ([../security/trust-model.md](../security/trust-model.md)); durable storage survives restart;
   execution contexts may crash, stall, or deliver late responses. The required host set is
   **browser and Node.js** with identical protocol capability
-  ([`REQ-RUNTIME-5-WJ1XKK`](execution.md#req-runtime-5-wj1xkk)); platform APIs differ between them only beneath the
+  ([`REQ-RUNTIME-5-WJ1XKK` (Required host environments: browser and Node)](execution.md#req-runtime-5-wj1xkk)); platform APIs differ between them only beneath the
   equivalence boundary.
 - **Ordering and concurrency.** One canonical owner per mutable resource; causal order within an
   ordered domain; lifecycle transitions settle every request exactly once
@@ -48,21 +48,21 @@ operational limits. It hosts every other system without changing their observabl
 - **Lobby control.** `joinLobby(topic, options)` is indefinite while matching unless the caller supplies
   a positive finite `matchTimeoutMs`. `leaveLobby(topic)` returns true only when it cancels active matching;
   after commitment it returns false and the host-owned negotiation continues to its chain-observed outcome.
-- **Invariants (owned).** [`INV-RUNTIME-1-AKRHAK`](execution.md#inv-runtime-1-akrhak), `REQ-RUNTIME-*` ([execution.md](./execution.md));
-  [`INV-SDK-ARCH-1-KNAX7F`](sdk.md#inv-sdk-arch-1-knax7f), `REQ-SDK-ARCH-*` ([sdk.md](./sdk.md)); `REQ-CONFIG-*`
+- **Invariants (owned).** [`INV-RUNTIME-1-AKRHAK` (Execution equivalence)](execution.md#inv-runtime-1-akrhak), `REQ-RUNTIME-*` ([execution.md](./execution.md));
+  [`INV-SDK-ARCH-1-KNAX7F` (Coherent participant state)](sdk.md#inv-sdk-arch-1-knax7f), `REQ-SDK-ARCH-*` ([sdk.md](./sdk.md)); `REQ-CONFIG-*`
   ([configuration.md](./configuration.md)); `INV-LOG-*`, `REQ-LOG-*` ([log-collection.md](./log-collection.md)). Durable storage is its own system:
   [../storage/README.md](../storage/README.md).
 - **Failure and recovery outcomes.** Context failure is contained at its boundary; restart recovers
   from the storage system's durable set and re-enters the block-progression pipeline without
-  trusting read-back data ([`REQ-STOR-3-4RJGER`](../storage/durability.md#req-stor-3-4rjger)); stale callbacks cannot mutate
+  trusting read-back data ([`REQ-STOR-3-4RJGER` (Restart recovery without trust)](../storage/durability.md#req-stor-3-4rjger)); stale callbacks cannot mutate
   disposed state; configuration outside validated bounds is rejected at startup, not discovered
   mid-protocol.
 - **Resource bounds.** Supported-device targets (constrained laptops, phones, tablets), worker
   startup/transfer costs, message-queue and serialization limits; isolation is added only where
   measurement justifies it.
 - **Verification evidence.** Requirement matrices in the owned documents; execution equivalence and
-  the observation edge are proven under [`REQ-IX-8-FY54AV`](../interactions.md#req-ix-8-fy54av) and
-  [`REQ-IX-7-A004VZ`](../interactions.md#req-ix-7-a004vz).
+  the observation edge are proven under [`REQ-IX-8-FY54AV` (Execution equivalence)](../interactions.md#req-ix-8-fy54av) and
+  [`REQ-IX-7-A004VZ` (Chain observation)](../interactions.md#req-ix-7-a004vz).
 
 ## Owned documents
 
@@ -78,6 +78,6 @@ which nearly every system calls; this system consumes it like the others.
 
 ## Interaction contracts
 
-Producer of chain observation for every system ([`REQ-IX-7-A004VZ`](../interactions.md#req-ix-7-a004vz)) and owner
+Producer of chain observation for every system ([`REQ-IX-7-A004VZ` (Chain observation)](../interactions.md#req-ix-7-a004vz)) and owner
 of the execution-equivalence guarantee every system inherits
-([`REQ-IX-8-FY54AV`](../interactions.md#req-ix-8-fy54av)).
+([`REQ-IX-8-FY54AV` (Execution equivalence)](../interactions.md#req-ix-8-fy54av)).

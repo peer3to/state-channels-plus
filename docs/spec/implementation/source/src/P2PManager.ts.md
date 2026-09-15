@@ -19,12 +19,7 @@
 
 ## Responsibility and observable boundary
 
-The frame dispatcher, correlation owner, and sole post-handshake connection promoter. `onRpc` runs stages 1–4 of the ingress order (16 MiB
-UTF-8 byte gate before parsing, response-first classification, envelope verification, service
-resolution) before handing to the service base; `sendRpcRequest` owns the pending-request table,
-per-call timeouts, authenticated response routing before transport retirement,
-late-response silent ignore, and disconnect settlement; plus broadcast/addressed delivery and
-ordinary connection registry. Completed handshakes are routed from the local lifecycle: `DISCOVERING`
+Owns connections, discovery, profiles, peer penalties and post-handshake promotion. Each manager constructs one [NetworkRpcRouter](rpc/router/NetworkRpcRouter.ts.md) before constructing its services. That router owns ingress, broadcast and network timeout/response hooks; its [ARpcRouter](rpc/router/ARpcRouter.ts.md) base owns the only pending-request registry. RPC callers use this router directly; the manager exposes no routing delegates. Completed handshakes are routed from the local lifecycle: `DISCOVERING`
 hands authenticated transports to lobby matching without ordinary promotion or connection notification;
 commitment later promotes only the selected profile. A replacement authenticated for that profile during
 negotiation handoff is promoted through the same path instead of being rejected as late lobby traffic. An
@@ -32,16 +27,22 @@ opened channel performs the participant read and sync.
 
 ## Key design decisions
 
-Both blacklist entry points ([address](../../../../../src/P2PManager.ts#L566), [transport](../../../../../src/P2PManager.ts#L552)) log the target before mutation. Existing logger call stacks identify the caller; blacklist policy and method parameters are unchanged. See [P2PManager.ts](../../../../../src/P2PManager.ts#L552).
+Cleanup delegates to [runCleanup.ts](utils/runCleanup.ts.md), which attempts all ordered steps before reporting the first failure. Caller-owned disposal promises and acknowledgement rules remain in this owner.
 
-Both engagement checks use the status predicate that includes SYNCED as well as committed membership. See [P2PManager.ts](../../../../../src/P2PManager.ts#L120).
+Disposal closes registered transports through ProfileManager once, then clears openConnections. The live disconnectAll operation remains available to leave and dispute callers; it is not a second disposal pass.
 
-Inbound frames are parsed once with response-first precedence after the byte-size gate. Connected peer projection remains transport-first with profile fallback and insertion-order deduplication. See [P2PManager.ts](../../../../../src/P2PManager.ts#L366).
+- The router receives the manager (including its optional debug proxy) after logger initialization and before service construction. Its constructor does no active work. The manager dependency remains explicit because routing uses its live connections, root, logger, timeout manager and peer-policy operations. See [constructor](../../../../../src/P2PManager.ts#L76).
 
-1. **Response-first classification** keeps response frames out of service dispatch entirely ([`REQ-RPC-6-E60S4J`](../../../specification/peer-communication/rpc.md#req-rpc-6-e60s4j)).
-2. **Settlement by peer identity, not transport identity** — a WebRTC upgrade cannot orphan pending requests; a response from any _other_ peer penalizes the responder ([`REQ-RPC-2-SZDTTM`](../../../specification/peer-communication/rpc.md#req-rpc-2-szdttm)).
+Both blacklist entry points ([address](../../../../../src/P2PManager.ts#L464), [transport](../../../../../src/P2PManager.ts#L450)) log the target before mutation. Existing logger call stacks identify the caller; blacklist policy and method parameters are unchanged. See [P2PManager.ts](../../../../../src/P2PManager.ts#L450).
+
+Both engagement checks use the status predicate that includes SYNCED as well as committed membership. See [P2PManager.ts](../../../../../src/P2PManager.ts#L119).
+
+The network router parses inbound frames once with response-first precedence after the byte-size gate. Connected peer projection remains transport-first with profile fallback and insertion-order deduplication. See [P2PManager.ts](../../../../../src/P2PManager.ts#L318).
+
+1. **Response-first classification** keeps response frames out of service dispatch entirely ([`REQ-RPC-6-E60S4J` (Ordered ingress verification)](../../../specification/peer-communication/rpc.md#req-rpc-6-e60s4j)).
+2. **Settlement by peer identity, not transport identity** — a WebRTC upgrade cannot orphan pending requests; a response from any _other_ peer penalizes the responder ([`REQ-RPC-2-SZDTTM` (Request lifecycle)](../../../specification/peer-communication/rpc.md#req-rpc-2-szdttm)).
 3. **Unknown/late responses are penalty-free by design** (must therefore stay cheap; bounded by the frame gate).
-4. **Service resolution uses the shared public-shape predicate.** A valid custom root loaded from a separate application module graph reaches the same guard and dispatch pipeline; constructor identity is not part of the wire contract ([#L226](../../../../../src/P2PManager.ts#L223)).
+4. **Service resolution uses the shared public-shape predicate.** A valid custom root loaded from a separate application module graph reaches the same guard and dispatch pipeline; constructor identity is not part of the wire contract ([#L226](../../../../../src/P2PManager.ts#L222)).
 5. **Handshake promotion has one owner.** The handshake hook reads local status once. Lobby transports
    enter the session-local matching set, while ordinary statuses promote directly. Lobby commitment calls
    the same promotion primitive only for the selected profile. Opened-channel participant lookup and sync
@@ -79,6 +80,8 @@ Inbound frames are parsed once with response-first precedence after the byte-siz
     or the status has moved, so chain genesis landing during the join or during an active request can
     neither hang the connect nor abort an already synced runtime.
 
+Disposal shares one promise. It attempts Holepunch cleanup even when profile transport cleanup fails, then preserves the first failure.
+
 ## Inputs, outputs, state, and side effects
 
 | Aspect       | Contents        |
@@ -112,7 +115,7 @@ None demonstrated.
 
 ## Missing behavior
 
-Per-peer rate limiting is the designated missing admission control ([`OQ-6-4JPNE5`](../../../specification/open-questions.md#oq-6-4jpne5)); request cancellation API absent (timeout-only) — documented limitation.
+Per-peer rate limiting is the designated missing admission control ([`OQ-6-4JPNE5` (P2P gossip rate limiting)](../../../specification/open-questions.md#oq-6-4jpne5)); request cancellation API absent (timeout-only) — documented limitation.
 
 ## Conformance traceability
 
@@ -120,14 +123,14 @@ Status enum: `Covered` | `Partial` | `Contradicts` | `Missing`. Evidence cells a
 **Here:** / **Other files:** so each row is auditable from its links alone; genuine gaps go in the
 Gap column. Audit state is file-level (Status header), never a row status.
 
-| Requirement / invariant                                                                                | Implementation status | Evidence                                                                                                                                                                                                                                                                                                                                                                                                                       | Gap / divergence                                                                                                            |
-| ------------------------------------------------------------------------------------------------------ | --------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------- |
-| [`REQ-RPC-6-E60S4J`](../../../specification/peer-communication/rpc.md#req-rpc-6-e60s4j)                | Covered               | **Here:** size→classify→envelope→structural service resolution; attributable wire faults blacklist the authenticated address, while an unclassified local dispatch failure only disconnects. **Other files:** [ObjectChecks](./utils/ObjectChecks.ts.md) owns the predicate; stages 5–7 are in [ARpcService](./rpc/ARpcService.ts.md).                                                                                         | None.                                                                                                                       |
-| [`REQ-RPC-2-SZDTTM`](../../../specification/peer-communication/rpc.md#req-rpc-2-szdttm)                | Partial               | **Here:** pending table, timeout, authenticated-address response routing, transport-disconnect settlement, and disposal cleanup.                                                                                                                                                                                                                                                                                               | No cancellation beyond timeout.                                                                                             |
-| [`REQ-RPC-7-9CBSHK`](../../../specification/peer-communication/rpc.md#req-rpc-7-9cbshk)                | Partial               | **Here:** manager disposal is exposed synchronously to detached guard waiters. **Other files:** [HandshakeCompletedGuard](./rpc/guards/HandshakeCompletedGuard.ts.md) owns queue cleanup and replay/punishment gates.                                                                                                                                                                                                          | Request-style deferred retry remains unresolved in [`OQ-34-FY08V2`](../../../specification/open-questions.md#oq-34-fy08v2). |
-| [`REQ-AUTH-5-BQG9AG`](../../../specification/peer-communication/synchronization.md#req-auth-5-bqg9ag)  | Covered               | **Here:** the handshake hook is the single promotion path; local status controls opened-only participant lookup and sync, with close/dispose/replacement checks; a status change away from `OPENED` settles the initial sync wait and a stale false sync result is ignored afterwards. **Other files:** [InitHandshakeService](./rpc/services/initHandshake/InitHandshakeService.ts.md) emits completion after authentication. | None.                                                                                                                       |
-| [`REQ-AUTH-7-VJFSD5`](../../../specification/peer-communication/handshake.md#req-auth-7-vjfsd5)        | Covered               | **Here:** every completed handshake engages the live transport unconditionally — no identity-specific opinion or participation filter exists on the promotion path. **Other files:** [InitHandshakeService](./rpc/services/initHandshake/InitHandshakeService.ts.md) emits completion for every peer that passes the objective checks.                                                                                         | None.                                                                                                                       |
-| [`REQ-LOBBY-9-N894C0`](../../../specification/peer-communication/lobby-matching.md#req-lobby-9-n894c0) | Covered               | **Here:** public lobby joins own local-discovery setup, rendezvous leave delegates without disconnecting established transports, and the existing address blacklist is the adapter's replacement gate. **Other files:** [LocalDiscoveryServer](./utils/node/LocalDiscoveryServer.ts.md) owns the topic-session dial and retry lifecycle.                                                                                       | None.                                                                                                                       |
+| Requirement / invariant                                                                                | Implementation status | Evidence                                                                                                                                                                                                                                                                                                                                                                                                                             | Gap / divergence                                                                                                            |
+| ------------------------------------------------------------------------------------------------------ | --------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------- |
+| [`REQ-RPC-6-E60S4J`](../../../specification/peer-communication/rpc.md#req-rpc-6-e60s4j)                | Covered               | **Here:** size→classify→envelope→structural service resolution; attributable wire faults blacklist the authenticated address, while an unclassified local dispatch failure only disconnects. **Other files:** [ObjectChecks](./utils/ObjectChecks.ts.md) owns the predicate; stages 5–7 are in [ANetworkRpcService](rpc/network/ANetworkRpcService.ts.md).                                                                           | None.                                                                                                                       |
+| [`REQ-RPC-2-SZDTTM`](../../../specification/peer-communication/rpc.md#req-rpc-2-szdttm)                | Partial               | **Here:** one router instance, transport-retirement rejection and disposal delegation. **Other files:** [NetworkRpcRouter](rpc/router/NetworkRpcRouter.ts.md) owns network timeout scheduling, authenticated same-peer response admission and ingress; [ARpcRouter](rpc/router/ARpcRouter.ts.md) owns registration, timers, correlation and settlement-once.                                                                         | No cancellation beyond timeout.                                                                                             |
+| [`REQ-RPC-7-9CBSHK`](../../../specification/peer-communication/rpc.md#req-rpc-7-9cbshk)                | Partial               | **Here:** manager disposal is exposed synchronously to detached guard waiters. **Other files:** [HandshakeCompletedGuard](rpc/network/guards/HandshakeCompletedGuard.ts.md) owns queue cleanup and replay/punishment gates.                                                                                                                                                                                                          | Request-style deferred retry remains unresolved in [`OQ-34-FY08V2`](../../../specification/open-questions.md#oq-34-fy08v2). |
+| [`REQ-AUTH-5-BQG9AG`](../../../specification/peer-communication/synchronization.md#req-auth-5-bqg9ag)  | Covered               | **Here:** the handshake hook is the single promotion path; local status controls opened-only participant lookup and sync, with close/dispose/replacement checks; a status change away from `OPENED` settles the initial sync wait and a stale false sync result is ignored afterwards. **Other files:** [InitHandshakeService](rpc/network/services/initHandshake/InitHandshakeService.ts.md) emits completion after authentication. | None.                                                                                                                       |
+| [`REQ-AUTH-7-VJFSD5`](../../../specification/peer-communication/handshake.md#req-auth-7-vjfsd5)        | Covered               | **Here:** every completed handshake engages the live transport unconditionally — no identity-specific opinion or participation filter exists on the promotion path. **Other files:** [InitHandshakeService](rpc/network/services/initHandshake/InitHandshakeService.ts.md) emits completion for every peer that passes the objective checks.                                                                                         | None.                                                                                                                       |
+| [`REQ-LOBBY-9-N894C0`](../../../specification/peer-communication/lobby-matching.md#req-lobby-9-n894c0) | Covered               | **Here:** public lobby joins own local-discovery setup, rendezvous leave delegates without disconnecting established transports, and the existing address blacklist is the adapter's replacement gate. **Other files:** [LocalDiscoveryServer](./utils/node/LocalDiscoveryServer.ts.md) owns the topic-session dial and retry lifecycle.                                                                                             | None.                                                                                                                       |
 
 ## Component test obligations
 
@@ -149,7 +152,7 @@ and both the retired and current transports close.
 
 ## Related source reports
 
-- [ARpcService](./rpc/ARpcService.ts.md), [ProfileManager](./ProfileManager.ts.md), [transport/ATransport](./transport/ATransport.ts.md), [utils/discoveryKey](./utils/discoveryKey.ts.md).
+- [ANetworkRpcService](rpc/network/ANetworkRpcService.ts.md), [ProfileManager](./ProfileManager.ts.md), [transport/NetworkTransport](./transport/NetworkTransport.ts.md), [utils/discoveryKey](./utils/discoveryKey.ts.md).
 
 ## Targeted connect contribution
 
@@ -163,3 +166,5 @@ their original transport; retiring it rejects the request. A response from a for
 [`UNIT-TEST-P2P-MANAGER-1-9DNSRZ.P25`](P2PManager.ts.md#unit-test-p2p-manager-1-9dnsrz.p25) means original-transport retirement rejects its pending request even when a replacement exists; `.P3` remains foreign-responder rejection.
 
 Shared operation owners: [errorMessage.ts.md](utils/errorMessage.ts.md), [bytes32.ts.md](utils/bytes32.ts.md).
+
+Runtime disposal also invokes the profile manager cleanup inventory, so unauthenticated connections are closed before logger teardown. Loopback close remains a no-op so disposal invoked through it can return its response.

@@ -226,4 +226,61 @@ describe("NodeLogger performance monitor", function () {
             logger.dispose();
         }
     });
+    it("shares one monitor across loggers and makes repeated start and stop harmless", function () {
+        const first = createLogger(
+            {},
+            {},
+            { skipWriting: true, attachErrorListener: false }
+        );
+        const second = createLogger(
+            {},
+            {},
+            { skipWriting: true, attachErrorListener: false }
+        );
+        let starts = 0;
+        let stops = 0;
+        let samples = 0;
+        const options = {
+            intervalMs: INTERVAL_MS,
+            sampleSource: {
+                start() {
+                    starts++;
+                },
+                sample() {
+                    samples++;
+                    return quietSample;
+                },
+                reset() {},
+                stop() {
+                    stops++;
+                }
+            }
+        };
+        try {
+            first.startPerformanceMonitoring(options);
+            first.startPerformanceMonitoring(options);
+            second.startPerformanceMonitoring(options);
+            second.dispose();
+            clock.tick(INTERVAL_MS);
+            expect({ starts, stops, samples }).to.deep.equal({
+                starts: 1,
+                stops: 0,
+                samples: 1
+            });
+            first.stopPerformanceMonitoring();
+            second.stopPerformanceMonitoring();
+            clock.tick(INTERVAL_MS);
+            expect(stops).to.equal(1);
+            expect(samples).to.equal(1);
+            first.startPerformanceMonitoring(options);
+            expect(starts).to.equal(2);
+            first.dispose();
+            first.dispose();
+            expect(stops).to.equal(2);
+        } finally {
+            first.stopPerformanceMonitoring();
+            first.dispose();
+            second.dispose();
+        }
+    });
 });

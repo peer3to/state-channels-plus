@@ -27,7 +27,7 @@ signature-set expansion (dedup by recovered signer), `didEveryoneSign`, relevant
 
 Same-block copy merging belongs to Block: expand confirmation signatures, then copy a defined on-chain timestamp, including zero. Callers remain responsible for block identity and trust policy. See [Block.ts](../../../../../../src/models/Block.ts#L247).
 
-1. **Signature expansion dedups by recovered signer**, so encoding malleability cannot double-count ([`REQ-ID-1-3Q2KB9`](../../../../specification/protocol-model/identity.md#req-id-1-3q2kb9) malleability rule).
+1. **Signature expansion dedups by recovered signer**, so encoding malleability cannot double-count ([`REQ-ID-1-3Q2KB9` (Recoverable signatures over canonical targets)](../../../../specification/protocol-model/identity.md#req-id-1-3q2kb9) malleability rule).
 2. **Relevant timestamp encodes the forfeit rule's data side:** the author-signed predecessor uses block time; a posted one the on-chain time.
 
 ## Inputs, outputs, state, and side effects

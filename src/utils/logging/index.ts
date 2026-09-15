@@ -1,6 +1,5 @@
 import type { CreateLoggerOptions } from "./createLoggerTypes";
 import { decodeLogs, decompressFromBase64 } from "./logEncoder";
-import { LogFlushBus, realmLogFlushBus } from "./LogFlushBus";
 import type {
     ExclusiveLoggerContext,
     SharedLoggerContext,
@@ -18,14 +17,6 @@ export type {
     LoggerPerformanceMonitorOptions,
     CreateLoggerOptions
 };
-export { decodeLogs, decompressFromBase64, LogFlushBus, realmLogFlushBus };
-export type {
-    FlushId,
-    LogControlMessage,
-    LogControlPort,
-    LogFlushResult,
-    LogPortHandle,
-    LogRemoteRealm
-} from "./logControl";
+export { decodeLogs, decompressFromBase64 };
 export type { LogThreadName } from "./Logger";
 export type { LogUploadOutcome } from "./LogUploader";

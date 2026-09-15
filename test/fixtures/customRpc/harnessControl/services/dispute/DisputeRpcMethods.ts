@@ -1,3 +1,4 @@
+// @spec-test-coverage-ignore: fixture support; executable evidence belongs to its calling test declarations.
 import type {
     DisputeService,
     DisputeValidationRun,
@@ -8,9 +9,9 @@ import {
     type DisputeTamperStrategy
 } from "./tamperStrategies";
 import Clock from "@/Clock";
-import ARpcMethods from "@/rpc/ARpcMethods";
+import ANetworkRpcMethods from "@/rpc/network/ANetworkRpcMethods";
 
-import type ATransport from "@/transport/ATransport";
+import type NetworkTransport from "@/transport/NetworkTransport";
 import type { ForkId, Hash } from "@/types/types";
 import { Codec, Type } from "@/utils";
 import type {
@@ -33,12 +34,9 @@ export interface ConstructDisputeStubSpec {
  * Dispute construction / auditing reads + tampering, executed host-side. Only
  * public endpoints live here; helpers/accessors/state are on {@link DisputeService}.
  */
-export class DisputeRpcMethods extends ARpcMethods {
-    constructor(
-        transport: ATransport,
-        private readonly service: DisputeService
-    ) {
-        super(transport, service.p2pManager);
+export class DisputeRpcMethods extends ANetworkRpcMethods<DisputeService> {
+    constructor(transport: NetworkTransport, service: DisputeService) {
+        super(transport, service);
     }
 
     /** Start the real fork-scoped reduction without awaiting its shared result. */

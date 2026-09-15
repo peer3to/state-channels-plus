@@ -1,27 +1,24 @@
-import ATransport from "./ATransport";
+import NetworkTransport from "./NetworkTransport";
 import { TransportType } from "./TransportType";
-import type P2PManager from "@/P2PManager";
 import type { BannablePeerInfo } from "@/PeerProfile";
+import type { NetworkRpcRouter } from "@/rpc/router/NetworkRpcRouter";
 import { Buffer } from "buffer";
 
-class HolepunchTransport extends ATransport {
+class HolepunchTransport extends NetworkTransport {
     transportType = TransportType.HOLEPUNCH;
     holepunchSocket: any;
     constructor(
         holepunchSocket: any,
         holepunchPeerInfo: BannablePeerInfo,
-        p2pManager: P2PManager
+        router: NetworkRpcRouter
     ) {
-        super(p2pManager);
+        super(router);
         this.holepunchSocket = holepunchSocket;
         this.p2pManager.profileManager.setBannablePeerInfo(
             this,
             holepunchPeerInfo
         );
         this.holepunchSocket.on("data", async (data: any) => {
-            if (data instanceof Uint8Array) {
-                data = Buffer.from(data);
-            }
             this.onMessage(data);
         });
         this.p2pManager.localRpc.initHandshakeService.initHandshake(this);
@@ -36,6 +33,12 @@ class HolepunchTransport extends ATransport {
             this.close();
         });
     }
+    // Overrides NetworkTransport.onMessage to decode Holepunch input.
+    public override onMessage(data: unknown): void {
+        if (data instanceof Uint8Array) data = Buffer.from(data);
+        super.onMessage(data);
+    }
+
     _send(serializedRPC: string): void {
         this.holepunchSocket.write(serializedRPC);
     }

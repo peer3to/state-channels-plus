@@ -13,6 +13,7 @@ import http from "http";
 import { AddressInfo } from "net";
 
 export type ReceivedUpload = {
+    storeId: string;
     channelId: string;
     peerAddress: string;
     threadName: LogThreadName;
@@ -218,4 +219,8 @@ export function createUploaderFixture(opts: {
         true
     );
     return { logUploader, logStore, logger };
+}
+
+export function messagesOf(receiver: LogReceiver, index: number): string[] {
+    return decodeUpload(receiver.requests[index]).map((entry) => entry.message);
 }

@@ -1,17 +1,20 @@
+import { withRuntimeRpc } from "./RpcRouterFixture";
+import { P2pRuntimeHostRoot } from "@/rpc/internal/roots/P2pRuntimeHostRoot";
 // @spec-test-coverage-ignore: concrete guard collaborators for runGuards component tests
-import type ARpcMethods from "@/rpc/ARpcMethods";
-import type ARpcService from "@/rpc/ARpcService";
-import { AGuard } from "@/rpc/guards/AGuard";
+import type ANetworkRpcMethods from "@/rpc/network/ANetworkRpcMethods";
+import type ANetworkRpcService from "@/rpc/network/ANetworkRpcService";
+import { AGuard } from "@/rpc/network/guards/AGuard";
 import type Rpc from "@/rpc/Rpc";
-import type ATransport from "@/transport/ATransport";
+import type NetworkTransport from "@/transport/NetworkTransport";
 
 class RecordingGuard extends AGuard {
     constructor(
         private readonly label: string,
         private readonly passes: boolean,
-        private readonly events: string[]
+        private readonly events: string[],
+        service: ANetworkRpcService<ANetworkRpcMethods>
     ) {
-        super(undefined as unknown as ARpcService<ARpcMethods>);
+        super(service);
     }
 
     public check(): boolean {
@@ -30,13 +33,41 @@ export class RunGuardsFixture {
         method: "run",
         params: []
     };
-    public readonly transport = undefined as unknown as ATransport;
     public readonly events: string[] = [];
+
+    constructor(
+        public readonly transport: NetworkTransport,
+        private readonly service: ANetworkRpcService<ANetworkRpcMethods>
+    ) {}
+
+    public static async with(
+        operation: (fixture: RunGuardsFixture) => void
+    ): Promise<void> {
+        await withRuntimeRpc(async (sdk) => {
+            const host = [...sdk.roots].find(
+                (root): root is P2pRuntimeHostRoot =>
+                    root instanceof P2pRuntimeHostRoot
+            );
+            if (!host) throw new Error("Expected inline SDK host");
+            const manager = host.hostRpc.requireManager();
+            operation(
+                new RunGuardsFixture(
+                    manager.loopbackTransport,
+                    manager.localRpc.initHandshakeService
+                )
+            );
+        });
+    }
 
     public guards(...passes: boolean[]): AGuard[] {
         return passes.map(
             (pass, index) =>
-                new RecordingGuard(String(index + 1), pass, this.events)
+                new RecordingGuard(
+                    String(index + 1),
+                    pass,
+                    this.events,
+                    this.service
+                )
         );
     }
 }

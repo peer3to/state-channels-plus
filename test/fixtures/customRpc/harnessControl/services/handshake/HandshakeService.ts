@@ -1,7 +1,8 @@
+// @spec-test-coverage-ignore: fixture support; executable evidence belongs to its calling test declarations.
 import HandshakeRpcMethods from "./HandshakeRpcMethods";
 import type P2PManager from "@/P2PManager";
-import ARpcService from "@/rpc/ARpcService";
-import type ATransport from "@/transport/ATransport";
+import ANetworkRpcService from "@/rpc/network/ANetworkRpcService";
+import type NetworkTransport from "@/transport/NetworkTransport";
 import type { Address } from "@/types/types";
 
 /**
@@ -9,10 +10,10 @@ import type { Address } from "@/types/types";
  * Accessors and helpers live here (not on the RpcMethods class) since every
  * RpcMethods method is routable by name at runtime.
  */
-export class HandshakeService extends ARpcService<HandshakeRpcMethods> {
+export class HandshakeService extends ANetworkRpcService<HandshakeRpcMethods> {
     constructor(p2pManager: P2PManager) {
         super(
-            p2pManager,
+            p2pManager.rpcRouter,
             p2pManager.stateManager.logger.child({
                 component: "HarnessHandshakeService"
             })
@@ -30,7 +31,7 @@ export class HandshakeService extends ARpcService<HandshakeRpcMethods> {
     }
 
     /** Resolve the live transport toward a peer address, or throw. */
-    transportTo(address: Address): ATransport {
+    transportTo(address: Address): NetworkTransport {
         const transport =
             this.p2pManager.profileManager.getTransportByEvmAddress(address);
         if (!transport) {
@@ -39,7 +40,7 @@ export class HandshakeService extends ARpcService<HandshakeRpcMethods> {
         return transport;
     }
 
-    public createRPCMethods(transport: ATransport): HandshakeRpcMethods {
+    public createRPCMethods(transport: NetworkTransport): HandshakeRpcMethods {
         return new HandshakeRpcMethods(transport, this);
     }
 }

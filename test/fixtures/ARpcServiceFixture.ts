@@ -1,5 +1,5 @@
-// @spec-test-coverage-ignore: shared runtime setup for ARpcService component tests
-import type { RemoteRpcProxyType } from "@/rpc/RemoteRpcProxy";
+// @spec-test-coverage-ignore: shared runtime setup for ANetworkRpcService component tests
+import type { RemoteRpcProxyType } from "@/rpc/network/RemoteRpcProxy";
 import type { ARpcDispatchProbe } from "@test/fixtures/customRpc/aRpcServiceProbe/ARpcServiceProbeService";
 import type { LoopbackGuardProbeResult } from "@test/fixtures/customRpc/loopbackGuardProbe/LoopbackGuardProbeService";
 import type { PingPongRpc } from "@test/fixtures/customRpc/PingPongRpcManifest";

@@ -1,7 +1,7 @@
 # test/evm/nodeGlobalsShim.test.ts — Test Report
 
 > **Test file:** [test/evm/nodeGlobalsShim.test.ts](../../../../../../test/evm/nodeGlobalsShim.test.ts) > **Status:** Authored — engineer verification pending.
-> **Exercises:** [nodeGlobalsShim.ts](../../../../implementation/source/src/evm/p2pRuntime/worker/nodeGlobalsShim.ts.md)
+> **Exercises:** [applyNodeGlobalsShim.ts](../../../../implementation/source/src/evm/p2pRuntime/worker/applyNodeGlobalsShim.ts.md)
 
 ## Contents
 
@@ -33,3 +33,5 @@ report but are kept here.
 | [`applyNodeGlobalsShim > does not overwrite an existing nextTick`](../../../../../../test/evm/nodeGlobalsShim.test.ts#L42) (line 42)                                      | —      |
 | [`applyNodeGlobalsShim > does not identify a real Node process as a browser`](../../../../../../test/evm/nodeGlobalsShim.test.ts#L51) (line 51)                           | —      |
 | [`applyNodeGlobalsShim > schedules the callback asynchronously via the shimmed nextTick`](../../../../../../test/evm/nodeGlobalsShim.test.ts#L61) (line 61)               | —      |
+
+This is partial component evidence for [`REQ-RUNTIME-4-B0N70Y` (Platform equivalence)](../../../../specification/runtime/execution.md#req-runtime-4-b0n70y); it does not claim worker placement coverage.

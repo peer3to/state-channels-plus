@@ -1,8 +1,8 @@
 import {
     assertRuntimeClock,
+    assertLiveInlineClock,
     deployTimestampStorage,
-    timestampReader,
-    wallSeconds
+    timestampReader
 } from "../fixtures/ExecutorTimestamp.fixture";
 import {
     getSimpleNumberStorageDeploymentTransaction,
@@ -10,7 +10,6 @@ import {
 } from "../fixtures/SimpleNumberStorage.fixture";
 import Clock from "@/Clock";
 import { ContractExecutor, type AContractExecutor } from "@/evm";
-import WorkerContractExecutor from "@/evm/contractExecutor/WorkerContractExecutor";
 import { tryDecodeCustomError } from "@/utils/evmErrorHandler";
 import { EVM } from "@ethereumjs/evm";
 import { Address } from "@ethereumjs/util";
@@ -621,22 +620,11 @@ describe("ContractExecutor", function () {
                 await executor.dispose();
             }
         });
+    });
+});
 
-        it("a dedicated executor derives the host's non-zero clock adjustment from its own wall clock", async function () {
-            const dedicated = await WorkerContractExecutor.create(
-                [],
-                undefined,
-                {},
-                600
-            );
-            try {
-                const read = await timestampReader(dedicated);
-                expect(
-                    Math.abs((await read()) - (wallSeconds() + 600))
-                ).to.be.at.most(1);
-            } finally {
-                await dedicated.dispose();
-            }
-        });
+describe("SDK executor live Clock", () => {
+    it("reads a changed shared Clock after inline executor construction", async () => {
+        await assertLiveInlineClock(ethers.provider);
     });
 });

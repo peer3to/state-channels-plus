@@ -1,7 +1,7 @@
 import { Worker } from "node:worker_threads";
 
 // Workers exit by draining naturally: after replying to dispose the worker
-// closes every handle it still holds (see closeWorkerBootstrapPort) and the
+// closes every handle it still holds (see closeRootWorker) and the
 // thread ends once the last close callback has run. Nothing may force-stop a
 // worker loop from outside - parent-side terminate(), or exiting the process
 // while a worker thread is still alive - or the whole process aborts with

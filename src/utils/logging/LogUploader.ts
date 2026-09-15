@@ -1,5 +1,4 @@
 import { sleep } from "..";
-import { DetachedPromises } from "../DetachedPromises";
 import {
     getAxiosFailureSummary,
     getAxiosRetrySummary,
@@ -97,9 +96,6 @@ export abstract class LogUploader {
         this.logger?.error(`Unhandled ${source} captured for log upload`, {
             error
         });
-        // error() already scheduled this realm; the round adds the rest
-        const round = this.logger?.flushAllRealms(`unhandled ${source}`);
-        if (round) DetachedPromises.collect(round);
     }
 
     // A non-Error rejection reason can have a throwing toString; the global crash
@@ -120,8 +116,7 @@ export abstract class LogUploader {
         return Math.floor(Math.random() * maxMs);
     }
 
-    /** depth-one queue. the bus acks on this promise, so a caller must resolve
-     *  only after a POST that covers its entries. */
+    /** One active upload and at most one follow-up; callers await only local work. */
     public uploadLogs(): Promise<LogUploadOutcome> {
         if (this.queuedUpload) return this.queuedUpload;
         if (!this.activeUpload) return this.startUpload();
@@ -150,7 +145,7 @@ export abstract class LogUploader {
         const peerAddress =
             this.sharedContext.peerAddress || ethers.ZeroAddress;
         const threadName: LogThreadName =
-            this.sharedContext.threadName ?? "main";
+            this.sharedContext.threadName ?? globalThis.threadName;
         return {
             channelId,
             peerAddress,
@@ -306,5 +301,6 @@ export abstract class LogUploader {
 
         this.destroyed = true;
         this.detachListeners();
+        this.logger = undefined;
     }
 }

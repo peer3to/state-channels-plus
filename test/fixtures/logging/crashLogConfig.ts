@@ -25,7 +25,8 @@ export function applyCrashLogConfig(
 export function crashLogUploadOverrides(uploadEndpoint: string) {
     return {
         CRASH_LOG_UPLOAD_ENDPOINT: uploadEndpoint,
-        CRASH_LOG_UPLOAD_JITTER_MAX_MS: 0
+        CRASH_LOG_UPLOAD_JITTER_MAX_MS: 0,
+        CRASH_LOG_UPLOAD_COALESCE_MS: 100
     };
 }
 

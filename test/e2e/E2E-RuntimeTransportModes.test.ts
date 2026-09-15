@@ -69,15 +69,15 @@ describe("E2E: p2pSetup runtime modes", function () {
         await assertSdkThreadCrashUploadsEveryThread();
     });
 
-    it("report-a-bug returns the threads it uploaded", async function () {
+    it("report-a-bug returns its local result and reaches the SDK receiver", async function () {
         await assertReportABugReportsItsThreads();
     });
 
-    it("a closed session leaves no root on the flush bus", async function () {
+    it("a closed session releases its roots and detaches its logger service", async function () {
         await assertDisposedSessionLeavesTheFlushTree();
     });
 
-    it("a failed setup leaves no root on the flush bus", async function () {
+    it("a failed setup releases its roots and detaches its logger service", async function () {
         await assertFailedSetupLeavesNoRootOnTheFlushBus();
     });
 });

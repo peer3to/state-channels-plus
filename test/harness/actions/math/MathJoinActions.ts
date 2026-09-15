@@ -1,7 +1,7 @@
 // @spec-test-coverage-ignore: shared math join setup exercised by owning mapped test declarations
 
 import Clock from "@/Clock";
-import type { PreparedJoinChannelConfirmation } from "@/rpc/services";
+import type { PreparedJoinChannelConfirmation } from "@/rpc/network/services";
 import type { Hash } from "@/types/types";
 import { addressesEqual, DetachedPromises } from "@/utils";
 import type { MathPeerTestHarness } from "@test/fixtures/MathPeerTestHarness";

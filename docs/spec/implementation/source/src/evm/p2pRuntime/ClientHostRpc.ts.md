@@ -23,6 +23,8 @@ The `hostRpc` back-channel: no target → loopback into the local host's service
 
 ## Key design decisions
 
+The shared proxy builder constructs service/method/argument payloads. The bridge forwards delivery name and arguments through a bound hostRpc.invoke request, preserving the outer 30-second default and the inner peer delivery result. Consumer recipients remain address/self, because live network transports cannot cross the port. See [createRpcProxy.ts](../../rpc/createRpcProxy.ts.md).
+
 1. **Loopback-or-relay duality** keeps one typed surface for both local and addressed calls (the review §43 intent).
 
 ## Inputs, outputs, state, and side effects
@@ -77,4 +79,4 @@ Exact test evidence is mapped against these IDs in the verification test reports
 
 ## Related source reports
 
-- [P2pRuntimeHost](./P2pRuntimeHost.ts.md).
+- [P2pRuntimeHost](../../rpc/internal/roots/P2pRuntimeHostRoot.ts.md).

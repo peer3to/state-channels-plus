@@ -32,16 +32,16 @@ bytes.** The service performs no protocol validation of the payload.
 
 **Sending.** After a confirmation-changing event (authoring, counter-signing, signature merge
 growth), broadcast the updated confirmation to all open sessions. No delivery receipt is expected;
-gossip redundancy plus the recovery paths of [`REQ-BLOCK-PIPE-4-CF52J6`](../block-progression/block-processing.md#req-block-pipe-4-cf52j6) provide eventual delivery.
+gossip redundancy plus the recovery paths of [`REQ-BLOCK-PIPE-4-CF52J6` (Recovery without bypass)](../block-progression/block-processing.md#req-block-pipe-4-cf52j6) provide eventual delivery.
 
 **Receiving.**
 
 1. The frame passes ingress dispatch and the authenticated-session gate ([rpc.md](./rpc.md)).
 2. The sender's proven identity is attached to the confirmation as source attribution — the
-   attribution that intake preserves per [`REQ-BLOCK-PIPE-1-SS24D1`](../block-progression/block-processing.md#req-block-pipe-1-ss24d1) and the queue stores per
+   attribution that intake preserves per [`REQ-BLOCK-PIPE-1-SS24D1` (Unified work item)](../block-progression/block-processing.md#req-block-pipe-1-ss24d1) and the queue stores per
    <a id="req-qstore-1-ps769j"></a>`REQ-QSTORE-1-PS769J`.
-3. The attributed confirmation is handed to pipeline intake ([`REQ-IX-1-WTJ0D1`](../interactions.md#req-ix-1-wtj0d1)).
-   Intake is the merge regime: unordered, duplicable, mutex-free ([`REQ-BLOCK-PIPE-5-WJ31RG`](../block-progression/block-processing.md#req-block-pipe-5-wj31rg)).
+3. The attributed confirmation is handed to pipeline intake ([`REQ-IX-1-WTJ0D1` (Peer block ingress)](../interactions.md#req-ix-1-wtj0d1)).
+   Intake is the merge regime: unordered, duplicable, mutex-free ([`REQ-BLOCK-PIPE-5-WJ31RG` (Pre-execution merge layer)](../block-progression/block-processing.md#req-block-pipe-5-wj31rg)).
 4. The pipeline's verdict maps back to a communication-layer consequence: acceptable knowledge
    (new, duplicate, mergeable, not-yet-eligible) has none; an objective protocol violation
    attributable to the sender terminates and excludes the sender; non-attributable junk is dropped
@@ -81,8 +81,8 @@ signature set grows, so signature knowledge converges across honest peers withou
 
 ## Assumptions and constraints
 
-- Highest-volume ingress surface of the node; per-peer rate bounds ([`REQ-RPC-5-CV1R1Y`](rpc.md#req-rpc-5-cv1r1y),
-  [`OQ-6-4JPNE5`](../open-questions.md#oq-6-4jpne5)) are the intended admission control — the pipeline's queue
+- Highest-volume ingress surface of the node; per-peer rate bounds ([`REQ-RPC-5-CV1R1Y` (Resource bounds)](rpc.md#req-rpc-5-cv1r1y),
+  [`OQ-6-4JPNE5` (P2P gossip rate limiting)](../open-questions.md#oq-6-4jpne5)) are the intended admission control — the pipeline's queue
   deliberately relies on this layer for frequency bounding.
 - Fire-and-forget delivery: loss is recovered by gossip redundancy and pipeline sync, not by this
   service.
@@ -109,5 +109,5 @@ rate limiting lands; structural caps in the queue bound per-entry damage.
 
 ## Future Work
 
-_Non-normative._ Per-peer gossip rate limiting and priority classes ([`OQ-6-4JPNE5`](../open-questions.md#oq-6-4jpne5));
+_Non-normative._ Per-peer gossip rate limiting and priority classes ([`OQ-6-4JPNE5` (P2P gossip rate limiting)](../open-questions.md#oq-6-4jpne5));
 delta gossip (signatures only) to cut redundant block-body traffic.

@@ -3,18 +3,31 @@ import {
     CrossModuleRpcService,
     CrossModuleTransport
 } from "../../testSupport/CrossModuleValues";
-import RemoteRpcProxy from "@/rpc/RemoteRpcProxy";
+import RemoteRpcProxy from "@/rpc/network/RemoteRpcProxy";
 
-import { isTransport } from "@/transport/ATransport";
+import { isNetworkTransport } from "@/transport/NetworkTransport";
 import {
     convertEthersValue,
     createEthersResultProxy
 } from "@/utils/EthersResultProxy";
 import { hasRpcService, isEthersResult } from "@/utils/ObjectChecks";
+import { assertFreshCrossModuleNetworkTransport } from "@test/fixtures/node/CrossModuleTransportFixture";
+import { withRuntimeRpc } from "@test/fixtures/RpcRouterFixture";
 import { expect } from "chai";
 import { AbiCoder } from "ethers";
 
 describe("cross-module runtime values", function () {
+    it("recognizes a fresh unauthenticated network transport from a separate module graph", async function () {
+        await assertFreshCrossModuleNetworkTransport();
+    });
+    it("recognizes actual runtime services without a peer manager", async function () {
+        await withRuntimeRpc(async (sdk) => {
+            expect(hasRpcService(sdk.clientRoot, "sdkClient")).to.equal(true);
+            expect(hasRpcService(sdk.clientRoot, "logger")).to.equal(true);
+            expect("p2pManager" in sdk.clientRoot.sdkClient).to.equal(false);
+            expect(hasRpcService(sdk.clientRoot, "router")).to.equal(false);
+        });
+    });
     it("accepts an RPC service with the public service shape", function () {
         const service = new CrossModuleRpcService();
         const root = { service };
@@ -90,40 +103,40 @@ describe("cross-module runtime values", function () {
     });
 
     it("accepts a transport with the public transport shape", function () {
-        expect(isTransport(new CrossModuleTransport())).to.equal(true);
+        expect(isNetworkTransport(new CrossModuleTransport())).to.equal(true);
     });
 
     it("rejects an object that is missing part of the transport shape", function () {
-        expect(isTransport(undefined)).to.equal(false);
-        expect(isTransport("transport")).to.equal(false);
+        expect(isNetworkTransport(undefined)).to.equal(false);
+        expect(isNetworkTransport("transport")).to.equal(false);
         expect(
-            isTransport({
+            isNetworkTransport({
                 transportType: "0",
                 send: () => undefined,
                 sendRpcResponse: () => undefined
             })
         ).to.equal(false);
         expect(
-            isTransport({
+            isNetworkTransport({
                 transportType: 0,
                 sendRpcResponse: () => undefined
             })
         ).to.equal(false);
         expect(
-            isTransport({
+            isNetworkTransport({
                 send: () => undefined,
                 transportType: 0
             })
         ).to.equal(false);
         expect(
-            isTransport({
+            isNetworkTransport({
                 transportType: 0,
                 send: "not-a-function",
                 sendRpcResponse: () => undefined
             })
         ).to.equal(false);
         expect(
-            isTransport({
+            isNetworkTransport({
                 transportType: 0,
                 send: () => undefined,
                 sendRpcResponse: "not-a-function"

@@ -9,12 +9,16 @@ _Pending authoring: shared responsibility, design decisions, assumptions, cross-
 
 - [ClientHostRpc.ts](./ClientHostRpc.ts.md)
 - [HostHandlerExecutionContext.ts](./HostHandlerExecutionContext.ts.md)
-- [P2pRuntimeClient.ts](./P2pRuntimeClient.ts.md)
-- [P2pRuntimeHost.ts](./P2pRuntimeHost.ts.md)
 - [RuntimeChainContext.ts](./RuntimeChainContext.ts.md)
-- [browser/](./browser/README.md)
-- [chainSignerSerialization.ts](./chainSignerSerialization.ts.md)
-- [host/](./host/README.md)
-- [node/](./node/README.md)
+- [setupP2pRuntime.ts](./setupP2pRuntime.ts.md)
 - [types.ts](./types.ts.md)
-- [worker/](./worker/README.md)
+
+## Source inventory
+
+| Source | Report |
+| --- | --- |
+| [ClientHostRpc.ts](../../../../../../../src/evm/p2pRuntime/ClientHostRpc.ts) | [ClientHostRpc.ts.md](./ClientHostRpc.ts.md) |
+| [HostHandlerExecutionContext.ts](../../../../../../../src/evm/p2pRuntime/HostHandlerExecutionContext.ts) | [HostHandlerExecutionContext.ts.md](./HostHandlerExecutionContext.ts.md) |
+| [RuntimeChainContext.ts](../../../../../../../src/evm/p2pRuntime/RuntimeChainContext.ts) | [RuntimeChainContext.ts.md](./RuntimeChainContext.ts.md) |
+| [setupP2pRuntime.ts](../../../../../../../src/evm/p2pRuntime/setupP2pRuntime.ts) | [setupP2pRuntime.ts.md](./setupP2pRuntime.ts.md) |
+| [types.ts](../../../../../../../src/evm/p2pRuntime/types.ts) | [types.ts.md](./types.ts.md) |

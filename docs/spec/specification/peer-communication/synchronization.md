@@ -45,7 +45,7 @@ the requester against its own chain reads and verification logic.
 This section is explanatory; its binding rule is [`REQ-AUTH-5-BQG9AG`](synchronization.md#req-auth-5-bqg9ag)
 below. The handshake ends at an authenticated
 identity-bound session and decides nothing further ([handshake.md](./handshake.md),
-[`INV-AUTH-3-0QP5E9`](handshake.md#inv-auth-3-0qp5e9)). What happens to that session is owned here:
+[`INV-AUTH-3-0QP5E9` (Objective facts only)](handshake.md#inv-auth-3-0qp5e9)). What happens to that session is owned here:
 the local node keeps every live authenticated session engaged for channel communication, whatever
 its own channel lifecycle state — not yet opened, opened, synchronized, join pending, or
 participating. Only a node whose channel is opened additionally resolves whether the proven
@@ -125,10 +125,10 @@ Ordered verification; any failure aborts the sync with no partial effect:
 11. **Simulate adoption.** Verify, without any on-chain transaction, that the implied snapshot
     advance would succeed on-chain; a simulated revert aborts.
 12. **Persist** the verified payload atomically through the storage system
-    ([`REQ-IX-9-AV56NR`](../interactions.md#req-ix-9-av56nr)): skip if local knowledge is already ahead; abort on
+    ([`REQ-IX-9-AV56NR` (Storage fidelity)](../interactions.md#req-ix-9-av56nr)): skip if local knowledge is already ahead; abort on
     any conflict with locally finalized blocks. After a different fork is successfully installed,
     terminate pending normal reduction work for the fork left behind without an outcome, as required by
-    [`REQ-DISPUTE-PIPE-4-3YVDSA`](../disputes/dispute-processing.md#req-dispute-pipe-4-3yvdsa).
+    [`REQ-DISPUTE-PIPE-4-3YVDSA` (Atomic recovery)](../disputes/dispute-processing.md#req-dispute-pipe-4-3yvdsa).
     This lineage verification remains separate from normal reduction; it does not supply that operation's
     result, and an already-completed reduction retains its actual result.
 13. **Replay the unfinalized suffix** through the standard block-progression pipeline under the
@@ -213,8 +213,8 @@ consequence rules.
 - Requires an authenticated session ([authentication](./handshake.md)) and an honest requester-side
   chain view ([trust-model.md](../security/trust-model.md)); a dishonest chain view undermines the
   anchor every check relies on.
-- Proof generation is expensive for the responder; resource bounding falls under [`REQ-RPC-5-CV1R1Y`](rpc.md#req-rpc-5-cv1r1y) and
-  the open rate-limiting question ([`OQ-6-4JPNE5`](../open-questions.md#oq-6-4jpne5)).
+- Proof generation is expensive for the responder; resource bounding falls under [`REQ-RPC-5-CV1R1Y` (Resource bounds)](rpc.md#req-rpc-5-cv1r1y) and
+  the open rate-limiting question ([`OQ-6-4JPNE5` (P2P gossip rate limiting)](../open-questions.md#oq-6-4jpne5)).
 - One in-flight sync per peer pair; retries are new rounds.
 - Any authenticated peer may request sync; there is no participant-vs-observer access control by
   design (open channels), with restriction as a possible future guard.
@@ -226,10 +226,10 @@ undercollateralized state — is defeated by the verification chain: forged line
 walk, forged finality fails milestone verification, forged history fails range linkage, unbacked
 balances fail the invariant check, and inapplicable claims fail the simulated advance. Residual
 exposures: the balance invariant is enforced requester-side only (its absence on the on-chain
-update path is tracked as [`OQ-19-Y8FDQX`](../../implementation/open-questions.md#oq-19-y8fdqx)); fault attribution on the request path
+update path is tracked as [`OQ-19-Y8FDQX` (Channel-balance invariant enforcement points)](../../implementation/open-questions.md#oq-19-y8fdqx)); fault attribution on the request path
 conflates unavailability with misbehavior in both directions (permanent exclusion for
 honest-lagging peers — tracked as [`DEF-5-E8TP9N`](../../audit/open-findings.md#def-5-e8tp9n) and its responder-side mirror); and proof serving is a
-resource-amplification surface pending rate limiting ([`OQ-6-4JPNE5`](../open-questions.md#oq-6-4jpne5)). Full history
+resource-amplification surface pending rate limiting ([`OQ-6-4JPNE5` (P2P gossip rate limiting)](../open-questions.md#oq-6-4jpne5)). Full history
 disclosure to any authenticated peer is accepted under the open-observer model.
 
 ## Verification and test plan
@@ -251,4 +251,4 @@ disclosure to any authenticated peer is accepted under the open-observer model.
 
 _Non-normative._ Admission cost weighting for proof serving under the future rate
 limiter; optional access-control guards for restricted channels; on-chain balance-invariant
-enforcement so protection no longer depends on the client always spectating ([`OQ-19-Y8FDQX`](../../implementation/open-questions.md#oq-19-y8fdqx)).
+enforcement so protection no longer depends on the client always spectating ([`OQ-19-Y8FDQX` (Channel-balance invariant enforcement points)](../../implementation/open-questions.md#oq-19-y8fdqx)).

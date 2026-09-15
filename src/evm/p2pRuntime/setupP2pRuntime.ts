@@ -1,30 +1,27 @@
+import { createHostRpc } from "./ClientHostRpc";
+import type { SerializedContract, SetupPayload } from "./types";
 import type { EvmCustomPrecompileManifest } from "../EvmFactory";
 import P2pInstance from "../P2pInstance";
 import type { HostHandlerExecutionContext } from "./HostHandlerExecutionContext";
-import P2pRuntimeClient from "./P2pRuntimeClient";
-import { startP2pRuntimeHost, type HostContext } from "./P2pRuntimeHost";
-import type {
-    P2pRuntimeWorker,
-    RuntimePort,
-    SerializedContract,
-    SetupPayload,
-    WorkerBootstrapMessage
-} from "./types";
+import ClientChainSigner from "../signer/ClientChainSigner";
+import ClientP2pSigner from "../signer/ClientP2pSigner";
 import DeploymentBridgeSigner from "../signer/DeploymentBridgeSigner";
-import type MainRpcService from "@/rpc/MainRpcService";
-import type { CustomRpcManifest } from "@/rpc/registry";
-import { createLogger, Logger } from "@/utils";
-import { createConfig, Config } from "@/utils/config";
-import {
-    createRuntimeChannel,
-    createTransferableChannel
-} from "@platform/p2pRuntimeChannel";
-import { createP2pRuntimeWorker as createProductionP2pRuntimeWorker } from "@platform/p2pRuntimeWorkerRuntime";
+import { attachContractEvents } from "@/events/EventBus";
+import { createRoot } from "@/rpc/internal/createRoot";
+import { P2pRuntimeClientRoot } from "@/rpc/internal/roots/P2pRuntimeClientRoot";
+import type { HostContext } from "@/rpc/internal/roots/P2pRuntimeHostRoot";
+import type MainRpcService from "@/rpc/network/MainRpcService";
+import type { CustomRpcManifest } from "@/rpc/network/registry";
+import { createLogger } from "@/utils";
+import type { Logger } from "@/utils";
+import { createConfig } from "@/utils/config";
+import type { Config } from "@/utils/config";
+import { connectStateChannelManager } from "@/utils/stateChannelManager";
 import type {
     StateChannelManagerInterface,
     AStateMachine as AStateMachineContract
 } from "@typechain-types";
-import { ethers } from "ethers";
+import { ethers, type InterfaceAbi } from "ethers";
 import type { LocalStateMachineDeployer } from "scripts/V1/deploy";
 
 /** Public options of `EvmStateMachine.p2pSetup`, unchanged. */
@@ -54,14 +51,10 @@ export type P2pSetupOptions = {
 
 /**
  * Internal construction dependencies, not part of the package API. The inline
- * host is started with `hostContext`; the threaded host is spawned through
- * `createP2pRuntimeWorker`. Tests supply a host context that builds a scripted
- * contract-executor worker and an outer test-worker factory; production
- * passes neither and gets the platform defaults.
+ * host is started with `hostContext`; worker placement uses `createRoot`.
  */
 export type P2pSetupDependencies = {
     hostContext?: Pick<HostContext, "createContractExecutor">;
-    createP2pRuntimeWorker?: () => P2pRuntimeWorker;
 };
 
 /**
@@ -92,23 +85,19 @@ export async function setupP2pRuntime<
         ? new ethers.Wallet(trimmedSignerSecret).address
         : ethers.Wallet.fromPhrase(trimmedSignerSecret).address;
 
-    // a caller-supplied logger stays the caller's to dispose; one made here
-    // is registered on this realm's bus and owns process crash hooks, so the
-    // instance has to give it back
-    const ownsLogger = !options?.peerLogger;
-
+    // The application owns its child; the supplied parent stays with the caller.
     const logger =
-        options?.peerLogger ||
+        options?.peerLogger?.child({ component: "ClientApp" }) ??
         createLogger(
             { peerId: options?.peerId, peerAddress: resolvedSignerAddress },
             { component: "ClientApp" },
             { attachErrorListener: true }
         );
 
-    // a setup that never returns an instance has nobody to hand the
-    // logger to: dispose it here or it stays on the realm bus forever
+    let root: P2pRuntimeClientRoot | undefined;
+    let instance: P2pInstance<T, TCustomRpc> | undefined;
     try {
-        // Main-thread description of the app contract (rebuilt by the client).
+        // Client description of the app contract (rebuilt by the client).
         const stateMachine: SerializedContract = {
             address: (
                 await stateMachineContractInstance.getAddress()
@@ -137,53 +126,60 @@ export async function setupP2pRuntime<
             signerSecret: runtimeSignerSecret,
             peerId: options?.peerId,
             customRpcManifest: options?.customRpcManifest,
-            customPrecompiles: options?.customPrecompiles
+            customPrecompiles: options?.customPrecompiles?.map(
+                (precompile) => ({
+                    ...precompile,
+                    address: precompile.address.toString()
+                })
+            )
         };
 
-        let clientPort: RuntimePort;
-        let onClose: (() => void) | undefined;
-
-        if (activeConfig.RUN_SDK_IN_THREAD) {
-            const { localPort, transferablePort } = createTransferableChannel();
-            const worker = (
-                dependencies.createP2pRuntimeWorker ??
-                createProductionP2pRuntimeWorker
-            )();
-            const bootstrap: WorkerBootstrapMessage = {
-                type: "connect",
+        root = await createRoot(P2pRuntimeClientRoot, {
+            args: {
                 payload,
-                port: transferablePort
-            };
-            worker.postMessage(bootstrap, [transferablePort]);
-            clientPort = localPort;
-            onClose = () => worker.shutdown();
-        } else {
-            const channel = createRuntimeChannel();
-            clientPort = channel.port1;
-            void startP2pRuntimeHost(channel.port2, payload, {
-                handlerExecutionContext: options?.handlerExecutionContext,
-                createContractExecutor:
-                    dependencies.hostContext?.createContractExecutor,
-                // same realm, no port -> the app's logger follows the host's channel
-                contextFollower: logger
-            }).catch((error) => {
-                logger.error("Inline runtime host failed", { error });
-            });
-        }
-
-        const client = new P2pRuntimeClient<T>(clientPort, {
-            signerAddress: resolvedSignerAddress,
-            stateMachine,
-            scm,
-            provider: clientProvider,
-            logger,
-            onClose,
-            // only a threaded host is a separate realm with its own bus
-            openLogControlPort: activeConfig.RUN_SDK_IN_THREAD
+                signerAddress: resolvedSignerAddress
+            },
+            logger: logger.child({ component: P2pRuntimeClientRoot.name }),
+            handlerExecutionContext: options?.handlerExecutionContext,
+            local: dependencies
         });
-
+        const remote = root.p2pRuntimeHostRemoteRoot!.rpc;
+        const signer = new ClientP2pSigner(remote, resolvedSignerAddress);
+        const chainSigner = new ClientChainSigner(
+            remote,
+            clientProvider,
+            resolvedSignerAddress
+        );
+        const stateChannelManagerContract = connectStateChannelManager(
+            scm.address,
+            chainSigner,
+            JSON.parse(scm.abiJson) as InterfaceAbi
+        );
+        const contract = new ethers.Contract(
+            stateMachine.address,
+            JSON.parse(stateMachine.abiJson),
+            signer
+        );
+        instance = new P2pInstance<T, TCustomRpc>(root, {
+            contract: contract as ethers.Contract & T,
+            signer,
+            chainSigner,
+            stateChannelManagerContract,
+            logger,
+            hostRpc: createHostRpc<TCustomRpc>(remote)
+        });
+        // The client contract mirror: the same helper worker code uses.
+        // Events are forwarded as { name, args } and re-emitted by event name,
+        // so name-based and unindexed `contract.filters.X()` subscriptions
+        // receive them. A subscription that filters on an indexed argument
+        // (`contract.filters.X(indexedValue)`) resolves to a different ethers
+        // tag and will NOT match — the original topics aren't forwarded.
+        // A failed mirror emit reports through the bus error reporter.
+        attachContractEvents(contract, root.events, undefined, {
+            runtimeOwned: true
+        });
         const deployBridgeSigner = new DeploymentBridgeSigner(
-            client,
+            remote,
             resolvedSignerAddress
         );
         // Deploy two independent local state machine instances:
@@ -194,32 +190,29 @@ export async function setupP2pRuntime<
             await deployStateMachine(deployBridgeSigner);
         const diamondStateMachineAddress =
             await deployStateMachine(deployBridgeSigner);
-        try {
-            await client.request<void>({
-                type: "deployComplete",
-                localStateMachineAddress: localStateMachineAddress.toString(),
-                diamondStateMachineAddress:
-                    diamondStateMachineAddress.toString()
-            });
-            await client.ready;
-        } catch (error) {
-            await client.dispose();
-            throw error;
-        }
-
-        const p2pInstance = new P2pInstance<T, TCustomRpc>(
-            client,
-            logger,
-            ownsLogger
-        );
+        await remote.sdkSetup
+            .deployComplete(
+                localStateMachineAddress.toString(),
+                diamondStateMachineAddress.toString()
+            )
+            .request();
         // On the main thread the surfaced WebRTC bridge port has no further
         // worker nesting to bubble up to, so wire it to the local
         // RTCPeerConnection here; inside a worker it stays on
         // p2pInstance.webRTCBridgePort for the consumer app to bubble up.
-        p2pInstance.installMainThreadBridgeIfOnMainThread();
-        return p2pInstance;
+        root.installMainThreadBridgeIfOnMainThread();
+        return instance;
     } catch (error) {
-        if (ownsLogger) logger.dispose();
+        try {
+            if (instance) await instance.dispose();
+            else await root?.dispose();
+        } catch {
+            // Preserve the setup failure after attempting all cleanup.
+        } finally {
+            // a setup that never returns an instance has nobody to hand the
+            // logger to: dispose it here or it stays on the realm bus forever
+            if (!instance) logger.dispose({ cascadeChildren: true });
+        }
         throw error;
     }
 }

@@ -1,7 +1,8 @@
+// @spec-test-coverage-ignore: fixture support; executable evidence belongs to its calling test declarations.
 import type { ScenarioService } from "./ScenarioService";
 import * as eventBusModule from "@/events/EventBus";
-import ARpcMethods from "@/rpc/ARpcMethods";
-import type ATransport from "@/transport/ATransport";
+import ANetworkRpcMethods from "@/rpc/network/ANetworkRpcMethods";
+import type NetworkTransport from "@/transport/NetworkTransport";
 import { ethers } from "ethers";
 
 /**
@@ -17,12 +18,9 @@ export type HostExecModules = {
  * Host-side execution of a harness-supplied body. The only endpoint; the
  * accessor lives on {@link ScenarioService}.
  */
-export class ScenarioRpcMethods extends ARpcMethods {
-    constructor(
-        transport: ATransport,
-        private readonly service: ScenarioService
-    ) {
-        super(transport, service.p2pManager);
+export class ScenarioRpcMethods extends ANetworkRpcMethods<ScenarioService> {
+    constructor(transport: NetworkTransport, service: ScenarioService) {
+        super(transport, service);
     }
 
     /**

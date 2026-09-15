@@ -1,17 +1,8 @@
 import { createWorkerShutdown } from "@/evm/node/workerShutdown";
+import { createDrainingWorker } from "@test/fixtures/node/DrainingWorkerFixture";
+import { assertWorkerLimit } from "@test/fixtures/node/WorkerResourceLimitsFixture";
 import { expect } from "chai";
 import { Worker } from "node:worker_threads";
-
-/** Worker that closes its port on request, draining its loop naturally. */
-function createDrainingWorker(): Worker {
-    return new Worker(
-        `
-            const { parentPort } = require("node:worker_threads");
-            parentPort.once("message", () => parentPort.close());
-        `,
-        { eval: true }
-    );
-}
 
 describe("workerShutdown", function () {
     it("resolves once the worker drains its loop and exits", async function () {
@@ -71,5 +62,26 @@ describe("workerShutdown", function () {
         expect(workers.every((worker) => worker.threadId === -1)).to.equal(
             true
         );
+    });
+});
+
+describe("Worker resource policy", () => {
+    it("uses the shared default when no override exists", () => {
+        assertWorkerLimit(undefined, 1024);
+    });
+    it("uses a finite positive override", () => {
+        assertWorkerLimit("256", 256);
+    });
+    it("disables the cap for zero", () => {
+        assertWorkerLimit("0", undefined);
+    });
+    it("disables the cap for a negative override", () => {
+        assertWorkerLimit("-1", undefined);
+    });
+    it("falls back for a non-finite override", () => {
+        assertWorkerLimit("Infinity", 1024);
+    });
+    it("falls back for an invalid override", () => {
+        assertWorkerLimit("invalid", 1024);
     });
 });

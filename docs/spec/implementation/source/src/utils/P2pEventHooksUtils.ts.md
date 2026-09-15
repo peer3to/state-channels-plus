@@ -84,7 +84,7 @@ Exact test evidence is mapped against these IDs in the verification test reports
 Turn notification asks the leave service whether this local signer owns a pending leave turn. It emits
 the zero-argument `onLeaveTurn` signal instead of `onTurn` only in that case; other peers and later turns keep
 normal automation. This contributes to
-[`REQ-TJOIN-7-NNGTAY`](../../../../specification/peer-communication/targeted-channel-join.md#req-tjoin-7-nngtay).
+[`REQ-TJOIN-7-NNGTAY` (Terminal channel leave)](../../../../specification/peer-communication/targeted-channel-join.md#req-tjoin-7-nngtay).
 
 - Consumers per the views.
 

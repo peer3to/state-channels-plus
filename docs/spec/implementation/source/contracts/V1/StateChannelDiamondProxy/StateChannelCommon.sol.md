@@ -36,7 +36,7 @@ dead-code-eliminated into the facets that actually call it. Compiled standalone 
 Current upload eligibility is the snapshot participant set plus JOINs after its inbound boundary through the latest inbound head, minus on-chain slashes. The lower boundary is excluded and the head included. Historical proof derivation explicitly keeps the zero stop hash; bounding current upload rights does not change historical thresholds. See [StateChannelCommon.sol](../../../../../../../contracts/V1/StateChannelDiamondProxy/StateChannelCommon.sol#L598).
 
 1. **Shared-validation-by-inheritance:** one implementation of every multi-path predicate, which is
-   the mechanism for [`REQ-CONTRACT-ARCH-2-BE651C`](../../../../../specification/enforcement/contracts.md#req-contract-arch-2-be651c). Everything is `internal`, so a predicate's code is
+   the mechanism for [`REQ-CONTRACT-ARCH-2-BE651C` (Shared validation)](../../../../../specification/enforcement/contracts.md#req-contract-arch-2-be651c). Everything is `internal`, so a predicate's code is
    compiled only into the facets that call it (the stateless pieces that need no inherited storage
    keep moving to the free functions in [utils/](./utils/README.md)).
 2. **The base binds `UtilityFacetInterface`, not the concrete facet.**
@@ -99,7 +99,7 @@ claims complete conformance for a requirement that depends on other files.
 
 ## Specification adherence
 
-- Identical predicate semantics on every path by construction; append-only slash set with timestamps ([`INV-ENFFP-1-BGVZN4`](../../../../../specification/enforcement/fraud-slashing.md#inv-enffp-1-bgvzn4) storage half).
+- Identical predicate semantics on every path by construction; append-only slash set with timestamps ([`INV-ENFFP-1-BGVZN4` (Slash set integrity)](../../../../../specification/enforcement/fraud-slashing.md#inv-enffp-1-bgvzn4) storage half).
 
 ## Specification contradictions
 

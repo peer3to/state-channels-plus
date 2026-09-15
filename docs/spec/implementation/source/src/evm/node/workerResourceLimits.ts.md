@@ -23,16 +23,16 @@ Node worker resource-limit configuration.
 
 ## Key design decisions
 
-_None — the file is declarative/mechanical; behavior-shaping decisions live with its consumers._
+All root workers use SCP_WORKER_MAX_OLD_SPACE_MB with a 1,024 MB default. Nonpositive values disable the cap. SDK/VM-specific overrides are removed; thread names do not select resource policy.
 
 ## Inputs, outputs, state, and side effects
 
-| Aspect       | Contents        |
-| ------------ | --------------- |
-| Inputs       | Per role above. |
-| Outputs      | Per role above. |
-| Owned state  | Per role above. |
-| Side effects | Per role above. |
+| Aspect       | Contents                                |
+| ------------ | --------------------------------------- |
+| Inputs       | Shared worker memory-cap configuration. |
+| Outputs      | Shared worker memory-cap configuration. |
+| Owned state  | Shared worker memory-cap configuration. |
+| Side effects | Shared worker memory-cap configuration. |
 
 ## Linked requirements
 
@@ -72,8 +72,9 @@ Gap column. Audit state is file-level (Status header), never a row status.
 
 Exact test evidence is mapped against these IDs in the verification test reports.
 
-| Unit test ID | Obligation | Public entry and setup | Oracle and forbidden effects | Required permutations |
-| ------------ | ---------- | ---------------------- | ---------------------------- | --------------------- |
+| Unit test ID                                                                                      | Obligation                    | Public entry and setup         | Oracle and forbidden effects  | Required permutations                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
+| ------------------------------------------------------------------------------------------------- | ----------------------------- | ------------------------------ | ----------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| <a id="unit-test-worker-resource-limits-1-9hcgk8"></a>`UNIT-TEST-WORKER-RESOURCE-LIMITS-1-9HCGK8` | Absent override uses 1024 MB. | Real owner with scoped inputs. | Absent override uses 1024 MB. | <a id="unit-test-worker-resource-limits-1-9hcgk8.p1"></a>`UNIT-TEST-WORKER-RESOURCE-LIMITS-1-9HCGK8.P1` — Absent override uses 1024 MB.; <a id="unit-test-worker-resource-limits-1-9hcgk8.p2"></a>`UNIT-TEST-WORKER-RESOURCE-LIMITS-1-9HCGK8.P2` — Positive finite override is used.; <a id="unit-test-worker-resource-limits-1-9hcgk8.p3"></a>`UNIT-TEST-WORKER-RESOURCE-LIMITS-1-9HCGK8.P3` — Zero disables the cap.; <a id="unit-test-worker-resource-limits-1-9hcgk8.p4"></a>`UNIT-TEST-WORKER-RESOURCE-LIMITS-1-9HCGK8.P4` — Negative override disables the cap.; <a id="unit-test-worker-resource-limits-1-9hcgk8.p5"></a>`UNIT-TEST-WORKER-RESOURCE-LIMITS-1-9HCGK8.P5` — Infinite override uses the default.; <a id="unit-test-worker-resource-limits-1-9hcgk8.p6"></a>`UNIT-TEST-WORKER-RESOURCE-LIMITS-1-9HCGK8.P6` — Invalid override uses the default. |
 
 ## Related source reports
 

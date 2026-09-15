@@ -3,23 +3,23 @@ import type { PingPongRpc } from "../PingPongRpcManifest";
 import { HandshakeCompletedGuardProbeRpcMethods } from "./HandshakeCompletedGuardProbeRpcMethods";
 import type P2PManager from "@/P2PManager";
 import PeerProfile from "@/PeerProfile";
-import ARpcMethods from "@/rpc/ARpcMethods";
-import ARpcService from "@/rpc/ARpcService";
+import ANetworkRpcMethods from "@/rpc/network/ANetworkRpcMethods";
+import ANetworkRpcService from "@/rpc/network/ANetworkRpcService";
 import {
     DeferredAdmissionGuard,
     type DeferredAdmissionPolicy
-} from "@/rpc/guards/DeferredAdmissionGuard";
+} from "@/rpc/network/guards/DeferredAdmissionGuard";
 import {
     HandshakeCompletedGuard,
     type HandshakeCompletedGuardOptions
-} from "@/rpc/guards/HandshakeCompletedGuard";
+} from "@/rpc/network/guards/HandshakeCompletedGuard";
 import type Rpc from "@/rpc/Rpc";
 import type { RpcResponse } from "@/rpc/Rpc";
-import ATransport from "@/transport/ATransport";
+import NetworkTransport from "@/transport/NetworkTransport";
 import { TransportType } from "@/transport/TransportType";
 import { getChecksumAddress } from "@/utils";
 
-class GuardTransport extends ATransport {
+class GuardTransport extends NetworkTransport {
     public transportType = TransportType.HOLEPUNCH;
     public readonly responses: RpcResponse[] = [];
     public readonly fixtureAddress: string | undefined;
@@ -27,7 +27,7 @@ class GuardTransport extends ATransport {
     public onSend?: (frame: string) => void;
 
     constructor(p2pManager: P2PManager<PingPongRpc>, fixtureAddress?: string) {
-        super(p2pManager);
+        super(p2pManager.rpcRouter);
         this.fixtureAddress = fixtureAddress;
     }
 
@@ -39,26 +39,24 @@ class GuardTransport extends ATransport {
         this.onSend?.(frame);
     }
 
-    public onMessage(): void {}
+    // Overrides NetworkTransport.onMessage: deliver through this probe transport.
+    public override onMessage(): void {}
 
     protected _close(): void {
         this.closeCalls += 1;
     }
 }
 
-type GuardTarget = {
+type GuardTarget = ANetworkRpcService<any, P2PManager<PingPongRpc>> & {
     p2pManager: P2PManager<PingPongRpc>;
     invocations: string[];
 };
 
 class GuardTargetRpcMethods<
     TService extends GuardTarget = GuardTargetService
-> extends ARpcMethods<P2PManager<PingPongRpc>> {
-    constructor(
-        transport: ATransport,
-        private readonly service: TService
-    ) {
-        super(transport, service.p2pManager);
+> extends ANetworkRpcMethods<TService> {
+    constructor(transport: NetworkTransport, service: TService) {
+        super(transport, service);
     }
 
     public record(value: string): string {
@@ -67,7 +65,7 @@ class GuardTargetRpcMethods<
     }
 }
 
-class GuardTargetService extends ARpcService<
+class GuardTargetService extends ANetworkRpcService<
     GuardTargetRpcMethods<GuardTargetService>,
     P2PManager<PingPongRpc>
 > {
@@ -78,7 +76,7 @@ class GuardTargetService extends ARpcService<
         options?: HandshakeCompletedGuardOptions
     ) {
         super(
-            p2pManager,
+            p2pManager.rpcRouter,
             p2pManager.stateManager.logger.child({
                 component: "HandshakeCompletedGuardTarget"
             })
@@ -87,7 +85,7 @@ class GuardTargetService extends ARpcService<
     }
 
     public createRPCMethods(
-        transport: ATransport
+        transport: NetworkTransport
     ): GuardTargetRpcMethods<GuardTargetService> {
         return new GuardTargetRpcMethods(transport, this);
     }
@@ -109,7 +107,7 @@ class ControlledAdmissionPolicy implements DeferredAdmissionPolicy {
         return this.eligible;
     }
     waitUntilReady(
-        _transport: ATransport,
+        _transport: NetworkTransport,
         timeoutMs: number
     ): Promise<boolean> {
         this.waitCalls += 1;
@@ -126,7 +124,7 @@ class ControlledAdmissionPolicy implements DeferredAdmissionPolicy {
     }
 }
 
-class DeferredTargetService extends ARpcService<
+class DeferredTargetService extends ANetworkRpcService<
     GuardTargetRpcMethods<DeferredTargetService>,
     P2PManager<PingPongRpc>
 > {
@@ -137,7 +135,7 @@ class DeferredTargetService extends ARpcService<
         policy: DeferredAdmissionPolicy
     ) {
         super(
-            p2pManager,
+            p2pManager.rpcRouter,
             p2pManager.stateManager.logger.child({
                 component: "DeferredAdmissionGuardTarget"
             })
@@ -146,7 +144,7 @@ class DeferredTargetService extends ARpcService<
     }
 
     public createRPCMethods(
-        transport: ATransport
+        transport: NetworkTransport
     ): GuardTargetRpcMethods<DeferredTargetService> {
         return new GuardTargetRpcMethods(transport, this);
     }
@@ -270,13 +268,13 @@ export type ClosedTransportDispatchGuardProbe = {
     profileBlacklisted: boolean;
 };
 
-export class HandshakeCompletedGuardProbeService extends ARpcService<
+export class HandshakeCompletedGuardProbeService extends ANetworkRpcService<
     HandshakeCompletedGuardProbeRpcMethods,
     P2PManager<PingPongRpc>
 > {
     constructor(p2pManager: P2PManager<PingPongRpc>) {
         super(
-            p2pManager,
+            p2pManager.rpcRouter,
             p2pManager.stateManager.logger.child({
                 component: "HandshakeCompletedGuardProbeService"
             })
@@ -284,7 +282,7 @@ export class HandshakeCompletedGuardProbeService extends ARpcService<
     }
 
     public createRPCMethods(
-        transport: ATransport
+        transport: NetworkTransport
     ): HandshakeCompletedGuardProbeRpcMethods {
         return new HandshakeCompletedGuardProbeRpcMethods(transport, this);
     }
@@ -352,7 +350,7 @@ export class HandshakeCompletedGuardProbeService extends ARpcService<
         );
         this.register(transport, true);
         const target = new GuardTargetService(this.p2pManager);
-        const consumed = target.runRPC(this.rpc("completed"), transport);
+        const consumed = await target.runRPC(this.rpc("completed"), transport);
         await this.flush();
         return { consumed, invocations: [...target.invocations] };
     }
@@ -472,12 +470,12 @@ export class HandshakeCompletedGuardProbeService extends ARpcService<
             transport.onSend = (frame) => {
                 const value = JSON.parse(frame) as Rpc | RpcResponse;
                 if ("rpcResponse" in value) {
-                    this.p2pManager.onRpc(frame, transport);
+                    this.p2pManager.rpcRouter.onRpc(frame, transport);
                     return;
                 }
                 target.runRPC(value, transport);
             };
-            const caller = this.p2pManager.sendRpcRequest<string>(
+            const caller = this.p2pManager.rpcRouter.sendRpcRequest<string>(
                 this.rpc("request"),
                 transport,
                 { timeoutMs: 1_000 }
@@ -588,8 +586,11 @@ export class HandshakeCompletedGuardProbeService extends ARpcService<
         const init = this.p2pManager.localRpc.initHandshakeService;
         const originalIsNegotiating = init.isNegotiating.bind(init);
         const originalWait = init.waitForHandshakeCompleted.bind(init);
-        const waitCalls = new Map<ATransport, number>();
-        const resolvers = new Map<ATransport, (completed: boolean) => void>();
+        const waitCalls = new Map<NetworkTransport, number>();
+        const resolvers = new Map<
+            NetworkTransport,
+            (completed: boolean) => void
+        >();
         init.isNegotiating = () => true;
         init.waitForHandshakeCompleted = async (transport) => {
             waitCalls.set(transport, (waitCalls.get(transport) ?? 0) + 1);

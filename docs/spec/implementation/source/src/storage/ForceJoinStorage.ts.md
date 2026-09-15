@@ -56,7 +56,7 @@ claims complete conformance for a requirement that depends on other files.
 
 ## Specification adherence
 
-- Explicit lifecycle with distinct absent state ([`REQ-RMSTORE-2-Y2T1PG`](../../../../specification/storage/progress-markers.md#req-rmstore-2-y2t1pg)).
+- Explicit lifecycle with distinct absent state ([`REQ-RMSTORE-2-Y2T1PG` (Explicit intent lifecycle)](../../../../specification/storage/progress-markers.md#req-rmstore-2-y2t1pg)).
 
 ## Specification contradictions
 

@@ -27,7 +27,7 @@ identifying proof. Milestone-carrying proofs and upload-gate reverts are out of 
 atomization the suite carries the split [`REQ-SP-4-NCSEX4`](../../../../../../specification/disputes/state-proofs.md#req-sp-4-ncsex4)/[`REQ-SP-7-70EMAT`](../../../../../../specification/disputes/state-proofs.md#req-sp-7-70emat) scenarios it demonstrates
 head-on (height-not-0 start, wrong author signature), the [`UNIT-TEST-STATE-PROOF-FACET-1-JSB4SR`](../../../../../../implementation/source/contracts/V1/StateChannelDiamondProxy/StateProofFacet.sol.md#unit-test-state-proof-facet-1-jsb4sr)
 suffix-break and first-invalid-position splits, and the mirrored structure/author predicate
-permutations. [`REQ-ENFPROOF-3-EEDR2Y`](../../../../../../specification/enforcement/proof-verification.md#req-enfproof-3-eedr2y) and [`REQ-DISPUTE-PIPE-2-MJRJV1`](../../../../../../specification/disputes/dispute-processing.md#req-dispute-pipe-2-mjrjv1) stay family-level, and the
+permutations. [`REQ-ENFPROOF-3-EEDR2Y` (Falsifying detail on failure)](../../../../../../specification/enforcement/proof-verification.md#req-enfproof-3-eedr2y) and [`REQ-DISPUTE-PIPE-2-MJRJV1` (Ordered complete verification)](../../../../../../specification/disputes/dispute-processing.md#req-dispute-pipe-2-mjrjv1) stay family-level, and the
 wrong-genesis-link, forged-inbound-message, and fabricated-snapshot fallback cases still
 match no single-scenario ID, so those rows stay unassigned.
 

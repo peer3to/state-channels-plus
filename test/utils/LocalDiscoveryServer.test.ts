@@ -1,10 +1,42 @@
 import { sleep } from "@/utils";
+import {
+    stageLocalDiscoveryReady,
+    observeDiscoveryLogger
+} from "@test/fixtures/node/LocalDiscoveryReadyStaging";
+import { runtimeEndpointFor } from "@test/fixtures/RuntimeRootObservation";
 import { MathTestSession as TestSession } from "@test/harness";
 import { waitFor } from "@test/utils/waitFor";
 import { expect } from "chai";
 import { ethers } from "ethers";
 
 describe("LocalDiscoveryServer topic lifecycle", function () {
+    it("closes an accepted socket whose ready frame arrives after manager disposal", async function () {
+        const h = TestSession.getHarness();
+        await h.setup(2, {
+            autoConnect: false,
+            configOverrides: { RUN_SDK_IN_THREAD: false }
+        });
+        const peer = h.getPeer(0);
+        await h
+            .control(peer)
+            .network.joinSelectedKey(ethers.id("late-ready-after-disposal"))
+            .request();
+        const { sm } = runtimeEndpointFor(peer.p2pInstance);
+        const socket = await stageLocalDiscoveryReady();
+        const discoveryLogger = observeDiscoveryLogger();
+        try {
+            await sm.dispose();
+            discoveryLogger.assertActive();
+            expect(await socket.sendReady()).to.equal(0);
+            expect(sm.p2pManager.openConnections).to.have.length(0);
+            await discoveryLogger.cleanup();
+            discoveryLogger.assertDisposed();
+        } finally {
+            socket.dispose();
+            await discoveryLogger.cleanup();
+        }
+    });
+
     it("redials an eligible disconnected peer while the topic remains observed and stops after leave", async function () {
         const h = TestSession.getHarness();
         await h.setup(2, { autoConnect: false });

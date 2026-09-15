@@ -1,25 +1,25 @@
 // @spec-test-coverage-ignore: harness network observations used by mapped component and E2E declarations
 import NetworkRpcMethods from "./NetworkRpcMethods";
 import type P2PManager from "@/P2PManager";
-import ARpcService from "@/rpc/ARpcService";
-import type ATransport from "@/transport/ATransport";
+import ANetworkRpcService from "@/rpc/network/ANetworkRpcService";
+import type NetworkTransport from "@/transport/NetworkTransport";
 import type { Address } from "@/types";
 
 /** Connection / network control operations exposed to the test harness. */
-export class NetworkService extends ARpcService<NetworkRpcMethods> {
-    private readonly transportTokens = new WeakMap<ATransport, number>();
+export class NetworkService extends ANetworkRpcService<NetworkRpcMethods> {
+    private readonly transportTokens = new WeakMap<NetworkTransport, number>();
     private nextTransportToken = 1;
 
     constructor(p2pManager: P2PManager) {
         super(
-            p2pManager,
+            p2pManager.rpcRouter,
             p2pManager.stateManager.logger.child({
                 component: "HarnessNetworkService"
             })
         );
     }
 
-    public createRPCMethods(transport: ATransport): NetworkRpcMethods {
+    public createRPCMethods(transport: NetworkTransport): NetworkRpcMethods {
         return new NetworkRpcMethods(transport, this);
     }
 

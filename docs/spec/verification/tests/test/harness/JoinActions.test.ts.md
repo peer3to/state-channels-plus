@@ -39,3 +39,4 @@ report but are kept here.
 | [`JoinActions spectator spawn helper > authors the minimum even when the spectator spawns and syncs fast`](../../../../../../test/harness/JoinActions.test.ts#L154) (line 154)                    | —      |
 | [`JoinActions spectator spawn helper > installs a beforeConnect stub before the first real sync request runs`](../../../../../../test/harness/JoinActions.test.ts#L173) (line 173)                | —      |
 | [`JoinActions spectator spawn helper > spawn-only keeps blocks flowing and leaves the spectator OPENED`](../../../../../../test/harness/JoinActions.test.ts#L199) (line 199)                      | —      |
+| [counts a slow authoring completion inside the next keep-alive window](../../../../../../test/harness/JoinActions.test.ts#L12) (line 12)                                                          | —      |

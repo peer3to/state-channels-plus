@@ -1,3 +1,4 @@
+import "@/rpc/internal/threadName";
 import { config } from "../config";
 import type { CreateLoggerOptions } from "./createLoggerTypes";
 import { LogStore } from "./logStore";

@@ -51,7 +51,7 @@ claims complete conformance for a requirement that depends on other files.
 
 ## Specification adherence
 
-- Kill evidence packaged for the canonical dispute-proof handlers ([`REQ-DISPUTE-PIPE-5-RZZB48`](../../../../../specification/disputes/dispute-processing.md#req-dispute-pipe-5-rzzb48)).
+- Kill evidence packaged for the canonical dispute-proof handlers ([`REQ-DISPUTE-PIPE-5-RZZB48` (Mirrored canonical audit)](../../../../../specification/disputes/dispute-processing.md#req-dispute-pipe-5-rzzb48)).
 
 ## Specification contradictions
 

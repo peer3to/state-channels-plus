@@ -8,9 +8,9 @@ import { LoopbackGuardProbeService } from "./loopbackGuardProbe/LoopbackGuardPro
 import { P2PManagerProbeService } from "./p2pManagerProbe/P2PManagerProbeService";
 import { RpcHandlerProbeService } from "./rpcHandlerProbe/RpcHandlerProbeService";
 import type P2PManager from "@/P2PManager";
-import ARpcMethods from "@/rpc/ARpcMethods";
-import ARpcService from "@/rpc/ARpcService";
-import type ATransport from "@/transport/ATransport";
+import ANetworkRpcMethods from "@/rpc/network/ANetworkRpcMethods";
+import ANetworkRpcService from "@/rpc/network/ANetworkRpcService";
+import type NetworkTransport from "@/transport/NetworkTransport";
 import { Codec, Type } from "@/utils";
 import { ethers } from "ethers";
 
@@ -57,29 +57,29 @@ export class PingPongRpc extends HarnessControlRpc {
     }
 }
 
-class PingService extends ARpcService<PingRpcMethods, P2PManager<PingPongRpc>> {
+class PingService extends ANetworkRpcService<
+    PingRpcMethods,
+    P2PManager<PingPongRpc>
+> {
     public receivedPingNonces: string[] = [];
     public receivedPongNonces: string[] = [];
     public receivedSumNonces: string[] = [];
 
     constructor(p2pManager: P2PManager<PingPongRpc>) {
         super(
-            p2pManager,
+            p2pManager.rpcRouter,
             p2pManager.stateManager.logger.child({ component: "PingService" })
         );
     }
 
-    public createRPCMethods(transport: ATransport): PingRpcMethods {
+    public createRPCMethods(transport: NetworkTransport): PingRpcMethods {
         return new PingRpcMethods(transport, this);
     }
 }
 
-class PingRpcMethods extends ARpcMethods<P2PManager<PingPongRpc>> {
-    constructor(
-        transport: ATransport,
-        private readonly service: PingService
-    ) {
-        super(transport, service.p2pManager);
+class PingRpcMethods extends ANetworkRpcMethods<PingService> {
+    constructor(transport: NetworkTransport, service: PingService) {
+        super(transport, service);
     }
 
     // ===== Peer-to-peer endpoints (the RPC being showcased) =====
@@ -148,7 +148,7 @@ class PingRpcMethods extends ARpcMethods<P2PManager<PingPongRpc>> {
     }
 }
 
-class RelayService extends ARpcService<
+class RelayService extends ANetworkRpcService<
     RelayRpcMethods,
     P2PManager<PingPongRpc>
 > {
@@ -156,22 +156,19 @@ class RelayService extends ARpcService<
 
     constructor(p2pManager: P2PManager<PingPongRpc>) {
         super(
-            p2pManager,
+            p2pManager.rpcRouter,
             p2pManager.stateManager.logger.child({ component: "RelayService" })
         );
     }
 
-    public createRPCMethods(transport: ATransport): RelayRpcMethods {
+    public createRPCMethods(transport: NetworkTransport): RelayRpcMethods {
         return new RelayRpcMethods(transport, this);
     }
 }
 
-class RelayRpcMethods extends ARpcMethods<P2PManager<PingPongRpc>> {
-    constructor(
-        transport: ATransport,
-        private readonly service: RelayService
-    ) {
-        super(transport, service.p2pManager);
+class RelayRpcMethods extends ANetworkRpcMethods<RelayService> {
+    constructor(transport: NetworkTransport, service: RelayService) {
+        super(transport, service);
     }
 
     /** Peer-to-peer: record a relayed ping nonce. */

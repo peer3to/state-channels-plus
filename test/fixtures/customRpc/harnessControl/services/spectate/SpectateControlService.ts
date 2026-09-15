@@ -2,9 +2,9 @@
 import SpectateControlRpcMethods from "./SpectateControlRpcMethods";
 import type { HarnessControlRpc } from "../../HarnessControlRpc";
 import type P2PManager from "@/P2PManager";
-import ARpcService from "@/rpc/ARpcService";
-import type { SyncRequest } from "@/rpc/services/spectate/SpectateService";
-import type ATransport from "@/transport/ATransport";
+import ANetworkRpcService from "@/rpc/network/ANetworkRpcService";
+import type { SyncRequest } from "@/rpc/network/services/spectate/SpectateService";
+import type NetworkTransport from "@/transport/NetworkTransport";
 import type { SyncPayload } from "@/types/spectate";
 import type { ForkId } from "@/types/types";
 import { Codec, Type } from "@/utils";
@@ -18,13 +18,13 @@ import { Codec, Type } from "@/utils";
  * Typing `p2pManager` as `P2PManager<HarnessControlRpc>` gives fully-typed
  * access to `localRpc` (the SDK's own services included) with no casts.
  */
-export class SpectateControlService extends ARpcService<
+export class SpectateControlService extends ANetworkRpcService<
     SpectateControlRpcMethods,
     P2PManager<HarnessControlRpc>
 > {
     constructor(p2pManager: P2PManager<HarnessControlRpc>) {
         super(
-            p2pManager,
+            p2pManager.rpcRouter,
             p2pManager.stateManager.logger.child({
                 component: "HarnessSpectateService"
             })
@@ -54,7 +54,9 @@ export class SpectateControlService extends ARpcService<
         };
     }
 
-    public createRPCMethods(transport: ATransport): SpectateControlRpcMethods {
+    public createRPCMethods(
+        transport: NetworkTransport
+    ): SpectateControlRpcMethods {
         return new SpectateControlRpcMethods(transport, this);
     }
 }

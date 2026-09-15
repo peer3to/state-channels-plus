@@ -1,4 +1,4 @@
-import type ARpcService from "@/rpc/ARpcService";
+import type { RpcServiceContract } from "@/rpc/RpcDispatch";
 import type { Result } from "ethers";
 
 /**
@@ -30,15 +30,15 @@ export function hasMethod<T, P extends string>(
 export function hasRpcService<T, P extends string>(
     obj: T,
     prop: P
-): obj is T & Record<P, ARpcService<any>> {
+): obj is T & Record<P, RpcServiceContract> {
     return (
         hasProperty(obj, prop) &&
         typeof obj[prop] === "object" &&
         obj[prop] !== null &&
         hasMethod(obj[prop], "createRPCMethods") &&
-        hasProperty(obj[prop], "p2pManager") &&
-        typeof obj[prop].p2pManager === "object" &&
-        obj[prop].p2pManager !== null &&
+        hasProperty(obj[prop], "router") &&
+        typeof obj[prop].router === "object" &&
+        obj[prop].router !== null &&
         hasMethod(obj[prop], "runRPC")
     );
 }

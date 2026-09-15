@@ -1,5 +1,6 @@
 // @spec-test-coverage-ignore: shared honest-leaver overlap and admitted-signature staging
 import type { MathPeerTestHarness } from "./MathPeerTestHarness";
+import { runtimeIsClosed } from "./RuntimeRootObservation";
 import { DisputeFraudProofType } from "@/types/sol-enums";
 import { addressesEqual } from "@/utils";
 import { waitFor } from "@test/utils/waitFor";
@@ -199,6 +200,8 @@ export async function assertHonestLeaverDisputeOrdering(
         // which would re-list it through its join, depends on the
         // top-up's place in the window; either way no slash took its seat.
     } finally {
-        await leaverReduction.release();
+        // A terminal abort already removed the held host and its executor.
+        if (!runtimeIsClosed(leaver.p2pInstance))
+            await leaverReduction.release();
     }
 }

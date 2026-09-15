@@ -1,69 +1,68 @@
 // @spec-test-coverage-ignore: real pre-deployment runtime fixture
-import { startP2pRuntimeHost } from "@/evm/p2pRuntime/P2pRuntimeHost";
-import type {
-    RuntimeClientRequest,
-    RuntimeHostMessage
-} from "@/evm/p2pRuntime/types";
-import type { RuntimeRequestInput } from "@/evm/p2pRuntime/worker/protocol";
-import { config } from "@/utils/config";
-import { createRuntimeChannel } from "@platform/p2pRuntimeChannel";
-import { MathTestSession as TestSession } from "@test/harness";
+import {
+    prepareRuntimeSetup,
+    startRuntimeTransportModesFixture,
+    stopRuntimeTransportModesFixture
+} from "./RuntimeTransportModesFixture";
+
+import type { RuntimeConnection } from "@/rpc/internal/AInternalRpcRoot";
+import { P2pRuntimeClientRoot } from "@/rpc/internal/roots/P2pRuntimeClientRoot";
+import type { P2pRuntimeHostRoot } from "@/rpc/internal/roots/P2pRuntimeHostRoot";
+import { setupObservedP2pRuntime as setupP2pRuntime } from "@test/fixtures/node/ObservedP2pSetup";
 import { expect } from "chai";
-import { ethers } from "ethers";
 
 export async function checkPreDeploymentRequest(
-    request: RuntimeRequestInput,
+    request: (
+        connection: RuntimeConnection<P2pRuntimeHostRoot>
+    ) => Promise<unknown>,
     succeeds = false
 ): Promise<void> {
-    const h = TestSession.getHarness();
-    await h.setup(2, { autoConnect: false });
-    const channel = createRuntimeChannel();
-    const signer = ethers.Wallet.createRandom();
-    // Request IDs map to the callback waiting for that host response.
-    const responses = new Map<number, (message: RuntimeHostMessage) => void>();
-    channel.port1.onMessage((raw) => {
-        const message = raw as RuntimeHostMessage;
-        if (message.type === "response")
-            responses.get(message.requestId)?.(message);
+    await startRuntimeTransportModesFixture();
+    const setup = await prepareRuntimeSetup({
+        runSdkInThread: false,
+        vmDedicatedThread: false
     });
-    channel.port1.start();
-    const send = (input: RuntimeRequestInput, requestId: number) =>
-        new Promise<RuntimeHostMessage>((resolve) => {
-            responses.set(requestId, resolve);
-            channel.port1.post({ ...input, requestId } as RuntimeClientRequest);
-        });
+    let connection: RuntimeConnection<P2pRuntimeHostRoot>;
+    let checked = false;
     try {
-        await startP2pRuntimeHost(
-            channel.port2,
-            {
-                config: { ...config, VM_DEDICATED_THREAD: false },
-                scm: {
-                    address: await h.channelManager.getAddress(),
-                    abiJson: h.channelManager.interface.formatJson()
-                },
-                stateMachine: {
-                    address: await h.getPeer(0).contractInstance.getAddress(),
-                    abiJson: h
-                        .getPeer(0)
-                        .contractInstance.interface.formatJson()
-                },
-                signerSecret: signer.privateKey
+        const instance = await setupP2pRuntime(
+            setup.scm,
+            setup.deployedStateMachine,
+            async (signer) => {
+                if (!checked) {
+                    checked = true;
+                    let result: unknown;
+                    let failure: unknown;
+                    try {
+                        result = await request(connection);
+                    } catch (error) {
+                        failure = error;
+                    }
+                    if (succeeds) {
+                        expect(failure).to.equal(undefined);
+                        expect(result).to.equal(await signer.getAddress());
+                    } else {
+                        expect(failure).to.be.instanceOf(Error);
+                        expect((failure as Error).message).to.equal(
+                            "Runtime is not ready"
+                        );
+                    }
+                }
+                return setup.deployStateMachine(signer);
             },
-            { threadLabel: "pre-deployment-readiness" }
+            setup.setupOptions,
+            {
+                onRuntimeRoot: (root) => {
+                    if (root instanceof P2pRuntimeClientRoot) {
+                        connection = [...root.connections.values()][0]
+                            .rpc as RuntimeConnection<P2pRuntimeHostRoot>;
+                    }
+                }
+            }
         );
-        const response = await send(request, 701);
-        expect(response.type).to.equal("response");
-        if (response.type !== "response") throw new Error("Expected response");
-        expect(response.requestId).to.equal(701);
-        expect(response.ok).to.equal(succeeds);
-        if (response.ok) {
-            expect(response.result).to.equal(signer.address);
-        } else {
-            expect(response.error.message).to.equal("Runtime is not ready");
-        }
-        await send({ type: "dispose" }, 702);
+        await instance.dispose();
+        expect(checked).to.equal(true);
     } finally {
-        channel.port1.close();
-        channel.port2.close();
+        stopRuntimeTransportModesFixture();
     }
 }

@@ -1,9 +1,10 @@
+import type { P2pRuntimeHostRoot } from "../../rpc/internal/roots/P2pRuntimeHostRoot";
 import {
-    SerializedTransactionResponse,
     deserializeTransactionResponse,
     serializeTransactionRequest
-} from "../p2pRuntime/chainSignerSerialization";
-import type { RuntimeRequester } from "../p2pRuntime/types";
+} from "../../rpc/internal/services/chainSigner/chainSignerSerialization";
+import type { RuntimeConnection } from "@/rpc/internal/AInternalRpcRoot";
+import { serializeSignerMessage } from "@/rpc/internal/services/chainSigner/chainSignerSerialization";
 import {
     AbstractSigner,
     Provider,
@@ -17,11 +18,11 @@ import {
 
 /** Real-chain signer whose key-bearing operations execute on the runtime host. */
 class ClientChainSigner extends AbstractSigner {
-    private readonly requester: RuntimeRequester;
+    private readonly requester: RuntimeConnection<P2pRuntimeHostRoot>;
     private readonly signerAddress: string;
 
     constructor(
-        requester: RuntimeRequester,
+        requester: RuntimeConnection<P2pRuntimeHostRoot>,
         provider: Provider,
         signerAddress: string
     ) {
@@ -49,13 +50,13 @@ class ClientChainSigner extends AbstractSigner {
             tx,
             this.provider
         );
-        return this.requester.request<string>({
-            type: "chainSignerSignTransaction",
-            serializedTransaction
-        });
+        return this.requester.chainSigner
+            .signTransaction(serializedTransaction)
+            .request();
     }
 
-    async sendTransaction(
+    // Overrides AbstractSigner.sendTransaction: broadcasting runs through the host.
+    override async sendTransaction(
         tx: TransactionRequest
     ): Promise<TransactionResponse> {
         const serializedTransaction = await serializeTransactionRequest(
@@ -64,14 +65,9 @@ class ClientChainSigner extends AbstractSigner {
         );
         // TODO: Revisit recovery for a port that dies while the host broadcast
         // outcome is unknown. A timeout cannot cancel an in-progress send.
-        const serializedResponse =
-            await this.requester.request<SerializedTransactionResponse>(
-                {
-                    type: "chainSignerSendTransaction",
-                    serializedTransaction
-                },
-                { timeoutMs: null }
-            );
+        const serializedResponse = await this.requester.chainSigner
+            .sendTransaction(serializedTransaction)
+            .request({ timeoutMs: null });
         return deserializeTransactionResponse(
             serializedResponse,
             this.provider!
@@ -79,13 +75,9 @@ class ClientChainSigner extends AbstractSigner {
     }
 
     signMessage(message: string | Uint8Array): Promise<string> {
-        return this.requester.request<string>({
-            type: "chainSignerSignMessage",
-            message:
-                typeof message === "string"
-                    ? { kind: "string", value: message }
-                    : { kind: "bytes", encodedBytes: hexlify(message) }
-        });
+        return this.requester.chainSigner
+            .signMessage(serializeSignerMessage(message))
+            .request();
     }
 
     signTypedData(
@@ -93,12 +85,9 @@ class ClientChainSigner extends AbstractSigner {
         types: Record<string, TypedDataField[]>,
         value: Record<string, any>
     ): Promise<string> {
-        return this.requester.request<string>({
-            type: "chainSignerSignTypedData",
-            domain,
-            types,
-            value
-        });
+        return this.requester.chainSigner
+            .signTypedData(domain, types, value)
+            .request();
     }
 }
 

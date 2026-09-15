@@ -52,9 +52,17 @@ describe("E2E: crash log upload", function () {
             { marker }
         );
 
-        const result = await h.logger.uploadLogs("FAILED: host log repro");
+        await h.uploadLogs("FAILED: host log repro");
 
-        expect(result.timedOut).to.equal(0);
+        await waitFor(
+            () =>
+                uploadsInclude(
+                    streamsFor(receiver!, h.getPeer(0).address).get("sdk") ??
+                        [],
+                    marker
+                ),
+            UPLOAD_WAIT_MS
+        );
         const sdkStream = streamsFor(receiver!, h.getPeer(0).address).get(
             "sdk"
         );
@@ -78,7 +86,22 @@ describe("E2E: crash log upload", function () {
         }
         // uploads before the channel existed keep the ZeroHash fallback
         const before = receiver!.requests.length;
-        await h.logger.uploadLogs("FAILED: per-thread streams");
+        await h.uploadLogs("FAILED: per-thread streams");
+        await waitFor(
+            () =>
+                h.peers.every(
+                    (peer) =>
+                        streamsIn(
+                            receiver!.requests.slice(before),
+                            peer.address
+                        ).has("main") &&
+                        streamsIn(
+                            receiver!.requests.slice(before),
+                            peer.address
+                        ).has("sdk")
+                ),
+            UPLOAD_WAIT_MS
+        );
         const round = receiver!.requests.slice(before);
 
         for (const peer of h.peers) {
@@ -94,12 +117,13 @@ describe("E2E: crash log upload", function () {
     });
 
     // boundary - worker crash hook -> the bus -> sibling realms
-    it("a crash inside the SDK thread uploads every other thread too", async function () {
+    it("a crash inside the SDK thread uploads its connected client and executor roots", async function () {
         const h = TestSession.getHarness();
         await h.lifecycle.start(2, 2, {
             configOverrides: crashLogConfigOverrides(receiver!.url, THREADED)
         });
 
+        const beforeCrash = receiver!.requests.length;
         const marker = `sdk-thread-crash-${Date.now()}`;
         await h.execOnHost(
             h.getPeer(0),
@@ -119,17 +143,19 @@ describe("E2E: crash log upload", function () {
         await waitFor(
             () =>
                 uploadsInclude(
-                    streamsFor(receiver!, h.getPeer(0).address).get("sdk") ??
-                        [],
+                    streamsIn(
+                        receiver!.requests.slice(beforeCrash),
+                        h.getPeer(0).address
+                    ).get("sdk") ?? [],
                     marker
                 ),
             UPLOAD_WAIT_MS
         );
-        // the round reached the sibling peer's realms, not just the crashed one.
-        await waitFor(
-            () => streamsFor(receiver!, h.getPeer(1).address).size > 0,
-            UPLOAD_WAIT_MS
-        );
+        await waitFor(() => {
+            const uploads = receiver!.requests.slice(beforeCrash);
+            const streams = streamsIn(uploads, h.getPeer(0).address);
+            return streams.has("main") && streams.has("vm");
+        }, UPLOAD_WAIT_MS);
     });
 
     // boundary - the delta watermark, carried across the port
@@ -139,24 +165,25 @@ describe("E2E: crash log upload", function () {
             configOverrides: crashLogConfigOverrides(receiver!.url, THREADED)
         });
 
-        await h.logger.uploadLogs("FAILED: first round");
+        await h.uploadLogs("FAILED: first round");
         const firstRound = receiver!.requests.slice();
         expect(firstRound.length).to.be.greaterThan(0);
 
         await h.transition.advanceState({ count: 1 });
-        await h.logger.uploadLogs("FAILED: second round");
+        await h.uploadLogs("FAILED: second round");
         const secondRound = receiver!.requests.slice(firstRound.length);
         expect(secondRound.length).to.be.greaterThan(0);
 
         const seen = new Set<string>();
         for (const second of secondRound) {
-            const key = `${second.peerAddress}/${second.threadName}`;
+            const key = `${second.peerAddress}/${second.threadName}/${second.storeId}`;
             if (seen.has(key)) continue;
             seen.add(key);
             const previous = firstRound.filter(
                 (upload) =>
                     upload.peerAddress === second.peerAddress &&
-                    upload.threadName === second.threadName
+                    upload.threadName === second.threadName &&
+                    upload.storeId === second.storeId
             );
             if (previous.length === 0) continue;
             // one seq per entry per store -> disjoint ranges means no overlap
@@ -166,24 +193,20 @@ describe("E2E: crash log upload", function () {
         }
     });
 
-    // boundary - the round's own outcome, back through the server it uploaded to
-    it("uploads a record of what the round reached", async function () {
+    it("returns a local report result without claiming remote completion", async function () {
         const h = TestSession.getHarness();
         await h.lifecycle.start(2, 2, {
             configOverrides: crashLogConfigOverrides(receiver!.url, THREADED)
         });
-
-        const reason = "FAILED: round record";
-        const result = await h.logger.uploadLogs(reason);
-
-        const summary = receiver!.requests
-            .flatMap(decodeUpload)
-            .find((entry) => entry.message === "Log flush round reached");
-        expect(summary, "no flush summary entry").to.not.be.undefined;
-        expect(summary!.meta[0]).to.deep.equal({ reason, ...result });
-        // every realm answered -> nothing is missing from this report
-        expect(summary!.meta[0].timedOut).to.equal(0);
-        expect(summary!.meta[0].ok).to.be.greaterThan(0);
+        const peer = h.getPeer(0);
+        const result = await peer.logger.uploadLogs("local report outcome");
+        expect(result.ok).to.equal(true);
+        expect(result.entries).to.be.greaterThan(0);
+        expect(
+            receiver!.requests
+                .flatMap(decodeUpload)
+                .some((entry) => entry.message === "Log flush round reached")
+        ).to.equal(false);
     });
 
     // boundary - no ports at all; every realm is this process
@@ -194,17 +217,26 @@ describe("E2E: crash log upload", function () {
         });
 
         const before = receiver!.requests.length;
-        const result = await h.logger.uploadLogs("FAILED: inline mode");
+        await h.uploadLogs("FAILED: inline mode");
+        await waitFor(
+            () =>
+                h.peers.every((peer) =>
+                    streamsIn(
+                        receiver!.requests.slice(before),
+                        peer.address
+                    ).has("main")
+                ),
+            UPLOAD_WAIT_MS
+        );
         const round = receiver!.requests.slice(before);
 
         // an inline host has no port -> nothing to time out on
-        expect(result.timedOut).to.equal(0);
         for (const peer of h.peers) {
             const streams = streamsIn(round, peer.address);
             expect(
                 [...streams.keys()].sort(),
                 `peer ${peer.index} streams`
-            ).to.include.members(["main", "sdk"]);
+            ).to.include.members(["main"]);
         }
         for (const upload of round) {
             expect(upload.channelId).to.equal(String(h.channelId));

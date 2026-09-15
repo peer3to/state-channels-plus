@@ -23,6 +23,10 @@ Logging re-exports.
 
 ## Key design decisions
 
+Exports LogUploadOutcome from the uploader. LogFlushResult and its global acknowledgment fields are removed.
+
+Old log-control envelopes, IDs, ports and bus exports are removed. The ordinary Logger API remains and returns the local LogUploadOutcome. See [LoggerService.ts](../../rpc/internal/services/logger/LoggerService.ts.md).
+
 _None — the file is declarative/mechanical; behavior-shaping decisions live with its consumers._
 
 ## Inputs, outputs, state, and side effects

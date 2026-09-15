@@ -69,7 +69,7 @@ boolean supplies the reason only after admission verifies the existing window. L
 invalidate that accepted reason. A pre-submission window refusal recovers on-chain slashes through
 the existing owner and re-enters normal construction when the observed set changed. This closes
 the reason-less contribution path; it does not grant exceptions to any other validity check.
-See [`REQ-DISPUTE-PIPE-9-TDWQPV`](../specification/disputes/dispute-processing.md#req-dispute-pipe-9-tdwqpv).
+See [`REQ-DISPUTE-PIPE-9-TDWQPV` (Existing-window state contributions)](../specification/disputes/dispute-processing.md#req-dispute-pipe-9-tdwqpv).
 
 <a id="oq-audit-dispute-2-tpmnqx"></a>
 
@@ -79,4 +79,12 @@ See [`REQ-DISPUTE-PIPE-9-TDWQPV`](../specification/disputes/dispute-processing.m
 participant-timeout check after marker rollback and mutex release. The delay uses the contract's
 minimum and current timestamps with a one-second floor. Revalidate current evidence and fork relevance;
 never blindly resend a signed dispute. An older dispute window remains ineligible and unrelated
-errors retain their existing handling. See [`REQ-DISPUTE-PIPE-10-BT8YAR`](../specification/disputes/dispute-processing.md#req-dispute-pipe-10-bt8yar).
+errors retain their existing handling. See [`REQ-DISPUTE-PIPE-10-BT8YAR` (Recheck an early timeout submission)](../specification/disputes/dispute-processing.md#req-dispute-pipe-10-bt8yar).
+
+<a id="oq-audit-runtime-1-3p2ptw"></a>
+
+## OQ-AUDIT-RUNTIME-1-3P2PTW — Application module cloneability
+
+Open. Internal RPC uses structured cloning. Application-defined custom RPC and precompile inputs must obey that boundary; functions and live provider objects cannot be transferred. The remaining question is whether the SDK should validate all application-defined payload shapes before posting, or continue reporting the platform clone failure. Built-in signer requests are projected before posting. This is a boundary limit, not approval to broaden the wire contract.
+
+Owner: [`REQ-RUNTIME-1-RSM6MZ` (Transfer-safe boundary)](../specification/runtime/execution.md#req-runtime-1-rsm6mz). Evidence and scope: [implementation audit](implementation.md).
