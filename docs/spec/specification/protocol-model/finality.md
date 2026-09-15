@@ -134,6 +134,14 @@ Finality arrives by exactly one of three routes:
   (`common adjudication logic`),
   and finalizes the dispute window immediately
   (`DisputeManagerFacet._isDisputeThresholdFinal`).
+- On-chain (dispute last-milestone probe, no posted data): the expected set is the chain's snapshot
+  participants at the dispute's commitment, joiners recorded at or below the dispute's committed inbound
+  anchor, minus the slashes the dispute itself lists and the on-chain slashes recorded before the
+  dispute's window opened. The chain refuses adopting any snapshot onto the disputed fork while its kill
+  period is open ([`REQ-ENFSNAP-4-ESP98F` (Kill-period freeze)](../enforcement/snapshot-adoption.md#req-enfsnap-4-esp98f)) and refuses uploads anchored below its
+  consumed inbound height ([`REQ-DIS-2-PKVZ7E`](../disputes/disputes.md#req-dis-2-pkvz7e)). The participant
+  half therefore cannot change during the kill period, a slash landing after the window opened moves the
+  verdict only if the dispute lists it, and a member slashed before the window opened is not expected.
 
 Sub-unanimous thresholds are not supported anywhere in the protocol definition.
 

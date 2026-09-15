@@ -464,6 +464,8 @@ export class StubService extends ANetworkRpcService<
     heldAuditingDataRebuild?: HeldOnChainSlashesQueryState;
     /** State for the hold on this peer's snapshot post at its send. */
     heldSnapshotPostSend?: HeldOnChainSlashesQueryState;
+    /** The first parked send's custom revert name once released, or null when it was mined. */
+    snapshotPostSendOutcome?: Promise<string | null>;
     /** Resolvers waiting for the first parked slashes query. */
     private readonly heldOnChainSlashesQueryWaiters: (() => void)[] = [];
     private readonly heldAuditingDataRebuildWaiters: (() => void)[] = [];
@@ -1774,16 +1776,29 @@ export class StubService extends ANetworkRpcService<
             }
         };
         this.heldSnapshotPostSend = held;
+        this.snapshotPostSendOutcome = undefined;
         // Only the send is held; simulation and population keep the real
         // contract method's properties, including when another hold wraps it.
         contract.multicall = new Proxy(original, {
-            apply: async (target, receiver, parameters) => {
+            apply: (target, receiver, parameters) => {
                 held.entered += 1;
                 this.heldSnapshotPostSendWaiters
                     .splice(0)
                     .forEach((resolve) => resolve());
-                await gate;
-                return Reflect.apply(target, receiver, parameters);
+                const sent = gate.then(
+                    (): ReturnType<typeof original> =>
+                        Reflect.apply(target, receiver, parameters)
+                );
+                if (held.entered === 1)
+                    this.snapshotPostSendOutcome = sent
+                        .then((response) => response.wait())
+                        .then(
+                            () => null,
+                            (error) =>
+                                tryDecodeCustomError(error)?.name ??
+                                String(error)
+                        );
+                return sent;
             }
         });
     }

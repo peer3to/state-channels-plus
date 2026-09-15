@@ -1,6 +1,7 @@
 import { Status } from "@/types";
 import { ForkId } from "@/types/types";
 import { hash as randomHash } from "@test/factory";
+import { assertReduceLandsWithoutFrozenForkAdoption } from "@test/fixtures/ReducedForkKillPeriodStaging";
 import { MathTestSession as TestSession } from "@test/harness";
 import { waitFor } from "@test/utils/waitFor";
 import { expect } from "chai";
@@ -426,6 +427,20 @@ describe("Unit: ReductionExecutor", function () {
                 sourceForkId: forkId,
                 peerIndices: [observerIndex, 1, 3]
             });
+        });
+    });
+
+    // the chain refuses adopting a fork whose kill period is open, so a
+    // reduction bundled with that adoption must still land its reduce
+    describe("reduced fork already in its kill period", function () {
+        it("the simulation meets the reduced fork's open window → the reduce lands alone, the chain snapshot waits, no host errors", async function () {
+            const h = TestSession.getHarness();
+            await assertReduceLandsWithoutFrozenForkAdoption(h, "simulation");
+        });
+
+        it("the send meets the reduced fork's open window → the reduce is resubmitted alone, the chain snapshot waits, no host errors", async function () {
+            const h = TestSession.getHarness();
+            await assertReduceLandsWithoutFrozenForkAdoption(h, "send");
         });
     });
 });

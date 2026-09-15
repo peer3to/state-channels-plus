@@ -624,6 +624,9 @@ contract DisputeVerificationFacetTest is DiamondHarness {
         firstDispute.input.channelId = CHANNEL_ID;
         firstDispute.input.forkId = snapshot.forkId;
         firstDispute.input.disputer = participants[0];
+        // anchored at the consumed inbound so the upload reaches the race checks
+        firstDispute.input.latestInboundMessageBlockHash = snapshot.snapshotData.latestInboundMessageBlockHash;
+        firstDispute.input.lastInboundMessageBlockHeight = snapshot.snapshotData.latestInboundMessageBlockHeight;
         vm.prank(participants[0]);
         diamond.uploadDispute(_confirmation(firstDispute));
 
@@ -635,6 +638,8 @@ contract DisputeVerificationFacetTest is DiamondHarness {
         timeoutDispute.input.disputer = participants[1];
         timeoutDispute.input.timeout.participant = participants[0];
         timeoutDispute.input.timeout.minTimeStamp = eligibleAt;
+        timeoutDispute.input.latestInboundMessageBlockHash = snapshot.snapshotData.latestInboundMessageBlockHash;
+        timeoutDispute.input.lastInboundMessageBlockHeight = snapshot.snapshotData.latestInboundMessageBlockHeight;
 
         vm.prank(participants[1]);
         // the error now carries (windowCreationTimestamp, minTimestamp); this case

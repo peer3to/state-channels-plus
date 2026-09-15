@@ -45,6 +45,10 @@ contract DisputeWindowAdmissionHarness is DisputeManagerFacet {
         stateSnapshots[channelId].snapshotData.latestInboundMessageBlockHash = hash;
     }
 
+    function setSnapshotInboundHeight(bytes32 channelId, uint256 height) external {
+        stateSnapshots[channelId].snapshotData.latestInboundMessageBlockHeight = height;
+    }
+
     function slash(bytes32 channelId, address participant) external {
         disputeData[channelId].onChainSlashes.push(OnChainSlash({participant: participant, timestamp: block.timestamp}));
     }
@@ -89,7 +93,7 @@ contract DisputeWindowAdmissionTest is Test {
         target.seedChannel(CHANNEL, disputer, vm.addr(67890));
     }
 
-    function _confirmation(bool required, bool withCalldata)
+    function _confirmation(bool required, bool withCalldata, uint256 lastInboundMessageBlockHeight)
         internal
         returns (DisputeConfirmation memory confirmation, DisputeAuditingData memory auditing)
     {
@@ -97,6 +101,7 @@ contract DisputeWindowAdmissionTest is Test {
         dispute.input.channelId = CHANNEL;
         dispute.input.forkId = FORK;
         dispute.input.disputer = disputer;
+        dispute.input.lastInboundMessageBlockHeight = lastInboundMessageBlockHeight;
         dispute.input.requireExistingDisputeWindow = required;
         dispute.postedAuditingData = withCalldata;
         dispute.input.disputeAuditingDataHash = keccak256(abi.encode(auditing));
@@ -107,8 +112,12 @@ contract DisputeWindowAdmissionTest is Test {
     }
 
     function _upload(bool required, bool withCalldata) internal {
+        _uploadAnchoredAt(required, withCalldata, 0);
+    }
+
+    function _uploadAnchoredAt(bool required, bool withCalldata, uint256 lastInboundMessageBlockHeight) internal {
         (DisputeConfirmation memory confirmation, DisputeAuditingData memory auditing) =
-            _confirmation(required, withCalldata);
+            _confirmation(required, withCalldata, lastInboundMessageBlockHeight);
         vm.prank(disputer);
         if (withCalldata) target.uploadDisputeWithCalldata(confirmation, auditing);
         else target.uploadDispute(confirmation);
@@ -242,5 +251,21 @@ contract DisputeWindowAdmissionTest is Test {
         target.slash(CHANNEL, disputer);
         vm.expectRevert(abi.encodeWithSelector(ErrorCantParticipateInDispute.selector, CHANNEL, disputer));
         _upload(false, withCalldata);
+    }
+
+    function testFuzz_anchorBelowConsumedInboundRefused(bool withCalldata) public {
+        target.setSnapshotInboundHeight(CHANNEL, 2);
+        bytes32 beforeState = _state();
+        vm.expectRevert(abi.encodeWithSelector(RaceConditionDisputeAnchorBehindSnapshot.selector, 2, 1));
+        _uploadAnchoredAt(false, withCalldata, 1);
+        assertEq(_state(), beforeState, "refusal changes no admission state");
+    }
+
+    function testFuzz_anchorAtConsumedInboundAccepted(bool withCalldata) public {
+        target.setSnapshotInboundHeight(CHANNEL, 2);
+        _uploadAnchoredAt(false, withCalldata, 2);
+        (uint256 created,, uint256 count,,) = target.readAdmissionState(CHANNEL, FORK, disputer);
+        assertEq(created, 100);
+        assertEq(count, 1);
     }
 }
