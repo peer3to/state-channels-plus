@@ -1,17 +1,20 @@
-import ATransport from "./ATransport";
+import NetworkTransport from "./NetworkTransport";
 import { TransportType } from "./TransportType";
-import type P2PManager from "@/P2PManager";
-import type { WebRTCDataChannelLike } from "@/rpc/services/WebRTCSetup/connection/WebRTCConnectionFactory";
+import type { WebRTCDataChannelLike } from "@/rpc/network/services/WebRTCSetup/connection/WebRTCConnectionFactory";
+import type { NetworkRpcRouter } from "@/rpc/router/NetworkRpcRouter";
 import { Buffer } from "buffer";
 
-class WebRTCTransport extends ATransport {
+class WebRTCTransport extends NetworkTransport {
     transportType = TransportType.WEBRTC;
     webRTCChannel: WebRTCDataChannelLike;
     private hasStartedHandshake = false;
     private pendingOutboundRpcs: string[] = [];
 
-    constructor(webRTCChannel: WebRTCDataChannelLike, p2pManager: P2PManager) {
-        super(p2pManager);
+    constructor(
+        webRTCChannel: WebRTCDataChannelLike,
+        router: NetworkRpcRouter
+    ) {
+        super(router);
         this.webRTCChannel = webRTCChannel;
 
         this.webRTCChannel.onmessage = (event: any) => {
@@ -108,6 +111,18 @@ class WebRTCTransport extends ATransport {
         this.webRTCChannel.send(serializedRPC);
     }
 
+    // Overrides NetworkTransport.onMessage to handle WebRTC frames.
+    public override onMessage(data: unknown): void {
+        const serializedRpc =
+            data instanceof Uint8Array
+                ? Buffer.from(data).toString()
+                : (data as string);
+        this.p2pManager.logger.debug("Received RPC over WebRTC", {
+            bytes: serializedRpc.length
+        });
+        void this.router.onRpc(serializedRpc, this);
+    }
+
     _send(serializedRPC: string): void {
         const readyState = this.webRTCChannel.readyState || "unknown";
         if (readyState === "open") {
@@ -134,15 +149,6 @@ class WebRTCTransport extends ATransport {
         });
     }
 
-    onMessage(data: any): void {
-        if (data instanceof Uint8Array) data = Buffer.from(data);
-        if (data instanceof Buffer) data = data.toString();
-        const serializedRPC = data;
-        this.p2pManager.logger.debug("Received RPC over WebRTC", {
-            bytes: serializedRPC.length
-        });
-        this.p2pManager.onRpc(serializedRPC, this);
-    }
     _close(): void {
         this.p2pManager.logger.debug("Closing WebRTC channel");
         const profile =

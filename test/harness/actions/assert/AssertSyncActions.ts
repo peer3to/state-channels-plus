@@ -3,6 +3,7 @@ import StateSnapshot from "@/models/StateSnapshot";
 import type { ForkId, Hash } from "@/types/types";
 import type { HarnessControlRpc } from "@test/fixtures/customRpc/harnessControl/HarnessControlRpc";
 import { PeerTestHarness } from "@test/fixtures/PeerTestHarness";
+import { runtimeIsClosed } from "@test/fixtures/RuntimeRootObservation";
 import { expect } from "chai";
 import { ZeroHash } from "ethers";
 
@@ -340,10 +341,21 @@ export class AssertSyncActions<
                     const peer = this.harness.getPeer(i);
                     const [spectatorConnected, peerConnected] =
                         await Promise.all([
-                            this.harness
-                                .control(spectator)
-                                .query.isConnectedTo(peer.address)
-                                .request(),
+                            runtimeIsClosed(spectator.p2pInstance)
+                                ? false
+                                : this.harness
+                                      .control(spectator)
+                                      .query.isConnectedTo(peer.address)
+                                      .request()
+                                      .catch((error: unknown) => {
+                                          if (
+                                              runtimeIsClosed(
+                                                  spectator.p2pInstance
+                                              )
+                                          )
+                                              return false;
+                                          throw error;
+                                      }),
                             this.harness
                                 .control(peer)
                                 .query.isConnectedTo(spectator.address)

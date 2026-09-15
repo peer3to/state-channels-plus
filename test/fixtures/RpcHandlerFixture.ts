@@ -1,6 +1,6 @@
 // @spec-test-coverage-ignore: support fixture for the mapped RpcHandler integration cases; it is not an evidence unit
 
-import type { RemoteRpcProxyType } from "@/rpc/RemoteRpcProxy";
+import type { RemoteRpcProxyType } from "@/rpc/network/RemoteRpcProxy";
 import type { PingPongRpc } from "@test/fixtures/customRpc/PingPongRpcManifest";
 import { PeerTestHarness } from "@test/fixtures/PeerTestHarness";
 import { DEFAULT_MATH_HARNESS_DEPLOYMENT } from "@test/harness/core/defaultMathHarnessDeployment";

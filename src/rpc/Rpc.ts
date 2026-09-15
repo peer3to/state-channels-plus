@@ -16,12 +16,12 @@ export const RPC_GUARD_REJECTION_ERROR = "RPC request rejected by guard";
  * Reply to a request-style RPC. Correlated back to the originating
  * `RpcHandler.request(...)` call via `requestId`.
  */
-export type RpcResponse = {
+export type RpcResponse<TError = string> = {
     rpcResponse: true;
     requestId: string;
     ok: boolean;
     result?: any;
-    error?: string;
+    error?: TError;
 };
 
 // Upper bound on a single RPC frame's size, enforced before parsing/dispatch so
@@ -37,10 +37,11 @@ export const MAX_RPC_FRAME_BYTES = 16 * 1024 * 1024;
 // it by design — surfacing the offending method instead of silently coercing it
 // to a lossy number. (The harness deliberately does NOT install a
 // `BigInt.prototype.toJSON` shim, so this throw holds in tests too.)
+// Network frames use JSON; internal ports separately clone and transfer live resources.
 export function serializeRpc(rpc: Rpc): string {
     return JSON.stringify(rpc);
 }
-function isRpc(rpc: any): rpc is Rpc {
+export function isRpc(rpc: any): rpc is Rpc {
     return (
         !!rpc &&
         typeof rpc.service === "string" &&
@@ -52,22 +53,13 @@ function isRpc(rpc: any): rpc is Rpc {
     );
 }
 
-function isRpcResponse(response: any): response is RpcResponse {
+export function isRpcResponse(response: any): response is RpcResponse {
     return (
         !!response &&
         response.rpcResponse === true &&
         typeof response.requestId === "string" &&
         typeof response.ok === "boolean"
     );
-}
-
-export function deserializeRpc(serializedRpc: string): Rpc | undefined {
-    try {
-        const rpc = JSON.parse(serializedRpc);
-        return isRpc(rpc) ? rpc : undefined;
-    } catch {
-        return undefined;
-    }
 }
 
 export function deserializeRpcFrame(
@@ -89,15 +81,4 @@ export function deserializeRpcFrame(
 export function serializeRpcResponse(response: RpcResponse): string {
     return JSON.stringify(response);
 }
-export function deserializeRpcResponse(
-    serialized: string
-): RpcResponse | undefined {
-    try {
-        const response = JSON.parse(serialized);
-        return isRpcResponse(response) ? response : undefined;
-    } catch {
-        return undefined;
-    }
-}
-
 export default Rpc;

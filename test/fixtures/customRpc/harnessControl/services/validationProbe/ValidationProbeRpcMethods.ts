@@ -14,19 +14,13 @@ import type {
     ReductionChallengeProbe,
     ValidationProbeService
 } from "./ValidationProbeService";
-import type { HarnessControlRpc } from "../../HarnessControlRpc";
-import type P2PManager from "@/P2PManager";
-import ARpcMethods from "@/rpc/ARpcMethods";
-import type ATransport from "@/transport/ATransport";
+
+import ANetworkRpcMethods from "@/rpc/network/ANetworkRpcMethods";
+import type NetworkTransport from "@/transport/NetworkTransport";
 import type { Address, ForkId, Hash, Timestamp } from "@/types/types";
-export class ValidationProbeRpcMethods extends ARpcMethods<
-    P2PManager<HarnessControlRpc>
-> {
-    constructor(
-        transport: ATransport,
-        private readonly service: ValidationProbeService
-    ) {
-        super(transport, service.p2pManager);
+export class ValidationProbeRpcMethods extends ANetworkRpcMethods<ValidationProbeService> {
+    constructor(transport: NetworkTransport, service: ValidationProbeService) {
+        super(transport, service);
     }
 
     public async probeDisputeReductionChallenge(

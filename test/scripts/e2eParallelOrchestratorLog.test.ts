@@ -158,7 +158,7 @@ describe("distributed orchestrator logs", function () {
         // host error, not as a crash; the unchanged message text is what the
         // classifier keys on, wherever in the line it appears.
         const line =
-            "[12:00:00][ERROR][Peer 0][0xabc][P2pRuntimeClient] Host error [ Error: " +
+            "[12:00:00][ERROR][Peer 0][0xabc][P2pRuntimeClientRoot] Host error [ Error: " +
             "Event loop delay 1200ms exceeded configured threshold 1000ms ]\n";
         const reduced = reduceAttemptOutput("", line + line);
         expect(reduced.starveCount).to.equal(1);

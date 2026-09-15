@@ -25,7 +25,7 @@ producing the successor genesis and its fork id.
 
 ## Key design decisions
 
-1. **Pure mirrored computation** — the client never re-implements the fold ([`INV-MIRROR-1-VAF778`](../../../../../specification/enforcement/local-mirror.md#inv-mirror-1-vaf778)).
+1. **Pure mirrored computation** — the client never re-implements the fold ([`INV-MIRROR-1-VAF778` (Single implementation)](../../../../../specification/enforcement/local-mirror.md#inv-mirror-1-vaf778)).
 
 ## Inputs, outputs, state, and side effects
 
@@ -51,7 +51,7 @@ claims complete conformance for a requirement that depends on other files.
 
 ## Specification adherence
 
-- Deterministic reduction inputs→outputs ([`REQ-DISPUTE-PIPE-3-PHE3SQ`](../../../../../specification/disputes/dispute-processing.md#req-dispute-pipe-3-phe3sq)).
+- Deterministic reduction inputs→outputs ([`REQ-DISPUTE-PIPE-3-PHE3SQ` (Deterministic reduction)](../../../../../specification/disputes/dispute-processing.md#req-dispute-pipe-3-phe3sq)).
 
 ## Specification contradictions
 

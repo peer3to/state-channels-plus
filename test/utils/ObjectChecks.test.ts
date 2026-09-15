@@ -112,15 +112,15 @@ describe("ObjectChecks", function () {
         );
     });
 
-    it("rejects missing, null, primitive, and function p2pManager members", function () {
+    it("rejects missing, null, primitive, and function router members", function () {
         const missing = createRpcServiceShape();
         const nullManager = createRpcServiceShape();
         const primitiveManager = createRpcServiceShape();
         const functionManager = createRpcServiceShape();
-        delete missing.p2pManager;
-        nullManager.p2pManager = null;
-        primitiveManager.p2pManager = "manager";
-        functionManager.p2pManager = () => undefined;
+        delete missing.router;
+        nullManager.router = null;
+        primitiveManager.router = "manager";
+        functionManager.router = () => undefined;
 
         expect(hasRpcService(createRpcRoot(missing), "service")).to.equal(
             false

@@ -51,11 +51,11 @@ claims complete conformance for a requirement that depends on other files.
 
 ## Specification adherence
 
-- Aliasing prevention backing the storage-fidelity edge ([`REQ-IX-9-AV56NR`](../../../../specification/interactions.md#req-ix-9-av56nr)).
+- Aliasing prevention backing the storage-fidelity edge ([`REQ-IX-9-AV56NR` (Storage fidelity)](../../../../specification/interactions.md#req-ix-9-av56nr)).
 
 ## Specification contradictions
 
-- [`REQ-STOR-6-SKP0KM`](../../../../specification/storage/durability.md#req-stor-6-skp0km) requires
+- [`REQ-STOR-6-SKP0KM` (Value semantics at the store boundary)](../../../../specification/storage/durability.md#req-stor-6-skp0km) requires
   value semantics for every read shape, sequential entry-at-a-time reads included. The generator
   branch ([L19-25](../../../../../../src/utils/DeepCopyProxy.ts#L19-L25)) returns the generator
   untouched, so values yielded by `getIterator` alias store state and can be mutated without an

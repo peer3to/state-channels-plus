@@ -33,7 +33,7 @@ Error text delegates to the dependency-free errorMessage helper. Existing catch 
 
 1. **One execution boundary for every origin.** Network deliveries, calldata recovery, dispute
    replay, and synchronization replay all execute here, so the same predicate chain and commit
-   rules apply ([`REQ-BLOCK-PIPE-4-CF52J6`](../../../../../specification/block-progression/block-processing.md#req-block-pipe-4-cf52j6)).
+   rules apply ([`REQ-BLOCK-PIPE-4-CF52J6` (Recovery without bypass)](../../../../../specification/block-progression/block-processing.md#req-block-pipe-4-cf52j6)).
 2. **The caller selects the strategy.** Dispute replay and verified synchronization replay select their respective strategies through the existing option. The latter accepts historical subjective timing
    ([synchronization.md](../../../../../specification/peer-communication/synchronization.md) step 13).
 
@@ -82,10 +82,10 @@ Status enum: `Covered` | `Partial` | `Contradicts` | `Missing`. Evidence cells a
 **Here:** / **Other files:** so each row is auditable from its links alone; genuine gaps go in the
 Gap column. Audit state is file-level (Status header), never a row status.
 
-| Requirement / invariant                                                                                                 | Implementation status | Evidence                                                                                                                                                                                                                                                                | Gap / divergence |
-| ----------------------------------------------------------------------------------------------------------------------- | --------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------- |
-| [`REQ-BLOCK-PIPE-4-CF52J6`](../../../../../specification/block-progression/block-processing.md#req-block-pipe-4-cf52j6) | Covered               | **Here:** every origin executes through the one boundary. **Other files:** [BlockQueueManager](BlockQueueManager.ts.md) owns the queue and the expiry probe; [SpectateService](../../rpc/services/spectate/SpectateService.ts.md) replays the proven suffix through it. | None.            |
-| [`REQ-BLOCK-PIPE-3-WW2SB7`](../../../../../specification/block-progression/block-processing.md#req-block-pipe-3-ww2sb7) | Covered               | **Here:** the caller's strategy and the entry's origin reach validation unchanged. **Other files:** [ValidationService](ValidationService.ts.md) applies the subjective window to live arrivals only.                                                                   | None.            |
+| Requirement / invariant                                                                                                 | Implementation status | Evidence                                                                                                                                                                                                                                                                        | Gap / divergence |
+| ----------------------------------------------------------------------------------------------------------------------- | --------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------- |
+| [`REQ-BLOCK-PIPE-4-CF52J6`](../../../../../specification/block-progression/block-processing.md#req-block-pipe-4-cf52j6) | Covered               | **Here:** every origin executes through the one boundary. **Other files:** [BlockQueueManager](BlockQueueManager.ts.md) owns the queue and the expiry probe; [SpectateService](../../rpc/network/services/spectate/SpectateService.ts.md) replays the proven suffix through it. | None.            |
+| [`REQ-BLOCK-PIPE-3-WW2SB7`](../../../../../specification/block-progression/block-processing.md#req-block-pipe-3-ww2sb7) | Covered               | **Here:** the caller's strategy and the entry's origin reach validation unchanged. **Other files:** [ValidationService](ValidationService.ts.md) applies the subjective window to live arrivals only.                                                                           | None.            |
 
 ## Component test obligations
 
@@ -97,6 +97,6 @@ Exact test evidence is mapped against these IDs in the verification test reports
 
 ## Related source reports
 
-- [ValidationService](ValidationService.ts.md), [BlockQueueManager](BlockQueueManager.ts.md), [QueueStorage](../../storage/QueueStorage.ts.md), [SpectateService](../../rpc/services/spectate/SpectateService.ts.md)
+- [ValidationService](ValidationService.ts.md), [BlockQueueManager](BlockQueueManager.ts.md), [QueueStorage](../../storage/QueueStorage.ts.md), [SpectateService](../../rpc/network/services/spectate/SpectateService.ts.md)
 
 Shared operation owners: [errorMessage.ts.md](../../utils/errorMessage.ts.md).

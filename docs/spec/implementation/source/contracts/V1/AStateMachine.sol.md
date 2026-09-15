@@ -52,7 +52,7 @@ claims complete conformance for a requirement that depends on other files.
 
 ## Assumptions, dependencies, trust boundaries, and limits
 
-- One shared deployment serves all channels in the current version — full pre-state restoration is what keeps that sound ([`INV-ENFSM-1-762ACD`](../../../../specification/enforcement/execution-and-consumer.md#inv-enfsm-1-762acd)).
+- One shared deployment serves all channels in the current version — full pre-state restoration is what keeps that sound ([`INV-ENFSM-1-762ACD` (Replay from supplied state only)](../../../../specification/enforcement/execution-and-consumer.md#inv-enfsm-1-762acd)).
 
 ## Specification adherence
 

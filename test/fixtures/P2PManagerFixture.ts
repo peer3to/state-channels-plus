@@ -1,6 +1,6 @@
 // @spec-test-coverage-ignore: shared runtime setup for P2PManager component tests
 
-import type { RemoteRpcProxyType } from "@/rpc/RemoteRpcProxy";
+import type { RemoteRpcProxyType } from "@/rpc/network/RemoteRpcProxy";
 import { Status } from "@/types";
 import type { PingPongRpc } from "@test/fixtures/customRpc/PingPongRpcManifest";
 import { PeerTestHarness } from "@test/fixtures/PeerTestHarness";
@@ -18,6 +18,7 @@ export type HandshakeRoutingFixtureResult = {
 };
 
 export type P2PManagerFixtureSetup = {
+    peerCount?: number;
     openChannel?: boolean;
     timeConfig?: HarnessOptions["timeConfig"];
 };
@@ -29,7 +30,7 @@ export class P2PManagerFixture {
     >({ deployment: DEFAULT_MATH_HARNESS_DEPLOYMENT });
 
     public async setup(options: P2PManagerFixtureSetup = {}): Promise<void> {
-        await this.harness.setup(2, {
+        await this.harness.setup(options.peerCount ?? 2, {
             autoConnect: false,
             timeConfig: options.timeConfig,
             customRpcManifest: {

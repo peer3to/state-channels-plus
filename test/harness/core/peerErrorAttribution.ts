@@ -1,3 +1,4 @@
+// @spec-test-coverage-ignore: harness error attribution support; assertions belong to the calling test declarations
 import type { HostHandlerExecutionContext } from "@/evm/p2pRuntime/HostHandlerExecutionContext";
 import { DetachedPromises, maybeStampErrorWithPeerAddress } from "@/utils";
 import { AsyncLocalStorage } from "node:async_hooks";
@@ -13,7 +14,7 @@ import { AsyncLocalStorage } from "node:async_hooks";
  * ignore errors from byzantine/left-channel peers.
  *
  * Worker peers don't need this: one worker thread = one peer, so the
- * `P2pRuntimeClient` / `quiesceHosts` boundaries attribute errors directly.
+ * `P2pRuntimeClientRoot` / `quiesceHosts` boundaries attribute errors directly.
  */
 export class PeerIdentityExecutionContext
     implements HostHandlerExecutionContext

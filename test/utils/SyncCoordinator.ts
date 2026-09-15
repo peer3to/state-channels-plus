@@ -1,5 +1,5 @@
 // @spec-test-coverage-ignore: shared sync-wait utility exercised by owning mapped test declarations
-import type { RemoteRpcProxyType } from "@/rpc/RemoteRpcProxy";
+import type { RemoteRpcProxyType } from "@/rpc/network/RemoteRpcProxy";
 import { ForkId } from "@/types/types";
 import { Logger, EventBarrier } from "@/utils";
 import type { EventBarrierCapturedError } from "@/utils/EventBarrier";

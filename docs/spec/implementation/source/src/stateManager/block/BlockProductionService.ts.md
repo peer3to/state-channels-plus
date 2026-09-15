@@ -39,7 +39,7 @@ authoring another block.
    without a block when the node's own dispute marker holds for the current fork
    ([#L47](../../../../../../../src/stateManager/block/BlockProductionService.ts#L47)); a block authored
    after the dispute started would make that dispute stale
-   ([`REQ-DISPUTE-PIPE-8-BVR8XV`](../../../../../specification/disputes/dispute-processing.md#req-dispute-pipe-8-bvr8xv)).
+   ([`REQ-DISPUTE-PIPE-8-BVR8XV` (Dispute admission orders block signatures)](../../../../../specification/disputes/dispute-processing.md#req-dispute-pipe-8-bvr8xv)).
 5. **A stale coordinate is dropped, never signed and never moved.** The signer stamps fork and height
    before the mutex is taken; once inside, a candidate whose fork or height no longer matches the
    current fork and next stored height is stale (the peer's own earlier submission, a reduction, or a
@@ -62,8 +62,8 @@ authoring another block.
 | -------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | [BlockProductionService.ts](../../../../../../../src/stateManager/block/BlockProductionService.ts) | [`INV-BLOCK-PIPE-1-1AB2ME`](../../../../../specification/block-progression/block-processing.md#inv-block-pipe-1-1ab2me), [`REQ-BLOCK-PIPE-6-XQ0RTT`](../../../../../specification/block-progression/block-processing.md#req-block-pipe-6-xq0rtt) |
 
-- [`INV-BLOCK-PIPE-1-1AB2ME`](../../../../../specification/block-progression/block-processing.md#inv-block-pipe-1-1ab2me): the mutex and stored-coordinate check let one same-author candidate commit and make its stale sibling a no-op.
-- [`REQ-BLOCK-PIPE-6-XQ0RTT`](../../../../../specification/block-progression/block-processing.md#req-block-pipe-6-xq0rtt): local authoring applies one state-machine transaction at a time against the current fork and height.
+- [`INV-BLOCK-PIPE-1-1AB2ME` (Atomic ordered commit)](../../../../../specification/block-progression/block-processing.md#inv-block-pipe-1-1ab2me): the mutex and stored-coordinate check let one same-author candidate commit and make its stale sibling a no-op.
+- [`REQ-BLOCK-PIPE-6-XQ0RTT` (Total-order application)](../../../../../specification/block-progression/block-processing.md#req-block-pipe-6-xq0rtt): local authoring applies one state-machine transaction at a time against the current fork and height.
 
 ## Assumptions, dependencies, trust boundaries, and limits
 

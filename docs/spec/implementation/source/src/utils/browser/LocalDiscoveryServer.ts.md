@@ -24,6 +24,8 @@ discovery removes its topic membership without closing the established channel c
 
 ## Key design decisions
 
+Local transport loading remains lazy after the transport split. This avoids importing the network transport hierarchy during discovery-server module initialization and preserves the existing cycle boundary. See [BrowserLocalTransport.ts](../../transport/BrowserLocalTransport.ts.md).
+
 1. **Discovery metadata is not authentication.** The relay's announced address selects the
    handshake peer but is not written to `transport.peerAddress`; final admission owns that field.
 2. **The rendezvous key is generic discovery input.** Equal caller keys form connections for either
@@ -72,10 +74,10 @@ Status enum: `Covered` | `Partial` | `Contradicts` | `Missing`. Evidence cells a
 **Here:** / **Other files:** so each row is auditable from its links alone; genuine gaps go in the
 Gap column. Audit state is file-level (Status header), never a row status.
 
-| Requirement / invariant                                                                                      | Implementation status | Evidence                                                                                                                                                                                                                                                            | Gap / divergence |
-| ------------------------------------------------------------------------------------------------------------ | --------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------- |
-| [`REQ-AUTH-3-ZV74KB`](../../../../../specification/peer-communication/handshake.md#req-auth-3-zv74kb)        | Covered               | **Here:** the unauthenticated browser transport starts without `peerAddress`; the handshake receives the discovery address separately. **Other files:** [InitHandshakeService](../../rpc/services/initHandshake/InitHandshakeService.ts.md) verifies and admits it. | None.            |
-| [`REQ-LOBBY-9-N894C0`](../../../../../specification/peer-communication/lobby-matching.md#req-lobby-9-n894c0) | Covered               | **Here:** leave removes the owning manager's topic metadata but keeps the paired relay transport alive for channel traffic; runtime cleanup closes it.                                                                                                              | None.            |
+| Requirement / invariant                                                                                      | Implementation status | Evidence                                                                                                                                                                                                                                                                    | Gap / divergence |
+| ------------------------------------------------------------------------------------------------------------ | --------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------- |
+| [`REQ-AUTH-3-ZV74KB`](../../../../../specification/peer-communication/handshake.md#req-auth-3-zv74kb)        | Covered               | **Here:** the unauthenticated browser transport starts without `peerAddress`; the handshake receives the discovery address separately. **Other files:** [InitHandshakeService](../../rpc/network/services/initHandshake/InitHandshakeService.ts.md) verifies and admits it. | None.            |
+| [`REQ-LOBBY-9-N894C0`](../../../../../specification/peer-communication/lobby-matching.md#req-lobby-9-n894c0) | Covered               | **Here:** leave removes the owning manager's topic metadata but keeps the paired relay transport alive for channel traffic; runtime cleanup closes it.                                                                                                                      | None.            |
 
 ## Component test obligations
 

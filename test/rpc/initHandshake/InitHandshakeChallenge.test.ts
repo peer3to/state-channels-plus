@@ -1,4 +1,4 @@
-import InitHandshakeService from "@/rpc/services/initHandshake/InitHandshakeService";
+import InitHandshakeService from "@/rpc/network/services/initHandshake/InitHandshakeService";
 import { expect } from "chai";
 import { ethers } from "ethers";
 

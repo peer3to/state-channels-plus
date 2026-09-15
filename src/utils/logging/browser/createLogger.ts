@@ -14,12 +14,18 @@ export const createLogger = (
     exclusiveContext: ExclusiveLoggerContext = {},
     options: CreateLoggerOptions = {}
 ): Logger => {
+    // copied, not mutated -> two loggers from one literal stay independent.
+    // every realm files under a thread role; main is the default.
+    const shared: SharedLoggerContext = {
+        ...sharedContext,
+        threadName: sharedContext.threadName ?? globalThis.threadName
+    };
     const { logStore, skipWriting, logUploaderConfig } =
         buildLoggerFoundation(options);
 
-    return new BrowserLogger(
+    const logger = new BrowserLogger(
         exclusiveContext,
-        sharedContext,
+        shared,
         options.level ?? (config.LOG_LEVEL as LogLevel),
         logStore,
         {
@@ -29,4 +35,7 @@ export const createLogger = (
         },
         skipWriting
     );
+    if (options.loggerService)
+        logger.attachLoggerService(options.loggerService);
+    return logger;
 };

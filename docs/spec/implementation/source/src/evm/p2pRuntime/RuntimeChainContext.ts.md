@@ -19,20 +19,22 @@
 
 ## Responsibility and observable boundary
 
-Serializable chain-context bundle (provider config, addresses) crossing to the host.
+Creates the host-owned WebSocket provider and signer. Creation waits for a reachable network; cleanup uses the standard ethers provider destruction. The returned provider and signer stay within the host.
 
 ## Key design decisions
 
-_None — the file is declarative/mechanical; behavior-shaping decisions live with its consumers._
+HTTP provider URLs are converted to their WebSocket equivalent. Socket startup errors reject creation, with provider cleanup before the failure returns.
+
+The host calls the standard ethers `destroy()` without first removing provider listeners. Ethers owns subscription cleanup. There is no extra subscription registry, drain promise or stored subscription-error history.
 
 ## Inputs, outputs, state, and side effects
 
-| Aspect       | Contents        |
-| ------------ | --------------- |
-| Inputs       | Per role above. |
-| Outputs      | Per role above. |
-| Owned state  | Per role above. |
-| Side effects | Per role above. |
+| Aspect       | Contents                                                                                           |
+| ------------ | -------------------------------------------------------------------------------------------------- |
+| Inputs       | Runtime provider URL and signer secret.                                                            |
+| Outputs      | A verified provider and its connected wallet.                                                      |
+| Owned state  | The ethers provider and connected signer.                                                          |
+| Side effects | Opens a socket, subscribes through ethers, removes listeners and closes the socket on destruction. |
 
 ## Linked requirements
 
@@ -45,11 +47,11 @@ claims complete conformance for a requirement that depends on other files.
 
 ## Assumptions, dependencies, trust boundaries, and limits
 
-- Cross-context values use the canonical transfer-safe encodings; ownership and ordering per the runtime rules.
+- Uses the ethers provider API. Caller-supplied contexts remain owned by their caller; this constructor creates an owned context.
 
 ## Specification adherence
 
-- Port-protocol semantics identical across platforms.
+- Host creation does not finish before its provider is usable. Host cleanup calls the provider’s standard destruction.
 
 ## Specification contradictions
 
@@ -72,9 +74,10 @@ Gap column. Audit state is file-level (Status header), never a row status.
 
 Exact test evidence is mapped against these IDs in the verification test reports.
 
-| Unit test ID | Obligation | Public entry and setup | Oracle and forbidden effects | Required permutations |
-| ------------ | ---------- | ---------------------- | ---------------------------- | --------------------- |
+| Unit test ID                                                                                    | Obligation       | Public entry and setup                        | Oracle and forbidden effects                                            | Required permutations                                                                                                                                                                                                                                                              |
+| ----------------------------------------------------------------------------------------------- | ---------------- | --------------------------------------------- | ----------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| <a id="unit-test-runtime-chain-cleanup-1-3h7pt8"></a>`UNIT-TEST-RUNTIME-CHAIN-CLEANUP-1-3H7PT8` | Provider cleanup | Real runtime construction and public cleanup. | The provider closes, has no listeners and permits repeated destruction. | <a id="unit-test-runtime-chain-cleanup-1-3h7pt8.p3"></a>`UNIT-TEST-RUNTIME-CHAIN-CLEANUP-1-3H7PT8.P3` — Cleanup without subscriptions.; <a id="unit-test-runtime-chain-cleanup-1-3h7pt8.p4"></a>`UNIT-TEST-RUNTIME-CHAIN-CLEANUP-1-3H7PT8.P4` — Cleanup with a block subscription. |
 
 ## Related source reports
 
-- [P2pRuntimeHost](./P2pRuntimeHost.ts.md).
+- [P2pRuntimeHostRoot](../../rpc/internal/roots/P2pRuntimeHostRoot.ts.md).

@@ -1,12 +1,8 @@
+import { rootStartContext } from "@/rpc/internal/createRoot";
 // @spec-test-coverage-ignore: shared test-worker core exercised by the mapped watchdog test declarations
-import {
-    createContractExecutorWorkerHost,
-    type ContractExecutorWorkerHostHandle
-} from "@/evm/contractExecutor/worker/ContractExecutorWorkerHostCore";
-import type {
-    WorkerHostMessage,
-    WorkerRequestMessage
-} from "@/evm/contractExecutor/worker/protocol";
+import { ContractExecutorRoot } from "@/rpc/internal/roots/ContractExecutorRoot";
+import type { ContractExecutorInitialization } from "@/rpc/internal/services/contractExecutor/ContractExecutorService";
+import type { RuntimePort } from "@/transport/RuntimePort";
 import type {
     PerformanceSample,
     PerformanceSampleSource
@@ -37,22 +33,6 @@ export type WatchdogArmMessage = { type: "arm" };
  * starvation classifier, and the timing marker would report a synthetic peak.
  * The scripted threshold below still trips the monitor.
  */
-function silenceInit(message: WorkerRequestMessage): WorkerRequestMessage {
-    if (message.type !== "request" || message.payload.type !== "init") {
-        return message;
-    }
-    return {
-        ...message,
-        payload: {
-            ...message.payload,
-            config: {
-                ...message.payload.config,
-                LOG_SKIP_WRITING: true,
-                EVENT_LOOP_DELAY_ERROR_THRESHOLD_SECONDS: 0
-            }
-        }
-    };
-}
 
 /**
  * One scripted delay sample source: below threshold until armed, then one
@@ -89,8 +69,7 @@ export function createScriptedSampleSource(): PerformanceSampleSource & {
 }
 
 export type WatchdogWorkerPort = {
-    post: (response: WorkerHostMessage) => void;
-    onMessage: (handler: (message: WorkerRequestMessage) => void) => void;
+    runtimePort: RuntimePort;
     onDisposed?: () => void;
     /** Platform arm subscription; resolves the unsubscribe once armed. */
     subscribeArm: (handler: () => void) => () => void;
@@ -103,26 +82,42 @@ export type WatchdogWorkerPort = {
  * and the real error funnel. Nothing trips until the arm message arrives; the
  * arm subscription is one-shot and closes itself after the first valid arm.
  */
-export function startWatchdogContractExecutorWorker(
+export async function startWatchdogContractExecutorWorker(
     mode: WatchdogWorkerMode,
-    port: WatchdogWorkerPort
-): ContractExecutorWorkerHostHandle {
+    port: WatchdogWorkerPort,
+    initialization: ContractExecutorInitialization
+): Promise<ContractExecutorRoot> {
     const sampleSource = createScriptedSampleSource();
     // Same order as the production entries: the funnel is registered on the
-    // handle before request handling and readiness.
-    const host = createContractExecutorWorkerHost(port.post, {
-        monitorOptions: {
+    // root before request handling and readiness.
+    const context = rootStartContext(port.runtimePort, "worker", {
+        close: () => port.onDisposed?.()
+    });
+    const host = new ContractExecutorRoot(
+        {
+            ...initialization,
+            config: {
+                ...initialization.config,
+                LOG_SKIP_WRITING: true,
+                EVENT_LOOP_DELAY_ERROR_THRESHOLD_SECONDS: 1
+            }
+        },
+        undefined,
+        context
+    );
+    port.onUnhandledWorkerError((error) => host.reportError(error));
+    const start = host.rootLogger.startPerformanceMonitoring.bind(
+        host.rootLogger
+    );
+    host.rootLogger.startPerformanceMonitoring = (options) =>
+        start({
+            ...options,
             threadLabel: "vm",
             sampleSource,
             delayErrorThresholdMs: WATCHDOG_WORKER_DELAY_ERROR_THRESHOLD_MS,
             intervalMs: 50
-        }
-    });
-    port.onUnhandledWorkerError(host.reportUnhandledError);
-    host.start(
-        (handler) => port.onMessage((message) => handler(silenceInit(message))),
-        port.onDisposed
-    );
+        });
+    await context.initialize(host);
     if (mode === "post-start") {
         queueMicrotask(() => {
             throw new Error(WATCHDOG_WORKER_ORIGINAL_ERROR);

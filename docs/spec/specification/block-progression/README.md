@@ -32,19 +32,19 @@ system.
   storage is durable across restarts.
 - **Ordering and concurrency.** Two regimes with a normative boundary: unordered concurrent
   intake/merge, and totally ordered serialized execution
-  ([block-processing.md](./block-processing.md) [`REQ-BLOCK-PIPE-5-WJ31RG`](block-processing.md#req-block-pipe-5-wj31rg)/[`REQ-BLOCK-PIPE-6-XQ0RTT`](block-processing.md#req-block-pipe-6-xq0rtt)).
-- **Invariants (owned).** [`INV-BLOCK-PIPE-1-1AB2ME`](block-processing.md#inv-block-pipe-1-1ab2me), [`REQ-BLOCK-PIPE-1-SS24D1`](block-processing.md#req-block-pipe-1-ss24d1)–[`REQ-BLOCK-PIPE-6-XQ0RTT`](block-processing.md#req-block-pipe-6-xq0rtt)
+  ([block-processing.md](./block-processing.md) [`REQ-BLOCK-PIPE-5-WJ31RG` (Pre-execution merge layer)](block-processing.md#req-block-pipe-5-wj31rg)/[`REQ-BLOCK-PIPE-6-XQ0RTT` (Total-order application)](block-processing.md#req-block-pipe-6-xq0rtt)).
+- **Invariants (owned).** [`INV-BLOCK-PIPE-1-1AB2ME` (Atomic ordered commit)](block-processing.md#inv-block-pipe-1-1ab2me), [`REQ-BLOCK-PIPE-1-SS24D1` (Unified work item)](block-processing.md#req-block-pipe-1-ss24d1)–[`REQ-BLOCK-PIPE-6-XQ0RTT` (Total-order application)](block-processing.md#req-block-pipe-6-xq0rtt)
   ([block-processing.md](./block-processing.md)).
 - **Failure and recovery outcomes.** Every validation deviation is classified with a
-  context-appropriate consequence ([`REQ-BLOCK-PIPE-3-WW2SB7`](block-processing.md#req-block-pipe-3-ww2sb7)); missing data triggers bounded sync that
-  re-enters the same pipeline ([`REQ-BLOCK-PIPE-4-CF52J6`](block-processing.md#req-block-pipe-4-cf52j6)); objective violations produce fraud-proof evidence;
+  context-appropriate consequence ([`REQ-BLOCK-PIPE-3-WW2SB7` (Strategy-complete deviations)](block-processing.md#req-block-pipe-3-ww2sb7)); missing data triggers bounded sync that
+  re-enters the same pipeline ([`REQ-BLOCK-PIPE-4-CF52J6` (Recovery without bypass)](block-processing.md#req-block-pipe-4-cf52j6)); objective violations produce fraud-proof evidence;
   liveness failures produce timeout-dispute eligibility after the windows defined in
   [../protocol-model/time.md](../protocol-model/time.md).
 - **Resource bounds.** Pre-execution retention is bounded per entry; queue and retry budgets must
   prevent one fork or peer from starving unrelated work.
 - **Verification evidence.** The requirement matrix in [block-processing.md](./block-processing.md);
-  the ingress edge is proven under [`REQ-IX-1-WTJ0D1`](../interactions.md#req-ix-1-wtj0d1) and the execution edge
-  under [`REQ-IX-2-2PY2EF`](../interactions.md#req-ix-2-2py2ef).
+  the ingress edge is proven under [`REQ-IX-1-WTJ0D1` (Peer block ingress)](../interactions.md#req-ix-1-wtj0d1) and the execution edge
+  under [`REQ-IX-2-2PY2EF` (Deterministic execution and commitment)](../interactions.md#req-ix-2-2py2ef).
 
 ## Owned documents
 
@@ -60,6 +60,6 @@ Deterministic author selection is owned by
 ## Interaction contracts
 
 Producer of proof material for disputes ([`REQ-IX-4-BB35GC`](../disputes/README.md#req-ix-4-bb35gc)) and consumer of
-peer ingress ([`REQ-IX-1-WTJ0D1`](../interactions.md#req-ix-1-wtj0d1)), deterministic execution
-([`REQ-IX-2-2PY2EF`](../interactions.md#req-ix-2-2py2ef)), and inbound-inclusion obligations
-([`REQ-IX-3-H8WCVY`](../interactions.md#req-ix-3-h8wcvy)).
+peer ingress ([`REQ-IX-1-WTJ0D1` (Peer block ingress)](../interactions.md#req-ix-1-wtj0d1)), deterministic execution
+([`REQ-IX-2-2PY2EF` (Deterministic execution and commitment)](../interactions.md#req-ix-2-2py2ef)), and inbound-inclusion obligations
+([`REQ-IX-3-H8WCVY` (Inbound inclusion and join flow)](../interactions.md#req-ix-3-h8wcvy)).

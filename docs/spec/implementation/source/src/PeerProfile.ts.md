@@ -21,7 +21,7 @@
 
 The per-peer record created with each transport: optional identity, blacklist flag, the set of
 live transports, preferred transport, disconnect subscribers, and the Holepunch ban handle that
-survives replacement. Exact-transport authentication remains on `ATransport.peerAddress`.
+survives replacement. Exact-transport authentication remains on `NetworkTransport.peerAddress`.
 
 ## Key design decisions
 

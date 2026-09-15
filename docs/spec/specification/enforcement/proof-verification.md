@@ -25,7 +25,7 @@
 Owned state: none. Every predicate is a pure or read-only function of its inputs plus committed
 channel state. That statelessness is what makes the module the primary payload of the
 [local mirror](./local-mirror.md): the same predicates run as the client's local check engine, and
-[`INV-MIRROR-1-VAF778`](local-mirror.md#inv-mirror-1-vaf778) forbids reimplementing them anywhere else.
+[`INV-MIRROR-1-VAF778` (Single implementation)](local-mirror.md#inv-mirror-1-vaf778) forbids reimplementing them anywhere else.
 
 ## Predicate inventory
 
@@ -53,8 +53,8 @@ inputs and committed state, equal for every caller and every evaluation context 
 
 **<a id="req-enfproof-1-rh4wem"></a>`REQ-ENFPROOF-1-RH4WEM` — Single verification authority.** Every consumer — adoption, adjudication,
 fraud enforcement, and off-chain audit — MUST verify through these predicates; no consumer may
-carry a private variant of any check they cover ([`REQ-CONTRACT-ARCH-2-BE651C`](contracts.md#req-contract-arch-2-be651c) on-chain,
-[`INV-MIRROR-1-VAF778`](local-mirror.md#inv-mirror-1-vaf778) off-chain).
+carry a private variant of any check they cover ([`REQ-CONTRACT-ARCH-2-BE651C` (Shared validation)](contracts.md#req-contract-arch-2-be651c) on-chain,
+[`INV-MIRROR-1-VAF778` (Single implementation)](local-mirror.md#inv-mirror-1-vaf778) off-chain).
 
 **<a id="req-enfproof-2-yzdcxm"></a>`REQ-ENFPROOF-2-YZDCXM` — Deduplicated threshold counting.** Threshold verification MUST count each
 distinct recovered signer at most once, over exactly the canonical encoding, against exactly the
@@ -70,7 +70,7 @@ can cite the exact violation rather than re-deriving it.
 - Verification cost is gas-bounded on-chain; proof sizes are constrained by the owning documents'
   bounds ([state-proofs.md](../disputes/state-proofs.md)).
 - Predicates evaluate committed state as-is; whether that state is fresh is the caller's problem
-  (on-chain it always is; locally see [`REQ-MIRROR-3-THD7K8`](local-mirror.md#req-mirror-3-thd7k8)).
+  (on-chain it always is; locally see [`REQ-MIRROR-3-THD7K8` (Cache, never authority)](local-mirror.md#req-mirror-3-thd7k8)).
 - The milestone-XOR-suffix constraint above is normative _as current behavior_ pending the
   engineer decision.
 
@@ -97,5 +97,5 @@ locally and fail on-chain (bounded input rules), and divergence between consumer
 ## Future Work
 
 _Non-normative._ Resolve the milestone-XOR-suffix exclusivity; on-chain balance-invariant
-enforcement at snapshot update ([`OQ-19-Y8FDQX`](../../implementation/open-questions.md#oq-19-y8fdqx)); proof-size/gas budget table per
+enforcement at snapshot update ([`OQ-19-Y8FDQX` (Channel-balance invariant enforcement points)](../../implementation/open-questions.md#oq-19-y8fdqx)); proof-size/gas budget table per
 predicate for deployment planning.

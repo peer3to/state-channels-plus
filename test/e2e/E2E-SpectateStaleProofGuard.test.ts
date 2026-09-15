@@ -1,4 +1,5 @@
 import { Status } from "@/types";
+import { runtimeIsClosed } from "@test/fixtures/RuntimeRootObservation";
 import { MathTestSession as TestSession } from "@test/harness";
 import { waitFor } from "@test/utils/waitFor";
 import { expect } from "chai";
@@ -51,9 +52,11 @@ describe("E2E: Spectate stale-proof guard", function () {
         });
 
         const spectator = h.getPeer(2);
-        expect(
-            await h.control(spectator).query.getOpenConnectionCount().request()
-        ).to.equal(0, "Spectator should have 0 open connections after abort");
+        expect(runtimeIsClosed(spectator.p2pInstance)).to.equal(true);
+        await h.assert.sync.spectatorNoTransportToPeersWait({
+            spectatorPeerIndex: spectator.index,
+            peerIndices: [0, 1]
+        });
     });
 
     it("aborts sync when a peer answers with undecodable junk bytes", async function () {
@@ -91,12 +94,11 @@ describe("E2E: Spectate stale-proof guard", function () {
         });
 
         const spectator = h.getPeer(2);
-        expect(
-            await h.control(spectator).query.getOpenConnectionCount().request()
-        ).to.equal(
-            0,
-            "Spectator should have 0 open connections after aborting on junk"
-        );
+        expect(runtimeIsClosed(spectator.p2pInstance)).to.equal(true);
+        await h.assert.sync.spectatorNoTransportToPeersWait({
+            spectatorPeerIndex: spectator.index,
+            peerIndices: [0, 1]
+        });
     });
 
     // A participant must blacklist a responder that supplies a real but stale proof.

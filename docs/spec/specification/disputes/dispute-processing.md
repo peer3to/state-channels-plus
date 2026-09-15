@@ -66,7 +66,7 @@ on the predecessor — which forfeits the extra time) and escalate.
    latest state and finalized encoded state, linking stream ranges) — construction aborts rather
    than submitting partial data.
 4. **Pre-committed outcome:** compute the successor-fork genesis via the mirrored reduction logic
-   ([`REQ-MIRROR-1-XCY9CB`](../enforcement/local-mirror.md#req-mirror-1-xcy9cb)) and embed its hash — the dispute commits to
+   ([`REQ-MIRROR-1-XCY9CB` (Constrained equivalence)](../enforcement/local-mirror.md#req-mirror-1-xcy9cb)) and embed its hash — the dispute commits to
    its own reduction result.
 5. **Data availability decision:** post the auditing data as calldata iff the proof's final anchor
    is not already provably final to everyone ([`REQ-DIS-*` upload rules](./disputes.md)).
@@ -77,7 +77,7 @@ on the predecessor — which forfeits the extra time) and escalate.
 ### Stage 3 — Chain intake (auditor role)
 
 Disputes never arrive over peer communication; the chain is the sole intake
-([`REQ-IX-7-A004VZ`](../interactions.md#req-ix-7-a004vz)). For each observed dispute event: replicate into the
+([`REQ-IX-7-A004VZ` (Chain observation)](../interactions.md#req-ix-7-a004vz)). For each observed dispute event: replicate into the
 local mirror, deduplicate by dispute identity, and gate by relevance (the disputed fork is the
 node's current fork, or a decided dispute for a fork with in-progress recovery — late events for
 resolved forks are ignored). Relevant disputes purge the dead fork's queued blocks and trigger the
@@ -184,7 +184,7 @@ reschedule or recreate its operation after an awaited read. Synchronization does
 reduction result to that operation.
 
 **<a id="req-dispute-pipe-5-rzzb48"></a>`REQ-DISPUTE-PIPE-5-RZZB48` — Mirrored canonical audit.** Every audit predicate with an on-chain twin is
-evaluated through the same canonical logic ([`INV-MIRROR-1-VAF778`](../enforcement/local-mirror.md#inv-mirror-1-vaf778)); an
+evaluated through the same canonical logic ([`INV-MIRROR-1-VAF778` (Single implementation)](../enforcement/local-mirror.md#inv-mirror-1-vaf778)); an
 audit verdict of invalid stores exactly one dispute fraud proof before any kill attempt;
 self-slashing proof types are preflighted before submission; and a dispute the auditor cannot
 anchor (no posted data, no local baseline) is skipped as valid, never killed on local ignorance.
@@ -254,7 +254,7 @@ new time threshold, or general error retry is introduced; other errors retain th
 - Replay uses the same deterministic application semantics as ordinary validation.
 - Multiple observers and participants may process the same dispute concurrently or after restart.
 - Audit deadlines inherit the chain-observation freshness assumption
-  ([`REQ-IX-7-A004VZ`](../interactions.md#req-ix-7-a004vz)); the windows come from the chain's configuration —
+  ([`REQ-IX-7-A004VZ` (Chain observation)](../interactions.md#req-ix-7-a004vz)); the windows come from the chain's configuration —
   the pipeline reads them, it never computes its own authority over them.
 - Honest-peer coverage of unjudgeable disputes relies on at least one peer holding the anchor data
   ([data-availability.md](../security/data-availability.md)).

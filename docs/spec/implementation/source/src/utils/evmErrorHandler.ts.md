@@ -67,7 +67,7 @@ claims complete conformance for a requirement that depends on other files.
 
 ## Specification adherence
 
-- The race-classification mechanism behind convergence handling ([`REQ-DISPUTE-PIPE-6-6FZB9M`](../../../../specification/disputes/dispute-processing.md#req-dispute-pipe-6-6fzb9m)).
+- The race-classification mechanism behind convergence handling ([`REQ-DISPUTE-PIPE-6-6FZB9M` (Minimal intervention and convergence)](../../../../specification/disputes/dispute-processing.md#req-dispute-pipe-6-6fzb9m)).
 
 ## Specification contradictions
 

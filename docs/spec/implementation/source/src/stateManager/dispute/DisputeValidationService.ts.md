@@ -30,7 +30,7 @@ fraud proof was stored.
 
 The always-true local conjunct is removed. Every actual dispute validation condition and strategy outcome remains required. See [DisputeValidationService.ts](../../../../../../../src/stateManager/dispute/DisputeValidationService.ts#L48).
 
-1. **Every predicate with an on-chain twin runs by staticCall against the canonical logic** so the auditor can never disagree with the apply-handler ([`REQ-DISPUTE-PIPE-5-RZZB48`](../../../../../specification/disputes/dispute-processing.md#req-dispute-pipe-5-rzzb48)).
+1. **Every predicate with an on-chain twin runs by staticCall against the canonical logic** so the auditor can never disagree with the apply-handler ([`REQ-DISPUTE-PIPE-5-RZZB48` (Mirrored canonical audit)](../../../../../specification/disputes/dispute-processing.md#req-dispute-pipe-5-rzzb48)).
 2. **Unjudgeable-skipped-as-valid:** undecodable-without-posted-data and locally-unanchored disputes are abstained from, never killed on ignorance — honest-peer coverage carries them.
 3. **Preflight before self-slashing proof types** (`validateTimeoutCalldataPostedProof.staticCall`) — an auditor never submits a proof that would slash itself.
 4. **Stop at the first failure with exactly one stored proof;** invalid-without-proof throws as an internal error.
@@ -59,7 +59,7 @@ claims complete conformance for a requirement that depends on other files.
 | -------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | [DisputeValidationService.ts](../../../../../../../src/stateManager/dispute/DisputeValidationService.ts) | [`INV-DISPUTE-PIPE-1-BN0K81`](../../../../../specification/disputes/dispute-processing.md#inv-dispute-pipe-1-bn0k81), [`REQ-DISPUTE-PIPE-2-MJRJV1`](../../../../../specification/disputes/dispute-processing.md#req-dispute-pipe-2-mjrjv1), [`REQ-DISPUTE-PIPE-5-RZZB48`](../../../../../specification/disputes/dispute-processing.md#req-dispute-pipe-5-rzzb48), [`REQ-DISPUTE-PIPE-9-TDWQPV`](../../../../../specification/disputes/dispute-processing.md#req-dispute-pipe-9-tdwqpv) |
 
-Contribution in this file: [`REQ-DISPUTE-PIPE-9-TDWQPV`](../../../../../specification/disputes/dispute-processing.md#req-dispute-pipe-9-tdwqpv). The conformance rows below name this owner and the other required owners.
+Contribution in this file: [`REQ-DISPUTE-PIPE-9-TDWQPV` (Existing-window state contributions)](../../../../../specification/disputes/dispute-processing.md#req-dispute-pipe-9-tdwqpv). The conformance rows below name this owner and the other required owners.
 
 ## Assumptions, dependencies, trust boundaries, and limits
 
@@ -67,7 +67,7 @@ Contribution in this file: [`REQ-DISPUTE-PIPE-9-TDWQPV`](../../../../../specific
 
 ## Specification adherence
 
-- Ordered complete verification with no later-step legitimization ([`REQ-DISPUTE-PIPE-2-MJRJV1`](../../../../../specification/disputes/dispute-processing.md#req-dispute-pipe-2-mjrjv1)); auditor equivalence by construction ([`INV-DISPUTE-PIPE-1-BN0K81`](../../../../../specification/disputes/dispute-processing.md#inv-dispute-pipe-1-bn0k81)).
+- Ordered complete verification with no later-step legitimization ([`REQ-DISPUTE-PIPE-2-MJRJV1` (Ordered complete verification)](../../../../../specification/disputes/dispute-processing.md#req-dispute-pipe-2-mjrjv1)); auditor equivalence by construction ([`INV-DISPUTE-PIPE-1-BN0K81` (Equivalent audit)](../../../../../specification/disputes/dispute-processing.md#inv-dispute-pipe-1-bn0k81)).
 - The contract-owned inbound-anchor predicate runs against the verified posted snapshot or the
   snapshot stored under the dispute's pinned hash before local auditing reconstruction and the
   linkage/output shortcut, so linked auditing data cannot hide a stale claimed anchor.

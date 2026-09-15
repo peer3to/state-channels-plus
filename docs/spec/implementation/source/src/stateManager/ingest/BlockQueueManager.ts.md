@@ -31,14 +31,14 @@ Expiry probes allow a verified successor of the queued fork. A completed success
 
 Queue channel identity uses the common conversion. QueuedBlockEntry attribution, scheduling and recovery remain unchanged. See [BlockQueueManager.ts](../../../../../../../src/stateManager/ingest/BlockQueueManager.ts#L19).
 
-1. **Fixed entry lifetime from first sight** — duplicates and restores never extend it, so junk cannot live forever by re-delivery ([`REQ-BLOCK-PIPE-5-WJ31RG`](../../../../../specification/block-progression/block-processing.md#req-block-pipe-5-wj31rg)).
+1. **Fixed entry lifetime from first sight** — duplicates and restores never extend it, so junk cannot live forever by re-delivery ([`REQ-BLOCK-PIPE-5-WJ31RG` (Pre-execution merge layer)](../../../../../specification/block-progression/block-processing.md#req-block-pipe-5-wj31rg)).
 2. **The lifetime expiry is the only sync-probe site** — arrival-time probing punished honest peers before the convergence window; known-stale forks drop silently for the same reason.
-   A probe decides the source's fate: `sync` excludes a source that fails to prove, and the queue excludes a source whose proven lineage does not carry the probed block (the sync landed on the source's latest fork and the block is neither stored there nor re-queued for execution by the sync's replay, whose execution is deferred) — that source supplied junk ([`REQ-BLOCK-PIPE-4-CF52J6`](../../../../../specification/block-progression/block-processing.md#req-block-pipe-4-cf52j6)). A source whose lineage carries the block stays; a block on any other fork after the sync is inconclusive and its source stays. Probes wait behind a sync already in flight toward the source (`SpectateService.syncAfterInFlight`), since that sync need not cover the block, so a `false` answer always means the source was cut. Probes are observed detached work with no await after the sync, so none can reject.
+   A probe decides the source's fate: `sync` excludes a source that fails to prove, and the queue excludes a source whose proven lineage does not carry the probed block (the sync landed on the source's latest fork and the block is neither stored there nor re-queued for execution by the sync's replay, whose execution is deferred) — that source supplied junk ([`REQ-BLOCK-PIPE-4-CF52J6` (Recovery without bypass)](../../../../../specification/block-progression/block-processing.md#req-block-pipe-4-cf52j6)). A source whose lineage carries the block stays; a block on any other fork after the sync is inconclusive and its source stays. Probes wait behind a sync already in flight toward the source (`SpectateService.syncAfterInFlight`), since that sync need not cover the block, so a `false` answer always means the source was cut. Probes are observed detached work with no await after the sync, so none can reject.
 3. **Fork recovery is coalesced and detached** (memoized kill-period gate, O(1) chain reads per window; detached because ingest can already hold the mutex via dispute re-ingest).
 4. **Exact recovery uses the shared sync default** — expiry recovery calls `sync` with its exact peer,
    fork, and height. The omitted timeout keeps the service's one-window default; false returns to the
    queue's existing restore/drop owner and never triggers initial-load abort policy.
-5. **Authenticity via the canonical predicate** so off-chain and on-chain agree on 'authentic' ([`INV-MIRROR-1-VAF778`](../../../../../specification/enforcement/local-mirror.md#inv-mirror-1-vaf778)).
+5. **Authenticity via the canonical predicate** so off-chain and on-chain agree on 'authentic' ([`INV-MIRROR-1-VAF778` (Single implementation)](../../../../../specification/enforcement/local-mirror.md#inv-mirror-1-vaf778)).
 
 ## Inputs, outputs, state, and side effects
 
@@ -60,11 +60,11 @@ claims complete conformance for a requirement that depends on other files.
 
 ## Assumptions, dependencies, trust boundaries, and limits
 
-- Queue boundedness is intended to come transitively from the RPC-level rate limit — not yet implemented ([`OQ-6-4JPNE5`](../../../../../specification/open-questions.md#oq-6-4jpne5)).
+- Queue boundedness is intended to come transitively from the RPC-level rate limit — not yet implemented ([`OQ-6-4JPNE5` (P2P gossip rate limiting)](../../../../../specification/open-questions.md#oq-6-4jpne5)).
 
 ## Specification adherence
 
-- Unified attributed work item ([`REQ-BLOCK-PIPE-1-SS24D1`](../../../../../specification/block-progression/block-processing.md#req-block-pipe-1-ss24d1)); bounded recovery re-entering the pipeline ([`REQ-BLOCK-PIPE-4-CF52J6`](../../../../../specification/block-progression/block-processing.md#req-block-pipe-4-cf52j6)); lowest-height total order ([`REQ-BLOCK-PIPE-6-XQ0RTT`](../../../../../specification/block-progression/block-processing.md#req-block-pipe-6-xq0rtt)).
+- Unified attributed work item ([`REQ-BLOCK-PIPE-1-SS24D1` (Unified work item)](../../../../../specification/block-progression/block-processing.md#req-block-pipe-1-ss24d1)); bounded recovery re-entering the pipeline ([`REQ-BLOCK-PIPE-4-CF52J6` (Recovery without bypass)](../../../../../specification/block-progression/block-processing.md#req-block-pipe-4-cf52j6)); lowest-height total order ([`REQ-BLOCK-PIPE-6-XQ0RTT` (Total-order application)](../../../../../specification/block-progression/block-processing.md#req-block-pipe-6-xq0rtt)).
 
 ## Specification contradictions
 
@@ -98,6 +98,6 @@ Exact test evidence is mapped against these IDs in the verification test reports
 
 ## Related source reports
 
-- [QueueStorage](../../storage/QueueStorage.ts.md), [StateManager](../StateManager.ts.md), [SpectateService](../../rpc/services/spectate/SpectateService.ts.md) (probe target).
+- [QueueStorage](../../storage/QueueStorage.ts.md), [StateManager](../StateManager.ts.md), [SpectateService](../../rpc/network/services/spectate/SpectateService.ts.md) (probe target).
 
 Shared operation owners: [errorMessage.ts.md](../../utils/errorMessage.ts.md), [channelKey.ts.md](../../utils/channelKey.ts.md).

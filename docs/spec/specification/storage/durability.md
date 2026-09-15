@@ -47,10 +47,10 @@ by definition.
 
 **<a id="req-stor-2-tarp8s"></a>`REQ-STOR-2-TARP8S` — Commit-aligned durability.** Durable writes commit atomically with the owning
 operation's effect boundary: a block and its consequences commit together
-([`INV-BLOCK-PIPE-1-1AB2ME`](../block-progression/block-processing.md#inv-block-pipe-1-1ab2me)); dispute evidence and actions
-converge or stay retryable ([`REQ-DISPUTE-PIPE-4-3YVDSA`](../disputes/dispute-processing.md#req-dispute-pipe-4-3yvdsa)); temporary
+([`INV-BLOCK-PIPE-1-1AB2ME` (Atomic ordered commit)](../block-progression/block-processing.md#inv-block-pipe-1-1ab2me)); dispute evidence and actions
+converge or stay retryable ([`REQ-DISPUTE-PIPE-4-3YVDSA` (Atomic recovery)](../disputes/dispute-processing.md#req-dispute-pipe-4-3yvdsa)); temporary
 work never reaches durable state without a successful commit
-([`REQ-SDK-ARCH-4-GTN7QN`](../runtime/sdk.md#req-sdk-arch-4-gtn7qn)). Observable events describe only durably committed transitions.
+([`REQ-SDK-ARCH-4-GTN7QN` (Execution isolation)](../runtime/sdk.md#req-sdk-arch-4-gtn7qn)). Observable events describe only durably committed transitions.
 
 **<a id="req-stor-3-4rjger"></a>`REQ-STOR-3-4RJGER` — Restart recovery without trust.** From its durable set plus chain observation alone, a
 restarted node MUST re-derive its protocol position and resume. Every datum read back re-enters the
@@ -89,7 +89,7 @@ store gives for free, so an in-memory realization MUST NOT be observably weaker.
 - Durable state is local: nothing here weakens the chain's role as the arbiter, and locally stored
   data proves nothing to anyone else without the owning system's proofs.
 - Platform storage APIs differ; the guarantees here are semantic and must hold on every supported
-  platform ([`REQ-RUNTIME-4-B0N70Y`](../runtime/execution.md#req-runtime-4-b0n70y)).
+  platform ([`REQ-RUNTIME-4-B0N70Y` (Platform equivalence)](../runtime/execution.md#req-runtime-4-b0n70y)).
 
 ## Security considerations
 

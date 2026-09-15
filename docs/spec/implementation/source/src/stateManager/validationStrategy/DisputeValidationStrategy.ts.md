@@ -23,7 +23,7 @@ The audit-replay context: live gates off, per-block pre-state positioning, devia
 
 ## Key design decisions
 
-1. **Kill only on canonical failure:** a local linkage gap alone must not kill an honest dispute — the canonical structure predicate decides ([`REQ-DISPUTE-PIPE-5-RZZB48`](../../../../../specification/disputes/dispute-processing.md#req-dispute-pipe-5-rzzb48)).
+1. **Kill only on canonical failure:** a local linkage gap alone must not kill an honest dispute — the canonical structure predicate decides ([`REQ-DISPUTE-PIPE-5-RZZB48` (Mirrored canonical audit)](../../../../../specification/disputes/dispute-processing.md#req-dispute-pipe-5-rzzb48)).
 2. **Replay survives discovered double-signs** (the dispute may still be honest); the proof is stored for separate enforcement.
 
 ## Inputs, outputs, state, and side effects
@@ -50,7 +50,7 @@ claims complete conformance for a requirement that depends on other files.
 
 ## Specification adherence
 
-- Context-complete consequence profile ([`REQ-BLOCK-PIPE-3-WW2SB7`](../../../../../specification/block-progression/block-processing.md#req-block-pipe-3-ww2sb7)) — the replay deviation mapping.
+- Context-complete consequence profile ([`REQ-BLOCK-PIPE-3-WW2SB7` (Strategy-complete deviations)](../../../../../specification/block-progression/block-processing.md#req-block-pipe-3-ww2sb7)) — the replay deviation mapping.
 
 ## Specification contradictions
 

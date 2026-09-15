@@ -51,7 +51,7 @@ claims complete conformance for a requirement that depends on other files.
 
 ## Specification adherence
 
-- Context-complete consequence profile ([`REQ-BLOCK-PIPE-3-WW2SB7`](../../../../../specification/block-progression/block-processing.md#req-block-pipe-3-ww2sb7)) — the calldata consequence delta.
+- Context-complete consequence profile ([`REQ-BLOCK-PIPE-3-WW2SB7` (Strategy-complete deviations)](../../../../../specification/block-progression/block-processing.md#req-block-pipe-3-ww2sb7)) — the calldata consequence delta.
 
 ## Specification contradictions
 

@@ -39,6 +39,11 @@ export default class ContractExecutor extends AContractExecutor {
         this.mutex = new Mutex();
     }
 
+    // AContractExecutor.dispose releases this executor's own logger.
+    public override dispose(): void {
+        this.logger?.dispose();
+    }
+
     async deploy(data: Bytes): Promise<ContractExecutionResult> {
         await this.mutex.lock({
             taskName: "deploy",

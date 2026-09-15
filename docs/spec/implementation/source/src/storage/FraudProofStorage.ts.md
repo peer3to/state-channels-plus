@@ -57,7 +57,7 @@ claims complete conformance for a requirement that depends on other files.
 
 ## Specification adherence
 
-- Content-addressed proofs with consistent participant index ([`REQ-DSTORE-3-ZNXSTM`](../../../../specification/storage/dispute-evidence.md#req-dstore-3-znxstm)).
+- Content-addressed proofs with consistent participant index ([`REQ-DSTORE-3-ZNXSTM` (Content-addressed proofs with stable indexes)](../../../../specification/storage/dispute-evidence.md#req-dstore-3-znxstm)).
 
 ## Specification contradictions
 

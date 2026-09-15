@@ -56,7 +56,7 @@ claims complete conformance for a requirement that depends on other files.
 
 ## Specification adherence
 
-- Canonical encodings used at every boundary ([`REQ-RPC-1-FF89Z0`](../../../../specification/peer-communication/rpc.md#req-rpc-1-ff89z0), [`REQ-RUNTIME-1-RSM6MZ`](../../../../specification/runtime/execution.md#req-runtime-1-rsm6mz)).
+- Canonical encodings used at every boundary ([`REQ-RPC-1-FF89Z0` (Typed wire contract)](../../../../specification/peer-communication/rpc.md#req-rpc-1-ff89z0), [`REQ-RUNTIME-1-RSM6MZ` (Transfer-safe boundary)](../../../../specification/runtime/execution.md#req-runtime-1-rsm6mz)).
 
 ## Specification contradictions
 

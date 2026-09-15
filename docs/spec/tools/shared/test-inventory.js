@@ -200,8 +200,15 @@ function extractTestCases(files, entrypoints = new Map()) {
     return { cases, emptyFiles };
 }
 
-function ignoreDisposition(target) {
-    const lines = fs.readFileSync(target, "utf8").split(/\r?\n/);
+function ignoreDisposition(target, content = fs.readFileSync(target, "utf8")) {
+    const lines = content
+        .split(/\r?\n/)
+        .map((line) =>
+            line.replace(
+                /^\s*<!--\s*(@spec-test-coverage-ignore.*?)\s*-->\s*$/,
+                "// $1"
+            )
+        );
     const markers = lines
         .map((line, index) => ({ line, index }))
         .filter(({ line }) =>

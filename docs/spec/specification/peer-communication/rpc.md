@@ -114,7 +114,7 @@ any method logic runs. They are the admission layer, distinct from per-endpoint 
   payload.
 
 Unresolved guard-interaction decisions (deferred-retry semantics for request-style calls, penalty
-persistence) are tracked in [`OQ-34-FY08V2`](../open-questions.md#oq-34-fy08v2).
+persistence) are tracked in [`OQ-34-FY08V2` (RPC boundary decisions)](../open-questions.md#oq-34-fy08v2).
 
 ## Request lifecycle and correlation
 
@@ -163,8 +163,8 @@ Protocol compatibility and encoding versions MUST be established before protecte
 and an incompatible peer MUST be refused cleanly (a declared refusal, not an escalating penalty).
 Compatibility identity should be bound into the signed handshake domain so a session cannot be
 established across incompatible deployments. The concrete negotiation scheme is unresolved —
-[`OQ-34-FY08V2`](../open-questions.md#oq-34-fy08v2), coupled to the signature-domain decision
-[`OQ-29-EFY4NF`](../open-questions.md#oq-29-efy4nf).
+[`OQ-34-FY08V2` (RPC boundary decisions)](../open-questions.md#oq-34-fy08v2), coupled to the signature-domain decision
+[`OQ-29-EFY4NF` (Signature domain separation)](../open-questions.md#oq-29-efy4nf).
 
 ## Requirements and invariants
 
@@ -225,7 +225,7 @@ or punishment of a replacement transport.
 **<a id="req-rpc-8-44xecf"></a>`REQ-RPC-8-44XECF` — Compatibility before protected calls.** Session compatibility (protocol and encoding
 versions) MUST be established no later than authentication, an incompatible peer MUST be refused
 cleanly without penalty escalation, and compatibility identity SHOULD be bound into the signed
-handshake domain. (Scheme unresolved: [`OQ-34-FY08V2`](../open-questions.md#oq-34-fy08v2).)
+handshake domain. (Scheme unresolved: [`OQ-34-FY08V2` (RPC boundary decisions)](../open-questions.md#oq-34-fy08v2).)
 
 ## Assumptions and constraints
 
@@ -240,7 +240,7 @@ handshake domain. (Scheme unresolved: [`OQ-34-FY08V2`](../open-questions.md#oq-3
   Resource bounds under [`REQ-RPC-5-CV1R1Y`](rpc.md#req-rpc-5-cv1r1y) are sized against that partition size, not against arbitrary fan-out.
 - RPC handlers run outside the block-progression execution boundary: an endpoint never assumes
   exclusive access to live protocol state and hands validated input to the owning system
-  ([`REQ-BLOCK-PIPE-5-WJ31RG`](../block-progression/block-processing.md#req-block-pipe-5-wj31rg)).
+  ([`REQ-BLOCK-PIPE-5-WJ31RG` (Pre-execution merge layer)](../block-progression/block-processing.md#req-block-pipe-5-wj31rg)).
 - Application extensions and production bundles may load compatible SDK code through separate JavaScript
   module graphs; constructor identity is therefore not a protocol type discriminator.
 
@@ -276,4 +276,4 @@ frame-level bounds.
 _Non-normative._ Standardize a language-independent wire schema and compatibility negotiation suite.
 Extend the loopback control path into the same typed service abstraction used for peer RPC, with a
 minimal trusted transport and router, preserving the trusted/untrusted distinction. General per-peer
-and per-service gossip rate limiting remains open ([`OQ-6-4JPNE5`](../open-questions.md#oq-6-4jpne5)).
+and per-service gossip rate limiting remains open ([`OQ-6-4JPNE5` (P2P gossip rate limiting)](../open-questions.md#oq-6-4jpne5)).

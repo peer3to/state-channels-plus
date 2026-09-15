@@ -1,15 +1,11 @@
 import { startLocalDiscoveryRelayHub } from "./localDiscoveryRelayHub.mjs";
+import { startSdkRuntimeServer } from "./sdkRuntimeServer.mjs";
 import assert from "node:assert/strict";
-import { spawn } from "node:child_process";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const projectRoot = path.resolve(__dirname, "../..");
-
-const HARDHAT_HOST = process.env.HARDHAT_NODE_HOST || "127.0.0.1";
-const HARDHAT_PORT = process.env.HARDHAT_NODE_PORT || "18545";
-const HARDHAT_URL = `http://${HARDHAT_HOST}:${HARDHAT_PORT}`;
 
 async function loadBrowserTestDependency(name) {
     try {
@@ -24,35 +20,18 @@ async function loadBrowserTestDependency(name) {
     }
 }
 
-async function waitForHardhat(url, timeoutMs = 30_000) {
-    const { ethers } = await loadBrowserTestDependency("ethers");
-    const provider = new ethers.JsonRpcProvider(url);
-    const startedAt = Date.now();
-    for (;;) {
-        try {
-            await provider.getBlockNumber();
-            // Switch from automining to interval mining. The browser
-            // parallelizes HTTP, so the deployer's concurrently-sent
-            // (correctly-numbered) transactions arrive out of order — which
-            // automining rejects ("can't be queued when automining"). Interval
-            // mining queues future nonces in the mempool and mines them in
-            // order.
-            await provider.send("evm_setAutomine", [false]);
-            await provider.send("evm_setIntervalMining", [100]);
-            return;
-        } catch {
-            if (Date.now() - startedAt > timeoutMs) {
-                throw new Error(`Hardhat node at ${url} did not become ready`);
-            }
-            await new Promise((resolve) => setTimeout(resolve, 250));
-        }
-    }
-}
-
 const platformAliases = {
-    "@platform/contractExecutorWorkerRuntime": path.join(
+    "@platform/contractExecutorRootUrl": path.join(
         projectRoot,
-        "src/evm/contractExecutor/browser/ContractExecutorWorkerRuntime.ts"
+        "src/rpc/internal/browser/ContractExecutorRootUrl.ts"
+    ),
+    "@platform/p2pRuntimeHostRootUrl": path.join(
+        projectRoot,
+        "src/rpc/internal/browser/P2pRuntimeHostRootUrl.ts"
+    ),
+    "@platform/rootWorkerRuntime": path.join(
+        projectRoot,
+        "src/rpc/internal/browser/RootWorkerRuntime.ts"
     ),
     "@platform/createLogger": path.join(
         projectRoot,
@@ -80,11 +59,7 @@ const platformAliases = {
     ),
     "@platform/p2pRuntimeChannel": path.join(
         projectRoot,
-        "src/evm/p2pRuntime/browser/P2pRuntimeChannel.ts"
-    ),
-    "@platform/p2pRuntimeWorkerRuntime": path.join(
-        projectRoot,
-        "src/evm/p2pRuntime/browser/P2pRuntimeWorkerRuntime.ts"
+        "src/transport/browser/RuntimeChannel.ts"
     ),
     "@": path.join(projectRoot, "src"),
     "@test": path.join(projectRoot, "test"),
@@ -94,19 +69,7 @@ const platformAliases = {
     scripts: path.join(projectRoot, "scripts")
 };
 
-const hardhatProcess = spawn(
-    process.execPath,
-    [path.join(projectRoot, "scripts/infra/start-hardhat-node.js")],
-    {
-        cwd: projectRoot,
-        env: {
-            ...process.env,
-            HARDHAT_NODE_HOST: HARDHAT_HOST,
-            HARDHAT_NODE_PORT: HARDHAT_PORT
-        },
-        stdio: "ignore"
-    }
-);
+const runtimeServer = await startSdkRuntimeServer();
 
 let hub;
 let server;
@@ -115,14 +78,10 @@ const cleanup = async () => {
     await browser?.close().catch(() => {});
     await server?.close().catch(() => {});
     await hub?.close().catch(() => {});
-    if (hardhatProcess && !hardhatProcess.killed) {
-        hardhatProcess.kill("SIGTERM");
-    }
+    await runtimeServer.close();
 };
 
 try {
-    await waitForHardhat(HARDHAT_URL);
-
     hub = await startLocalDiscoveryRelayHub({ host: "127.0.0.1", port: 0 });
 
     const [{ createServer }, { chromium }] = await Promise.all([
@@ -142,14 +101,7 @@ try {
             // hardhat node without cross-origin (CORS) requests. `ws: true`
             // also forwards the WebSocket upgrade: the SDK worker builds a
             // `WebSocketProvider` (push-based events) from the same URL.
-            proxy: {
-                "/rpc": {
-                    target: HARDHAT_URL,
-                    changeOrigin: true,
-                    ws: true,
-                    rewrite: (p) => p.replace(/^\/rpc/, "")
-                }
-            }
+            proxy: runtimeServer.proxy
         }
     });
 
@@ -303,7 +255,7 @@ try {
     } catch (error) {
         console.error("P2P WebRTC browser e2e FAILED\n");
         console.error("--- page console tail ---");
-        console.error(consoleLog.slice(-80).join("\n"));
+        console.error(consoleLog.join("\n"));
         if (browserErrors.length) {
             console.error("--- first browser error ---");
             console.error(browserErrors[0].stack || browserErrors[0].message);

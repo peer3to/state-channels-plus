@@ -33,7 +33,7 @@ getGenesisStateMachineState remains available for existing test callers. This te
 1. **Defensive copies everywhere.** Every module (and the facade itself) is wrapped in a
    deep-copy proxy, so values returned to callers are copies — a caller mutating a returned
    object can never corrupt stored state, which is what keeps storage's exact-preservation
-   promise ([`REQ-IX-9-AV56NR`](../../../../specification/interactions.md#req-ix-9-av56nr)) cheap to trust.
+   promise ([`REQ-IX-9-AV56NR` (Storage fidelity)](../../../../specification/interactions.md#req-ix-9-av56nr)) cheap to trust.
 2. **Joins are explicit, not cached.** Derived reads re-resolve through the module keys on
    every call (block → snapshot hash → snapshot → state hash → state); nothing is
    denormalized, so module writes are the single source of truth.
@@ -60,22 +60,22 @@ claims complete conformance for a requirement that depends on other files.
 
 ## Assumptions, dependencies, trust boundaries, and limits
 
-- Producers validated everything before storing; the facade grants no validity ([`REQ-IX-9-AV56NR`](../../../../specification/interactions.md#req-ix-9-av56nr)).
+- Producers validated everything before storing; the facade grants no validity ([`REQ-IX-9-AV56NR` (Storage fidelity)](../../../../specification/interactions.md#req-ix-9-av56nr)).
 - Deep-copy proxying trades CPU/allocations for aliasing safety; large states pay the copy cost on every read.
 - In-memory medium for this protocol version: durability across restart is not yet provided; the
   target contract is [durability.md](../../../../specification/storage/durability.md).
 
 ## Specification adherence
 
-- Coordinate reads (`getStateSnapshot`, `getGenesisStateMachineState`) return explicit absence on any missing join link and resolve negative heights to fork genesis, per [`REQ-SNAPSTORE-2-Q7E6TQ`](../../../../specification/storage/snapshots-and-states.md#req-snapstore-2-q7e6tq).
+- Coordinate reads (`getStateSnapshot`, `getGenesisStateMachineState`) return explicit absence on any missing join link and resolve negative heights to fork genesis, per [`REQ-SNAPSTORE-2-Q7E6TQ` (Derived reads fail explicitly)](../../../../specification/storage/snapshots-and-states.md#req-snapstore-2-q7e6tq).
 - Participant union merges previous and resulting snapshot sets, honoring an explicitly supplied resulting-snapshot hash.
-- Every store module is constructed wrapped in `deepCopyProxy`, and the aggregate itself is returned wrapped ([#L39-L56](../../../../../../src/storage/Storage.ts#L39-L56)), so the copy boundary of [`REQ-STOR-6-SKP0KM`](../../../../specification/storage/durability.md#req-stor-6-skp0km) applies uniformly rather than per module — subject to the generator exemption owned by [DeepCopyProxy.ts.md](../utils/DeepCopyProxy.ts.md).
+- Every store module is constructed wrapped in `deepCopyProxy`, and the aggregate itself is returned wrapped ([#L39-L56](../../../../../../src/storage/Storage.ts#L39-L56)), so the copy boundary of [`REQ-STOR-6-SKP0KM` (Value semantics at the store boundary)](../../../../specification/storage/durability.md#req-stor-6-skp0km) applies uniformly rather than per module — subject to the generator exemption owned by [DeepCopyProxy.ts.md](../utils/DeepCopyProxy.ts.md).
 
 ## Specification contradictions
 
 `getPreviousBlockOrSnapshot` and `getPreviousRelevantTimestamp` use non-null assertions on the
 predecessor lookup: an absent predecessor produces an unclassified runtime throw instead of the
-explicit absence [`REQ-SNAPSTORE-2-Q7E6TQ`](../../../../specification/storage/snapshots-and-states.md#req-snapstore-2-q7e6tq) requires. Callers currently only invoke them where the
+explicit absence [`REQ-SNAPSTORE-2-Q7E6TQ` (Derived reads fail explicitly)](../../../../specification/storage/snapshots-and-states.md#req-snapstore-2-q7e6tq) requires. Callers currently only invoke them where the
 predecessor exists, but the contract violation stands — engineer decision: harden the helpers or
 narrow the spec to caller-guaranteed preconditions.
 
@@ -109,4 +109,4 @@ Exact test evidence is mapped against these IDs in the verification test reports
 
 ## Related source reports
 
-- Every module report in this directory; [BlockQueueManager](../stateManager/BlockQueueManager.ts.md) and [StateManager](../stateManager/StateManager.ts.md) as the primary consumers.
+- Every module report in this directory; [BlockQueueManager](../stateManager/ingest/BlockQueueManager.ts.md) and [StateManager](../stateManager/StateManager.ts.md) as the primary consumers.

@@ -19,7 +19,7 @@ undecodable-with-posted-data → invalid branch of the audit's decode check; the
 nothing-posted → unjudgeable/abstention branch is out of scope here. After the permutation
 atomization the case carries the service's proof-decode-check-failure permutation; the
 abstention split ([`UNIT-TEST-DISPUTE-VALIDATION-SERVICE-1-XBCA09.P2`](../../../../../../implementation/source/src/stateManager/dispute/DisputeValidationService.ts.md#unit-test-dispute-validation-service-1-xbca09.p2)) is the out-of-scope branch,
-and [`REQ-DISPUTE-PIPE-2-MJRJV1`](../../../../../../specification/disputes/dispute-processing.md#req-dispute-pipe-2-mjrjv1) permutations still bundle whole corruption families, so nothing
+and [`REQ-DISPUTE-PIPE-2-MJRJV1` (Ordered complete verification)](../../../../../../specification/disputes/dispute-processing.md#req-dispute-pipe-2-mjrjv1) permutations still bundle whole corruption families, so nothing
 else is assigned.
 
 ## Tests and covered test IDs

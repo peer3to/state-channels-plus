@@ -24,7 +24,7 @@ mismatch, and the positional committed-set matching `areDisputesCommitted`.
 
 ## Key design decisions
 
-1. **Positional set matching** is where the post-kill order sensitivity ([`OQ-4-JGDCNX`](../../../../../../verification/open-questions.md#oq-4-jgdcnx) input) is anchored.
+1. **Positional set matching** is where the post-kill order sensitivity ([`OQ-4-JGDCNX` (Dispute-reduction order-independence)](../../../../../../verification/open-questions.md#oq-4-jgdcnx) input) is anchored.
 2. **Every period predicate returns its deadline alongside the verdict:**
    `_isEvidencePeriodExpired`, `_isKillPeriodExpired` and `_isReduceChallengePeriodExpired` all
    return `(bool, uint256 periodEnd)`. The caller that reverts on the verdict needs the deadline
@@ -50,7 +50,7 @@ claims complete conformance for a requirement that depends on other files.
 | -------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | [DisputeUtils.sol](../../../../../../../../contracts/V1/StateChannelDiamondProxy/utils/DisputeUtils.sol) | [`REQ-ENFDIS-1-8CSA6B`](../../../../../../specification/enforcement/dispute-window.md#req-enfdis-1-8csa6b), [`REQ-DISPUTE-PIPE-9-TDWQPV`](../../../../../../specification/disputes/dispute-processing.md#req-dispute-pipe-9-tdwqpv) |
 
-Contribution in this file: [`REQ-DISPUTE-PIPE-9-TDWQPV`](../../../../../../specification/disputes/dispute-processing.md#req-dispute-pipe-9-tdwqpv). The conformance rows below name this owner and the other required owners.
+Contribution in this file: [`REQ-DISPUTE-PIPE-9-TDWQPV` (Existing-window state contributions)](../../../../../../specification/disputes/dispute-processing.md#req-dispute-pipe-9-tdwqpv). The conformance rows below name this owner and the other required owners.
 
 ## Assumptions, dependencies, trust boundaries, and limits
 
@@ -66,7 +66,7 @@ None demonstrated.
 
 ## Missing behavior
 
-Order-sensitivity of the positional match feeds [`OQ-4-JGDCNX`](../../../../../../verification/open-questions.md#oq-4-jgdcnx) — documented, engineer decision pending.
+Order-sensitivity of the positional match feeds [`OQ-4-JGDCNX` (Dispute-reduction order-independence)](../../../../../../verification/open-questions.md#oq-4-jgdcnx) — documented, engineer decision pending.
 
 ## Conformance traceability
 

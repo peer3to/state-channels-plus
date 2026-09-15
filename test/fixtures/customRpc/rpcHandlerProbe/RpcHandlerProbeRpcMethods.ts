@@ -1,20 +1,14 @@
 // @spec-test-coverage-ignore: worker-side support methods for the mapped RpcHandler integration cases
-import type { PingPongRpc, SumResponse } from "../PingPongRpcManifest";
+import type { SumResponse } from "../PingPongRpcManifest";
 import type { RpcHandlerProbeService } from "./RpcHandlerProbeService";
-import type P2PManager from "@/P2PManager";
-import ARpcMethods from "@/rpc/ARpcMethods";
+import ANetworkRpcMethods from "@/rpc/network/ANetworkRpcMethods";
 import type { RpcResponse } from "@/rpc/Rpc";
-import type ATransport from "@/transport/ATransport";
+import type NetworkTransport from "@/transport/NetworkTransport";
 import type { Address } from "@/types";
 
-export class RpcHandlerProbeRpcMethods extends ARpcMethods<
-    P2PManager<PingPongRpc>
-> {
-    constructor(
-        transport: ATransport,
-        private readonly service: RpcHandlerProbeService
-    ) {
-        super(transport, service.p2pManager);
+export class RpcHandlerProbeRpcMethods extends ANetworkRpcMethods<RpcHandlerProbeService> {
+    constructor(transport: NetworkTransport, service: RpcHandlerProbeService) {
+        super(transport, service);
     }
 
     public broadcastRecord(nonce: string): boolean {

@@ -1,5 +1,6 @@
 // @spec-test-coverage-ignore: shared initial-sync staging exercised by mapped P2PManager declarations
 
+import { clientRootFor } from "./RuntimeRootObservation";
 import { Status } from "@/types";
 import { sleep } from "@/utils";
 import type HarnessControlRpc from "@test/fixtures/customRpc/harnessControl/HarnessControlRpc";
@@ -57,6 +58,8 @@ export async function assertLateSyncResultAfterAbortChangesNothing<
 ): Promise<void> {
     await withFreshInitialSyncObserver(h, async (observer) => {
         const observerIndex = observer.index;
+        const root = clientRootFor(observer.p2pInstance);
+        const host = root.p2pRuntimeHostRemoteRoot!;
         const releases = await Promise.all(
             [0, 1].map((index) =>
                 h.rpcStub.holdSpectateResponses(index, lateResult === "failure")
@@ -80,36 +83,24 @@ export async function assertLateSyncResultAfterAbortChangesNothing<
                 );
                 return counts.some((count) => count >= 1);
             });
-            await h.execOnHost(observer, async (sm) => {
-                sm.abort();
-                return true;
-            });
+            await h.control(observer).stub.abortDetached().request();
             expect(await connect).to.equal(false);
-            await waitFor(
-                async () =>
-                    await h.execOnHost(observer, async (sm) =>
-                        Boolean(sm.isDisposed)
-                    )
+            await waitFor(() => host.isClosed);
+            const syncedAtAbort = h.event.getEventCallCount(
+                observerIndex,
+                "onSetState"
             );
-            const statusAtAbort = await h
-                .control(observer)
-                .query.getStatus()
-                .request();
 
             // The late result lands on a settled, disposed observer.
             await Promise.all(releases.map((release) => release()));
             await sleep(500);
+            expect(host.isClosed).to.equal(true);
+            expect(root.connections.size).to.equal(0);
             expect(
-                await h.control(observer).query.getStatus().request()
-            ).to.equal(statusAtAbort);
-            expect(
-                await h.execOnHost(observer, async (sm) =>
-                    Boolean(sm.isDisposed)
-                )
-            ).to.equal(true);
-            expect(
-                await h.control(observer).query.getChannelId().request()
-            ).to.equal(String(h.channelId));
+                h.event.getEventCallCount(observerIndex, "onSetState")
+            ).to.equal(syncedAtAbort);
+            await expect(h.control(observer).query.getStatus().request()).to.be
+                .rejected;
         } finally {
             await Promise.all(releases.map((release) => release()));
         }

@@ -59,6 +59,6 @@ implementations agree on *what a thing is* before any mechanism operates on it.
 ## Interaction contracts
 
 This system is the producer side of the execution/commitment edge
-([`REQ-IX-2-2PY2EF`](../interactions.md#req-ix-2-2py2ef)) and the timing authority every window computation cites.
+([`REQ-IX-2-2PY2EF` (Deterministic execution and commitment)](../interactions.md#req-ix-2-2py2ef)) and the timing authority every window computation cites.
 Consumers must not redefine identities or commitments locally; a divergent local definition is a
 conformance defect, not an alternative interpretation.

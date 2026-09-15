@@ -32,6 +32,10 @@ export type Config = {
     CRASH_LOG_UPLOAD_ENDPOINT: string;
     CRASH_LOG_API_TOKEN: string;
     CRASH_LOG_MAX_SIZE_MB: number;
+    // Minimum spacing between coordinated upload attempts.
+    CRASH_LOG_UPLOAD_COALESCE_MS: number;
+    // upper bound of the random per-upload jitter that spreads realms apart
+    CRASH_LOG_UPLOAD_JITTER_MAX_MS: number;
 };
 
 const DEFAULT_CONFIG: Config = {
@@ -56,7 +60,9 @@ const DEFAULT_CONFIG: Config = {
     // Crash log collection is enabled when upload endpoint is configured.
     CRASH_LOG_UPLOAD_ENDPOINT: "",
     CRASH_LOG_API_TOKEN: "",
-    CRASH_LOG_MAX_SIZE_MB: 10
+    CRASH_LOG_MAX_SIZE_MB: 10,
+    CRASH_LOG_UPLOAD_COALESCE_MS: 3000,
+    CRASH_LOG_UPLOAD_JITTER_MAX_MS: 3000
 };
 
 export function isNodeRuntime() {
@@ -122,7 +128,6 @@ function coerceEnvValue(
     if (typeof defaultValue === "string") {
         return raw;
     }
-
     // Unsupported types (objects, arrays) are ignored.
     return undefined;
 }

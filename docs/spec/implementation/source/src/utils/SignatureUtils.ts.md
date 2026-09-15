@@ -24,7 +24,7 @@ disputes) via EIP-191 over the keccak of encoded bytes; address recovery and com
 
 ## Key design decisions
 
-1. **Sign-the-hash-of-canonical-bytes everywhere** — one signing form for protocol objects (the [`REQ-ID-1-3Q2KB9`](../../../../specification/protocol-model/identity.md#req-id-1-3q2kb9) target rule; domain separation remains [`OQ-29-EFY4NF`](../../../../specification/open-questions.md#oq-29-efy4nf)).
+1. **Sign-the-hash-of-canonical-bytes everywhere** — one signing form for protocol objects (the [`REQ-ID-1-3Q2KB9` (Recoverable signatures over canonical targets)](../../../../specification/protocol-model/identity.md#req-id-1-3q2kb9) target rule; domain separation remains [`OQ-29-EFY4NF` (Signature domain separation)](../../../../specification/open-questions.md#oq-29-efy4nf)).
 
 ## Inputs, outputs, state, and side effects
 
@@ -58,7 +58,7 @@ None demonstrated.
 
 ## Missing behavior
 
-No object-type/chain/deployment domain tags (the [`OQ-29-EFY4NF`](../../../../specification/open-questions.md#oq-29-efy4nf) decision surface).
+No object-type/chain/deployment domain tags (the [`OQ-29-EFY4NF` (Signature domain separation)](../../../../specification/open-questions.md#oq-29-efy4nf) decision surface).
 
 ## Conformance traceability
 

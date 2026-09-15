@@ -1,11 +1,13 @@
 import { deserializeRpcFrame } from "@/rpc/Rpc";
 import {
-    deserializeRpc,
-    deserializeRpcResponse,
     MAX_RPC_FRAME_BYTES,
     serializeRpc,
     serializeRpcResponse
 } from "@/rpc/Rpc";
+import {
+    deserializeRpc,
+    deserializeRpcResponse
+} from "@test/fixtures/RpcFrameProjection";
 import { expect } from "chai";
 
 /**
@@ -207,7 +209,7 @@ describe("deserializeRpc - params schema", function () {
         });
         const frame = deserializeRpcFrame(serialized);
         expect(frame?.kind).to.equal("response");
-        expect(deserializeRpc(serialized) !== undefined).to.equal(true);
+        expect(deserializeRpc(serialized) !== undefined).to.equal(false);
         expect(deserializeRpcResponse(serialized) !== undefined).to.equal(true);
     });
     it("classifies invalid response with valid request with response-first precedence", function () {

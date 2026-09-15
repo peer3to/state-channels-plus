@@ -12,6 +12,7 @@ import {
 } from "@test/fixtures/AuthoredLeaveFailureStaging";
 import { assertClean, setup } from "@test/fixtures/DiscoveryRuntimePortStaging";
 import { assertPendingLeaveGuard } from "@test/fixtures/PendingLeaveStaging";
+import { runtimeEndpointFor } from "@test/fixtures/RuntimeRootObservation";
 import { TargetedChannelJoinFixture } from "@test/fixtures/TargetedChannelJoinFixture";
 import { MathTestSession as TestSession } from "@test/harness";
 import { waitFor } from "@test/utils/waitFor";
@@ -1224,13 +1225,17 @@ describe("discovery runtime port", function () {
     it("disposal rejects leave while a watchdog upload is held and its late completion cannot resettle leave", async function () {
         const h = TestSession.getHarness();
         await h.lifecycle.start(3, 0, {
-            configOverrides: { LEAVE_CHANNEL_WATCHDOG_MS: 50 }
+            configOverrides: {
+                LEAVE_CHANNEL_WATCHDOG_MS: 50,
+                RUN_SDK_IN_THREAD: false
+            }
         });
         const leaver = h.getPeer(1);
         const recorder = await h.rpcStub.recordDisputeSubmissions(
             leaver.index,
             { hold: true }
         );
+        const endpoint = runtimeEndpointFor(leaver.p2pInstance);
         let settlements = 0;
         const leave = leaver.p2pInstance.p2pSigner.leaveChannel().then(
             () => {
@@ -1244,17 +1249,22 @@ describe("discovery runtime port", function () {
         );
         await recorder.waitUntilHeld();
         try {
-            await h.execOnHost(leaver, async (sm) => {
-                await sm.dispose();
-            });
+            await endpoint.sm.dispose();
             expect(await leave).to.include("disposed");
-            expect((await recorder.submissions())[0].waited).to.equal(false);
-            await recorder.release();
-            await waitFor(async () => (await recorder.submissions())[0].waited);
+            expect(
+                endpoint.stub.getRecordedDisputeSubmissions().submissions[0]
+                    .waited
+            ).to.equal(false);
+            endpoint.stub.releaseDisputeSubmissions();
+            await waitFor(
+                () =>
+                    endpoint.stub.getRecordedDisputeSubmissions().submissions[0]
+                        .waited
+            );
             expect(settlements).to.equal(1);
             expect(await leave).to.include("disposed");
         } finally {
-            await recorder.restore();
+            endpoint.stub.restoreDisputeSubmissions();
         }
         await TestSession.settleDetached();
     });

@@ -1,8 +1,9 @@
+// @spec-test-coverage-ignore: fixture support; executable evidence belongs to its calling test declarations.
 import SignerRpcMethods from "./SignerRpcMethods";
 import type P2PManager from "@/P2PManager";
-import ARpcService from "@/rpc/ARpcService";
+import ANetworkRpcService from "@/rpc/network/ANetworkRpcService";
 
-import type ATransport from "@/transport/ATransport";
+import type NetworkTransport from "@/transport/NetworkTransport";
 import { addressesEqual } from "@/utils";
 import { Signer, Wallet } from "ethers";
 
@@ -12,12 +13,12 @@ import { Signer, Wallet } from "ethers";
  * keys are mnemonic-derived and pushed in by the harness. Accessors/state live
  * here (not on the RpcMethods class), which is routable by name at runtime.
  */
-export class SignerService extends ARpcService<SignerRpcMethods> {
+export class SignerService extends ANetworkRpcService<SignerRpcMethods> {
     private readonly peerSigners = new Map<string, Wallet>();
 
     constructor(p2pManager: P2PManager) {
         super(
-            p2pManager,
+            p2pManager.rpcRouter,
             p2pManager.stateManager.logger.child({
                 component: "HarnessSignerService"
             })
@@ -47,7 +48,7 @@ export class SignerService extends ARpcService<SignerRpcMethods> {
         );
     }
 
-    public createRPCMethods(transport: ATransport): SignerRpcMethods {
+    public createRPCMethods(transport: NetworkTransport): SignerRpcMethods {
         return new SignerRpcMethods(transport, this);
     }
 }

@@ -1,7 +1,7 @@
 import {
     isWorkerRuntime,
     loadWebRTCProvider
-} from "@/rpc/services/WebRTCSetup/connection/WebRTCProvider";
+} from "@/rpc/network/services/WebRTCSetup/connection/WebRTCProvider";
 import { runProviderImportCase } from "@test/fixtures/WebRTCProviderStaging";
 import { expect } from "chai";
 import { RTCPeerConnection } from "werift";

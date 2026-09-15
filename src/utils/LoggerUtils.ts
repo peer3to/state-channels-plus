@@ -10,7 +10,7 @@ import type PeerProfile from "@/PeerProfile";
 import type Rpc from "@/rpc/Rpc";
 import type { NormalizedDisputeCommitment } from "@/stateManager/eventSync/EventSyncService";
 import Storage from "@/storage";
-import type ATransport from "@/transport/ATransport";
+import type NetworkTransport from "@/transport/NetworkTransport";
 import { TransportType } from "@/transport/TransportType";
 import { ReduceData, TimeConfig, BlockValidationResult } from "@/types";
 import {
@@ -86,8 +86,10 @@ export class LoggerUtils {
             "EXIT_CHANNEL_MESSAGE"
     };
 
-    private static readonly TRANSPORT_DEBUG_IDS: WeakMap<ATransport, number> =
-        new WeakMap();
+    private static readonly TRANSPORT_DEBUG_IDS: WeakMap<
+        NetworkTransport,
+        number
+    > = new WeakMap();
     private static nextTransportDebugId = 1;
 
     // ====================================
@@ -191,6 +193,15 @@ export class LoggerUtils {
         };
     }
 
+    static getRpcRequestMetadata(rpc: Rpc, startedAtMs: number) {
+        return {
+            requestId: rpc.requestId,
+            service: rpc.service,
+            operation: rpc.method,
+            durationMs: Date.now() - startedAtMs
+        };
+    }
+
     static getContractCallMetadata(data: Bytes, contractAddress?: Address) {
         const encodedData = ethers.hexlify(data);
         return {
@@ -271,7 +282,7 @@ export class LoggerUtils {
         return (value.length - 2) / 2;
     }
 
-    private static getTransportDebugId(transport: ATransport): string {
+    private static getTransportDebugId(transport: NetworkTransport): string {
         const existing = this.TRANSPORT_DEBUG_IDS.get(transport);
         if (existing !== undefined) return `transport-${existing}`;
 
@@ -349,7 +360,7 @@ export class LoggerUtils {
 
     static logInitHandshakeMessage(
         logger: Logger,
-        transport: ATransport,
+        transport: NetworkTransport,
         args: InitHandshakeLogArgs
     ): void {
         const localPeerAddress =
@@ -428,7 +439,7 @@ export class LoggerUtils {
      * This is a thin wrapper around logPeerDisconnected() to reduce call-site boilerplate.
      */
     static logTransportDisconnect(
-        transport: ATransport,
+        transport: NetworkTransport,
         isInfoLevel = false
     ): void {
         const meta = this.getTransportMetadata(transport);
@@ -441,8 +452,8 @@ export class LoggerUtils {
 
     static logTransportReplacement(
         logger: Logger,
-        oldTransport: ATransport,
-        newTransport: ATransport,
+        oldTransport: NetworkTransport,
+        newTransport: NetworkTransport,
         peerAddress: string
     ): void {
         logger.info("🔄 Transport upgrade", {
@@ -463,7 +474,7 @@ export class LoggerUtils {
         };
     }
 
-    static getTransportMetadata(transport: ATransport) {
+    static getTransportMetadata(transport: NetworkTransport) {
         const peerAddress = transport.peerAddress || "unknown";
         const stateManager = transport.p2pManager.stateManager;
         const transportType = TransportType[transport.transportType];

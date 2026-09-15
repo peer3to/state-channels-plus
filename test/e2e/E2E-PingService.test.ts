@@ -164,6 +164,11 @@ describe("E2E: PingPongService (custom RPC)", function () {
         expect(
             await ctl(receiver).pingService.getReceivedSumNonces().request()
         ).to.deep.equal(["empty-id-e2e"]);
+        const next = await ctl(sender)
+            .pingService.sum(2, 3, "after-empty-id")
+            .request(receiver.address);
+        expect(next.sum).to.equal(5);
+        expect(next.requester).to.equal(sender.address);
     });
 
     it("blacklists a multibyte oversized sender without affecting another session", async function () {

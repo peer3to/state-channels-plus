@@ -11,8 +11,8 @@ import { ethers } from "ethers";
 /**
  * E2E Tests for Spectate Service
  *
- * Maps to: src/rpc/services/spectate/SpectateService.ts
- *          src/rpc/services/spectate/SpectateRpcMethods.ts
+ * Maps to: src/rpc/network/services/spectate/SpectateService.ts
+ *          src/rpc/network/services/spectate/SpectateRpcMethods.ts
  *          src/stateManager/validationStrategy/SpectatingValidationStrategy.ts
  *
  * Tests spectator joining, syncing, and fork traversal mechanisms.

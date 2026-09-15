@@ -1,5 +1,6 @@
 // @spec-test-coverage-ignore: real dispute admission held behind the state mutex
 import type { MathPeerTestHarness } from "./MathPeerTestHarness";
+import { runtimeEndpointFor } from "./RuntimeRootObservation";
 import { waitFor } from "@test/utils/waitFor";
 import { expect } from "chai";
 
@@ -7,6 +8,30 @@ export async function assertDisputeAdmissionRefuses(
     h: MathPeerTestHarness,
     change: "dispose" | "fork"
 ) {
+    if (change === "dispose") {
+        await h.lifecycle.start(3, 0, {
+            configOverrides: { RUN_SDK_IN_THREAD: false }
+        });
+        const { host, sm, stub } = runtimeEndpointFor(h.getPeer(2).p2pInstance);
+        const forkId = sm.forkId;
+        stub.stubPauseConstructDisputeAtStateProof(forkId);
+        stub.holdStateMutex();
+        try {
+            await waitFor(() => stub.getStateMutexHeldCount() === 1);
+            const attempt = sm.disputeManager.dispute(forkId);
+            await waitFor(() => stub.getStateMutexWaiterCount() >= 1);
+            sm.abort();
+            stub.releaseStateMutex();
+            await attempt;
+            expect(sm.storage.disputes.didIDispute(forkId)).to.equal(false);
+            expect(stub.getPausedConstructDisputeStatus().entered).to.equal(0);
+        } finally {
+            stub.releaseStateMutex();
+            stub.restorePausedConstructDispute();
+            await host.dispose();
+        }
+        return;
+    }
     let reductionHold:
         | { entered(): Promise<number>; release(): Promise<void> }
         | undefined;
@@ -17,8 +42,6 @@ export async function assertDisputeAdmissionRefuses(
         });
         await h.dispute.restoreDisputeInitiation([2]);
         reductionHold = await h.rpcStub.holdReductionAttempt(0, "submit");
-    } else {
-        await h.lifecycle.start(3, 0);
     }
     const target = h.getPeer(2);
     const forkId = await h.control(target).query.getForkId().request();
@@ -44,28 +67,24 @@ export async function assertDisputeAdmissionRefuses(
                     .stub.getStateMutexWaiterCount()
                     .request()) >= 1
         );
-        if (change === "dispose") {
-            await h.control(target).stub.abortDetached().request();
-            await waitFor(() => h.execOnHost(target, (sm) => sm.isDisposed));
-        } else {
-            await h.control(h.getPeer(0)).stub.startTryReduce(forkId).request();
-            await waitFor(async () => (await reductionHold!.entered()) === 1);
-            const reducedForkId = await h
-                .control(h.getPeer(0))
-                .query.getForkId()
-                .request();
-            expect(reducedForkId).to.not.equal(forkId);
-            // Teleport only the fork coordinate while admission is parked;
-            // the replacement is a real reduction produced by the other peer.
-            await h.execOnHost(
-                target,
-                (sm, args) => {
-                    sm.forkId = args.reducedForkId;
-                    return true;
-                },
-                { reducedForkId }
-            );
-        }
+
+        await h.control(h.getPeer(0)).stub.startTryReduce(forkId).request();
+        await waitFor(async () => (await reductionHold!.entered()) === 1);
+        const reducedForkId = await h
+            .control(h.getPeer(0))
+            .query.getForkId()
+            .request();
+        expect(reducedForkId).to.not.equal(forkId);
+        // Teleport only the fork coordinate while admission is parked;
+        // the replacement is a real reduction produced by the other peer.
+        await h.execOnHost(
+            target,
+            (sm, args) => {
+                sm.forkId = args.reducedForkId;
+                return true;
+            },
+            { reducedForkId }
+        );
         await mutex.release();
         expect(await attempt).to.equal(false);
         expect(await construction.parkedCount()).to.equal(0);

@@ -4,15 +4,16 @@ import {
     type WatchdogArmMessage,
     type WatchdogWorkerMode
 } from "../watchdogContractExecutorWorkerCore";
-import type {
-    WorkerHostMessage,
-    WorkerRequestMessage
-} from "@/evm/contractExecutor/worker/protocol";
-import { onUnhandledWorkerError } from "@/evm/p2pRuntime/node/P2pRuntimeWorkerRuntime";
+import type { ContractExecutorInitialization } from "@/rpc/internal/services/contractExecutor/ContractExecutorService";
+import { onUnhandledWorkerError } from "@platform/rootWorkerRuntime";
+import {
+    onRootBootstrap,
+    adaptTransferredPort
+} from "@platform/rootWorkerRuntime";
 import { BroadcastChannel, parentPort, workerData } from "node:worker_threads";
 
 /**
- * Construction-time selection carried in `workerData`. `prefunnel` fails at
+ * Scripted selection installed by RootWorkerControl. `prefunnel` fails at
  * load, before any funnel exists; `exit` ends the thread once armed, after
  * the host is ready; `exit-pending` swallows the first call request so it
  * stays in flight, then ends the thread once armed. All three are the fatal
@@ -50,41 +51,35 @@ const mode: WatchdogWorkerMode =
     data.mode === "post-start"
         ? data.mode
         : "watchdog";
-let swallowedCall = false;
-startWatchdogContractExecutorWorker(mode, {
-    post: (response: WorkerHostMessage) => port.postMessage(response),
-    onMessage: (handler: (message: WorkerRequestMessage) => void) => {
-        port.on("message", (message: WorkerRequestMessage) => {
-            // The held call never reaches the host, so its caller stays
-            // pending until the exit below settles it.
-            if (
-                data.mode === "exit-pending" &&
-                !swallowedCall &&
-                message.type === "request" &&
-                message.payload.type === "call"
-            ) {
-                swallowedCall = true;
-                return;
-            }
-            handler(message);
-        });
-    },
-    // Close the port so the drained loop can exit naturally (see
-    // workerShutdown.ts for why the loop must never be force-stopped).
-    onDisposed: () => port.close(),
-    subscribeArm: (handler) => {
-        channel.onmessage = (message: unknown) => {
-            const payload = (message as { data?: WatchdogArmMessage })?.data;
-            if (payload?.type !== "arm") return;
-            if (exitOnArm) {
-                // Unexpected exit after readiness, with a clean code.
-                process.exit(0);
-            }
-            handler();
-        };
-        // One-shot: close the receiver after the first valid arm so the
-        // worker holds no channel handle while it drains.
-        return () => channel.close();
-    },
-    onUnhandledWorkerError
-});
+globalThis.threadName = "vm";
+onRootBootstrap<ContractExecutorInitialization>(
+    async ({ port: transferredPort, payload }) => {
+        await startWatchdogContractExecutorWorker(
+            mode,
+            {
+                runtimePort: adaptTransferredPort(transferredPort),
+                // Close the port so the drained loop can exit naturally (see
+                // workerShutdown.ts for why the loop must never be force-stopped).
+                onDisposed: () => port.close(),
+                subscribeArm: (handler) => {
+                    channel.onmessage = (message: unknown) => {
+                        const payload = (
+                            message as { data?: WatchdogArmMessage }
+                        )?.data;
+                        if (payload?.type !== "arm") return;
+                        if (exitOnArm) {
+                            // Unexpected exit after readiness, with a clean code.
+                            process.exit(0);
+                        }
+                        handler();
+                    };
+                    // One-shot: close the receiver after the first valid arm so the
+                    // worker holds no channel handle while it drains.
+                    return () => channel.close();
+                },
+                onUnhandledWorkerError
+            },
+            payload
+        );
+    }
+);
