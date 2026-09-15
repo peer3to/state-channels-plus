@@ -21,7 +21,11 @@ import type {
     UpgradeBanPolicyProbe,
     UnblacklistBanPolicyProbe,
     UnblacklistBanPolicyScenario,
+    ReconnectBanProbe,
+    ReconnectBanPrecedenceProbe,
+    ReconnectBanWebRtcCloseProbe,
     HolepunchTopicProbe,
+    JoinedDiscoveryKeysProbe,
     HandshakeFailureProbe,
     LateHandshakeProbe,
     ReplacementHandshakeProbe,
@@ -30,6 +34,9 @@ import type {
     LobbyRecoveryProbe,
     LobbyRecoveryBoundProbe,
     LobbyCommitCancellationProbe,
+    HandshakeResponseRefusalProbe,
+    LobbyCleanupOrderingProbe,
+    LateJoinerHandoffProbe,
     LobbySessionCleanupProbe,
     MatchedNegotiationAdmissionProbe,
     InvalidNegotiationAmountProbe,
@@ -41,7 +48,15 @@ import type {
     LobbyRoleTimerProbe,
     LobbyRetryEpochProbe,
     LobbyExhaustionTimerProbe,
-    LobbyLatePickProbe
+    LobbyLatePickProbe,
+    DiscoveryAdmissionGateProbe,
+    DiscoveryJoinLeaveRaceProbe,
+    InFlightJoinAdmissionProbe,
+    FailedDiscoveryJoinProbe,
+    ReconnectBanFinalAdmissionProbe,
+    RejectedRpcAfterLobbyEndedProbe,
+    CleanupMatchSerializationProbe,
+    ReplacementAdmissionGateProbe
 } from "./P2PManagerProbeService";
 import ANetworkRpcMethods from "@/rpc/network/ANetworkRpcMethods";
 import type NetworkTransport from "@/transport/NetworkTransport";
@@ -252,6 +267,25 @@ export class P2PManagerProbeRpcMethods extends ANetworkRpcMethods<P2PManagerProb
         return this.service.probeWebRtcCloseAcceptsHolepunch(address);
     }
 
+    public probeReconnectBan(
+        address: string,
+        unknownAddress: string
+    ): ReconnectBanProbe {
+        return this.service.probeReconnectBan(address, unknownAddress);
+    }
+
+    public probeReconnectBanPrecedence(
+        address: string
+    ): ReconnectBanPrecedenceProbe {
+        return this.service.probeReconnectBanPrecedence(address);
+    }
+
+    public probeReconnectBanWebRtcClose(
+        address: string
+    ): ReconnectBanWebRtcCloseProbe {
+        return this.service.probeReconnectBanWebRtcClose(address);
+    }
+
     public probeBlacklistRejectsHolepunch(
         address: string
     ): Promise<RelayAdmissionProbe> {
@@ -278,6 +312,18 @@ export class P2PManagerProbeRpcMethods extends ANetworkRpcMethods<P2PManagerProb
         duplicate = false
     ): Promise<HolepunchTopicProbe> {
         return this.service.probeHolepunchRejoinAfterLeave(duplicate);
+    }
+
+    public probeJoinedDiscoveryKeys(
+        firstKey: string,
+        secondKey: string,
+        unknownKey: string
+    ): Promise<JoinedDiscoveryKeysProbe> {
+        return this.service.probeJoinedDiscoveryKeys(
+            firstKey,
+            secondKey,
+            unknownKey
+        );
     }
 
     public probeHandshakeParticipantReadFailure(
@@ -314,6 +360,20 @@ export class P2PManagerProbeRpcMethods extends ANetworkRpcMethods<P2PManagerProb
 
     public probeLobbyProtocol(): Promise<LobbyProtocolProbe> {
         return this.service.probeLobbyProtocol();
+    }
+
+    public probeHandshakeResponseRefusal(
+        banMode: "reconnect" | "blacklist"
+    ): Promise<HandshakeResponseRefusalProbe> {
+        return this.service.probeHandshakeResponseRefusal(banMode);
+    }
+
+    public probeLobbyCleanupOrdering(): Promise<LobbyCleanupOrderingProbe> {
+        return this.service.probeLobbyCleanupOrdering();
+    }
+
+    public probeLateJoinerAfterHandoff(): Promise<LateJoinerHandoffProbe> {
+        return this.service.probeLateJoinerAfterHandoff();
     }
 
     public probeLobbyRecovery(): Promise<LobbyRecoveryProbe> {
@@ -374,5 +434,65 @@ export class P2PManagerProbeRpcMethods extends ANetworkRpcMethods<P2PManagerProb
 
     public probeTargetedNegotiationRaces(): Promise<TargetedNegotiationRaceProbe> {
         return this.service.probeTargetedNegotiationRaces();
+    }
+
+    public probeDiscoveryAdmissionGate(
+        refusedAddress: string,
+        webRtcAddress: string,
+        admittedAddress: string,
+        discoveryKey: string
+    ): Promise<DiscoveryAdmissionGateProbe> {
+        return this.service.probeDiscoveryAdmissionGate(
+            refusedAddress,
+            webRtcAddress,
+            admittedAddress,
+            discoveryKey
+        );
+    }
+
+    public probeDiscoveryJoinLeaveRace(
+        discoveryKey: string
+    ): Promise<DiscoveryJoinLeaveRaceProbe> {
+        return this.service.probeDiscoveryJoinLeaveRace(discoveryKey);
+    }
+
+    public probeAdmissionDuringInFlightDiscoveryJoin(
+        admittedAddress: string,
+        discoveryKey: string
+    ): Promise<InFlightJoinAdmissionProbe> {
+        return this.service.probeAdmissionDuringInFlightDiscoveryJoin(
+            admittedAddress,
+            discoveryKey
+        );
+    }
+
+    public probeFailedDiscoveryJoin(
+        discoveryKey: string
+    ): Promise<FailedDiscoveryJoinProbe> {
+        return this.service.probeFailedDiscoveryJoin(discoveryKey);
+    }
+
+    public probeReconnectBanAtFinalAdmission(): Promise<ReconnectBanFinalAdmissionProbe> {
+        return this.service.probeReconnectBanAtFinalAdmission();
+    }
+
+    public probeRejectedRpcAfterLobbyEnded(): Promise<RejectedRpcAfterLobbyEndedProbe> {
+        return this.service.probeRejectedRpcAfterLobbyEnded();
+    }
+
+    public probeCleanupSerializesWithMatch(): Promise<CleanupMatchSerializationProbe> {
+        return this.service.probeCleanupSerializesWithMatch();
+    }
+
+    public probeReplacementAdmissionWithoutDiscoveryKey(
+        establishedAddress: string,
+        freshAddress: string,
+        discoveryKey: string
+    ): Promise<ReplacementAdmissionGateProbe> {
+        return this.service.probeReplacementAdmissionWithoutDiscoveryKey(
+            establishedAddress,
+            freshAddress,
+            discoveryKey
+        );
     }
 }

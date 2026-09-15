@@ -255,3 +255,15 @@ The engineer approved host shutdown preparation before the child cascade. Run-31
 ## Application setup ownership correction
 
 The user superseded review 4's application-heavy client root. Application setup now owns config, logger creation, adapters, two deployments and final assembly. The client root owns host communication and common lifecycle only; P2pInstance owns application cleanup. Root readiness means usable communication, while application setup still waits for deployment completion. Existing startup errors, parent-required workers, host preparation before child disposal and bridge behavior remain in scope. The focused and final evidence is recorded in the application-setup implementation follow-up. Engineer approval and existing queues remain unchanged.
+
+## Refusal-attribution evidence — 2026-09-08
+
+Two real loopback discovery cases select the suspending side by address order rather than index.
+The admission case suspends from the side that owns the pair's dial loop and counts that side's own
+handshake starts: the count rises while the suspension stands — so the ban stopped no dial — while
+the transport token stays `null` for a full agreement window, so every one of those dials was
+refused at admission and neither identity is excluded. Lifting the suspension on that same side then
+returns a transport with no dial-back call anywhere. The attribution case suspends from the
+non-dialing side and holds one full agreement window after the first redial, with both peers'
+exclusion state as the oracle: a refusal does not become an exclusion on the refused peer, and a
+suspension does not escalate on the suspending one.

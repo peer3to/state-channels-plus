@@ -127,7 +127,7 @@ export class P2pSignerRpcMethods extends AInternalRpcMethods<P2pSignerService> {
     }
 
     public async disconnectFromPeers() {
-        this.service.requireP2pSigner().disconnectFromPeers();
+        await this.service.requireP2pSigner().disconnectFromPeers();
     }
 
     public async signMessage(message: SerializedSignerMessage) {

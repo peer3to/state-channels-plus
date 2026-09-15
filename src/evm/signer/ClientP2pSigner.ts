@@ -269,8 +269,8 @@ class ClientP2pSigner implements Signer {
         };
     }
 
-    disconnectFromPeers(): void {
-        void this.client.p2pSigner.disconnectFromPeers().request();
+    async disconnectFromPeers(): Promise<void> {
+        await this.client.p2pSigner.disconnectFromPeers().request();
     }
 
     getChannelStatus(): Promise<Status> {

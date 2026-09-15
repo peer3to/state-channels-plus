@@ -1,6 +1,7 @@
 import { TransportType } from "@/transport";
 import { P2PManagerFixture } from "@test/fixtures/P2PManagerFixture";
 import { expect } from "chai";
+import { Wallet } from "ethers";
 
 describe("ProfileManager Holepunch ban policy", function () {
     let fixture: P2PManagerFixture;
@@ -175,6 +176,53 @@ describe("ProfileManager Holepunch ban policy", function () {
         expect(result.usableTrafficSent).to.equal(true);
     });
 
+    it("bans reconnects without blacklisting or touching the discovery handle", async function () {
+        const result = await fixture
+            .control()
+            .p2pManagerProbe.probeReconnectBan(
+                fixture.address(1),
+                Wallet.createRandom().address
+            )
+            .request();
+
+        expect(result.banned).to.equal(true);
+        // The ban is admission-only: discovery keeps dialing the identity, so
+        // its handle is never banned and nothing has to be released on allow.
+        expect(result.banCallsAfterBan).to.deep.equal([]);
+        expect(result.reconnectBannedAfterBan).to.equal(true);
+        expect(result.blacklistedAfterBan).to.equal(false);
+        expect(result.banCallsAfterAllow).to.deep.equal([]);
+        expect(result.reconnectBannedAfterAllow).to.equal(false);
+        expect(result.unknownPeerBanned).to.equal(false);
+    });
+
+    it("keeps an explicit blacklist banned when a reconnect ban is lifted", async function () {
+        const result = await fixture
+            .control()
+            .p2pManagerProbe.probeReconnectBanPrecedence(fixture.address(1))
+            .request();
+
+        // Only the exclusion bans the handle, and lifting the reconnect ban
+        // must not release it.
+        expect(result.banCallsAfterBlacklistThenAllow).to.deep.equal([true]);
+        expect(result.blacklistedAfterAllow).to.equal(true);
+        expect(result.reconnectBannedAfterAllow).to.equal(false);
+    });
+
+    it("releases the upgrade ban on WebRTC close while a reconnect ban stands", async function () {
+        const result = await fixture
+            .control()
+            .p2pManagerProbe.probeReconnectBanWebRtcClose(fixture.address(1))
+            .request();
+
+        // The reconnect ban adds no handle ban, so the upgrade ban is the only
+        // one on the handle and the WebRTC close releases it as usual. The
+        // identity stays refused at admission until the ban is lifted.
+        expect(result.banCallsAfterUpgradeAndBan).to.deep.equal([true]);
+        expect(result.banCallsAfterCurrentClose).to.deep.equal([true, false]);
+        expect(result.reconnectBannedAfterClose).to.equal(true);
+    });
+
     it("rejects and bans a later Holepunch fallback for an excluded identity", async function () {
         const result = await fixture
             .control()
@@ -191,5 +239,47 @@ describe("ProfileManager Holepunch ban policy", function () {
         expect(result.handshakeCompleted).to.equal(false);
         expect(result.disconnectionHookCalls).to.equal(0);
         expect(result.usableTrafficSent).to.equal(false);
+    });
+
+    it("refuses a handshake response from a reconnect-banned signer without banning its handle", async function () {
+        const result = await fixture
+            .control()
+            .p2pManagerProbe.probeHandshakeResponseRefusal("reconnect")
+            .request();
+
+        expect(result.freshTransportClosed).to.equal(true);
+        expect(result.signerBlacklisted).to.equal(false);
+        expect(result.signerReconnectBanned).to.equal(true);
+        // A refused redial stays dialable: the identity keeps arriving and
+        // keeps being refused here until the ban is lifted.
+        expect(result.freshPeerInfoBanCalls).to.deep.equal([]);
+    });
+
+    it("bans the new handle of a blacklisted signer that answers a handshake", async function () {
+        const result = await fixture
+            .control()
+            .p2pManagerProbe.probeHandshakeResponseRefusal("blacklist")
+            .request();
+
+        expect(result.freshTransportClosed).to.equal(true);
+        expect(result.signerBlacklisted).to.equal(true);
+        expect(result.freshPeerInfoBanCalls).to.deep.equal([true]);
+    });
+
+    it("refuses a reconnect-banned identity at the ack-gated finalize without excluding it", async function () {
+        const result = await fixture
+            .control()
+            .p2pManagerProbe.probeReconnectBanAtFinalAdmission()
+            .request();
+
+        // The staged race is real: the response was accepted before the ban.
+        expect(result.responseAcceptedBeforeBan).to.equal(true);
+        expect(result.replacementTransportClosed).to.equal(true);
+        expect(result.replacementAuthenticated).to.equal(false);
+        expect(result.replacementConnected).to.equal(false);
+        expect(result.establishedTransportRetained).to.equal(true);
+        // A suspension refusal never escalates to an exclusion.
+        expect(result.signerBlacklisted).to.equal(false);
+        expect(result.signerReconnectBanned).to.equal(true);
     });
 });

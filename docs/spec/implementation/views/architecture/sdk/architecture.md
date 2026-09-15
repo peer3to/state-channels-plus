@@ -113,6 +113,13 @@ receives `busEvent` and `webRTCBridgePort`; readiness and errors use the common
 lifecycle and error services. Each endpoint also exposes its logger service. Existing operation-specific timeout choices remain at
 the callers.
 
+`disconnectFromPeers` is awaited on both sides: the host leaves every discovery
+key it observes (`P2PManager.leaveAllDiscoveryKeys`) before `disconnectAll`,
+because discovery re-dials any peer that still shares an observed key — closing
+first would make the disconnect a pause. The client facade therefore awaits the
+host's request rather than firing and forgetting. It bans nobody; a later
+`connectToChannel` re-observes its key and peers reconnect.
+
 Startup sequence: application config and signer → create client root and its
 host child → host communication ready → application adapters →
 `deployStateMachine` runs twice through the deployment signer →

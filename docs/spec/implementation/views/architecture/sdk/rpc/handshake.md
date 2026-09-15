@@ -205,11 +205,17 @@ When satisfied:
 - **Response timeout** (initiator): `agreementTime` → `disconnectConnection`. No blacklist — the peer
   never proved an identity to blacklist.
 - **Ack timeout** (`ensureHandshakeAckTimeoutScheduled`, armed by both roles, deduped by
-  `ackTimeoutScheduled`): after `agreementTime`, if `!didReceiveAck` → if a peer address is known
+  `ackTimeoutScheduled`): after `agreementTime`, if `!didReceiveAck` → if `transport.isClosed`, log
+  the `ack-timeout` message with reason `transport closed before the handshake ack` and return; else
+  if a peer address is known
   (`transport.peerAddress || verifiedPeerAddressByTransport.get(transport)`),
   `disconnectAndBlacklistPeerByEvmAddress`; else `disconnectConnection`. So a peer this node has
-  _verified_ (initiator role complete) but which never acks gets blacklisted by address; an unverified
-  peer is merely disconnected.
+  _verified_ (initiator role complete) but which never acks **on a still-open transport** gets
+  blacklisted by address; an unverified peer is merely disconnected; and a transport already closed
+  costs nobody anything, because the close — not the peer — explains the missing ack. The refusal
+  paths of §4 are that case: an identity that refuses us (exclusion or reconnect suspension) closes
+  without acking, and without this gate the refused side would answer with an exclusion, turning a
+  one-sided local suspension into a mutual permanent one.
 
 ### 3.7 Sequence diagram (mutual, both directions on one transport)
 
@@ -335,16 +341,17 @@ service.
 
 Consistent with the model's classification table ([./README.md](./README.md) §8):
 
-| Trigger                                   | Method / role                             | Consequence                                                                     |
-| ----------------------------------------- | ----------------------------------------- | ------------------------------------------------------------------------------- |
-| Non-hex32 challenge or non-finite time    | `onInitHandshakeRequest`                  | Disconnect + `{ok:false}` request error (throw)                                 |
-| Request time outside `agreementTime` skew | `onInitHandshakeRequest`                  | Disconnect + request error                                                      |
-| Response timeout                          | `runHandshake` (initiator)                | Disconnect, **no blacklist** (identity unproven)                                |
-| RTT or response-timestamp outside window  | `handleHandshakeResponse`                 | Disconnect, no blacklist                                                        |
-| Undecodable / invalid signature           | `handleHandshakeResponse` (verify throws) | Disconnect, no blacklist                                                        |
-| Verified signer is blacklisted            | `handleHandshakeResponse`                 | Disconnect                                                                      |
-| Duplicate ack                             | `onInitHandshakeAck`                      | Disconnect + blacklist of the transport's addressless profile/SDK handle (§4.2) |
-| Ack never arrives                         | ack-timeout task                          | Blacklist by verified address if known, else disconnect                         |
+| Trigger                                     | Method / role                             | Consequence                                                                     |
+| ------------------------------------------- | ----------------------------------------- | ------------------------------------------------------------------------------- |
+| Non-hex32 challenge or non-finite time      | `onInitHandshakeRequest`                  | Disconnect + `{ok:false}` request error (throw)                                 |
+| Request time outside `agreementTime` skew   | `onInitHandshakeRequest`                  | Disconnect + request error                                                      |
+| Response timeout                            | `runHandshake` (initiator)                | Disconnect, **no blacklist** (identity unproven)                                |
+| RTT or response-timestamp outside window    | `handleHandshakeResponse`                 | Disconnect, no blacklist                                                        |
+| Undecodable / invalid signature             | `handleHandshakeResponse` (verify throws) | Disconnect, no blacklist                                                        |
+| Verified signer is blacklisted              | `handleHandshakeResponse`                 | Disconnect                                                                      |
+| Duplicate ack                               | `onInitHandshakeAck`                      | Disconnect + blacklist of the transport's addressless profile/SDK handle (§4.2) |
+| Ack never arrives, transport still open     | ack-timeout task                          | Blacklist by verified address if known, else disconnect                         |
+| Ack never arrives, transport already closed | ack-timeout task                          | Log and return — no disconnect, no blacklist (the close explains the silence)   |
 
 The duplicate-ack result matches the model table for the live transport. Identity-level durability
 across a new SDK handle or process restart is still an open policy decision.

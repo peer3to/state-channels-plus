@@ -273,7 +273,10 @@ export class EventHandler {
 
         this.stateManager.setStatus(Status.NOT_OPENED);
 
-        // Disconnect from all peers in this channel
+        // Leave the channel's discovery key before closing, or discovery
+        // re-dials every peer that still observes it. Then disconnect from
+        // all peers in this channel.
+        await this.stateManager.p2pManager.leaveAllDiscoveryKeys();
         this.stateManager.p2pManager.disconnectAll();
 
         // Trigger channelclosed hook?
