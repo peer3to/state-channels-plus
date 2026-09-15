@@ -9,7 +9,7 @@ Binds negotiation endpoints to the main-thread bridge broker and uses the shared
 
 ## Key design decisions
 
-- The inherited internal service boundary serializes errors through the common error codec. No service-specific prepareError override is needed.
+- The inherited internal service boundary serializes errors through the common error codec.
 
 - Each invocation constructs endpoint methods bound to its sender ([`WebRTCNegotiationService.ts`](../../../../../../../../../src/rpc/internal/services/webRTCNegotiation/WebRTCNegotiationService.ts#L11)).
 - Errors use the shared internal error projection, as do callback failures ([`WebRTCNegotiationService.ts`](../../../../../../../../../src/rpc/internal/services/webRTCNegotiation/WebRTCNegotiationService.ts#L14)).

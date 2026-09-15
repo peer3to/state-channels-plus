@@ -35,3 +35,5 @@ The suite exercises actual SDK-owned components and connections. Each declaratio
 | [`InternalRpcRouter detached execution context > retains detached inline executor peer identity after another peer enters`](../../../../../../test/rpc/InternalRpcRouter.test.ts#L240) (line 240) | [`UNIT-TEST-RUNTIME-RPC-ROUTER-1-C1MH7M.P17`](../../../../implementation/source/src/rpc/router/InternalRpcRouter.ts.md#unit-test-runtime-rpc-router-1-c1mh7m.p17)           |
 
 | [`InternalRpcRouter > composes lifecycle on every SDK root and preserves inactive disposal`](../../../../../../test/rpc/InternalRpcRouter.test.ts#L15) (line 15) | [`UNIT-TEST-RUNTIME-SERVICE-1-WH4SSY.P4`](../../../../implementation/source/src/rpc/internal/AInternalRpcRoot.ts.md#unit-test-runtime-service-1-wh4ssy.p4) |
+
+The four inline identity cases also observe the real client router’s settlement events. They assert that both the failed endpoint response and a later successful response settle under the expected peer identity. This checks the outer inbound context separately from the endpoint error stamp; the existing detached cases interleave two peers.

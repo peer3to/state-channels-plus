@@ -16,6 +16,13 @@ export async function assertInlineErrorIdentity(
         inlineSdk: true,
         identityContext: true
     });
+    const settlementIdentities: Array<string | undefined> = [];
+    const unsubscribe = sdk.clientRoot.router.onRequestSettled(({ rpc }) => {
+        if (rpc.service === "runtimeProbe")
+            settlementIdentities.push(
+                PeerIdentityExecutionContext.getPeerAddressOfCurrentAsyncContext()
+            );
+    });
     try {
         const probe = sdk.remote.runtimeProbe;
         const request = executor
@@ -31,7 +38,11 @@ export async function assertInlineErrorIdentity(
         );
         expect(await probe.sum(3, 4).request()).to.equal(7);
         expect(sdk.clientRoot.router.pendingRequestCount).to.equal(0);
+        // Both failure and success responses must settle inside the inbound peer context.
+        const address = await sdk.instance.p2pSigner.getAddress();
+        expect(settlementIdentities).to.deep.equal([address, address]);
     } finally {
+        unsubscribe();
         try {
             await sdk.dispose();
         } finally {

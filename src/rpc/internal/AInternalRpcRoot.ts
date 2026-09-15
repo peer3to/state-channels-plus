@@ -65,14 +65,11 @@ export abstract class AInternalRpcRoot<
     ) {
         const handlerExecutionContext = context?.handlerExecutionContext;
         this.startContext = context;
-        this.router = new InternalRpcRouter(this, timeoutMs);
-        if (handlerExecutionContext) {
-            const onMessage = this.router.onMessage.bind(this.router);
-            this.router.onMessage = (message, sender) =>
-                handlerExecutionContext.runHandler(() =>
-                    onMessage(message, sender)
-                );
-        }
+        this.router = new InternalRpcRouter(
+            this,
+            timeoutMs,
+            handlerExecutionContext
+        );
         this.errors = new RootErrorService(this.router, onError);
         this.logger = new LoggerService(this);
         this.rootLogger =

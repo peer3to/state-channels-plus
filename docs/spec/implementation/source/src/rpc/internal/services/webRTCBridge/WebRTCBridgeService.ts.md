@@ -9,7 +9,7 @@ Constructs sender-bound WebRTC callback endpoints and keeps callback failures wi
 
 ## Key design decisions
 
-- The protected prepareError override supplies the existing three-field bridge error projection to the internal service boundary. It is a service policy method, not an RPC endpoint.
+- The inherited internal service boundary serializes endpoint errors with the common error codec.
 
 - Each dispatch constructs endpoint methods with the invoking transport ([`WebRTCBridgeService.ts`](../../../../../../../../../src/rpc/internal/services/webRTCBridge/WebRTCBridgeService.ts#L11)).
 - Bridge failures use the existing three-field projection rather than runtime contract error metadata ([`WebRTCBridgeService.ts`](../../../../../../../../../src/rpc/internal/services/webRTCBridge/WebRTCBridgeService.ts#L14)).

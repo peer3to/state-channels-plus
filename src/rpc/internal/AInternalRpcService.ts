@@ -1,11 +1,7 @@
 import { AInternalRpcMethods } from "./AInternalRpcMethods";
 import type { InternalRpcRouter } from "../router/InternalRpcRouter";
 import type Rpc from "../Rpc";
-import {
-    resolveRpcEndpoint,
-    sendRpcResponseSafely,
-    invokeRpcEndpoint
-} from "../RpcDispatch";
+import { resolveRpcEndpoint, invokeRpcEndpoint } from "../RpcDispatch";
 import { serializeError } from "@/rpc/internal/errorWire";
 import type InternalTransport from "@/transport/InternalTransport";
 
@@ -13,15 +9,6 @@ export abstract class AInternalRpcService<TMethods extends object> {
     constructor(public readonly router: InternalRpcRouter) {}
 
     public abstract createRPCMethods(sender: InternalTransport): TMethods;
-
-    protected prepareError(error: unknown): unknown {
-        return serializeError(error);
-    }
-
-    protected responseSendFailed(error: unknown): void {
-        // The transport reports uncaught dispatch failures to the owning root.
-        throw error;
-    }
 
     protected afterResponse(_rpc: Rpc, _sender: InternalTransport): void {}
 
@@ -39,14 +26,11 @@ export abstract class AInternalRpcService<TMethods extends object> {
             invoke: context
                 ? (operation) => context.runHandler(operation)
                 : undefined,
-            prepareError: (error) => this.prepareError(error),
+            prepareError: serializeError,
             reply: (response) => {
                 try {
-                    sendRpcResponseSafely(
-                        response,
-                        (prepared) => sender.sendRpcResponse(prepared),
-                        (error) => this.responseSendFailed(error)
-                    );
+                    // The transport reports uncaught dispatch failures to the owning root.
+                    sender.sendRpcResponse(response);
                 } finally {
                     // Disposal must finish even when the parent cannot receive its reply.
                     this.afterResponse(rpc, sender);

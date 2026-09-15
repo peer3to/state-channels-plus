@@ -1,5 +1,6 @@
 import { ARpcRouter } from "./ARpcRouter";
 import { isRpc, isRpcResponse } from "../Rpc";
+import type { HostHandlerExecutionContext } from "@/evm/p2pRuntime/HostHandlerExecutionContext";
 import type { AInternalRpcRoot } from "@/rpc/internal/AInternalRpcRoot";
 import {
     deserializeError,
@@ -10,7 +11,8 @@ import type InternalTransport from "@/transport/InternalTransport";
 export class InternalRpcRouter extends ARpcRouter<InternalTransport> {
     constructor(
         public readonly rpcRoot: AInternalRpcRoot,
-        protected readonly defaultRequestTimeoutMs: number | null
+        protected readonly defaultRequestTimeoutMs: number | null,
+        private readonly handlerExecutionContext?: HostHandlerExecutionContext
     ) {
         super();
     }
@@ -30,6 +32,17 @@ export class InternalRpcRouter extends ARpcRouter<InternalTransport> {
     }
 
     public async onMessage(
+        message: unknown,
+        sender: InternalTransport
+    ): Promise<void> {
+        return this.handlerExecutionContext
+            ? this.handlerExecutionContext.runHandler(() =>
+                  this.handleMessage(message, sender)
+              )
+            : this.handleMessage(message, sender);
+    }
+
+    private async handleMessage(
         message: unknown,
         sender: InternalTransport
     ): Promise<void> {
