@@ -882,7 +882,8 @@ export class RpcStubActions<
      */
     async holdSnapshotPostSend(peerIndex: number): Promise<{
         waitUntilHeld: (timeoutMs?: number) => Promise<number>;
-        release: () => Promise<void>;
+        /** Resolves with the first parked send's revert name, or null when it was mined or nothing was parked. */
+        release: () => Promise<string | null>;
     }> {
         const ctl = () => this.peerStub(peerIndex);
         await ctl().stubHoldSnapshotPostSend().request();
@@ -892,9 +893,7 @@ export class RpcStubActions<
                     withFirstBlockGrace: true
                 })
             ) => ctl().waitForHeldSnapshotPostSend().request({ timeoutMs }),
-            release: async () => {
-                await ctl().restoreSnapshotPostSend().request();
-            }
+            release: () => ctl().restoreSnapshotPostSend().request()
         };
     }
 

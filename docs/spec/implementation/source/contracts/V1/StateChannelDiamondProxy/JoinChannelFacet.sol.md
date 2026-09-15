@@ -28,7 +28,7 @@ atomic composable deposit, appended inbound JOIN block.
 
 1. **One `_processJoinChannel(…, isTopUp)`** keeps the two admission cases from drifting apart — the membership split is a flag check, everything else shared.
 2. **The undisputed-fork gate is an internal call, not an external self-call.** The join branch
-   evaluates [`_isForkDisputed`](../../../../../../../contracts/V1/StateChannelDiamondProxy/StateChannelCommon.sol#L195)
+   evaluates [`_isForkDisputed`](../../../../../../../contracts/V1/StateChannelDiamondProxy/StateChannelCommon.sol#L184)
    on [StateChannelCommon](./StateChannelCommon.sol.md)
    ([#L66](../../../../../../../contracts/V1/StateChannelDiamondProxy/JoinChannelFacet.sol#L66)); it
    previously reached the same predicate through an external self-call on the proxy. Same verdict,

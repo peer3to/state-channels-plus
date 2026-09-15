@@ -13,6 +13,7 @@ export type RaceConditionErrorName =
     | "RaceConditionJoinChannelExpired"
     | "RaceConditionJoinChannelSnapshotMismatch"
     | "RaceConditionPendingInboundNotConsumed"
+    | "RaceConditionSnapshotDuringKillPeriod"
     | "RaceConditionForceInboundJoinForkDisputed"
     | "RaceConditionDisputeWindowNotOpen"
     | "RaceConditionDisputeEvidencePeriodExpired"

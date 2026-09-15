@@ -156,17 +156,6 @@ contract StateChannelCommon is StateChannelManagerStorage, StateChannelManagerEv
         return pendingParticipants;
     }
 
-    function _deriveEligibleParticipantsFromInboundHash(bytes32 channelId, bytes32 latestInboundMessageBlockHash)
-        internal
-        view
-        returns (address[] memory eligibleParticipants)
-    {
-        address[] memory snapshotParticipants = _getSnapshotParticipants(channelId);
-        return _deriveEligibleParticipantsFromInboundHashAndSnapshotParticipants(
-            channelId, latestInboundMessageBlockHash, snapshotParticipants, bytes32(0)
-        );
-    }
-
     function _deriveEligibleParticipantsFromInboundHashAndSnapshotParticipants(
         bytes32 channelId,
         bytes32 latestInboundMessageBlockHash,

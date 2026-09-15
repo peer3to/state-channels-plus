@@ -27,6 +27,8 @@ decisions.
 
 The race-error union includes `RaceConditionDisputeWindowNotOpen`. Generic ABI decoding dispatches that exact name; DisputeManager owns rollback, slash recovery, and normal re-entry. Other custom errors keep their existing handlers.
 
+The union also names `RaceConditionSnapshotDuringKillPeriod` (handled by SnapshotUpdateService and ReductionExecutor, read by SpectateService) ([#L16](../../../../../../src/utils/evmErrorHandler.ts#L16)).
+
 `GeneratedArtifacts.errorAbis` is the single reachable-manager error union. It includes the
 `StateProofFacet` and `UtilityFacet` ECDSA errors used by both the decoder and canonical binding.
 

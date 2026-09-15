@@ -97,7 +97,8 @@ signatures — existence in chain storage is the proof.
   (`ForgedInboundMessageBlock`, see [protocol/fraud-proofs.md](./fraud-proofs.md)).
 - **On-chain ancestry check for disputes.** A dispute's claimed inbound tip must be an ancestor
   (or equal) of the chain's tip: `_isDisputeInboundHashValid` walks the persisted chain from the
-  chain tip toward genesis and also requires the claimed height to match the stored height.
+  chain tip toward genesis and also requires the claimed height to match the stored height. Upload
+  separately refuses an anchor below the chain snapshot's consumed inbound height.
 - **Pruning.** When a snapshot advance clears storage, inbound blocks from the new snapshot's tip
   backwards are deleted (`_clearOldInboundMessageBlocks` in
   [`StateSnapshotFacet`](../../../../../contracts/V1/StateChannelDiamondProxy/StateSnapshotFacet.sol#L8)).

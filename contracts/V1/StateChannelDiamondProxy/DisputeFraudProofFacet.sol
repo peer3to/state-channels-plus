@@ -772,9 +772,21 @@ contract DisputeFraudProofFacet is StateChannelCommon {
         view
         returns (address[] memory expectedParticipants)
     {
-        return _deriveEligibleParticipantsFromInboundHash(
-            dispute.input.channelId, dispute.input.latestInboundMessageBlockHash
+        bytes32 channelId = dispute.input.channelId;
+        // the chain set is frozen for the kill period (adoption onto the fork refused)
+        address[] memory participants = UtilityFacet(utilityFacetAddress).concatAddressArraysNoDuplicates(
+            _getSnapshotParticipants(channelId),
+            _derivePendingParticipantsFromInboundHash(
+                channelId, dispute.input.latestInboundMessageBlockHash, bytes32(0)
+            )
         );
+        // slashes before the window opened were visible to every dispute in it; later ones count only if committed
+        DisputeWindow storage window = disputeData[channelId].disputeWindowMap[dispute.input.forkId];
+        uint256 slashedBefore = _isDisputeWidnowCreated(window) ? window.evidence.creationTimestamp : block.timestamp;
+        address[] memory slashes = UtilityFacet(utilityFacetAddress).concatAddressArraysNoDuplicates(
+            dispute.input.onChainSlashes, _getOnChainSlashedParticipantsUpToTimestamp(channelId, slashedBefore - 1)
+        );
+        return UtilityFacet(utilityFacetAddress).subtractAddressArrays(participants, slashes);
     }
 
     function _isLastMilestoneFinalByEveryone(Dispute memory dispute) internal returns (bool isFinal) {
