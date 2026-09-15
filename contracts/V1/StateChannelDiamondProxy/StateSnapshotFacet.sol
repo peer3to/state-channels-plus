@@ -89,6 +89,13 @@ contract StateSnapshotFacet is StateChannelCommon {
             ),
             ErrorOutboundMessageBlocksInvalid()
         );
+        DisputeWindow storage disputeWindow = disputeData[channelId].disputeWindowMap[newSnapshot.forkId];
+        (bool killPeriodExpired, uint256 killPeriodEnd) = _isKillPeriodExpired(disputeWindow, _getEvidenceTime());
+        // a fork's membership is frozen while its committed disputes can still be killed
+        require(
+            !_isDisputeWidnowCreated(disputeWindow) || killPeriodExpired,
+            RaceConditionSnapshotDuringKillPeriod(killPeriodEnd, block.timestamp)
+        );
         _applyOutboundMessageBlocks(channelId, outboundMessageBlocks, newSnapshot.snapshotData);
 
         // Update the state snapshot

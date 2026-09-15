@@ -123,7 +123,8 @@ Ordered verification; any failure aborts the sync with no partial effect:
     make a newcomer adopt an undercollateralized snapshot
     ([cross-layer-messages.md](../settlement/cross-layer-messages.md) §6).
 11. **Simulate adoption.** Verify, without any on-chain transaction, that the implied snapshot
-    advance would succeed on-chain; a simulated revert aborts.
+    advance would succeed on-chain; a simulated revert aborts, except a refusal that only defers adoption
+    because the target fork's kill period is open.
 12. **Persist** the verified payload atomically through the storage system
     ([`REQ-IX-9-AV56NR` (Storage fidelity)](../interactions.md#req-ix-9-av56nr)): skip if local knowledge is already ahead; abort on
     any conflict with locally finalized blocks. After a different fork is successfully installed,

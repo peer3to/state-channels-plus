@@ -9,17 +9,14 @@
 
 ## Overview
 
-A single positive case for the inbound-anchor check at upload: `postTamperedDispute` sets
-`dispute.input.latestInboundMessageBlockHash = ZeroHash` with
-`lastInboundMessageBlockHeight = 0`, the genesis anchor of the inbound message chain.
-`_isDisputeInboundHashValid` walks the on-chain inbound chain backwards and accepts any valid
-ancestor with a matching height, so the upload succeeds even though the inbound chain has
-advanced past genesis; the oracle is at least one committed dispute observed for peer 1. Junk
-inbound-hash variants (a non-genesis random hash, or genesis hash with height > 0) live
-deliberately in `disputeInputFields/inboundHash.test.ts` because they fail through the
-fraud-proof pipeline rather than upload revert. Even after the permutation atomization no ID isolates this
-positive-ancestor acceptance — the atomized inbound-tip permutations cover the failure
-side — so no ID is assigned.
+A single refusal case for the consumed-inbound anchor gate at upload. A real constructed dispute is
+re-signed with `latestInboundMessageBlockHash = ZeroHash`, `lastInboundMessageBlockHeight = 0` and no posted
+auditing data, then uploaded directly: the chain snapshot has already consumed the open's inbound block, so
+`uploadDispute` reverts `RaceConditionDisputeAnchorBehindSnapshot(consumedHeight, 0)` and the fork's window
+creation timestamp stays 0. The component boundary permutations (both upload modes, at and above the
+boundary) are assigned to the Foundry admission suite; this case covers the refusal through the deployed
+manager for a dispute the SDK constructed. Junk inbound-hash variants that pass the gate live in
+`disputeInputFields/inboundHash.test.ts` because they fail through the fraud-proof pipeline.
 
 ## Tests and covered test IDs
 
@@ -28,6 +25,6 @@ test ID may be assigned to at most one test across the whole tree; static analys
 duplicate assignments, and tests with no assigned ID are listed in the verification-coverage
 report but are kept here.
 
-| Test declaration                                                                                                                                                                                                                                                                                                                                                   | Covers |
-| ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------ |
-| [`E2E: dispute validation / uploadRevert / latestInboundMessageBlockHash > dispute.input.latestInboundMessageBlockHash = ZeroHash AND lastInboundMessageBlockHeight = 0 → dispute upload succeeds (genesis anchor is always a valid ancestor)`](../../../../../../../../test/e2e/disputeValidation/uploadRevert/latestInboundMessageBlockHash.test.ts#L5) (line 5) | —      |
+| Test declaration                                                                                                                                                                                                                                                                                                  | Covers                                                                                                    |
+| ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------- |
+| [`E2E: dispute validation / uploadRevert / latestInboundMessageBlockHash > dispute.input.lastInboundMessageBlockHeight below the consumed inbound → RaceConditionDisputeAnchorBehindSnapshot`](../../../../../../../../test/e2e/disputeValidation/uploadRevert/latestInboundMessageBlockHash.test.ts#L6) (line 6) | [`REQ-DIS-2-PKVZ7E.T1.P27`](../../../../../../specification/disputes/disputes.md#req-dis-2-pkvz7e.t1.p27) |

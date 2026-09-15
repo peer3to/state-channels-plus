@@ -30,6 +30,7 @@ not consumed the on-chain inbound head. This is also the N/N exit path.
 Error text delegates to the dependency-free errorMessage helper. Existing catch policy, stack fields, log messages and error propagation remain at this call site. See [SnapshotUpdateService.ts](../../../../../../../src/stateManager/snapshotUpdate/SnapshotUpdateService.ts#L1).
 
 1. **Multi-generation walking in one submission** — several dispute generations cross in one update because each link is verified on-chain anyway ([`REQ-DIS-9-64WHCD`](../../../../../specification/disputes/disputes.md#req-dis-9-64whcd)).
+2. **A kill-period refusal fails the post.** `RaceConditionSnapshotDuringKillPeriod`, from the fork update or the same-fork advance of the post's bundle, is logged as a warning and rethrown as the decoded error so callers can tell the expected refusal apart ([#L163](../../../../../../../src/stateManager/snapshotUpdate/SnapshotUpdateService.ts#L163)), like the pending-inbound refusal, so the leave exit falls back to its self-removal dispute ([`REQ-ENFSNAP-4-ESP98F` (Kill-period freeze)](../../../../../specification/enforcement/snapshot-adoption.md#req-enfsnap-4-esp98f)).
 
 ## Inputs, outputs, state, and side effects
 

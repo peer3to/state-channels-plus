@@ -363,6 +363,21 @@ export default class ReductionExecutor {
             return "submit";
         } catch (error) {
             const customError = tryDecodeCustomError(error);
+            // the reduce passed (multicall stops at the first failure); only the
+            // reduced fork's adoption is frozen by its open kill period
+            if (
+                customError?.name === "RaceConditionSnapshotDuringKillPeriod" &&
+                submission.calldata.length > 1
+            ) {
+                this.logger.info("Reduction submits without fork adoption", {
+                    forkId,
+                    candidateForkId: candidate.reducedForkId,
+                    customError:
+                        LoggerUtils.getCustomEvmErrorMetadata(customError)
+                });
+                submission.calldata.splice(1);
+                return this.simulateSubmission(forkId, candidate, submission);
+            }
             const status = await this.classifyReductionRace(
                 customError?.name,
                 forkId,
@@ -408,7 +423,12 @@ export default class ReductionExecutor {
             })
             .catch(async (error) => {
                 let raceErrorName: ReductionRaceErrorName | undefined;
-                const handlers: RaceConditionErrorHandlers = {};
+                let adoptionFrozen = false;
+                const handlers: RaceConditionErrorHandlers = {
+                    RaceConditionSnapshotDuringKillPeriod: () => {
+                        adoptionFrozen = true;
+                    }
+                };
                 for (const errorName of REDUCTION_RACE_ERRORS) {
                     handlers[errorName] = () => {
                         raceErrorName = errorName;
@@ -421,6 +441,17 @@ export default class ReductionExecutor {
                     signer: this.stateManager.signer,
                     handlers
                 });
+                // a dispute reached the reduced fork after the simulation -> land the reduce alone
+                if (
+                    handled &&
+                    adoptionFrozen &&
+                    submission.calldata.length > 1
+                ) {
+                    this.submitDetached(forkId, candidate, {
+                        calldata: submission.calldata.slice(0, 1)
+                    });
+                    return;
+                }
                 if (handled && raceErrorName) {
                     const status = await this.classifyReductionRace(
                         raceErrorName,

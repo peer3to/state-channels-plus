@@ -404,13 +404,15 @@ describe("parallel forge task discovery", function () {
             "DisputeUtilsTest",
             "FraudProofFacetTest",
             "JoinChannelFacetTest",
+            "MilestoneFinalityFreezeTest",
+            "SameForkSnapshotKillPeriodTest",
             "StateChannelManagerProxyDepositTest",
             "StateChannelManagerProxyOpenTest",
             "StateChannelManagerProxyRegistrationTest",
             "StateSnapshotFacetOpenChannelRegistryTest",
             "UtilityFacetTest"
         ]);
-        expect(tasks).to.have.lengthOf(10);
+        expect(tasks).to.have.lengthOf(12);
     });
 
     it("includes a test contract declared in a .test.sol file", function () {

@@ -160,6 +160,14 @@ export default class SnapshotUpdateService {
                                 `postStateSnapshot: pending inbound not consumed for forkId=${forkId}`
                             );
                         },
+                        RaceConditionSnapshotDuringKillPeriod: (custom) => {
+                            this.logger.warn(
+                                "postStateSnapshot: adoption refused while the target fork's kill period is open",
+                                { forkId }
+                            );
+                            // callers tell the expected freeze from a failure by its name
+                            throw custom;
+                        },
                         RaceConditionReductionExpectationDoesntMatch: () => {
                             this.logger.error(
                                 "postStateSnapshot: reduction already finalized to a different forkId",

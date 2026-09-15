@@ -169,7 +169,7 @@ requested forkId`.
     snapshot — §4.1.
 12. **Simulated advance.** `tryMulticallSnapshotUpdate` `staticCall`s the pending
     `reduceAndFinalize` + `updateStateSnapshotFork` + `updateStateSnapshotSameFork` multicall; a
-    revert aborts. Proves the teleport would actually succeed on-chain without sending a tx.
+    revert aborts, except `RaceConditionSnapshotDuringKillPeriod`, which is accepted. Proves the teleport would actually succeed on-chain without sending a tx.
 13. **Persist.** `persistSyncPayload` under the state-manager mutex: skipped if local storage is
     already ahead; aborts on any finalized-block conflict with local storage; otherwise stores
     disputes, snapshots, states, inbound/outbound blocks and sets latest state.
