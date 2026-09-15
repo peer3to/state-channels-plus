@@ -1,7 +1,8 @@
+// @spec-test-coverage-ignore: fixture support; executable evidence belongs to its calling test declarations.
 import ScenarioRpcMethods from "./ScenarioRpcMethods";
 import type P2PManager from "@/P2PManager";
-import ARpcService from "@/rpc/ARpcService";
-import type ATransport from "@/transport/ATransport";
+import ANetworkRpcService from "@/rpc/network/ANetworkRpcService";
+import type NetworkTransport from "@/transport/NetworkTransport";
 
 /**
  * Runs harness-supplied `(sm, args) => result` bodies host-side, with the live
@@ -12,10 +13,10 @@ import type ATransport from "@/transport/ATransport";
  * reach everything through `sm`, pass captured values via `args`, and return
  * only serializable data.
  */
-export class ScenarioService extends ARpcService<ScenarioRpcMethods> {
+export class ScenarioService extends ANetworkRpcService<ScenarioRpcMethods> {
     constructor(p2pManager: P2PManager) {
         super(
-            p2pManager,
+            p2pManager.rpcRouter,
             p2pManager.stateManager.logger.child({
                 component: "HarnessScenarioService"
             })
@@ -26,7 +27,7 @@ export class ScenarioService extends ARpcService<ScenarioRpcMethods> {
         return this.p2pManager.stateManager;
     }
 
-    public createRPCMethods(transport: ATransport): ScenarioRpcMethods {
+    public createRPCMethods(transport: NetworkTransport): ScenarioRpcMethods {
         return new ScenarioRpcMethods(transport, this);
     }
 }

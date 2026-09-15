@@ -6,6 +6,7 @@ import {
     withFreshInitialSyncObserver
 } from "@test/fixtures/AbortDuringInitialSyncStaging";
 import { P2PManagerFixture } from "@test/fixtures/P2PManagerFixture";
+import { clientRootFor } from "@test/fixtures/RuntimeRootObservation";
 import { slotAccountIndex } from "@test/harness/core/slotAccounts";
 import { waitFor } from "@test/utils/waitFor";
 import { expect } from "chai";
@@ -247,6 +248,22 @@ describe("P2PManager", function () {
         expect(result.racedValue).to.equal("winner");
         expect(result.pendingCount).to.equal(0);
         expect(result.timerCount).to.equal(0);
+    });
+
+    it("closes later unpromoted transports and Holepunch after an earlier close fails", async function () {
+        const result = await fixture!
+            .control()
+            .p2pManagerProbe.probeDisposalFailure()
+            .request();
+        expect(result).to.deep.equal({
+            message: "first transport close failed",
+            failedTransportReleased: true,
+            firstCloseCalls: 1,
+            secondCloseCalls: 1,
+            secondClosed: true,
+            holepunchDisposed: true,
+            samePromise: true
+        });
     });
 
     it("rejects and releases every pending request during disposal", async function () {
@@ -733,7 +750,7 @@ describe("P2PManager", function () {
             ).to.deep.equal([true, true]);
         });
 
-        it("fatal initial sync disposal leaves later same-channel connect calls false", async function () {
+        it("fatal initial sync closes its root and rejects later same-channel client calls", async function () {
             await fixture!.cleanup();
             fixture = new P2PManagerFixture();
             await fixture.setup({
@@ -753,6 +770,9 @@ describe("P2PManager", function () {
                 h.signerFor(slotAccountIndex(observerIndex))
             );
             const observer = h.getPeer(observerIndex);
+            const host = clientRootFor(
+                observer.p2pInstance
+            ).p2pRuntimeHostRemoteRoot!;
             const releases = await Promise.all(
                 [0, 1].map((index) => h.rpcStub.holdSpectateResponses(index))
             );
@@ -762,11 +782,13 @@ describe("P2PManager", function () {
                         h.channelId
                     )
                 ).to.equal(false);
-                expect(
-                    await observer.p2pInstance.p2pSigner.connectToChannel(
-                        h.channelId
-                    )
-                ).to.equal(false);
+                await waitFor(
+                    () => host.isClosed,
+                    h.event.protocolEventTimeoutMs()
+                );
+                await expect(
+                    observer.p2pInstance.p2pSigner.connectToChannel(h.channelId)
+                ).to.be.rejected;
             } finally {
                 await Promise.all(releases.map((release) => release()));
             }
@@ -792,6 +814,9 @@ describe("P2PManager", function () {
                 h.signerFor(slotAccountIndex(observerIndex))
             );
             const observer = h.getPeer(observerIndex);
+            const host = clientRootFor(
+                observer.p2pInstance
+            ).p2pRuntimeHostRemoteRoot!;
             // Block handshake initiation on every runtime so the observer never
             // reaches a participant sync request; the pre-request bound must
             // settle the connect the way a timed-out sync request would.
@@ -813,16 +838,20 @@ describe("P2PManager", function () {
                 const elapsedMs = Date.now() - startedAt;
                 expect(elapsedMs).to.be.greaterThan(2 * 2 * 1000 - 500);
                 expect(elapsedMs).to.be.lessThan(2 * 2 * 1000 + 6000);
-                expect(
-                    await h.execOnHost(observer, async (sm) =>
-                        Boolean(sm.isDisposed)
-                    )
-                ).to.equal(true);
+                await waitFor(
+                    () => host.isClosed,
+                    h.event.protocolEventTimeoutMs()
+                );
             } finally {
                 await Promise.all(
-                    h.peers.map((peer) =>
-                        h.control(peer).stub.restoreBlockedHandshake().request()
-                    )
+                    h.peers
+                        .filter((peer) => peer.index !== observerIndex)
+                        .map((peer) =>
+                            h
+                                .control(peer)
+                                .stub.restoreBlockedHandshake()
+                                .request()
+                        )
                 );
             }
         });
@@ -1027,6 +1056,9 @@ describe("P2PManager", function () {
                 h.signerFor(slotAccountIndex(observerIndex))
             );
             const observer = h.getPeer(observerIndex);
+            const host = clientRootFor(
+                observer.p2pInstance
+            ).p2pRuntimeHostRemoteRoot!;
             await Promise.all(
                 h.peers.map((peer) =>
                     h
@@ -1041,25 +1073,24 @@ describe("P2PManager", function () {
                     h.channelId
                 );
                 await h.event.waitUntilPeerStatus(observerIndex, Status.OPENED);
-                await h.execOnHost(observer, async (sm) => {
-                    sm.abort();
-                    return true;
-                });
+                await h.control(observer).stub.abortDetached().request();
                 expect(await connect).to.equal(false);
                 // Settled by the abort, well inside the two-window deadline.
                 expect(Date.now() - startedAt).to.be.lessThan(2 * 2 * 1000);
                 await waitFor(
-                    async () =>
-                        await h.execOnHost(observer, async (sm) =>
-                            Boolean(sm.isDisposed)
-                        ),
+                    () => host.isClosed,
                     h.event.protocolEventTimeoutMs()
                 );
             } finally {
                 await Promise.all(
-                    h.peers.map((peer) =>
-                        h.control(peer).stub.restoreBlockedHandshake().request()
-                    )
+                    h.peers
+                        .filter((peer) => peer.index !== observerIndex)
+                        .map((peer) =>
+                            h
+                                .control(peer)
+                                .stub.restoreBlockedHandshake()
+                                .request()
+                        )
                 );
             }
         });

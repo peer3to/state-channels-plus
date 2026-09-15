@@ -51,7 +51,7 @@ claims complete conformance for a requirement that depends on other files.
 
 ## Specification adherence
 
-- Explicit intent lifecycle with false default ([`REQ-RMSTORE-2-Y2T1PG`](../../../../specification/storage/progress-markers.md#req-rmstore-2-y2t1pg)).
+- Explicit intent lifecycle with false default ([`REQ-RMSTORE-2-Y2T1PG` (Explicit intent lifecycle)](../../../../specification/storage/progress-markers.md#req-rmstore-2-y2t1pg)).
 
 ## Specification contradictions
 

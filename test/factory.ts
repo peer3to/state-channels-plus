@@ -17,6 +17,7 @@ import {
     tryDecodeCustomError,
     type CustomEvmError
 } from "@/utils/evmErrorHandler";
+import type * as GeneratedArtifacts from "@/utils/GeneratedArtifacts";
 import type { HardhatEthersSigner } from "@nomicfoundation/hardhat-ethers/signers";
 import {
     BlockStruct,
@@ -493,7 +494,7 @@ let errorInterface: ethers.Interface | undefined;
 function getErrorInterface(): ethers.Interface {
     if (!errorInterface) {
         const { errorAbis } =
-            require("@/utils/GeneratedArtifacts") as typeof import("@/utils/GeneratedArtifacts");
+            require("@/utils/GeneratedArtifacts") as typeof GeneratedArtifacts;
         errorInterface = new ethers.Interface(errorAbis);
     }
     return errorInterface;

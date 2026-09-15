@@ -30,7 +30,7 @@ This helper does no validation or parsing. Callers supply valid fork IDs and hei
 
 ## Specification adherence
 
-The operation supports [`INV-BLKSTORE-1-MK4W8D`](../../../../specification/storage/blocks.md#inv-blkstore-1-mk4w8d) within the caller-owned policy described above.
+The operation supports [`INV-BLKSTORE-1-MK4W8D` (Index consistency)](../../../../specification/storage/blocks.md#inv-blkstore-1-mk4w8d) within the caller-owned policy described above.
 
 ## Specification contradictions
 

@@ -7,7 +7,35 @@
 > review, plus open security design items that gate the P2P security model. Sibling documents:
 > [trust-model.md](../specification/security/trust-model.md), [data-availability.md](../specification/security/data-availability.md).
 
+Root lifecycle changes retain internal endpoint composition and exact transport response matching. No internal logger, signer, lifecycle or bridge service is registered on the network root. Parent/child registration constrains error and lifecycle control messages. Port possession remains an internal capability; forwarding a bridge port does not add a peer-wire endpoint. Disposal before broker attachment closes that capability and rejects waiting negotiation. This assessment does not approve the standing protocol-security queues below.
+
 The shared frame decoder keeps the size gate before parsing and response-first classification for dual-shaped input. Lobby policy callbacks run after the same malformed-input and reservation checks. Negotiation preserves raw nonce/challenge comparison and malformed-address failure. No authorization, punishment, timeout or signed-attempt release policy changes; implementation-only coercion helpers do not broaden trust. The review follow-up changes the bytes32 type assertion and import order without adding a trust-boundary branch.
+
+## Awaited RPC dispatch
+
+Router ingress awaits service.runRPC. Guards retain their existing response suppression and replay behavior. Shared RpcDispatch handles endpoint execution and response construction, with service-local policies and no exception wrapper or extra service-shape requirements. Error response construction remains separate from peer punishment: request endpoint errors return failures; synchronous one-way throws retain disconnect/blacklist behavior, and asynchronous one-way rejection retains disconnect-only behavior. Failed response sends have one attempt. Internal uncaught dispatch failures reach the root error handler from the port callback. Message callbacks remain independent, so a held invocation does not block reply or cancellation traffic.
+
+## RPC category and ingress ownership
+
+Network frame limits, response-first parsing and authenticated same-peer response admission live in the manager’s single NetworkRpcRouter. Peer penalties remain manager operations. Internal roots and services are explicitly composed under their own category; centralized exports do not register them on the peer root. Typed transport constructors reject cross-category routers. Shared forwarding adds no universal closed guard: closed internal input remains ignored and network late-frame admission is preserved. Live MessagePort/data-channel transfers continue to use structured clone and explicit transfer lists, without a new attachment protocol.
+
+## Shared runtime RPC trust boundary
+
+The refactor keeps peer authentication and penalties on NetworkTransport/P2PManager. Internal
+transports cannot enter peer recipient selection, profile registration, handshake or blacklist
+policy. Structural predicates recognize complete service/transport shapes across module graphs;
+they do not authenticate senders. Internal responses must match the exact owning connection.
+Network responses retain authenticated same-peer replacement admission before pending settlement.
+
+Shared dispatch rejects constructors, base helpers, accessors and non-function shadows. Each
+invocation keeps its own sender, including interleaved awaited and detached work. Domain services
+prepare serializable errors; the router does not choose codecs based on trust or method names.
+Network JSON still rejects raw BigInt. Ethers structs retain named Codec encodings.
+
+The approved test controls are internal construction dependencies. Ordinary SDK creation installs
+no probe; test worker entries use production bootstrap and retain live references locally. These
+controls do not add a production default service or a new authentication bypass. The broader
+security review below remains pending.
 
 ## 1. Purpose
 
@@ -60,7 +88,7 @@ exception (owner decision, 2026-09-02): once a lobby lease is accepted, a peer t
 transport before the commitment completes is excluded from the excluding peer's local lobby reputation at
 that side's agreement-window timing. This is a local blacklist, never a slashable violation, and a network
 partition during the handoff excludes two honest peers from each other for the blacklist lifetime; see
-[`OQ-AUDIT-LOBBY-1-9S3GVD`](open-questions.md#oq-audit-lobby-1-9s3gvd).
+[`OQ-AUDIT-LOBBY-1-9S3GVD` (Lobby accepted-lease exclusion versus the no-punishment rule)](open-questions.md#oq-audit-lobby-1-9s3gvd).
 
 ## 3. Required output per gap
 
@@ -122,7 +150,7 @@ before the worker's error funnel exists, or an exit the runtime did not request,
 worker. A remote peer cannot make a worker die by provoking a stall: the throw is contained and
 reported, so the peer's canonical EVM state survives. Whether an application disposes its runtime
 on such a report stays the application's decision. The threshold policy for the test farm is
-tracked in [`OQ-AUDIT-RUNTIME-1-HH601X`](open-questions.md#oq-audit-runtime-1-hh601x).
+tracked in [`OQ-AUDIT-RUNTIME-1-HH601X` (Watchdog threshold under gate load)](open-questions.md#oq-audit-runtime-1-hh601x).
 
 The RPC verification ledger now separates implemented boundary coverage from missing controls.
 Endpoint hard stops, guard ordering and isolation, peer-bound response settlement, and cleanup after
@@ -146,7 +174,7 @@ finding to a different class once accepted, which is a decision, not a present s
 | No signature domain separation ([`OQ-29-EFY4NF`](../specification/open-questions.md#oq-29-efy4nf))                                                                                                             | Signed protocol artifacts: blocks, transactions, joins, opens, disputes (the handshake already carries an object/version domain tag) | Replay a signature across manager deployments / chains (`channelId` is caller-chosen)                                                                                                                                                 | None                                                                                                                                                                                                                                            | validation rule                                                                                                             | EIP-712 or domain-tagged struct binding version, chain, deployment, object type                                                                                 | cross-deployment replay                                                | Open, production gate |
 | Cross-channel dispute-ack pollution ([`OQ-36-WEN9T1`](../implementation/open-questions.md#oq-36-wen9t1))                                                                                                       | `IsForkDisputedService`                                                                                                              | Throwaway disputed channel makes victims record foreign forks; free chain-read oracle                                                                                                                                                 | None; `channelId` unchecked                                                                                                                                                                                                                     | validation rule                                                                                                             | Bind `channelId` to the local channel; key ack records by channel                                                                                               | foreign-channel ack rejection                                          | Open                  |
 | Reorg / event-ordering uncertainty ([`OQ-30-2G0Q5M`](../implementation/open-questions.md#oq-30-2g0q5m))                                                                                                        | SDK chain observation                                                                                                                | Same-height reorg undetected; out-of-order log application at join/dispute/withdrawal                                                                                                                                                 | Bare block-number cursor; no rollback                                                                                                                                                                                                           | recovery path                                                                                                               | Canonical `(blockNumber, blockHash, txIndex, logIndex)` cursor + rollback journal                                                                               | reorg replay at each decision site                                     | Open                  |
-| Prototype-inherited RPC names reachable ([`DEF-7-PK564B`](open-findings.md#def-7-pk564b))                                                                                                                      | RPC dispatch                                                                                                                         | Call `toString`/`constructor` etc. remotely                                                                                                                                                                                           | Descriptor-based endpoint resolution stops before the RPC/language bases, never evaluates accessors, and captures the accepted function once                                                                                                    | validation rule                                                                                                             | Implemented in [`ARpcService`](../implementation/source/src/rpc/ARpcService.ts.md)                                                                              | component boundary matrix + authenticated-peer rejection/isolation E2E | Resolved 2026-08-17   |
+| Prototype-inherited RPC names reachable ([`DEF-7-PK564B`](open-findings.md#def-7-pk564b))                                                                                                                      | RPC dispatch                                                                                                                         | Call `toString`/`constructor` etc. remotely                                                                                                                                                                                           | Descriptor-based endpoint resolution stops before the RPC/language bases, never evaluates accessors, and captures the accepted function once                                                                                                    | validation rule                                                                                                             | Implemented in [`ANetworkRpcService`](../implementation/source/src/rpc/network/ANetworkRpcService.ts.md)                                                        | component boundary matrix + authenticated-peer rejection/isolation E2E | Resolved 2026-08-17   |
 | Honest peers blacklisted for availability / local faults ([`DEF-5-E8TP9N`](open-findings.md#def-5-e8tp9n), [`DEF-9-724SXP`](open-findings.md#def-9-724sxp), [`DEF-10-199C7F`](open-findings.md#def-10-199c7f)) | Peer classification                                                                                                                  | Griefer weaponizes unavailability, or our own chain-provider failure, into mutual blacklisting                                                                                                                                        | None; failure classes conflated                                                                                                                                                                                                                 | validation rule                                                                                                             | Separate unavailable/local-fault from Byzantine before penalizing                                                                                               | unavailability-not-blacklisted                                         | Open                  |
 | Attacker-controlled ICE targets ([`DEF-11-JN8N6H`](open-findings.md#def-11-jn8n6h))                                                                                                                            | WebRTC setup                                                                                                                         | Induce STUN/connectivity traffic toward arbitrary hosts (reflection)                                                                                                                                                                  | None; candidates unfiltered                                                                                                                                                                                                                     | validation rule                                                                                                             | Filter candidate targets, or reclassify as accepted limitation under the [`OQ-6-4JPNE5`](../specification/open-questions.md#oq-6-4jpne5) limiter with rationale | ICE target filtering                                                   | Open                  |
 | Unguarded harness-control root is network-reachable and ships in the package ([`OQ-37-0Y7YWS`](../implementation/open-questions.md#oq-37-0y7yws))                                                              | RPC dispatch / peer boundary                                                                                                         | Any connected peer calls `scenario.exec` (arbitrary code via `new Function` in the host realm), `handshake.signMessage` (signing oracle), or `signer` (key import) on a peer built with the test harness — 207 endpoints, zero guards | None: no harness service sets `guards`, dispatch is structural over any transport, and `dist/test/...` + `exports["./test-harness"]` publish the root. Blast radius limited only by production `p2pSetup` registering the bare `MainRpcService` | validation rule                                                                                                             | Restrict harness services to the trusted loopback transport **and** exclude them from the published artifact                                                    | network-peer cannot reach a harness service                            | Open, production gate |
@@ -162,7 +190,7 @@ Items already known to be missing, ahead of the full review.
 **Open question:** the P2P layer has no gossip rate-limiting policy. It is not yet designed, and
 it is required for availability, resource control, and griefing resistance.
 
-**Current:** [src/P2PManager.ts](../../../src/P2PManager.ts) broadcasts RPCs to all connected
+**Current:** [NetworkRpcRouter](../../../src/rpc/router/NetworkRpcRouter.ts#L43) broadcasts RPCs to all connected
 peers (full mesh), disconnects a peer that sends an oversized RPC frame, and supports
 disconnect-and-blacklist of misbehaving peers. There is no rate limiting, throttling, queueing
 policy, or backpressure — **gap**.
@@ -192,9 +220,9 @@ model is complete, but no specific values are normative yet.
 
 **Current:** the RPC envelope and handshake carry no negotiated protocol version. Incompatible peers
 discover drift through unknown services, unknown methods, or payload decode failures. All
-[`REQ-RPC-8-44XECF`](../specification/peer-communication/rpc.md#req-rpc-8-44xecf) compatibility
+[`REQ-RPC-8-44XECF` (Compatibility before protected calls)](../specification/peer-communication/rpc.md#req-rpc-8-44xecf) compatibility
 permutations remain unassigned. The design decision belongs to
-[`OQ-34-FY08V2`](../specification/open-questions.md#oq-34-fy08v2).
+[`OQ-34-FY08V2` (RPC boundary decisions)](../specification/open-questions.md#oq-34-fy08v2).
 
 ## 6. Verification
 
@@ -275,7 +303,7 @@ reader bytecode. These maintained assessments remain pending engineer review; no
 
 ### Early timeout submission recovery
 
-[`REQ-DISPUTE-PIPE-10-BT8YAR`](../specification/disputes/dispute-processing.md#req-dispute-pipe-10-bt8yar) preserves chain admission while retrying a specific early-timestamp refusal through the existing timeout owner. Retries must revalidate current evidence, stop after fork replacement or disposal, and keep an older-window refusal ineligible. Repeated attempts may incur transaction cost while chain time lags; this does not relax the deadline or unrelated error policy.
+[`REQ-DISPUTE-PIPE-10-BT8YAR` (Recheck an early timeout submission)](../specification/disputes/dispute-processing.md#req-dispute-pipe-10-bt8yar) preserves chain admission while retrying a specific early-timestamp refusal through the existing timeout owner. Retries must revalidate current evidence, stop after fork replacement or disposal, and keep an older-window refusal ineligible. Repeated attempts may incur transaction cost while chain time lags; this does not relax the deadline or unrelated error policy.
 
 ## Accepted PR 472 fixes after the SDK refactor
 
@@ -308,11 +336,11 @@ Explicit runtime disposal is local shutdown and does not await a pending dispute
 
 Dispute upload, reduction admission, and fraud-proof target eligibility share the bounded current snapshot/inbound set. Once a participant leaves that chain set, an old join does not keep it slashable. If the chain snapshot still lists a locally departed participant, a valid fraud proof still writes the chain slash record. Later slash/removal application to a state without that participant is an idempotent no-op under [`REQ-SM-10-JD8TSF`](../specification/protocol-model/state-machines.md#req-sm-10-jd8tsf). The stale-snapshot workflow checks repeated application and unchanged withdrawal totals.
 
-Queue-expiry probes may accept a successor only through verified reduction lineage containing the requested fork, as specified by [`REQ-SYNC-1-T2589H`](../specification/peer-communication/synchronization.md#req-sync-1-t2589h). Ordinary pinned sync follows the same verified-successor rule; the pinned height applies only on the pinned fork. Blacklist and profile lifecycle logs now identify the path through existing call stacks; they do not change the accepted-lease policy. Non-reproduction of the earlier four-peer failure still does not establish its cause.
+Queue-expiry probes may accept a successor only through verified reduction lineage containing the requested fork, as specified by [`REQ-SYNC-1-T2589H` (Minimum-target proving)](../specification/peer-communication/synchronization.md#req-sync-1-t2589h). Ordinary pinned sync follows the same verified-successor rule; the pinned height applies only on the pinned fork. Blacklist and profile lifecycle logs now identify the path through existing call stacks; they do not change the accepted-lease policy. Non-reproduction of the earlier four-peer failure still does not establish its cause.
 
 Synchronization replay always uses the spectating context. Uncommitted observers abort on provable participant fraud without requesting a dispute. Pending and participating peers retain their on-chain stake and delegate these faults to live fraud-proof and dispute handling. Pending participants also use live handling for arrivals, while the commit guard still excludes them from counter-signing. The exact declarations are mapped in the [validation report](../verification/tests/test/unit/ValidationService.test.ts.md).
 
-Absent-target handling is specified separately by [`REQ-SM-10-JD8TSF`](../specification/protocol-model/state-machines.md#req-sm-10-jd8tsf). Successful slash and removal now both record their returned exit under [`REQ-SM-8-8CHSQ8`](../specification/protocol-model/state-machines.md#req-sm-8-8chsq8); [`OQ-18-2NK97T`](../specification/open-questions.md#oq-18-2nk97t) is implemented. Wrapper tests cover absent, present and repeated targets separately; the dispute consumer checks one exit and a matching withdrawal delta.
+Absent-target handling is specified separately by [`REQ-SM-10-JD8TSF`](../specification/protocol-model/state-machines.md#req-sm-10-jd8tsf). Successful slash and removal now both record their returned exit under [`REQ-SM-8-8CHSQ8`](../specification/protocol-model/state-machines.md#req-sm-8-8chsq8); [`OQ-18-2NK97T` (Exit-recording asymmetry between slash and remove)](../specification/open-questions.md#oq-18-2nk97t) is implemented. Wrapper tests cover absent, present and repeated targets separately; the dispute consumer checks one exit and a matching withdrawal delta.
 
 Sync timeout and transport-failure liability is retained by the owner: honest peers are assumed to observe the same reality within agreementTime. No universal provider or execution bound is proved by this implementation. Local successor installation is not required to serve its already computed proof; requested same-fork heights are minimums.
 
@@ -325,3 +353,41 @@ cannot alone remove reduction calldata. Reusing verified work remains a non-bloc
 proof validation and blacklist liability are unchanged.
 
 Authored departure now rejects if its dispute fallback fails after either a failed fully signed snapshot post or an unsigned exit. The failure notification checks both the operation phase and fork, so a stale task cannot reject a new operation. Observer-hook tests separate provable-fault aborts from disputed-fork discard. Disputed-fork hooks never restore the entry; committed peers retain acknowledged-supplier liability, while unacknowledged suppliers and observers are not penalized for this branch.
+
+Internal lifecycle cleanup accepts requests from registered parent connections only. Readiness resolves only the invoking child connection. These services remain off the network root. Forced connection loss rejects pending readiness, and rejected upward cleanup does not invoke response-triggered closure.
+
+## Root creation boundary
+
+Root entries are selected by trusted local callers through explicit URLs; no remote module-discovery protocol or automatic service registration was added. Startup payloads cross structured clone in both modes, while local constructors, loggers and execution context stay in the receiving realm. Connections remain internal and parent-owned. Lifecycle admission and network service exposure are unchanged. A worker failure rejects its own readiness and pending calls without closing its SDK owner or siblings.
+
+## Initialized root creation follow-up
+
+Common internal error endpoints accept reports from registered child connections only. They remain absent from the network root. Request failures return through their response path; autonomous reports travel upward. Startup failure rejects the owning readiness promise and closes only that child. Cloneable startup data and explicit browser entry URLs retain the existing capability boundary.
+
+Engineer approvals and review fingerprints remain engineer-owned. This update does not clear unrelated audit queues.
+
+## Explicit root creation API
+
+The free createRoot function now constructs local top-level roots or connected children with an explicit parent. Top-level application handlers stay local; child startup keeps the existing clone boundary. SDK root observation retains connection-before-observer and observer-before-child-start order. RootCreation adds two real SDK placement cases and retains child creation/failure recovery cases. Existing approval and impact queues remain unchanged by this API decision.
+
+## Generic worker creation
+
+Root classes now pass directly to createRoot. One platform worker creator takes an explicit URL, with no per-root factory or entry wrapper. Built-in roots use internal static worker entry URLs. Generic custom-root creation accepts an explicit URL; startup payloads do not carry child entry URLs. The shared worker globals use one path for all launched roots. Relevant startup, error, cleanup and browser evidence is being refreshed; engineer fingerprint approval remains pending.
+
+## Client-root ownership and initialization
+
+The application instance now references its initialized client root directly. The client root owns host communication and bridge resources. Application setup owns deployments and adapters; P2pInstance owns application listeners and logger cleanup. Common creation awaits initialization for every root. Top-level creation is inline and returns the root; worker creation requires a parent and returns that parent's registered connection record. No raw bootstrap port is exposed by that record.
+
+The new creation cases exercise delayed standalone initialization, missing parent rejection before allocation, held host readiness in both placements, independent deployments and cleanup after either deployment or client observation fails. Existing client error, timeout, disposal and browser bridge boundaries remain part of verification. A missing logger connection registration found by the report-a-bug E2E was restored; the focused collection and root-creation cases pass together. The focused teardown cases pass; the final full run is recorded in the implementation handoff. Existing generated queues remain unchanged. This update grants no engineer approval.
+
+The engineer approved host shutdown preparation before the child cascade. Run-310 confirmed the earlier race in discovery fallback cleanup: the test body passed, then reduction calls rejected because the executor was closed. The host now invokes the existing StateManager stop-and-drain owner before common child disposal. Final local cleanup still runs after failure and repeated calls reuse completion. A separate startup cleanup change unregisters a host whose observation callback throws before parent attachment. Focused ordering, preparation-failure and teardown cases pass, including an executor read while preparation is held. Parented inline client creation uses host connection options and sends its disposal acknowledgement before closing the parent connection. Missing connection options reject before allocation. Both browser gates pass on this source state. Final full-run evidence and the unchanged generated queues are recorded in the implementation handoff.
+
+## Application setup ownership correction
+
+The user superseded review 4's application-heavy client root. Application setup now owns config, logger creation, adapters, two deployments and final assembly. The client root owns host communication and common lifecycle only; P2pInstance owns application cleanup. Root readiness means usable communication, while application setup still waits for deployment completion. Existing startup errors, parent-required workers, host preparation before child disposal and bridge behavior remain in scope. The focused and final evidence is recorded in the application-setup implementation follow-up. Engineer approval and existing queues remain unchanged.
+
+## Logger gossip follow-up
+
+The engineer replaced acknowledged global flushes with best-effort generation gossip. [LoggerService](../implementation/source/src/rpc/internal/services/logger/LoggerService.ts.md) owns its attached store map and one scalar index; [Logger](../implementation/source/src/utils/logging/Logger.ts.md) owns local uploading and one optional service reference in sharedResources. Common roots create logging before startup. Equal/older generations are suppressed even after the window; invalid indexes are rejected. Remote delivery is not claimed by a local promise. Late entries can wait for another generation under the accepted timing assumption. Existing HTTP retries and secret-field encoding remain with the uploader.
+
+The obsolete folded-summary finding no longer describes the current contract. Source and test changes require engineer re-verification; no approval register was changed.

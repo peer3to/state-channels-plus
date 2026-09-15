@@ -31,7 +31,7 @@ merged ABI in [localDiamond.ts](../../../src/utils/localDiamond.ts.md).
 
 ## Key design decisions
 
-1. **Event-replication entry points** (`on*` handlers) are how the client advances the mirror — replication, never local hypothesis ([`REQ-MIRROR-2-E9F3TM`](../../../../../specification/enforcement/local-mirror.md#req-mirror-2-e9f3tm)).
+1. **Event-replication entry points** (`on*` handlers) are how the client advances the mirror — replication, never local hypothesis ([`REQ-MIRROR-2-E9F3TM` (Unconditional replication)](../../../../../specification/enforcement/local-mirror.md#req-mirror-2-e9f3tm)).
 2. **`isBlockAuthentic` is declared here so the debug override still wins.** In production that
    selector routes to [UtilityFacet](./UtilityFacet.sol.md); a declared function dispatches before
    the fallback, so declaring a thin `public` entry point

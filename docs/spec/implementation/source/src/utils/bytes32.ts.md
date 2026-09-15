@@ -30,7 +30,7 @@ The input may be undefined. ethers.isHexString owns byte-length and hex validati
 
 ## Specification adherence
 
-The operation supports [`REQ-UPG-6-BC60XD`](../../../../specification/peer-communication/transport-upgrade.md#req-upg-6-bc60xd) within the caller-owned policy described above.
+The operation supports [`REQ-UPG-6-BC60XD` (Discovery topic leave is byte-exact and durable)](../../../../specification/peer-communication/transport-upgrade.md#req-upg-6-bc60xd) within the caller-owned policy described above.
 
 ## Specification contradictions
 

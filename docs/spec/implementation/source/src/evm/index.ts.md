@@ -23,6 +23,8 @@ EVM module re-exports.
 
 ## Key design decisions
 
+The standalone createContractExecutorFactory and ContractExecutorFactoryOptions package exports are removed. Executor creation is internal to SDK setup and requires its owning endpoint. Unrelated exports retain their existing public contracts; the replacement internal factory and owner endpoint are not exported here. See [createContractExecutor.ts](contractExecutor/createContractExecutor.ts.md).
+
 _None — the file is declarative/mechanical; behavior-shaping decisions live with its consumers._
 
 ## Inputs, outputs, state, and side effects

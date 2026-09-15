@@ -93,6 +93,6 @@ Exact test evidence is mapped against these IDs in the verification test reports
 
 # Terminal leave contribution
 
-`postStateSnapshotWait` is an explicit internal awaitable boundary used by terminal leave so transaction failure can fall back to dispute. This contributes to [`REQ-LIF-10-QR8NQ9`](../../../../../specification/settlement/lifecycle.md#req-lif-10-qr8nq9).
+`postStateSnapshotWait` is an explicit internal awaitable boundary used by terminal leave so transaction failure can fall back to dispute. This contributes to [`REQ-LIF-10-QR8NQ9` (Terminal runtime departure)](../../../../../specification/settlement/lifecycle.md#req-lif-10-qr8nq9).
 
 Shared operation owners: [errorMessage.ts.md](../../utils/errorMessage.ts.md).

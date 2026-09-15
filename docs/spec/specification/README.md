@@ -140,7 +140,7 @@ without weakening or contradicting them.
 
 A system-wide portability commitment applies to every client capability: a conforming client runs in
 both browser and Node.js host environments with identical observable protocol behavior — normative
-owner [`REQ-RUNTIME-5-WJ1XKK`](runtime/execution.md#req-runtime-5-wj1xkk). Every mechanism document's behavior is implicitly
+owner [`REQ-RUNTIME-5-WJ1XKK` (Required host environments: browser and Node)](runtime/execution.md#req-runtime-5-wj1xkk). Every mechanism document's behavior is implicitly
 required on both hosts; none may assume a host-specific facility above the runtime system's
 equivalence boundary.
 

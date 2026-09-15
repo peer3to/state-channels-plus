@@ -23,6 +23,10 @@ Node logger factory.
 
 ## Key design decisions
 
+The factory attaches the shared store only when options.loggerService is provided. It uses the same Logger.attachLoggerService operation as later attachment; child creation never registers another store.
+
+Thread names are diagnostic strings. Without an explicit logger override, factories and upload metadata use the global threadName (main before worker entry initialization). Inline roots share their physical thread name; separate logger stores are identified independently.
+
 The shared foundation creates the store and common options; Node level selection and excluded tags stay in this factory. See [createLogger.ts](../../../../../../../../src/utils/logging/node/createLogger.ts#L1).
 
 _None — the file is declarative/mechanical; behavior-shaping decisions live with its consumers._

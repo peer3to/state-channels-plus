@@ -102,7 +102,7 @@ Current: the source comment above `stateTransition`
 fraud-proof soundness depends on the implementation's check, and the on-chain
 `BlockInvalidStateTransition` handler indeed performs no author check of its own — the comment
 matches today's on-chain behavior but contradicts the decided design. See
-[`OQ-26-XH59SP`](../../../../specification/open-questions.md#oq-26-xh59sp) for the resolution options (generic on-chain author check vs.
+[`OQ-26-XH59SP` (On-chain wrong-turn enforceability)](../../../../specification/open-questions.md#oq-26-xh59sp) for the resolution options (generic on-chain author check vs.
 confirming no on-chain wrong-turn proof is needed).
 
 ### 2.3 `_joinChannel` handles both admission and top-up
@@ -173,7 +173,7 @@ success — a `false` return reverts the manager with
 | `slashParticipant(address) external _nonReentrant returns (bool, ExitChannel)`          | Calls `_slashParticipant`; on success **also** appends the `ExitChannel` to `_outboundMessages` via `_addExitChannel`. |
 | `removeParticipant(address) external virtual _nonReentrant returns (bool, ExitChannel)` | Calls `_removeParticipant`; on success appends the exit through `_addExitChannel`.                                     |
 
-Both wrappers return and record a successful exit through `_addExitChannel`. This implements [`REQ-SM-8-8CHSQ8`](../../../../specification/protocol-model/state-machines.md#req-sm-8-8chsq8) and closes [`OQ-18-2NK97T`](../../../../specification/open-questions.md#oq-18-2nk97t). Application hooks retain their balance semantics. The dispute pipeline builds its outbound block from returned exits and does not read the buffer. The SDK clears the buffer before its next state transition, preventing duplicate delivery. Absent or repeated targets add no exit under [`REQ-SM-10-JD8TSF`](../../../../specification/protocol-model/state-machines.md#req-sm-10-jd8tsf).
+Both wrappers return and record a successful exit through `_addExitChannel`. This implements [`REQ-SM-8-8CHSQ8`](../../../../specification/protocol-model/state-machines.md#req-sm-8-8chsq8) and closes [`OQ-18-2NK97T` (Exit-recording asymmetry between slash and remove)](../../../../specification/open-questions.md#oq-18-2nk97t). Application hooks retain their balance semantics. The dispute pipeline builds its outbound block from returned exits and does not read the buffer. The SDK clears the buffer before its next state transition, preventing duplicate delivery. Absent or repeated targets add no exit under [`REQ-SM-10-JD8TSF`](../../../../specification/protocol-model/state-machines.md#req-sm-10-jd8tsf).
 
 ### 3.4 `getOutboundMessages() public view returns (Message[] memory)`
 

@@ -47,7 +47,7 @@ claims complete conformance for a requirement that depends on other files.
 | ------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | [DisputeManagerFacet.sol](../../../../../../../contracts/V1/StateChannelDiamondProxy/DisputeManagerFacet.sol) | [`REQ-ENFDIS-1-8CSA6B`](../../../../../specification/enforcement/dispute-window.md#req-enfdis-1-8csa6b), [`REQ-ENFDIS-2-VV9FPR`](../../../../../specification/enforcement/dispute-window.md#req-enfdis-2-vv9fpr), [`REQ-DISPUTE-PIPE-9-TDWQPV`](../../../../../specification/disputes/dispute-processing.md#req-dispute-pipe-9-tdwqpv) |
 
-Contribution in this file: [`REQ-DISPUTE-PIPE-9-TDWQPV`](../../../../../specification/disputes/dispute-processing.md#req-dispute-pipe-9-tdwqpv). The conformance rows below name this owner and the other required owners.
+Contribution in this file: [`REQ-DISPUTE-PIPE-9-TDWQPV` (Existing-window state contributions)](../../../../../specification/disputes/dispute-processing.md#req-dispute-pipe-9-tdwqpv). The conformance rows below name this owner and the other required owners.
 
 ## Assumptions, dependencies, trust boundaries, and limits
 

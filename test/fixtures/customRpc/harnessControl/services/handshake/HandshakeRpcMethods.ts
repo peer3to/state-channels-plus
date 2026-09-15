@@ -1,8 +1,8 @@
 // @spec-test-coverage-ignore: harness handshake controls exercised by owning mapped test declarations
 import type { HandshakeService } from "./HandshakeService";
 import Block from "@/models/Block";
-import ARpcMethods from "@/rpc/ARpcMethods";
-import type ATransport from "@/transport/ATransport";
+import ANetworkRpcMethods from "@/rpc/network/ANetworkRpcMethods";
+import type NetworkTransport from "@/transport/NetworkTransport";
 import type { TransportType } from "@/transport/TransportType";
 import type { Address, ChannelId, ForkId, Hash } from "@/types/types";
 import { Codec, Type } from "@/utils";
@@ -11,19 +11,16 @@ import { Codec, Type } from "@/utils";
  * White-box driver for the handshake / dispute-acknowledgment RPC flows,
  * executed host-side. The original harness reached into a peer's live
  * `localRpc.initHandshakeService` / `isForkDisputedService` with a concrete
- * `ATransport`; transports can't cross the port, so every method targets the
+ * `NetworkTransport`; transports can't cross the port, so every method targets the
  * other peer by **EVM address** and resolves the transport host-side.
  *
  * Flows that span two peers (e.g. a response signed by the responder against a
  * challenge held by the initiator) are exposed as granular primitives that the
  * harness orchestrates across two `control(peer)` calls.
  */
-export class HandshakeRpcMethods extends ARpcMethods {
-    constructor(
-        transport: ATransport,
-        private readonly service: HandshakeService
-    ) {
-        super(transport, service.p2pManager);
+export class HandshakeRpcMethods extends ANetworkRpcMethods<HandshakeService> {
+    constructor(transport: NetworkTransport, service: HandshakeService) {
+        super(transport, service);
     }
 
     // ===== Handshake initiation / state =====

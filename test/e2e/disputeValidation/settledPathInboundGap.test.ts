@@ -16,21 +16,6 @@ import { expect } from "chai";
 describe("E2E: dispute validation / inbound run gap", function () {
     const TIME_CONFIG = INBOUND_GAP_TIME_CONFIG;
 
-    /** No peer may answer a gap with a fraud proof - it is nobody's fraud. */
-    const expectNoDisputeFraudProofs = async (
-        h: ReturnType<typeof TestSession.getHarness>
-    ): Promise<void> => {
-        for (const peer of h.peers) {
-            expect(
-                await h
-                    .control(peer)
-                    .query.getDisputeFraudProofTypes()
-                    .request(),
-                `peer ${peer.index} must store no dispute fraud proof`
-            ).to.deep.equal([]);
-        }
-    };
-
     it("recoverable inbound log → the auditor recovers it, audits for real and converges", async function () {
         const h = TestSession.getHarness();
         await h.setup(3, { timeConfig: TIME_CONFIG });
@@ -90,7 +75,7 @@ describe("E2E: dispute validation / inbound run gap", function () {
                 .request(),
             "lagging peer must still be participating"
         ).to.equal(Status.PARTICIPATING);
-        await expectNoDisputeFraudProofs(h);
+        await h.assert.storage.honestPeersStoredNoDisputeFraudProofs();
         expect(
             await TestSession.consumeFirstDetachedError(
                 h.event.protocolEventTimeoutMs()
@@ -147,7 +132,7 @@ describe("E2E: dispute validation / inbound run gap", function () {
                 h.event.protocolEventTimeoutMs()
             )
         ).to.equal(undefined);
-        await expectNoDisputeFraudProofs(h);
+        await h.assert.storage.honestPeersStoredNoDisputeFraudProofs();
 
         // an inbound gap it cannot help having must not have evicted it
         expect(
@@ -288,7 +273,7 @@ describe("E2E: dispute validation / inbound run gap", function () {
                 h.event.protocolEventTimeoutMs()
             )
         ).to.equal(undefined);
-        await expectNoDisputeFraudProofs(h);
+        await h.assert.storage.honestPeersStoredNoDisputeFraudProofs();
         expect(
             await h
                 .control(h.getPeer(laggingIndex))

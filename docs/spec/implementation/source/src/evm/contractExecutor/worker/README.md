@@ -6,6 +6,3 @@
 _Pending authoring: shared responsibility, design decisions, assumptions, cross-file interactions, and integration obligations of this subsystem._
 
 ## Contents
-
-- [ContractExecutorWorkerHostCore.ts](./ContractExecutorWorkerHostCore.ts.md)
-- [protocol.ts](./protocol.ts.md)

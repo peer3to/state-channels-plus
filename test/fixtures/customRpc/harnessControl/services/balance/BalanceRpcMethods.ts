@@ -1,6 +1,7 @@
+// @spec-test-coverage-ignore: fixture support; executable evidence belongs to its calling test declarations.
 import type { BalanceService } from "./BalanceService";
-import ARpcMethods from "@/rpc/ARpcMethods";
-import type ATransport from "@/transport/ATransport";
+import ANetworkRpcMethods from "@/rpc/network/ANetworkRpcMethods";
+import type NetworkTransport from "@/transport/NetworkTransport";
 import { Codec, Type } from "@/utils";
 
 /**
@@ -10,12 +11,9 @@ import { Codec, Type } from "@/utils";
  * `BalanceStruct` carries a bigint `amount`, so balances cross the port as
  * `Codec.encode(_, Type.Balance)` hex strings (`encoded*`) and are decoded here.
  */
-export class BalanceRpcMethods extends ARpcMethods {
-    constructor(
-        transport: ATransport,
-        private readonly service: BalanceService
-    ) {
-        super(transport, service.p2pManager);
+export class BalanceRpcMethods extends ANetworkRpcMethods<BalanceService> {
+    constructor(transport: NetworkTransport, service: BalanceService) {
+        super(transport, service);
     }
 
     /** Sum of outbound message balances between two snapshot positions. */

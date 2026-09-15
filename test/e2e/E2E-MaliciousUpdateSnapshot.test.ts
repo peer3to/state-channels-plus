@@ -1,5 +1,5 @@
-import { Status } from "@/types";
 import { Codec, Type, hash, tryDecodeCustomError } from "@/utils";
+import { clientRootFor } from "@test/fixtures/RuntimeRootObservation";
 import { MathTestSession as TestSession } from "@test/harness";
 import {
     MESSAGE_TYPE_EXIT,
@@ -253,33 +253,22 @@ describe("E2E: Malicious updateSnapshot", function () {
 
         // Spawn-only, classified: the participants no longer agree with the
         // chain after the colluded snapshot, so no block may be authored
-        // here. Install the abort-recording stub on the created, still
-        // disconnected spectator so it is in place before the first sync
-        // request can run. Re-fetch via getPeer to recover the harness's
-        // typed peer handle.
+        // here. Retain the created spectator's root handle before its first
+        // sync so abort cleanup remains observable after its port closes.
         const added = await h.join.createSpectatorPeer();
-        await h.control(added).stub.stubRecordAbort().request();
+        const host = clientRootFor(added.p2pInstance).p2pRuntimeHostRemoteRoot!;
         await h.join.connectSpectator(added);
         const spectator = h.getPeer(added.index);
 
-        // Wait for abort.
-        await waitFor(
-            () => h.control(spectator).stub.wasAbortCalled().request(),
-            h.event.protocolEventTimeoutMs()
-        );
+        await h.event.waitForPeers("onAbort", [spectator.index], 1);
+        await waitFor(() => host.isClosed, h.event.protocolEventTimeoutMs());
         expect(
-            await h.control(spectator).stub.wasAbortCalled().request()
-        ).to.equal(true, "SpectateService.abort must be called");
-
-        expect(
-            await h.control(spectator).query.getStatus().request()
-        ).to.not.equal(Status.SYNCED);
-        expect(
-            await h.control(spectator).query.getOpenConnectionCount().request()
-        ).to.equal(
-            0,
-            "spectator should have 0 open connections after aborting on balance invariant"
-        );
+            h.event.getEventCallCount(spectator.index, "onSetState")
+        ).to.equal(0);
+        await h.assert.sync.spectatorNoTransportToPeersWait({
+            spectatorPeerIndex: spectator.index,
+            peerIndices: [0, 1]
+        });
         await TestSession.settleDetached({
             expectedErrorIncludes: "connectToChannel failed"
         });

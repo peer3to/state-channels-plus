@@ -20,11 +20,11 @@
 ## Responsibility and observable boundary
 
 The hyperswarm bootstrap transport: wraps a Holepunch socket, stores its narrow ban handle on the
-profile created by `ATransport`, and starts authentication immediately.
+profile created by `NetworkTransport`, and starts authentication immediately.
 
 ## Key design decisions
 
-Frame delivery inherits the identical base onMessage implementation; transport-specific connection and close behavior remain here. See [HolepunchTransport.ts](../../../../../../src/transport/HolepunchTransport.ts#L7).
+Frame delivery converts Uint8Array input to Buffer, then delegates to NetworkTransport for text conversion and router delivery; connection and close behavior remain here. See [HolepunchTransport.ts](../../../../../../src/transport/HolepunchTransport.ts#L6).
 
 1. **Handshake-on-construct:** no window where an unauthenticated bootstrap connection idles usable.
 2. **Ban policy stays outside the transport.** Construction supplies the SDK handle to its profile;
@@ -82,4 +82,4 @@ Exact test evidence is mapped against these IDs in the verification test reports
 
 ## Related source reports
 
-- [Holepunch](../Holepunch.ts.md), [InitHandshakeService](../rpc/services/initHandshake/InitHandshakeService.ts.md).
+- [Holepunch](../Holepunch.ts.md), [InitHandshakeService](../rpc/network/services/initHandshake/InitHandshakeService.ts.md).

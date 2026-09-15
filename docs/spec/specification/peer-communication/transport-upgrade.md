@@ -143,7 +143,7 @@ absent topics are no-ops and removed topics MUST NOT return during a later disco
   data handed to the connectivity stack.
 - Direct connectivity may be impossible (symmetric NATs, policy); the bootstrap transport remains a
   fully supported permanent path.
-- Signaling volume is bounded per peer ([`REQ-RPC-5-CV1R1Y`](rpc.md#req-rpc-5-cv1r1y)); connection attempts consume real resources
+- Signaling volume is bounded per peer ([`REQ-RPC-5-CV1R1Y` (Resource bounds)](rpc.md#req-rpc-5-cv1r1y)); connection attempts consume real resources
   and are bounded by the replacement rule.
 
 ## Security considerations

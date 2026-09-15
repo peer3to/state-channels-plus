@@ -42,7 +42,7 @@ Otherwise submission fails with `RaceConditionDisputeWindowNotOpen`, including a
 with no commitments. False adds no window precondition and supplies no reason; it retains the
 fully-killed-window reopen behavior. Once admitted, true is sufficient reason independently of later
 kills; all other validity checks remain active. See
-[`REQ-DISPUTE-PIPE-9-TDWQPV`](../disputes/dispute-processing.md#req-dispute-pipe-9-tdwqpv).
+[`REQ-DISPUTE-PIPE-9-TDWQPV` (Existing-window state contributions)](../disputes/dispute-processing.md#req-dispute-pipe-9-tdwqpv).
 
 ## Requirements and invariants
 
@@ -74,7 +74,7 @@ fork's window when the address is otherwise eligible and unthrottled.
 The window store is the dispute game's memory: corrupting it rewrites who claimed what and when.
 Threats: commitment substitution between upload and reduction ([`INV-ENFDIS-1-1K65DT`](dispute-window.md#inv-enfdis-1-1k65dt)), kill-order
 manipulation perturbing the reduced set (the order-dependence concern tracked under
-[`INV-DIS-5-J1QZ92`](../disputes/disputes.md#inv-dis-5-j1qz92)/[`OQ-4-JGDCNX`](../../verification/open-questions.md#oq-4-jgdcnx) — this module records; the
+[`INV-DIS-5-J1QZ92`](../disputes/disputes.md#inv-dis-5-j1qz92)/[`OQ-4-JGDCNX` (Dispute-reduction order-independence)](../../verification/open-questions.md#oq-4-jgdcnx) — this module records; the
 owner must resolve canonical ordering), spam via many identities (throttle is per-address only —
 Sybil bounds come from dispute eligibility), and timestamp manipulation at period edges (chain
 time is authoritative; boundary behavior per the owner's rules).
@@ -93,4 +93,4 @@ time is authoritative; boundary behavior per the owner's rules).
 
 _Non-normative._ The optimistic-reduction path that would activate the dormant challenge flow
 (owner's future work); canonical commitment ordering to close the kill-order perturbation concern
-([`OQ-4-JGDCNX`](../../verification/open-questions.md#oq-4-jgdcnx)).
+([`OQ-4-JGDCNX` (Dispute-reduction order-independence)](../../verification/open-questions.md#oq-4-jgdcnx)).

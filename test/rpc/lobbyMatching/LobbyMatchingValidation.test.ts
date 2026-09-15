@@ -1,4 +1,4 @@
-import { validateMatchTimeout } from "@/rpc/services/lobbyMatching/LobbyMatchingValidation";
+import { validateMatchTimeout } from "@/rpc/network/services/lobbyMatching/LobbyMatchingValidation";
 import { expect } from "chai";
 
 describe("LobbyMatchingValidation", function () {

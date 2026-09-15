@@ -1,7 +1,8 @@
-import type { RemoteRpcProxyType } from "@/rpc/RemoteRpcProxy";
+import type { RemoteRpcProxyType } from "@/rpc/network/RemoteRpcProxy";
 import { Status } from "@/types";
 import { sleep } from "@/utils";
 import type { PingPongRpc } from "@test/fixtures/customRpc/PingPongRpcManifest";
+import { runtimeIsClosed } from "@test/fixtures/RuntimeRootObservation";
 import { TargetedChannelJoinFixture } from "@test/fixtures/TargetedChannelJoinFixture";
 import { MathTestSession as TestSession } from "@test/harness";
 import { waitFor } from "@test/utils/waitFor";
@@ -222,21 +223,28 @@ describe("E2E: Targeted channel join", function () {
         const { h, channelId, targeted } = await openedWithFreshObservers(
             "target-sync-silence"
         );
-        const restoreRecord = await h.rpcStub.recordSpectateSync(2, {
-            forward: true
-        });
         const releases = await Promise.all(
             [0, 1].map((index) => h.rpcStub.holdSpectateResponses(index))
+        );
+        await Promise.all(
+            [0, 1].map((index) => h.rpcStub.stubCountSpectateRequests(index))
         );
         try {
             expect(await targeted.connect(h.getPeer(2), channelId)).to.equal(
                 false
             );
-            expect(await h.rpcStub.spectateSyncCallCount(2)).to.equal(1);
+            expect(
+                (
+                    await Promise.all(
+                        [0, 1].map((index) =>
+                            h.rpcStub.getSpectateRequestCount(index)
+                        )
+                    )
+                ).reduce((sum, count) => sum + count, 0)
+            ).to.equal(1);
             expect(await targeted.isDisposed(h.getPeer(2))).to.equal(true);
         } finally {
             await Promise.all(releases.map((release) => release()));
-            await restoreRecord();
         }
     });
 
@@ -244,11 +252,14 @@ describe("E2E: Targeted channel join", function () {
         const { h, channelId, targeted } = await openedWithFreshObservers(
             "target-sync-disconnect"
         );
-        const restore = await h.rpcStub.recordSpectateSync(2, {
+        await h.rpcStub.recordSpectateSync(2, {
             forward: true
         });
         const releases = await Promise.all(
             [0, 1].map((index) => h.rpcStub.holdSpectateResponses(index))
+        );
+        await Promise.all(
+            [0, 1].map((index) => h.rpcStub.stubCountSpectateRequests(index))
         );
         const connect = targeted.connect(h.getPeer(2), channelId);
         try {
@@ -258,11 +269,18 @@ describe("E2E: Targeted channel join", function () {
             )!.index;
             await h.network.blacklistAndDisconnectPeer(selectedIndex);
             expect(await connect).to.equal(false);
-            expect(await h.rpcStub.spectateSyncCallCount(2)).to.equal(1);
+            expect(
+                (
+                    await Promise.all(
+                        [0, 1].map((index) =>
+                            h.rpcStub.getSpectateRequestCount(index)
+                        )
+                    )
+                ).reduce((sum, count) => sum + count, 0)
+            ).to.equal(1);
             expect(await targeted.isDisposed(h.getPeer(2))).to.equal(true);
         } finally {
             await Promise.all(releases.map((release) => release()));
-            await restore();
         }
     });
 
@@ -270,21 +288,28 @@ describe("E2E: Targeted channel join", function () {
         const { h, channelId, targeted } = await openedWithFreshObservers(
             "target-sync-timeout"
         );
-        const restore = await h.rpcStub.recordSpectateSync(2, {
-            forward: true
-        });
         const releases = await Promise.all(
             [0, 1].map((index) => h.rpcStub.holdSpectateResponses(index))
+        );
+        await Promise.all(
+            [0, 1].map((index) => h.rpcStub.stubCountSpectateRequests(index))
         );
         try {
             expect(await targeted.connect(h.getPeer(2), channelId)).to.equal(
                 false
             );
-            expect(await h.rpcStub.spectateSyncCallCount(2)).to.equal(1);
+            expect(
+                (
+                    await Promise.all(
+                        [0, 1].map((index) =>
+                            h.rpcStub.getSpectateRequestCount(index)
+                        )
+                    )
+                ).reduce((sum, count) => sum + count, 0)
+            ).to.equal(1);
             expect(await targeted.isDisposed(h.getPeer(2))).to.equal(true);
         } finally {
             await Promise.all(releases.map((release) => release()));
-            await restore();
         }
     });
 
@@ -292,19 +317,26 @@ describe("E2E: Targeted channel join", function () {
         const { h, channelId, targeted } = await openedWithFreshObservers(
             "target-sync-invalid"
         );
-        const restoreRecord = await h.rpcStub.recordSpectateSync(2, {
-            forward: true
-        });
         const restoreJunk = await h.rpcStub.stubSpectateJunkPayload([0, 1]);
+        await Promise.all(
+            [0, 1].map((index) => h.rpcStub.stubCountSpectateRequests(index))
+        );
         try {
             expect(await targeted.connect(h.getPeer(2), channelId)).to.equal(
                 false
             );
-            expect(await h.rpcStub.spectateSyncCallCount(2)).to.equal(1);
+            expect(
+                (
+                    await Promise.all(
+                        [0, 1].map((index) =>
+                            h.rpcStub.getSpectateRequestCount(index)
+                        )
+                    )
+                ).reduce((sum, count) => sum + count, 0)
+            ).to.equal(1);
             expect(await targeted.isDisposed(h.getPeer(2))).to.equal(true);
         } finally {
             await restoreJunk();
-            await restoreRecord();
         }
     });
 
@@ -499,11 +531,12 @@ describe("E2E: Targeted channel join", function () {
                 })
             ).to.equal(false);
             expect(await targeted.isDisposed(h.getPeer(2))).to.equal(true);
-            expect(
-                await targeted.connect(h.getPeer(2), channelId, {
+            await waitFor(() => runtimeIsClosed(h.getPeer(2).p2pInstance));
+            await expect(
+                targeted.connect(h.getPeer(2), channelId, {
                     autoOpen: true
                 })
-            ).to.equal(false);
+            ).to.be.rejected;
         } finally {
             await Promise.all(releases.map((release) => release()));
         }
@@ -838,9 +871,9 @@ describe("E2E: Targeted channel join", function () {
                 testTime.agreementTime * 2 * 1000
             );
             expect(await targeted.isDisposed(h.getPeer(2))).to.equal(true);
-            expect(await targeted.connect(h.getPeer(2), channelId)).to.equal(
-                false
-            );
+            await waitFor(() => runtimeIsClosed(h.getPeer(2).p2pInstance));
+            await expect(targeted.connect(h.getPeer(2), channelId)).to.be
+                .rejected;
         } finally {
             await Promise.all(releases.map((release) => release()));
         }

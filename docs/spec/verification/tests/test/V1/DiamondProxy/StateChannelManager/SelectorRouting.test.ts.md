@@ -46,7 +46,7 @@ ethers reads that field to choose between an `eth_call` and a transaction.
 Everything here is address resolution or ABI comparison. No case executes a routed operation, so
 nothing in this file is evidence for the operations' semantics, for revert-data propagation, or for the
 "an unowned operation must not affect channel state" half of
-[`REQ-CONTRACT-ARCH-5-QT17P1`](../../../../../../specification/enforcement/contracts.md#req-contract-arch-5-qt17p1) — an unrouted selector resolving to the integrator's consumer facet
+[`REQ-CONTRACT-ARCH-5-QT17P1` (Complete operation ownership)](../../../../../../specification/enforcement/contracts.md#req-contract-arch-5-qt17p1) — an unrouted selector resolving to the integrator's consumer facet
 is exactly what that clause leaves to the integrator. The specification-level routing permutations
 ([`REQ-CONTRACT-ARCH-1-9W5390.T1`](../../../../../../specification/enforcement/contracts.md#req-contract-arch-1-9w5390.t1) and [`REQ-CONTRACT-ARCH-5-QT17P1.T1`](../../../../../../specification/enforcement/contracts.md#req-contract-arch-5-qt17p1.t1)) all require invoking the
 operations themselves, so none is assigned here; the evidence maps to the proxy's implementation

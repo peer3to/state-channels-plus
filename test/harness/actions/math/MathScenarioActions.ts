@@ -339,6 +339,7 @@ export class MathScenarioActions extends ScenarioActions {
      * malicious peer, the committed dispute, then the evidence period.
      */
     async stageReducibleDisputedFork(options?: {
+        configOverrides?: HarnessOptions["configOverrides"];
         beforeDispute?: () => Promise<void>;
         disputingPeerIndices?: number[];
         peerCount?: number;
@@ -348,6 +349,7 @@ export class MathScenarioActions extends ScenarioActions {
         const peerCount = options?.peerCount ?? 4;
         await this.preDisputeSetup({
             peerCount,
+            configOverrides: options?.configOverrides,
             timeConfig: { evidenceTime: options?.timeConfig?.evidenceTime ?? 3 }
         });
         const sourceForkId = this.harness.activeForkId!;

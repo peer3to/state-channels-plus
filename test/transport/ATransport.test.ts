@@ -2,7 +2,7 @@ import { RpcHandlerFixture } from "@test/fixtures/RpcHandlerFixture";
 import { expect } from "chai";
 import { Wallet } from "ethers";
 
-describe("ATransport", function () {
+describe("NetworkTransport", function () {
     let fixture: RpcHandlerFixture | undefined;
 
     afterEach(async function () {

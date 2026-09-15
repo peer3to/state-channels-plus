@@ -56,7 +56,7 @@ claims complete conformance for a requirement that depends on other files.
 
 ## Specification adherence
 
-- Idempotent recording; ascending, bound-defaulted, inverted-empty ranges ([`REQ-PSCSTORE-1-7BDTEV`](../../../../specification/storage/participant-changes.md#req-pscstore-1-7bdtev)).
+- Idempotent recording; ascending, bound-defaulted, inverted-empty ranges ([`REQ-PSCSTORE-1-7BDTEV` (Complete ordered change points)](../../../../specification/storage/participant-changes.md#req-pscstore-1-7bdtev)).
 
 ## Specification contradictions
 

@@ -1,6 +1,4 @@
-import { MathTestSession as TestSession } from "@test/harness";
-import { waitFor } from "@test/utils/waitFor";
-import { expect } from "chai";
+import { assertRuntimeContractEvent } from "@test/fixtures/RuntimePlacementWorkflowFixture";
 
 /**
  * A contract event emitted by the host EVM must reach a subscriber on the
@@ -22,34 +20,9 @@ import { expect } from "chai";
  */
 describe("E2E: Runtime contract events", function () {
     it("delivers a real Addition event to a main-thread .on subscriber over the runtime port", async function () {
-        const h = TestSession.getHarness();
-        await h.lifecycle.start(2);
-
-        const contract = h.peers[0].contractInstance;
-
-        const received: Array<[bigint, bigint, bigint]> = [];
-        // Subscribe exactly like the app: through the main-thread contract whose
-        // runner is the provider-less ClientP2pSigner.
-        await contract.on(
-            contract.filters.Addition(),
-            (a: bigint, b: bigint, result: bigint) => {
-                received.push([a, b, result]);
-            }
-        );
-
-        // A real transition: a peer executes add(1), so MathStateMachine emits
-        // Addition(previousSum, 1, previousSum + 1). Every peer's host EVM parses
-        // the log and forwards it over its own runtime port.
-        await h.transition.advanceState({ count: 1 });
-
-        await waitFor(
-            () => received.length >= 1,
-            h.event.protocolEventTimeoutMs()
-        );
-
-        expect(received).to.have.lengthOf(1);
-        const [a, b, result] = received[0];
-        expect(b).to.equal(1n); // the added number
-        expect(result).to.equal(a + b); // real Math semantics, not a canned value
+        await assertRuntimeContractEvent();
+    });
+    it("delivers a real Addition event from an SDK worker", async function () {
+        await assertRuntimeContractEvent(true);
     });
 });

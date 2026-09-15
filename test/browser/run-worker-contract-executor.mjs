@@ -1,10 +1,80 @@
+import {
+    startSdkRuntimeServer,
+    installSdkRuntimeConfig
+} from "./sdkRuntimeServer.mjs";
 import assert from "node:assert/strict";
+import { once } from "node:events";
+import fs from "node:fs/promises";
+import { createRequire } from "node:module";
+import os from "node:os";
 import path from "node:path";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const projectRoot = path.resolve(__dirname, "../..");
+const require = createRequire(import.meta.url);
+
+// the crash-log smoke's crash is deliberate; every other console error fails
+const BROWSER_WORKER_CRASH_MESSAGE =
+    "browser worker answer precompile async crash";
+// what the crash-log smoke files under; must match crash-log-smoke.js
+const CRASH_LOG_MAIN_PEER = "0x70997970C51812dc3A010C7d01b50e0d17dc79C8";
+const CRASH_LOG_MAIN_MARKER = "browser main entry";
+
+/** the real receiver, on a fresh directory it reads at require time */
+async function startCrashLogServer() {
+    const logDir = await fs.mkdtemp(
+        path.join(os.tmpdir(), "browser-crash-log-")
+    );
+    process.env.CRASH_LOG_DIR = logDir;
+    const { app } = require("../../scripts/logging/crash-log-server.js");
+    const server = app.listen(0, "127.0.0.1");
+    await once(server, "listening");
+    return {
+        logDir,
+        uploadEndpoint: `http://127.0.0.1:${server.address().port}/logs/upload`,
+        close: () =>
+            new Promise((resolve, reject) =>
+                server.close((error) => (error ? reject(error) : resolve()))
+            )
+    };
+}
+
+/** every stored chunk: <channel>/<peer>/<thread>/<store>/<from-to>.b64 */
+async function storedChunks(logDir) {
+    const chunks = [];
+    const walk = async (dir, segments) => {
+        for (const entry of await fs.readdir(dir, { withFileTypes: true })) {
+            const next = path.join(dir, entry.name);
+            if (entry.isDirectory()) {
+                await walk(next, [...segments, entry.name]);
+            } else if (segments.length === 4 && entry.name.endsWith(".b64")) {
+                const [channelId, peerAddress, threadName] = segments;
+                chunks.push({ channelId, peerAddress, threadName, file: next });
+            }
+        }
+    };
+    await walk(logDir, []);
+    return chunks;
+}
+
+async function waitForStoredThreads(logDir, threadNames, timeoutMs, channelId) {
+    const deadline = Date.now() + timeoutMs;
+    for (;;) {
+        const chunks = (await storedChunks(logDir)).filter(
+            (chunk) => !channelId || chunk.channelId.split("_")[0] === channelId
+        );
+        const stored = new Set(chunks.map((chunk) => chunk.threadName));
+        if (threadNames.every((name) => stored.has(name))) return chunks;
+        if (Date.now() > deadline) {
+            throw new Error(
+                `stored threads ${[...stored].join(",") || "none"}; wanted ${threadNames.join(",")}`
+            );
+        }
+        await new Promise((resolve) => setTimeout(resolve, 200));
+    }
+}
 
 async function loadBrowserTestDependency(name) {
     try {
@@ -24,14 +94,23 @@ const [{ createServer }, { chromium }] = await Promise.all([
     loadBrowserTestDependency("playwright")
 ]);
 
+const runtimeServer = await startSdkRuntimeServer();
 const server = await createServer({
     configFile: false,
     root: projectRoot,
     resolve: {
         alias: {
-            "@platform/contractExecutorWorkerRuntime": path.join(
+            "@platform/contractExecutorRootUrl": path.join(
                 projectRoot,
-                "src/evm/contractExecutor/browser/ContractExecutorWorkerRuntime.ts"
+                "src/rpc/internal/browser/ContractExecutorRootUrl.ts"
+            ),
+            "@platform/p2pRuntimeHostRootUrl": path.join(
+                projectRoot,
+                "src/rpc/internal/browser/P2pRuntimeHostRootUrl.ts"
+            ),
+            "@platform/rootWorkerRuntime": path.join(
+                projectRoot,
+                "src/rpc/internal/browser/RootWorkerRuntime.ts"
             ),
             "@platform/createLogger": path.join(
                 projectRoot,
@@ -59,12 +138,13 @@ const server = await createServer({
             ),
             "@platform/p2pRuntimeChannel": path.join(
                 projectRoot,
-                "src/evm/p2pRuntime/browser/P2pRuntimeChannel.ts"
+                "src/transport/browser/RuntimeChannel.ts"
             ),
-            "@platform/p2pRuntimeWorkerRuntime": path.join(
+            "@platform/evmJumpdestCache": path.join(
                 projectRoot,
-                "src/evm/p2pRuntime/browser/P2pRuntimeWorkerRuntime.ts"
+                "src/evm/browser/evmJumpdestCache"
             ),
+            scripts: path.join(projectRoot, "scripts"),
             "@": path.join(projectRoot, "src"),
             "@test": path.join(projectRoot, "test"),
             "@typechain-types": path.join(projectRoot, "typechain-types")
@@ -73,11 +153,13 @@ const server = await createServer({
     server: {
         host: "127.0.0.1",
         port: 0,
-        strictPort: false
+        strictPort: false,
+        proxy: runtimeServer.proxy
     }
 });
 
 let browser;
+const crashLogServer = await startCrashLogServer();
 try {
     await server.listen();
     const address = server.httpServer?.address();
@@ -87,14 +169,29 @@ try {
 
     browser = await chromium.launch({ headless: true });
     const page = await browser.newPage();
+    await installSdkRuntimeConfig(page, `http://127.0.0.1:${address.port}`);
     page.setDefaultTimeout(60_000);
     const browserErrors = [];
 
-    page.on("pageerror", (error) => browserErrors.push(error));
+    page.on("pageerror", (error) => {
+        // the crash-log smoke crashes its vm worker on purpose
+        if (error.message.includes(BROWSER_WORKER_CRASH_MESSAGE)) return;
+        browserErrors.push(error);
+    });
     page.on("console", (message) => {
-        if (message.type() === "error") {
-            browserErrors.push(new Error(message.text()));
+        if (message.type() !== "error") return;
+        // the logger's own error-level writes are log output, not page
+        // failures: the crash-log smoke captures its deliberate worker crash
+        // through them
+        const loggerWrite = "/src/utils/logging/Logger.ts";
+        if (
+            message.location().url.includes(loggerWrite) ||
+            message.text().includes(loggerWrite) ||
+            message.text().includes(BROWSER_WORKER_CRASH_MESSAGE)
+        ) {
+            return;
         }
+        browserErrors.push(new Error(message.text()));
     });
     page.on("requestfailed", (request) => {
         browserErrors.push(
@@ -118,7 +215,9 @@ try {
                 ) &&
                 Boolean(globalThis.runWebRTCMainThreadBrowserSmoke) &&
                 Boolean(globalThis.runWebRTCDedicatedWorkerBrowserSmoke) &&
-                Boolean(globalThis.runWebRTCProxyWorkerBrowserSmoke)
+                Boolean(globalThis.runWebRTCProxyWorkerBrowserSmoke) &&
+                Boolean(globalThis.runCrashLogBrowserSmoke) &&
+                Boolean(globalThis.runBrowserWebRTCAutoFallback)
         );
     } catch (error) {
         if (browserErrors.length) {
@@ -245,6 +344,7 @@ try {
                 "runWebRTCDedicatedWorkerBrowserSmoke"
             )
         };
+        assert.equal(result.webRTCDedicatedWorker.transferredChannel, true);
         assert.equal(result.webRTCDedicatedWorker.receivedByMain, 1);
         assert.equal(result.webRTCDedicatedWorker.receivedByWorker, 1);
         assert.equal(browserErrors.length, 0, browserErrors[0]?.stack);
@@ -256,11 +356,160 @@ try {
                 "runWebRTCProxyWorkerBrowserSmoke"
             )
         };
+        assert.equal(result.webRTCProxyWorker.transferredChannel, false);
         assert.equal(result.webRTCProxyWorker.receivedByMain, 1);
         assert.equal(result.webRTCProxyWorker.receivedByWorker, 1);
         assert.equal(browserErrors.length, 0, browserErrors[0]?.stack);
     });
+
+    await test("browser SDK WebRTC reconnects and exchanges new messages", async () => {
+        assert.deepEqual(await runSmoke("runBrowserWebRTCReconnect"), {
+            exchanged: 2
+        });
+        assert.equal(browserErrors.length, 0, browserErrors[0]?.stack);
+    });
+
+    await test("browser SDK WebRTC rejects pending negotiation on final teardown", async () => {
+        const result = await runSmoke("runBrowserWebRTCPendingDisposal");
+        assert.equal(result.message, "Runtime child disposed");
+        assert.equal(result.pending, 0);
+        assert.equal(result.timers, 0);
+        assert.equal(browserErrors.length, 0, browserErrors[0]?.stack);
+    });
+
+    await test("browser SDK WebRTC caches auto fallback after a native transfer failure", async () => {
+        assert.deepEqual(await runSmoke("runBrowserWebRTCAutoFallback"), {
+            cloneError: "DataCloneError",
+            firstProxy: true,
+            secondProxy: true,
+            transferAttempts: 1
+        });
+        assert.equal(browserErrors.length, 0, browserErrors[0]?.stack);
+    });
+
+    await test("fallback browser worker keeps its second inline SDK host usable after disposing the first", async () => {
+        const result = await runSmoke("runWebRTCFirstHostDisposal");
+        assert.equal(result.receivedByMain, 1);
+        assert.equal(result.receivedByWorker, 1);
+    });
+
+    await test("fallback browser worker keeps its first inline SDK host usable after disposing the second", async () => {
+        const result = await runSmoke("runWebRTCSecondHostDisposal");
+        assert.equal(result.receivedByMain, 1);
+        assert.equal(result.receivedByWorker, 1);
+    });
+
+    await test("browser crash-log collection uploads every realm", async () => {
+        const crashLog = await page.evaluate(async (endpoint) => {
+            let timer;
+            try {
+                return await Promise.race([
+                    globalThis.runCrashLogBrowserSmoke(endpoint),
+                    new Promise((_, reject) => {
+                        timer = setTimeout(
+                            () =>
+                                reject(
+                                    new Error(
+                                        "Crash log browser smoke timed out"
+                                    )
+                                ),
+                            45_000
+                        );
+                    })
+                ]);
+            } finally {
+                clearTimeout(timer);
+            }
+        }, crashLogServer.uploadEndpoint);
+
+        // Full SDK setup owns an SDK store beside the supplied main store;
+        // the dedicated VM owns the third store in its worker realm.
+        assert.equal(crashLog.ok, true);
+        // The VM crash upload and the main realm report reach the real receiver;
+        // the main chunk carries the application marker under its identity.
+        const chunks = await waitForStoredThreads(
+            crashLogServer.logDir,
+            ["main", "vm"],
+            15_000
+        );
+        const { decodeChunk } = require("../../scripts/logging/logChunks.js");
+        const mainChunks = chunks.filter(
+            (chunk) =>
+                chunk.threadName === "main" &&
+                chunk.peerAddress === CRASH_LOG_MAIN_PEER
+        );
+        assert.ok(mainChunks.length > 0, "no main-thread chunk under the peer");
+        const mainMessages = [];
+        for (const chunk of mainChunks) {
+            for (const entry of decodeChunk(
+                await fs.readFile(chunk.file, "utf8")
+            )) {
+                mainMessages.push(entry.message);
+            }
+        }
+        assert.ok(
+            mainMessages.includes(CRASH_LOG_MAIN_MARKER),
+            `main chunk lacks the marker: ${mainMessages.join(" | ")}`
+        );
+        assert.equal(
+            browserErrors.length,
+            0,
+            browserErrors
+                .map((error) => error.message.split("\n")[0])
+                .join(" || ")
+        );
+    });
+    await test("browser nested SDK and executor workers gossip crash logs", async () => {
+        const outcome = await page.evaluate(async (endpoint) => {
+            let timer;
+            try {
+                return await Promise.race([
+                    globalThis.runNestedCrashLogBrowserSmoke(endpoint),
+                    new Promise((_, reject) => {
+                        timer = setTimeout(
+                            () =>
+                                reject(
+                                    new Error(
+                                        "Nested browser crash upload timed out"
+                                    )
+                                ),
+                            45_000
+                        );
+                    })
+                ]);
+            } finally {
+                clearTimeout(timer);
+            }
+        }, crashLogServer.uploadEndpoint);
+        try {
+            assert.equal(outcome.ok, true);
+            const chunks = await waitForStoredThreads(
+                crashLogServer.logDir,
+                ["main", "sdk", "vm"],
+                15_000,
+                outcome.channelId
+            );
+            const {
+                decodeChunk
+            } = require("../../scripts/logging/logChunks.js");
+            const messages = [];
+            for (const chunk of chunks) {
+                for (const entry of decodeChunk(
+                    await fs.readFile(chunk.file, "utf8")
+                ))
+                    messages.push(entry.message);
+            }
+            assert.ok(messages.includes("nested SDK forwarded executor error"));
+            assert.ok(messages.includes("nested browser report"));
+            assert.equal(browserErrors.length, 0);
+        } finally {
+            await page.evaluate(() => globalThis.disposeNestedCrashLogSmoke());
+        }
+    });
 } finally {
     await browser?.close();
     await server.close();
+    await runtimeServer.close();
+    await crashLogServer.close();
+    await fs.rm(crashLogServer.logDir, { recursive: true, force: true });
 }

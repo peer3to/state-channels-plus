@@ -23,6 +23,8 @@ Logger factory types.
 
 ## Key design decisions
 
+The optional loggerService field lets factory callers attach the shared store to a root service. Omitting it preserves standalone local upload support.
+
 _None — the file is declarative/mechanical; behavior-shaping decisions live with its consumers._
 
 ## Inputs, outputs, state, and side effects

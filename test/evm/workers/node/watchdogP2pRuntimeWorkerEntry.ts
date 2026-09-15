@@ -1,19 +1,19 @@
 // @spec-test-coverage-ignore: outer sdk test-worker entry exercised by the mapped runtime-port watchdog declarations
 // Must run before any EVM/stream import pulls in Node globals.
-import "@/evm/p2pRuntime/worker/nodeGlobalsShim";
+import "@test/fixtures/NodeGlobalsShim";
 
 import type { WatchdogWorkerData } from "./watchdogContractExecutorWorkerEntry";
-import { createContractExecutor } from "@/evm/contractExecutor/createContractExecutor";
-import { createContractExecutorWorkerFromPath } from "@/evm/contractExecutor/node/ContractExecutorWorkerRuntime";
-import { serializeError } from "@/evm/p2pRuntime/errorWire";
-import {
-    onWorkerBootstrap,
-    adaptTransferredPort,
-    onUnhandledWorkerError,
-    closeWorkerBootstrapPort
-} from "@/evm/p2pRuntime/node/P2pRuntimeWorkerRuntime";
-import { startP2pRuntimeHost } from "@/evm/p2pRuntime/P2pRuntimeHost";
+import type { SetupPayload } from "@/evm/p2pRuntime/types";
+import { rootStartContext } from "@/rpc/internal/createRoot";
+import { serializeError } from "@/rpc/internal/errorWire";
+import { P2pRuntimeHostRoot } from "@/rpc/internal/roots/P2pRuntimeHostRoot";
 import { createConfig } from "@/utils/config";
+import {
+    onRootBootstrap,
+    adaptTransferredPort,
+    onUnhandledWorkerError
+} from "@platform/rootWorkerRuntime";
+import { RootWorkerControl } from "@test/fixtures/node/RootWorkerControl";
 import * as path from "node:path";
 import { workerData } from "node:worker_threads";
 
@@ -24,30 +24,31 @@ import { workerData } from "node:worker_threads";
  */
 const data = workerData as WatchdogWorkerData;
 
-onWorkerBootstrap(async (message) => {
+onRootBootstrap<SetupPayload>(async (message) => {
     const { payload, port } = message;
     createConfig(payload.config);
     const runtimePort = adaptTransferredPort(port);
     onUnhandledWorkerError((error) => {
-        runtimePort.post({ type: "hostError", error: serializeError(error) });
+        runtimePort.post({
+            service: "errors",
+            method: "report",
+            params: [serializeError(error)]
+        });
     });
 
-    await startP2pRuntimeHost(runtimePort, payload, {
-        threadLabel: "sdk",
-        onDisposed: closeWorkerBootstrapPort,
-        createContractExecutor: (options, dependencies) =>
-            createContractExecutor(options, {
-                ...dependencies,
-                createWorkerRuntime: (onMessage, onError) =>
-                    createContractExecutorWorkerFromPath(
-                        path.join(
-                            __dirname,
-                            "watchdogContractExecutorWorkerEntry.ts"
-                        ),
-                        onMessage,
-                        onError,
-                        data
-                    )
-            })
-    });
+    await RootWorkerControl.run(
+        "vm",
+        {
+            workerUrl: path.join(
+                __dirname,
+                "watchdogContractExecutorWorkerEntry.ts"
+            ),
+            workerData: data
+        },
+        async () => {
+            const context = rootStartContext(runtimePort, "worker");
+            const root = new P2pRuntimeHostRoot(payload, undefined, context);
+            await context.initialize(root);
+        }
+    );
 });

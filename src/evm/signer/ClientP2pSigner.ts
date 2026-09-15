@@ -1,11 +1,13 @@
 import type { ConnectToChannelOptions } from "./ConnectToChannelOptions";
 import NoopEventProvider from "./NoopEventProvider";
-import type { RuntimeRequester } from "../p2pRuntime/types";
+import type { P2pRuntimeHostRoot } from "../../rpc/internal/roots/P2pRuntimeHostRoot";
+import type { RuntimeConnection } from "@/rpc/internal/AInternalRpcRoot";
+import { serializeSignerMessage } from "@/rpc/internal/services/chainSigner/chainSignerSerialization";
 import type {
     LobbyJoinOptions,
     LobbyJoinResult,
     PreparedJoinChannelConfirmation
-} from "@/rpc/services";
+} from "@/rpc/network/services";
 import type { Status } from "@/types";
 
 import type { Address, Bytes, ForkId, Hash } from "@/types/types";
@@ -45,7 +47,7 @@ class ClientP2pSigner implements Signer {
     private isLeader = false;
 
     constructor(
-        private readonly client: RuntimeRequester,
+        private readonly client: RuntimeConnection<P2pRuntimeHostRoot>,
         signerAddress: Address
     ) {
         this.signerAddress = signerAddress;
@@ -76,10 +78,10 @@ class ClientP2pSigner implements Signer {
     }
 
     async call(tx: TransactionRequest): Promise<string> {
-        return this.client.request<string>({
-            type: "callView",
-            data: ethers.hexlify(tx.data ?? "0x")
-        });
+        return this.client.p2pSigner
+            .callView(ethers.hexlify(tx.data ?? "0x"))
+            .request()
+            .then(({ encodedReturnData }) => encodedReturnData);
     }
 
     resolveName(): Promise<string | null> {
@@ -93,22 +95,16 @@ class ClientP2pSigner implements Signer {
     async sendTransaction(
         tx: TransactionRequest
     ): Promise<TransactionResponse> {
-        await this.client.request<void>(
-            {
-                type: "sendTransaction",
-                data: ethers.hexlify(tx.data ?? "0x")
-            },
-            { timeoutMs: null }
-        );
+        await this.client.p2pSigner
+            .sendTransaction(ethers.hexlify(tx.data ?? "0x"))
+            .request({ timeoutMs: null });
         return "There is no TransactionResponse p2p - everything executed locally" as unknown as TransactionResponse;
     }
 
     signMessage(message: string | Uint8Array): Promise<string> {
-        return this.client.request<string>({
-            type: "signMessage",
-            message:
-                typeof message === "string" ? message : ethers.hexlify(message)
-        });
+        return this.client.p2pSigner
+            .signMessage(serializeSignerMessage(message))
+            .request();
     }
 
     signTypedData(
@@ -116,17 +112,14 @@ class ClientP2pSigner implements Signer {
         types: Record<string, TypedDataField[]>,
         value: Record<string, unknown>
     ): Promise<string> {
-        return this.client.request<string>({
-            type: "signTypedData",
-            domain,
-            types,
-            value
-        });
+        return this.client.p2pSigner
+            .signTypedData(domain, types, value)
+            .request();
     }
 
     setIsLeader(value: boolean): void {
         this.isLeader = value;
-        void this.client.request<void>({ type: "setIsLeader", value });
+        void this.client.p2pSigner.setIsLeader(value).request();
     }
 
     getIsLeader(): boolean {
@@ -158,11 +151,10 @@ class ClientP2pSigner implements Signer {
             options.shouldJoin !== undefined ||
             options.balance !== undefined ||
             options.timeoutMs !== undefined;
-        return this.client.request<boolean>(
-            {
-                type: "connectToChannel",
-                channelId: normalizedChannelId,
-                options: hasOptions
+        return this.client.p2pSigner
+            .connectToChannel(
+                normalizedChannelId,
+                hasOptions
                     ? {
                           autoOpen: options.autoOpen,
                           shouldJoin: options.shouldJoin,
@@ -170,9 +162,8 @@ class ClientP2pSigner implements Signer {
                           timeoutMs: options.timeoutMs
                       }
                     : undefined
-            },
-            { timeoutMs: null }
-        );
+            )
+            .request({ timeoutMs: null });
     }
 
     cancelConnectToChannel(channelId: Bytes): Promise<boolean> {
@@ -186,13 +177,9 @@ class ClientP2pSigner implements Signer {
         } catch (error) {
             return Promise.reject(error);
         }
-        return this.client.request<boolean>(
-            {
-                type: "cancelConnectToChannel",
-                channelId: normalizedChannelId
-            },
-            { timeoutMs: null }
-        );
+        return this.client.p2pSigner
+            .cancelConnectToChannel(normalizedChannelId)
+            .request({ timeoutMs: null });
     }
 
     /**
@@ -200,10 +187,9 @@ class ClientP2pSigner implements Signer {
      * Direct callers wait for settled removal but do not dispose the runtime.
      */
     leaveChannel(): Promise<void> {
-        return this.client.request<void>(
-            { type: "leaveChannel" },
-            { timeoutMs: null }
-        );
+        return this.client.p2pSigner
+            .leaveChannel()
+            .request({ timeoutMs: null });
     }
 
     joinLobby(
@@ -219,24 +205,18 @@ class ClientP2pSigner implements Signer {
         } catch (error) {
             return Promise.reject(error);
         }
-        return this.client.request<LobbyJoinResult | undefined>(
-            {
-                type: "joinLobby",
-                lobbyTopic,
-                options: {
-                    encodedBalance,
-                    matchTimeoutMs: options.matchTimeoutMs
-                }
-            },
-            { timeoutMs: null }
-        );
+        return this.client.p2pSigner
+            .joinLobby(lobbyTopic, {
+                encodedBalance,
+                matchTimeoutMs: options.matchTimeoutMs
+            })
+            .request({ timeoutMs: null });
     }
 
     leaveLobby(lobbyTopic: string): Promise<boolean> {
-        return this.client.request<boolean>(
-            { type: "leaveLobby", lobbyTopic },
-            { timeoutMs: null }
-        );
+        return this.client.p2pSigner
+            .leaveLobby(lobbyTopic)
+            .request({ timeoutMs: null });
     }
 
     async joinChannel(
@@ -244,17 +224,15 @@ class ClientP2pSigner implements Signer {
         expectedSnapshotHash: Hash,
         expectedForkId: ForkId
     ): Promise<boolean> {
-        return this.client.request<boolean>(
-            {
-                type: "joinChannel",
-                encodedJoinChannelConfirmation: String(
+        return this.client.p2pSigner
+            .joinChannel(
+                String(
                     Codec.encode(confirmation, Type.JoinChannelConfirmation)
                 ),
-                expectedSnapshotHash: String(expectedSnapshotHash),
-                expectedForkId: String(expectedForkId)
-            },
-            { timeoutMs: null }
-        );
+                String(expectedSnapshotHash),
+                String(expectedForkId)
+            )
+            .request({ timeoutMs: null });
     }
 
     async topUpBalance(
@@ -262,32 +240,25 @@ class ClientP2pSigner implements Signer {
         expectedSnapshotHash: Hash,
         expectedForkId: ForkId
     ): Promise<boolean> {
-        return this.client.request<boolean>(
-            {
-                type: "topUpBalance",
-                encodedJoinChannelConfirmation: String(
+        return this.client.p2pSigner
+            .topUpBalance(
+                String(
                     Codec.encode(confirmation, Type.JoinChannelConfirmation)
                 ),
-                expectedSnapshotHash: String(expectedSnapshotHash),
-                expectedForkId: String(expectedForkId)
-            },
-            { timeoutMs: null }
-        );
+                String(expectedSnapshotHash),
+                String(expectedForkId)
+            )
+            .request({ timeoutMs: null });
     }
 
     async collectJoinChannelConfirmation(
         joinChannel: JoinChannelStruct
     ): Promise<PreparedJoinChannelConfirmation> {
-        const result = await this.client.request<{
-            encodedJoinChannelConfirmation: string;
-            expectedSnapshotHash: Hash;
-            expectedForkId: ForkId;
-        }>({
-            type: "collectJoinChannelConfirmation",
-            encodedJoinChannel: String(
-                Codec.encode(joinChannel, Type.JoinChannel)
+        const result = await this.client.p2pSigner
+            .collectJoinChannelConfirmation(
+                String(Codec.encode(joinChannel, Type.JoinChannel))
             )
-        });
+            .request();
         return {
             confirmation: Codec.decode(
                 result.encodedJoinChannelConfirmation,
@@ -299,11 +270,11 @@ class ClientP2pSigner implements Signer {
     }
 
     disconnectFromPeers(): void {
-        void this.client.request<void>({ type: "disconnectFromPeers" });
+        void this.client.p2pSigner.disconnectFromPeers().request();
     }
 
     getChannelStatus(): Promise<Status> {
-        return this.client.request<Status>({ type: "getChannelStatus" });
+        return this.client.p2pSigner.getChannelStatus().request();
     }
 
     private validateConnectOptions(options: ConnectToChannelOptions): void {

@@ -138,7 +138,7 @@ All fields with their defaults, from `DEFAULT_CONFIG` in
 
 ## 4. Choosing a transport
 
-Connectivity is pluggable behind [ATransport](../../../../../src/transport/ATransport.ts#L12); the
+Connectivity is pluggable behind [ATransport](../../../../../src/transport/ATransport.ts#L8); the
 components involved are described in [../sdk/components.md](../architecture/sdk/components.md). The
 `TransportType` enum ([src/transport/TransportType.ts](../../../../../src/transport/TransportType.ts#L1))
 has three values — `HOLEPUNCH`, `WEBRTC`, `LOOPBACK` — and the P2PManager defaults to preferring

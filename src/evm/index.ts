@@ -1,14 +1,9 @@
 import { CONSOLE_ADDRESS, createConsolePrecompile } from "./ConsolePrecompile";
-import {
-    AContractExecutor,
-    ContractExecutor,
-    createContractExecutorFactory
-} from "./contractExecutor";
+import { AContractExecutor, ContractExecutor } from "./contractExecutor";
 import type {
     ContractExecutionLog,
     ContractExecutionResult
 } from "./contractExecutor";
-import type { ContractExecutorFactoryOptions } from "./contractExecutor";
 import EvmDiamondStateMachine from "./EvmDiamondStateMachine";
 import createEvm from "./EvmFactory";
 import type {
@@ -28,7 +23,6 @@ import type { LocalStateMachineDeployer } from "../../scripts/V1/deploy";
 export {
     AContractExecutor,
     ContractExecutor,
-    createContractExecutorFactory,
     P2pInstance,
     LocalP2pSigner as P2pSigner,
     LocalContractExecutorSigner as LocalDiamondSigner,
@@ -42,7 +36,6 @@ export {
 export type {
     ContractExecutionLog,
     ContractExecutionResult,
-    ContractExecutorFactoryOptions,
     EvmCustomPrecompile,
     EvmCustomPrecompileFactory,
     EvmCustomPrecompileManifest,

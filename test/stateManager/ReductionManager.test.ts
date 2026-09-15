@@ -1,13 +1,15 @@
 import { Status } from "@/types";
 import { sleep } from "@/utils";
-import type { ReductionApplicationControl } from "@test/fixtures/customRpc/harnessControl/services/stub/StubService";
 import { REDUCTION_ATTEMPT_STUB_FAILURE } from "@test/fixtures/customRpc/harnessControl/services/stub/StubService";
+import { assertInvalidReductionControl } from "@test/fixtures/InvalidReductionControlFixture";
 import {
     assertDisposalDuringGenesisApplication,
-    assertReadFailureDuringGenesisApplication
+    assertReadFailureDuringGenesisApplication,
+    stageDisposalFork
 } from "@test/fixtures/ReductionDisposalStaging";
 import { assertDirectCompletionLosesForkInMutex } from "@test/fixtures/ReductionForkSwitchStaging";
 import { assertLiveForkSwitch } from "@test/fixtures/ReductionForkSwitchStaging";
+import { runtimeEndpointFor } from "@test/fixtures/RuntimeRootObservation";
 import { assertSyncedLeaverSkipsSubmission } from "@test/fixtures/SyncedLeaverReductionStaging";
 import { MathTestSession as TestSession } from "@test/harness";
 import type { SubmittedFinalDispute } from "@test/harness/actions/DisputeOrchestrator";
@@ -321,181 +323,118 @@ describe("ReductionManager", function () {
     describe("terminal disposal", function () {
         it("disposal after the completion exists settles the attempt as undefined and installs nothing", async function () {
             const h = TestSession.getHarness();
-            const { sourceForkId } =
-                await h.scenario.stageReducibleDisputedFork({
-                    peerCount: 4,
-                    maliciousPeerIndex: 1
-                });
+            const { sourceForkId } = await stageDisposalFork(h);
             const target = h.getPeer(0);
+            const { host, sm, stub, query } = runtimeEndpointFor(
+                target.p2pInstance
+            );
             const setStateCalls = h.event.getEventCallCount(0, "onSetState");
             const hold = await h.rpcStub.holdReductionAttempt(0, "attempt");
-            await h.control(target).stub.startTryReduce(sourceForkId).request();
+            stub.startTryReduce(sourceForkId);
             await waitFor(
                 async () => (await hold.entered()) === 1,
                 h.event.protocolEventTimeoutMs()
             );
-            await h.control(target).stub.abortDetached().request();
-            await waitFor(
-                async () =>
-                    await h.execOnHost(target, async (sm) =>
-                        Boolean(sm.isDisposed)
-                    )
-            );
+            stub.abortDetached();
+            await waitFor(async () => sm.isDisposed);
             // Disposal settles the caller while the executor is still held.
             await waitFor(
-                async () =>
-                    (
-                        await h
-                            .control(target)
-                            .stub.getTryReduceOutcome()
-                            .request()
-                    )?.settled === true
+                async () => stub.getTryReduceOutcome()?.settled === true
             );
-            await hold.release();
+            stub.restoreReductionAttempt();
 
-            const outcome = await h
-                .control(target)
-                .stub.getTryReduceOutcome()
-                .request();
+            const outcome = stub.getTryReduceOutcome();
             expect(outcome).to.deep.equal({
                 settled: true,
                 result: null,
                 rejected: null
             });
-            expect(
-                await h
-                    .control(target)
-                    .query.getCompletedReductionForkId(sourceForkId)
-                    .request()
-            ).to.equal(null);
-            expect(
-                await h.control(target).query.getForkId().request()
-            ).to.equal(sourceForkId);
-            expect(
-                await h.control(target).query.getStatus().request()
-            ).to.equal(Status.OPENED);
+            expect(query.getCompletedReductionForkId(sourceForkId)).to.equal(
+                null
+            );
+            expect(query.getForkId()).to.equal(sourceForkId);
+            expect(query.getStatus()).to.equal(Status.OPENED);
             expect(h.event.getEventCallCount(0, "onSetState")).to.equal(
                 setStateCalls
             );
+            await host.dispose();
         });
 
         it("disposal during candidate computation persists no outbound block and installs nothing", async function () {
             const h = TestSession.getHarness();
-            const { sourceForkId } =
-                await h.scenario.stageReducibleDisputedFork({
-                    peerCount: 4,
-                    maliciousPeerIndex: 1
-                });
+            const { sourceForkId } = await stageDisposalFork(h);
             const target = h.getPeer(0);
-            const outboundHead = await h
-                .control(target)
-                .query.getOutboundHead()
-                .request();
-            const outboundCount = await h.execOnHost(
-                target,
-                async (sm) => sm.storage.outboundMessages["blockMap"].size
+            const { host, sm, stub, query } = runtimeEndpointFor(
+                target.p2pInstance
             );
+            const outboundHead = query.getOutboundHead();
+            const outboundCount = sm.storage.outboundMessages["blockMap"].size;
             const hold = await h.rpcStub.holdReductionAttempt(0, "compute");
-            await h.control(target).stub.startTryReduce(sourceForkId).request();
+            stub.startTryReduce(sourceForkId);
             await waitFor(
                 async () => (await hold.entered()) === 1,
                 h.event.protocolEventTimeoutMs()
             );
-            await h.control(target).stub.abortDetached().request();
-            await waitFor(
-                async () =>
-                    await h.execOnHost(target, async (sm) =>
-                        Boolean(sm.isDisposed)
-                    )
-            );
+            stub.abortDetached();
+            await waitFor(async () => sm.isDisposed);
             // Disposal settles the caller while the executor is still held.
             await waitFor(
-                async () =>
-                    (
-                        await h
-                            .control(target)
-                            .stub.getTryReduceOutcome()
-                            .request()
-                    )?.settled === true
+                async () => stub.getTryReduceOutcome()?.settled === true
             );
-            await hold.release();
+            stub.restoreReductionAttempt();
 
-            expect(
-                await h.control(target).stub.getTryReduceOutcome().request()
-            ).to.deep.equal({ settled: true, result: null, rejected: null });
-            expect(
-                await h.execOnHost(
-                    target,
-                    async (sm) => sm.storage.outboundMessages["blockMap"].size
-                )
-            ).to.equal(outboundCount);
-            expect(
-                await h.control(target).query.getOutboundHead().request()
-            ).to.deep.equal(outboundHead);
-            expect(
-                await h.control(target).query.getForkId().request()
-            ).to.equal(sourceForkId);
-            expect(
-                await h
-                    .control(target)
-                    .query.getCompletedReductionForkId(sourceForkId)
-                    .request()
-            ).to.equal(null);
+            expect(stub.getTryReduceOutcome()).to.deep.equal({
+                settled: true,
+                result: null,
+                rejected: null
+            });
+            expect(sm.storage.outboundMessages["blockMap"].size).to.equal(
+                outboundCount
+            );
+            expect(query.getOutboundHead()).to.deep.equal(outboundHead);
+            expect(query.getForkId()).to.equal(sourceForkId);
+            expect(query.getCompletedReductionForkId(sourceForkId)).to.equal(
+                null
+            );
+            await host.dispose();
         });
 
         it("disposal while a direct completion waits for the state mutex installs nothing", async function () {
             const h = TestSession.getHarness();
-            const { sourceForkId } =
-                await h.scenario.stageReducibleDisputedFork({
-                    peerCount: 4,
-                    maliciousPeerIndex: 1
-                });
+            const { sourceForkId } = await stageDisposalFork(h);
             const target = h.getPeer(0);
+            const { host, sm, stub, query } = runtimeEndpointFor(
+                target.p2pInstance
+            );
             const reducedForkId = id("stub-reduced-fork");
             const mutex = await h.rpcStub.holdStateMutex(0);
             await waitFor(
                 async () => (await mutex.entered()) === 1,
                 h.event.protocolEventTimeoutMs()
             );
-            await h
-                .control(target)
-                .stub.startCompleteWithGenesis(reducedForkId)
-                .request();
-            await h.control(target).stub.abortDetached().request();
+            stub.startCompleteWithGenesis(reducedForkId);
+            stub.abortDetached();
             await waitFor(
-                async () =>
-                    await h.execOnHost(target, async (sm) =>
-                        Boolean(sm.isDisposed)
-                    ),
+                async () => sm.isDisposed,
                 h.event.protocolEventTimeoutMs()
             );
-            await mutex.release();
+            stub.service.releaseStateMutex();
             await waitFor(
                 async () =>
-                    (
-                        await h
-                            .control(target)
-                            .stub.getCompleteWithGenesisOutcome()
-                            .request()
-                    )?.settled === true,
+                    stub.getCompleteWithGenesisOutcome()?.settled === true,
                 h.event.protocolEventTimeoutMs()
             );
 
-            expect(
-                await h
-                    .control(target)
-                    .stub.getCompleteWithGenesisOutcome()
-                    .request()
-            ).to.deep.equal({ settled: true, result: "false", rejected: null });
-            expect(
-                await h.control(target).query.getForkId().request()
-            ).to.equal(sourceForkId);
-            expect(
-                await h
-                    .control(target)
-                    .query.getCompletedReductionForkId(sourceForkId)
-                    .request()
-            ).to.equal(null);
+            expect(stub.getCompleteWithGenesisOutcome()).to.deep.equal({
+                settled: true,
+                result: "false",
+                rejected: null
+            });
+            expect(query.getForkId()).to.equal(sourceForkId);
+            expect(query.getCompletedReductionForkId(sourceForkId)).to.equal(
+                null
+            );
+            await host.dispose();
         });
 
         it("disposal held at setState during genesis application commits nothing", async function () {
@@ -535,57 +474,41 @@ describe("ReductionManager", function () {
 
         it("disposal after the local install and before the chain write submits nothing", async function () {
             const h = TestSession.getHarness();
-            const { sourceForkId } =
-                await h.scenario.stageReducibleDisputedFork({
-                    peerCount: 4,
-                    maliciousPeerIndex: 1
-                });
+            const { sourceForkId } = await stageDisposalFork(h);
             const target = h.getPeer(0);
+            const { host, sm, stub, query } = runtimeEndpointFor(
+                target.p2pInstance
+            );
             const hold = await h.rpcStub.holdReductionAttempt(0, "submit");
             try {
-                await h
-                    .control(target)
-                    .stub.startTryReduce(sourceForkId)
-                    .request();
+                stub.startTryReduce(sourceForkId);
                 // The gas-limit read is reached only after the local install,
                 // so the attempt has already settled with the reduced fork.
                 await waitFor(async () => (await hold.entered()) === 1);
-                expect(
-                    (
-                        await h
-                            .control(target)
-                            .stub.getTryReduceOutcome()
-                            .request()
-                    )?.result
-                ).to.be.a("string");
-                await h.control(target).stub.abortDetached().request();
-                await waitFor(
-                    async () =>
-                        await h.execOnHost(target, async (sm) =>
-                            Boolean(sm.isDisposed)
-                        )
-                );
+                expect(stub.getTryReduceOutcome()?.result).to.be.a("string");
+                stub.abortDetached();
+                await waitFor(async () => sm.isDisposed);
             } finally {
-                await hold.release();
+                stub.restoreReductionAttempt();
             }
             // The released gas limit resolves into the disposal re-check, so
             // no chain write follows.
             await sleep(500);
-            expect(
-                await h
-                    .control(target)
-                    .stub.getReductionSubmitCallCount()
-                    .request()
-            ).to.equal(0);
+            expect(stub.getReductionSubmitCallCount()).to.equal(0);
+            await host.dispose();
         });
 
         it("an ordinary attempt that completes a window the chain already finalized converges without a chain write", async function () {
             const h = TestSession.getHarness();
             await h.scenario.preDisputeSetup({
                 peerCount: 4,
+                configOverrides: { RUN_SDK_IN_THREAD: false },
                 timeConfig: { evidenceTime: 3 }
             });
             const target = h.getPeer(0);
+            const { host, sm, stub, query } = runtimeEndpointFor(
+                target.p2pInstance
+            );
             // The final dispute is uploaded without its auditing data, so peer
             // 0 rebuilds it on commit; that rebuild is parked, and the
             // ordinary attempt (the window's kill period is pre-expired) is
@@ -607,10 +530,7 @@ describe("ReductionManager", function () {
                 await rebuild.waitUntilHeld(timeoutMs);
                 await waitFor(
                     async () =>
-                        (await h
-                            .control(target)
-                            .query.getForkId()
-                            .request()) === staged.finalResolution.forkId,
+                        query.getForkId() === staged.finalResolution.forkId,
                     timeoutMs
                 );
             } finally {
@@ -624,160 +544,115 @@ describe("ReductionManager", function () {
             expect(
                 (await h.channelManager.getStateSnapshot(h.channelId)).forkId
             ).to.equal(staged!.forkId);
-            expect(
-                await h
-                    .control(target)
-                    .query.getCompletedReductionForkId(staged!.forkId)
-                    .request()
-            ).to.equal(staged!.finalResolution.forkId);
+            expect(query.getCompletedReductionForkId(staged!.forkId)).to.equal(
+                staged!.finalResolution.forkId
+            );
+            await host.dispose();
         });
 
         it("a fatal attempt error rejects the caller once with the original error and aborts", async function () {
             const h = TestSession.getHarness();
-            const { sourceForkId } =
-                await h.scenario.stageReducibleDisputedFork({
-                    peerCount: 4,
-                    maliciousPeerIndex: 1
-                });
+            const { sourceForkId } = await stageDisposalFork(h);
             const target = h.getPeer(0);
+            const { host, sm, stub, query } = runtimeEndpointFor(
+                target.p2pInstance
+            );
             const setStateCalls = h.event.getEventCallCount(0, "onSetState");
             const hold = await h.rpcStub.holdReductionAttempt(
                 0,
                 "compute",
                 "throw"
             );
-            await h.control(target).stub.startTryReduce(sourceForkId).request();
+            stub.startTryReduce(sourceForkId);
             await waitFor(async () => (await hold.entered()) === 1);
-            await hold.release();
+            stub.restoreReductionAttempt();
             await waitFor(
-                async () =>
-                    (
-                        await h
-                            .control(target)
-                            .stub.getTryReduceOutcome()
-                            .request()
-                    )?.settled === true
+                async () => stub.getTryReduceOutcome()?.settled === true
             );
 
-            expect(
-                await h.control(target).stub.getTryReduceOutcome().request()
-            ).to.deep.equal({
+            expect(stub.getTryReduceOutcome()).to.deep.equal({
                 settled: true,
                 result: null,
                 rejected: REDUCTION_ATTEMPT_STUB_FAILURE
             });
-            await waitFor(
-                async () =>
-                    await h.execOnHost(target, async (sm) =>
-                        Boolean(sm.isDisposed)
-                    )
-            );
-            expect(
-                await h.control(target).query.getForkId().request()
-            ).to.equal(sourceForkId);
+            await waitFor(async () => sm.isDisposed);
+            expect(query.getForkId()).to.equal(sourceForkId);
             expect(h.event.getEventCallCount(0, "onSetState")).to.equal(
                 setStateCalls
             );
+            await host.dispose();
         });
 
         it("a stale dispute read after disposal reschedules nothing", async function () {
             const h = TestSession.getHarness();
-            const { sourceForkId } =
-                await h.scenario.stageReducibleDisputedFork({
-                    peerCount: 4,
-                    maliciousPeerIndex: 1
-                });
+            const { sourceForkId } = await stageDisposalFork(h);
             const target = h.getPeer(0);
-            await h.control(target).stub.stubHoldReductionTasks().request();
+            const { host, sm, stub, query } = runtimeEndpointFor(
+                target.p2pInstance
+            );
+            stub.stubHoldReductionTasks();
             const hold = await h.rpcStub.holdReductionAttempt(
                 0,
                 "disputes",
                 "undefined"
             );
-            await h.control(target).stub.startTryReduce(sourceForkId).request();
+            stub.startTryReduce(sourceForkId);
             await waitFor(async () => (await hold.entered()) === 1);
             // Timers scheduled by live chain events before the abort are not
             // the subject; only the stale branch after it must add none.
-            const heldBeforeAbort = await h
-                .control(target)
-                .stub.getHeldScheduledTaskCount("reduction-")
-                .request();
-            await h.control(target).stub.abortDetached().request();
+            const heldBeforeAbort =
+                stub.getHeldScheduledTaskCount("reduction-");
+            stub.abortDetached();
+            await waitFor(async () => sm.isDisposed);
+            stub.restoreReductionAttempt();
             await waitFor(
-                async () =>
-                    await h.execOnHost(target, async (sm) =>
-                        Boolean(sm.isDisposed)
-                    )
+                async () => stub.getTryReduceOutcome()?.settled === true
             );
-            await hold.release();
-            await waitFor(
-                async () =>
-                    (
-                        await h
-                            .control(target)
-                            .stub.getTryReduceOutcome()
-                            .request()
-                    )?.settled === true
+            expect(stub.getTryReduceOutcome()).to.deep.equal({
+                settled: true,
+                result: null,
+                rejected: null
+            });
+            expect(stub.getHeldScheduledTaskCount("reduction-")).to.equal(
+                heldBeforeAbort
             );
-            expect(
-                await h.control(target).stub.getTryReduceOutcome().request()
-            ).to.deep.equal({ settled: true, result: null, rejected: null });
-            expect(
-                await h
-                    .control(target)
-                    .stub.getHeldScheduledTaskCount("reduction-")
-                    .request()
-            ).to.equal(heldBeforeAbort);
+            await host.dispose();
         });
 
         it("a stale candidate computation after disposal reschedules nothing", async function () {
             const h = TestSession.getHarness();
-            const { sourceForkId } =
-                await h.scenario.stageReducibleDisputedFork({
-                    peerCount: 4,
-                    maliciousPeerIndex: 1
-                });
+            const { sourceForkId } = await stageDisposalFork(h);
             const target = h.getPeer(0);
-            await h.control(target).stub.stubHoldReductionTasks().request();
+            const { host, sm, stub, query } = runtimeEndpointFor(
+                target.p2pInstance
+            );
+            stub.stubHoldReductionTasks();
             const hold = await h.rpcStub.holdReductionAttempt(
                 0,
                 "compute",
                 "undefined"
             );
-            await h.control(target).stub.startTryReduce(sourceForkId).request();
+            stub.startTryReduce(sourceForkId);
             await waitFor(async () => (await hold.entered()) === 1);
             // Timers scheduled by live chain events before the abort are not
             // the subject; only the stale branch after it must add none.
-            const heldBeforeAbort = await h
-                .control(target)
-                .stub.getHeldScheduledTaskCount("reduction-")
-                .request();
-            await h.control(target).stub.abortDetached().request();
+            const heldBeforeAbort =
+                stub.getHeldScheduledTaskCount("reduction-");
+            stub.abortDetached();
+            await waitFor(async () => sm.isDisposed);
+            stub.restoreReductionAttempt();
             await waitFor(
-                async () =>
-                    await h.execOnHost(target, async (sm) =>
-                        Boolean(sm.isDisposed)
-                    )
+                async () => stub.getTryReduceOutcome()?.settled === true
             );
-            await hold.release();
-            await waitFor(
-                async () =>
-                    (
-                        await h
-                            .control(target)
-                            .stub.getTryReduceOutcome()
-                            .request()
-                    )?.settled === true
+            expect(stub.getTryReduceOutcome()).to.deep.equal({
+                settled: true,
+                result: null,
+                rejected: null
+            });
+            expect(stub.getHeldScheduledTaskCount("reduction-")).to.equal(
+                heldBeforeAbort
             );
-            expect(
-                await h.control(target).stub.getTryReduceOutcome().request()
-            ).to.deep.equal({ settled: true, result: null, rejected: null });
-            expect(
-                await h
-                    .control(target)
-                    .stub.getHeldScheduledTaskCount("reduction-")
-                    .request()
-            ).to.equal(heldBeforeAbort);
+            await host.dispose();
         });
     });
 
@@ -801,35 +676,3 @@ describe("ReductionManager", function () {
         });
     });
 });
-
-/** The payload is JSON as it would arrive over the control port. */
-async function assertInvalidReductionControl(payload: string): Promise<void> {
-    const h = TestSession.getHarness();
-    await h.lifecycle.start(2, 0);
-    const target = h.getPeer(0);
-    const control: ReductionApplicationControl = JSON.parse(payload);
-    let failure: unknown;
-    try {
-        await h
-            .control(target)
-            .stub.holdReductionGenesisApplication(control)
-            .request();
-    } catch (error) {
-        failure = error;
-    }
-    expect((failure as Error).message).to.include(
-        "Invalid reduction application control"
-    );
-    expect(
-        await h
-            .control(target)
-            .stub.isReductionGenesisApplicationHeld()
-            .request()
-    ).to.equal(false);
-    expect(
-        await h
-            .control(target)
-            .stub.getHeldReductionGenesisApplicationCount()
-            .request()
-    ).to.equal(0);
-}

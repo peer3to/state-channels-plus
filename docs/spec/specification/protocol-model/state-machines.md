@@ -176,7 +176,7 @@ function _setState(bytes memory encodedState) internal virtual;    // restore
   channel**: upgrades to state-machine logic, if any, apply only to newly opened channels. No
   state-encoding version marker is therefore required, and an existing channel MUST NOT change
   its encoding. _(Decided 2026-08-10, resolving the versioning half of
-  [`OQ-21-PEZK9X`](../../implementation/open-questions.md#oq-21-pezk9x).)_
+  [`OQ-21-PEZK9X` (`_tx.body` population and state-encoding versioning)](../../implementation/open-questions.md#oq-21-pezk9x).)_
 
 The illustrative encoding is a single ABI encode/decode of one state struct:
 
@@ -313,7 +313,7 @@ answers the same question against a supplied state without mutating the live one
   rejection.)_ For this protocol version: the on-chain `BlockInvalidStateTransition` handler re-executes and
   compares snapshots without an author check of its own, so on-chain wrong-turn slashing today
   succeeds only against machines that do guard in-contract — see
-  [`OQ-26-XH59SP`](../open-questions.md#oq-26-xh59sp).
+  [`OQ-26-XH59SP` (On-chain wrong-turn enforceability)](../open-questions.md#oq-26-xh59sp).
 
 ## 6. Participant lifecycle hooks
 
@@ -367,7 +367,7 @@ MAY also produce an exit; exits are not limited to removal and slashing.
   same path (`_addExitChannel`). The only permitted difference between the two is balance
   semantics inside the hooks: `_removeParticipant` is the soft path and MAY return the
   participant's full held balance, while `_slashParticipant` applies the application-defined
-  penalty. _(Decided 2026-08-10, resolving [`OQ-18-2NK97T`](../open-questions.md#oq-18-2nk97t).)_
+  penalty. _(Decided 2026-08-10, resolving [`OQ-18-2NK97T` (Exit-recording asymmetry between slash and remove)](../open-questions.md#oq-18-2nk97t).)_
 
 ## Assumptions and constraints
 

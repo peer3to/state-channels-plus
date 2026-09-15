@@ -16,7 +16,7 @@ export async function runProviderImportCase(
         await build({
             entryPoints: [
                 path.resolve(
-                    "src/rpc/services/WebRTCSetup/connection/WebRTCProvider.ts"
+                    "src/rpc/network/services/WebRTCSetup/connection/WebRTCProvider.ts"
                 )
             ],
             bundle: true,

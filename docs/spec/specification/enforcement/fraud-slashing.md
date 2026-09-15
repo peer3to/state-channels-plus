@@ -68,7 +68,7 @@ re-executing violations in every later dispute. Threats: forged proofs against h
 and double-jeopardy gas waste (skip-if-slashed). The self-slash rule cuts both ways: an honest
 submitter racing a state change can lose stake to a technicality — the preflight-through-the-mirror
 pattern is the operational mitigation and the reason mirror equivalence
-([`REQ-MIRROR-1-XCY9CB`](local-mirror.md#req-mirror-1-xcy9cb)) matters here.
+([`REQ-MIRROR-1-XCY9CB` (Constrained equivalence)](local-mirror.md#req-mirror-1-xcy9cb)) matters here.
 
 ## Verification and test plan
 

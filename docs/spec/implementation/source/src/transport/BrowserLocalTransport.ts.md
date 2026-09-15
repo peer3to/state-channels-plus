@@ -23,7 +23,9 @@ Browser-side local pairing (message-channel based) mirroring LocalTransport sema
 
 ## Key design decisions
 
-1. **Platform pair with identical observable behavior** ([`REQ-RUNTIME-4-B0N70Y`](../../../../specification/runtime/execution.md#req-runtime-4-b0n70y)).
+- `onMessage` converts browser host input with `String(data)` before calling `router.onRpc`.
+
+1. **Platform pair with identical observable behavior** ([`REQ-RUNTIME-4-B0N70Y` (Platform equivalence)](../../../../specification/runtime/execution.md#req-runtime-4-b0n70y)).
 
 ## Inputs, outputs, state, and side effects
 

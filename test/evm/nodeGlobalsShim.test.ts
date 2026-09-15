@@ -1,4 +1,4 @@
-import { applyNodeGlobalsShim } from "@/evm/p2pRuntime/worker/nodeGlobalsShim";
+import { applyNodeGlobalsShim } from "@test/fixtures/NodeGlobalsShim";
 import { expect } from "chai";
 
 type ProcessShim = {
