@@ -1,4 +1,9 @@
 import { Status } from "@/types";
+import {
+    connectLobbyPeers,
+    probeLobbyHandoffOrdering,
+    probeLobbyRematchAdmission
+} from "@test/fixtures/LobbyRematchStaging";
 import { P2PManagerFixture } from "@test/fixtures/P2PManagerFixture";
 import { slotAccountIndex } from "@test/harness/core/slotAccounts";
 import { waitFor } from "@test/utils/waitFor";
@@ -435,6 +440,60 @@ describe("LobbyMatchingService", function () {
         expect(result.scheduledAfterRepeatedAvailability).to.equal(
             result.scheduledAfterExhaustion
         );
+    });
+
+    it("refuses a pick from a peer excluded from rematching", async function () {
+        await connectLobbyPeers(fixture, 2);
+        const result = await probeLobbyRematchAdmission(fixture);
+
+        expect(result.roleBeforeExclusion).to.equal("advertiser");
+        expect(result.pickStatus).to.equal("rejected");
+        expect(result.reservedAfterPick).to.equal(false);
+    });
+
+    it("keeps an excluded peer out of the candidate set", async function () {
+        await connectLobbyPeers(fixture, 2);
+        const result = await probeLobbyRematchAdmission(fixture);
+
+        expect(result.candidateCountAfterExclusion).to.equal(0);
+        expect(result.excludedDuringSession).to.equal(1);
+    });
+
+    it("clears the do-not-rematch set when the lobby session ends", async function () {
+        await connectLobbyPeers(fixture, 2);
+        const result = await probeLobbyRematchAdmission(fixture);
+
+        expect(result.cancelled).to.equal(true);
+        expect(result.matched).to.equal(false);
+        expect(result.excludedDuringSession).to.equal(1);
+        expect(result.excludedAfterSessionEnd).to.equal(0);
+    });
+
+    it("leaves the lobby topic before closing a non-selected transport", async function () {
+        await connectLobbyPeers(fixture, 3);
+        const result = await probeLobbyHandoffOrdering(fixture);
+
+        expect(result.matchedPeer).to.equal(fixture.address(1));
+        expect(result.topicJoinedBeforeCommit).to.equal(true);
+        expect(result.nonSelectedClosed).to.equal(true);
+        expect(result.topicJoinedWhenNonSelectedClosed).to.equal(false);
+        expect(result.topicJoinedAfterHandoff).to.equal(false);
+    });
+
+    it("keeps the selected transport through the handoff", async function () {
+        await connectLobbyPeers(fixture, 3);
+        const result = await probeLobbyHandoffOrdering(fixture);
+
+        expect(result.selectedClosedAfterHandoff).to.equal(false);
+        expect(result.selectedHandedOff).to.equal(true);
+    });
+
+    it("keeps exclusions across a released negotiation handoff", async function () {
+        await connectLobbyPeers(fixture, 3);
+        const result = await probeLobbyHandoffOrdering(fixture);
+
+        expect(result.excludedAfterHandoff).to.equal(1);
+        expect(result.excludedAfterHandoffRelease).to.equal(1);
     });
 
     it("rejects a late pick after commitment without blacklisting its requester", async function () {

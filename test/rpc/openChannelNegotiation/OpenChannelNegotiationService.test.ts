@@ -128,9 +128,22 @@ describe("OpenChannelNegotiationService", function () {
         expect(result.responseBeforeInitialization).to.equal(false);
         expect(result.responseAfterInitialization).to.equal(true);
         expect(result.selectedChannelId).not.to.equal(ethers.ZeroHash);
-        expect(result.peerBlacklistedAfterLoss).to.equal(true);
         expect(result.channelIdAfterLoss).to.equal(ethers.ZeroHash);
         expect(result.statusAfterLoss).to.equal(Status.DISCOVERING);
+    });
+
+    it("excludes a lost committed peer from rematching instead of blacklisting it", async function () {
+        const result = await fixture
+            .control()
+            .p2pManagerProbe.probeMatchedNegotiationAdmission()
+            .request();
+        expect(result.peerBlacklistedAfterLoss).to.equal(false);
+
+        const availability = await fixture
+            .control()
+            .query.getLobbyAvailability()
+            .request();
+        expect(availability.excludedPeerCount).to.equal(1);
     });
 
     it("rejects a non-finite opening amount and clears the attempt", async function () {
@@ -215,9 +228,11 @@ describe("OpenChannelNegotiationService", function () {
             .p2pManagerProbe.probeNegotiationFailure("already-open")
             .request();
 
+        // A stale view of the chain is not a fault, so the peer keeps its
+        // profile and is only dropped from the lobby session.
         expect(result).to.deep.equal({
             alreadyOpenRejected: true,
-            alreadyOpenBlacklisted: true,
+            alreadyOpenBlacklisted: false,
             alreadyOpenKeptZeroId: true
         });
     });
@@ -241,10 +256,12 @@ describe("OpenChannelNegotiationService", function () {
             higherDidNotBlacklistLowerAfterSubmissionFailure: true,
             higherDidNotBlacklistLowerAfterExpiry: true,
             lowerDidNotBlacklistHigherBeforeExpiry: true,
-            lowerBlacklistedHigherAfterExpiry: true,
+            // A burned opening window excludes the peer from the lobby
+            // session; it is never a fault ban.
+            lowerBlacklistedHigherAfterExpiry: false,
             signedDisposeOutcomeCancelled: true,
             signedAttemptClearedOnDispose: true,
-            signedPeerBlacklistedOnFinalLoss: true,
+            signedPeerBlacklistedOnFinalLoss: false,
             signedAttemptRetainedAfterFinalLoss: true,
             signedAttemptClearedAfterExpiry: true,
             signedAttemptIdClearedAfterExpiry: true,
@@ -319,7 +336,9 @@ describe("OpenChannelNegotiationService", function () {
         expect(result.ordinaryReceiptError).to.contain(
             "ordinary receipt failure"
         );
-        expect(result.ordinaryReceiptPeerBlacklisted).to.equal(true);
+        // The receipt may have failed on our own chain provider, so the peer
+        // loses the lobby session but is never banned.
+        expect(result.ordinaryReceiptPeerBlacklisted).to.equal(false);
         expect(result.ordinaryReceiptChannelCleared).to.equal(true);
     });
 

@@ -273,7 +273,7 @@ describe("E2E: lobby matching", function () {
         }
     });
 
-    it("blacklists a silent picker response and retries another peer on the same topic", async function () {
+    it("excludes a silent picker from rematching and pairs with another peer on the same topic", async function () {
         const h = TestSession.getHarness();
         await h.setup(3, { autoConnect: false });
         const topic = ethers.id("e2e-lobby-silent-pick-recovery");
@@ -288,14 +288,22 @@ describe("E2E: lobby matching", function () {
         try {
             await h.network.joinLobby([lowerIndex, higherIndex], topic);
             await waitFor(
-                () =>
-                    h
-                        .control(h.peers[higherIndex])
-                        .query.isBlacklisted(h.peers[lowerIndex].address)
-                        .request(),
+                async () =>
+                    (
+                        await h
+                            .control(h.peers[higherIndex])
+                            .query.getLobbyAvailability()
+                            .request()
+                    ).excludedPeerCount === 1,
                 h.event.protocolEventTimeoutMs(),
                 200
             );
+            expect(
+                await h
+                    .control(h.peers[higherIndex])
+                    .query.isBlacklisted(h.peers[lowerIndex].address)
+                    .request()
+            ).to.equal(false);
 
             await h.network.joinLobby([2], topic);
             const recoveredChannelId =
@@ -399,7 +407,7 @@ describe("E2E: lobby matching", function () {
         }
     });
 
-    it("punishes commitment silence symmetrically and ignores the late attempt", async function () {
+    it("excludes both sides after commitment silence and does not rematch them", async function () {
         const h = TestSession.getHarness();
         await h.setup(3, { autoConnect: false });
         const topic = ethers.id("e2e-lobby-silent-commit-recovery");
@@ -418,17 +426,33 @@ describe("E2E: lobby matching", function () {
             await h.network.joinLobby([advertiserIndex, selectorIndex], topic);
             await waitFor(
                 async () =>
-                    (await h
-                        .control(h.peers[advertiserIndex])
-                        .query.isBlacklisted(h.peers[selectorIndex].address)
-                        .request()) &&
-                    (await h
-                        .control(h.peers[selectorIndex])
-                        .query.isBlacklisted(h.peers[advertiserIndex].address)
-                        .request()),
+                    (
+                        await h
+                            .control(h.peers[advertiserIndex])
+                            .query.getLobbyAvailability()
+                            .request()
+                    ).excludedPeerCount === 1 &&
+                    (
+                        await h
+                            .control(h.peers[selectorIndex])
+                            .query.getLobbyAvailability()
+                            .request()
+                    ).excludedPeerCount === 1,
                 h.event.protocolEventTimeoutMs(),
                 200
             );
+            expect(
+                await Promise.all([
+                    h
+                        .control(h.peers[advertiserIndex])
+                        .query.isBlacklisted(h.peers[selectorIndex].address)
+                        .request(),
+                    h
+                        .control(h.peers[selectorIndex])
+                        .query.isBlacklisted(h.peers[advertiserIndex].address)
+                        .request()
+                ])
+            ).to.deep.equal([false, false]);
             await releaseReply();
             expect(
                 await h
@@ -454,6 +478,26 @@ describe("E2E: lobby matching", function () {
                 h.event.protocolEventTimeoutMs(),
                 200
             );
+            // Both peers keep the topic and reconnect, so only the exclusion
+            // stops them from burning another agreement window on each other.
+            await sleep(600);
+            expect(
+                await Promise.all(
+                    [advertiserIndex, selectorIndex].map((index) =>
+                        h
+                            .control(h.peers[index])
+                            .query.getNegotiationAttempt()
+                            .request()
+                    )
+                )
+            ).to.deep.equal([null, null]);
+            expect(
+                await Promise.all(
+                    [advertiserIndex, selectorIndex].map((index) =>
+                        h.control(h.peers[index]).query.getChannelId().request()
+                    )
+                )
+            ).to.deep.equal([ethers.ZeroHash, ethers.ZeroHash]);
         } finally {
             await releaseReply();
             await h.network.leaveLobby([0, 1, 2], topic);
@@ -461,7 +505,7 @@ describe("E2E: lobby matching", function () {
         }
     });
 
-    it("blacklists both sides when the advertiser bound fires before the selector bound", async function () {
+    it("excludes both sides when the advertiser bound fires before the selector bound", async function () {
         const h = TestSession.getHarness();
         await h.setup(3, { autoConnect: false });
         const topic = ethers.id("e2e-lobby-advertiser-bound-first");
@@ -470,7 +514,7 @@ describe("E2E: lobby matching", function () {
             advertiserIndex,
             "commit"
         );
-        // The selector's own commit timeout never fires: its blacklist can only
+        // The selector's own commit timeout never fires: its exclusion can only
         // come from the commit rejecting when the advertiser closes the
         // transport at its reservation bound.
         const selectorTimeout = await h.rpcStub.holdScheduledTasks(
@@ -487,22 +531,38 @@ describe("E2E: lobby matching", function () {
             await h.network.joinLobby([advertiserIndex, selectorIndex], topic);
             await waitFor(
                 async () =>
-                    await h
-                        .control(h.peers[advertiserIndex])
-                        .query.isBlacklisted(h.peers[selectorIndex].address)
-                        .request(),
+                    (
+                        await h
+                            .control(h.peers[advertiserIndex])
+                            .query.getLobbyAvailability()
+                            .request()
+                    ).excludedPeerCount === 1,
                 h.event.protocolEventTimeoutMs(),
                 200
             );
             await waitFor(
                 async () =>
-                    await h
-                        .control(h.peers[selectorIndex])
-                        .query.isBlacklisted(h.peers[advertiserIndex].address)
-                        .request(),
+                    (
+                        await h
+                            .control(h.peers[selectorIndex])
+                            .query.getLobbyAvailability()
+                            .request()
+                    ).excludedPeerCount === 1,
                 h.event.protocolEventTimeoutMs(),
                 50
             );
+            expect(
+                await Promise.all([
+                    h
+                        .control(h.peers[advertiserIndex])
+                        .query.isBlacklisted(h.peers[selectorIndex].address)
+                        .request(),
+                    h
+                        .control(h.peers[selectorIndex])
+                        .query.isBlacklisted(h.peers[advertiserIndex].address)
+                        .request()
+                ])
+            ).to.deep.equal([false, false]);
             expect(await selectorTimeout.heldCount()).to.equal(1);
             await releaseReply();
             expect(
@@ -518,7 +578,7 @@ describe("E2E: lobby matching", function () {
         }
     });
 
-    it("blacklists both sides when the selector bound fires before the advertiser bound", async function () {
+    it("excludes both sides when the selector bound fires before the advertiser bound", async function () {
         const h = TestSession.getHarness();
         await h.setup(3, { autoConnect: false });
         const topic = ethers.id("e2e-lobby-selector-bound-first");
@@ -529,7 +589,7 @@ describe("E2E: lobby matching", function () {
         );
         // The advertiser's reservation bound is held, so the selector's commit
         // timeout fires first and closes the transport. The reservation must
-        // survive that loss and blacklist when its bound is released.
+        // survive that loss and exclude when its bound is released.
         const advertiserExpiry = await h.rpcStub.holdScheduledTasks(
             advertiserIndex,
             "lobby advertiser reservation expiry"
@@ -544,30 +604,48 @@ describe("E2E: lobby matching", function () {
             await h.network.joinLobby([advertiserIndex, selectorIndex], topic);
             await waitFor(
                 async () =>
-                    await h
-                        .control(h.peers[selectorIndex])
-                        .query.isBlacklisted(h.peers[advertiserIndex].address)
-                        .request(),
+                    (
+                        await h
+                            .control(h.peers[selectorIndex])
+                            .query.getLobbyAvailability()
+                            .request()
+                    ).excludedPeerCount === 1,
                 h.event.protocolEventTimeoutMs(),
                 200
             );
             expect(await advertiserExpiry.heldCount()).to.equal(1);
             expect(
-                await h
-                    .control(h.peers[advertiserIndex])
-                    .query.isBlacklisted(h.peers[selectorIndex].address)
-                    .request()
-            ).to.equal(false);
+                (
+                    await h
+                        .control(h.peers[advertiserIndex])
+                        .query.getLobbyAvailability()
+                        .request()
+                ).excludedPeerCount
+            ).to.equal(0);
             await advertiserExpiry.release(true);
             await waitFor(
                 async () =>
-                    await h
-                        .control(h.peers[advertiserIndex])
-                        .query.isBlacklisted(h.peers[selectorIndex].address)
-                        .request(),
+                    (
+                        await h
+                            .control(h.peers[advertiserIndex])
+                            .query.getLobbyAvailability()
+                            .request()
+                    ).excludedPeerCount === 1,
                 h.event.protocolEventTimeoutMs(),
                 50
             );
+            expect(
+                await Promise.all([
+                    h
+                        .control(h.peers[advertiserIndex])
+                        .query.isBlacklisted(h.peers[selectorIndex].address)
+                        .request(),
+                    h
+                        .control(h.peers[selectorIndex])
+                        .query.isBlacklisted(h.peers[advertiserIndex].address)
+                        .request()
+                ])
+            ).to.deep.equal([false, false]);
             await releaseReply();
             expect(
                 await h
@@ -1061,7 +1139,7 @@ describe("E2E: lobby matching", function () {
         }
     });
 
-    it("redials and rejects a non-selected local peer until completeLobby leaves the topic", async function () {
+    it("leaves the lobby topic at handoff so no peer is redialed during negotiation", async function () {
         const h = TestSession.getHarness();
         await h.setup(3, { autoConnect: false });
         const topic = ethers.id("e2e-lobby-redial-until-complete");
@@ -1101,32 +1179,24 @@ describe("E2E: lobby matching", function () {
             const unmatchedIndex = [0, 1, 2].find(
                 (index) => !matchedIndices.includes(index)
             )!;
+            // The matched pair left the lobby topic before cutting the
+            // non-selected peer, so nothing redials for the whole negotiation.
             const handoffCounts = await Promise.all(
                 h.peers.map((peer) =>
                     h.control(peer).stub.getInitHandshakeCallCount().request()
                 )
             );
-            await waitFor(
-                async () => {
-                    const counts = await Promise.all(
-                        h.peers.map((peer) =>
-                            h
-                                .control(peer)
-                                .stub.getInitHandshakeCallCount()
-                                .request()
-                        )
-                    );
-                    return (
-                        counts[unmatchedIndex] >
-                            handoffCounts[unmatchedIndex] &&
-                        matchedIndices.some(
-                            (index) => counts[index] > handoffCounts[index]
-                        )
-                    );
-                },
-                h.event.protocolEventTimeoutMs(),
-                200
-            );
+            await sleep(600);
+            expect(
+                await Promise.all(
+                    h.peers.map((peer) =>
+                        h
+                            .control(peer)
+                            .stub.getInitHandshakeCallCount()
+                            .request()
+                    )
+                )
+            ).to.deep.equal(handoffCounts);
             expect(
                 await Promise.all(
                     matchedIndices.map((index) =>
@@ -1139,7 +1209,7 @@ describe("E2E: lobby matching", function () {
                     )
                 )
             ).to.deep.equal([false, false]);
-            const heldAfterReplacement = await Promise.all(
+            const heldDuringNegotiation = await Promise.all(
                 h.peers.map((peer) =>
                     h
                         .control(peer)
@@ -1148,9 +1218,9 @@ describe("E2E: lobby matching", function () {
                 )
             );
             expect(
-                matchedIndices.map((index) => heldAfterReplacement[index])
+                matchedIndices.map((index) => heldDuringNegotiation[index])
             ).to.deep.equal([1, 1]);
-            expect(heldAfterReplacement[unmatchedIndex]).to.equal(0);
+            expect(heldDuringNegotiation[unmatchedIndex]).to.equal(0);
 
             await Promise.all(matchedIndices.map((index) => releases[index]()));
             await Promise.all(matchedIndices.map((index) => joins[index]));
@@ -1158,26 +1228,19 @@ describe("E2E: lobby matching", function () {
                 topic
             );
             await joins[unmatchedIndex];
-
-            const settledCounts = await Promise.all(
+            const openedChannelIds = await Promise.all(
                 matchedIndices.map((index) =>
-                    h
-                        .control(h.peers[index])
-                        .stub.getInitHandshakeCallCount()
-                        .request()
+                    h.control(h.peers[index]).query.getChannelId().request()
                 )
             );
-            await sleep(600);
+            expect(openedChannelIds[0]).to.equal(openedChannelIds[1]);
+            expect(openedChannelIds[0]).not.to.equal(ethers.ZeroHash);
             expect(
-                await Promise.all(
-                    matchedIndices.map((index) =>
-                        h
-                            .control(h.peers[index])
-                            .stub.getInitHandshakeCallCount()
-                            .request()
-                    )
-                )
-            ).to.deep.equal(settledCounts);
+                await h
+                    .control(h.peers[matchedIndices[0]])
+                    .query.isChannelOpen(openedChannelIds[0])
+                    .request()
+            ).to.equal(true);
         } finally {
             await Promise.all(releases.map((release) => release()));
             await Promise.all(
@@ -1189,7 +1252,7 @@ describe("E2E: lobby matching", function () {
         }
     });
 
-    it("redials and rejects a non-selected local peer until releaseNegotiationHandoff leaves the topic", async function () {
+    it("leaves the targeted lobby topic at handoff so no peer is redialed during negotiation", async function () {
         const h = TestSession.getHarness();
         await h.setup(3, { autoConnect: false });
         const channelId = ethers.id("e2e-targeted-redial-until-release");
@@ -1233,32 +1296,24 @@ describe("E2E: lobby matching", function () {
             const unmatchedIndex = [0, 1, 2].find(
                 (index) => !matchedIndices.includes(index)
             )!;
+            // The matched pair left the targeted lobby topic before cutting
+            // the non-selected peer, so nothing redials during negotiation.
             const handoffCounts = await Promise.all(
                 h.peers.map((peer) =>
                     h.control(peer).stub.getInitHandshakeCallCount().request()
                 )
             );
-            await waitFor(
-                async () => {
-                    const counts = await Promise.all(
-                        h.peers.map((peer) =>
-                            h
-                                .control(peer)
-                                .stub.getInitHandshakeCallCount()
-                                .request()
-                        )
-                    );
-                    return (
-                        counts[unmatchedIndex] >
-                            handoffCounts[unmatchedIndex] &&
-                        matchedIndices.some(
-                            (index) => counts[index] > handoffCounts[index]
-                        )
-                    );
-                },
-                h.event.protocolEventTimeoutMs(),
-                200
-            );
+            await sleep(600);
+            expect(
+                await Promise.all(
+                    h.peers.map((peer) =>
+                        h
+                            .control(peer)
+                            .stub.getInitHandshakeCallCount()
+                            .request()
+                    )
+                )
+            ).to.deep.equal(handoffCounts);
             expect(
                 await Promise.all(
                     matchedIndices.map((index) =>
@@ -1271,7 +1326,7 @@ describe("E2E: lobby matching", function () {
                     )
                 )
             ).to.deep.equal([false, false]);
-            const heldAfterReplacement = await Promise.all(
+            const heldDuringNegotiation = await Promise.all(
                 h.peers.map((peer) =>
                     h
                         .control(peer)
@@ -1280,9 +1335,9 @@ describe("E2E: lobby matching", function () {
                 )
             );
             expect(
-                matchedIndices.map((index) => heldAfterReplacement[index])
+                matchedIndices.map((index) => heldDuringNegotiation[index])
             ).to.deep.equal([1, 1]);
-            expect(heldAfterReplacement[unmatchedIndex]).to.equal(0);
+            expect(heldDuringNegotiation[unmatchedIndex]).to.equal(0);
 
             await Promise.all(matchedIndices.map((index) => releases[index]()));
             expect(
@@ -1296,26 +1351,6 @@ describe("E2E: lobby matching", function () {
                 ].p2pInstance.p2pSigner.cancelConnectToChannel(channelId)
             ).to.equal(true);
             expect(await connects[unmatchedIndex]).to.equal(false);
-
-            const settledCounts = await Promise.all(
-                matchedIndices.map((index) =>
-                    h
-                        .control(h.peers[index])
-                        .stub.getInitHandshakeCallCount()
-                        .request()
-                )
-            );
-            await sleep(600);
-            expect(
-                await Promise.all(
-                    matchedIndices.map((index) =>
-                        h
-                            .control(h.peers[index])
-                            .stub.getInitHandshakeCallCount()
-                            .request()
-                    )
-                )
-            ).to.deep.equal(settledCounts);
         } finally {
             await Promise.all(releases.map((release) => release()));
             await Promise.all(
@@ -1324,6 +1359,93 @@ describe("E2E: lobby matching", function () {
                 )
             );
             await Promise.allSettled(connects);
+        }
+    });
+
+    it("treats a remote negotiation abort as a lobby exit, not a fault", async function () {
+        const h = TestSession.getHarness();
+        await h.setup(2, { autoConnect: false });
+        const topic = ethers.id("e2e-lobby-negotiation-abort");
+        const [lowerIndex, higherIndex] = h.network.lobbyRoleIndices();
+
+        try {
+            // Both attempts exist while the terms exchange is parked, so the
+            // abort lands on a live commitment.
+            await h.rpcStub.withHeldNegotiationReplies(
+                [lowerIndex, higherIndex],
+                "exchangeTerms",
+                async () => {
+                    await h.network.joinLobby(
+                        [lowerIndex, higherIndex],
+                        topic
+                    );
+                    await waitFor(
+                        async () =>
+                            !!(await h
+                                .control(h.peers[higherIndex])
+                                .query.getNegotiationAttempt()
+                                .request()),
+                        h.event.protocolEventTimeoutMs({
+                            withFirstBlockGrace: true
+                        }),
+                        200
+                    );
+                    const commitment = await h.execOnHost(
+                        h.peers[higherIndex],
+                        (stateManager) => {
+                            const attempt =
+                                stateManager.p2pManager.localRpc
+                                    .openChannelNegotiationService.state
+                                    .attempt;
+                            if (!attempt) {
+                                throw new Error("Negotiation attempt is gone");
+                            }
+                            return {
+                                attemptNonce: attempt.attemptNonce,
+                                selectorChallenge: attempt.selectorChallenge,
+                                advertiserChallenge:
+                                    attempt.advertiserChallenge
+                            };
+                        }
+                    );
+                    await h.byzantine.sendRawNegotiationRpc(
+                        lowerIndex,
+                        higherIndex,
+                        "abort",
+                        [
+                            commitment.attemptNonce,
+                            commitment.selectorChallenge,
+                            commitment.advertiserChallenge,
+                            "peer left the negotiation"
+                        ]
+                    );
+                    await waitFor(
+                        async () =>
+                            (await h
+                                .control(h.peers[higherIndex])
+                                .query.getNegotiationAttempt()
+                                .request()) === null,
+                        h.event.protocolEventTimeoutMs(),
+                        100
+                    );
+                    expect(
+                        await h
+                            .control(h.peers[higherIndex])
+                            .query.isBlacklisted(h.peers[lowerIndex].address)
+                            .request()
+                    ).to.equal(false);
+                    expect(
+                        (
+                            await h
+                                .control(h.peers[higherIndex])
+                                .query.getLobbyAvailability()
+                                .request()
+                        ).excludedPeerCount
+                    ).to.equal(1);
+                }
+            );
+        } finally {
+            await h.network.leaveLobby([lowerIndex, higherIndex], topic);
         }
     });
 });

@@ -196,7 +196,9 @@ export default class OpenChannelNegotiationService extends ANetworkRpcService<
             if (mode === "targeted") {
                 return { status: "observed-target-open", channelId };
             }
-            this.p2pManager.disconnectAndBlacklistPeerByEvmAddress(peer);
+            // A peer that matched us into an already-open channel has a stale
+            // view, not a fault: keep it connectable and stop rematching it.
+            this.excludeFromLobbySession(peer);
             await this.p2pManager.stateManager.clearChannelId();
             return { status: "retry" };
         }
@@ -449,7 +451,7 @@ export default class OpenChannelNegotiationService extends ANetworkRpcService<
             selectorChallenge,
             advertiserChallenge
         );
-        this.protocolFailure(attempt, `remote abort: ${reason}`);
+        this.remoteAbort(attempt, `remote abort: ${reason}`);
     }
 
     public rejectProtocolTransport(transport: NetworkTransport): void {
@@ -637,9 +639,10 @@ export default class OpenChannelNegotiationService extends ANetworkRpcService<
                     const me =
                         this.p2pManager.stateManager.checksumSignerAddress;
                     if (compareAddresses(me, attempt.peerAddress) < 0) {
-                        this.p2pManager.disconnectAndBlacklistPeerByEvmAddress(
-                            attempt.peerAddress
-                        );
+                        // A burned opening window is a matching fault, not a
+                        // connection fault: do not pair with this peer again
+                        // in this lobby session, but do not ban it either.
+                        this.excludeFromLobbySession(attempt.peerAddress);
                     }
                     await this.clearAttempt(
                         "opening payload expired",
@@ -654,11 +657,11 @@ export default class OpenChannelNegotiationService extends ANetworkRpcService<
     private onCommittedPeerDisconnected(attempt: MatchedAttempt): void {
         if (this.state.attempt !== attempt) return;
         if (attempt.mode === "ordinary") {
-            // Route through P2PManager so the exclusion goes through the one
-            // owner of the disconnect policy instead of banning behind its back.
-            this.p2pManager.disconnectAndBlacklistPeerByEvmAddress(
-                attempt.peerAddress
-            );
+            // Losing the committed peer mid-negotiation is a lifecycle event
+            // (closed tab, lost link), so the connection policy stays
+            // permissive and only the lobby stops rematching it. The lobby
+            // owns both, so nothing bans the peer behind P2PManager's back.
+            this.excludeFromLobbySession(attempt.peerAddress);
         }
         if (!attempt.localOpeningSignatureIssued) {
             void this.clearAttempt(
@@ -668,6 +671,7 @@ export default class OpenChannelNegotiationService extends ANetworkRpcService<
         }
     }
 
+    /** A negotiation step the peer got wrong. Objective fault: blacklist. */
     private protocolFailure(attempt: MatchedAttempt, reason: string): void {
         this.logger.warn("Matched negotiation failed", {
             peerAddress: attempt.peerAddress,
@@ -676,9 +680,35 @@ export default class OpenChannelNegotiationService extends ANetworkRpcService<
         this.p2pManager.disconnectAndBlacklistPeerByEvmAddress(
             attempt.peerAddress
         );
+        this.endFailedAttempt(attempt, reason);
+    }
+
+    /**
+     * The peer ended the negotiation with the protocol's own abort message.
+     * That is lifecycle, not fault: it keeps its profile and is only dropped
+     * from this lobby session.
+     */
+    private remoteAbort(attempt: MatchedAttempt, reason: string): void {
+        this.logger.warn("Matched negotiation aborted by peer", {
+            peerAddress: attempt.peerAddress,
+            reason
+        });
+        this.excludeFromLobbySession(attempt.peerAddress);
+        this.endFailedAttempt(attempt, reason);
+    }
+
+    /** Shared tail of both failure paths; a signed attempt keeps running. */
+    private endFailedAttempt(attempt: MatchedAttempt, reason: string): void {
         if (!attempt.localOpeningSignatureIssued) {
             void this.clearAttempt(reason, this.failureOutcome(attempt));
         }
+    }
+
+    /** The lobby session owns the do-not-rematch set; this only reaches it. */
+    private excludeFromLobbySession(peerAddress: Address): void {
+        this.p2pManager.localRpc.lobbyMatchingService.excludeFromLobbySession(
+            peerAddress
+        );
     }
 
     private detachAttempt(attempt: MatchedAttempt): void {
@@ -808,9 +838,9 @@ export default class OpenChannelNegotiationService extends ANetworkRpcService<
                 );
                 throw error;
             }
-            this.p2pManager.disconnectAndBlacklistPeerByEvmAddress(
-                attempt.peerAddress
-            );
+            // The receipt may have failed on our own chain provider, so the
+            // peer is only dropped from this lobby session, never banned.
+            this.excludeFromLobbySession(attempt.peerAddress);
             await this.clearAttempt("ordinary opening receipt failed", "retry");
             throw error;
         }
