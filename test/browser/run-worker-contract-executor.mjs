@@ -1,3 +1,4 @@
+import { chromiumLaunchOptions } from "./chromiumLaunch.mjs";
 import {
     startSdkRuntimeServer,
     installSdkRuntimeConfig
@@ -167,7 +168,7 @@ try {
         throw new Error("Vite did not expose a browser test server port");
     }
 
-    browser = await chromium.launch({ headless: true });
+    browser = await chromium.launch(chromiumLaunchOptions());
     const page = await browser.newPage();
     await installSdkRuntimeConfig(page, `http://127.0.0.1:${address.port}`);
     page.setDefaultTimeout(60_000);

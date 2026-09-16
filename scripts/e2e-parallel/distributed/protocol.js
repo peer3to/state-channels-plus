@@ -2,7 +2,7 @@ const { EventEmitter } = require("events");
 const { closeStream } = require("./connectionLifecycle");
 
 const PROTOCOL_VERSION = 2;
-const DISTRIBUTED_PROTOCOL_VERSION = 13;
+const DISTRIBUTED_PROTOCOL_VERSION = 14;
 const DEFAULT_MAX_FRAME = 1024 * 1024;
 const REVIEW_KINDS = new Set([
     "REVIEW_HELLO",
