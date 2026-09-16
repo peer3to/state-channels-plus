@@ -80,6 +80,7 @@ const {
 const {
     TASK_RUNNERS,
     browserBuildFailure,
+    browserChromiumFailure,
     countTasksForRunner,
     forgeBuildFailure,
     requiresChainSlot
@@ -380,6 +381,11 @@ async function main(options = {}) {
                 runner: TASK_RUNNERS.FORGE,
                 message: "Warming the Foundry build before the forge tier...",
                 warm: forgeBuildFailure
+            },
+            {
+                runner: TASK_RUNNERS.BROWSER,
+                message: "Checking Chromium before the browser tier...",
+                warm: browserChromiumFailure
             },
             {
                 runner: TASK_RUNNERS.BROWSER,

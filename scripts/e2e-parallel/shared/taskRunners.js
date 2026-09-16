@@ -1,4 +1,5 @@
 const { spawnSync } = require("child_process");
+const fs = require("fs");
 const { BROWSER_BUILD_COMMAND } = require("./browserConfig");
 const { FORGE_BIN } = require("./forgeConfig");
 
@@ -92,6 +93,31 @@ function forgeBuildFailure() {
  * than once per gate. Distributed workers build it in their prepare script; the
  * local path has no such step, so it builds once here.
  */
+/**
+ * Check the gates' actual requirement before the tier runs. The browser build
+ * says nothing about it — it is a typecheck, and `dist/browser` is not an input
+ * — so without this a whole run ends with two gates failing on a missing
+ * browser, where the forge tier fails immediately on a missing binary.
+ */
+function browserChromiumFailure() {
+    let executablePath;
+    try {
+        executablePath = require("playwright").chromium.executablePath();
+    } catch (error) {
+        return new Error(
+            `Could not resolve Playwright's Chromium: ${error.message}. ` +
+                "Install the project dependencies, or re-run with --no-browser " +
+                "to skip the browser tier."
+        );
+    }
+    if (fs.existsSync(executablePath)) return null;
+    return new Error(
+        `Playwright's Chromium is missing at ${executablePath}. Run ` +
+            "`yarn playwright install chromium`, or re-run with --no-browser " +
+            "to skip the browser tier."
+    );
+}
+
 function browserBuildFailure() {
     const [command, ...args] = BROWSER_BUILD_COMMAND;
     return tierBuildFailure(command, args, {
@@ -113,5 +139,6 @@ module.exports = {
     countTasksForRunner,
     tierBuildFailure,
     forgeBuildFailure,
+    browserChromiumFailure,
     browserBuildFailure
 };
