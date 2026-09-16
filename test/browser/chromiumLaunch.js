@@ -34,9 +34,11 @@ async function launchChromium(chromium, env = process.env) {
         throw new Error(
             "Chromium for this Playwright version is missing. Locally, run " +
                 "`yarn playwright install chromium`. A distributed worker reads " +
-                "PLAYWRIGHT_BROWSERS_PATH, which the runner image sets; a worker " +
-                "started with --execution-backend unsafe-host has to export it " +
-                "itself, because the environment gives the worker a fresh HOME.",
+                "PLAYWRIGHT_BROWSERS_PATH, which the runner image sets: rebuild " +
+                "that image if the host updated its checkout without it, since " +
+                "the protocol version covers the runner, not the image. A worker " +
+                "started with --execution-backend unsafe-host has to export the " +
+                "path itself, because the environment gives it a fresh HOME.",
             { cause: error }
         );
     }

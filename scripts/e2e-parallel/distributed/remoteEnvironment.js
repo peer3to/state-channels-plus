@@ -17,7 +17,9 @@ function buildRemoteEnvironment(source, forwarded, fixed = {}) {
 // What the runner image declares for the browser tier: where its Chromium lives
 // and the marker that tells a gate it runs inside the hardened container. The
 // worker is forked with an explicit env, so these reach a task child only by
-// being carried over deliberately.
+// being carried over deliberately. They stay out of WORKER_ENV_ALLOWLIST: that
+// one is the prepare-command env, where nothing reads them and a future pnpm
+// build script would try to write browsers into the read-only image layer.
 const ENVIRONMENT_BROWSER_ENV = [
     "PLAYWRIGHT_BROWSERS_PATH",
     "SCP_BROWSER_CONTAINED"
@@ -34,8 +36,7 @@ const WORKER_ENV_ALLOWLIST = [
     "LC_CTYPE",
     "TERM",
     "FORCE_COLOR",
-    "NODE_OPTIONS",
-    ...ENVIRONMENT_BROWSER_ENV
+    "NODE_OPTIONS"
 ];
 
 function buildWorkerEnvironment(source) {

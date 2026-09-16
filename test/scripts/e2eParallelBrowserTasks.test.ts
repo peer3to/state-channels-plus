@@ -42,6 +42,10 @@ const { runBrowserGate } =
             }
         ) => Promise<number>;
     };
+const { browserChromiumFailure } =
+    require("../../scripts/e2e-parallel/shared/taskRunners.js") as {
+        browserChromiumFailure: () => Error | null;
+    };
 const { TASK_RUNNERS, countTasksForRunner, requiresChainSlot } =
     require("../../scripts/e2e-parallel/shared/taskRunners.js") as {
         TASK_RUNNERS: { HARDHAT: string; FORGE: string; BROWSER: string };
@@ -321,6 +325,38 @@ describe("parallel browser task discovery", function () {
         const { tasks, preGrepTaskCount } = discoverBrowserTasks(root, "beta");
         expect(preGrepTaskCount).to.equal(2);
         expect(tasks.map((task) => task.fullTitle)).to.deep.equal(["run-beta"]);
+    });
+
+    it("fails discovery when two gates share a file name", function () {
+        const root = scratchRoot("browser-gates-");
+        for (const dir of ["browser", path.join("browser", "nested")]) {
+            fs.mkdirSync(path.join(root, dir), { recursive: true });
+            fs.writeFileSync(
+                path.join(root, dir, "run-same.mjs"),
+                "export default 1;\n"
+            );
+        }
+        expect(() =>
+            discoverBrowserTasks(root, undefined, {
+                testPattern: "browser/**/run-*.mjs"
+            })
+        ).to.throw("Duplicate browser gate name(s): run-same.mjs");
+    });
+
+    it("explains that duplicate gate names would overwrite one another's log", function () {
+        const root = scratchRoot("browser-gates-");
+        for (const dir of ["browser", path.join("browser", "nested")]) {
+            fs.mkdirSync(path.join(root, dir), { recursive: true });
+            fs.writeFileSync(
+                path.join(root, dir, "run-same.mjs"),
+                "export default 1;\n"
+            );
+        }
+        expect(() =>
+            discoverBrowserTasks(root, undefined, {
+                testPattern: "browser/**/run-*.mjs"
+            })
+        ).to.throw("one would overwrite the other");
     });
 
     it("reports an empty tier rather than throwing when no gate matches", function () {
@@ -651,6 +687,12 @@ describe("browser tier selection", function () {
 describe("browser tier environment", function () {
     it("builds the browser sources through the project's own build script", function () {
         expect(BROWSER_BUILD_COMMAND).to.deep.equal(["yarn", "build:browser"]);
+    });
+
+    it("checks the gates' Chromium before a run schedules them", function () {
+        // The browser build is a typecheck and says nothing about the browser,
+        // so without this the tier fails only after the whole run.
+        expect(browserChromiumFailure()).to.equal(null);
     });
 
     it("keeps the worker prepare script building the browser sources", function () {
