@@ -127,7 +127,7 @@ describe("LobbyMatchingService", function () {
         expect(result.discardedPeerMissedOrdinaryBroadcast).to.equal(true);
     });
 
-    it("keeps a reservation through final profile loss, blacklists at its bound, and bounds rejected lobby traffic", async function () {
+    it("keeps a reservation through final profile loss, excludes at its bound, and bounds rejected lobby traffic", async function () {
         const result = await fixture
             .control()
             .p2pManagerProbe.probeLobbyRecovery()
@@ -138,15 +138,16 @@ describe("LobbyMatchingService", function () {
         expect(result.matchingAfterFinalLoss).to.equal(true);
         expect(result.disconnectedPeerBlacklisted).to.equal(false);
         // The reservation bound is one agreement window; the absent selector
-        // is blacklisted when it fires and the reservation is released.
+        // is dropped from this lobby session when it fires and the reservation
+        // is released. A burned window is never a fault ban.
         await waitFor(
             async () =>
-                (
+                !(
                     await fixture
                         .control()
                         .p2pManagerProbe.probeLobbyRecoveryBound()
                         .request()
-                ).disconnectedPeerBlacklisted,
+                ).reserved,
             fixture.getHarness().event.protocolEventTimeoutMs(),
             100
         );
@@ -156,6 +157,11 @@ describe("LobbyMatchingService", function () {
             .request();
         expect(afterBound.reserved).to.equal(false);
         expect(afterBound.matching).to.equal(true);
+        expect(afterBound.disconnectedPeerBlacklisted).to.equal(false);
+        expect(
+            (await fixture.control().query.getLobbyAvailability().request())
+                .excludedPeerCount
+        ).to.equal(1);
         expect(result.openAtRejectionLimit).to.equal(true);
         expect(result.notificationReplies).to.equal(0);
         expect(result.abusiveTransportClosed).to.equal(true);
@@ -176,7 +182,9 @@ describe("LobbyMatchingService", function () {
             selectionCleared: true,
             candidateCount: 0,
             transportClosed: true,
-            peerBlacklisted: true
+            // A peer that vanished mid-commit is excluded from the session,
+            // not fault-banned.
+            peerBlacklisted: false
         });
     });
 
@@ -206,7 +214,9 @@ describe("LobbyMatchingService", function () {
         expect(result.configuredRoleDelayMs).to.equal(37);
         expect(result.roleWhileReservedAfterTimer).to.equal("advertiser");
         expect(result.commitAfterTimerStatus).to.equal("acknowledged");
-        expect(result.reservationExpiryBlacklisted).to.equal(true);
+        // The reservation bound excludes the absent selector from the lobby
+        // session; it does not blacklist it.
+        expect(result.reservationExpiryBlacklisted).to.equal(false);
         expect(result.roleTimerScheduleCount).to.equal(1);
         expect(result.availabilityFramesAfterExpiry).to.be.greaterThan(
             result.availabilityFramesBeforeExpiry

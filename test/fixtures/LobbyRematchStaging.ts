@@ -5,9 +5,15 @@ import { waitFor } from "@test/utils/waitFor";
 import { ethers } from "ethers";
 
 /**
- * Grow the fixture to `peerCount` peers and connect them to peer 0 over the
- * selected channel key, so the lobby cases below have real authenticated
- * transports to drive.
+ * Plain discovery key used only to give the cases below real authenticated
+ * transports. It is not a channel key: the peers select no channel ID, the
+ * same state they are in while discovering a lobby.
+ */
+const CONNECT_KEY = ethers.id("lobby-rematch-staging-connect-key");
+
+/**
+ * Grow the fixture to `peerCount` peers and connect them all to peer 0, then
+ * leave the key again so nothing redials a transport a case closes.
  */
 export async function connectLobbyPeers(
     fixture: P2PManagerFixture,
@@ -18,10 +24,36 @@ export async function connectLobbyPeers(
         const index = h.peers.length;
         await h.createPeer(index, h.signerFor(slotAccountIndex(index)));
     }
-    const peerIndices = h.peers.map((peer) => peer.index);
-    await h.network.joinSelectedKey(peerIndices, String(h.channelId));
+    await Promise.all(
+        h.peers.map((peer) =>
+            h.execOnHost(
+                peer,
+                async (stateManager, args) => {
+                    await stateManager.p2pManager.joinDiscoveryKey(
+                        args.discoveryKey
+                    );
+                    return true;
+                },
+                { discoveryKey: CONNECT_KEY }
+            )
+        )
+    );
     await waitFor(
         async () => (await h.query.getConnectionCount(0)) === peerCount - 1
+    );
+    await Promise.all(
+        h.peers.map((peer) =>
+            h.execOnHost(
+                peer,
+                async (stateManager, args) => {
+                    await stateManager.p2pManager.leaveDiscoveryKey(
+                        args.discoveryKey
+                    );
+                    return true;
+                },
+                { discoveryKey: CONNECT_KEY }
+            )
+        )
     );
 }
 
