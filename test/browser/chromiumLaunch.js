@@ -1,12 +1,14 @@
 // @spec-test-coverage-ignore: browser test infrastructure; executable evidence is in the browser worker and WebRTC gates
 
 /**
- * How every browser gate launches Chromium. A distributed worker runs the gate
- * inside a container that drops every capability, sets no-new-privileges and
- * keeps the default 64MB /dev/shm, so Chromium's own sandbox cannot start there
- * and its shared memory has to come from /tmp. The runner image declares that
- * environment with SCP_BROWSER_CONTAINED; everywhere else the browser keeps its
- * sandbox.
+ * How every browser gate launches Chromium. The isolation a distributed worker
+ * relies on is the container itself; Chromium's own sandbox is a separate
+ * setting that needs capabilities and an unprivileged user namespace the
+ * environment may deny (it drops every capability and sets no-new-privileges,
+ * and AppArmor or a restricted userns can block the namespace outright), and
+ * the container keeps the default 64MB /dev/shm, so shared memory belongs in
+ * /tmp. The runner image declares such an environment with
+ * SCP_BROWSER_CONTAINED; everywhere else Playwright's defaults stand.
  *
  * CommonJS, not ESM: the gates are ESM and import it, while the Mocha suite that
  * pins this policy is CommonJS and must require it on the Node 20 CI runners.

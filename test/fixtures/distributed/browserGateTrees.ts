@@ -100,17 +100,45 @@ export function processesMatching(tag: string) {
     return result.stdout.split("\n").filter(Boolean);
 }
 
-/** Wait for a gate to report readiness, or throw with what it printed. */
+/** Wait for a gate to report readiness. The marker can be read mid-write. */
 export async function waitForGateReady(marker: string, timeoutMs = 60_000) {
     const deadline = Date.now() + timeoutMs;
     for (;;) {
-        if (fs.existsSync(marker)) {
+        try {
             return JSON.parse(fs.readFileSync(marker, "utf8")) as {
                 gate: number;
                 port: number;
             };
+        } catch {
+            if (Date.now() > deadline) {
+                throw new Error("gate never reported ready");
+            }
+            await new Promise((resolve) => setTimeout(resolve, 100));
         }
-        if (Date.now() > deadline) throw new Error(`gate never reported ready`);
+    }
+}
+
+/**
+ * Wait for a tagged tree to disappear. Cancellation resolves once the runner's
+ * own child is gone; the signal it sent the rest of the group lands a moment
+ * later, so this polls instead of sampling once.
+ */
+export async function waitForProcessesGone(tag: string, timeoutMs = 15_000) {
+    const deadline = Date.now() + timeoutMs;
+    for (;;) {
+        const alive = processesMatching(tag);
+        if (alive.length === 0) return alive;
+        if (Date.now() > deadline) return alive;
+        await new Promise((resolve) => setTimeout(resolve, 100));
+    }
+}
+
+/** Wait for a port to be free again, returning whether it still is not. */
+export async function waitForPortFree(port: number, timeoutMs = 15_000) {
+    const deadline = Date.now() + timeoutMs;
+    for (;;) {
+        if (!(await portIsOccupied(port))) return false;
+        if (Date.now() > deadline) return true;
         await new Promise((resolve) => setTimeout(resolve, 100));
     }
 }
