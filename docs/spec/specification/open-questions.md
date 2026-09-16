@@ -412,11 +412,27 @@ Grouped decisions surfaced while specifying the peer-RPC model
 - **Ban durability across reconnects.** Every live transport has an unauthenticated profile, so a
   pre-handshake verdict can ban its live Holepunch handle. Decide whether that ban must survive a
   new SDK peer handle or process restart before the EVM identity is authenticated.
-- **Failure-outcome policy consistency.** Endpoint outcomes are currently per-service accidents:
-  join-signature validation failures are penalty-free request errors (free probing), while
-  spectate failures blacklist permanently ([`DEF-5-E8TP9N`](../audit/open-findings.md#def-5-e8tp9n)); WebRTC signaling failures are silently
-  ignored. Decide one policy table — which failure classes disconnect, blacklist, error, or are
-  ignored — and make endpoints conform.
+- **Failure-outcome policy consistency.** _Resolved 2026-09-16._ Endpoint outcomes were per-service
+  accidents: join-signature validation failures are penalty-free request errors (free probing), while
+  spectate failures blacklist permanently ([`DEF-5-E8TP9N`](../audit/open-findings.md#def-5-e8tp9n));
+  WebRTC signaling failures are silently ignored. The policy is now stated once: every close names one
+  of two outcomes and never inherits another caller's — close with reconnect allowed, or close and
+  exclude — and only an attributable fault by the peer takes the second
+  ([`REQ-RPC-6-E60S4J` (Ordered ingress verification)](peer-communication/rpc.md#req-rpc-6-e60s4j),
+  [`REQ-AUTH-4-JWCF71` (Penalty requires proof and an attributable fault)](peer-communication/handshake.md#req-auth-4-jwcf71)).
+  Silence, timeouts, clock differences, a name this deployment does not have
+  ([`REQ-RPC-8-44XECF` (Compatibility before protected calls)](peer-communication/rpc.md#req-rpc-8-44xecf)),
+  and failures that may be local keep reconnect allowed. A matching fault is scoped to the lobby session
+  instead of the identity ([`REQ-LOBBY-10-V8MA22` (Session-scoped do-not-rematch set)](peer-communication/lobby-matching.md#req-lobby-10-v8ma22),
+  [`REQ-LOBBY-7-BXQ1QA` (Symmetric timeout consequence)](peer-communication/lobby-matching.md#req-lobby-7-bxq1qa),
+  [`REQ-NEG-4-ZQ0985` (Committed-attempt admission and recovery)](peer-communication/channel-negotiation.md#req-neg-4-zq0985)). The rejected
+  alternative was a third, suspended tier between the two: it adds a state with no distinct observable
+  behavior, because a session-scoped bar already expresses everything a suspension would.
+  _Rationale:_ conflating unavailability with misbehavior punishes honest peers, which the security
+  review forbids as a general principle. _Still open:_ the sync-timeout and transport-failure paths keep
+  blacklisting, retained by the owner on 2026-09-07
+  ([`DEF-5-E8TP9N`](../audit/open-findings.md#def-5-e8tp9n)), and the dispute-acknowledgment silence rule
+  is retained with them; both remain outside this policy until that fault taxonomy is settled.
 
 <a id="oq-spec-lobby-1-d65ytt"></a>
 

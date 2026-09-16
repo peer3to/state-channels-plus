@@ -38,6 +38,12 @@ through this system.
 - **Failure and recovery outcomes.** Every endpoint failure has a defined consequence class —
   disconnect, blacklist, request error, silent ignore, or escalation — and a peer-controlled failure
   never corrupts another session ([`REQ-RPC-5-CV1R1Y` (Resource bounds)](rpc.md#req-rpc-5-cv1r1y), [`REQ-RPC-6-E60S4J` (Ordered ingress verification)](rpc.md#req-rpc-6-e60s4j)).
+- **Disconnect policy.** Every close states one of exactly two outcomes and never inherits another
+  caller's: close with reconnect allowed (the identity keeps its standing), or close and exclude the
+  identity. Expected and upgrade-driven closes are always the first kind. Only an attributable fault
+  excludes; silence, a timeout, a clock difference, and a failure that may be this node's own keep
+  reconnect allowed ([`REQ-RPC-6-E60S4J` (Ordered ingress verification)](rpc.md#req-rpc-6-e60s4j),
+  [`REQ-AUTH-4-JWCF71` (Penalty requires proof and an attributable fault)](handshake.md#req-auth-4-jwcf71)).
 - **Resource bounds.** Frame size, outstanding requests, expensive proof/signaling work, and per-peer
   rate are bounded ([`REQ-RPC-5-CV1R1Y` (Resource bounds)](rpc.md#req-rpc-5-cv1r1y)); bounds are sized for the full-mesh small-partition topology
   ([../security/trust-model.md](../security/trust-model.md) [`REQ-TRUST-5-NDVRW8`](../security/trust-model.md#req-trust-5-ndvrw8)).
