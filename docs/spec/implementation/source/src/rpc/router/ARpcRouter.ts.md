@@ -17,7 +17,7 @@ Pending state stores the same request envelope sent to the transport, including 
 - A pending entry and its timer are installed before send, including synchronous loopback replies ([`ARpcRouter.ts`](../../../../../../../src/rpc/router/ARpcRouter.ts#L117)).
 - Response admission runs before consuming a pending entry ([`ARpcRouter.ts`](../../../../../../../src/rpc/router/ARpcRouter.ts#L172)).
 - Settlement deletes the entry and cancels its timer before resolving or rejecting ([`ARpcRouter.ts`](../../../../../../../src/rpc/router/ARpcRouter.ts#L179)).
-- Failure causes distinguish timeout, post failure and explicit removal for domain adaptation ([`ARpcRouter.ts`](../../../../../../../src/rpc/router/ARpcRouter.ts#L14)).
+- Failure causes distinguish timeout, remote error, transport closure and send failure, carried on the standard `Error` `cause` as a small named union so a caller branches on the kind instead of matching message text ([`ARpcRouter.ts`](../../../../../../../src/rpc/router/ARpcRouter.ts#L14)).
 
 Pending state stores the exact outgoing envelope, including requestId. Error restoration has one protected router hook; each router category owns its restoration policy, with no per-request override.
 

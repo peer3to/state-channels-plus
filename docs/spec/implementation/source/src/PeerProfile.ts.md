@@ -19,7 +19,8 @@
 
 ## Responsibility and observable boundary
 
-The per-peer record created with each transport: optional identity, blacklist flag, the set of
+The per-peer record created with each transport: optional identity, blacklist flag, session-scoped
+suspension flag, the set of
 live transports, preferred transport, disconnect subscribers, and the Holepunch ban handle that
 survives replacement. Exact-transport authentication remains on `NetworkTransport.peerAddress`.
 
@@ -33,7 +34,11 @@ Profile logs cover explicit bans, clearing bans, authentication, transport attac
 2. **Disconnection means loss of the profile, not one pipe.** `onDisconnected` fires once only on
    the transition from at least one live transport to none. Authentication rebinding transfers the
    live transport and subscriptions to the identity profile.
-3. **The live set is observable inside the runtime.** `getLiveTransports` lets the lobby take
+3. **Suspension is a separate fact from the blacklist.** A suspended profile is not blacklisted:
+   the flag records that this runtime stopped dialling the peer, carries no verdict, and has no
+   release path, so a future persisted blacklist never inherits it ([`REQ-AUTH-4-JWCF71` (Penalty requires proof; timing failures withdraw instead)](../../../specification/peer-communication/handshake.md#req-auth-4-jwcf71)).
+   Lifecycle absorption carries both flags so a rebound profile keeps them.
+4. **The live set is observable inside the runtime.** `getLiveTransports` lets the lobby take
    ownership of every transport for an authenticated profile, so none can remain in the ordinary
    connection set while that profile is only a discovery candidate.
 
@@ -53,7 +58,7 @@ claims complete conformance for a requirement that depends on other files.
 
 | Source file                                         | Specification IDs                                                                                                                                                                                      |
 | --------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| [PeerProfile.ts](../../../../../src/PeerProfile.ts) | [`REQ-AUTH-3-ZV74KB`](../../../specification/peer-communication/handshake.md#req-auth-3-zv74kb), [`REQ-UPG-4-M2XDBA`](../../../specification/peer-communication/transport-upgrade.md#req-upg-4-m2xdba) |
+| [PeerProfile.ts](../../../../../src/PeerProfile.ts) | [`REQ-AUTH-3-ZV74KB`](../../../specification/peer-communication/handshake.md#req-auth-3-zv74kb), [`REQ-AUTH-4-JWCF71`](../../../specification/peer-communication/handshake.md#req-auth-4-jwcf71), [`REQ-UPG-4-M2XDBA`](../../../specification/peer-communication/transport-upgrade.md#req-upg-4-m2xdba) |
 
 ## Assumptions, dependencies, trust boundaries, and limits
 
@@ -80,6 +85,7 @@ Gap column. Audit state is file-level (Status header), never a row status.
 | Requirement / invariant                                                                                | Implementation status | Evidence                                                                                                                                                                                                                                          | Gap / divergence |
 | ------------------------------------------------------------------------------------------------------ | --------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------- |
 | [`REQ-UPG-4-M2XDBA`](../../../specification/peer-communication/transport-upgrade.md#req-upg-4-m2xdba)  | Covered               | **Here:** the bootstrap handle is attached before authentication and remains on the profile across transport replacement. **Other files:** [ProfileManager](./ProfileManager.ts.md) authenticates and indexes the profile and applies ban policy. | None.            |
+| [`REQ-AUTH-4-JWCF71`](../../../specification/peer-communication/handshake.md#req-auth-4-jwcf71) | Covered               | **Here:** `isSuspended` holds the session-scoped withdrawal beside `isBlackListed`, `suspend()` never sets the blacklist, and lifecycle absorption carries both. **Other files:** [ProfileManager](./ProfileManager.ts.md) sets the flag and bans the peer info, [InitHandshakeService](./rpc/network/services/initHandshake/InitHandshakeService.ts.md) decides which fault class applies. | None. |
 | [`REQ-LOBBY-8-31BE0F`](../../../specification/peer-communication/lobby-matching.md#req-lobby-8-31be0f) | Covered               | **Here:** live-set transitions and `onDisconnected`; **Other files:** ProfileManager transfers lifecycle ownership and LobbyMatchingService releases work on the callback.                                                                        | None.            |
 
 ## Component test obligations
