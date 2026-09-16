@@ -12,8 +12,11 @@ import { ethers } from "ethers";
 const CONNECT_KEY = ethers.id("lobby-rematch-staging-connect-key");
 
 /**
- * Grow the fixture to `peerCount` peers and connect them all to peer 0, then
- * leave the key again so nothing redials a transport a case closes.
+ * Grow the fixture to `peerCount` peers and connect them all to peer 0. The
+ * key stays joined: leaving it closes dials that are still pending, which can
+ * take down a transport a case is about to drive. A peer that redials after a
+ * case closes its transport is refused by the lobby and changes nothing the
+ * cases observe.
  */
 export async function connectLobbyPeers(
     fixture: P2PManagerFixture,
@@ -38,21 +41,22 @@ export async function connectLobbyPeers(
             )
         )
     );
-    await waitFor(
-        async () => (await h.query.getConnectionCount(0)) === peerCount - 1
-    );
-    await Promise.all(
-        h.peers.map((peer) =>
-            h.execOnHost(
-                peer,
-                async (stateManager, args) => {
-                    await stateManager.p2pManager.leaveDiscoveryKey(
-                        args.discoveryKey
-                    );
-                    return true;
-                },
-                { discoveryKey: CONNECT_KEY }
-            )
+    // Wait on the lookup the cases actually use: an open connection is not yet
+    // a profile that answers to its peer's EVM address.
+    const peerAddresses = h.peers
+        .filter((peer) => peer.index !== 0)
+        .map((peer) => String(peer.address));
+    await waitFor(() =>
+        h.execOnHost(
+            h.getPeer(0),
+            (stateManager, args) =>
+                args.peerAddresses.every(
+                    (peerAddress) =>
+                        !!stateManager.p2pManager.profileManager
+                            .getProfileByEvmAddress(peerAddress)
+                            ?.getTransport()
+                ),
+            { peerAddresses }
         )
     );
 }
@@ -69,10 +73,14 @@ export async function probeLobbyRematchAdmission(fixture: P2PManagerFixture) {
         async (stateManager, args) => {
             const lobby = stateManager.p2pManager.localRpc.lobbyMatchingService;
             const transport =
-                stateManager.p2pManager.profileManager.getProfileByEvmAddress(
-                    args.peerAddress
-                )?.transport;
-            if (!transport) throw new Error("Lobby peer transport is missing");
+                stateManager.p2pManager.profileManager
+                    .getProfileByEvmAddress(args.peerAddress)
+                    ?.getTransport();
+            if (!transport) {
+                throw new Error(
+                    `Lobby peer transport is missing for ${args.peerAddress}`
+                );
+            }
             const matchPromise = lobby.match(args.topic);
             await Promise.resolve();
             lobby.onAuthenticatedTransport(transport);
@@ -139,14 +147,16 @@ export async function probeLobbyHandoffOrdering(fixture: P2PManagerFixture) {
         async (stateManager, args) => {
             const lobby = stateManager.p2pManager.localRpc.lobbyMatchingService;
             const profiles = stateManager.p2pManager.profileManager;
-            const selected = profiles.getProfileByEvmAddress(
-                args.selectedAddress
-            )?.transport;
-            const nonSelected = profiles.getProfileByEvmAddress(
-                args.nonSelectedAddress
-            )?.transport;
+            const selected = profiles
+                .getProfileByEvmAddress(args.selectedAddress)
+                ?.getTransport();
+            const nonSelected = profiles
+                .getProfileByEvmAddress(args.nonSelectedAddress)
+                ?.getTransport();
             if (!selected || !nonSelected) {
-                throw new Error("Lobby peer transport is missing");
+                throw new Error(
+                    `Lobby peer transport is missing: selected ${args.selectedAddress}=${!!selected}, non-selected ${args.nonSelectedAddress}=${!!nonSelected}`
+                );
             }
             const matchPromise = lobby.match(args.topic);
             await Promise.resolve();
