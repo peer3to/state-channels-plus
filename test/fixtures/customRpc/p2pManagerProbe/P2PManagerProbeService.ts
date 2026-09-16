@@ -16,7 +16,11 @@ import type {
     MatchedNegotiationOptions,
     NegotiationOutcome
 } from "@/rpc/network/services/openChannelNegotiation/OpenChannelNegotiationService";
-import type { RpcRequestId } from "@/rpc/router/ARpcRouter";
+import {
+    getRpcRequestFailureCause,
+    type RpcRequestFailureCause,
+    type RpcRequestId
+} from "@/rpc/router/ARpcRouter";
 import { MAX_RPC_FRAME_BYTES } from "@/rpc/Rpc";
 import type Rpc from "@/rpc/Rpc";
 import { HolepunchTransport, WebRTCTransport } from "@/transport";
@@ -97,6 +101,21 @@ export type RequestSettlementProbe = {
     remoteError: string;
     defaultRemoteError: string;
     sendError: string;
+    pendingCount: number;
+    timerCount: number;
+};
+
+/** The cause tag read back from a rejection, or why there was none. */
+type ObservedRequestFailureCause =
+    | RpcRequestFailureCause
+    | "resolved"
+    | "untagged";
+
+export type RequestFailureCauseProbe = {
+    timeoutCause: ObservedRequestFailureCause;
+    remoteErrorCause: ObservedRequestFailureCause;
+    transportClosedCause: ObservedRequestFailureCause;
+    sendFailedCause: ObservedRequestFailureCause;
     pendingCount: number;
     timerCount: number;
 };
@@ -936,6 +955,66 @@ export class P2PManagerProbeService extends ANetworkRpcService<
             sendError: await error(fourth)
         };
         return { ...result, ...this.resourceCounts(resourceBaseline) };
+    }
+
+    private failureCause(
+        promise: Promise<string>
+    ): Promise<ObservedRequestFailureCause> {
+        return promise.then(
+            () => "resolved" as const,
+            (error: unknown) =>
+                getRpcRequestFailureCause(error) ?? ("untagged" as const)
+        );
+    }
+
+    public async probeRequestFailureCauses(): Promise<RequestFailureCauseProbe> {
+        const resourceBaseline = this.resourceCounts();
+
+        // Each reader is attached as its request is made: a rejection left
+        // unread until a later await surfaces as an unhandled rejection.
+        const timedOut = this.transport();
+        const timeoutCause = this.failureCause(
+            this.p2pManager.rpcRouter.sendRpcRequest<string>(
+                { service: "pingService", method: "never", params: [] },
+                timedOut,
+                { timeoutMs: 20 }
+            )
+        );
+
+        const remoteFailure = this.transport(
+            "0x5000000000000000000000000000000000000005"
+        );
+        const remote = this.beginRequest(remoteFailure);
+        const remoteErrorCause = this.failureCause(remote.promise);
+        this.response(remoteFailure, remote.requestId, false, "remote failed");
+
+        const closed = this.transport(
+            "0x6000000000000000000000000000000000000006"
+        );
+        const closedRequest = this.beginRequest(closed);
+        const transportClosedCause = this.failureCause(closedRequest.promise);
+        this.p2pManager.rpcRouter.rejectPendingRpcRequestsForTransport(
+            closed,
+            new Error("Peer disconnected before RPC response arrived")
+        );
+
+        const sendFailure = this.transport();
+        sendFailure.sendError = new Error("send failed");
+        const sendFailedCause = this.failureCause(
+            this.p2pManager.rpcRouter.sendRpcRequest<string>(
+                { service: "pingService", method: "sum", params: [] },
+                sendFailure,
+                { timeoutMs: 20 }
+            )
+        );
+
+        return {
+            timeoutCause: await timeoutCause,
+            remoteErrorCause: await remoteErrorCause,
+            transportClosedCause: await transportClosedCause,
+            sendFailedCause: await sendFailedCause,
+            ...this.resourceCounts(resourceBaseline)
+        };
     }
 
     public async probeTimeoutSelection(): Promise<TimeoutSelectionProbe> {
