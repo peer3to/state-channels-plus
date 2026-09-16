@@ -1,10 +1,14 @@
 // @spec-test-coverage-ignore: developer test-orchestration tooling; not protocol behavior, no specification or implementation IDs apply
 import {
+    portIsOccupied,
+    processesMatching,
     removeScratchRoots,
     runGateLaunchProbe,
+    waitForGateReady,
     writeBuildCommand,
     writeGate,
-    writeGateTree
+    writeGateTree,
+    writeIdlingGate
 } from "../fixtures/distributed/browserGateTrees";
 import { expect } from "chai";
 import fs from "fs";
@@ -117,6 +121,20 @@ const { parseCliArgs, resolveDiscoverySelection } =
             includeForge: boolean;
             includeBrowser: boolean;
         };
+    };
+const { runTask } = require("../../scripts/e2e-parallel/shared/runTask.js") as {
+    runTask: (
+        cmd: string,
+        args: string[],
+        env: NodeJS.ProcessEnv,
+        label: string,
+        output: string | { write: () => void; close: () => Promise<void> },
+        cancellationSignal?: AbortSignal
+    ) => Promise<{ code: number; cancelled: boolean }>;
+};
+const { HARDHAT_CLI } =
+    require("../../scripts/e2e-parallel/shared/constants.js") as {
+        HARDHAT_CLI: string;
     };
 const { runScheduler } =
     require("../../scripts/e2e-parallel/local/scheduler.js") as {
@@ -617,6 +635,61 @@ describe("browser tier admission", function () {
                 (line) => line.includes("[1/1]") && line.includes("browser")
             )
         ).to.equal(true);
+    });
+});
+
+describe("browser task cancellation", function () {
+    it("reaps a cancelled gate's Chromium and releases its port", async function () {
+        const { gate, marker, tag, root } = writeIdlingGate();
+        const logPath = path.join(root, "gate.ansi");
+        const cancellation = new AbortController();
+        const running = runTask(
+            process.execPath,
+            [HARDHAT_CLI, BROWSER_TEST_TASK, "--script", gate],
+            process.env,
+            "browser:cancelled-gate",
+            logPath,
+            cancellation.signal
+        );
+        const ready = await waitForGateReady(marker);
+        expect(processesMatching(tag)).to.have.length.greaterThan(0);
+        expect(await portIsOccupied(ready.port)).to.equal(true);
+
+        cancellation.abort();
+        const result = await running;
+
+        expect(result.cancelled).to.equal(true);
+        // The gate owns a detached process group; cancelling has to take the
+        // whole tree, not just the Hardhat process the runner spawned.
+        expect(processesMatching(tag)).to.deep.equal([]);
+        expect(await portIsOccupied(ready.port)).to.equal(false);
+    });
+
+    it("runs a following gate after one was cancelled", async function () {
+        const { gate: cancelled, marker, tag } = writeIdlingGate();
+        const cancellation = new AbortController();
+        const first = runTask(
+            process.execPath,
+            [HARDHAT_CLI, BROWSER_TEST_TASK, "--script", cancelled],
+            process.env,
+            "browser:cancelled-gate",
+            path.join(path.dirname(cancelled), "first.ansi"),
+            cancellation.signal
+        );
+        await waitForGateReady(marker);
+        cancellation.abort();
+        await first;
+        expect(processesMatching(tag)).to.deep.equal([]);
+
+        const { gate: next, root } = writeGate("process.exit(0);");
+        const second = await runTask(
+            process.execPath,
+            [HARDHAT_CLI, BROWSER_TEST_TASK, "--script", next],
+            process.env,
+            "browser:next-gate",
+            path.join(root, "second.ansi")
+        );
+        expect(second.code).to.equal(0);
     });
 });
 

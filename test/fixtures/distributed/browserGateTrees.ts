@@ -58,6 +58,75 @@ export function writeBuildCommand(name: string, body: string) {
 }
 
 /**
+ * A gate that brings up what a real one owns — a Chromium and an HTTP server —
+ * records how to find them, then idles until it is cancelled. The browser is
+ * tagged through its user agent so the tree can be found from outside by
+ * command line: Playwright's `launch` hands back no process handle, and it
+ * rejects a `--user-data-dir` argument.
+ */
+export function writeIdlingGate() {
+    const { root, gate } = writeGate("");
+    const marker = path.join(root, "ready.json");
+    const tag = `scp-cancelled-gate-${path.basename(root)}`;
+    fs.writeFileSync(
+        gate,
+        `import { chromium } from "playwright";
+import { createServer } from "node:http";
+import { writeFileSync } from "node:fs";
+import { chromiumLaunchOptions } from ${JSON.stringify(LAUNCH_HELPER)};
+
+const options = chromiumLaunchOptions();
+const browser = await chromium.launch({
+    ...options,
+    args: [...(options.args ?? []), "--user-agent=${tag}"]
+});
+const page = await browser.newPage();
+await page.setContent("<title>idling</title>");
+const server = createServer((_request, response) => response.end("ok"));
+await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
+writeFileSync(
+    ${JSON.stringify(marker)},
+    JSON.stringify({ gate: process.pid, port: server.address().port })
+);
+setInterval(() => {}, 1000);
+`
+    );
+    return { root, gate, marker, tag };
+}
+
+/** PIDs whose command line carries `tag`, via pgrep. */
+export function processesMatching(tag: string) {
+    const result = spawnSync("pgrep", ["-f", tag], { encoding: "utf8" });
+    return result.stdout.split("\n").filter(Boolean);
+}
+
+/** Wait for a gate to report readiness, or throw with what it printed. */
+export async function waitForGateReady(marker: string, timeoutMs = 60_000) {
+    const deadline = Date.now() + timeoutMs;
+    for (;;) {
+        if (fs.existsSync(marker)) {
+            return JSON.parse(fs.readFileSync(marker, "utf8")) as {
+                gate: number;
+                port: number;
+            };
+        }
+        if (Date.now() > deadline) throw new Error(`gate never reported ready`);
+        await new Promise((resolve) => setTimeout(resolve, 100));
+    }
+}
+
+/** Whether a port on loopback still refuses to bind (something owns it). */
+export async function portIsOccupied(port: number) {
+    const { createServer } = await import("node:net");
+    return new Promise<boolean>((resolve) => {
+        const probe = createServer();
+        probe.once("error", () => resolve(true));
+        probe.once("listening", () => probe.close(() => resolve(false)));
+        probe.listen(port, "127.0.0.1");
+    });
+}
+
+/**
  * Launch Chromium through the gates' own policy in a child process, so the
  * browsers path — which Playwright resolves when it is imported — is the one
  * the case asks for. `mode` picks the real failure to provoke: "missing" points
