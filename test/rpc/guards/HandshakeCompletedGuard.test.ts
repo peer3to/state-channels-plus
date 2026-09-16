@@ -75,7 +75,9 @@ describe("HandshakeCompletedGuard", function () {
             result.expectedTimeoutMs,
             result.expectedTimeoutMs
         ]);
-        expect(result.firstBlacklisted).to.equal(true);
+        // An expired deferral is a timeout, not misbehaviour: the transport
+        // closes and the peer keeps its profile.
+        expect(result.firstBlacklisted).to.equal(false);
         expect(result.firstDisconnected).to.equal(true);
         expect(result.invocations).to.deep.equal(["fresh"]);
     });
@@ -163,7 +165,7 @@ describe("HandshakeCompletedGuard", function () {
 
         expect(result.waitCalls).to.equal(2);
         expect(result.invocations).to.deep.equal(["replacement"]);
-        expect(result.originalBlacklisted).to.equal(true);
+        expect(result.originalBlacklisted).to.equal(false);
         expect(result.originalDisconnected).to.equal(true);
         expect(result.replacementConnected).to.equal(true);
     });

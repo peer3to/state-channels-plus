@@ -113,7 +113,7 @@ describe("E2E: Init Handshake", function () {
     });
 
     describe("Time Validation", function () {
-        it("should blacklist peer when handshake request time difference exceeds agreementTime", async function () {
+        it("should disconnect without blacklisting when handshake request time difference exceeds agreementTime", async function () {
             const h = TestSession.getHarness();
             await h.lifecycle.start(3, 0, { autoConnect: false });
             await h.network.connectPeers([0, 1]);
@@ -128,16 +128,27 @@ describe("E2E: Init Handshake", function () {
                 .control(observer)
                 .query.getStatus()
                 .request();
+            // A request timestamp outside the agreement window is clock skew,
+            // an environment fault: peer 1 refuses the handshake and closes,
+            // but peer 2 keeps its profile and may reconnect.
             await h.rpc.sendInvalidTimeHandshakeRequest({
                 fromPeer: 2,
                 toPeer: 1,
                 timeOffset: 2000
             });
-            await h.assert.rpc.peerBlacklistedAndDisconnected({
-                observer,
-                target: offender,
-                expectedStatus
+            await h.assert.rpc.transportClosedOrGone({
+                fromPeer: 1,
+                toPeer: 2
             });
+            expect(
+                await h
+                    .control(observer)
+                    .query.isBlacklisted(offender.address)
+                    .request()
+            ).to.equal(false);
+            expect(
+                await h.control(observer).query.getStatus().request()
+            ).to.equal(expectedStatus);
         });
 
         it("should disconnect peer that doesn't respond within agreementTime", async function () {
@@ -169,7 +180,7 @@ describe("E2E: Init Handshake", function () {
             ).to.equal(false);
         });
 
-        it("should blacklist peer when handshake response time doesn't match init time", async function () {
+        it("should disconnect without blacklisting when handshake response time doesn't match init time", async function () {
             const h = TestSession.getHarness();
             await h.lifecycle.start(3, 0, { autoConnect: false });
             await h.network.connectPeers([0, 1]);
@@ -185,17 +196,26 @@ describe("E2E: Init Handshake", function () {
                 .query.getStatus()
                 .request();
             // Peer 2 answers promptly but with a response timestamp far outside
-            // the agreement window, so peer 0 rejects and blacklists peer 2.
+            // the agreement window. That is the same clock-skew class as the
+            // RTT check, so peer 0 drops the connection without punishing it.
             await h.rpc.initiateHandshakeWithFaultyResponse({
                 initiatorPeer: 0,
                 responderPeer: 2,
                 responseTimeOffsetSeconds: 1000
             });
-            await h.assert.rpc.peerBlacklistedAndDisconnected({
-                observer,
-                target: offender,
-                expectedStatus
+            await h.assert.rpc.peerDisconnectedFrom({
+                peerIndex: 0,
+                expectedFinalCount: 1
             });
+            expect(
+                await h
+                    .control(observer)
+                    .query.isBlacklisted(offender.address)
+                    .request()
+            ).to.equal(false);
+            expect(
+                await h.control(observer).query.getStatus().request()
+            ).to.equal(expectedStatus);
         });
 
         it("should blacklist peer answering with an undecodable (junk) signature", async function () {

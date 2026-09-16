@@ -1,3 +1,4 @@
+import { DisconnectPolicy } from "@/DisconnectPolicy";
 import type ANetworkRpcMethods from "@/rpc/network/ANetworkRpcMethods";
 import type ANetworkRpcService from "@/rpc/network/ANetworkRpcService";
 import {
@@ -58,7 +59,12 @@ class HandshakeAdmissionPolicy implements DeferredAdmissionPolicy {
                 peerAddress: transport.peerAddress
             }
         );
-        this.disconnectAndBlacklist(transport);
+        // A handshake that did not finish in the deferral window is a load or
+        // clock symptom, not misbehaviour: close the transport, never punish.
+        this.service.p2pManager.disconnectConnection(
+            transport,
+            DisconnectPolicy.ALLOW
+        );
     }
 
     private isCurrentTransport(transport: NetworkTransport): boolean {

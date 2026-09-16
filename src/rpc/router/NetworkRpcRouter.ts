@@ -105,7 +105,22 @@ export class NetworkRpcRouter<
             }
             const success = await this.dispatchRpc(rpc, transport);
             if (!success) {
-                this.p2pManager.disconnectAndBlacklistPeer(transport);
+                // An unknown service/method is also what a version skew between
+                // two SDK builds looks like, so the frame is refused cleanly:
+                // close the connection without escalating to a blacklist.
+                // Frame size and frame shape above stay punitive.
+                this.p2pManager.logger.warn(
+                    "Unknown RPC service or method; refusing the frame",
+                    {
+                        rpc: LoggerUtils.getRpcLogMetadata(rpc),
+                        transportType: TransportType[transport.transportType],
+                        peerAddress: transport.peerAddress
+                    }
+                );
+                this.p2pManager.disconnectConnection(
+                    transport,
+                    DisconnectPolicy.ALLOW
+                );
                 return;
             }
         } catch (e) {
