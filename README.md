@@ -178,9 +178,10 @@ yarn hardhat browser-test --script test/browser/run-p2p-webrtc-e2e.mjs
 
 A gate needs the Chromium that Playwright ships with the version `yarn.lock`
 resolves. Install it locally with `yarn playwright install chromium`; the
-distributed runner image installs it during the image build. Chromium's own
-sandbox needs capabilities the environment drops, so the image declares
-`SCP_BROWSER_CONTAINED=1` and the gates launch a contained Chromium there.
+distributed runner image installs it during the image build. The container is the isolation
+boundary; Chromium's own sandbox is a separate setting that an environment
+dropping every capability may not allow, so the image declares
+`SCP_BROWSER_CONTAINED=1` and the gates launch without it there.
 
 An environment hands its worker a fresh `HOME`, and `pnpm install` never
 downloads browsers, so a gate finds Chromium only through

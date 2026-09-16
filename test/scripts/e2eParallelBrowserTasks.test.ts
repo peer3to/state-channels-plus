@@ -2,6 +2,8 @@
 import {
     portIsOccupied,
     processesMatching,
+    waitForPortFree,
+    waitForProcessesGone,
     removeScratchRoots,
     runGateLaunchProbe,
     waitForGateReady,
@@ -661,8 +663,8 @@ describe("browser task cancellation", function () {
         expect(result.cancelled).to.equal(true);
         // The gate owns a detached process group; cancelling has to take the
         // whole tree, not just the Hardhat process the runner spawned.
-        expect(processesMatching(tag)).to.deep.equal([]);
-        expect(await portIsOccupied(ready.port)).to.equal(false);
+        expect(await waitForProcessesGone(tag)).to.deep.equal([]);
+        expect(await waitForPortFree(ready.port)).to.equal(false);
     });
 
     it("runs a following gate after one was cancelled", async function () {
@@ -679,7 +681,7 @@ describe("browser task cancellation", function () {
         await waitForGateReady(marker);
         cancellation.abort();
         await first;
-        expect(processesMatching(tag)).to.deep.equal([]);
+        expect(await waitForProcessesGone(tag)).to.deep.equal([]);
 
         const { gate: next, root } = writeGate("process.exit(0);");
         const second = await runTask(
@@ -991,17 +993,17 @@ describe("browser tier environment", function () {
         expect(output).to.not.contain("PLAYWRIGHT_BROWSERS_PATH");
     });
 
-    it("tells the gates that the runner image's container confines Chromium", function () {
+    it("declares the contained environment to the gates from the image", function () {
         expect(fs.readFileSync(RUNNER_IMAGE, "utf8")).to.contain(
             "ENV SCP_BROWSER_CONTAINED=1"
         );
     });
 
-    it("keeps Chromium's own sandbox outside that container", function () {
+    it("keeps Playwright's defaults where nothing declares a contained environment", function () {
         expect(chromiumLaunchOptions({})).to.deep.equal({ headless: true });
     });
 
-    it("drops Chromium's sandbox and /dev/shm use inside that container", function () {
+    it("drops Chromium's sandbox and /dev/shm use where the image declares one", function () {
         expect(
             chromiumLaunchOptions({ SCP_BROWSER_CONTAINED: "1" })
         ).to.deep.equal({
