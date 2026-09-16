@@ -15,6 +15,9 @@ import {
 } from "@/utils/contractSize";
 
 const DEFAULT_DISPUTE_EXECUTION_GAS_LIMIT = 3_000_000;
+// Mirrors DEFAULT_MAX_CHANNEL_PARTICIPANTS in StateChannelManagerProxy: the
+// deployer picks the value, the chain stores it, and clients read it back.
+const DEFAULT_MAX_CHANNEL_PARTICIPANTS = 32;
 const FACET_DEPLOY_GAS_LIMIT = 12_000_000;
 const NONCE_GAP_RETRY_DELAY_MS = 10;
 const NONCE_GAP_MAX_RETRIES = 500;
@@ -198,6 +201,7 @@ export type DeployFullStackParams = {
     consumerFacetArgs?: any[];
     timeConfig?: TimeConfig;
     disputeExecutionGasLimit?: number;
+    maxChannelParticipants?: number;
     /** Reuse already-deployed config-independent facets (see `deploy`). */
     facetAddresses?: string[];
 };
@@ -208,6 +212,7 @@ export async function deploy(
     signer: Signer,
     timeConfigOverrides?: TimeConfig,
     disputeExecutionGasLimit: number = DEFAULT_DISPUTE_EXECUTION_GAS_LIMIT,
+    maxChannelParticipants: number = DEFAULT_MAX_CHANNEL_PARTICIPANTS,
     // The dispute/verification facets are stateless and config-independent:
     // a caller that already deployed them (or found them cached on the node)
     // passes their addresses to skip the redeploy — only the proxy carries
@@ -229,7 +234,8 @@ export async function deploy(
                 timeConfig.agreementTime,
                 timeConfig.chainFallbackTime,
                 timeConfig.evidenceTime,
-                disputeExecutionGasLimit
+                disputeExecutionGasLimit,
+                maxChannelParticipants
             ]
         }
     );
@@ -252,6 +258,7 @@ export async function deployFullStack(
         consumerFacetArgs,
         timeConfig,
         disputeExecutionGasLimit,
+        maxChannelParticipants,
         facetAddresses
     } = params;
 
@@ -272,6 +279,7 @@ export async function deployFullStack(
         signer,
         timeConfig,
         disputeExecutionGasLimit,
+        maxChannelParticipants,
         facetAddresses
     );
 }
@@ -280,7 +288,8 @@ export async function deployLocalDiamond(
     deployStateMachine: LocalStateMachineDeployer,
     signer: Signer,
     timeConfigOverrides?: TimeConfig,
-    disputeExecutionGasLimit: number = DEFAULT_DISPUTE_EXECUTION_GAS_LIMIT
+    disputeExecutionGasLimit: number = DEFAULT_DISPUTE_EXECUTION_GAS_LIMIT,
+    maxChannelParticipants: number = DEFAULT_MAX_CHANNEL_PARTICIPANTS
 ): Promise<DeploymentResult> {
     const facetAddresses = await deployFacetsLocal(signer);
 
@@ -299,7 +308,8 @@ export async function deployLocalDiamond(
                 timeConfig.agreementTime,
                 timeConfig.chainFallbackTime,
                 timeConfig.evidenceTime,
-                disputeExecutionGasLimit
+                disputeExecutionGasLimit,
+                maxChannelParticipants
             ]
         }
     );
@@ -311,7 +321,8 @@ export async function deployLocalDiamondWithStateMachineAddress(
     stateMachineAddress: Address,
     signer: Signer,
     timeConfigOverrides?: TimeConfig,
-    disputeExecutionGasLimit: number = DEFAULT_DISPUTE_EXECUTION_GAS_LIMIT
+    disputeExecutionGasLimit: number = DEFAULT_DISPUTE_EXECUTION_GAS_LIMIT,
+    maxChannelParticipants: number = DEFAULT_MAX_CHANNEL_PARTICIPANTS
 ): Promise<DeploymentResult> {
     const facetAddresses = await deployFacetsLocal(signer);
     const timeConfig = getTimeConfig(timeConfigOverrides);
@@ -327,7 +338,8 @@ export async function deployLocalDiamondWithStateMachineAddress(
                 timeConfig.agreementTime,
                 timeConfig.chainFallbackTime,
                 timeConfig.evidenceTime,
-                disputeExecutionGasLimit
+                disputeExecutionGasLimit,
+                maxChannelParticipants
             ]
         }
     );

@@ -247,13 +247,13 @@ Retention above the cap is first-come, so a signature offered while an entry is 
 retained until validation strips unexpected signatures and frees room; this is specified in
 [`REQ-QSTORE-2-VYWJAQ`](../specification/storage/queue.md#req-qstore-2-vywjaq) and covered by an
 exact test. The cap is now sized against an enforced maximum union size rather than an assumed one:
-`open` and `_processJoinChannel` both reject a union larger than MAX_CHANNEL_PARTICIPANTS. That is
-sizing, not proof. Three findings record why: the maximum is not enforced on every path that makes
-a participant set authoritative, retention counts signature bytes while validity counts recovered
-signers, and the Solidity and TypeScript constants are unrelated literals that can drift. The cap
+`open` and `_processJoinChannel` both reject a union larger than the channel's configured
+participant maximum, and the client reads that maximum from the contract instead of restating it,
+so the two cannot drift. That is sizing, not proof. Two findings record why: the maximum is not
+enforced on every path that makes a participant set authoritative, and retention counts signature
+bytes while validity counts recovered signers. The cap
 bounds per-entry memory, which is what it was added for, and recovery cost is bounded per block
-hash so a dequeue cannot refill the allowance. Deriving the cap from an enforced maximum is recorded as Future Work in
-the owning specification, No end-to-end evidence covers the peer-observable path. A case written for it was
+hash so a dequeue cannot refill the allowance. No end-to-end evidence covers the peer-observable path. A case written for it was
 withdrawn once it proved vacuous: a block padded with foreign confirmation signatures is cut before
 it parks, so the test passed with no signatures sent at all. Reaching the caps end to end requires a
 block that parks without being cut, which is a larger fixture than this change warranted; the caps

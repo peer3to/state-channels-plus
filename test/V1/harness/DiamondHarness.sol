@@ -60,7 +60,8 @@ abstract contract DiamondHarness is Test {
                     0, // agreementTime  -> contract default
                     0, // chainFallbackTime -> default
                     0, // evidenceTime -> default
-                    0 // disputeExecutionGasLimit -> default
+                    0, // disputeExecutionGasLimit -> default
+                    0 // maxChannelParticipants -> default
                 )
             )
         );

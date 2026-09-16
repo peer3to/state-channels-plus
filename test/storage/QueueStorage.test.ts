@@ -914,6 +914,25 @@ describe("QueueStorage", () => {
             ).to.have.lengthOf(1);
         });
 
+        it("sizes signature retention from the participant maximum it is built with", () => {
+            // The cap is 4x the channel's participant maximum, and that maximum
+            // is what the deployed contract carries — read once at startup and
+            // passed in. Kills the mutation that ignores the constructor value
+            // and falls back to a hardcoded 32, which no chain would govern.
+            const small = new QueueStorage(4);
+            const flood = Array.from({ length: 64 }, () => sig());
+            small.queueBlock(
+                Block.fromBlockConfirmation({
+                    ...mockBlockConfirmation,
+                    signatures: flood
+                })
+            );
+
+            const entry = small.getQueuedEntry(mockBlock.hash)!;
+            expect(entry.block.confirmationSignatures.size).to.equal(16);
+            expect(entry.overflowedSources).to.equal(true);
+        });
+
         it("bounds signatures merged back through the restore path", () => {
             // restoreEntry is the sanctioned re-queue path, taken on every
             // not-ready outcome. Capping only queueBlock and createEntry lets a

@@ -46,7 +46,8 @@ contract LocalDiamond is StateChannelManagerProxy {
         uint256 _agreementTime,
         uint256 _chainFallbackTime,
         uint256 _evidenceTime,
-        uint256 _disputeExecutionGasLimit
+        uint256 _disputeExecutionGasLimit,
+        uint256 _maxChannelParticipants
     )
         StateChannelManagerProxy(
             _stateMachineImplementation,
@@ -63,7 +64,8 @@ contract LocalDiamond is StateChannelManagerProxy {
             _agreementTime,
             _chainFallbackTime,
             _evidenceTime,
-            _disputeExecutionGasLimit
+            _disputeExecutionGasLimit,
+            _maxChannelParticipants
         )
     {}
 
@@ -103,7 +105,9 @@ contract LocalDiamond is StateChannelManagerProxy {
         uint256 blockNumber,
         uint256 logIndex
     ) external {
-        if (!_acceptEvent(channelId, STATE_SNAPSHOT_FAMILY, bytes32(0), blockNumber, logIndex)) return;
+        if (!_acceptEvent(channelId, STATE_SNAPSHOT_FAMILY, bytes32(0), blockNumber, logIndex)) {
+            return;
+        }
         stateSnapshots[channelId] = stateSnapshot;
     }
 
@@ -114,7 +118,9 @@ contract LocalDiamond is StateChannelManagerProxy {
         uint256 blockNumber,
         uint256 logIndex
     ) external {
-        if (!_acceptEvent(channelId, INBOUND_MESSAGES_FAMILY, bytes32(0), blockNumber, logIndex)) return;
+        if (!_acceptEvent(channelId, INBOUND_MESSAGES_FAMILY, bytes32(0), blockNumber, logIndex)) {
+            return;
+        }
         bytes32 blockHash = keccak256(abi.encode(messageBlock));
         ChannelBalance storage channelBalance = channelBalances[channelId];
         _persistInboundMessageBlock(channelId, blockHash, messageBlock);
@@ -132,10 +138,9 @@ contract LocalDiamond is StateChannelManagerProxy {
         uint256 timestamp
     ) external {
         Block memory _block = abi.decode(signedBlock.encodedBlock, (Block));
-        blockCalldataCommitments[channelId][sender][_block.transaction.header.forkId][_block
-            .transaction
-            .header
-            .transactionCnt] = commitmentHash;
+        blockCalldataCommitments[
+            channelId
+        ][sender][_block.transaction.header.forkId][_block.transaction.header.transactionCnt] = commitmentHash;
     }
 
     // Called by DisputeCommitted event
@@ -194,7 +199,9 @@ contract LocalDiamond is StateChannelManagerProxy {
         address,
         /*disputer*/
         bytes32 disputeHash
-    ) external {
+    )
+        external
+    {
         DisputeWindow storage disputeWindow = disputeData[channelId].disputeWindowMap[forkId];
         bytes32[] storage commitments = disputeWindow.evidence.disputeCommitments;
 
@@ -229,7 +236,9 @@ contract LocalDiamond is StateChannelManagerProxy {
         uint256 blockNumber,
         uint256 logIndex
     ) external {
-        if (!_acceptEvent(channelId, WITHDRAWALS_FAMILY, bytes32(0), blockNumber, logIndex)) return;
+        if (!_acceptEvent(channelId, WITHDRAWALS_FAMILY, bytes32(0), blockNumber, logIndex)) {
+            return;
+        }
         channelBalances[channelId].totalWithdrawals = totalWithdrawals;
     }
 
@@ -239,7 +248,9 @@ contract LocalDiamond is StateChannelManagerProxy {
         uint256 blockNumber,
         uint256 logIndex
     ) external {
-        if (!_acceptEvent(channelId, STORAGE_CLEARED_FAMILY, bytes32(0), blockNumber, logIndex)) return;
+        if (!_acceptEvent(channelId, STORAGE_CLEARED_FAMILY, bytes32(0), blockNumber, logIndex)) {
+            return;
+        }
         // Clear dispute data
         DisputeData storage disputeData = disputeData[channelId];
         delete disputeData.onChainSlashes;
@@ -359,9 +370,8 @@ contract LocalDiamond is StateChannelManagerProxy {
         returns (bool)
     {
         // The underlying function is pure, so no need for a delegatecall
-        return DisputeVerificationFacet(disputeVerificationFacetAddress).checkDisputeAuditingDataCommitment(
-            dispute, disputeAuditingData
-        );
+        return DisputeVerificationFacet(disputeVerificationFacetAddress)
+            .checkDisputeAuditingDataCommitment(dispute, disputeAuditingData);
     }
 
     function isBlockAuthorParticipant(

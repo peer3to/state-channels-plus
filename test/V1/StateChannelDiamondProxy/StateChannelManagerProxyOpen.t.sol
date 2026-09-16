@@ -4,8 +4,7 @@ import {DiamondHarness} from "../harness/DiamondHarness.sol";
 import {StateChannelManagerInterface} from "../../../contracts/V1/StateChannelManagerInterface.sol";
 import {
     ErrorDuplicateParticipant,
-    ErrorTooManyParticipants,
-    MAX_CHANNEL_PARTICIPANTS
+    ErrorTooManyParticipants
 } from "../../../contracts/V1/StateChannelDiamondProxy/Errors.sol";
 import "../../../contracts/V1/types/DataTypes.sol";
 
@@ -40,21 +39,26 @@ contract StateChannelManagerProxyOpenTest is DiamondHarness {
     // unbounded union would mean a valid block could carry more confirmations
     // than a peer is required to retain.
     function test_open_participantsAboveMaximum_reverts() public {
-        uint256 count = MAX_CHANNEL_PARTICIPANTS + 1;
+        // Read the bound from the deployed channel rather than a compile-time
+        // constant: the maximum is configuration now, and the check has to
+        // follow whatever this channel was deployed with.
+        uint256 maximum = diamond.getMaxChannelParticipants();
+        uint256 count = maximum + 1;
         OpenChannelConfirmation memory confirmation;
         confirmation.encodedOpenChannel = _encodeOpenChannelWith(count);
         confirmation.signatures = new bytes[](count);
 
-        vm.expectRevert(abi.encodeWithSelector(ErrorTooManyParticipants.selector, count, MAX_CHANNEL_PARTICIPANTS));
+        vm.expectRevert(abi.encodeWithSelector(ErrorTooManyParticipants.selector, count, maximum));
         diamond.open(confirmation);
     }
 
     // The boundary itself is accepted: the check rejects above the maximum, not
     // at it, so a channel may use every seat the bound allows.
     function test_open_participantsAtMaximum_passesTheBoundCheck() public {
+        uint256 maximum = diamond.getMaxChannelParticipants();
         OpenChannelConfirmation memory confirmation;
-        confirmation.encodedOpenChannel = _encodeOpenChannelWith(MAX_CHANNEL_PARTICIPANTS);
-        confirmation.signatures = new bytes[](MAX_CHANNEL_PARTICIPANTS);
+        confirmation.encodedOpenChannel = _encodeOpenChannelWith(maximum);
+        confirmation.signatures = new bytes[](maximum);
 
         // Reverts later on signature verification, never on the bound.
         try diamond.open(confirmation) {

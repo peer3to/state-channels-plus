@@ -35,7 +35,9 @@ export class Storage {
     public readonly blockCalldata: BlockCalldataStorage;
     public readonly eventSync: EventSyncStorage;
 
-    constructor() {
+    // `maxChannelParticipants` comes from the deployed contract, so the queue's
+    // retention bound follows the chain instead of restating it.
+    constructor(maxChannelParticipants?: number) {
         this.blocks = deepCopyProxy(new BlockStorage());
         this.inboundMessages = deepCopyProxy(new MessageBlockStorage());
         this.outboundMessages = deepCopyProxy(new MessageBlockStorage());
@@ -44,7 +46,7 @@ export class Storage {
         this.participantSetChanges = deepCopyProxy(
             new ParticipantSetChangeStorage()
         );
-        this.queues = deepCopyProxy(new QueueStorage());
+        this.queues = deepCopyProxy(new QueueStorage(maxChannelParticipants));
         this.disputes = deepCopyProxy(new DisputeStorage());
         this.fraudProofs = deepCopyProxy(new FraudProofStorage());
         this.disputeFraudProofs = deepCopyProxy(new DisputeFraudProofStorage());

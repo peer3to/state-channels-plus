@@ -30,6 +30,11 @@ export function sourcePeersAndAuthor(entry: QueuedBlockEntry): Set<Address> {
     return peers;
 }
 
+// Used only when a QueueStorage is built without a chain read (tests, tooling).
+// Mirrors DEFAULT_MAX_CHANNEL_PARTICIPANTS in StateChannelManagerProxy; the
+// deployed value always wins in production.
+const DEFAULT_MAX_CHANNEL_PARTICIPANTS = 32;
+
 export class QueueStorage {
     // Structural per-entry retention caps: bound memory against a peer flooding
     // unique junk signatures/sources for one block hash. Far above any real
@@ -41,33 +46,25 @@ export class QueueStorage {
     // with fresh junk signatures; without this the merged set grows without
     // limit.
     //
-    // Sized against the on-chain bound: the channel union is capped at
-    // MAX_CHANNEL_PARTICIPANTS (Errors.sol) where it is proposed, and the
-    // author's own signature is held separately, so an honest block needing
-    // every participant's confirmation fits with margin.
+    // Sized against the on-chain bound: the channel union is capped by the
+    // maximum the deployed StateChannelManager carries, and the author's own
+    // signature is held separately, so an honest block needing every
+    // participant's confirmation fits with margin. The chain is authoritative
+    // for that maximum — it is read from the contract at startup and passed in
+    // here rather than restated, so the two cannot drift.
     //
     // This is a sizing argument, not a proof that a needed signature is never
-    // dropped. Two gaps are open and recorded: the maximum is not enforced on
-    // every path that makes a participant set authoritative
-    // (FIND-SETTLE-1-G2CPV6), and retention counts signature bytes while
-    // validity counts recovered signers, so one participant able to produce
-    // many valid signatures can occupy slots others need
-    // (FIND-QSTORE-3-1HF4V6). Until those are decided this bounds memory,
-    // which is what it was added for.
-    private static readonly MAX_CHANNEL_PARTICIPANTS = 32;
-    private static readonly MAX_ENTRY_SIGNATURES =
-        QueueStorage.MAX_CHANNEL_PARTICIPANTS * 4;
+    // dropped. One gap is open and recorded: retention counts signature bytes
+    // while validity counts recovered signers, so one participant able to
+    // produce many valid signatures can occupy slots others need
+    // (FIND-QSTORE-3-1HF4V6). Until that is decided this bounds memory, which
+    // is what it was added for.
+    private readonly maxEntrySignatures: number;
     // Total failed recoveries one block hash will ever pay for. A hash that has
     // spent this much has already been shown to carry junk; further unadmitted
     // values are dropped without recovering, so cumulative cost is bounded over
     // the hash's life in the queue rather than only within a single call.
-    //
-    // Declared after the cap it derives from, deliberately: a static field
-    // initialised from one declared later reads undefined, and the ceiling
-    // silently becomes NaN -- which compares false against everything, so no
-    // ceiling applies at all.
-    private static readonly MAX_ENTRY_RECOVERY_FAILURES =
-        QueueStorage.MAX_ENTRY_SIGNATURES * 16;
+    private readonly maxEntryRecoveryFailures: number;
     // A cardinality cap alone bounds nothing: ingress authenticates the signed
     // block, never the confirmation values attached to it, and
     // Block.fromBlockConfirmation casts them straight into a Set. A frame may
@@ -75,7 +72,7 @@ export class QueueStorage {
     // orders of magnitude more memory than a capful of signatures. Only a canonical 65-byte
     // ECDSA signature can ever recover to a participant, so anything else is
     // retained by nobody and dropped here — which makes the count cap a real
-    // byte bound: MAX_ENTRY_SIGNATURES * 65 bytes.
+    // byte bound: maxEntrySignatures * 65 bytes.
     private static readonly SIGNATURE_BYTES = 65;
 
     private queuedBlocks: Map<Hash, QueuedBlockEntry> = new Map();
@@ -89,6 +86,24 @@ export class QueueStorage {
     // entry with a new allowance, spend it, restore. Keyed by hash the spend
     // outlives the entry, and clearFork is what releases it.
     private recoverySpend: Map<Hash, number> = new Map();
+
+    // `maxChannelParticipants` is the value the deployed contract stores, read
+    // once at startup. Defaulted only so existing construction without a chain
+    // read keeps working; production passes the contract's value.
+    constructor(
+        maxChannelParticipants: number = DEFAULT_MAX_CHANNEL_PARTICIPANTS
+    ) {
+        if (
+            !Number.isInteger(maxChannelParticipants) ||
+            maxChannelParticipants < 1
+        ) {
+            throw new Error(
+                `QueueStorage: maxChannelParticipants must be a positive integer, got ${maxChannelParticipants}`
+            );
+        }
+        this.maxEntrySignatures = maxChannelParticipants * 4;
+        this.maxEntryRecoveryFailures = this.maxEntrySignatures * 16;
+    }
 
     /**
      * Build a standalone entry for a block copy — the unit of work the
@@ -114,7 +129,7 @@ export class QueueStorage {
             return false;
         const hash = entry.block.hash;
         const spent = this.recoverySpend.get(hash) ?? 0;
-        if (spent >= QueueStorage.MAX_ENTRY_RECOVERY_FAILURES) return false;
+        if (spent >= this.maxEntryRecoveryFailures) return false;
         try {
             entry.block.signatureToAddress(signature);
             return true;
@@ -149,8 +164,8 @@ export class QueueStorage {
         const held = [...entry.block.confirmationSignatures];
         // Slice before recovering, so the cost is bounded by the cap rather
         // than by how much the sender offered.
-        const candidates = held.slice(0, QueueStorage.MAX_ENTRY_SIGNATURES);
-        const surplus = held.slice(QueueStorage.MAX_ENTRY_SIGNATURES);
+        const candidates = held.slice(0, this.maxEntrySignatures);
+        const surplus = held.slice(this.maxEntrySignatures);
         const unrecoverable = candidates.filter(
             (signature) => !this.isRecoverable(entry, signature)
         );
@@ -393,7 +408,7 @@ export class QueueStorage {
         const novel = [...incoming.confirmationSignatures].filter(
             (signature) => !held.has(signature)
         );
-        const room = Math.max(QueueStorage.MAX_ENTRY_SIGNATURES - held.size, 0);
+        const room = Math.max(this.maxEntrySignatures - held.size, 0);
         if (novel.length > room) entry.overflowedSources = true;
         // Recover only what could be kept: a full entry does no crypto work.
         const admitted = novel
@@ -431,10 +446,7 @@ export class QueueStorage {
             // original signature. The per-signature peer set below is a
             // different dimension -- how many peers sent the same signature --
             // and stays on the source cap.
-            if (
-                entry.signatureSources.size >=
-                QueueStorage.MAX_ENTRY_SIGNATURES + 1
-            ) {
+            if (entry.signatureSources.size >= this.maxEntrySignatures + 1) {
                 entry.overflowedSources = true;
                 return;
             }

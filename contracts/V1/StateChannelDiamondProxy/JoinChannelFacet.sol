@@ -51,9 +51,8 @@ contract JoinChannelFacet is StateChannelCommon {
             expectedSnapshotHash == keccak256(abi.encode(currentSnapshot)), RaceConditionJoinChannelSnapshotMismatch()
         );
 
-        address[] memory participantUnion = UtilityFacet(utilityFacetAddress).concatAddressArraysNoDuplicates(
-            _getSnapshotParticipants(channelId), _getPendingParticipants(channelId)
-        );
+        address[] memory participantUnion = UtilityFacet(utilityFacetAddress)
+            .concatAddressArraysNoDuplicates(_getSnapshotParticipants(channelId), _getPendingParticipants(channelId));
         bool isExistingParticipant =
             UtilityFacet(utilityFacetAddress).isAddressInArray(participantUnion, jc.participant);
         if (isTopUp) {
@@ -67,8 +66,8 @@ contract JoinChannelFacet is StateChannelCommon {
             // A join adds one to the union, so the bound is checked against the
             // result rather than the current size.
             require(
-                participantUnion.length + 1 <= MAX_CHANNEL_PARTICIPANTS,
-                ErrorTooManyParticipants(participantUnion.length + 1, MAX_CHANNEL_PARTICIPANTS)
+                participantUnion.length + 1 <= _getMaxChannelParticipants(),
+                ErrorTooManyParticipants(participantUnion.length + 1, _getMaxChannelParticipants())
             );
             require(!_isForkDisputed(channelId, expectedForkId), RaceConditionForceInboundJoinForkDisputed());
         }
@@ -80,9 +79,8 @@ contract JoinChannelFacet is StateChannelCommon {
 
         // Check threshold from the current eligibility set
         address[] memory thresholdParticipants = _getOnChainThresholdSet(channelId);
-        (bool isValid,) = UtilityFacet(utilityFacetAddress).verifyThresholdSigned(
-            thresholdParticipants, sjc.encodedJoinChannel, joinChannelConfirmation.signatures
-        );
+        (bool isValid,) = UtilityFacet(utilityFacetAddress)
+            .verifyThresholdSigned(thresholdParticipants, sjc.encodedJoinChannel, joinChannelConfirmation.signatures);
         require(isValid, ErrorJoinChannelInvalidSignature());
 
         // Deposit funds

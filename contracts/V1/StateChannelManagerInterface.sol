@@ -65,11 +65,7 @@ abstract contract StateChannelManagerInterface is StateChannelManagerEvents {
 
     function getOpenChannelCount() public view virtual returns (uint256);
 
-    function getOpenChannelIds(uint256 offset, uint256 limit)
-        public
-        view
-        virtual
-        returns (bytes32[] memory channelIds);
+    function getOpenChannelIds(uint256 offset, uint256 limit) public view virtual returns (bytes32[] memory channelIds);
 
     function getChannelBalance(bytes32 channelId) public view virtual returns (ChannelBalance memory);
 
@@ -88,6 +84,8 @@ abstract contract StateChannelManagerInterface is StateChannelManagerEvents {
     function getGasLimit() public view virtual returns (uint256);
 
     function getAllTimes() public view virtual returns (uint256, uint256, uint256, uint256);
+
+    function getMaxChannelParticipants() public view virtual returns (uint256);
 
     function getBlockCallDataCommitment(bytes32 channelId, bytes32 forkId, uint256 blockHeight, address participant)
         public

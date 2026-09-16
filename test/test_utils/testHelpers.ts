@@ -134,6 +134,7 @@ export async function deployMathChannelProxyFixture(
         0,
         0,
         0,
+        0,
         0
     );
 

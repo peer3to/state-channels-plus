@@ -57,8 +57,10 @@ longer holds.
 
 The signature cap is sized against the enforced maximum participant-union size: the union is
 bounded where it is proposed, at open and at join, and an honest block needing every participant's
-confirmation fits with margin. That is a sizing argument rather than a guarantee. It does not yet
-establish that a needed signature is never dropped, because the maximum is not enforced on every
+confirmation fits with margin. That maximum is channel configuration held on chain, and a client
+reads it from the contract it is bound to rather than restating it, so the cap follows whatever
+union the channel actually permits. That is a sizing argument rather than a guarantee. It does not
+yet establish that a needed signature is never dropped, because the maximum is not enforced on every
 path that makes a participant set authoritative, and because retention counts signatures while
 validity counts signers — one participant able to produce many valid signatures for a block can
 occupy slots the others need. Both are recorded as findings against the audit layer.
