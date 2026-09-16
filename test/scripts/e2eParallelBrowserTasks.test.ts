@@ -114,13 +114,20 @@ const { ENVIRONMENT_BROWSER_ENV, buildWorkerForkEnvironment } =
             nodePaths: string[];
         }) => NodeJS.ProcessEnv;
     };
-const { chromiumLaunchOptions } = require("../browser/chromiumLaunch.js") as {
-    chromiumLaunchOptions: (env: NodeJS.ProcessEnv) => {
-        headless: boolean;
-        chromiumSandbox?: boolean;
-        args?: string[];
+const { chromiumLaunchOptions, launchChromium } =
+    require("../browser/chromiumLaunch.js") as {
+        chromiumLaunchOptions: (env: NodeJS.ProcessEnv) => {
+            headless: boolean;
+            chromiumSandbox?: boolean;
+            args?: string[];
+        };
+        launchChromium: (
+            chromium: {
+                launch: (options: Record<string, unknown>) => Promise<string>;
+            },
+            env?: NodeJS.ProcessEnv
+        ) => Promise<string>;
     };
-};
 const { validateDiscoveryResults, resolveSlotCount } =
     require("../../scripts/test-e2e-parallel.js") as {
         validateDiscoveryResults: (
@@ -716,6 +723,54 @@ describe("browser tier environment", function () {
                 )
             ).to.contain('from "./chromiumLaunch.js"');
         }
+    });
+
+    it("names PLAYWRIGHT_BROWSERS_PATH when the gate finds no Chromium", async function () {
+        const missing = {
+            launch: () =>
+                Promise.reject(
+                    new Error(
+                        "browserType.launch: Executable doesn't exist at /home/.cache/ms-playwright/chromium-1223"
+                    )
+                )
+        };
+        // The environment hands its worker a fresh HOME and pnpm never
+        // downloads browsers, so this is the failure a worker actually hits.
+        const message = await launchChromium(missing, {}).catch(
+            (caught: Error) => caught.message
+        );
+        expect(message).to.contain("PLAYWRIGHT_BROWSERS_PATH");
+        expect(message).to.contain("unsafe-host");
+    });
+
+    it("passes an unrelated launch failure through untouched", async function () {
+        const broken = {
+            launch: () => Promise.reject(new Error("Target page crashed"))
+        };
+        const message = await launchChromium(broken, {}).catch(
+            (caught: Error) => caught.message
+        );
+        expect(message).to.equal("Target page crashed");
+    });
+
+    it("launches with the options the environment asks for", async function () {
+        const seen: Record<string, unknown>[] = [];
+        const chromium = {
+            launch: (options: Record<string, unknown>) => {
+                seen.push(options);
+                return Promise.resolve("browser");
+            }
+        };
+        expect(
+            await launchChromium(chromium, { SCP_BROWSER_CONTAINED: "1" })
+        ).to.equal("browser");
+        expect(seen).to.deep.equal([
+            {
+                headless: true,
+                chromiumSandbox: false,
+                args: ["--disable-dev-shm-usage"]
+            }
+        ]);
     });
 
     it("tells the gates that the runner image's container confines Chromium", function () {

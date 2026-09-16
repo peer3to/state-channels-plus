@@ -20,4 +20,26 @@ function chromiumLaunchOptions(env = process.env) {
     };
 }
 
-module.exports = { chromiumLaunchOptions };
+/**
+ * Launch Chromium for a gate, and name the fix when the browser is simply not
+ * there: an environment gives its worker a fresh HOME, and `pnpm install` never
+ * downloads browsers (`onlyBuiltDependencies` is empty), so the binary can only
+ * come from PLAYWRIGHT_BROWSERS_PATH.
+ */
+async function launchChromium(chromium, env = process.env) {
+    try {
+        return await chromium.launch(chromiumLaunchOptions(env));
+    } catch (error) {
+        if (!/Executable doesn't exist/.test(error.message || "")) throw error;
+        throw new Error(
+            "Chromium for this Playwright version is missing. Locally, run " +
+                "`yarn playwright install chromium`. A distributed worker reads " +
+                "PLAYWRIGHT_BROWSERS_PATH, which the runner image sets; a worker " +
+                "started with --execution-backend unsafe-host has to export it " +
+                "itself, because the environment gives the worker a fresh HOME.",
+            { cause: error }
+        );
+    }
+}
+
+module.exports = { chromiumLaunchOptions, launchChromium };

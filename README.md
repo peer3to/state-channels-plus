@@ -182,6 +182,14 @@ distributed runner image installs it during the image build. Chromium's own
 sandbox needs capabilities the environment drops, so the image declares
 `SCP_BROWSER_CONTAINED=1` and the gates launch a contained Chromium there.
 
+An environment hands its worker a fresh `HOME`, and `pnpm install` never
+downloads browsers, so a gate finds Chromium only through
+`PLAYWRIGHT_BROWSERS_PATH`. The runner image sets it; a worker started with
+`--execution-backend unsafe-host` has to export it itself, for example
+`PLAYWRIGHT_BROWSERS_PATH="$HOME/Library/Caches/ms-playwright"` on macOS or
+`"$HOME/.cache/ms-playwright"` on Linux. A gate that cannot find the browser
+says so and names the variable.
+
 A worker runs tasks with the runner from its own checkout, so the browser tier
 reaches it only after **the worker host updates that checkout, restarts
 `yarn test:parallel:server`, and rebuilds its runner image**. The distributed

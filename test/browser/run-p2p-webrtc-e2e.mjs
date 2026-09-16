@@ -1,4 +1,4 @@
-import { chromiumLaunchOptions } from "./chromiumLaunch.js";
+import { launchChromium } from "./chromiumLaunch.js";
 import { startLocalDiscoveryRelayHub } from "./localDiscoveryRelayHub.mjs";
 import { startSdkRuntimeServer } from "./sdkRuntimeServer.mjs";
 import assert from "node:assert/strict";
@@ -114,7 +114,7 @@ try {
     const origin = `http://127.0.0.1:${address.port}`;
     const providerUrl = `${origin}/rpc`;
 
-    browser = await chromium.launch(chromiumLaunchOptions());
+    browser = await launchChromium(chromium);
     const page = await browser.newPage();
     page.setDefaultTimeout(120_000);
 
