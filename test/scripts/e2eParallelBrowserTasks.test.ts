@@ -105,7 +105,16 @@ const { runScheduler } =
             failed: unknown[];
         }>;
     };
-const { chromiumLaunchOptions } = require("../browser/chromiumLaunch.mjs") as {
+const { ENVIRONMENT_BROWSER_ENV, buildWorkerForkEnvironment } =
+    require("../../scripts/e2e-parallel/distributed/remoteEnvironment.js") as {
+        ENVIRONMENT_BROWSER_ENV: string[];
+        buildWorkerForkEnvironment: (options: {
+            source: NodeJS.ProcessEnv;
+            home: string;
+            nodePaths: string[];
+        }) => NodeJS.ProcessEnv;
+    };
+const { chromiumLaunchOptions } = require("../browser/chromiumLaunch.js") as {
     chromiumLaunchOptions: (env: NodeJS.ProcessEnv) => {
         headless: boolean;
         chromiumSandbox?: boolean;
@@ -660,6 +669,53 @@ describe("browser tier environment", function () {
         expect(source).to.contain(
             "playwright@${PLAYWRIGHT_VERSION} install --with-deps chromium"
         );
+    });
+
+    it("carries the image's browser names into the worker a guest forks", function () {
+        const forked = buildWorkerForkEnvironment({
+            source: {
+                PATH: "/usr/bin",
+                PLAYWRIGHT_BROWSERS_PATH: "/ms-playwright",
+                SCP_BROWSER_CONTAINED: "1",
+                SCP_TEST_POOL_SECRET: "must not cross"
+            },
+            home: "/environment/home",
+            nodePaths: ["/environment/runner/node_modules"]
+        });
+        // A gate runs in a task child of that fork, so without these it would
+        // look for Chromium under the fresh HOME and keep its own sandbox.
+        expect(forked.PLAYWRIGHT_BROWSERS_PATH).to.equal("/ms-playwright");
+        expect(forked.SCP_BROWSER_CONTAINED).to.equal("1");
+        expect(forked.HOME).to.equal("/environment/home");
+        expect(forked.SCP_TEST_POOL_SECRET).to.equal(undefined);
+    });
+
+    it("names both image-declared browser variables in one place", function () {
+        expect(ENVIRONMENT_BROWSER_ENV).to.deep.equal([
+            "PLAYWRIGHT_BROWSERS_PATH",
+            "SCP_BROWSER_CONTAINED"
+        ]);
+    });
+
+    it("keeps the launch policy loadable by the CommonJS suite and both gates", function () {
+        // Node only unflagged require(esm) in 22.12 and CI pins Node 20, so a
+        // gate helper this file requires has to stay CommonJS.
+        expect(
+            fs.existsSync(
+                path.join(REPO_TEST_DIR, "browser", "chromiumLaunch.js")
+            )
+        ).to.equal(true);
+        for (const gate of [
+            "run-worker-contract-executor.mjs",
+            "run-p2p-webrtc-e2e.mjs"
+        ]) {
+            expect(
+                fs.readFileSync(
+                    path.join(REPO_TEST_DIR, "browser", gate),
+                    "utf8"
+                )
+            ).to.contain('from "./chromiumLaunch.js"');
+        }
     });
 
     it("tells the gates that the runner image's container confines Chromium", function () {

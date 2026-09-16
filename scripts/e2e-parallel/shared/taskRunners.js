@@ -87,10 +87,10 @@ function forgeBuildFailure() {
 
 /**
  * Warm the browser build before any browser gate is scheduled. The gates load
- * `src` through Vite, so the build is the gate's typecheck of
- * tsconfig.browser.json rather than an input; running it per task would also
- * race two gates on `dist/browser`. Distributed workers build it in their
- * prepare script; the local path has no such step, so it builds once here.
+ * `src` through Vite, so the build is the tier's typecheck of
+ * tsconfig.browser.json rather than an input, and one run needs it once rather
+ * than once per gate. Distributed workers build it in their prepare script; the
+ * local path has no such step, so it builds once here.
  */
 function browserBuildFailure() {
     const [command, ...args] = BROWSER_BUILD_COMMAND;

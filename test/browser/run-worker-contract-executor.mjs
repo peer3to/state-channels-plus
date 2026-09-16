@@ -1,4 +1,4 @@
-import { chromiumLaunchOptions } from "./chromiumLaunch.mjs";
+import { chromiumLaunchOptions } from "./chromiumLaunch.js";
 import {
     startSdkRuntimeServer,
     installSdkRuntimeConfig

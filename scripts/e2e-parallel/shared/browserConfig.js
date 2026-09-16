@@ -8,9 +8,9 @@ const BROWSER_TEST_TASK = "browser-test";
 const DEFAULT_BROWSER_TEST_PATTERN = "browser/run-*.mjs";
 
 // The gates load `src` through Vite, so nothing consumes `dist/browser` at run
-// time: the browser build is the only typecheck of tsconfig.browser.json the
-// gate performs. It is warmed once per run rather than run per task, because
-// concurrently scheduled gates would race on `dist/browser`.
+// time: the browser build is the tier's typecheck of tsconfig.browser.json, not
+// an input. The runner performs it once per run rather than making each gate
+// pay for it — and two concurrent builds would race on `dist/browser` anyway.
 const BROWSER_BUILD_COMMAND = ["yarn", "build:browser"];
 
 module.exports = {

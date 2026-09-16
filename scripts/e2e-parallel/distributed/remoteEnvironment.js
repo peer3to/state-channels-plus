@@ -1,3 +1,5 @@
+const path = require("path");
+
 function buildRemoteEnvironment(source, forwarded, fixed = {}) {
     const result = {};
     for (const key of forwarded) {
@@ -12,6 +14,15 @@ function buildRemoteEnvironment(source, forwarded, fixed = {}) {
     return { ...result, ...fixed };
 }
 
+// What the runner image declares for the browser tier: where its Chromium lives
+// and the marker that tells a gate it runs inside the hardened container. The
+// worker is forked with an explicit env, so these reach a task child only by
+// being carried over deliberately.
+const ENVIRONMENT_BROWSER_ENV = [
+    "PLAYWRIGHT_BROWSERS_PATH",
+    "SCP_BROWSER_CONTAINED"
+];
+
 const WORKER_ENV_ALLOWLIST = [
     "PATH",
     "HOME",
@@ -23,11 +34,39 @@ const WORKER_ENV_ALLOWLIST = [
     "LC_CTYPE",
     "TERM",
     "FORCE_COLOR",
-    "NODE_OPTIONS"
+    "NODE_OPTIONS",
+    ...ENVIRONMENT_BROWSER_ENV
 ];
 
 function buildWorkerEnvironment(source) {
     return buildRemoteEnvironment(source, WORKER_ENV_ALLOWLIST);
 }
 
-module.exports = { buildRemoteEnvironment, buildWorkerEnvironment };
+/** Only the image-declared browser names, for the worker's own fork env. */
+function buildBrowserEnvironment(source) {
+    return buildRemoteEnvironment(source, ENVIRONMENT_BROWSER_ENV);
+}
+
+/**
+ * The environment a guest forks its worker with. The worker's task children
+ * inherit it, so a browser gate sees the image's Chromium through it; the
+ * environment's own home and module paths override whatever the guest carries.
+ */
+function buildWorkerForkEnvironment({ source, home, nodePaths }) {
+    return {
+        PATH: source.PATH,
+        ...buildBrowserEnvironment(source),
+        HOME: home,
+        NODE_PATH: [...nodePaths, source.NODE_PATH]
+            .filter(Boolean)
+            .join(path.delimiter)
+    };
+}
+
+module.exports = {
+    ENVIRONMENT_BROWSER_ENV,
+    buildRemoteEnvironment,
+    buildWorkerEnvironment,
+    buildBrowserEnvironment,
+    buildWorkerForkEnvironment
+};

@@ -1,4 +1,4 @@
-import { chromiumLaunchOptions } from "./chromiumLaunch.mjs";
+import { chromiumLaunchOptions } from "./chromiumLaunch.js";
 import { startLocalDiscoveryRelayHub } from "./localDiscoveryRelayHub.mjs";
 import { startSdkRuntimeServer } from "./sdkRuntimeServer.mjs";
 import assert from "node:assert/strict";
