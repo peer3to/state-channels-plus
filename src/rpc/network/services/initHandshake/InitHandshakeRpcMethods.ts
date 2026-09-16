@@ -71,7 +71,10 @@ class InitHandshakeRpcMethods extends ANetworkRpcMethods<InitHandshakeService> {
                     reason: "request time outside agreement window"
                 }
             );
-            this.p2pManager.disconnectAndBlacklistPeer(this.senderTransport);
+            // Clock skew is an environment fault, not misbehaviour. Let the
+            // refusal reach the peer before we close, so it suspends us too
+            // and neither side redials.
+            this.service.suspendAfterRefusal(this.senderTransport);
             throw new Error("request time outside agreement window");
         }
         const challengeMessage =

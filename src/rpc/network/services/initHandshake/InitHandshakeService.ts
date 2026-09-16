@@ -2,13 +2,20 @@ import InitHandshakeRpcMethods from "./InitHandshakeRpcMethods";
 import Clock from "@/Clock";
 import type P2PManager from "@/P2PManager";
 import ANetworkRpcService from "@/rpc/network/ANetworkRpcService";
+import {
+    getRpcRequestFailureCause,
+    type RpcRequestFailureCause
+} from "@/rpc/router/ARpcRouter";
 import NetworkTransport from "@/transport/NetworkTransport";
 import { TransportType } from "@/transport/TransportType";
 import { Hash, Signature, Timestamp } from "@/types/types";
 import { DetachedPromises, getChecksumAddress } from "@/utils";
 import EventBarrier from "@/utils/EventBarrier";
 import { EventBarrierCapturedError } from "@/utils/EventBarrier";
-import { LoggerUtils } from "@/utils/LoggerUtils";
+import {
+    type InitHandshakeMessage,
+    LoggerUtils
+} from "@/utils/LoggerUtils";
 import { TimeoutManager } from "@/utils/TimeoutManager";
 import { ethers } from "ethers";
 
@@ -21,6 +28,21 @@ export type HandshakeResponse = {
     signature: Signature;
     responseTime: Timestamp;
     preferredTransport: TransportType;
+};
+
+/**
+ * How the request leg ended when it did not produce a response. A timeout or a
+ * refusal is our own filter firing, so we suspend; a transport that is already
+ * gone, or a send that never left, has no peer left to suspend.
+ */
+const REQUEST_FAILURE_LOG_MESSAGE: Record<
+    RpcRequestFailureCause,
+    InitHandshakeMessage
+> = {
+    "request-timeout": "response-timeout",
+    "remote-error": "response-refused",
+    "transport-closed": "transport-closed",
+    "send-failed": "response-send-failed"
 };
 
 class InitHandshakeService extends ANetworkRpcService<InitHandshakeRpcMethods> {
@@ -111,17 +133,21 @@ class InitHandshakeService extends ANetworkRpcService<InitHandshakeRpcMethods> {
                 .onInitHandshakeRequest(randomChallengeHash, initTime)
                 .request(transport, { timeoutMs: agreementTime * 1000 });
         } catch (error) {
+            const cause = getRpcRequestFailureCause(error);
             LoggerUtils.logInitHandshakeMessage(this.logger, transport, {
                 direction: "local",
-                message: "response-timeout",
+                message: cause
+                    ? REQUEST_FAILURE_LOG_MESSAGE[cause]
+                    : "response-timeout",
                 challengeHash: randomChallengeHash,
                 challengeInitTime: initTime,
                 reason:
-                    error instanceof Error
-                        ? `handshake response not received in time: ${error.message}`
-                        : "handshake response not received in time"
+                    error instanceof Error ? error.message : String(error)
             });
-            this.p2pManager.disconnectConnection(transport);
+            // Nothing is left to suspend once the connection is gone or the
+            // request never left this node.
+            if (cause === "transport-closed" || cause === "send-failed") return;
+            this.p2pManager.disconnectAndSuspendPeer(transport);
             return;
         }
 
@@ -181,7 +207,9 @@ class InitHandshakeService extends ANetworkRpcService<InitHandshakeRpcMethods> {
                 agreementTimeSeconds: agreementTime,
                 reason: "response RTT outside agreement window"
             });
-            this.p2pManager.disconnectConnection(transport);
+            // Too much latency for the agreement window: not a fault, but we
+            // stop dialling this peer for the rest of this runtime.
+            this.p2pManager.disconnectAndSuspendPeer(transport);
             return;
         }
         const responseTimeDifference = responseTime - initTime;
@@ -199,7 +227,9 @@ class InitHandshakeService extends ANetworkRpcService<InitHandshakeRpcMethods> {
                 agreementTimeSeconds: agreementTime,
                 reason: "response timestamp outside agreement window"
             });
-            this.p2pManager.disconnectAndBlacklistPeer(transport);
+            // Same class as the RTT check: a skewed clock is an environment
+            // fault, so suspend instead of punishing the peer.
+            this.p2pManager.disconnectAndSuspendPeer(transport);
             return;
         }
         //verify signature
@@ -216,6 +246,24 @@ class InitHandshakeService extends ANetworkRpcService<InitHandshakeRpcMethods> {
             rttSeconds: rtt,
             signerAddress
         });
+        // A suspended identity is refused like a blacklisted one. Re-apply the
+        // suspension to the connection that just arrived, otherwise its fresh
+        // peer info stays unbanned and the peer redials.
+        if (this.p2pManager.isSuspended(signerAddress)) {
+            LoggerUtils.logInitHandshakeMessage(this.logger, transport, {
+                direction: "local",
+                message: "rejected",
+                challengeHash,
+                challengeInitTime: initTime,
+                responseTime,
+                preferredTransport,
+                rttSeconds: rtt,
+                signerAddress,
+                reason: "response signer is suspended"
+            });
+            this.p2pManager.disconnectAndSuspendPeer(transport);
+            return;
+        }
         // Check if this peer is blacklisted
         if (this.p2pManager.isBlacklisted(signerAddress)) {
             LoggerUtils.logInitHandshakeMessage(this.logger, transport, {
@@ -343,9 +391,11 @@ class InitHandshakeService extends ANetworkRpcService<InitHandshakeRpcMethods> {
         this.timeoutManager.scheduleTask(
             () => {
                 if (this.didReceiveAck(transport)) return;
-                // Handshake negotiation started but never finalized.
-                // If we have an authenticated peer address, blacklist by address;
-                // otherwise just disconnect the transport.
+                // Handshake negotiation started but never finalized. A missing
+                // ack is a load/clock symptom, not misbehaviour, so close and
+                // suspend by transport — the verified address may have no
+                // profile yet, and blacklisting by it never closed anything.
+                // The address is kept for the log only.
                 const peerAddress =
                     transport.peerAddress ||
                     this.verifiedPeerAddressByTransport.get(transport);
@@ -357,17 +407,23 @@ class InitHandshakeService extends ANetworkRpcService<InitHandshakeRpcMethods> {
                     reason: "handshake ack not received in time"
                 });
 
-                if (peerAddress) {
-                    this.p2pManager.disconnectAndBlacklistPeerByEvmAddress(
-                        peerAddress
-                    );
-                    return;
-                }
-
-                this.p2pManager.disconnectConnection(transport);
+                this.p2pManager.disconnectAndSuspendPeer(transport);
             },
             this.p2pManager.stateManager.timeConfig.agreementTime * 1000,
             "InitHandshakeService - handshake ack timeout"
+        );
+    }
+
+    /**
+     * Close and suspend once the refusal we are about to throw has been sent.
+     * The reply is written from the rejection's microtask chain, so a
+     * zero-delay task is the first point after it reaches the wire.
+     */
+    public suspendAfterRefusal(transport: NetworkTransport) {
+        this.timeoutManager.scheduleTask(
+            () => this.p2pManager.disconnectAndSuspendPeer(transport),
+            0,
+            "InitHandshakeService - suspend after handshake refusal"
         );
     }
 

@@ -1,6 +1,8 @@
 {
     "compilerOptions": {
         "target": "es2020",
+        // es2022.error only: the standard `new Error(msg, { cause })` option.
+        "lib": ["es2020", "es2022.error", "dom", "dom.iterable", "scripthost"],
         "module": "commonjs",
         "esModuleInterop": true,
         "forceConsistentCasingInFileNames": true,

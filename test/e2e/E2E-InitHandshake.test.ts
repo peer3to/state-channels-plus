@@ -113,7 +113,7 @@ describe("E2E: Init Handshake", function () {
     });
 
     describe("Time Validation", function () {
-        it("should blacklist peer when handshake request time difference exceeds agreementTime", async function () {
+        it("should suspend peer when handshake request time difference exceeds agreementTime", async function () {
             const h = TestSession.getHarness();
             await h.lifecycle.start(3, 0, { autoConnect: false });
             await h.network.connectPeers([0, 1]);
@@ -128,19 +128,23 @@ describe("E2E: Init Handshake", function () {
                 .control(observer)
                 .query.getStatus()
                 .request();
+            // A request timestamp outside the agreement window is clock skew,
+            // an environment fault: peer 1 refuses the handshake and closes,
+            // but peer 2 keeps a clean record and is only shut out for this
+            // runtime.
             await h.rpc.sendInvalidTimeHandshakeRequest({
                 fromPeer: 2,
                 toPeer: 1,
                 timeOffset: 2000
             });
-            await h.assert.rpc.peerBlacklistedAndDisconnected({
+            await h.assert.rpc.peerSuspendedAndDisconnected({
                 observer,
                 target: offender,
                 expectedStatus
             });
         });
 
-        it("should disconnect peer that doesn't respond within agreementTime", async function () {
+        it("should suspend peer that doesn't respond within agreementTime", async function () {
             const h = TestSession.getHarness();
             await h.lifecycle.start(3, 0, { autoConnect: false });
             await h.network.connectPeers([0, 1]);
@@ -150,8 +154,8 @@ describe("E2E: Init Handshake", function () {
                 observingPeerIndex: 0
             });
             // Peer 2 delays its reply well past the request window
-            // (agreementTime), so peer 0's `.request(...)` times out and it
-            // disconnects peer 2.
+            // (agreementTime), so peer 0's `.request(...)` times out. A timeout
+            // is no proof of fault, so peer 0 suspends rather than blacklists.
             await h.rpc.initiateHandshakeWithFaultyResponse({
                 initiatorPeer: 0,
                 responderPeer: 2,
@@ -164,12 +168,18 @@ describe("E2E: Init Handshake", function () {
             expect(
                 await h
                     .control(h.getPeer(0))
+                    .query.isSuspended(h.getPeer(2).address)
+                    .request()
+            ).to.equal(true);
+            expect(
+                await h
+                    .control(h.getPeer(0))
                     .query.isBlacklisted(h.getPeer(2).address)
                     .request()
             ).to.equal(false);
         });
 
-        it("should blacklist peer when handshake response time doesn't match init time", async function () {
+        it("should suspend peer when handshake response time doesn't match init time", async function () {
             const h = TestSession.getHarness();
             await h.lifecycle.start(3, 0, { autoConnect: false });
             await h.network.connectPeers([0, 1]);
@@ -185,13 +195,14 @@ describe("E2E: Init Handshake", function () {
                 .query.getStatus()
                 .request();
             // Peer 2 answers promptly but with a response timestamp far outside
-            // the agreement window, so peer 0 rejects and blacklists peer 2.
+            // the agreement window. That is the same clock-skew class as the
+            // RTT check, so peer 0 suspends peer 2 instead of punishing it.
             await h.rpc.initiateHandshakeWithFaultyResponse({
                 initiatorPeer: 0,
                 responderPeer: 2,
                 responseTimeOffsetSeconds: 1000
             });
-            await h.assert.rpc.peerBlacklistedAndDisconnected({
+            await h.assert.rpc.peerSuspendedAndDisconnected({
                 observer,
                 target: offender,
                 expectedStatus

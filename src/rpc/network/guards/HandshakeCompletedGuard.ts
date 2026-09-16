@@ -58,7 +58,9 @@ class HandshakeAdmissionPolicy implements DeferredAdmissionPolicy {
                 peerAddress: transport.peerAddress
             }
         );
-        this.disconnectAndBlacklist(transport);
+        // An expired deferral is a timeout, not misbehaviour: suspend so the
+        // peer keeps its record but does not redial into the same stall.
+        this.service.p2pManager.disconnectAndSuspendPeer(transport);
     }
 
     private isCurrentTransport(transport: NetworkTransport): boolean {

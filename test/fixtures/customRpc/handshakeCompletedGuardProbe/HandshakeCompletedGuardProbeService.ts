@@ -191,6 +191,7 @@ export type TimeoutGuardProbe = {
     timeoutMs: number[];
     expectedTimeoutMs: number;
     firstBlacklisted: boolean;
+    firstSuspended: boolean;
     firstDisconnected: boolean;
     invocations: string[];
 };
@@ -236,6 +237,7 @@ export type LateCompletionGuardProbe = {
     waitCalls: number;
     invocations: string[];
     originalBlacklisted: boolean;
+    originalSuspended: boolean;
     originalDisconnected: boolean;
     replacementConnected: boolean;
 };
@@ -544,6 +546,7 @@ export class HandshakeCompletedGuardProbeService extends ANetworkRpcService<
             resolvers[0](false);
             await this.flush();
             const firstBlacklisted = profile.isBlackListed;
+            const firstSuspended = profile.isSuspended;
             const firstDisconnected =
                 !this.p2pManager.openConnections.includes(transport);
 
@@ -564,6 +567,7 @@ export class HandshakeCompletedGuardProbeService extends ANetworkRpcService<
                     2 *
                     1000,
                 firstBlacklisted,
+                firstSuspended,
                 firstDisconnected,
                 invocations: [...target.invocations]
             };
@@ -810,6 +814,7 @@ export class HandshakeCompletedGuardProbeService extends ANetworkRpcService<
                 waitCalls,
                 invocations: [...target.invocations],
                 originalBlacklisted: originalProfile.isBlackListed,
+                originalSuspended: originalProfile.isSuspended,
                 originalDisconnected:
                     !this.p2pManager.openConnections.includes(original),
                 replacementConnected:

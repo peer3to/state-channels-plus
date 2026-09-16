@@ -36,6 +36,35 @@ describe("ProfileManager Holepunch ban policy", function () {
         expect(result.profileBlacklisted).to.equal(false);
     });
 
+    it("bans a suspended unauthenticated Holepunch profile without blacklisting it", async function () {
+        const result = await fixture
+            .control()
+            .p2pManagerProbe.probeUnauthenticatedSuspend()
+            .request();
+
+        expect(result.banCalls).to.deep.equal([true]);
+        expect(result.socketDestroyed).to.equal(true);
+        expect(result.profileSuspended).to.equal(true);
+        expect(result.profileBlacklisted).to.equal(false);
+    });
+
+    it("rejects and bans a later Holepunch fallback for a suspended identity", async function () {
+        const result = await fixture
+            .control()
+            .p2pManagerProbe.probeSuspendRejectsHolepunch(fixture.address(1))
+            .request();
+
+        expect(result.admitted).to.equal(false);
+        expect(result.attemptedClosed).to.equal(true);
+        expect(result.attemptedSocketDestroyed).to.equal(true);
+        expect(result.activePeerConnections).to.equal(0);
+        expect(result.attemptedBanCalls).to.deep.equal([true]);
+        expect(result.profileSuspended).to.equal(true);
+        expect(result.profileBlacklisted).to.equal(false);
+        expect(result.handshakeCompleted).to.equal(false);
+        expect(result.usableTrafficSent).to.equal(false);
+    });
+
     it("bans the Holepunch fallback after a WebRTC upgrade", async function () {
         const result = await fixture
             .control()

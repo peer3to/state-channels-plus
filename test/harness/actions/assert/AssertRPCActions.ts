@@ -1,3 +1,4 @@
+// @spec-test-coverage-ignore: shared harness assertions exercised by owning mapped test declarations
 import type { Status } from "@/types";
 import type { ForkId } from "@/types/types";
 import type { HarnessControlRpc } from "@test/fixtures/customRpc/harnessControl/HarnessControlRpc";
@@ -42,6 +43,52 @@ export class AssertRPCActions<
                 .query.isConnectedTo(target.address)
                 .request(),
             `peer ${observer.index} stayed connected to blacklisted peer ${target.index}`
+        ).to.equal(false);
+        expect(
+            await this.harness.control(observer).query.getStatus().request(),
+            `peer ${observer.index} status changed while dropping peer ${target.index}`
+        ).to.equal(expectedStatus);
+    }
+
+    // The observer suspends and disconnects the target (a peer it could not
+    // agree a clock with) without blacklisting it or going offline
+    async peerSuspendedAndDisconnected(options: {
+        observer: TestPeer<TCustomRpc>;
+        target: TestPeer<TCustomRpc>;
+        expectedStatus: Status;
+        timeoutMs?: number;
+    }): Promise<void> {
+        const {
+            observer,
+            target,
+            expectedStatus,
+            timeoutMs = this.harness.event.protocolEventTimeoutMs()
+        } = options;
+
+        await this.harness.disconnectionBarrier.waitFor(
+            async () =>
+                await this.harness
+                    .control(observer)
+                    .query.isSuspended(target.address)
+                    .request(),
+            {
+                timeoutMs,
+                timeoutMessage: `Expected peer ${observer.index} to suspend peer ${target.index} within ${timeoutMs}ms`
+            }
+        );
+        expect(
+            await this.harness
+                .control(observer)
+                .query.isConnectedTo(target.address)
+                .request(),
+            `peer ${observer.index} stayed connected to suspended peer ${target.index}`
+        ).to.equal(false);
+        expect(
+            await this.harness
+                .control(observer)
+                .query.isBlacklisted(target.address)
+                .request(),
+            `peer ${observer.index} blacklisted peer ${target.index} instead of suspending it`
         ).to.equal(false);
         expect(
             await this.harness.control(observer).query.getStatus().request(),

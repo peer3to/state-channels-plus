@@ -405,6 +405,10 @@ export type BanPolicyProbe = {
     profileBlacklisted: boolean;
 };
 
+export type SuspendPolicyProbe = BanPolicyProbe & {
+    profileSuspended: boolean;
+};
+
 export type UpgradeBanPolicyProbe = {
     banCallsAfterUpgrade: boolean[];
     banCallsAfterStaleClose: boolean[];
@@ -434,6 +438,7 @@ export type RelayAdmissionProbe = {
     originalBanCalls: boolean[];
     attemptedBanCalls: boolean[];
     profileBlacklisted: boolean;
+    profileSuspended: boolean;
     handshakeCompleted: boolean;
     usableTrafficSent: boolean;
     disconnectionHookCalls: number;
@@ -1673,6 +1678,59 @@ export class P2PManagerProbeService extends ANetworkRpcService<
         };
     }
 
+    public probeUnauthenticatedSuspend(): SuspendPolicyProbe {
+        const { transport, peerInfo, socket } = this.holepunchTransport();
+        const profile =
+            this.p2pManager.profileManager.getProfileByTransport(transport);
+
+        this.p2pManager.disconnectAndSuspendPeer(transport);
+
+        return {
+            banCalls: [...peerInfo.banCalls],
+            socketDestroyed: socket.destroyed,
+            profileBlacklisted: profile?.isBlackListed ?? false,
+            profileSuspended: profile?.isSuspended ?? false
+        };
+    }
+
+    /**
+     * A suspended identity dials back on a fresh connection. Admission must
+     * refuse it and ban the arriving peer info, otherwise the peer redials.
+     */
+    public async probeSuspendRejectsHolepunch(
+        address: string
+    ): Promise<RelayAdmissionProbe> {
+        const { peerInfo: originalPeerInfo, profile } =
+            this.registeredHolepunchTransport(address);
+        const webRTC = new WebRTCTransport(
+            new RecordingWebRTCDataChannel(),
+            this.p2pManager.rpcRouter
+        );
+        this.authenticateTransport(webRTC, address);
+        this.p2pManager.addConnection(webRTC);
+        this.p2pManager.disconnectAndSuspendPeer(webRTC);
+
+        const {
+            transport: attempted,
+            peerInfo: attemptedPeerInfo,
+            socket: attemptedSocket
+        } = this.holepunchTransport();
+        const disconnectionHookCalls =
+            await this.finalizeAndCountDisconnections(attempted, address);
+        const admitted = this.isAuthenticatedCurrentTransport(attempted);
+
+        return this.relayAdmissionResult({
+            address,
+            admitted,
+            attempted,
+            attemptedPeerInfo,
+            attemptedSocket,
+            originalPeerInfo,
+            profile,
+            disconnectionHookCalls
+        });
+    }
+
     public probeUpgradeBanPolicy(address: string): UpgradeBanPolicyProbe {
         const { peerInfo } = this.registeredHolepunchTransport(address);
         const firstWebRTC = new WebRTCTransport(
@@ -1916,6 +1974,7 @@ export class P2PManagerProbeService extends ANetworkRpcService<
             originalBanCalls: [...originalPeerInfo.banCalls],
             attemptedBanCalls: [...attemptedPeerInfo.banCalls],
             profileBlacklisted: profile.isBlackListed,
+            profileSuspended: profile.isSuspended,
             handshakeCompleted: this.isAuthenticatedCurrentTransport(attempted),
             usableTrafficSent,
             disconnectionHookCalls

@@ -14,6 +14,9 @@ export class RecordingBannablePeerInfo implements BannablePeerInfo {
 
 export class RecordingHolepunchSocket {
     public destroyed = false;
+    // How many frames had been written when destroy() ran, so a test can tell
+    // whether a reply reached the wire before the close.
+    public writesAtDestroy: number | undefined;
     public readonly writes: string[] = [];
     private readonly listeners = new Map<
         HolepunchSocketEvent,
@@ -34,6 +37,7 @@ export class RecordingHolepunchSocket {
     }
 
     public destroy(): void {
+        if (!this.destroyed) this.writesAtDestroy = this.writes.length;
         this.destroyed = true;
     }
 
