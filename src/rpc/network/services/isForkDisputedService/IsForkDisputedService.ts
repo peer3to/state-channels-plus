@@ -1,4 +1,5 @@
 import IsForkDisputedRpcMethods from "./IsForkDisputedRpcMethods";
+import { DisconnectPolicy } from "@/DisconnectPolicy";
 import type P2PManager from "@/P2PManager";
 import ANetworkRpcService from "@/rpc/network/ANetworkRpcService";
 import { HandshakeCompletedGuard } from "@/rpc/network/guards";
@@ -149,7 +150,21 @@ class IsForkDisputedService extends ANetworkRpcService<IsForkDisputedRpcMethods>
      */
     public IAcknowledgeDisputedFork(peerAddress: string, forkId: ForkId) {
         if (this.didIAcknowledgeDisputedFork(peerAddress, forkId)) {
-            this.p2pManager.disconnectAndBlacklistPeerByEvmAddress(peerAddress);
+            // This fires on our own bookkeeping (myAcknowledgementsByAddress
+            // already has this fork recorded for this peer), not evidence the
+            // peer misbehaved, so it never blacklists. Close only if a
+            // transport is still known; an address-only hit has nothing to
+            // close.
+            const transport =
+                this.p2pManager.profileManager.getTransportByEvmAddress(
+                    peerAddress
+                );
+            if (transport) {
+                this.p2pManager.disconnectConnection(
+                    transport,
+                    DisconnectPolicy.ALLOW
+                );
+            }
             return;
         }
         this.recordAcknowledgement(
