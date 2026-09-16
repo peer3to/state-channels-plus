@@ -427,7 +427,7 @@ function result({
                 : failureReason
                   ? failureReason
                   : repeatedStarvation
-                    ? "starved twice"
+                    ? `starved ${STARVATION_RETRY_LIMIT + 1}x`
                     : starvedFail
                       ? "starved"
                       : `exit ${code}`;
@@ -553,7 +553,7 @@ function summary({
         console.log(
             colorize(
                 "yellow",
-                `  ${starvation.repeated.length} test(s) hit event-loop starvation on both runs (>1s, ${totalStarve} event(s) total):`
+                `  ${starvation.repeated.length} test(s) hit event-loop starvation on every attempt (>1s, ${totalStarve} event(s) total):`
             )
         );
         for (const t of starvation.repeated) {
@@ -650,8 +650,12 @@ function getErrorLogPath(logDir, logName) {
     return getDecoratedLogPath(logDir, logName, "error_");
 }
 
-function getStarvationLogPath(logDir, logName) {
-    return getDecoratedLogPath(logDir, logName, "error_starvation_");
+function getStarvationLogPath(logDir, logName, retryCount) {
+    // Each starved attempt keeps its own file. Keying on the name alone let a
+    // second retry's log overwrite the first, destroying the evidence for the
+    // attempt that actually explains the failure.
+    const suffix = retryCount === undefined ? "" : `.attempt-${retryCount}`;
+    return getDecoratedLogPath(logDir, logName, "error_starvation_", suffix);
 }
 
 function markLogAsError(logDir, logName) {

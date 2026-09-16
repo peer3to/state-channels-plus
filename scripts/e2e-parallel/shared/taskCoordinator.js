@@ -194,6 +194,13 @@ class TaskCoordinator {
             parsed.starveCount > 0 &&
             (assignment.task.starvationRetryCount || 0) < STARVATION_RETRY_LIMIT
         ) {
+            // Speculative copies of one task can starve together. Each
+            // enqueues, and the copy left queued after the other completes
+            // puts the task in two membership sets at once, which fails
+            // finish()'s invariant and takes down the whole run.
+            if (this.queue.some((entry) => entry.task === assignment.task)) {
+                return { accepted: false, reason: "redundant-starvation" };
+            }
             assignment.task.starvationRetryCount =
                 (assignment.task.starvationRetryCount || 0) + 1;
             this.queue.push({ task: assignment.task, seq: assignment.seq });

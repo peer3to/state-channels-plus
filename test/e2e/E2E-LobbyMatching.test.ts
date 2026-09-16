@@ -6,6 +6,11 @@ import { waitFor } from "@test/utils/waitFor";
 import { expect } from "chai";
 import { ethers } from "ethers";
 
+// Upper bound on the post-failure blacklist gather. It only runs on a
+// failure path, and must never outlive the mocha budget it is reporting
+// inside of.
+const BLACKLIST_DIAGNOSTIC_TIMEOUT_MS = 3000;
+
 describe("E2E: lobby matching", function () {
     it("matches two authenticated peers, derives one ID, and opens one channel", async function () {
         const h = TestSession.getHarness();
@@ -218,11 +223,19 @@ describe("E2E: lobby matching", function () {
         // Four peers handshake simultaneously, so this is the heaviest lobby
         // case in the file. A handshake whose ack misses `agreementTime` is
         // not just dropped: InitHandshakeService's ack timeout calls
-        // P2PManager.disconnectAndBlacklistPeerByEvmAddress, and nothing in
-        // src/ ever lifts a blacklist, so one late ack on a loaded host
-        // permanently removes a pairing this test needs. The harness floor of
-        // 3s leaves no headroom for that under a saturated runner. What needs
-        // room is the ack deadline, not the assertion below.
+        // P2PManager.disconnectAndBlacklistPeerByEvmAddress, only a test
+        // fixture ever calls unblacklistPeer, and scheduleRetry will not
+        // redial a blacklisted address — so one late ack on a loaded host
+        // removes a pairing this test needs for good. Observed under a
+        // saturated runner with sub-threshold event-loop stalls of 0.5-1.1s
+        // against the 3s harness floor.
+        //
+        // This widens the assertion budget below as well, since
+        // protocolEventTimeoutMs derives from the same timeConfig (24s -> 29s).
+        // The cost of that is real: a regression where four-peer handshakes
+        // genuinely need 4-7s would now pass here. Accepted deliberately —
+        // this case exists to prove pairs converge, and the handshake deadline
+        // itself is covered by the tests that drive it on purpose.
         await h.setup(4, {
             autoConnect: false,
             timeConfig: { agreementTime: 8 }
@@ -249,20 +262,44 @@ describe("E2E: lobby matching", function () {
             // "Condition not met" alone cannot distinguish "still converging"
             // from "a pairing was blacklisted and can never come back". Name
             // which it was, so a recurrence does not need a log excavation.
-            const blacklisted: string[] = [];
+            //
+            // Strictly best-effort: the peers may already be wedged, and a
+            // diagnostic that blocks would replace this failure with an opaque
+            // mocha timeout. Queries run concurrently, individual rejections
+            // are swallowed, the whole gather is bounded, and the original
+            // error is rethrown so its stack survives.
+            const pairs: Array<[number, number]> = [];
             for (let holder = 0; holder < h.peers.length; holder++) {
                 for (let subject = 0; subject < h.peers.length; subject++) {
-                    if (holder === subject) continue;
-                    const flagged = await h
-                        .control(h.peers[holder])
-                        .query.isBlacklisted(h.peers[subject].address)
-                        .request();
-                    if (flagged) blacklisted.push(`${holder}->${subject}`);
+                    if (holder !== subject) pairs.push([holder, subject]);
                 }
             }
-            throw new Error(
-                `${(error as Error).message}; channelIds=${JSON.stringify(ids)}; blacklisted=[${blacklisted.join(", ")}]`
-            );
+            let expiry: ReturnType<typeof setTimeout> | undefined;
+            const blacklisted = await Promise.race([
+                Promise.all(
+                    pairs.map(([holder, subject]) =>
+                        h
+                            .control(h.peers[holder])
+                            .query.isBlacklisted(h.peers[subject].address)
+                            .request()
+                            .then((flagged) =>
+                                flagged ? `${holder}->${subject}` : ""
+                            )
+                            .catch(() => "")
+                    )
+                ).then((flags) => flags.filter(Boolean).join(", ")),
+                new Promise<string>((resolve) => {
+                    expiry = setTimeout(
+                        () => resolve("unavailable, diagnostic timed out"),
+                        BLACKLIST_DIAGNOSTIC_TIMEOUT_MS
+                    );
+                })
+            ]);
+            if (expiry !== undefined) clearTimeout(expiry);
+            (error as Error).message =
+                `${(error as Error).message}; channelIds=${JSON.stringify(ids)}` +
+                `; blacklisted=[${blacklisted}]`;
+            throw error;
         }
 
         const uniqueIds = [...new Set(ids)];

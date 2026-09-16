@@ -98,7 +98,68 @@ describe("distributed task coordinator", function () {
         });
         expect(afterSecond.disposition).to.equal("retry-starvation");
         expect(afterSecond.starvationRetryCount).to.equal(2);
+        // Pin the enqueue, not just the counter: a mutation that reports
+        // retry-starvation and increments without requeueing would otherwise
+        // pass while the task silently vanished from the run.
+        const third = coordinator.requestTask("remote");
+        expect(third).to.not.equal(null);
+        expect(third.taskId).to.equal(second.taskId);
         expect(coordinator.finish().failed).to.deep.equal([]);
+    });
+
+    it("lets one speculative copy schedule the retry when both starve", function () {
+        // Kills the mutation that drops the already-queued guard: two
+        // speculative copies each enqueue the same task, the copy left queued
+        // after the other completes puts it in two membership sets, and
+        // finish() then throws its invariant and fails the whole run.
+        const contested = task("speculative-starve");
+        const coordinator = new TaskCoordinator([contested], {
+            speculative: true
+        });
+        const timing = {
+            startupMs: 9,
+            deployMs: 4,
+            workerBootMs: 1,
+            runtimeReadyMs: 1,
+            maxEventLoopDelayMs: 1100,
+            el: { main: 0, sdk: 0, vm: 0, watchdog: 1100 },
+            found: true
+        };
+        const cleanTiming = { ...timing, maxEventLoopDelayMs: 12 };
+        const real = coordinator.requestTask("worker-a");
+        const copy = coordinator.requestTask("worker-b");
+        expect(copy).to.not.equal(null);
+
+        const afterReal = coordinator.completeAttempt("worker-a", {
+            attemptId: real.attemptId,
+            code: 0,
+            stdout: "",
+            stderr: "",
+            reduced: { oomCount: 0, starveCount: 1, timing }
+        });
+        const afterCopy = coordinator.completeAttempt("worker-b", {
+            attemptId: copy.attemptId,
+            code: 0,
+            stdout: "",
+            stderr: "",
+            reduced: { oomCount: 0, starveCount: 1, timing }
+        });
+        expect(afterReal.disposition).to.equal("retry-starvation");
+        expect(afterCopy.accepted).to.equal(false);
+        expect(afterCopy.reason).to.equal("redundant-starvation");
+        expect(coordinator.queue).to.have.length(1);
+
+        const retry = coordinator.requestTask("worker-a");
+        coordinator.completeAttempt("worker-a", {
+            attemptId: retry.attemptId,
+            code: 0,
+            stdout: "",
+            stderr: "",
+            reduced: { oomCount: 0, starveCount: 0, timing: cleanTiming }
+        });
+        const finished = coordinator.finish();
+        expect(finished.failed).to.deep.equal([]);
+        expect(finished.done).to.equal(true);
     });
 
     it("counts a pass on the second retry as recovered from starvation", function () {

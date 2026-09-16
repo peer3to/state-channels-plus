@@ -31,6 +31,7 @@ const {
     cleanupNonErrorLogs,
     countStarvation,
     getStarvationSummary,
+    getStarvationLogPath,
     parseTimings,
     isDangerousPurgeTarget,
     isWithinDefaultLogDir,
@@ -51,6 +52,11 @@ const {
         recovered: Array<Record<string, unknown>>;
         repeated: Array<Record<string, unknown>>;
     };
+    getStarvationLogPath: (
+        logDir: string,
+        logName: string,
+        retryCount?: number
+    ) => string;
     parseTimings: (text: string) => {
         el: { main: number; sdk: number; vm: number; watchdog: number };
         maxEventLoopDelayMs: number;
@@ -590,6 +596,17 @@ describe("e2e-parallel logging - purge guards", function () {
 });
 
 describe("e2e-parallel logging - starvation diagnostics", function () {
+    it("keeps one starvation log per attempt so a retry cannot overwrite it", function () {
+        // Kills the mutation that drops the retry suffix: with the budget at
+        // two, both starved attempts promote to the same path and the second
+        // rename destroys the first attempt's evidence.
+        const first = getStarvationLogPath("/logs", "SomeTest", 1);
+        const second = getStarvationLogPath("/logs", "SomeTest", 2);
+        expect(first).to.not.equal(second);
+        expect(first).to.contain("error_starvation_");
+        expect(second).to.contain("error_starvation_");
+    });
+
     it("includes every failed task label in the shared final summary", function () {
         const lines: string[] = [];
         const original = console.log;
