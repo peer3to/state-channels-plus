@@ -215,24 +215,55 @@ describe("E2E: lobby matching", function () {
 
     it("converges four peers on one topic into two exclusive pairs", async function () {
         const h = TestSession.getHarness();
-        await h.setup(4, { autoConnect: false });
+        // Four peers handshake simultaneously, so this is the heaviest lobby
+        // case in the file. A handshake whose ack misses `agreementTime` is
+        // not just dropped: InitHandshakeService's ack timeout calls
+        // P2PManager.disconnectAndBlacklistPeerByEvmAddress, and nothing in
+        // src/ ever lifts a blacklist, so one late ack on a loaded host
+        // permanently removes a pairing this test needs. The harness floor of
+        // 3s leaves no headroom for that under a saturated runner. What needs
+        // room is the ack deadline, not the assertion below.
+        await h.setup(4, {
+            autoConnect: false,
+            timeConfig: { agreementTime: 8 }
+        });
         const topic = ethers.id("e2e-lobby-four-peer-convergence");
 
         await h.network.joinLobby([0, 1, 2, 3], topic);
 
         let ids: string[] = [];
-        await waitFor(
-            async () => {
-                ids = await Promise.all(
-                    h.peers.map((peer) =>
-                        h.control(peer).query.getChannelId().request()
-                    )
-                );
-                return ids.every((id) => id !== ethers.ZeroHash);
-            },
-            h.event.protocolEventTimeoutMs({ withFirstBlockGrace: true }),
-            200
-        );
+        try {
+            await waitFor(
+                async () => {
+                    ids = await Promise.all(
+                        h.peers.map((peer) =>
+                            h.control(peer).query.getChannelId().request()
+                        )
+                    );
+                    return ids.every((id) => id !== ethers.ZeroHash);
+                },
+                h.event.protocolEventTimeoutMs({ withFirstBlockGrace: true }),
+                200
+            );
+        } catch (error) {
+            // "Condition not met" alone cannot distinguish "still converging"
+            // from "a pairing was blacklisted and can never come back". Name
+            // which it was, so a recurrence does not need a log excavation.
+            const blacklisted: string[] = [];
+            for (let holder = 0; holder < h.peers.length; holder++) {
+                for (let subject = 0; subject < h.peers.length; subject++) {
+                    if (holder === subject) continue;
+                    const flagged = await h
+                        .control(h.peers[holder])
+                        .query.isBlacklisted(h.peers[subject].address)
+                        .request();
+                    if (flagged) blacklisted.push(`${holder}->${subject}`);
+                }
+            }
+            throw new Error(
+                `${(error as Error).message}; channelIds=${JSON.stringify(ids)}; blacklisted=[${blacklisted.join(", ")}]`
+            );
+        }
 
         const uniqueIds = [...new Set(ids)];
         expect(uniqueIds).to.have.length(2);
