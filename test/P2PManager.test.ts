@@ -52,7 +52,7 @@ describe("P2PManager", function () {
             malformedDisconnected: true,
             malformedBlacklisted: true,
             unknownServiceDisconnected: true,
-            unknownServiceBlacklisted: true,
+            unknownServiceBlacklisted: false,
             responseClassifiedBeforeDispatch: true
         });
     });
@@ -82,7 +82,7 @@ describe("P2PManager", function () {
             validMethodStayedConnected: true,
             validMethodCalls: 1,
             unknownMethodDisconnected: true,
-            unknownMethodBlacklisted: true,
+            unknownMethodBlacklisted: false,
             throwingServiceDisconnected: true,
             throwingServiceBlacklisted: false
         });
