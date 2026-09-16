@@ -46,11 +46,14 @@ const { discoverTasks } =
             preGrepTaskCount: number;
         };
     };
-const { TASK_RUNNERS, requiresChainSlot, countForgeTasks } =
+const { TASK_RUNNERS, requiresChainSlot, countTasksForRunner } =
     require("../../scripts/e2e-parallel/shared/taskRunners.js") as {
-        TASK_RUNNERS: { HARDHAT: string; FORGE: string };
+        TASK_RUNNERS: { HARDHAT: string; FORGE: string; BROWSER: string };
         requiresChainSlot: (task: { runner?: string }) => boolean;
-        countForgeTasks: (tasks: { runner?: string }[]) => number;
+        countTasksForRunner: (
+            tasks: { runner?: string }[],
+            runner?: string
+        ) => number;
     };
 const { toWireTask, fromWireTask } =
     require("../../scripts/e2e-parallel/distributed/taskWire.js") as {
@@ -864,9 +867,21 @@ describe("parallel task runner classification", function () {
     });
 
     it("counts only the forge tasks in a mixed run", function () {
-        expect(countForgeTasks([MOCHA_TASK, FORGE_TASK, FORGE_TASK])).to.equal(
-            2
-        );
+        expect(
+            countTasksForRunner(
+                [MOCHA_TASK, FORGE_TASK, FORGE_TASK],
+                TASK_RUNNERS.FORGE
+            )
+        ).to.equal(2);
+    });
+
+    it("counts a runnerless task as a hardhat task", function () {
+        expect(
+            countTasksForRunner(
+                [{ ...MOCHA_TASK, runner: undefined }, FORGE_TASK],
+                TASK_RUNNERS.HARDHAT
+            )
+        ).to.equal(1);
     });
 });
 
@@ -943,26 +958,39 @@ describe("parallel forge tier selection", function () {
         expect(parsed.forgeOnly).to.equal(false);
         expect(resolveDiscoverySelection(parsed)).to.deep.equal({
             includeMocha: true,
-            includeForge: true
+            includeForge: true,
+            includeBrowser: true
         });
     });
 
     it("drops the Mocha tier for --forge-only", function () {
         expect(
             resolveDiscoverySelection(parseCliArgs(argv("--forge-only")))
-        ).to.deep.equal({ includeMocha: false, includeForge: true });
+        ).to.deep.equal({
+            includeMocha: false,
+            includeForge: true,
+            includeBrowser: false
+        });
     });
 
     it("drops the forge tier for --no-forge", function () {
         expect(
             resolveDiscoverySelection(parseCliArgs(argv("--no-forge")))
-        ).to.deep.equal({ includeMocha: true, includeForge: false });
+        ).to.deep.equal({
+            includeMocha: true,
+            includeForge: false,
+            includeBrowser: true
+        });
     });
 
     it("drops the forge tier for --e2e-only", function () {
         expect(
             resolveDiscoverySelection(parseCliArgs(argv("--e2e-only")))
-        ).to.deep.equal({ includeMocha: true, includeForge: false });
+        ).to.deep.equal({
+            includeMocha: true,
+            includeForge: false,
+            includeBrowser: false
+        });
     });
 
     it("rejects --forge-only together with --no-forge", function () {

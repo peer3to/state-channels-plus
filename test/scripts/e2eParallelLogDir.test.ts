@@ -357,7 +357,7 @@ describe("e2e-parallel argParser - logDir validation", function () {
         }
         expect(lines).to.have.length(1);
         expect(lines[0]).to.match(
-            /^Distributed dry run: \d+ task\(s\) \(\d+ forge\); slots=worker default; remaining capacity is configured by test:parallel:server$/
+            /^Distributed dry run: \d+ task\(s\) \(\d+ forge, \d+ browser\); slots=worker default; remaining capacity is configured by test:parallel:server$/
         );
     });
 

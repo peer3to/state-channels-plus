@@ -15,10 +15,14 @@ Options:
                                   Mocha filename glob relative to test/
       --forge-test-pattern <glob>
                                   Solidity filename glob relative to test/
+      --browser-test-pattern <glob>
+                                  Browser gate filename glob relative to test/
       --e2e-only                 Discover only Mocha tests under test/e2e
       --forge-only               Discover only Foundry (forge) test contracts
       --no-forge                 Skip Foundry (forge) test contracts
       --forge-threads <count>    Threads per forge task (default 1)
+      --browser-only             Discover only browser gates
+      --no-browser               Skip browser gates
   -d, --log-dir, --logDir, --dir <path>
                                   Use and clear this exact log directory
   -p, --allow-logdir-purge, --allowLogdirPurge, --purge
@@ -41,9 +45,10 @@ Options:
       --discovery-timeout <ms>   Time to wait for the first worker
       --forward-env <name>       Environment variable to forward (repeatable)
 
-By default all Mocha tests and all Foundry test contracts under test/ are
-discovered and logs are written to a new logs/run-N directory. Use --e2e-only
-only when the ordinary Mocha tier is not needed; it also drops the forge tier.
+By default all Mocha tests, all Foundry test contracts and all browser gates
+under test/ are discovered and logs are written to a new logs/run-N directory.
+Use --e2e-only only when the ordinary Mocha tier is not needed; it also drops
+the forge and browser tiers.
 Each forge task uses one thread by default because the runner already
 parallelizes across tasks. Override it with --forge-threads.`;
 
@@ -71,6 +76,7 @@ function parseCliArgs(argv) {
         testPattern: undefined,
         mochaTestPattern: undefined,
         forgeTestPattern: undefined,
+        browserTestPattern: undefined,
         help: false,
         e2eOnly: false,
         // Foundry test contracts are discovered alongside Mocha tests by
@@ -78,6 +84,10 @@ function parseCliArgs(argv) {
         forge: true,
         forgeOnly: false,
         forgeThreads: DEFAULT_FORGE_THREADS,
+        // Browser gates are discovered alongside the other tiers by default;
+        // --no-browser drops them, --browser-only drops every other tier.
+        browser: true,
+        browserOnly: false,
         dryRun: false,
         // Warm slot pool size; undefined → DEFAULT_SLOTS.
         slots: undefined,
@@ -171,6 +181,20 @@ function parseCliArgs(argv) {
             );
             continue;
         }
+        if (arg === "--browser-test-pattern") {
+            const next = argv[i + 1];
+            if (!next || next.startsWith("-"))
+                throw new Error("--browser-test-pattern requires a value");
+            options.browserTestPattern = next;
+            i++;
+            continue;
+        }
+        if (arg.startsWith("--browser-test-pattern=")) {
+            options.browserTestPattern = arg.slice(
+                "--browser-test-pattern=".length
+            );
+            continue;
+        }
         if (arg === "--e2e-only") {
             options.e2eOnly = true;
             continue;
@@ -181,6 +205,14 @@ function parseCliArgs(argv) {
         }
         if (arg === "--no-forge") {
             options.forge = false;
+            continue;
+        }
+        if (arg === "--browser-only") {
+            options.browserOnly = true;
+            continue;
+        }
+        if (arg === "--no-browser") {
+            options.browser = false;
             continue;
         }
         if (arg === "--forge-threads") {
@@ -457,11 +489,23 @@ function parseCliArgs(argv) {
     if (options.forgeOnly && options.e2eOnly) {
         throw new Error("--forge-only conflicts with --e2e-only");
     }
+    if (options.browserOnly && !options.browser) {
+        throw new Error("--browser-only conflicts with --no-browser");
+    }
+    if (options.browserOnly && options.e2eOnly) {
+        throw new Error("--browser-only conflicts with --e2e-only");
+    }
+    if (options.browserOnly && options.forgeOnly) {
+        throw new Error("--browser-only conflicts with --forge-only");
+    }
     if (!options.distributed && options.distributedOptionsProvided) {
         throw new Error("Distributed-only options require --distributed");
     }
     if (options.distributed) {
-        const slots = options.forgeOnly ? 0 : options.slots;
+        // Neither tier talks to a warm slot, so an entry made only of their
+        // tasks asks its workers for none.
+        const slots =
+            options.forgeOnly || options.browserOnly ? 0 : options.slots;
         options.executionProfile = Object.fromEntries(
             Object.entries({
                 schedulerTickMs: options.schedulerTickMs,
@@ -484,12 +528,16 @@ function parseCliArgs(argv) {
 
 /**
  * Which discovery tiers a parsed CLI selects. `--e2e-only` narrows the Mocha
- * tier to test/e2e and drops forge with it (forge contracts never live there).
+ * tier to test/e2e and drops forge and the browser gates with it (neither lives
+ * there).
  */
 function resolveDiscoverySelection(options) {
     return {
-        includeMocha: !options.forgeOnly,
-        includeForge: options.forge !== false && !options.e2eOnly
+        includeMocha: !options.forgeOnly && !options.browserOnly,
+        includeForge:
+            options.forge !== false && !options.e2eOnly && !options.browserOnly,
+        includeBrowser:
+            options.browser !== false && !options.e2eOnly && !options.forgeOnly
     };
 }
 

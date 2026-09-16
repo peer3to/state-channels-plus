@@ -23,7 +23,12 @@ const {
     discoverForgeTasks
 } = require("./e2e-parallel/shared/forgeTaskDiscovery");
 const {
-    countForgeTasks,
+    discoverBrowserTasks
+} = require("./e2e-parallel/shared/browserTaskDiscovery");
+const {
+    TASK_RUNNERS,
+    browserBuildFailure,
+    countTasksForRunner,
     forgeBuildFailure,
     requiresChainSlot
 } = require("./e2e-parallel/shared/taskRunners");
@@ -65,12 +70,21 @@ function discoveryFailureMessage(tier, grep, error) {
     return `${tier} test discovery failed: ${error.message}`;
 }
 
-function validateDiscoveryResults(cli, selection, mocha, forge) {
+function validateDiscoveryResults(
+    cli,
+    selection,
+    mocha,
+    forge,
+    browser = { tasks: [], preGrepTaskCount: 0 }
+) {
     if (cli.mochaTestPattern !== undefined && !selection.includeMocha) {
-        return `--mocha-test-pattern ${JSON.stringify(cli.mochaTestPattern)} conflicts with the selected tiers (--forge-only=${cli.forgeOnly}, --e2e-only=${cli.e2eOnly})`;
+        return `--mocha-test-pattern ${JSON.stringify(cli.mochaTestPattern)} conflicts with the selected tiers (--forge-only=${cli.forgeOnly}, --browser-only=${cli.browserOnly}, --e2e-only=${cli.e2eOnly})`;
     }
     if (cli.forgeTestPattern !== undefined && !selection.includeForge) {
-        return `--forge-test-pattern ${JSON.stringify(cli.forgeTestPattern)} conflicts with the selected tiers (--no-forge=${!cli.forge}, --e2e-only=${cli.e2eOnly})`;
+        return `--forge-test-pattern ${JSON.stringify(cli.forgeTestPattern)} conflicts with the selected tiers (--no-forge=${!cli.forge}, --browser-only=${cli.browserOnly}, --e2e-only=${cli.e2eOnly})`;
+    }
+    if (cli.browserTestPattern !== undefined && !selection.includeBrowser) {
+        return `--browser-test-pattern ${JSON.stringify(cli.browserTestPattern)} conflicts with the selected tiers (--no-browser=${!cli.browser}, --forge-only=${cli.forgeOnly}, --e2e-only=${cli.e2eOnly})`;
     }
     if (cli.mochaTestPattern !== undefined && mocha.preGrepTaskCount === 0) {
         return `Mocha tier selected by --mocha-test-pattern ${JSON.stringify(cli.mochaTestPattern)} contains no runnable tests`;
@@ -78,7 +92,13 @@ function validateDiscoveryResults(cli, selection, mocha, forge) {
     if (cli.forgeTestPattern !== undefined && forge.preGrepTaskCount === 0) {
         return `Forge tier selected by --forge-test-pattern ${JSON.stringify(cli.forgeTestPattern)} contains no runnable tests`;
     }
-    const tasks = [...mocha.tasks, ...forge.tasks];
+    if (
+        cli.browserTestPattern !== undefined &&
+        browser.preGrepTaskCount === 0
+    ) {
+        return `Browser tier selected by --browser-test-pattern ${JSON.stringify(cli.browserTestPattern)} contains no runnable gates`;
+    }
+    const tasks = [...mocha.tasks, ...forge.tasks, ...browser.tasks];
     if (tasks.length > 0) return null;
     return cli.grep
         ? `No selected tests matched --grep ${JSON.stringify(cli.grep)}`
@@ -148,11 +168,13 @@ async function main(options = {}) {
     }
 
     // ---- discover tasks ----
-    // Mocha and Foundry tiers are discovered independently and scheduled as one
-    // task list; each task carries the runner that executes it.
+    // The Mocha, Foundry and browser tiers are discovered independently and
+    // scheduled as one task list; each task carries the runner that executes it.
     let mochaDiscovery = { tasks: [], preGrepTaskCount: 0 };
     let forgeDiscovery = { tasks: [], preGrepTaskCount: 0 };
-    const { includeMocha, includeForge } = resolveDiscoverySelection(cli);
+    let browserDiscovery = { tasks: [], preGrepTaskCount: 0 };
+    const { includeMocha, includeForge, includeBrowser } =
+        resolveDiscoverySelection(cli);
     const testDir = path.resolve(cli.e2eOnly ? "test/e2e" : "test");
     if (includeMocha) {
         try {
@@ -182,18 +204,32 @@ async function main(options = {}) {
             process.exit(1);
         }
     }
+    if (includeBrowser) {
+        try {
+            browserDiscovery = discoverBrowserTasks(
+                path.resolve("test"),
+                cli.grep,
+                { testPattern: cli.browserTestPattern ?? cli.testPattern }
+            );
+        } catch (e) {
+            console.error(discoveryFailureMessage("Browser", cli.grep, e), e);
+            process.exit(1);
+        }
+    }
     const discoveryError = validateDiscoveryResults(
         cli,
-        { includeMocha, includeForge },
+        { includeMocha, includeForge, includeBrowser },
         mochaDiscovery,
-        forgeDiscovery
+        forgeDiscovery,
+        browserDiscovery
     );
     if (discoveryError) {
         console.error(discoveryError);
         process.exit(1);
     }
     const forgeTasks = forgeDiscovery.tasks;
-    const tasks = [...mochaDiscovery.tasks, ...forgeTasks];
+    const browserTasks = browserDiscovery.tasks;
+    const tasks = [...mochaDiscovery.tasks, ...forgeTasks, ...browserTasks];
 
     // ---- resolve config ----
     const requestedSlotCount = cli.slots ?? DEFAULT_SLOTS;
@@ -224,13 +260,14 @@ async function main(options = {}) {
                 slotCount
             );
             console.log(
-                `Distributed dry run: ${tasks.length} task(s) (${forgeTasks.length} forge); slots=${profile?.slots ?? "worker default"}; remaining capacity is configured by test:parallel:server`
+                `Distributed dry run: ${tasks.length} task(s) (${forgeTasks.length} forge, ${browserTasks.length} browser); slots=${profile?.slots ?? "worker default"}; remaining capacity is configured by test:parallel:server`
             );
             return;
         }
         logging.dryRun({
             taskCount: tasks.length,
             forgeTaskCount: forgeTasks.length,
+            browserTaskCount: browserTasks.length,
             forgeThreads: cli.forgeThreads,
             slotCount,
             threadModes,
@@ -247,6 +284,7 @@ async function main(options = {}) {
         logging.runHeader({
             taskCount: tasks.length,
             forgeTaskCount: forgeTasks.length,
+            browserTaskCount: browserTasks.length,
             grep: cli.grep,
             e2eOnly: cli.e2eOnly,
             slotCount,
@@ -259,13 +297,29 @@ async function main(options = {}) {
     }
 
     // Distributed workers build in their prepare script; the local path builds
-    // once here so concurrent forge tasks never race on a cold via_ir build.
-    if (!cli.distributed && countForgeTasks(tasks) > 0) {
-        console.log("Warming the Foundry build before the forge tier...");
-        const buildFailure = forgeBuildFailure();
-        if (buildFailure) {
-            console.error(buildFailure.message);
-            process.exit(1);
+    // once here so concurrent forge tasks never race on a cold via_ir build,
+    // and so two browser gates never race on dist/browser.
+    if (!cli.distributed) {
+        const warmUps = [
+            {
+                runner: TASK_RUNNERS.FORGE,
+                message: "Warming the Foundry build before the forge tier...",
+                warm: forgeBuildFailure
+            },
+            {
+                runner: TASK_RUNNERS.BROWSER,
+                message: "Warming the browser build before the browser tier...",
+                warm: browserBuildFailure
+            }
+        ];
+        for (const { runner, message, warm } of warmUps) {
+            if (countTasksForRunner(tasks, runner) === 0) continue;
+            console.log(message);
+            const buildFailure = warm();
+            if (buildFailure) {
+                console.error(buildFailure.message);
+                process.exit(1);
+            }
         }
     }
 
