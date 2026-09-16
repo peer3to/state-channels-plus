@@ -59,11 +59,9 @@ class HandshakeAdmissionPolicy implements DeferredAdmissionPolicy {
                 peerAddress: transport.peerAddress
             }
         );
-        // A handshake that did not finish in the deferral window is a load or
-        // clock symptom, not misbehaviour: close the transport, never punish.
         this.service.p2pManager.disconnectConnection(
             transport,
-            DisconnectPolicy.ALLOW
+            DisconnectPolicy.BLACKLIST
         );
     }
 

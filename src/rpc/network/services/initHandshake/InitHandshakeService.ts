@@ -206,12 +206,7 @@ class InitHandshakeService extends ANetworkRpcService<InitHandshakeRpcMethods> {
                 agreementTimeSeconds: agreementTime,
                 reason: "response timestamp outside agreement window"
             });
-            // Same class as the RTT check above: a skewed clock is an
-            // environment fault, so close without punishing the peer.
-            this.p2pManager.disconnectConnection(
-                transport,
-                DisconnectPolicy.ALLOW
-            );
+            this.p2pManager.disconnectAndBlacklistPeer(transport);
             return;
         }
         //verify signature
@@ -241,14 +236,9 @@ class InitHandshakeService extends ANetworkRpcService<InitHandshakeRpcMethods> {
                 signerAddress,
                 reason: "response signer is blacklisted"
             });
-            // Re-apply the exclusion to the transport that just arrived, the
-            // way ProfileManager does for an already-blacklisted profile. A
-            // plain close leaves the new peer info unbanned, so the peer
-            // re-dials and the whole handshake runs again. The blacklist is
-            // idempotent on the profile.
             this.p2pManager.disconnectConnection(
                 transport,
-                DisconnectPolicy.BLACKLIST
+                DisconnectPolicy.ALLOW
             );
             return;
         }
@@ -363,10 +353,9 @@ class InitHandshakeService extends ANetworkRpcService<InitHandshakeRpcMethods> {
         this.timeoutManager.scheduleTask(
             () => {
                 if (this.didReceiveAck(transport)) return;
-                // Handshake negotiation started but never finalized. A late ack
-                // is a load/clock symptom, not misbehaviour, so close the
-                // transport without punishing the peer — even once its address
-                // is verified. The address is kept for the log only.
+                // Handshake negotiation started but never finalized.
+                // If we have an authenticated peer address, blacklist by address;
+                // otherwise just disconnect the transport.
                 const peerAddress =
                     transport.peerAddress ||
                     this.verifiedPeerAddressByTransport.get(transport);
@@ -377,6 +366,13 @@ class InitHandshakeService extends ANetworkRpcService<InitHandshakeRpcMethods> {
                     verifiedPeerAddress: peerAddress,
                     reason: "handshake ack not received in time"
                 });
+
+                if (peerAddress) {
+                    this.p2pManager.disconnectAndBlacklistPeerByEvmAddress(
+                        peerAddress
+                    );
+                    return;
+                }
 
                 this.p2pManager.disconnectConnection(
                     transport,

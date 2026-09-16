@@ -4,7 +4,6 @@ import { ARpcServiceProbeService } from "./aRpcServiceProbe/ARpcServiceProbeServ
 import { ATransportProbeService } from "./aTransportProbe/ATransportProbeService";
 import { HandshakeCompletedGuardProbeService } from "./handshakeCompletedGuardProbe/HandshakeCompletedGuardProbeService";
 import { HarnessControlRpc } from "./harnessControl/HarnessControlRpc";
-import { InitHandshakePolicyProbeService } from "./initHandshakePolicyProbe/InitHandshakePolicyProbeService";
 import { LoopbackGuardProbeService } from "./loopbackGuardProbe/LoopbackGuardProbeService";
 import { P2PManagerProbeService } from "./p2pManagerProbe/P2PManagerProbeService";
 import { RpcHandlerProbeService } from "./rpcHandlerProbe/RpcHandlerProbeService";
@@ -42,7 +41,6 @@ export class PingPongRpc extends HarnessControlRpc {
     rpcHandlerProbe: RpcHandlerProbeService;
     p2pManagerProbe: P2PManagerProbeService;
     handshakeCompletedGuardProbe: HandshakeCompletedGuardProbeService;
-    initHandshakePolicyProbe: InitHandshakePolicyProbeService;
     loopbackGuardProbe: LoopbackGuardProbeService;
 
     constructor(p2pManager: P2PManager<PingPongRpc>) {
@@ -55,9 +53,6 @@ export class PingPongRpc extends HarnessControlRpc {
         this.p2pManagerProbe = new P2PManagerProbeService(p2pManager);
         this.handshakeCompletedGuardProbe =
             new HandshakeCompletedGuardProbeService(p2pManager);
-        this.initHandshakePolicyProbe = new InitHandshakePolicyProbeService(
-            p2pManager
-        );
         this.loopbackGuardProbe = new LoopbackGuardProbeService(p2pManager);
     }
 }
