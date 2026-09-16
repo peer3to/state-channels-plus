@@ -774,7 +774,8 @@ async function runDistributed(options) {
                     seq: message.header.assignment.seq,
                     total: options.tasks.length,
                     label: message.header.result.label,
-                    starveCount: completion.parsed.starveCount
+                    starveCount: completion.parsed.starveCount,
+                    retryCount: completion.starvationRetryCount
                 });
             } else if (completion.disposition === "retry-infrastructure") {
                 logging.infrastructureRetry({

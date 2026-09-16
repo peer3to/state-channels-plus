@@ -2,7 +2,7 @@
 const crypto = require("crypto");
 const fs = require("fs");
 const path = require("path");
-const { DEFAULT_LOG_DIR } = require("./constants");
+const { DEFAULT_LOG_DIR, STARVATION_RETRY_LIMIT } = require("./constants");
 
 function formatDurationMs(durationMs) {
     return `${(durationMs / 1000).toFixed(2)}s`;
@@ -359,12 +359,16 @@ function hold({ seq, total, reason, buffered }) {
     );
 }
 
-// Light yellow: a starved task gets its single clean retry.
-function starvationRetry({ seq, total, label, starveCount }) {
+// Light yellow: a starved task is rescheduled, up to the retry budget.
+function starvationRetry({ seq, total, label, starveCount, retryCount }) {
+    const attempt =
+        retryCount === undefined
+            ? "rescheduling"
+            : `rescheduling (retry ${retryCount} of ${STARVATION_RETRY_LIMIT})`;
     console.log(
         colorize(
             "lightYellow",
-            `[${seq}/${total}] STARVED x${starveCount} — rescheduling once [${label}]`
+            `[${seq}/${total}] STARVED x${starveCount} — ${attempt} [${label}]`
         )
     );
 }
@@ -534,7 +538,7 @@ function summary({
         console.log(
             colorize(
                 "lightGreen",
-                `  ${starvation.recovered.length} test(s) recovered from starvation on their second run`
+                `  ${starvation.recovered.length} test(s) recovered from starvation on a retry`
             )
         );
         for (const task of starvation.recovered) {
