@@ -7,6 +7,12 @@ const BROWSER_TEST_TASK = "browser-test";
 // test/ like the other tiers', so a shared --test-pattern narrows all three.
 const DEFAULT_BROWSER_TEST_PATTERN = "browser/run-*.mjs";
 
+// The same boundary as a rule, applied to every pattern. A custom or shared
+// pattern that reaches test/browser otherwise picks up helper modules such as
+// sdkRuntimeServer.mjs, and a "gate" that only exports helpers asserts nothing
+// while reporting success.
+const BROWSER_GATE_FILE_NAME = /^run-.+\.mjs$/;
+
 // The gates load `src` through Vite, so nothing consumes `dist/browser` at run
 // time: the browser build is the tier's typecheck of tsconfig.browser.json, not
 // an input. The runner performs it once per run rather than making each gate
@@ -16,5 +22,6 @@ const BROWSER_BUILD_COMMAND = ["yarn", "build:browser"];
 module.exports = {
     BROWSER_TEST_TASK,
     DEFAULT_BROWSER_TEST_PATTERN,
+    BROWSER_GATE_FILE_NAME,
     BROWSER_BUILD_COMMAND
 };

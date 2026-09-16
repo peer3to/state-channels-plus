@@ -1,4 +1,11 @@
 // @spec-test-coverage-ignore: developer test-orchestration tooling; not protocol behavior, no specification or implementation IDs apply
+import {
+    removeScratchRoots,
+    runGateLaunchProbe,
+    writeBuildCommand,
+    writeGate,
+    writeGateTree
+} from "../fixtures/distributed/browserGateTrees";
 import { expect } from "chai";
 import fs from "fs";
 import path from "path";
@@ -46,15 +53,24 @@ const { browserChromiumFailure } =
     require("../../scripts/e2e-parallel/shared/taskRunners.js") as {
         browserChromiumFailure: () => Error | null;
     };
-const { TASK_RUNNERS, countTasksForRunner, requiresChainSlot } =
-    require("../../scripts/e2e-parallel/shared/taskRunners.js") as {
-        TASK_RUNNERS: { HARDHAT: string; FORGE: string; BROWSER: string };
-        countTasksForRunner: (
-            tasks: { runner?: string }[],
-            runner?: string
-        ) => number;
-        requiresChainSlot: (task: { runner?: string }) => boolean;
-    };
+const {
+    TASK_RUNNERS,
+    countTasksForRunner,
+    requiresChainSlot,
+    tierBuildFailure
+} = require("../../scripts/e2e-parallel/shared/taskRunners.js") as {
+    TASK_RUNNERS: { HARDHAT: string; FORGE: string; BROWSER: string };
+    tierBuildFailure: (
+        command: string,
+        args: string[],
+        messages: { missing: string; failed: string }
+    ) => Error | null;
+    countTasksForRunner: (
+        tasks: { runner?: string }[],
+        runner?: string
+    ) => number;
+    requiresChainSlot: (task: { runner?: string }) => boolean;
+};
 const { toWireTask, fromWireTask } =
     require("../../scripts/e2e-parallel/distributed/taskWire.js") as {
         toWireTask: (
@@ -132,8 +148,12 @@ const { chromiumLaunchOptions, launchChromium } =
             env?: NodeJS.ProcessEnv
         ) => Promise<string>;
     };
-const { validateDiscoveryResults, resolveSlotCount } =
+const { validateDiscoveryResults, resolveSlotCount, resolveWarmUps } =
     require("../../scripts/test-e2e-parallel.js") as {
+        resolveWarmUps: (
+            tasks: { runner?: string }[],
+            distributed?: boolean
+        ) => { runner: string; message: string; warm: () => Error | null }[];
         validateDiscoveryResults: (
             cli: Record<string, unknown>,
             selection: {
@@ -204,44 +224,12 @@ const STUB_RESOURCE_GATE = {
     })
 };
 
-// Throwaway trees this file created, removed when it is done with them.
-const scratchRoots: string[] = [];
+// Log dirs the scheduler case writes; the fixture owns the gate trees.
 const scratchLogDirs: string[] = [];
 
-function scratchRoot(prefix: string) {
-    fs.mkdirSync(path.join(REPO_ROOT, "temp"), { recursive: true });
-    const root = fs.mkdtempSync(path.join(REPO_ROOT, "temp", prefix));
-    scratchRoots.push(root);
-    return root;
-}
-
 after(function () {
-    for (const root of [
-        ...scratchRoots.splice(0),
-        ...scratchLogDirs.splice(0)
-    ]) {
-        fs.rmSync(root, { recursive: true, force: true });
-    }
+    removeScratchRoots(scratchLogDirs.splice(0));
 });
-
-/** A throwaway gate tree: `<root>/browser/<name>.mjs` for each given name. */
-function writeGateTree(gateNames: string[], extraFiles: string[] = []) {
-    const root = scratchRoot("browser-gates-");
-    const browserDir = path.join(root, "browser");
-    fs.mkdirSync(browserDir, { recursive: true });
-    for (const name of [...gateNames, ...extraFiles]) {
-        fs.writeFileSync(path.join(browserDir, name), "export default 1;\n");
-    }
-    return root;
-}
-
-/** A gate that exits the way the test asks for. */
-function writeGate(body: string) {
-    const root = scratchRoot("browser-gate-");
-    const gate = path.join(root, "run-gate.mjs");
-    fs.writeFileSync(gate, `${body}\n`);
-    return { root, gate };
-}
 
 function dockerfileArg(name: string) {
     const source = fs.readFileSync(RUNNER_IMAGE, "utf8");
@@ -274,10 +262,11 @@ describe("parallel browser task discovery", function () {
     });
 
     it("skips a helper module that is not a gate entry point", function () {
-        const root = writeGateTree(
-            ["run-first.mjs"],
-            ["helperModule.mjs", "run-helper.js"]
-        );
+        const root = writeGateTree([
+            "run-first.mjs",
+            "helperModule.mjs",
+            "run-helper.js"
+        ]);
         const { tasks } = discoverBrowserTasks(root);
         expect(tasks.map((task) => task.fullTitle)).to.deep.equal([
             "run-first"
@@ -328,14 +317,10 @@ describe("parallel browser task discovery", function () {
     });
 
     it("fails discovery when two gates share a file name", function () {
-        const root = scratchRoot("browser-gates-");
-        for (const dir of ["browser", path.join("browser", "nested")]) {
-            fs.mkdirSync(path.join(root, dir), { recursive: true });
-            fs.writeFileSync(
-                path.join(root, dir, "run-same.mjs"),
-                "export default 1;\n"
-            );
-        }
+        const root = writeGateTree([
+            "run-same.mjs",
+            path.join("nested", "run-same.mjs")
+        ]);
         expect(() =>
             discoverBrowserTasks(root, undefined, {
                 testPattern: "browser/**/run-*.mjs"
@@ -344,14 +329,10 @@ describe("parallel browser task discovery", function () {
     });
 
     it("explains that duplicate gate names would overwrite one another's log", function () {
-        const root = scratchRoot("browser-gates-");
-        for (const dir of ["browser", path.join("browser", "nested")]) {
-            fs.mkdirSync(path.join(root, dir), { recursive: true });
-            fs.writeFileSync(
-                path.join(root, dir, "run-same.mjs"),
-                "export default 1;\n"
-            );
-        }
+        const root = writeGateTree([
+            "run-same.mjs",
+            path.join("nested", "run-same.mjs")
+        ]);
         expect(() =>
             discoverBrowserTasks(root, undefined, {
                 testPattern: "browser/**/run-*.mjs"
@@ -364,6 +345,47 @@ describe("parallel browser task discovery", function () {
         const { tasks, preGrepTaskCount } = discoverBrowserTasks(root, "gamma");
         expect(tasks).to.deep.equal([]);
         expect(preGrepTaskCount).to.equal(1);
+    });
+
+    it("selects only gate entry points under a broad browser glob", function () {
+        const { tasks } = discoverBrowserTasks(REPO_TEST_DIR, undefined, {
+            testPattern: "browser/**"
+        });
+        expect(tasks.map((task) => task.fullTitle)).to.deep.equal([
+            "run-p2p-webrtc-e2e",
+            "run-worker-contract-executor"
+        ]);
+    });
+
+    it("selects no gate for a helper-only browser pattern", function () {
+        // sdkRuntimeServer.mjs only exports helpers: running it as a gate would
+        // assert nothing and report success.
+        const { tasks, preGrepTaskCount } = discoverBrowserTasks(
+            REPO_TEST_DIR,
+            undefined,
+            { testPattern: "browser/sdkRuntimeServer.mjs" }
+        );
+        expect(tasks).to.deep.equal([]);
+        expect(preGrepTaskCount).to.equal(0);
+    });
+
+    it("reports a helper-only browser pattern as containing no runnable gates", function () {
+        expect(
+            validateDiscoveryResults(
+                {
+                    browserTestPattern: "browser/sdkRuntimeServer.mjs",
+                    browser: true
+                },
+                {
+                    includeMocha: true,
+                    includeForge: true,
+                    includeBrowser: true
+                },
+                { tasks: [MOCHA_TASK], preGrepTaskCount: 1 },
+                EMPTY_TIER,
+                EMPTY_TIER
+            )
+        ).to.contain("contains no runnable gates");
     });
 
     it("keeps a shared filename pattern inside the tier's file boundary", function () {
@@ -437,6 +459,80 @@ describe("browser gate runner", function () {
             { stdio: "ignore" }
         );
         expect(status).to.not.equal(0);
+    });
+});
+
+describe("browser warm-up selection", function () {
+    it("checks Chromium before building, and both before any gate is admitted", function () {
+        expect(
+            resolveWarmUps([MOCHA_TASK, FORGE_TASK, BROWSER_TASK]).map(
+                (warmUp) => warmUp.message
+            )
+        ).to.deep.equal([
+            "Warming the Foundry build before the forge tier...",
+            "Checking Chromium before the browser tier...",
+            "Warming the browser build before the browser tier..."
+        ]);
+    });
+
+    it("warms nothing for the browser tier when no gate survives filtering", function () {
+        expect(
+            resolveWarmUps([MOCHA_TASK, FORGE_TASK]).map(
+                (warmUp) => warmUp.runner
+            )
+        ).to.deep.equal([TASK_RUNNERS.FORGE]);
+    });
+
+    it("warms nothing at all for a Mocha-only run", function () {
+        expect(resolveWarmUps([MOCHA_TASK])).to.deep.equal([]);
+    });
+
+    it("leaves every build to the prepare script in distributed mode", function () {
+        // A worker builds in its own prepare script; the orchestrator must not.
+        expect(
+            resolveWarmUps([MOCHA_TASK, FORGE_TASK, BROWSER_TASK], true)
+        ).to.deep.equal([]);
+    });
+});
+
+describe("browser build boundary", function () {
+    it("names the browser tier when its build command cannot be run", function () {
+        const failure = tierBuildFailure("scp-no-such-build-command", [], {
+            missing:
+                "Install the project dependencies, or re-run with --no-browser to skip the browser tier.",
+            failed: "unused"
+        });
+        expect(failure?.message).to.contain("Could not run");
+        expect(failure?.message).to.contain("--no-browser");
+    });
+
+    it("preserves a nonzero browser build exit in the diagnostic", function () {
+        const { command } = writeBuildCommand("build", "exit 3");
+        const failure = tierBuildFailure(command, [], {
+            missing: "unused",
+            failed: "Fix the build, or re-run with --no-browser."
+        });
+        expect(failure?.message).to.contain("exit 3");
+        expect(failure?.message).to.contain("--no-browser");
+    });
+
+    it("reports a browser build killed by a signal as a failure", function () {
+        const { command } = writeBuildCommand(
+            "build",
+            "kill -TERM $$; sleep 5"
+        );
+        const failure = tierBuildFailure(command, [], {
+            missing: "unused",
+            failed: "Fix the build, or re-run with --no-browser."
+        });
+        expect(failure?.message).to.contain("signal SIGTERM");
+    });
+
+    it("reports no failure for a build that succeeds", function () {
+        const { command } = writeBuildCommand("build", "exit 0");
+        expect(
+            tierBuildFailure(command, [], { missing: "u", failed: "u" })
+        ).to.equal(null);
     });
 });
 
@@ -739,6 +835,41 @@ describe("browser tier environment", function () {
         expect(forked.SCP_TEST_POOL_SECRET).to.equal(undefined);
     });
 
+    it("forks a worker with no browser variables when the environment declares none", function () {
+        const forked = buildWorkerForkEnvironment({
+            source: { PATH: "/usr/bin", HOME: "/Users/dev" },
+            home: "/environment/home",
+            nodePaths: ["/environment/runner/node_modules"]
+        });
+        expect("PLAYWRIGHT_BROWSERS_PATH" in forked).to.equal(false);
+        expect("SCP_BROWSER_CONTAINED" in forked).to.equal(false);
+    });
+
+    it("overrides the host's HOME with the environment's own", function () {
+        // Isolation depends on it: the gate must not reach the host's home.
+        const forked = buildWorkerForkEnvironment({
+            source: { PATH: "/usr/bin", HOME: "/Users/dev" },
+            home: "/environment/home",
+            nodePaths: []
+        });
+        expect(forked.HOME).to.equal("/environment/home");
+    });
+
+    it("looks modules up in runner, then project, then the source path", function () {
+        const forked = buildWorkerForkEnvironment({
+            source: { PATH: "/usr/bin", NODE_PATH: "/host/modules" },
+            home: "/environment/home",
+            nodePaths: ["/environment/runner", "/environment/project"]
+        });
+        expect(forked.NODE_PATH).to.equal(
+            [
+                "/environment/runner",
+                "/environment/project",
+                "/host/modules"
+            ].join(path.delimiter)
+        );
+    });
+
     it("names both image-declared browser variables in one place", function () {
         expect(ENVIRONMENT_BROWSER_ENV).to.deep.equal([
             "PLAYWRIGHT_BROWSERS_PATH",
@@ -767,52 +898,24 @@ describe("browser tier environment", function () {
         }
     });
 
-    it("names PLAYWRIGHT_BROWSERS_PATH when the gate finds no Chromium", async function () {
-        const missing = {
-            launch: () =>
-                Promise.reject(
-                    new Error(
-                        "browserType.launch: Executable doesn't exist at /home/.cache/ms-playwright/chromium-1223"
-                    )
-                )
-        };
-        // The environment hands its worker a fresh HOME and pnpm never
-        // downloads browsers, so this is the failure a worker actually hits.
-        const message = await launchChromium(missing, {}).catch(
-            (caught: Error) => caught.message
-        );
-        expect(message).to.contain("PLAYWRIGHT_BROWSERS_PATH");
-        expect(message).to.contain("unsafe-host");
+    it("launches a real Chromium through the gates' own policy", function () {
+        expect(runGateLaunchProbe("launch")).to.contain("LAUNCHED");
     });
 
-    it("passes an unrelated launch failure through untouched", async function () {
-        const broken = {
-            launch: () => Promise.reject(new Error("Target page crashed"))
-        };
-        const message = await launchChromium(broken, {}).catch(
-            (caught: Error) => caught.message
-        );
-        expect(message).to.equal("Target page crashed");
+    it("names PLAYWRIGHT_BROWSERS_PATH when Playwright finds no browser there", function () {
+        // The real failure a worker hits: an environment hands it a fresh HOME
+        // and pnpm never downloads browsers.
+        const empty = writeGateTree([]);
+        const output = runGateLaunchProbe("missing", empty);
+        expect(output).to.contain("PLAYWRIGHT_BROWSERS_PATH");
+        expect(output).to.contain("rebuild");
+        expect(output).to.contain("unsafe-host");
     });
 
-    it("launches with the options the environment asks for", async function () {
-        const seen: Record<string, unknown>[] = [];
-        const chromium = {
-            launch: (options: Record<string, unknown>) => {
-                seen.push(options);
-                return Promise.resolve("browser");
-            }
-        };
-        expect(
-            await launchChromium(chromium, { SCP_BROWSER_CONTAINED: "1" })
-        ).to.equal("browser");
-        expect(seen).to.deep.equal([
-            {
-                headless: true,
-                chromiumSandbox: false,
-                args: ["--disable-dev-shm-usage"]
-            }
-        ]);
+    it("passes an unrelated Playwright launch failure through untouched", function () {
+        const output = runGateLaunchProbe("unrelated");
+        expect(output).to.contain("browserType.launch");
+        expect(output).to.not.contain("PLAYWRIGHT_BROWSERS_PATH");
     });
 
     it("tells the gates that the runner image's container confines Chromium", function () {

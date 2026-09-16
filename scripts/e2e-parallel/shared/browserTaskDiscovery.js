@@ -1,6 +1,7 @@
 const path = require("path");
 const { globSync } = require("glob");
 const {
+    BROWSER_GATE_FILE_NAME,
     BROWSER_TEST_TASK,
     DEFAULT_BROWSER_TEST_PATTERN
 } = require("./browserConfig");
@@ -8,7 +9,7 @@ const { sanitizeFileName } = require("./taskDiscovery");
 const { TASK_RUNNERS } = require("./taskRunners");
 
 function isBrowserGateFile(filePath) {
-    return path.extname(filePath) === ".mjs";
+    return BROWSER_GATE_FILE_NAME.test(path.basename(filePath));
 }
 
 /**
