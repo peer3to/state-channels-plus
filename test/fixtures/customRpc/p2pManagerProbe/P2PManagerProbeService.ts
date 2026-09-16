@@ -318,6 +318,7 @@ export type NegotiationFailureProbe = {
     alreadyOpenRejected: boolean;
     alreadyOpenBlacklisted: boolean;
     alreadyOpenKeptZeroId: boolean;
+    alreadyOpenExcludedPeerCount: number;
 };
 
 export type NegotiationFailureScenario =
@@ -338,6 +339,7 @@ export type SignedAttemptObservationProbe = {
     higherDidNotBlacklistLowerAfterExpiry: boolean;
     lowerDidNotBlacklistHigherBeforeExpiry: boolean;
     lowerBlacklistedHigherAfterExpiry: boolean;
+    expiredWindowExcludedPeerCount: number;
     signedDisposeOutcomeCancelled: boolean;
     signedAttemptClearedOnDispose: boolean;
     signedPeerBlacklistedOnFinalLoss: boolean;
@@ -370,6 +372,7 @@ export type TargetedNegotiationRaceProbe = {
     ordinaryReceiptOutcome: string;
     ordinaryReceiptError: string;
     ordinaryReceiptPeerBlacklisted: boolean;
+    ordinaryReceiptExcludedPeerCount: number;
     ordinaryReceiptChannelCleared: boolean;
 };
 
@@ -3924,6 +3927,9 @@ export class P2PManagerProbeService extends ANetworkRpcService<
                 )
             ).wait();
             let alreadyOpenRejected = false;
+            const closeLobbySession = this.stageLobbySession(
+                `0x${"78".repeat(32)}`
+            );
             const collisionOutcome =
                 await collisionService.initMatchedNegotiation(collisionMatch);
             alreadyOpenRejected = collisionOutcome.status === "retry";
@@ -3931,11 +3937,13 @@ export class P2PManagerProbeService extends ANetworkRpcService<
             const alreadyOpenKeptZeroId =
                 String(this.p2pManager.stateManager.channelId) ===
                 `0x${"00".repeat(32)}`;
+            const alreadyOpenExcludedPeerCount = await closeLobbySession();
 
             return {
                 alreadyOpenRejected,
                 alreadyOpenBlacklisted,
-                alreadyOpenKeptZeroId
+                alreadyOpenKeptZeroId,
+                alreadyOpenExcludedPeerCount
             };
         }
 
@@ -4126,9 +4134,13 @@ export class P2PManagerProbeService extends ANetworkRpcService<
         );
         const lowerDidNotBlacklistHigherBeforeExpiry =
             !higherProfile.isBlackListed;
+        const closeExpiryLobbySession = this.stageLobbySession(
+            `0x${"87".repeat(32)}`
+        );
         await lowerExpiryTask?.();
         await Promise.resolve();
         const lowerBlacklistedHigherAfterExpiry = higherProfile.isBlackListed;
+        const expiredWindowExcludedPeerCount = await closeExpiryLobbySession();
         timeoutManager.scheduleTask = originalScheduleTask;
         await lowerOutcome;
 
@@ -4243,6 +4255,7 @@ export class P2PManagerProbeService extends ANetworkRpcService<
             higherDidNotBlacklistLowerAfterExpiry,
             lowerDidNotBlacklistHigherBeforeExpiry,
             lowerBlacklistedHigherAfterExpiry,
+            expiredWindowExcludedPeerCount,
             signedDisposeOutcomeCancelled,
             signedAttemptClearedOnDispose,
             signedPeerBlacklistedOnFinalLoss,
@@ -4505,6 +4518,9 @@ export class P2PManagerProbeService extends ANetworkRpcService<
                 throw new Error("ordinary receipt failure");
             }
         })) as unknown as typeof manager.open;
+        const closeOrdinaryLobbySession = this.stageLobbySession(
+            `0x${"97".repeat(32)}`
+        );
         await ordinaryService.acceptOpenProposal(
             ordinaryTransport,
             ordinaryMatch.attemptNonce,
@@ -4519,6 +4535,8 @@ export class P2PManagerProbeService extends ANetworkRpcService<
             (entry): entry is PromiseRejectedResult =>
                 entry.status === "rejected"
         );
+        const ordinaryReceiptExcludedPeerCount =
+            await closeOrdinaryLobbySession();
         manager.open = originalOpen;
 
         return {
@@ -4546,8 +4564,25 @@ export class P2PManagerProbeService extends ANetworkRpcService<
                 ? String(ordinaryRejected.reason)
                 : "",
             ordinaryReceiptPeerBlacklisted: ordinaryProfile.isBlackListed,
+            ordinaryReceiptExcludedPeerCount,
             ordinaryReceiptChannelCleared:
                 String(stateManager.channelId) === ethers.ZeroHash
+        };
+    }
+
+    /**
+     * Starts a pending lobby session so an exclusion raised by the negotiation
+     * under test has a session to record in. The returned closer reads the
+     * recorded exclusion count and then ends the session, which clears the set.
+     */
+    private stageLobbySession(topic: string): () => Promise<number> {
+        const lobby = this.p2pManager.localRpc.lobbyMatchingService;
+        const matchPromise = lobby.match(topic);
+        return async () => {
+            const { excludedPeerCount } = lobby.getAvailability();
+            await lobby.cancelMatching(topic);
+            await matchPromise;
+            return excludedPeerCount;
         };
     }
 

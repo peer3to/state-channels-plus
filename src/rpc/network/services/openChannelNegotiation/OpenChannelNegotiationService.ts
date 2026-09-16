@@ -10,6 +10,7 @@ import OpenChannelNegotiationRpcMethods, {
     type OpenChannelNegotiationP2PManager
 } from "./OpenChannelNegotiationRpcMethods";
 import Clock from "@/Clock";
+import { DisconnectPolicy } from "@/DisconnectPolicy";
 
 import ANetworkRpcService from "@/rpc/network/ANetworkRpcService";
 import {
@@ -463,13 +464,10 @@ export default class OpenChannelNegotiationService extends ANetworkRpcService<
         ) {
             return;
         }
-        if (transport.peerAddress) {
-            this.p2pManager.disconnectAndBlacklistPeerByEvmAddress(
-                transport.peerAddress
-            );
-            return;
-        }
-        this.p2pManager.disconnectAndBlacklistPeer(transport);
+        this.p2pManager.disconnectConnection(
+            transport,
+            DisconnectPolicy.BLACKLIST
+        );
     }
 
     private async runLowerAddressNegotiation(

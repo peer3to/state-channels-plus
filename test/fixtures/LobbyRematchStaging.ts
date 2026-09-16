@@ -136,6 +136,55 @@ export async function probeLobbyRematchAdmission(fixture: P2PManagerFixture) {
 }
 
 /**
+ * One lobby session on peer 0 that is cancelled while its only session
+ * transport is live. Reports what that transport observed at the moment the
+ * matching cleanup closed it.
+ */
+export async function probeLobbyCleanupOrdering(fixture: P2PManagerFixture) {
+    const h = fixture.getHarness();
+    return h.execOnHost(
+        h.getPeer(0),
+        async (stateManager, args) => {
+            const lobby = stateManager.p2pManager.localRpc.lobbyMatchingService;
+            const transport =
+                stateManager.p2pManager.profileManager
+                    .getProfileByEvmAddress(args.peerAddress)
+                    ?.getTransport();
+            if (!transport) {
+                throw new Error(
+                    `Lobby peer transport is missing for ${args.peerAddress}`
+                );
+            }
+            const matchPromise = lobby.match(args.topic);
+            await Promise.resolve();
+            lobby.onAuthenticatedTransport(transport);
+            let topicJoinedWhenSessionTransportClosed: boolean | undefined;
+            const unsubscribe = transport.onClosed(() => {
+                topicJoinedWhenSessionTransportClosed =
+                    lobby.getAvailability().topicJoined;
+            });
+            const topicJoinedBeforeCancel = lobby.getAvailability().topicJoined;
+
+            const cancelled = await lobby.cancelMatching(args.topic);
+            const match = await matchPromise;
+            unsubscribe();
+            return {
+                cancelled,
+                matched: !!match,
+                topicJoinedBeforeCancel,
+                topicJoinedWhenSessionTransportClosed,
+                sessionTransportClosed: transport.isClosed,
+                topicJoinedAfterCancel: lobby.getAvailability().topicJoined
+            };
+        },
+        {
+            topic: ethers.id("lobby-cleanup-ordering"),
+            peerAddress: fixture.address(1)
+        }
+    );
+}
+
+/**
  * One lobby session on peer 0 that commits to peer 1 while peer 2 is also a
  * session transport, then releases the handoff. Reports what the non-selected
  * transport observed at the moment it was closed.

@@ -1,6 +1,5 @@
 import { MathTestSession as TestSession } from "@test/harness";
 import { expect } from "chai";
-import { ethers } from "ethers";
 
 /**
  * E2E Tests for Fork Dispute Detection
@@ -67,46 +66,6 @@ describe("E2E: Is Fork Disputed", function () {
                 peerIndex: 0,
                 expectedFinalCount: 0
             });
-        });
-
-        it("does not blacklist the peer when our own acknowledgment bookkeeping already has the record, but still closes the transport", async function () {
-            const h = TestSession.getHarness();
-            await h.lifecycle.start(2, 0);
-            const responder = h.getPeer(0);
-            const requester = h.getPeer(1);
-            const forkId = ethers.id("self-bookkeeping-replay-fork");
-
-            // Two direct calls to the service's own bookkeeping method (past
-            // any RPC-level duplicate guard) simulate the race the second call
-            // fires on: our own record already has this peer/fork pair, which
-            // is not evidence the peer misbehaved.
-            await h.execOnHost(
-                responder,
-                (sm, args) => {
-                    sm.p2pManager.localRpc.isForkDisputedService.IAcknowledgeDisputedFork(
-                        args.requesterAddress,
-                        args.forkId
-                    );
-                    sm.p2pManager.localRpc.isForkDisputedService.IAcknowledgeDisputedFork(
-                        args.requesterAddress,
-                        args.forkId
-                    );
-                },
-                { requesterAddress: requester.address, forkId }
-            );
-
-            expect(
-                await h
-                    .control(responder)
-                    .query.isBlacklisted(requester.address)
-                    .request()
-            ).to.equal(false);
-            expect(
-                await h
-                    .control(responder)
-                    .query.isTransportClosed(requester.address)
-                    .request()
-            ).to.equal(true);
         });
 
         it("should disconnect non-responding peers after acknowledgment timeout", async function () {

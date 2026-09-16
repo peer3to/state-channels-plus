@@ -42,6 +42,10 @@ and excluded. A frame dispatched after its authenticated transport closes is dro
    than a change of intent.
 5. **Self-close is not peer malice.** A late dispatched frame on a closed transport is consumed
    without execution or punishment, leaving any healthy replacement untouched.
+6. **The exclusion goes through the single owner.** [`rejectUnauthenticated`](../../../../../../../src/rpc/network/guards/HandshakeCompletedGuard.ts#L89) calls
+   `p2pManager.disconnectConnection(transport, DisconnectPolicy.BLACKLIST)` instead of branching on
+   `transport.peerAddress` itself, so the transport it was handed is closed together with the
+   profile's preferred one. The guard no longer keeps its own copy of that branch.
 
 ## Inputs, outputs, state, and side effects
 
@@ -75,7 +79,13 @@ claims complete conformance for a requirement that depends on other files.
 
 ## Specification contradictions
 
-None demonstrated for deferred request admission. The broader protocol-versioning and ban-persistence parts of [`OQ-34-FY08V2` (RPC boundary decisions)](../../../../../../specification/open-questions.md#oq-34-fy08v2) remain open.
+- [`rejectUnauthenticated`](../../../../../../../src/rpc/network/guards/HandshakeCompletedGuard.ts#L89) excludes the caller
+  even when the transport carries no proven identity, so an anonymous profile is marked and banned.
+  [`REQ-AUTH-4-JWCF71` (Exclusion consequences)](../../../../../../specification/peer-communication/handshake.md#req-auth-4-jwcf71) now scopes exclusion to the
+  faulting exchange rather than to a proven identity, which keeps this site inside the requirement,
+  but the unattributable case remains open under
+  [`DEF-5-E8TP9N`](../../../../../../audit/open-findings.md#def-5-e8tp9n).
+- None demonstrated for deferred request admission. The broader protocol-versioning and ban-persistence parts of [`OQ-34-FY08V2` (RPC boundary decisions)](../../../../../../specification/open-questions.md#oq-34-fy08v2) remain open.
 
 ## Missing behavior
 
@@ -90,7 +100,7 @@ Gap column. Audit state is file-level (Status header), never a row status.
 | Requirement / invariant                                                                          | Implementation status | Evidence                                                                                                                                                                                                                                                                                                                                                                                                                                     | Gap / divergence |
 | ------------------------------------------------------------------------------------------------ | --------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------- |
 | [`INV-RPC-1-SJS2T6`](../../../../../../specification/peer-communication/rpc.md#inv-rpc-1-sjs2t6) | Covered               | **Here:** exact-transport completion check. **Other files:** completion written by [InitHandshakeService](../services/initHandshake/InitHandshakeService.ts.md) and stored by [ProfileManager](../../../ProfileManager.ts.md).                                                                                                                                                                                                               | None.            |
-| [`REQ-RPC-7-9CBSHK`](../../../../../../specification/peer-communication/rpc.md#req-rpc-7-9cbshk) | Covered               | **Here:** named handshake policy over the shared exact-transport queue, queue-or-refuse split, and post-wait transport/owner gates; the [expiry handler](../../../../../../../src/rpc/network/guards/HandshakeCompletedGuard.ts#L66) closes with reconnect allowed, so no deferral outcome punishes late. **Other files:** `ANetworkRpcService` suppresses early failures and `DeferredAdmissionGuard` replays requests through the service. | None.            |
+| [`REQ-RPC-7-9CBSHK`](../../../../../../specification/peer-communication/rpc.md#req-rpc-7-9cbshk) | Partial               | **Here:** named handshake policy over the shared exact-transport queue, queue-or-refuse split, and post-wait transport/owner gates; the [expiry handler](../../../../../../../src/rpc/network/guards/HandshakeCompletedGuard.ts#L66) closes with reconnect allowed, so no deferral outcome punishes late. **Other files:** `ANetworkRpcService` suppresses early failures and `DeferredAdmissionGuard` replays requests through the service. | Guarded traffic from an unauthenticated transport is still terminated and excluded through [`rejectUnauthenticated`](../../../../../../../src/rpc/network/guards/HandshakeCompletedGuard.ts#L89), including a transport with no peer address at all. |
 
 ## Component test obligations
 

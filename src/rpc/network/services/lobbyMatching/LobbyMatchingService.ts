@@ -776,6 +776,9 @@ export default class LobbyMatchingService extends ANetworkRpcService<LobbyMatchi
         this.matchResolve = undefined;
         this.unsubscribeTargetOpened?.();
         this.unsubscribeTargetOpened = undefined;
+        // Leave the topic before cutting anything: a transport closed while we
+        // are still joined is rediscovered and redialed right away.
+        await this.leaveJoinedTopic();
         this.disconnectSessionTransports();
         if (!options.preserveHandedOffTransports) {
             this.disconnectHandedOffTransports();
@@ -783,7 +786,6 @@ export default class LobbyMatchingService extends ANetworkRpcService<LobbyMatchi
             this.handedOffTransports.clear();
             this.handedOffPeerAddress = undefined;
         }
-        await this.leaveJoinedTopic();
         // Exclusions die with the lobby session, not with one failed
         // negotiation: releaseNegotiationHandoff clears the attempt and the
         // caller matches again on the same topic, so a peer excluded during

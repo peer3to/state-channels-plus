@@ -100,17 +100,10 @@ class HandshakeAdmissionPolicy implements DeferredAdmissionPolicy {
                 method: rpc.method
             }
         );
-        this.disconnectAndBlacklist(transport);
-    }
-
-    private disconnectAndBlacklist(transport: NetworkTransport): void {
-        if (transport.peerAddress) {
-            this.service.p2pManager.disconnectAndBlacklistPeerByEvmAddress(
-                transport.peerAddress
-            );
-            return;
-        }
-        this.service.p2pManager.disconnectAndBlacklistPeer(transport);
+        this.service.p2pManager.disconnectConnection(
+            transport,
+            DisconnectPolicy.BLACKLIST
+        );
     }
 }
 

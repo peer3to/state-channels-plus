@@ -233,7 +233,8 @@ describe("OpenChannelNegotiationService", function () {
         expect(result).to.deep.equal({
             alreadyOpenRejected: true,
             alreadyOpenBlacklisted: false,
-            alreadyOpenKeptZeroId: true
+            alreadyOpenKeptZeroId: true,
+            alreadyOpenExcludedPeerCount: 1
         });
     });
 
@@ -259,6 +260,7 @@ describe("OpenChannelNegotiationService", function () {
             // A burned opening window excludes the peer from the lobby
             // session; it is never a fault ban.
             lowerBlacklistedHigherAfterExpiry: false,
+            expiredWindowExcludedPeerCount: 1,
             signedDisposeOutcomeCancelled: true,
             signedAttemptClearedOnDispose: true,
             signedPeerBlacklistedOnFinalLoss: false,
@@ -339,6 +341,7 @@ describe("OpenChannelNegotiationService", function () {
         // The receipt may have failed on our own chain provider, so the peer
         // loses the lobby session but is never banned.
         expect(result.ordinaryReceiptPeerBlacklisted).to.equal(false);
+        expect(result.ordinaryReceiptExcludedPeerCount).to.equal(1);
         expect(result.ordinaryReceiptChannelCleared).to.equal(true);
     });
 

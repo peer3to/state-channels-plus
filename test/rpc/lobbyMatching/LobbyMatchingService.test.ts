@@ -1,6 +1,7 @@
 import { Status } from "@/types";
 import {
     connectLobbyPeers,
+    probeLobbyCleanupOrdering,
     probeLobbyHandoffOrdering,
     probeLobbyRematchAdmission
 } from "@test/fixtures/LobbyRematchStaging";
@@ -488,6 +489,18 @@ describe("LobbyMatchingService", function () {
         expect(result.nonSelectedClosed).to.equal(true);
         expect(result.topicJoinedWhenNonSelectedClosed).to.equal(false);
         expect(result.topicJoinedAfterHandoff).to.equal(false);
+    });
+
+    it("leaves the lobby topic before a cancelled session closes its transports", async function () {
+        await connectLobbyPeers(fixture, 2);
+        const result = await probeLobbyCleanupOrdering(fixture);
+
+        expect(result.cancelled).to.equal(true);
+        expect(result.matched).to.equal(false);
+        expect(result.topicJoinedBeforeCancel).to.equal(true);
+        expect(result.sessionTransportClosed).to.equal(true);
+        expect(result.topicJoinedWhenSessionTransportClosed).to.equal(false);
+        expect(result.topicJoinedAfterCancel).to.equal(false);
     });
 
     it("keeps the selected transport through the handoff", async function () {

@@ -1139,7 +1139,7 @@ describe("E2E: lobby matching", function () {
         }
     });
 
-    it("leaves the lobby topic at handoff so no peer is redialed during negotiation", async function () {
+    it("leaves the lobby topic at handoff so the matched pair stops redialing non-selected peers during negotiation", async function () {
         const h = TestSession.getHarness();
         await h.setup(3, { autoConnect: false });
         const topic = ethers.id("e2e-lobby-redial-until-complete");
@@ -1180,7 +1180,9 @@ describe("E2E: lobby matching", function () {
                 (index) => !matchedIndices.includes(index)
             )!;
             // The matched pair left the lobby topic before cutting the
-            // non-selected peer, so nothing redials for the whole negotiation.
+            // non-selected peer, so neither of them redials it during the
+            // negotiation. A peer still in the lobby may reconnect once more
+            // and is closed again without penalty.
             const handoffCounts = await Promise.all(
                 h.peers.map((peer) =>
                     h.control(peer).stub.getInitHandshakeCallCount().request()
@@ -1252,7 +1254,7 @@ describe("E2E: lobby matching", function () {
         }
     });
 
-    it("leaves the targeted lobby topic at handoff so no peer is redialed during negotiation", async function () {
+    it("leaves the targeted lobby topic at handoff so the matched pair stops redialing non-selected peers during negotiation", async function () {
         const h = TestSession.getHarness();
         await h.setup(3, { autoConnect: false });
         const channelId = ethers.id("e2e-targeted-redial-until-release");
@@ -1297,7 +1299,9 @@ describe("E2E: lobby matching", function () {
                 (index) => !matchedIndices.includes(index)
             )!;
             // The matched pair left the targeted lobby topic before cutting
-            // the non-selected peer, so nothing redials during negotiation.
+            // the non-selected peer, so neither of them redials it during the
+            // negotiation. A peer still in the lobby may reconnect once more
+            // and is closed again without penalty.
             const handoffCounts = await Promise.all(
                 h.peers.map((peer) =>
                     h.control(peer).stub.getInitHandshakeCallCount().request()
