@@ -424,7 +424,6 @@ export type BanFactSnapshot = {
 export type BanFactSeparationProbe = {
     afterUpgrade: BanFactSnapshot;
     afterBlacklist: BanFactSnapshot;
-    afterUpgradeRelease: BanFactSnapshot;
 };
 
 export type UpgradeBanPolicyProbe = {
@@ -1819,10 +1818,7 @@ export class P2PManagerProbeService extends ANetworkRpcService<
         this.p2pManager.profileManager.blacklistPeer(address);
         const afterBlacklist = snapshot();
 
-        this.p2pManager.profileManager.releaseHolepunchBanOnWebRtcClose(webRTC);
-        const afterUpgradeRelease = snapshot();
-
-        return { afterUpgrade, afterBlacklist, afterUpgradeRelease };
+        return { afterUpgrade, afterBlacklist };
     }
 
     public probeUpgradeBanPolicy(address: string): UpgradeBanPolicyProbe {

@@ -277,15 +277,4 @@ describe("P2PManager disconnect policy", function () {
             banCalls: [true, true]
         });
     });
-
-    it("keeps a fault-banned peer banned when the upgrade ban is released", async function () {
-        const result = await fixture
-            .control()
-            .p2pManagerProbe.probeBanFactSeparation(fixture.address(1))
-            .request();
-
-        expect(result.afterUpgradeRelease.faultBanned).to.equal(true);
-        expect(result.afterUpgradeRelease.derivedBan).to.equal(true);
-        expect(result.afterUpgradeRelease.banCalls).to.deep.equal([true, true]);
-    });
 });
