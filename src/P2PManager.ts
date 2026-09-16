@@ -409,6 +409,25 @@ class P2PManager<TCustomRpc extends MainRpcService = MainRpcService> {
         this.disconnectConnection(transport);
     }
 
+    /**
+     * Session-scoped exclusion for peers the handshake filters out (skewed
+     * clocks, too much latency). The peer keeps its clean record but is not
+     * redialled for the rest of this runtime, so neither side loops.
+     */
+    public disconnectAndSuspendPeer(transport: NetworkTransport) {
+        this.logger.warn(
+            "Disconnecting and suspending peer transport",
+            LoggerUtils.getTransportMetadata(transport)
+        );
+        const transportToDisconnect = transport.peerAddress
+            ? this.profileManager.suspendPeer(transport.peerAddress)
+            : this.profileManager.suspendPeer(transport);
+        if (transportToDisconnect && transportToDisconnect !== transport) {
+            this.disconnectConnection(transportToDisconnect);
+        }
+        this.disconnectConnection(transport);
+    }
+
     public disconnectAndBlacklistPeerByEvmAddress(evmAddress: Address) {
         this.logger.warn("Disconnecting and blacklisting peer address", {
             peerAddress: evmAddress
@@ -427,6 +446,13 @@ class P2PManager<TCustomRpc extends MainRpcService = MainRpcService> {
         return (
             this.profileManager.getProfileByEvmAddress(evmAddress)
                 ?.isBlackListed || false
+        );
+    }
+
+    public isSuspended(evmAddress: Address): boolean {
+        return (
+            this.profileManager.getProfileByEvmAddress(evmAddress)
+                ?.isSuspended || false
         );
     }
 

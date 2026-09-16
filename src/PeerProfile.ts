@@ -20,6 +20,9 @@ class PeerProfile {
     hpAddress: string | undefined;
     isLeader: boolean;
     isBlackListed: boolean;
+    // Session-scoped filter result, separate from the blacklist: the peer is
+    // not proven faulty, we just stop redialling it for this runtime.
+    isSuspended: boolean;
     private readonly liveTransports = new Set<NetworkTransport>();
     private readonly disconnectedListeners =
         new Set<ProfileDisconnectedListener>();
@@ -40,6 +43,7 @@ class PeerProfile {
         this.hpAddress = hpAddress;
         this.isLeader = false;
         this.isBlackListed = false;
+        this.isSuspended = false;
     }
 
     public blacklist() {
@@ -55,6 +59,13 @@ class PeerProfile {
             LoggerUtils.getPeerProfileMetadata(this)
         );
         this.isBlackListed = false;
+    }
+    public suspend() {
+        this.logger.warn(
+            "Suspending peer profile",
+            LoggerUtils.getPeerProfileMetadata(this)
+        );
+        this.isSuspended = true;
     }
     public getTransport() {
         if (this.transport && !this.transport.isClosed) return this.transport;
@@ -116,6 +127,7 @@ class PeerProfile {
         const peerInfo = profile.takeHolepunchPeerInfo();
         if (peerInfo) this.setHolepunchPeerInfo(peerInfo);
         if (profile.isBlackListed) this.blacklist();
+        if (profile.isSuspended) this.suspend();
     }
     public setHolepunchPeerInfo(peerInfo: BannablePeerInfo) {
         this.holepunchPeerInfo = peerInfo;

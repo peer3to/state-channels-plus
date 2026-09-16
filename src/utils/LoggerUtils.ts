@@ -52,6 +52,9 @@ export type InitHandshakeMessage =
     | "response"
     | "ack"
     | "response-timeout"
+    | "response-refused"
+    | "response-send-failed"
+    | "transport-closed"
     | "ack-timeout"
     | "rejected"
     | "finalize-check"
@@ -373,6 +376,8 @@ export class LoggerUtils {
         const level: LogLevel =
             args.message === "ack-timeout" ||
             args.message === "response-timeout" ||
+            args.message === "response-refused" ||
+            args.message === "response-send-failed" ||
             args.message === "rejected"
                 ? "warn"
                 : "debug";
@@ -468,6 +473,7 @@ export class LoggerUtils {
             peerAddress: profile.getEvmAddress(),
             hpAddress: profile.getHpAddress(),
             blacklisted: profile.isBlackListed,
+            suspended: profile.isSuspended,
             transports: profile
                 .getLiveTransports()
                 .map((transport) => this.getTransportMetadata(transport))

@@ -69,15 +69,20 @@ class ProfileManager {
         const existingProfile =
             this.mapEvmAddressToProfile.get(normalizedAddress);
         if (existingProfile) {
-            if (existingProfile.isBlackListed) {
+            if (existingProfile.isBlackListed || existingProfile.isSuspended) {
                 transport.p2pManager.logger.warn(
-                    "Rejecting transport for blacklisted profile",
+                    "Rejecting transport for excluded profile",
                     {
                         ...LoggerUtils.getTransportMetadata(transport),
-                        peerAddress: normalizedAddress
+                        peerAddress: normalizedAddress,
+                        blacklisted: existingProfile.isBlackListed,
+                        suspended: existingProfile.isSuspended
                     }
                 );
-                this.blacklistPeer(transport);
+                // Re-apply the exclusion to the arriving transport so its own
+                // peer info is banned too; a bare close lets the peer redial.
+                if (existingProfile.isBlackListed) this.blacklistPeer(transport);
+                else this.suspendPeer(transport);
                 transport.close(true);
                 return undefined;
             }
@@ -227,6 +232,27 @@ class ProfileManager {
         return profile.getTransport();
     }
 
+    /**
+     * Session-scoped exclusion: mark the profile suspended and ban its
+     * Hyperswarm peer info so the peer is not redialled for this runtime.
+     * Unlike the blacklist it is not a verdict on the peer, and it has no
+     * release path.
+     */
+    public suspendPeer(
+        peer: NetworkTransport | Address
+    ): NetworkTransport | undefined {
+        if (peer instanceof NetworkTransport) {
+            const profile = this.getProfileByTransport(peer);
+            if (profile) this.suspendProfile(profile);
+            return peer;
+        }
+
+        const profile = this.getProfileByEvmAddress(peer);
+        if (!profile) return undefined;
+        this.suspendProfile(profile);
+        return profile.getTransport();
+    }
+
     public unblacklistPeer(evmAddress: Address): boolean {
         const profile = this.getProfileByEvmAddress(evmAddress);
         if (!profile) return false;
@@ -237,7 +263,7 @@ class ProfileManager {
             .some(
                 (transport) => transport.transportType === TransportType.WEBRTC
             );
-        if (!hasLiveWebRtc) {
+        if (!hasLiveWebRtc && !profile.isSuspended) {
             profile.getHolepunchPeerInfo()?.ban(false);
         }
         return true;
@@ -249,7 +275,8 @@ class ProfileManager {
         if (
             !profile ||
             !profile.isPreferredTransport(transport) ||
-            profile.isBlackListed
+            profile.isBlackListed ||
+            profile.isSuspended
         ) {
             return;
         }
@@ -265,6 +292,11 @@ class ProfileManager {
         profile.getHolepunchPeerInfo()?.ban(true);
     }
 
+    private suspendProfile(profile: PeerProfile): void {
+        profile.suspend();
+        profile.getHolepunchPeerInfo()?.ban(true);
+    }
+
     private applyUpgradeBanPolicy(
         oldTransport: NetworkTransport,
         newTransport: NetworkTransport,
@@ -277,7 +309,8 @@ class ProfileManager {
             if (
                 oldTransport.transportType === TransportType.WEBRTC &&
                 newTransport.transportType === TransportType.HOLEPUNCH &&
-                !profile.isBlackListed
+                !profile.isBlackListed &&
+                !profile.isSuspended
             ) {
                 profile.getHolepunchPeerInfo()?.ban(false);
             }
