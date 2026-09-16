@@ -107,6 +107,34 @@ function validateDiscoveryResults(
 }
 
 /**
+ * What a run has to warm before it admits a task, in order. Distributed workers
+ * build in their prepare script, so only the local path warms anything: forge
+ * so concurrent tasks never race on a cold via_ir build, Chromium because a gate
+ * cannot run without it, and the browser build so one run typechecks it once
+ * rather than per gate. A tier with no scheduled task warms nothing.
+ */
+function resolveWarmUps(tasks, distributed) {
+    if (distributed) return [];
+    return [
+        {
+            runner: TASK_RUNNERS.FORGE,
+            message: "Warming the Foundry build before the forge tier...",
+            warm: forgeBuildFailure
+        },
+        {
+            runner: TASK_RUNNERS.BROWSER,
+            message: "Checking Chromium before the browser tier...",
+            warm: browserChromiumFailure
+        },
+        {
+            runner: TASK_RUNNERS.BROWSER,
+            message: "Warming the browser build before the browser tier...",
+            warm: browserBuildFailure
+        }
+    ].filter(({ runner }) => countTasksForRunner(tasks, runner) > 0);
+}
+
+/**
  * Slots are provisioned whenever the run holds a hardhat task and offered to
  * every one of them; no task is classified by directory or source. A test uses
  * the shared node (via PROVIDER_URL) or ignores it and keeps hardhat's
@@ -297,35 +325,12 @@ async function main(options = {}) {
         });
     }
 
-    // Distributed workers build in their prepare script; the local path builds
-    // once here so concurrent forge tasks never race on a cold via_ir build,
-    // and so one run typechecks the browser build once rather than per gate.
-    if (!cli.distributed) {
-        const warmUps = [
-            {
-                runner: TASK_RUNNERS.FORGE,
-                message: "Warming the Foundry build before the forge tier...",
-                warm: forgeBuildFailure
-            },
-            {
-                runner: TASK_RUNNERS.BROWSER,
-                message: "Checking Chromium before the browser tier...",
-                warm: browserChromiumFailure
-            },
-            {
-                runner: TASK_RUNNERS.BROWSER,
-                message: "Warming the browser build before the browser tier...",
-                warm: browserBuildFailure
-            }
-        ];
-        for (const { runner, message, warm } of warmUps) {
-            if (countTasksForRunner(tasks, runner) === 0) continue;
-            console.log(message);
-            const buildFailure = warm();
-            if (buildFailure) {
-                console.error(buildFailure.message);
-                process.exit(1);
-            }
+    for (const { message, warm } of resolveWarmUps(tasks, cli.distributed)) {
+        console.log(message);
+        const buildFailure = warm();
+        if (buildFailure) {
+            console.error(buildFailure.message);
+            process.exit(1);
         }
     }
 
@@ -540,6 +545,7 @@ if (require.main === module) {
 
 module.exports = {
     buildBaseEnv,
+    resolveWarmUps,
     discoveryFailureMessage,
     validateDiscoveryResults,
     resolveDistributedExecutionProfile,
