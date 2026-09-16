@@ -7,8 +7,11 @@
  * and its shared memory has to come from /tmp. The runner image declares that
  * environment with SCP_BROWSER_CONTAINED; everywhere else the browser keeps its
  * sandbox.
+ *
+ * CommonJS, not ESM: the gates are ESM and import it, while the Mocha suite that
+ * pins this policy is CommonJS and must require it on the Node 20 CI runners.
  */
-export function chromiumLaunchOptions(env = process.env) {
+function chromiumLaunchOptions(env = process.env) {
     if (env.SCP_BROWSER_CONTAINED !== "1") return { headless: true };
     return {
         headless: true,
@@ -16,3 +19,5 @@ export function chromiumLaunchOptions(env = process.env) {
         args: ["--disable-dev-shm-usage"]
     };
 }
+
+module.exports = { chromiumLaunchOptions };

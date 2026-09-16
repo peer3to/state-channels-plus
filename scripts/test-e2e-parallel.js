@@ -373,7 +373,7 @@ async function main(options = {}) {
 
     // Distributed workers build in their prepare script; the local path builds
     // once here so concurrent forge tasks never race on a cold via_ir build,
-    // and so two browser gates never race on dist/browser.
+    // and so one run typechecks the browser build once rather than per gate.
     if (!cli.distributed) {
         const warmUps = [
             {
