@@ -1,6 +1,6 @@
-import ATransport from "./ATransport";
+import NetworkTransport from "./NetworkTransport";
 import { TransportType } from "./TransportType";
-import type P2PManager from "@/P2PManager";
+import type { NetworkRpcRouter } from "@/rpc/router/NetworkRpcRouter";
 
 /**
  * In-process transport that delivers RPCs back to the same {@link P2PManager}.
@@ -10,28 +10,32 @@ import type P2PManager from "@/P2PManager";
  * request/response plumbing. It is trusted (bypasses peer guards) and is never
  * tracked as a peer connection.
  */
-class LoopbackTransport extends ATransport {
+class LoopbackTransport extends NetworkTransport {
     transportType = TransportType.LOOPBACK;
 
-    constructor(p2pManager: P2PManager) {
-        super(p2pManager);
-        this.peerAddress = p2pManager.stateManager.signerAddress.toString();
+    constructor(router: NetworkRpcRouter) {
+        super(router);
+        this.peerAddress =
+            router.p2pManager.stateManager.signerAddress.toString();
     }
 
-    get isTrusted(): boolean {
+    // Overrides NetworkTransport.isTrusted: self delivery is trusted.
+    override get isTrusted(): boolean {
         return true;
     }
 
     _send(serializedRPC: string): void {
-        this.p2pManager.onRpc(serializedRPC, this);
+        void this.router.onRpc(serializedRPC, this);
     }
 
-    onMessage(): void {
-        // Loopback never receives external data; sends re-enter `onRpc`.
+    // Overrides NetworkTransport.onMessage; loopback delivery enters the router directly.
+    override onMessage(): void {
+        // Loopback never receives external data; sends re-enter the network router.
     }
 
     /** The loopback is never a real connection, so closing is a no-op. */
-    close(): void {}
+    // Overrides ATransport.close so a disposal RPC can still return to its caller.
+    override close(): void {}
 
     protected _close(): void {}
 }

@@ -1,4 +1,5 @@
 // @spec-test-coverage-ignore: shared hook wiring exercised by mapped TestSession and full-flow tests
+
 import { TestSession } from "./TestSession";
 import { PeerIdentityExecutionContext } from "../core/peerErrorAttribution";
 import { DetachedPromises, maybeStampErrorWithPeerAddress } from "@/utils";
@@ -17,10 +18,8 @@ function hookTrace(message: string): void {
 }
 
 declare global {
-    // eslint-disable-next-line no-var
     var __peer3SessionHooksRegistered__: boolean | undefined;
 
-    // eslint-disable-next-line no-var
     var __peer3UnhandledRejectionHookRegistered__: boolean | undefined;
 }
 
@@ -87,17 +86,17 @@ export function registerTestSessionHooks(testSession: TestSessionClass): void {
             if (this.currentTest?.state === "failed" || firstDetachedError) {
                 hookTrace("Test failed - trying to upload logs!");
                 const h = testSession.getHarness();
+                // The harness explicitly triggers each independent peer root below.
                 h.peers.forEach((peer, index) => {
-                    const promise = peer.logger.uploadLogs(
+                    peer.logger.warn(
                         `FAILED (Peer ${index}): ${this.currentTest?.title}`,
                         {
                             testError: this.currentTest?.err || "N/A",
                             firstDetachedError: firstDetachedError || "N/A"
                         }
                     );
-                    DetachedPromises.collect(promise);
                 });
-                const promise = h.logger.uploadLogs(
+                const promise = h.uploadLogs(
                     `FAILED (Harness): ${this.currentTest?.title}`,
                     {
                         testError: this.currentTest?.err || "N/A",

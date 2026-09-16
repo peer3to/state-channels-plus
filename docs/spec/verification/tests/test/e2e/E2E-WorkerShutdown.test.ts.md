@@ -11,8 +11,8 @@
 
 A single smoke test starts three peers with `RUN_SDK_IN_THREAD: true` through the
 `MathTestSession` harness (each SDK in its own worker), runs one warm-up transition, then calls
-`harness.cleanup()` and asserts the whole teardown — draining and disposing every threaded peer —
-completes in under five seconds and leaves `harness.peers` empty. The oracle is teardown latency
+concurrent and repeated `harness.cleanup()` calls and asserts the whole teardown — draining and disposing every threaded peer —
+completes in under five seconds and leaves `harness.peers` empty. Concurrent calls return the same cleanup promise, and a later call remains harmless. The oracle is teardown latency
 plus the emptied peer list; it guards against workers hanging the process or teardown stalling on
 undrained handles. It does not observe the settlement of individual in-flight requests, resource
 reclamation, or post-disposal mutation, so the disposal permutations of the runtime and SDK
@@ -29,3 +29,5 @@ report but are kept here.
 | Test declaration                                                                                                                                     | Covers |
 | ---------------------------------------------------------------------------------------------------------------------------------------------------- | ------ |
 | [`E2E: worker shutdown > drains and tears down multiple threaded peers promptly`](../../../../../../test/e2e/E2E-WorkerShutdown.test.ts#L5) (line 5) | —      |
+
+This is partial system evidence for [`REQ-RUNTIME-3-VQXW59` (Lifecycle convergence)](../../../../specification/runtime/execution.md#req-runtime-3-vqxw59), without crediting a full lifecycle permutation.

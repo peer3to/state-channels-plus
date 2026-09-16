@@ -23,7 +23,7 @@ Public RPC surface re-exports, ordered to avoid CommonJS circular-init issues. N
 
 ## Key design decisions
 
-_None — the file is declarative/mechanical; behavior-shaping decisions live with its consumers._
+The network service base is exported only as `ANetworkRpcService`. The old `ARpcService` alias is removed by engineer decision; callers use the explicit network name.
 
 ## Inputs, outputs, state, and side effects
 

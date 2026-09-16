@@ -1,0 +1,23 @@
+# RootErrorService.test.ts — Test Report
+
+> **Test file:** [RootErrorService.test.ts](../../../../../../test/rpc/RootErrorService.test.ts) > **Status:** Authored — engineer verification pending.
+> **Exercises:** [RootErrorService](../../../../implementation/source/src/rpc/internal/services/errors/RootErrorService.ts.md)
+
+## Overview
+
+Exercises upward error reporting across actual SDK and executor connections in both SDK placements. Request failures remain separate; a parent cannot report an error as if it were a child.
+
+## Tests and covered test IDs
+
+| Test                                                                                                                                                                     | Covers                                                                                                                                                                 |
+| ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| [rejects an error report from a parent without closing the connection](../../../../../../test/rpc/RootErrorService.test.ts#L27) (line 27)                                | [`UNIT-TEST-ROOT-ERROR-1-0N4XM4.P5`](../../../../implementation/source/src/rpc/internal/services/errors/RootErrorService.ts.md#unit-test-root-error-1-0n4xm4.p5)       |
+| [forwards a child error once through an inline SDK and keeps both roots usable](../../../../../../test/rpc/RootErrorService.test.ts#L30) (line 30)                       | [`UNIT-TEST-ROOT-ERROR-1-0N4XM4.P1`](../../../../implementation/source/src/rpc/internal/services/errors/RootErrorService.ts.md#unit-test-root-error-1-0n4xm4.p1)       |
+| [forwards a child error once through a worker SDK and keeps both roots usable](../../../../../../test/rpc/RootErrorService.test.ts#L33) (line 33)                        | [`UNIT-TEST-ROOT-ERROR-1-0N4XM4.P2`](../../../../implementation/source/src/rpc/internal/services/errors/RootErrorService.ts.md#unit-test-root-error-1-0n4xm4.p2)       |
+| [returns an inline child request failure without an autonomous report](../../../../../../test/rpc/RootErrorService.test.ts#L36) (line 36)                                | [`UNIT-TEST-ROOT-ERROR-1-0N4XM4.P3`](../../../../implementation/source/src/rpc/internal/services/errors/RootErrorService.ts.md#unit-test-root-error-1-0n4xm4.p3)       |
+| [returns a worker child request failure without an autonomous report](../../../../../../test/rpc/RootErrorService.test.ts#L39) (line 39)                                 | [`UNIT-TEST-ROOT-ERROR-1-0N4XM4.P4`](../../../../implementation/source/src/rpc/internal/services/errors/RootErrorService.ts.md#unit-test-root-error-1-0n4xm4.p4)       |
+| [`RootErrorService > rejects unknown host RPC services and unsupported delivery selectors`](../../../../../../test/rpc/RootErrorService.test.ts#L12) (line 12)           | [`UNIT-TEST-HOST-RPC-1-X1QFZA.P1`](../../../../implementation/source/src/rpc/internal/services/hostRpc/HostRpcService.ts.md#unit-test-host-rpc-1-x1qfza.p1)            |
+| [`RootErrorService > surfaces a client host error as an unhandled rejection when no listener exists`](../../../../../../test/rpc/RootErrorService.test.ts#L15) (line 15) | [`UNIT-TEST-SDK-CLIENT-ROOT-1-93DC96.P15`](../../../../implementation/source/src/rpc/internal/roots/P2pRuntimeClientRoot.ts.md#unit-test-sdk-client-root-1-93dc96.p15) |
+| [`RootErrorService > reports a fire-and-forget endpoint failure once without closing the root`](../../../../../../test/rpc/RootErrorService.test.ts#L18) (line 18)       | [`UNIT-TEST-ROOT-ERROR-1-0N4XM4.P10`](../../../../implementation/source/src/rpc/internal/services/errors/RootErrorService.ts.md#unit-test-root-error-1-0n4xm4.p10)     |
+| [`RootErrorService > rejects readiness when a child reports an error before ready`](../../../../../../test/rpc/RootErrorService.test.ts#L21) (line 21)                   | [`UNIT-TEST-ROOT-ERROR-1-0N4XM4.P8`](../../../../implementation/source/src/rpc/internal/services/errors/RootErrorService.ts.md#unit-test-root-error-1-0n4xm4.p8)       |
+| [`RootErrorService > rejects readiness through the startupFailed wire endpoint`](../../../../../../test/rpc/RootErrorService.test.ts#L24) (line 24)                      | [`UNIT-TEST-ROOT-ERROR-1-0N4XM4.P9`](../../../../implementation/source/src/rpc/internal/services/errors/RootErrorService.ts.md#unit-test-root-error-1-0n4xm4.p9)       |

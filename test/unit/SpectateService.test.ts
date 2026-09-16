@@ -1,5 +1,5 @@
 import StateSnapshot from "@/models/StateSnapshot";
-import type { SyncRequest } from "@/rpc/services/spectate/SpectateService";
+import type { SyncRequest } from "@/rpc/network/services/spectate/SpectateService";
 import { Status } from "@/types";
 import { Codec, Type } from "@/utils";
 import {
@@ -193,13 +193,15 @@ describe("Unit: SpectateService", function () {
     describe("applySyncResponse", function () {
         it("the same-fork target snapshot lands before validation → accepts the proof", async function () {
             const h = TestSession.getHarness();
-            await h.lifecycle.start(4, 0);
-            const forkId = h.activeForkId!;
+            // Create the requester before genesis starts the block-zero deadline.
+            // It must precede every block without spending that deadline on worker startup.
+            await h.setup(5);
             const participantIndices = [0, 1, 2, 3];
-
-            // Spawn-only, classified (plan 30 item 5): the requester must precede
-            // every block, so nothing authors while it spawns.
-            const requester = await h.join.addSpectatorWait();
+            const forkId =
+                await h.lifecycle.openChannelForParticipants(
+                    participantIndices
+                );
+            const requester = h.getPeer(4);
             await h.network.blacklistAndDisconnectPeer(requester.index);
             for (const peerIndex of participantIndices) {
                 await h

@@ -59,7 +59,7 @@ Error text delegates to the dependency-free errorMessage helper. Existing catch 
    (`computeDisputeOutputSnapshotData.staticCall`,
    [#L421](../../../../../../src/disputeManager/DisputeManager.ts#L421)) and its hash embedded as
    `outputSnapshotDataHash` — never a client-side reimplementation
-   ([`INV-MIRROR-1-VAF778`](../../../../specification/enforcement/local-mirror.md#inv-mirror-1-vaf778)).
+   ([`INV-MIRROR-1-VAF778` (Single implementation)](../../../../specification/enforcement/local-mirror.md#inv-mirror-1-vaf778)).
 4. **Data-availability decision by finality probe.** Auditing calldata is posted iff the proof's
    last milestone is not provably final to everyone (`isLastMilestoneFinalByEveryone.staticCall`,
    [#L452](../../../../../../src/disputeManager/DisputeManager.ts#L447)); a known-final anchor
@@ -87,7 +87,7 @@ Error text delegates to the dependency-free errorMessage helper. Existing catch 
    inside the state mutex use observed detached requests. Failed uploads roll back the marker;
    later same-fork block work is allowed again. No second closed-fork set or post-signature check is used.
 
-The early-chain-timestamp handler implements [`REQ-DISPUTE-PIPE-10-BT8YAR`](../../../../specification/disputes/dispute-processing.md#req-dispute-pipe-10-bt8yar): retain the submitted timeout slot, derive the retry delay from the decoded error, roll back the marker, release the mutex, then call ParticipantTimeoutService.scheduleCheck. WindowCreatedTooEarly remains a no-op and unrelated errors keep their existing policy.
+The early-chain-timestamp handler implements [`REQ-DISPUTE-PIPE-10-BT8YAR` (Recheck an early timeout submission)](../../../../specification/disputes/dispute-processing.md#req-dispute-pipe-10-bt8yar): retain the submitted timeout slot, derive the retry delay from the decoded error, roll back the marker, release the mutex, then call ParticipantTimeoutService.scheduleCheck. WindowCreatedTooEarly remains a no-op and unrelated errors keep their existing policy.
 
 ## Inputs, outputs, state, and side effects
 
@@ -118,13 +118,13 @@ Contribution per ID: [`REQ-DIS-1-XAJ1VA`](../../../../specification/disputes/dis
 self-removal flag, inbound tip fields); [`REQ-DIS-2-PKVZ7E`](../../../../specification/disputes/disputes.md#req-dis-2-pkvz7e) — sets `disputer = signerAddress` and surfaces
 the contract's ineligibility revert; [`REQ-DIS-3-C4KYSF`](../../../../specification/disputes/disputes.md#req-dis-3-c4kysf) — the kill submission path; [`REQ-DIS-6-Y92H1M`](../../../../specification/disputes/disputes.md#req-dis-6-y92h1m) — the
 pre-committed output hash; [`REQ-DIS-10-SAHJBN`](../../../../specification/disputes/disputes.md#req-dis-10-sahjbn) — carries the timeout claim and its evidence context
-(validity checks live in detection and on-chain); [`REQ-DISPUTE-PIPE-1-HRBFP7`](../../../../specification/disputes/dispute-processing.md#req-dispute-pipe-1-hrbfp7) — binds every submission to
-exact channel/fork; [`REQ-DISPUTE-PIPE-5-RZZB48`](../../../../specification/disputes/dispute-processing.md#req-dispute-pipe-5-rzzb48) — kill only with a stored proof, via mirrored predicates;
-[`REQ-DISPUTE-PIPE-6-6FZB9M`](../../../../specification/disputes/dispute-processing.md#req-dispute-pipe-6-6fzb9m) — race reverts classified as convergence/no-op; [`INV-MIRROR-1-VAF778`](../../../../specification/enforcement/local-mirror.md#inv-mirror-1-vaf778)/[`REQ-MIRROR-1-XCY9CB`](../../../../specification/enforcement/local-mirror.md#req-mirror-1-xcy9cb) —
+(validity checks live in detection and on-chain); [`REQ-DISPUTE-PIPE-1-HRBFP7` (Bound intake)](../../../../specification/disputes/dispute-processing.md#req-dispute-pipe-1-hrbfp7) — binds every submission to
+exact channel/fork; [`REQ-DISPUTE-PIPE-5-RZZB48` (Mirrored canonical audit)](../../../../specification/disputes/dispute-processing.md#req-dispute-pipe-5-rzzb48) — kill only with a stored proof, via mirrored predicates;
+[`REQ-DISPUTE-PIPE-6-6FZB9M` (Minimal intervention and convergence)](../../../../specification/disputes/dispute-processing.md#req-dispute-pipe-6-6fzb9m) — race reverts classified as convergence/no-op; [`INV-MIRROR-1-VAF778` (Single implementation)](../../../../specification/enforcement/local-mirror.md#inv-mirror-1-vaf778)/[`REQ-MIRROR-1-XCY9CB` (Constrained equivalence)](../../../../specification/enforcement/local-mirror.md#req-mirror-1-xcy9cb) —
 output and finality probes through mirrored contract logic; [`REQ-SP-1-9YABY1`](../../../../specification/disputes/state-proofs.md#req-sp-1-9yaby1)/[`REQ-SP-2-ST4JJ4`](../../../../specification/disputes/state-proofs.md#req-sp-2-st4jj4) — packages the
 state proof and its per-milestone snapshots into auditing data.
 
-Contribution in this file: [`REQ-DISPUTE-PIPE-8-BVR8XV`](../../../../specification/disputes/dispute-processing.md#req-dispute-pipe-8-bvr8xv), [`REQ-DISPUTE-PIPE-9-TDWQPV`](../../../../specification/disputes/dispute-processing.md#req-dispute-pipe-9-tdwqpv). The conformance rows below name this owner and the other required owners.
+Contribution in this file: [`REQ-DISPUTE-PIPE-8-BVR8XV` (Dispute admission orders block signatures)](../../../../specification/disputes/dispute-processing.md#req-dispute-pipe-8-bvr8xv), [`REQ-DISPUTE-PIPE-9-TDWQPV` (Existing-window state contributions)](../../../../specification/disputes/dispute-processing.md#req-dispute-pipe-9-tdwqpv). The conformance rows below name this owner and the other required owners.
 
 ## Assumptions, dependencies, trust boundaries, and limits
 
@@ -132,7 +132,7 @@ Contribution in this file: [`REQ-DISPUTE-PIPE-8-BVR8XV`](../../../../specificati
   remote input reaches this file directly. Its outputs, however, become adversarial input to the
   chain — everything it submits is re-verified on-chain.
 - **Storage-backed construction:** correctness of a constructed dispute presumes the storage
-  modules' fidelity ([`REQ-IX-9-AV56NR`](../../../../specification/interactions.md#req-ix-9-av56nr)) and the
+  modules' fidelity ([`REQ-IX-9-AV56NR` (Storage fidelity)](../../../../specification/interactions.md#req-ix-9-av56nr)) and the
   agreement manager's proof assembly; a state-hash mismatch between snapshot and stored state is
   treated as a fatal race ([#L355](../../../../../../src/disputeManager/DisputeManager.ts#L350)).
 - **Mirror freshness:** slash-subset and finality probes read the mirror; staleness is bounded by
@@ -162,8 +162,8 @@ None demonstrated in this file. (The empty-timeout sentinel it submits — zero 
 participant — is the input shape behind the empty-timeout reduction cancellation of
 [disputes.md §5](../../../../specification/disputes/disputes.md): intended slash precedence for
 slash-carrying disputes, but a confirmed defect in the slash-free case — resolved 2026-08-14,
-[`OQ-9-XR1MFS`](../../../../specification/open-questions.md#oq-9-xr1mfs); the fold fix is tracked in
-[`OQ-14-5C8KV7`](../../../open-questions.md#oq-14-5c8kv7). This file follows the
+[`OQ-9-XR1MFS` (Timeout precedence edge rules)](../../../../specification/open-questions.md#oq-9-xr1mfs); the fold fix is tracked in
+[`OQ-14-5C8KV7` (Empty-timeout fold can suppress a real timeout)](../../../open-questions.md#oq-14-5c8kv7). This file follows the
 current struct contract, and the behavior is owned by the reduction fold, not construction.)
 
 ## Missing behavior

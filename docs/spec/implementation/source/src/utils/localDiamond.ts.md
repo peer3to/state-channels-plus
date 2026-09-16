@@ -71,9 +71,9 @@ claims complete conformance for a requirement that depends on other files.
 | -------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | [localDiamond.ts](../../../../../../src/utils/localDiamond.ts) | [`INV-MIRROR-1-VAF778`](../../../../specification/enforcement/local-mirror.md#inv-mirror-1-vaf778), [`REQ-CONTRACT-ARCH-1-9W5390`](../../../../specification/enforcement/contracts.md#req-contract-arch-1-9w5390) |
 
-Contribution per ID: [`INV-MIRROR-1-VAF778`](../../../../specification/enforcement/local-mirror.md#inv-mirror-1-vaf778) — makes every mirrored predicate callable on the deployed
+Contribution per ID: [`INV-MIRROR-1-VAF778` (Single implementation)](../../../../specification/enforcement/local-mirror.md#inv-mirror-1-vaf778) — makes every mirrored predicate callable on the deployed
 mirror, which is the precondition for evaluating predicates through the mirror instead of
-re-implementing them client-side; [`REQ-CONTRACT-ARCH-1-9W5390`](../../../../specification/enforcement/contracts.md#req-contract-arch-1-9w5390) — presents the manager's whole external
+re-implementing them client-side; [`REQ-CONTRACT-ARCH-1-9W5390` (Stable external boundary)](../../../../specification/enforcement/contracts.md#req-contract-arch-1-9w5390) — presents the manager's whole external
 surface at one address to the client, regardless of how the deployment decomposes it.
 
 ## Assumptions, dependencies, trust boundaries, and limits
@@ -84,7 +84,7 @@ surface at one address to the client, regardless of how the deployment decompose
   that abstract contract, so only review and the routing test keep it in step with
   `_facetForSelector`; a declaration missing there is unreachable from here.
 - **No trust boundary.** The mirror is a local, client-owned deployment; its answers are a cache and
-  never authority ([`REQ-MIRROR-3-THD7K8`](../../../../specification/enforcement/local-mirror.md#req-mirror-3-thd7k8), owned by its callers).
+  never authority ([`REQ-MIRROR-3-THD7K8` (Cache, never authority)](../../../../specification/enforcement/local-mirror.md#req-mirror-3-thd7k8), owned by its callers).
 - **Limit:** the merge is by signature only. Two different fragments with the same `type:sighash`
   are indistinguishable here, and the first (the `LocalDiamond` one) wins by construction.
 - **Platform-neutral.** It imports only `ethers` and generated types, so it compiles for both the
@@ -93,7 +93,7 @@ surface at one address to the client, regardless of how the deployment decompose
 ## Specification adherence
 
 - Keeps predicate evaluation on the deployed mirror rather than in TypeScript, which is the
-  mechanism [`INV-MIRROR-1-VAF778`](../../../../specification/enforcement/local-mirror.md#inv-mirror-1-vaf778) requires.
+  mechanism [`INV-MIRROR-1-VAF778` (Single implementation)](../../../../specification/enforcement/local-mirror.md#inv-mirror-1-vaf778) requires.
 - Adds no protocol behavior, no state, and no validation, so it cannot relax any check.
 
 ## Specification contradictions

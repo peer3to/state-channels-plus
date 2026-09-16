@@ -28,7 +28,7 @@ No additional contradiction is asserted here. Contradictions demonstrated in the
 
 ### Missing
 
-The source-by-source inventory and unit plans are not yet consolidated here. **Required resolution:** audit the linked reports against every [`INV-SDK-ARCH-1-KNAX7F`](../../../specification/runtime/sdk.md#inv-sdk-arch-1-knax7f), [`REQ-SDK-ARCH-1-7H14H6`](../../../specification/runtime/sdk.md#req-sdk-arch-1-7h14h6), [`REQ-SDK-ARCH-2-QBZAT8`](../../../specification/runtime/sdk.md#req-sdk-arch-2-qbzat8), [`REQ-SDK-ARCH-3-WHTDWX`](../../../specification/runtime/sdk.md#req-sdk-arch-3-whtdwx), [`REQ-SDK-ARCH-4-GTN7QN`](../../../specification/runtime/sdk.md#req-sdk-arch-4-gtn7qn) obligation, move their exact source ownership and unit permutations into this subject, and remove duplicated claims.
+The source-by-source inventory and unit plans are not yet consolidated here. **Required resolution:** audit the linked reports against every [`INV-SDK-ARCH-1-KNAX7F` (Coherent participant state)](../../../specification/runtime/sdk.md#inv-sdk-arch-1-knax7f), [`REQ-SDK-ARCH-1-7H14H6` (Explicit ownership)](../../../specification/runtime/sdk.md#req-sdk-arch-1-7h14h6), [`REQ-SDK-ARCH-2-QBZAT8` (Ordered lifecycle)](../../../specification/runtime/sdk.md#req-sdk-arch-2-qbzat8), [`REQ-SDK-ARCH-3-WHTDWX` (Event fidelity)](../../../specification/runtime/sdk.md#req-sdk-arch-3-whtdwx), [`REQ-SDK-ARCH-4-GTN7QN` (Execution isolation)](../../../specification/runtime/sdk.md#req-sdk-arch-4-gtn7qn) obligation, move their exact source ownership and unit permutations into this subject, and remove duplicated claims.
 
 ## Assumptions and constraints
 

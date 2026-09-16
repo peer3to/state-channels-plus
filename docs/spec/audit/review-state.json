@@ -59,7 +59,7 @@
         "reviewer": "Luka",
         "date": "2026-08-18"
     },
-    "verification/tests/test/evm/WorkerContractExecutor.test.ts.md": {
+    "verification/tests/test/evm/RpcContractExecutorWorker.test.ts.md": {
         "hash": "57c9a8c9f029fdd1",
         "reviewer": "Luka",
         "date": "2026-08-15"

@@ -5,12 +5,12 @@ import type { HarnessControlRpc } from "../../HarnessControlRpc";
 import Clock from "@/Clock";
 import { Block, StateSnapshot } from "@/models";
 import type P2PManager from "@/P2PManager";
-import ARpcService from "@/rpc/ARpcService";
+import ANetworkRpcService from "@/rpc/network/ANetworkRpcService";
 import type AValidationStrategy from "@/stateManager/validationStrategy/AValidationStrategy";
 import CalldataCommittedStrategy from "@/stateManager/validationStrategy/CalldataCommittedStrategy";
 import DisputeValidationStrategy from "@/stateManager/validationStrategy/DisputeValidationStrategy";
 import type { QueuedBlockEntry } from "@/storage/QueueStorage";
-import type ATransport from "@/transport/ATransport";
+import type NetworkTransport from "@/transport/NetworkTransport";
 import { BlockValidationResult } from "@/types";
 import type { Address, ForkId, Hash, Timestamp } from "@/types/types";
 import { Codec, Mutex, Type } from "@/utils";
@@ -161,7 +161,7 @@ type RecordedValidationRun = {
     };
     restore: () => void;
 };
-export class ValidationProbeService extends ARpcService<
+export class ValidationProbeService extends ANetworkRpcService<
     ValidationProbeRpcMethods,
     P2PManager<HarnessControlRpc>
 > {
@@ -175,7 +175,7 @@ export class ValidationProbeService extends ARpcService<
 
     constructor(p2pManager: P2PManager<HarnessControlRpc>) {
         super(
-            p2pManager,
+            p2pManager.rpcRouter,
             p2pManager.stateManager.logger.child({
                 component: "HarnessValidationProbeService"
             })
@@ -1105,7 +1105,9 @@ export class ValidationProbeService extends ARpcService<
             this.unanchoredCoordinates()
         );
     }
-    public createRPCMethods(transport: ATransport): ValidationProbeRpcMethods {
+    public createRPCMethods(
+        transport: NetworkTransport
+    ): ValidationProbeRpcMethods {
         return new ValidationProbeRpcMethods(transport, this);
     }
 }

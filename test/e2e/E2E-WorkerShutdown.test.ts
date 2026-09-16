@@ -9,6 +9,9 @@ describe("E2E: worker shutdown", function () {
         });
 
         const startedAt = Date.now();
+        const cleanup = harness.cleanup();
+        expect(harness.cleanup()).to.equal(cleanup);
+        await cleanup;
         await harness.cleanup();
 
         expect(Date.now() - startedAt).to.be.lessThan(5_000);

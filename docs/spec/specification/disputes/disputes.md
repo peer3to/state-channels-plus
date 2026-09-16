@@ -59,7 +59,7 @@ The complete set of valid dispute inputs is exactly:
 
 5. **Accepted existing-window state contribution** — `requireExistingDisputeWindow` is true and
    admission checked the same open channel/fork window before mutation. Later kills do not remove this
-   reason; see [`REQ-DISPUTE-PIPE-9-TDWQPV`](dispute-processing.md#req-dispute-pipe-9-tdwqpv).
+   reason; see [`REQ-DISPUTE-PIPE-9-TDWQPV` (Existing-window state contributions)](dispute-processing.md#req-dispute-pipe-9-tdwqpv).
 
 Fraud proofs are **not** a dispute input mechanism. An objective violation is proven on the
 separate immediate path in [fraud-proofs.md](./fraud-proofs.md); a successful proof adds the
@@ -255,7 +255,7 @@ order independence including slash-application order. This specification does no
 mechanism CRDT-like: that label would require stating and proving the convergence properties.
 Neither a proof nor permutation tests exist. Verification: required downstream coverage (permutation,
 adversarial-interleaving with kills, and on-chain integration tests required before this
-invariant can be marked verified). Tracked as [`OQ-4-JGDCNX`](../../verification/open-questions.md#oq-4-jgdcnx).
+invariant can be marked verified). Tracked as [`OQ-4-JGDCNX` (Dispute-reduction order-independence)](../../verification/open-questions.md#oq-4-jgdcnx).
 
 **Observed divergence (partially resolved).** In `reduce`, the timeout fold replaces the current
 candidate whenever `dispute.input.timeout.blockHeight < reducedOutput.timeout.blockHeight`
@@ -273,7 +273,7 @@ or that is relevant to it, so they cannot legitimize ignoring the missed slot �
 lowest-real-height rule of §6.1 stands, and empty timeout structs do not participate in the
 fold. The implemented fold's empty-timeout reset is therefore a defect in the slash-free case;
 the fix (skip candidates with an unset `participant`) and its permutation tests are tracked
-implementation-side ([`OQ-14-5C8KV7`](../../implementation/open-questions.md#oq-14-5c8kv7)).
+implementation-side ([`OQ-14-5C8KV7` (Empty-timeout fold can suppress a real timeout)](../../implementation/open-questions.md#oq-14-5c8kv7)).
 
 ## 6. Timeout precedence, ordering, and information disclosure
 
@@ -297,10 +297,10 @@ there), `minTimeStamp`, `isForced`, and optional previous-block-producer context
   apparent missed slots reduce to the earliest one. Only real timeout claims (a set
   `participant`) participate in the selection: a slash-free dispute with no timeout claim does
   **not** cancel a proposed timeout, because it leaks no information relevant to the timed-out
-  participant (resolved 2026-08-14, [`OQ-9-XR1MFS`](../open-questions.md#oq-9-xr1mfs)).
+  participant (resolved 2026-08-14, [`OQ-9-XR1MFS` (Timeout precedence edge rules)](../open-questions.md#oq-9-xr1mfs)).
   `For this protocol version:` implemented as the min-`blockHeight` fold of §5; the implemented
   fold's empty-timeout reset violates the slash-free rule and its fix is tracked in
-  [`OQ-14-5C8KV7`](../../implementation/open-questions.md#oq-14-5c8kv7).
+  [`OQ-14-5C8KV7` (Empty-timeout fold can suppress a real timeout)](../../implementation/open-questions.md#oq-14-5c8kv7).
 - Self-removals always apply; they are independent of timeout precedence.
 
 ### 6.2 Information-disclosure safety
@@ -319,7 +319,7 @@ incomplete-information attacks into evidence against the attacker:
   the dispute is killed and its disputer slashed via the `Timeout*` dispute fraud proofs
   ([fraud-proofs.md §3](./fraud-proofs.md)).
 
-**Cross-view semantics (resolved 2026-08-14, engineer decision, [`OQ-9-XR1MFS`](../open-questions.md#oq-9-xr1mfs)):**
+**Cross-view semantics (resolved 2026-08-14, engineer decision, [`OQ-9-XR1MFS` (Timeout precedence edge rules)](../open-questions.md#oq-9-xr1mfs)):**
 
 - **"Fork" means a `forkId`** — a reality that prevails out of the dispute game after a genesis —
   never divergent block histories inside one `forkId`. Leader election is deterministic as a

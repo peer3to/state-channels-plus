@@ -1,7 +1,7 @@
 import { ARpcServiceFixture } from "@test/fixtures/ARpcServiceFixture";
 import { expect } from "chai";
 
-describe("ARpcService", function () {
+describe("ANetworkRpcService", function () {
     let fixture: ARpcServiceFixture;
 
     beforeEach(async function () {
@@ -103,7 +103,7 @@ describe("ARpcService", function () {
         expect(result.responses).to.deep.equal([]);
     });
 
-    it("rejects ARpcMethods and Object prototype names", async function () {
+    it("rejects ANetworkRpcMethods and Object prototype names", async function () {
         const remoteRpc = await fixture.probe("remoteRpc");
         const toString = await fixture.probe("toString");
         const hasOwnProperty = await fixture.probe("hasOwnProperty");

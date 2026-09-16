@@ -19,13 +19,19 @@
 
 ## Responsibility and observable boundary
 
-The runtime port protocol types.
+SDK setup/bootstrap contracts. Ports and serialized errors are imported directly from their transport and codec owners. Private operation request/response unions and RuntimeRequester are removed.
 
 ## Key design decisions
+
+WorkerBootstrapMessage is generic over the root initialization payload. Common creation and both platform receivers use it; the default remains SetupPayload for existing consumers.
+
+SetupPayload carries domain configuration and serialized contracts. Built-in worker URLs are resolved internally and never travel in setup data. The unused P2pRuntimeWorker interface and bootstrap alias have been removed; shared worker bootstrap types remain with creation.
 
 1. `SerializedContract.abiJson` carries application ABI metadata across the port. For the manager,
    both runtime sides merge it after the SDK-owned ABI so consumer extensions remain available.
 2. `SerializedError.eventLoopDelay` carries the watchdog's structured sample (`EventLoopDelayDetails`) across the port; structured cloning an `Error` keeps only its standard slots, so the codec projects it explicitly.
+
+This module owns deployment and bootstrap payload types. Runtime ports and serialized errors are imported from their concrete owners rather than re-exported here.
 
 ## Inputs, outputs, state, and side effects
 
@@ -79,7 +85,7 @@ Exact test evidence is mapped against these IDs in the verification test reports
 
 ## Related source reports
 
-- [P2pRuntimeHost](./P2pRuntimeHost.ts.md).
+- [P2pRuntimeHost](../../rpc/internal/roots/P2pRuntimeHostRoot.ts.md).
 
 ## Matching-policy boundary
 

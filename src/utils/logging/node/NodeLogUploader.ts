@@ -3,26 +3,33 @@ import {
     getDnsLookupSnapshot,
     getSyncNetworkSnapshot
 } from "./uploadDiagnostics";
+import type { Agent } from "https";
+import type * as Https from "https";
 
 export class NodeLogUploader extends LogUploader {
-    private static uploadAgent?: import("https").Agent;
+    private static uploadAgent?: Agent;
     private onUncaughtException?: (error: unknown) => void;
     private onUnhandledRejection?: (reason: unknown) => void;
 
-    protected getAxiosOptions(): Record<string, unknown> {
+    // Overrides LogUploader.getAxiosOptions: use Node diagnostics and connection options.
+    protected override getAxiosOptions(): Record<string, unknown> {
         return {
             httpsAgent: NodeLogUploader.getUploadAgent()
         };
     }
 
-    protected getSyncNetworkSnapshot(
+    // Overrides LogUploader.getSyncNetworkSnapshot: use Node diagnostics and connection options.
+    protected override getSyncNetworkSnapshot(
         endpoint: string,
         uploadError?: unknown
     ): unknown {
         return getSyncNetworkSnapshot(endpoint, uploadError);
     }
 
-    protected getDnsLookupSnapshot(endpoint: string): Promise<unknown> {
+    // Overrides LogUploader.getDnsLookupSnapshot: use Node diagnostics and connection options.
+    protected override getDnsLookupSnapshot(
+        endpoint: string
+    ): Promise<unknown> {
         return getDnsLookupSnapshot(endpoint);
     }
 
@@ -54,9 +61,9 @@ export class NodeLogUploader extends LogUploader {
         }
     }
 
-    private static getUploadAgent(): import("https").Agent {
+    private static getUploadAgent(): Agent {
         if (!NodeLogUploader.uploadAgent) {
-            const { Agent } = require("https") as typeof import("https");
+            const { Agent } = require("https") as typeof Https;
             NodeLogUploader.uploadAgent = new Agent({
                 keepAlive: true,
                 maxSockets: 6,

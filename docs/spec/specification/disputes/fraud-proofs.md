@@ -176,7 +176,7 @@ The protocol maintains an append-only, per-channel set of
   preflighted via `staticCall` before submission so an honest auditor never triggers the
   self-slash guard (`DisputeValidationService`).
 
-**Decision ([`REQ-FP-6-TS1QAV`](fraud-proofs.md#req-fp-6-ts1qav), engineer decision, 2026-08-13, resolving [`OQ-2-7WTV16`](../open-questions.md#oq-2-7wtv16)).** The self-slashing guard
+**Decision ([`REQ-FP-6-TS1QAV`](fraud-proofs.md#req-fp-6-ts1qav), engineer decision, 2026-08-13, resolving [`OQ-2-7WTV16` (Penalty for submitting an invalid fraud proof)](../open-questions.md#oq-2-7wtv16)).** The self-slashing guard
 above is the intended penalty rule: an invalid fraud-proof submission slashes the submitter
 **when the submitter is a channel participant** (dispute-eligible as defined above), chosen to
 further disincentivize Byzantine behavior and bogus-proof spam from channel members.

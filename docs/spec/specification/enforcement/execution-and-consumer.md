@@ -41,7 +41,7 @@ follows the restore → execute → extract pattern:
 
 Join application (admission and top-up against an encoded state) follows the same pattern through
 the machine's join entry point. All of this is internal-only composition
-([`REQ-CONTRACT-ARCH-3-GEGD78`](contracts.md#req-contract-arch-3-gegd78)): external callers cannot drive the machine directly through the manager.
+([`REQ-CONTRACT-ARCH-3-GEGD78` (Internal-call confinement)](contracts.md#req-contract-arch-3-gegd78)): external callers cannot drive the machine directly through the manager.
 
 **Known constraint (current behavior).** One shared state-machine deployment serves all channels:
 replay execution selects the machine independently of the channel. Correctness therefore relies on
@@ -74,7 +74,7 @@ executed before.
 **<a id="req-enfsm-1-dkjcy2"></a>`REQ-ENFSM-1-DKJCY2` — Injected context, bounded gas.** Execution supplies the protocol's execution
 context and enforces the configured gas limit; a transition exceeding it fails as an invalid
 transition, identically in fraud-proof replay and local-mirror evaluation
-([`REQ-MIRROR-1-XCY9CB`](local-mirror.md#req-mirror-1-xcy9cb)).
+([`REQ-MIRROR-1-XCY9CB` (Constrained equivalence)](local-mirror.md#req-mirror-1-xcy9cb)).
 
 **<a id="req-enfsm-2-g4hbkg"></a>`REQ-ENFSM-2-G4HBKG` — Adapter confinement.** The consumer adapter is reachable only through the
 manager's specified delegation points; its failures propagate exactly as the enclosing operation's

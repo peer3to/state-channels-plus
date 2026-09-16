@@ -1,5 +1,6 @@
 // @spec-test-coverage-ignore: real dispute attempts with controlled upload/read failures
 import type { MathPeerTestHarness } from "./MathPeerTestHarness";
+import { runtimeEndpointFor } from "./RuntimeRootObservation";
 import { MathTestSession as TestSession } from "@test/harness";
 import { waitFor } from "@test/utils/waitFor";
 import { expect } from "chai";
@@ -15,6 +16,39 @@ export async function assertDisputeRefreshPolicy(
         | "disposed"
         | "ineligible"
 ): Promise<void> {
+    if (mode === "disposed") {
+        await h.lifecycle.start(3, 0, {
+            configOverrides: { RUN_SDK_IN_THREAD: false }
+        });
+        const { host, sm, stub } = runtimeEndpointFor(h.getPeer(0).p2pInstance);
+        stub.stubRecordDisputeSubmissions(
+            true,
+            {
+                customError: "RaceConditionDisputeWindowNotOpen",
+                at: "send"
+            },
+            false
+        );
+        stub.recordSlashRecoveries();
+        try {
+            const attempt = sm.disputeManager.dispute(sm.forkId);
+            await waitFor(() => stub.getRecordedDisputeSubmissions().held > 0);
+            sm.abort();
+            stub.releaseDisputeSubmissions();
+            await attempt;
+            expect(sm.storage.disputes.didIDispute(sm.forkId)).to.equal(false);
+            expect(stub.getSlashRecoveryCount()).to.equal(0);
+            expect(
+                stub.getRecordedDisputeSubmissions().submissions
+            ).to.have.length(1);
+        } finally {
+            stub.releaseDisputeSubmissions();
+            stub.restoreDisputeSubmissions();
+            stub.restoreSlashRecoveries();
+            await host.dispose();
+        }
+        return;
+    }
     if (mode === "ineligible") {
         await h.lifecycle.start(4, 2);
         await h.scenario.disputeAndResolve({ maliciousPeerIndex: 1 });
@@ -34,7 +68,7 @@ export async function assertDisputeRefreshPolicy(
     }
     const peer = h.getPeer(0);
     const recorder = await h.rpcStub.recordDisputeSubmissions(0, {
-        hold: mode === "disposed",
+        hold: false,
         failWith: {
             customError:
                 mode === "unrelated"
@@ -74,14 +108,6 @@ export async function assertDisputeRefreshPolicy(
         { mode }
     );
     try {
-        if (mode === "disposed") {
-            await recorder.waitUntilHeld();
-            await h.control(peer).stub.abortDetached().request();
-            await waitFor(async () =>
-                h.execOnHost(peer, (sm) => sm.isDisposed)
-            );
-            await recorder.release();
-        }
         const result = {
             ...(await attempt),
             recoveries: await h
@@ -91,7 +117,7 @@ export async function assertDisputeRefreshPolicy(
         };
         expect(result.marker).to.equal(false);
         expect(result.recoveries).to.equal(
-            mode === "unrelated" || mode === "disposed"
+            mode === "unrelated"
                 ? 0
                 : mode === "repeat" || mode === "concurrent"
                   ? 2

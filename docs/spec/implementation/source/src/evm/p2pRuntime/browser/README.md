@@ -14,8 +14,7 @@ The browser runtime owns the structured-clone channel between the SDK-facing bro
 
 ## Source inventory
 
-- [P2pRuntimeChannel.ts](./P2pRuntimeChannel.ts.md)
-- [P2pRuntimeWorkerRuntime.ts](./P2pRuntimeWorkerRuntime.ts.md)
+- [RuntimeChannel.ts](../../../transport/browser/RuntimeChannel.ts.md)
 
 ## Integration test obligations
 

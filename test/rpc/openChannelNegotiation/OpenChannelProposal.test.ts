@@ -1,4 +1,4 @@
-import { getOpenChannelProposalMismatch } from "@/rpc/services/openChannelNegotiation/OpenChannelNegotiationHelpers";
+import { getOpenChannelProposalMismatch } from "@/rpc/network/services/openChannelNegotiation/OpenChannelNegotiationHelpers";
 import type { OpenChannelStruct } from "@typechain-types/contracts/V1/types/DataTypes";
 import { expect } from "chai";
 

@@ -6,12 +6,7 @@ import { ethers } from "ethers";
 globalThis.Buffer ||= Buffer;
 globalThis.window ||= globalThis;
 
-const { default: WorkerContractExecutor } = await import(
-    "../../src/evm/contractExecutor/WorkerContractExecutor.ts"
-);
-const { createContractExecutorWorkerFromUrl } = await import(
-    "../../src/evm/contractExecutor/browser/ContractExecutorWorkerRuntime.ts"
-);
+const { createBrowserSdkExecutor } = await import("./sdkSetup.js");
 const {
     WATCHDOG_WORKER_DELAY_ERROR_THRESHOLD_MS,
     WATCHDOG_WORKER_ORIGINAL_ERROR,
@@ -37,21 +32,23 @@ const LOG_ONLY_INIT_CODE = (() => {
 async function runMode(mode) {
     const armChannel = `watchdog-arm-${crypto.randomUUID()}`;
     const reports = [];
-    const executor = await WorkerContractExecutor.create([], undefined, {
-        createWorkerRuntime: (onMessage, onError) =>
-            createContractExecutorWorkerFromUrl(
-                new URL(
-                    "../evm/workers/browser/watchdogContractExecutorWorkerEntry.ts",
-                    import.meta.url
-                ),
-                onMessage,
-                onError,
-                JSON.stringify({ mode, armChannel })
+    const sdk = await createBrowserSdkExecutor({
+        config: {
+            LOG_SKIP_WRITING: true,
+            EVENT_LOOP_DELAY_ERROR_THRESHOLD_SECONDS: 0
+        },
+        dependencies: {
+            workerUrl: new URL(
+                "../evm/workers/browser/watchdogContractExecutorWorkerEntry.ts",
+                import.meta.url
             ),
-        onDetachedError: (error) => {
-            reports.push(error);
+            workerName: JSON.stringify({ mode, armChannel }),
+            onDetachedError: (error) => {
+                reports.push(error);
+            }
         }
     });
+    const { executor } = sdk;
     const sender = new BroadcastChannel(armChannel);
     try {
         // Nothing may trip before the arm: the scripted source stays quiet
@@ -72,7 +69,7 @@ async function runMode(mode) {
         };
     } finally {
         sender.close();
-        await executor.dispose();
+        await sdk.dispose();
     }
 }
 

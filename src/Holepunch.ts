@@ -1,6 +1,6 @@
 import HolepunchRelay from "@/HolepunchRelay";
 import type P2PManager from "@/P2PManager";
-import { isWorkerRuntime } from "@/rpc/services/WebRTCSetup/connection/WebRTCProvider";
+import { isWorkerRuntime } from "@/rpc/network/services/WebRTCSetup/connection/WebRTCProvider";
 import { HolepunchTransport, TransportType } from "@/transport";
 import { config } from "@/utils/config";
 import { Buffer } from "buffer";
@@ -54,7 +54,7 @@ class Holepunch {
             this.p2pManager.logger.debug("Holepunch peer info", {
                 peerInfo: info
             });
-            new HolepunchTransport(socket, info, this.p2pManager);
+            new HolepunchTransport(socket, info, this.p2pManager.rpcRouter);
         });
         this.rejoinTopics();
     }

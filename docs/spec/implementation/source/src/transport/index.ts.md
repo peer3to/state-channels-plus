@@ -23,6 +23,8 @@ Transport re-exports.
 
 ## Key design decisions
 
+The transport barrel exposes the neutral base and distinct network/internal categories. InternalTransport has no network enum value and is not a valid peer recipient through an alias. Network implementations retain their transport types and peer policy. See [NetworkTransport.ts](NetworkTransport.ts.md).
+
 _None — the file is declarative/mechanical; behavior-shaping decisions live with its consumers._
 
 ## Inputs, outputs, state, and side effects

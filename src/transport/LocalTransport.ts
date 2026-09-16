@@ -1,13 +1,13 @@
-import ATransport from "./ATransport";
+import NetworkTransport from "./NetworkTransport";
 import { TransportType } from "./TransportType";
-import type P2PManager from "@/P2PManager";
+import type { NetworkRpcRouter } from "@/rpc/router/NetworkRpcRouter";
 import WebSocket from "ws";
 
-class LocalTransport extends ATransport {
+class LocalTransport extends NetworkTransport {
     transportType = TransportType.HOLEPUNCH; // not holepunch, but probably doesn't matter for testing
     ws: WebSocket;
-    constructor(ws: WebSocket, p2pManager: P2PManager) {
-        super(p2pManager);
+    constructor(ws: WebSocket, router: NetworkRpcRouter) {
+        super(router);
         this.ws = ws;
         this.ws.on("message", async (data: any) => {
             this.onMessage(data);

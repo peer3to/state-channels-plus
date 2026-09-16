@@ -32,7 +32,7 @@ collection proceed while a transition executes, without letting arrival order de
 The stages below are the normative behavior; how an implementation schedules them is its own concern
 so long as the ordering, decisions, and actions are preserved. Four input paths converge on one
 pipeline: peer gossip ([block-gossip.md](../peer-communication/block-gossip.md)), observed on-chain
-calldata ([`REQ-IX-7-A004VZ`](../interactions.md#req-ix-7-a004vz)), local authoring (which enters at execution —
+calldata ([`REQ-IX-7-A004VZ` (Chain observation)](../interactions.md#req-ix-7-a004vz)), local authoring (which enters at execution —
 the author validated by constructing), and proof replay from the dispute and synchronization paths
 (sourceless: there is no supplier to penalize).
 
@@ -40,15 +40,15 @@ the author validated by constructing), and proof replay from the dispute and syn
 
 For each arriving confirmation:
 
-1. **Authenticate** ([`REQ-BLOCK-PIPE-2-PCXNT6`](block-processing.md#req-block-pipe-2-pcxnt6)) with the canonical predicate ([`INV-MIRROR-1-VAF778`](../enforcement/local-mirror.md#inv-mirror-1-vaf778)):
+1. **Authenticate** ([`REQ-BLOCK-PIPE-2-PCXNT6`](block-processing.md#req-block-pipe-2-pcxnt6)) with the canonical predicate ([`INV-MIRROR-1-VAF778` (Single implementation)](../enforcement/local-mirror.md#inv-mirror-1-vaf778)):
    the encoded block must decode and the author signature must recover to the declared author.
    Failure ([`REQ-BLOCK-PIPE-3-WW2SB7`](block-processing.md#req-block-pipe-3-ww2sb7)): peer-supplied → terminate the supplier; observed calldata → an objective fault by the
-   poster (the required proof type is the open question [`OQ-22-99DDSZ`](../../implementation/open-questions.md#oq-22-99ddsz)).
+   poster (the required proof type is the open question [`OQ-22-99DDSZ` (Inauthentic on-chain calldata is not escalated)](../../implementation/open-questions.md#oq-22-99ddsz)).
 2. **Deduplicate** ([`REQ-BLOCK-PIPE-1-SS24D1`](block-processing.md#req-block-pipe-1-ss24d1)). A block already committed locally routes to the merge stage (Stage 2).
 3. **Channel gate** ([`REQ-BLOCK-PIPE-2-PCXNT6`](block-processing.md#req-block-pipe-2-pcxnt6)). A wrong-channel block is ignored; an attributable sender is penalized.
 4. **Dead-fork gate** ([`REQ-BLOCK-PIPE-9-QA66GT`](block-processing.md#req-block-pipe-9-qa66gt)). A fork the node
    itself is disputing counts as disputed from the moment its own dispute starts
-   ([`REQ-DISPUTE-PIPE-8-BVR8XV`](../disputes/dispute-processing.md#req-dispute-pipe-8-bvr8xv)): the node authors and
+   ([`REQ-DISPUTE-PIPE-8-BVR8XV` (Dispute admission orders block signatures)](../disputes/dispute-processing.md#req-dispute-pipe-8-bvr8xv)): the node authors and
    signs nothing more on it. A block on a fork with an observed dispute is ignored and that fork's queued
    work purged — dead-fork state is recovered through the dispute path, never gossip. If the node's
    _own_ current fork is disputed, fork recovery is scheduled (bounded: repeated junk must cost
@@ -65,7 +65,7 @@ each new signer and require membership in the block's participant union (previou
 participants) ([`REQ-BLOCK-PIPE-11-DCHAJ2`](block-processing.md#req-block-pipe-11-dchaj2)). Stray signatures penalize exactly the suppliers that carried them (attribution) and
 are stripped; valid ones merge monotonically ([`REQ-BLOCK-PIPE-5-WJ31RG`](block-processing.md#req-block-pipe-5-wj31rg)). Threshold coverage fires the finality outcome
 ([`REQ-FIN-7-RTZWQZ`](../protocol-model/finality.md#req-fin-7-rtzwqz), [finality.md](../protocol-model/finality.md)); signature growth re-publishes the confirmation
-([`REQ-GOSSIP-3-HQZNQX`](../peer-communication/block-gossip.md#req-gossip-3-hqznqx)).
+([`REQ-GOSSIP-3-HQZNQX` (Re-broadcast on growth)](../peer-communication/block-gossip.md#req-gossip-3-hqznqx)).
 
 ### Stage 3 — Entry-lifetime expiry (the only synchronization probe)
 
@@ -133,7 +133,7 @@ boundary releases ([`INV-BLOCK-PIPE-1-1AB2ME`](block-processing.md#inv-block-pip
    ([`REQ-BLOCK-PIPE-2-PCXNT6`](block-processing.md#req-block-pipe-2-pcxnt6) message inputs), and each
    must exist locally or on-chain — a fabricated inbound block is dedicated fraud evidence
    ([`REQ-BLOCK-PIPE-8-N529VH`](block-processing.md#req-block-pipe-8-n529vh), [cross-layer-messages.md](../settlement/cross-layer-messages.md)).
-2. Execute the transition through the protocol model ([`REQ-IX-2-2PY2EF`](../interactions.md#req-ix-2-2py2ef));
+2. Execute the transition through the protocol model ([`REQ-IX-2-2PY2EF` (Deterministic execution and commitment)](../interactions.md#req-ix-2-2py2ef));
    a failed transition is an invalid-transition fault by the author.
 3. Apply carried inbound messages; advance stream tips and totals.
 4. Construct the resulting snapshot per the commitment hierarchy
@@ -149,7 +149,7 @@ boundary releases ([`INV-BLOCK-PIPE-1-1AB2ME`](block-processing.md#inv-block-pip
 
 On success, in order: update the node's own membership status (a join that landed promotes the
 joiner; an ignored join arms the forced-inclusion trigger after participant-count + 1 further
-blocks — [`REQ-IX-3-H8WCVY`](../interactions.md#req-ix-3-h8wcvy)); persist the snapshot and state, then decide
+blocks — [`REQ-IX-3-H8WCVY` (Inbound inclusion and join flow)](../interactions.md#req-ix-3-h8wcvy)); persist the snapshot and state, then decide
 **counter-signing** ([`REQ-BLOCK-PIPE-10-PHAKE2`](block-processing.md#req-block-pipe-10-phake2)): sign iff the node participates, is in the block's participant union, does not
 have the author excluded, and NOT (the block was posted on-chain AND the node is the next author) —
 signing then would forfeit the extra time the post granted ([time.md](../protocol-model/time.md));
@@ -233,7 +233,7 @@ prove is junk, not participant fault — the sender is dropped and spectating co
 participant, with two differences: the confirmation carries only the author's signature, so
 signature-merge deviations are impossible in this context (impossible → internal error, per the
 rule above); and an authenticity failure of the posted block is an objective fault by the poster
-(the required proof type is the open question [`OQ-22-99DDSZ`](../../implementation/open-questions.md#oq-22-99ddsz)).
+(the required proof type is the open question [`OQ-22-99DDSZ` (Inauthentic on-chain calldata is not escalated)](../../implementation/open-questions.md#oq-22-99ddsz)).
 
 **Dispute replay** — active while auditing a dispute's proof suffix. Live-fork and ordering gates
 off — the proof is a fixed, out-of-live-order sequence on a disputed fork — and the pre-state for
@@ -319,7 +319,7 @@ participates in the channel, is in the block's participant union, and does not h
 excluded. `For this protocol version:` the node also refuses to sign an on-chain-posted block when it is
 itself the next author, preserving the extra time the post granted ([time.md](../protocol-model/time.md));
 whether that refusal is intended protocol behavior is an open engineer decision
-([`OQ-24-A4XRTB`](../../implementation/open-questions.md#oq-24-a4xrtb)).
+([`OQ-24-A4XRTB` (`shouldSignBlock` refusal when next-to-write)](../../implementation/open-questions.md#oq-24-a4xrtb)).
 
 **<a id="req-block-pipe-11-dchaj2"></a>`REQ-BLOCK-PIPE-11-DCHAJ2` — Signature admission by participant union.** Every signature on a
 confirmation — the author's or a counter-signature, at intake, merge, or execution — MUST recover to

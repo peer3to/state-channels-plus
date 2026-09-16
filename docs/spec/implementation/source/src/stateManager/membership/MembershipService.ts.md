@@ -87,6 +87,6 @@ balance reuse sends no transaction in the signer wrapper. This service never rec
 
 # Terminal leave contribution
 
-The fully signed exit path now waits for snapshot submission. If it fails, it preserves self-removal and starts the existing dispute path. This contributes to [`REQ-LIF-10-QR8NQ9`](../../../../../specification/settlement/lifecycle.md#req-lif-10-qr8nq9).
+The fully signed exit path now waits for snapshot submission. If it fails, it preserves self-removal and starts the existing dispute path. This contributes to [`REQ-LIF-10-QR8NQ9` (Terminal runtime departure)](../../../../../specification/settlement/lifecycle.md#req-lif-10-qr8nq9).
 
 Shared operation owners: [errorMessage.ts.md](../../utils/errorMessage.ts.md).

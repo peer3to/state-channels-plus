@@ -23,11 +23,7 @@ suites.
 
 ## Tests and covered test IDs
 
-A row lists only test IDs this test covers **in full** — partial credit is never recorded. Each
-test ID may be assigned to at most one test across the whole tree; static analysis reports
-duplicate assignments, and tests with no assigned ID are listed in the verification-coverage
-report but are kept here.
-
-| Test declaration                                                                                                                                                                                    | Covers                                                                                                                                                       |
-| --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| [`E2E: Runtime contract events > delivers a real Addition event to a main-thread .on subscriber over the runtime port`](../../../../../../test/e2e/E2E-RuntimeContractEvents.test.ts#L24) (line 24) | [`UNIT-TEST-P2P-RUNTIME-HOST-1-TJYWGM.P4`](../../../../implementation/source/src/evm/p2pRuntime/P2pRuntimeHost.ts.md#unit-test-p2p-runtime-host-1-tjywgm.p4) |
+| Test                                                                                                                                                                                                | Covers                                                                                                                                                               |
+| --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| [`E2E: Runtime contract events > delivers a real Addition event to a main-thread .on subscriber over the runtime port`](../../../../../../test/e2e/E2E-RuntimeContractEvents.test.ts#L22) (line 22) | [`UNIT-TEST-P2P-RUNTIME-HOST-1-TJYWGM.P4`](../../../../implementation/source/src/rpc/internal/roots/P2pRuntimeHostRoot.ts.md#unit-test-p2p-runtime-host-1-tjywgm.p4) |
+| [`E2E: Runtime contract events > delivers a real Addition event from an SDK worker`](../../../../../../test/e2e/E2E-RuntimeContractEvents.test.ts#L25) (line 25)                                    | —                                                                                                                                                                    |

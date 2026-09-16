@@ -30,8 +30,8 @@ import { createBusPublishingHooks, EventBus } from "@/events/EventBus";
 import { StateSnapshot } from "@/models";
 import P2pEventHooks from "@/P2pEventHooks";
 import P2PManager from "@/P2PManager";
-import MainRpcService from "@/rpc/MainRpcService";
-import type { CustomRpcConstructor } from "@/rpc/registry";
+import MainRpcService from "@/rpc/network/MainRpcService";
+import type { CustomRpcConstructor } from "@/rpc/network/registry";
 import StateChannelEventListener from "@/StateChannelEventListener";
 import Storage from "@/storage";
 
@@ -111,6 +111,7 @@ class StateManager<
     readonly membershipService: MembershipService;
     readonly leaveChannelService: LeaveChannelService;
     private disposalPromise?: Promise<void>;
+    private stoppingPromise?: Promise<void>;
 
     constructor(
         signer: ethers.Signer,
@@ -121,6 +122,7 @@ class StateManager<
         p2pEventHooks: P2pEventHooks,
         storage: Storage,
         logger: Logger,
+        private readonly disposeRuntime: () => Promise<void>,
         customRpc?: CustomRpcConstructor<TCustomRpc, TCustomRpcOptions>,
         customRpcOptions?: TCustomRpcOptions
     ) {
@@ -272,23 +274,22 @@ class StateManager<
     }
     /**
      * General abort: give up participation in the current channel and tear down
-     * P2P and chain resources. Used by any component/service that needs to stop
+     * the owning root and its children. Used by any component/service that needs to stop
      * participating (slashed/removed by dispute resolution, unrecoverable sync
      * failure, race-condition join). We tear down the event listener so we no
      * longer track state — drop to OPENED (channel exists on-chain, not synced)
      * rather than SYNCED or NOT_OPENED.
      */
     public abort() {
-        if (this.disposalPromise) return;
-        // TODO: Abort should tear down the entire peer runtime and control port
-        // so disposed peers cannot continue serving host RPC queries.
+        if (this.isDisposed) return;
+        this.isDisposed = true;
         this.logger.warn("Aborting channel participation", {
             channelId: this.channelId,
             status: Status[this.status]
         });
         this.p2pEventHooks.onAbort?.();
         this.setStatus(Status.OPENED);
-        DetachedPromises.collect(this.dispose());
+        DetachedPromises.collect(this.disposeRuntime());
     }
 
     public isActiveFork(forkId: ForkId): boolean {
@@ -297,8 +298,28 @@ class StateManager<
 
     //Mark resources for garbage collection
     public dispose(): Promise<void> {
-        if (this.disposalPromise) {
-            return this.disposalPromise;
+        return (this.disposalPromise ??= (async () => {
+            try {
+                await this.stop();
+            } finally {
+                try {
+                    await Promise.all([
+                        this.stateChannelEventListener.dispose(),
+                        this.p2pManager.dispose(),
+                        this.diamondStateMachine.dispose()
+                    ]);
+                } finally {
+                    this.logger.dispose({
+                        cascadeChildren: true
+                    });
+                }
+            }
+        })());
+    }
+    /** Stop producers and drain work while the executor is still available. */
+    public stop(): Promise<void> {
+        if (this.stoppingPromise) {
+            return this.stoppingPromise;
         }
 
         this.isDisposed = true;
@@ -307,7 +328,7 @@ class StateManager<
 
         // Event handlers may still need the local EVM while draining already
         // scheduled contract logs. Dispose their dependencies only afterward.
-        this.disposalPromise = (async () => {
+        this.stoppingPromise = (async () => {
             // The custom RPC root disposes first so it can settle waits that
             // depend on the timeout manager and p2p below. A broken root must
             // never skip runtime teardown: its error is captured and rethrown
@@ -320,28 +341,19 @@ class StateManager<
                     error instanceof Error ? error : new Error(String(error));
             }
             try {
-                await this.stateChannelEventListener.dispose();
+                await this.stateChannelEventListener.stop();
             } finally {
                 // Drain scheduled work (queued block applications) before its
                 // dependencies disappear: a queued entry mid-execution still
                 // needs the EVM executor and p2p below. The drain is bounded
                 // by the timeout manager's dispose wait.
                 await this.timeoutManager.dispose();
-                await Promise.all([
-                    this.p2pManager.dispose(),
-                    this.diamondStateMachine.dispose()
-                ]);
             }
             if (customRpcError) {
                 throw customRpcError;
             }
-        })().finally(() => {
-            this.logger.dispose({
-                cascadeChildren: true,
-                cascadeParent: true
-            });
-        });
-        return this.disposalPromise;
+        })();
+        return this.stoppingPromise;
     }
     public setP2pEventHooks(p2pEventHooks: P2pEventHooks) {
         this.appP2pEventHooks = p2pEventHooks;

@@ -1,11 +1,12 @@
+// @spec-test-coverage-ignore: fixture support; executable evidence belongs to its calling test declarations.
 import QueryRpcMethods, {
     type BlockBundle,
     type StateProofVerification
 } from "./QueryRpcMethods";
 import Block from "@/models/Block";
 import type P2PManager from "@/P2PManager";
-import ARpcService from "@/rpc/ARpcService";
-import type ATransport from "@/transport/ATransport";
+import ANetworkRpcService from "@/rpc/network/ANetworkRpcService";
+import type NetworkTransport from "@/transport/NetworkTransport";
 import type { BlockHeight, ForkId } from "@/types/types";
 import { Codec, Type } from "@/utils";
 
@@ -14,10 +15,10 @@ import { Codec, Type } from "@/utils";
  * (not on the RpcMethods class) since every RpcMethods method is routable by
  * name at runtime.
  */
-export class QueryService extends ARpcService<QueryRpcMethods> {
+export class QueryService extends ANetworkRpcService<QueryRpcMethods> {
     constructor(p2pManager: P2PManager) {
         super(
-            p2pManager,
+            p2pManager.rpcRouter,
             p2pManager.stateManager.logger.child({
                 component: "HarnessQueryService"
             })
@@ -150,7 +151,7 @@ export class QueryService extends ARpcService<QueryRpcMethods> {
         };
     }
 
-    public createRPCMethods(transport: ATransport): QueryRpcMethods {
+    public createRPCMethods(transport: NetworkTransport): QueryRpcMethods {
         return new QueryRpcMethods(transport, this);
     }
 }

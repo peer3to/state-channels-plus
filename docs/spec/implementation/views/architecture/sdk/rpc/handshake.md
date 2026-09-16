@@ -12,14 +12,14 @@
 
 Related: [../components.md](../components.md) §2 (service summary), [./README.md](./README.md)
 §5.2/§7 (`HandshakeCompletedGuard`, endpoint contract), [../../security/trust-model.md](../../../../../specification/security/trust-model.md)
-(Byzantine peers, transport trust), [../../open-questions.md](../../../../../specification/open-questions.md) ([`OQ-29-EFY4NF`](../../../../../specification/open-questions.md#oq-29-efy4nf), [`OQ-34-FY08V2`](../../../../../specification/open-questions.md#oq-34-fy08v2),
+(Byzantine peers, transport trust), [../../open-questions.md](../../../../../specification/open-questions.md) ([`OQ-29-EFY4NF` (Signature domain separation)](../../../../../specification/open-questions.md#oq-29-efy4nf), [`OQ-34-FY08V2` (RPC boundary decisions)](../../../../../specification/open-questions.md#oq-34-fy08v2),
 [`DEF-8-HWJ10N`](../../../../../audit/open-findings.md#def-8-hwj10n)).
 
 Code (paths relative to this file; repo root = `../../../../../`):
 
-- [src/rpc/services/initHandshake/InitHandshakeService.ts](../../../../../../../src/rpc/services/initHandshake/InitHandshakeService.ts#L4)
-- [src/rpc/services/initHandshake/InitHandshakeRpcMethods.ts](../../../../../../../src/rpc/services/initHandshake/InitHandshakeRpcMethods.ts#L5)
-- [src/rpc/guards/HandshakeCompletedGuard.ts](../../../../../../../src/rpc/guards/HandshakeCompletedGuard.ts#L1)
+- [src/rpc/network/services/initHandshake/InitHandshakeService.ts](../../../../../../../src/rpc/network/services/initHandshake/InitHandshakeService.ts#L4)
+- [src/rpc/network/services/initHandshake/InitHandshakeRpcMethods.ts](../../../../../../../src/rpc/network/services/initHandshake/InitHandshakeRpcMethods.ts#L5)
+- [src/rpc/network/guards/HandshakeCompletedGuard.ts](../../../../../../../src/rpc/network/guards/HandshakeCompletedGuard.ts#L1)
 - callers: [src/transport/HolepunchTransport.ts](../../../../../../../src/transport/HolepunchTransport.ts#L1),
   [src/transport/WebRTCTransport.ts](../../../../../../../src/transport/WebRTCTransport.ts#L1),
   [src/utils/node/LocalDiscoveryServer.ts](../../../../../../../src/utils/node/LocalDiscoveryServer.ts#L5)
@@ -43,7 +43,7 @@ Its place in the lifecycle:
 
 1. A transport is constructed. Every network transport immediately calls
    `initHandshakeService.initHandshake(this)` from its constructor / channel-open hook
-   ([`HolepunchTransport`](../../../../../../../src/transport/HolepunchTransport.ts#L6) line 24,
+   ([`HolepunchTransport`](../../../../../../../src/transport/HolepunchTransport.ts#L5) line 24,
    [`WebRTCTransport.startHandshake`](../../../../../../../src/transport/WebRTCTransport.ts#L48) line 51,
    [`LocalDiscoveryServer`](../../../../../../../src/utils/node/LocalDiscoveryServer.ts#L32) lines 600/978).
    Both peers do this, so **two challenge/response exchanges cross the same transport, one per
@@ -95,7 +95,7 @@ proof (§4).
 
 ## 3. Algorithm, per method and per role
 
-Two public `RpcMethods` endpoints exist ([`InitHandshakeRpcMethods`](../../../../../../../src/rpc/services/initHandshake/InitHandshakeRpcMethods.ts#L11)):
+Two public `RpcMethods` endpoints exist ([`InitHandshakeRpcMethods`](../../../../../../../src/rpc/network/services/initHandshake/InitHandshakeRpcMethods.ts#L11)):
 `onInitHandshakeRequest` (request/response) and `onInitHandshakeAck` (fire-and-forget). The initiator
 half (`runHandshake`, `handleHandshakeResponse`) lives on the service and is _not_ remotely callable —
 it is driven locally by `initHandshake(transport)`.
@@ -117,14 +117,14 @@ wire (`peer3:init-handshake:v1`, [`REQ-SDK-3-91XMZR`](../components.md#req-sdk-3
 **signing-oracle defense**: protocol blocks are EIP-191 signatures over a _raw 32-byte keccak hash_,
 so a signature over a domain-prefixed string is structurally incapable of colliding with a block
 signature even when the peer sets `challengeHash = keccak256(encodedBlock)` (§4, [`INV-HSK-2-XCP7A2`](handshake.md#inv-hsk-2-xcp7a2), and the
-`ver` note under [`OQ-29-EFY4NF`](../../../../../specification/open-questions.md#oq-29-efy4nf)).
+`ver` note under [`OQ-29-EFY4NF` (Signature domain separation)](../../../../../specification/open-questions.md#oq-29-efy4nf)).
 
 ### 3.2 `onInitHandshakeRequest(challengeHash, time)` — responder, request/response
 
 Inputs: `challengeHash` (peer-chosen), `time` (peer's claimed clock, seconds). Return: `HandshakeResponse
 = { signature, responseTime, preferredTransport }`.
 
-Stages ([`InitHandshakeRpcMethods.onInitHandshakeRequest`](../../../../../../../src/rpc/services/initHandshake/InitHandshakeRpcMethods.ts#L25)):
+Stages ([`InitHandshakeRpcMethods.onInitHandshakeRequest`](../../../../../../../src/rpc/network/services/initHandshake/InitHandshakeRpcMethods.ts#L25)):
 
 1. **Decode / shape validation, before signing.** `!ethers.isHexString(challengeHash, 32)` or
    `!Number.isFinite(time)` → log, `disconnectConnection(senderTransport)`, `throw`. Rejecting a
@@ -164,7 +164,7 @@ signature)`. This is the only authentication step: it proves the responder holds
 ### 3.4 `onInitHandshakeAck(challengeHash?)` — fire-and-forget
 
 1. **Duplicate check.** `didReceiveAck(senderTransport)` → `disconnectAndBlacklistPeer(senderTransport,
-"protocol violation: duplicate handshake ack")`, return. (Replay-as-violation, [`REQ-RPC-6-E60S4J`](../../../../../specification/peer-communication/rpc.md#req-rpc-6-e60s4j).)
+"protocol violation: duplicate handshake ack")`, return. (Replay-as-violation, [`REQ-RPC-6-E60S4J` (Ordered ingress verification)](../../../../../specification/peer-communication/rpc.md#req-rpc-6-e60s4j).)
 2. `markAcked(senderTransport)`.
 3. `void maybeFinalizeHandshakeOnceFromTransport(senderTransport)`.
 
@@ -273,8 +273,8 @@ This is not currently handled and is not recorded elsewhere. **Open question (de
 divergence class: decision pending):** should the handshake bind the peer identity and a channel/
 session token into the signed message (e.g. sign over `domain : challenge : localAddr : remoteAddr`
 or over a transport-derived key) so a relayed signature cannot authenticate a third party? This is
-adjacent to but distinct from [`OQ-29-EFY4NF`](../../../../../specification/open-questions.md#oq-29-efy4nf) (cross-deployment domain separation)
-and the protocol-versioning item in [`OQ-34-FY08V2`](../../../../../specification/open-questions.md#oq-34-fy08v2); it should be raised for an
+adjacent to but distinct from [`OQ-29-EFY4NF` (Signature domain separation)](../../../../../specification/open-questions.md#oq-29-efy4nf) (cross-deployment domain separation)
+and the protocol-versioning item in [`OQ-34-FY08V2` (RPC boundary decisions)](../../../../../specification/open-questions.md#oq-34-fy08v2); it should be raised for an
 engineer decision. _(Inferred concern — the reflection path is derived from the code, not observed in
 a test.)_
 
@@ -285,7 +285,7 @@ only useful in the live relay above, where the attacker forwards in real time.
 
 **Resource abuse (pre-guard flood).** Unhandled — accepted gap. This endpoint runs before any guard
 and performs an ECDSA `signMessage` per call; there is no per-peer or global rate limit
-([./README.md](./README.md) §9, [`REQ-RPC-7-9CBSHK`](../../../../../specification/peer-communication/rpc.md#req-rpc-7-9cbshk) / [`OQ-6-4JPNE5`](../../../../../specification/open-questions.md#oq-6-4jpne5)). A peer can flood
+([./README.md](./README.md) §9, [`REQ-RPC-7-9CBSHK` (Guard semantics)](../../../../../specification/peer-communication/rpc.md#req-rpc-7-9cbshk) / [`OQ-6-4JPNE5` (P2P gossip rate limiting)](../../../../../specification/open-questions.md#oq-6-4jpne5)). A peer can flood
 handshake requests to burn signing CPU. Every transport has an addressless profile, so an explicit
 Holepunch blacklist can ban that live SDK peer before identity authentication; a new SDK peer handle
 or process restart is not covered. Classified **missing** because rate limiting is still absent.
@@ -306,7 +306,7 @@ peer's private key). A forged ack thus sets `ackedTransports` but cannot forge i
 `disconnectAndBlacklistPeer`. The transport already owns an addressless `PeerProfile`, so a
 Holepunch peer is banned through its SDK handle even if identity verification has not completed.
 Durability across a new SDK handle or process restart remains open in
-[`OQ-34-FY08V2`](../../../../../specification/open-questions.md#oq-34-fy08v2).
+[`OQ-34-FY08V2` (RPC boundary decisions)](../../../../../specification/open-questions.md#oq-34-fy08v2).
 
 After identity proof, `ProfileManager` performs a final admission check. A new Holepunch transport
 cannot replace a healthy current WebRTC transport or revive an explicitly blacklisted identity, even
@@ -388,27 +388,27 @@ These are concrete component-level tests required by the implementation obligati
 _Non-normative._
 
 - Bind peer identity and a channel/session token into the signed handshake message to close the relay/
-  reflection MITM (§4.1); coordinate with [`OQ-29-EFY4NF`](../../../../../specification/open-questions.md#oq-29-efy4nf) domain separation and the
-  protocol-versioning decision in [`OQ-34-FY08V2`](../../../../../specification/open-questions.md#oq-34-fy08v2) so one signed-domain scheme covers
+  reflection MITM (§4.1); coordinate with [`OQ-29-EFY4NF` (Signature domain separation)](../../../../../specification/open-questions.md#oq-29-efy4nf) domain separation and the
+  protocol-versioning decision in [`OQ-34-FY08V2` (RPC boundary decisions)](../../../../../specification/open-questions.md#oq-34-fy08v2) so one signed-domain scheme covers
   deployment scoping, protocol version, and channel binding.
 - Decide whether unauthenticated bans must survive a new SDK peer handle or process restart
-  ([`OQ-34-FY08V2`](../../../../../specification/open-questions.md#oq-34-fy08v2), [./README.md](./README.md) §8).
-- Fold the pre-guard signing endpoint under the central RPC rate limiter ([`OQ-6-4JPNE5`](../../../../../specification/open-questions.md#oq-6-4jpne5),
+  ([`OQ-34-FY08V2` (RPC boundary decisions)](../../../../../specification/open-questions.md#oq-34-fy08v2), [./README.md](./README.md) §8).
+- Fold the pre-guard signing endpoint under the central RPC rate limiter ([`OQ-6-4JPNE5` (P2P gossip rate limiting)](../../../../../specification/open-questions.md#oq-6-4jpne5),
   [./README.md](./README.md) §9), with handshake traffic prioritized above bulk sync.
 
 ---
 
 ## Implementation traceability
 
-| Requirement / invariant                             | Statement                                                                                           | Implementation status | Implementation evidence                                                                                                                                                                                                                                                | Gap / divergence |
-| --------------------------------------------------- | --------------------------------------------------------------------------------------------------- | --------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------- |
-| [`INV-HSK-1-R44CN1`](handshake.md#inv-hsk-1-r44cn1) | Profile completes only after verify + ack + preferred-transport on the transport (both directions). | Covered               | [InitHandshakeService.maybeFinalizeHandshakeOnceFromTransport](../../../../../../../src/rpc/services/initHandshake/InitHandshakeService.ts#L237)                                                                                                                       | None.            |
-| [`INV-HSK-2-XCP7A2`](handshake.md#inv-hsk-2-xcp7a2) | Responder signs the domain-tagged message; no block-signature collision.                            | Covered               | [InitHandshakeService.buildHandshakeChallengeMessage / HANDSHAKE_DOMAIN](../../../../../../../src/rpc/services/initHandshake/InitHandshakeService.ts#L44)                                                                                                              | None.            |
-| [`INV-HSK-3-Z4WBJG`](handshake.md#inv-hsk-3-z4wbjg) | Non-hex32 challenge / non-finite time rejected before signing.                                      | Covered               | [InitHandshakeRpcMethods.onInitHandshakeRequest](../../../../../../../src/rpc/services/initHandshake/InitHandshakeRpcMethods.ts#L25)                                                                                                                                   | None.            |
-| [`INV-HSK-4-FDM91W`](handshake.md#inv-hsk-4-fdm91w) | Ack `challengeHash` is diagnostic only, never trusted.                                              | Covered               | [InitHandshakeRpcMethods.onInitHandshakeAck](../../../../../../../src/rpc/services/initHandshake/InitHandshakeRpcMethods.ts#L114)                                                                                                                                      | None.            |
-| [`INV-HSK-5-3E60DY`](handshake.md#inv-hsk-5-3e60dy) | Request/response accepted only within one `agreementTime` skew window.                              | Covered               | [InitHandshakeRpcMethods.onInitHandshakeRequest](../../../../../../../src/rpc/services/initHandshake/InitHandshakeRpcMethods.ts#L25), [InitHandshakeService.handleHandshakeResponse](../../../../../../../src/rpc/services/initHandshake/InitHandshakeService.ts#L130) | None.            |
-| [`REQ-HSK-1-Y9JQS3`](handshake.md#req-hsk-1-y9jqs3) | Unguarded service; every endpoint safe against unauthenticated adversarial input.                   | Covered               | [InitHandshakeService.ts](../../../../../../../src/rpc/services/initHandshake/InitHandshakeService.ts#L1) (no `this.guards`)                                                                                                                                           | None.            |
-| [`REQ-HSK-2-MDNH4N`](handshake.md#req-hsk-2-mdnh4n) | Messages signed for unauthenticated callers are domain-separated.                                   | Covered               | [InitHandshakeService.HANDSHAKE_DOMAIN](../../../../../../../src/rpc/services/initHandshake/InitHandshakeService.ts#L1)                                                                                                                                                | None.            |
+| Requirement / invariant                             | Statement                                                                                           | Implementation status | Implementation evidence                                                                                                                                                                                                                                                                | Gap / divergence |
+| --------------------------------------------------- | --------------------------------------------------------------------------------------------------- | --------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------- |
+| [`INV-HSK-1-R44CN1`](handshake.md#inv-hsk-1-r44cn1) | Profile completes only after verify + ack + preferred-transport on the transport (both directions). | Covered               | [InitHandshakeService.maybeFinalizeHandshakeOnceFromTransport](../../../../../../../src/rpc/network/services/initHandshake/InitHandshakeService.ts#L242)                                                                                                                               | None.            |
+| [`INV-HSK-2-XCP7A2`](handshake.md#inv-hsk-2-xcp7a2) | Responder signs the domain-tagged message; no block-signature collision.                            | Covered               | [InitHandshakeService.buildHandshakeChallengeMessage / HANDSHAKE_DOMAIN](../../../../../../../src/rpc/network/services/initHandshake/InitHandshakeService.ts#L44)                                                                                                                      | None.            |
+| [`INV-HSK-3-Z4WBJG`](handshake.md#inv-hsk-3-z4wbjg) | Non-hex32 challenge / non-finite time rejected before signing.                                      | Covered               | [InitHandshakeRpcMethods.onInitHandshakeRequest](../../../../../../../src/rpc/network/services/initHandshake/InitHandshakeRpcMethods.ts#L25)                                                                                                                                           | None.            |
+| [`INV-HSK-4-FDM91W`](handshake.md#inv-hsk-4-fdm91w) | Ack `challengeHash` is diagnostic only, never trusted.                                              | Covered               | [InitHandshakeRpcMethods.onInitHandshakeAck](../../../../../../../src/rpc/network/services/initHandshake/InitHandshakeRpcMethods.ts#L114)                                                                                                                                              | None.            |
+| [`INV-HSK-5-3E60DY`](handshake.md#inv-hsk-5-3e60dy) | Request/response accepted only within one `agreementTime` skew window.                              | Covered               | [InitHandshakeRpcMethods.onInitHandshakeRequest](../../../../../../../src/rpc/network/services/initHandshake/InitHandshakeRpcMethods.ts#L25), [InitHandshakeService.handleHandshakeResponse](../../../../../../../src/rpc/network/services/initHandshake/InitHandshakeService.ts#L135) | None.            |
+| [`REQ-HSK-1-Y9JQS3`](handshake.md#req-hsk-1-y9jqs3) | Unguarded service; every endpoint safe against unauthenticated adversarial input.                   | Covered               | [InitHandshakeService.ts](../../../../../../../src/rpc/network/services/initHandshake/InitHandshakeService.ts#L1) (no `this.guards`)                                                                                                                                                   | None.            |
+| [`REQ-HSK-2-MDNH4N`](handshake.md#req-hsk-2-mdnh4n) | Messages signed for unauthenticated callers are domain-separated.                                   | Covered               | [InitHandshakeService.HANDSHAKE_DOMAIN](../../../../../../../src/rpc/network/services/initHandshake/InitHandshakeService.ts#L1)                                                                                                                                                        | None.            |
 
 ## Shared operation ownership
 

@@ -1,11 +1,14 @@
-import ARpcService from "./ARpcService";
+import ANetworkRpcService from "./network/ANetworkRpcService";
 
 // Export the base class first to avoid CommonJS circular-dependency
-// initialization issues (services import from "../../../rpc").
-export { ARpcService };
+// initialization issues when custom services import the public RPC barrel.
+export { ANetworkRpcService };
 
-import MainRpcService from "./MainRpcService";
+import MainRpcService from "./network/MainRpcService";
 
 export { MainRpcService };
-export type { CustomRpcConstructor, CustomRpcManifest } from "./registry";
-export { resolveCustomRpcConstructor } from "./resolveCustomRpcManifest";
+export type {
+    CustomRpcConstructor,
+    CustomRpcManifest
+} from "./network/registry";
+export { resolveCustomRpcConstructor } from "./network/resolveCustomRpcManifest";

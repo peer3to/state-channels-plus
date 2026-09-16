@@ -60,16 +60,16 @@ claims complete conformance for a requirement that depends on other files.
 
 ## Specification adherence
 
-- Content-addressed storage with idempotent duplicate stores ([`REQ-MSGSTORE-1-6ME9D7`](../../../../specification/storage/message-blocks.md#req-msgstore-1-6me9d7), addressing clause).
+- Content-addressed storage with idempotent duplicate stores ([`REQ-MSGSTORE-1-6ME9D7` (Content-addressed store with tip tracking)](../../../../specification/storage/message-blocks.md#req-msgstore-1-6me9d7), addressing clause).
 - Backward `[upper, lower)` walks follow linkage only, return an explicit incomplete marker on a
   gap or unmet lower boundary, and let strict callers reject the partial result
-  ([`REQ-MSGSTORE-2-8RDXPZ`](../../../../specification/storage/message-blocks.md#req-msgstore-2-8rdxpz)).
+  ([`REQ-MSGSTORE-2-8RDXPZ` (Linked backward range reads)](../../../../specification/storage/message-blocks.md#req-msgstore-2-8rdxpz)).
 
 ## Specification contradictions
 
 One divergence remains:
 
-1. **Tip update uses `>=`.** [`REQ-MSGSTORE-1-6ME9D7`](../../../../specification/storage/message-blocks.md#req-msgstore-1-6me9d7) says the tip advances only when the height
+1. **Tip update uses `>=`.** [`REQ-MSGSTORE-1-6ME9D7` (Content-addressed store with tip tracking)](../../../../specification/storage/message-blocks.md#req-msgstore-1-6me9d7) says the tip advances only when the height
    _exceeds_ the current tip; the code replaces the tip on equal height too ([#L41](../../../../../../src/storage/MessageBlockStorage.ts#L41)).
    Benign while heights are unique per honest stream, but an equal-height store silently
    repoints the tip.

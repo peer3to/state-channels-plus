@@ -65,7 +65,7 @@ claims complete conformance for a requirement that depends on other files.
 
 - Operation semantics per the owning protocol documents; composition rules per [contracts.md](../../../../../specification/enforcement/contracts.md).
 - `ErrorTopUpBalanceParticipantSlashed(address)` identifies the explicit top-up eligibility
-  rejection required by [`REQ-ENFADM-2-K6K9SP`](../../../../../specification/enforcement/admission-and-funds.md#req-enfadm-2-k6k9sp).
+  rejection required by [`REQ-ENFADM-2-K6K9SP` (Membership-split correctness)](../../../../../specification/enforcement/admission-and-funds.md#req-enfadm-2-k6k9sp).
 - Argument-carrying errors on the dispute-upload, reduction and snapshot paths name their
   operands `expected*`/`actual*` (or `current*`/`submitted*`) so the pair reads unambiguously
   once decoded. Errors whose failure carries no operand — an empty-array guard, for example —

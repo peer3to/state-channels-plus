@@ -3,8 +3,8 @@
 import type { QueryService } from "./QueryService";
 import Clock from "@/Clock";
 import StateSnapshot from "@/models/StateSnapshot";
-import ARpcMethods from "@/rpc/ARpcMethods";
-import type ATransport from "@/transport/ATransport";
+import ANetworkRpcMethods from "@/rpc/network/ANetworkRpcMethods";
+import type NetworkTransport from "@/transport/NetworkTransport";
 import { Status } from "@/types/flags";
 import type { Address, ForkId, Hash, BlockHeight } from "@/types/types";
 import { Codec, Type, hash } from "@/utils";
@@ -70,12 +70,9 @@ export interface StateProofVerification {
  * serializable projection (status, hash, height, address) — never a live
  * `Block`/transport/profile instance, which cannot cross the runtime port.
  */
-export class QueryRpcMethods extends ARpcMethods {
-    constructor(
-        transport: ATransport,
-        private readonly service: QueryService
-    ) {
-        super(transport, service.p2pManager);
+export class QueryRpcMethods extends ANetworkRpcMethods<QueryService> {
+    constructor(transport: NetworkTransport, service: QueryService) {
+        super(transport, service);
     }
 
     // ===== Identity / status =====

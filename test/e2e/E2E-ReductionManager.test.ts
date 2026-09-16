@@ -1,5 +1,7 @@
 import { Status } from "@/types";
 import type { ForkId } from "@/types/types";
+import { runtimeEndpointFor } from "@test/fixtures/RuntimeRootObservation";
+import { clientRootFor } from "@test/fixtures/RuntimeRootObservation";
 import {
     MathTestSession as TestSession,
     sleep,
@@ -19,6 +21,7 @@ describe("E2E: ReductionManager", function () {
             h = TestSession.getHarness();
             ({ sourceForkId } = await h.scenario.stageReducibleDisputedFork({
                 peerCount: 4,
+                configOverrides: { RUN_SDK_IN_THREAD: false },
                 maliciousPeerIndex: 1,
                 timeConfig: { evidenceTime: 3 }
             }));
@@ -60,30 +63,26 @@ describe("E2E: ReductionManager", function () {
 
         it("RaceConditionReductionExpectationDoesntMatch aborts and rejects the operation", async function () {
             const targetPeer = h.getPeer(targetPeerIndex);
+            const { query } = runtimeEndpointFor(targetPeer.p2pInstance);
+            const host = clientRootFor(
+                targetPeer.p2pInstance
+            ).p2pRuntimeHostRemoteRoot!;
             await h.rpcStub.releaseReductionWithSimulationError(
                 targetPeerIndex,
                 "RaceConditionReductionExpectationDoesntMatch"
             );
 
             await waitFor(
-                async () =>
-                    (await h
-                        .control(targetPeer)
-                        .query.getStatus()
-                        .request()) === Status.OPENED,
-                h.event.protocolEventTimeoutMs(),
-                50
+                () => host.isClosed,
+                h.event.protocolEventTimeoutMs()
             );
             await TestSession.settleDetached({
                 expectedErrorIncludes:
                     "RaceConditionReductionExpectationDoesntMatch"
             });
-            expect(
-                await h
-                    .control(targetPeer)
-                    .query.getCompletedReductionForkId(sourceForkId)
-                    .request()
-            ).to.equal(null);
+            expect(query.getCompletedReductionForkId(sourceForkId)).to.equal(
+                null
+            );
         });
     });
 

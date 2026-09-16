@@ -6,13 +6,16 @@ import {
     deployLocalDiamond,
     deployArtifact
 } from "../../scripts/V1/deploy";
-import { createContractExecutorFactory } from "@/evm";
 import LocalContractExecutorSigner from "@/evm/signer/LocalContractExecutorSigner";
 import { ContractSizeLimitError } from "@/index";
 import { Codec, SignatureUtils, Type } from "@/utils";
 import { connectLocalDiamond } from "@/utils/localDiamond";
 import { HardhatEthersSigner } from "@nomicfoundation/hardhat-ethers/signers";
 import * as factory from "@test/factory";
+import {
+    createSdkOwnedExecutor,
+    disposeSdkExecutorFixtures
+} from "@test/fixtures/node/SdkExecutorFixture";
 import {
     createJoinChannelTestObject,
     createOpenChannelTestObject
@@ -23,6 +26,7 @@ import { ContractFactory, type Signer } from "ethers";
 import { ethers } from "hardhat";
 
 describe("Universal Deployment", () => {
+    after(disposeSdkExecutorFixtures);
     let deployer: HardhatEthersSigner;
     let localSigner: LocalContractExecutorSigner;
 
@@ -48,7 +52,7 @@ describe("Universal Deployment", () => {
         [deployer] = await ethers.getSigners();
         localSigner = new LocalContractExecutorSigner(
             deployer,
-            await createContractExecutorFactory({ dedicatedThread: false })
+            await createSdkOwnedExecutor({ dedicatedThread: false })
         );
     });
 

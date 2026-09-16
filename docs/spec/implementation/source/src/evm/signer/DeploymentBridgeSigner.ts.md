@@ -21,9 +21,15 @@
 
 Deployment-time bridge signer (mirror deployment paths).
 
+call unwraps encodedReturnData from the internal response and preserves the public ethers Promise<string> return contract.
+
 ## Key design decisions
 
+Deployment operations select deploySigner endpoints on the bound SDK connection. Raw message/typed-data signing uses p2pSigner endpoints. Public signer behavior, deployment response reconstruction and 30-second request defaults remain unchanged. See [DeploySignerRpcMethods.ts](../../rpc/internal/services/deploySigner/DeploySignerRpcMethods.ts.md).
+
 _None — the file is declarative/mechanical; behavior-shaping decisions live with its consumers._
+
+Message signing uses the shared tagged message serializer. ABI call results remain unwrapped to the public Promise<string> contract.
 
 ## Inputs, outputs, state, and side effects
 
@@ -77,4 +83,4 @@ Exact test evidence is mapped against these IDs in the verification test reports
 
 ## Related source reports
 
-- [identity.md](../../../../../specification/protocol-model/identity.md), [P2pRuntimeHost](../p2pRuntime/P2pRuntimeHost.ts.md).
+- [identity.md](../../../../../specification/protocol-model/identity.md), [P2pRuntimeHost](../../rpc/internal/roots/P2pRuntimeHostRoot.ts.md).

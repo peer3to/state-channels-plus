@@ -42,14 +42,14 @@ export function createThrowingHasProxy(): object {
 
 export type RpcServiceShape = {
     createRPCMethods?: unknown;
-    p2pManager?: unknown;
+    router?: unknown;
     runRPC?: unknown;
 };
 
 export function createRpcServiceShape(): RpcServiceShape {
     return {
         createRPCMethods: () => ({}),
-        p2pManager: {},
+        router: {},
         runRPC: () => true
     };
 }

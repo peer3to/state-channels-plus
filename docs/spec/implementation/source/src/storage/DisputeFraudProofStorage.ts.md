@@ -53,7 +53,7 @@ claims complete conformance for a requirement that depends on other files.
 
 ## Specification adherence
 
-- Dispute-keyed, first-write-wins retention ([`REQ-DSTORE-3-ZNXSTM`](../../../../specification/storage/dispute-evidence.md#req-dstore-3-znxstm)).
+- Dispute-keyed, first-write-wins retention ([`REQ-DSTORE-3-ZNXSTM` (Content-addressed proofs with stable indexes)](../../../../specification/storage/dispute-evidence.md#req-dstore-3-znxstm)).
 
 ## Specification contradictions
 

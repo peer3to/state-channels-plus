@@ -3,6 +3,7 @@ import {
     assertDirectSlashRecovery,
     assertRecoveredSlashTimestampAndDedup
 } from "@test/fixtures/DisputeSlashRecoveryStaging";
+import { assertListenerStopWindow } from "@test/fixtures/EventListenerStopFixture";
 import { MathTestSession as TestSession } from "@test/harness";
 import { waitFor } from "@test/utils/waitFor";
 import { expect } from "chai";
@@ -12,6 +13,9 @@ import { hexlify, zeroPadValue } from "ethers";
 const LOG_RECOVERY_ATTEMPTS = 3;
 
 describe("EventSyncService", function () {
+    it("drops subscription callbacks while stop is still draining scheduled work", async () => {
+        await assertListenerStopWindow(TestSession.getHarness());
+    });
     it("authoritative slash recovery returns no change for an empty chain set", async function () {
         await assertDirectSlashRecovery(TestSession.getHarness(), false);
     });

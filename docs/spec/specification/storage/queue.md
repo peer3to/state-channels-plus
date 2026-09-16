@@ -4,7 +4,7 @@
 > **Engineer verification:** Pending.
 > **Status:** Draft.
 > **Scope:** The module realizing the pre-execution merge layer of
-> [`REQ-BLOCK-PIPE-5-WJ31RG`](../block-progression/block-processing.md#req-block-pipe-5-wj31rg): not-yet-eligible block
+> [`REQ-BLOCK-PIPE-5-WJ31RG` (Pre-execution merge layer)](../block-progression/block-processing.md#req-block-pipe-5-wj31rg): not-yet-eligible block
 > confirmations with their merged signatures and source attribution. Shared storage rules:
 > [durability.md](./durability.md).
 
@@ -72,9 +72,9 @@ entry leaves both the entry map and the coordinate index.
 
 - The queue holds _unvalidated_ knowledge by design; everything read from it re-enters pipeline
   validation. Attribution must therefore be preserved exactly — it is future evidence.
-- Entries may never become eligible; retention is bounded per entry ([`REQ-BLOCK-PIPE-5-WJ31RG`](../block-progression/block-processing.md#req-block-pipe-5-wj31rg)) and by the
-  shared retention rules ([durability.md](./durability.md), [`REQ-STOR-4-MF6FT6`](durability.md#req-stor-4-mf6ft6)).
-- Frequency-bounding of intake is the communication layer's duty ([`REQ-RPC-5-CV1R1Y`](../peer-communication/rpc.md#req-rpc-5-cv1r1y)); the queue bounds
+- Entries may never become eligible; retention is bounded per entry ([`REQ-BLOCK-PIPE-5-WJ31RG` (Pre-execution merge layer)](../block-progression/block-processing.md#req-block-pipe-5-wj31rg)) and by the
+  shared retention rules ([durability.md](./durability.md), [`REQ-STOR-4-MF6FT6` (Obligation-bounded retention)](durability.md#req-stor-4-mf6ft6)).
+- Frequency-bounding of intake is the communication layer's duty ([`REQ-RPC-5-CV1R1Y` (Resource bounds)](../peer-communication/rpc.md#req-rpc-5-cv1r1y)); the queue bounds
   per-entry structure only.
 
 ## Security considerations

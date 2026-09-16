@@ -34,68 +34,60 @@ describe("E2E: dispute validation / disputeInputFields / selfRemoval", function 
         await h.dispute.suppressDisputeInitiation([
             h.getPeer(leaverIndex).index
         ]);
-        try {
-            // One dispute commits on-chain.
-            const remainingPeerIndices =
-                await h.dispute.selfRemoveViaDisputeWait({
-                    leaverIndex,
-                    forkId: disputedForkId
-                });
+        // One dispute commits on-chain.
+        const remainingPeerIndices = await h.dispute.selfRemoveViaDisputeWait({
+            leaverIndex,
+            forkId: disputedForkId
+        });
 
-            // Nobody should kill a valid self-removal dispute.
-            await h.event.waitWhileEventCountsStayAtMost(
-                "onDisputeKilled",
-                [...remainingPeerIndices, leaverIndex],
-                { durationMs: 4000 }
-            );
+        // Nobody should kill a valid self-removal dispute.
+        await h.event.waitWhileEventCountsStayAtMost(
+            "onDisputeKilled",
+            [...remainingPeerIndices, leaverIndex],
+            { durationMs: 4000 }
+        );
 
-            await h.dispute.resolveDisputeWait({
-                forkId: disputedForkId,
-                assertMaliciousRemoved: false,
-                honestPeerIndices: remainingPeerIndices
-            });
+        await h.dispute.resolveDisputeWait({
+            forkId: disputedForkId,
+            assertMaliciousRemoved: false,
+            honestPeerIndices: remainingPeerIndices
+        });
 
-            await h.assert.sync.participantCount({ expectedCount: 2 });
-            const exits = await h.execOnHost(
-                h.getPeer(remainingPeerIndices[0]),
-                async (sm, { leaver }) => {
-                    const messages =
-                        sm.storage.outboundMessages.getLatestMessageBlock()
-                            ?.messages ?? [];
-                    return messages
-                        .filter((message) => message.participant === leaver)
-                        .map((message) => String(message.balance.amount));
-                },
-                { leaver: leaverAddress }
-            );
-            expect(exits.length).to.equal(1);
-            // Local fork adoption can precede the chain reduction receipt.
-            // Snapshot submission is only available after that result is committed.
-            await h.event.waitForEventCounts(
-                "onDisputeReducedResultCommitted",
-                remainingPeerIndices.map((peerId) => ({
-                    peerId,
-                    expectedCount: 1
-                })),
-                h.event.protocolEventTimeoutMs(),
-                { mode: "atLeast" }
-            );
-            await h.transition.postSnapshotWait({
-                peerIndex: remainingPeerIndices[0]
-            });
-            const afterSnapshot = await h.channelManager.getStateSnapshot(
-                h.channelId
-            );
-            expect(
-                afterSnapshot.snapshotData.totalWithdrawals.amount -
-                    beforeSnapshot.snapshotData.totalWithdrawals.amount
-            ).to.equal(BigInt(exits[0]));
-        } finally {
-            await h
-                .control(h.getPeer(leaverIndex))
-                .stub.restoreDisputeInitiation()
-                .request();
-        }
+        await h.assert.sync.participantCount({ expectedCount: 2 });
+        const exits = await h.execOnHost(
+            h.getPeer(remainingPeerIndices[0]),
+            async (sm, { leaver }) => {
+                const messages =
+                    sm.storage.outboundMessages.getLatestMessageBlock()
+                        ?.messages ?? [];
+                return messages
+                    .filter((message) => message.participant === leaver)
+                    .map((message) => String(message.balance.amount));
+            },
+            { leaver: leaverAddress }
+        );
+        expect(exits.length).to.equal(1);
+        // Local fork adoption can precede the chain reduction receipt.
+        // Snapshot submission is only available after that result is committed.
+        await h.event.waitForEventCounts(
+            "onDisputeReducedResultCommitted",
+            remainingPeerIndices.map((peerId) => ({
+                peerId,
+                expectedCount: 1
+            })),
+            h.event.protocolEventTimeoutMs(),
+            { mode: "atLeast" }
+        );
+        await h.transition.postSnapshotWait({
+            peerIndex: remainingPeerIndices[0]
+        });
+        const afterSnapshot = await h.channelManager.getStateSnapshot(
+            h.channelId
+        );
+        expect(
+            afterSnapshot.snapshotData.totalWithdrawals.amount -
+                beforeSnapshot.snapshotData.totalWithdrawals.amount
+        ).to.equal(BigInt(exits[0]));
 
         for (const peer of h.getActiveHonestPeers()) {
             const participants = await h

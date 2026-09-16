@@ -57,7 +57,7 @@ claims complete conformance for a requirement that depends on other files.
 
 ## Specification adherence
 
-- Coordinate keying and exact-hash matching ([`REQ-CDSTORE-1-ECWBNY`](../../../../specification/storage/calldata-and-timeouts.md#req-cdstore-1-ecwbny)).
+- Coordinate keying and exact-hash matching ([`REQ-CDSTORE-1-ECWBNY` (Coordinate-keyed calldata with exact matching)](../../../../specification/storage/calldata-and-timeouts.md#req-cdstore-1-ecwbny)).
 
 ## Specification contradictions
 

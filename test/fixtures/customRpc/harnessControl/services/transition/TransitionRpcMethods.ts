@@ -1,9 +1,9 @@
 // @spec-test-coverage-ignore: transition fixture support exercised by owning mapped tests
 import type { TransitionService } from "./TransitionService";
 import { Block } from "@/models";
-import ARpcMethods from "@/rpc/ARpcMethods";
+import ANetworkRpcMethods from "@/rpc/network/ANetworkRpcMethods";
 import type { IngestBlockConfirmationOptions } from "@/stateManager/ingest/BlockQueueManager";
-import type ATransport from "@/transport/ATransport";
+import type NetworkTransport from "@/transport/NetworkTransport";
 import type { ForkId } from "@/types/types";
 import { Codec, Type } from "@/utils";
 
@@ -23,12 +23,9 @@ export interface SameForkSnapshotUpdate {
  * here; accessors are on {@link TransitionService}. Snapshot structs carry
  * bigints, so they cross the port as `Codec.encode(_, Type.StateSnapshot)`.
  */
-export class TransitionRpcMethods extends ARpcMethods {
-    constructor(
-        transport: ATransport,
-        private readonly service: TransitionService
-    ) {
-        super(transport, service.p2pManager);
+export class TransitionRpcMethods extends ANetworkRpcMethods<TransitionService> {
+    constructor(transport: NetworkTransport, service: TransitionService) {
+        super(transport, service);
     }
 
     /** Post a fresh state snapshot for `forkId`; returns the encoded snapshot or null. */

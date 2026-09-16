@@ -1,11 +1,11 @@
-// @spec-test-coverage-ignore: host-side support service for the mapped ATransport component cases
+// @spec-test-coverage-ignore: host-side support service for the mapped NetworkTransport component cases
 import type { PingPongRpc } from "../PingPongRpcManifest";
 import { ATransportProbeRpcMethods } from "./ATransportProbeRpcMethods";
 import type P2PManager from "@/P2PManager";
-import ARpcService from "@/rpc/ARpcService";
+import ANetworkRpcService from "@/rpc/network/ANetworkRpcService";
 import type Rpc from "@/rpc/Rpc";
 import type { RpcResponse } from "@/rpc/Rpc";
-import ATransport from "@/transport/ATransport";
+import NetworkTransport from "@/transport/NetworkTransport";
 import { TransportType } from "@/transport/TransportType";
 
 export type ATransportIdentityProbe = {
@@ -37,7 +37,7 @@ export type ATransportFailureProbe = {
     sendErrorMessage: string | undefined;
 };
 
-class RecordingTransport extends ATransport {
+class RecordingTransport extends NetworkTransport {
     public transportType = TransportType.HOLEPUNCH;
     public readonly serializedFrames: string[] = [];
     public concreteCloseCalls = 0;
@@ -48,52 +48,58 @@ class RecordingTransport extends ATransport {
         this.serializedFrames.push(serializedRPC);
     }
 
-    public onMessage(): void {}
+    // Overrides NetworkTransport.onMessage: deliver through this probe transport.
+    public override onMessage(): void {}
 
     protected _close(): void {
         this.concreteCloseCalls += 1;
     }
 }
 
-export class ATransportProbeService extends ARpcService<
+export class ATransportProbeService extends ANetworkRpcService<
     ATransportProbeRpcMethods,
     P2PManager<PingPongRpc>
 > {
     constructor(p2pManager: P2PManager<PingPongRpc>) {
         super(
-            p2pManager,
+            p2pManager.rpcRouter,
             p2pManager.stateManager.logger.child({
                 component: "ATransportProbeService"
             })
         );
     }
 
-    public createRPCMethods(transport: ATransport): ATransportProbeRpcMethods {
+    public createRPCMethods(
+        transport: NetworkTransport
+    ): ATransportProbeRpcMethods {
         return new ATransportProbeRpcMethods(transport, this);
     }
 
     public probeMessageConversion() {
-        const transport = new RecordingTransport(this.p2pManager);
-        const original = this.p2pManager.onRpc;
+        const transport = new RecordingTransport(this.p2pManager.rpcRouter);
+        const original = this.p2pManager.rpcRouter.onRpc;
         const frames: string[] = [];
         let correctReceiver = true;
-        this.p2pManager.onRpc = function (frame, source) {
+        this.p2pManager.rpcRouter.onRpc = async function (frame, source) {
             frames.push(frame);
             correctReceiver =
                 correctReceiver &&
-                this === transport.p2pManager &&
+                this === transport.router &&
                 source === transport;
         };
         try {
-            ATransport.prototype.onMessage.call(transport, "string-frame");
-            ATransport.prototype.onMessage.call(
+            NetworkTransport.prototype.onMessage.call(
+                transport,
+                "string-frame"
+            );
+            NetworkTransport.prototype.onMessage.call(
                 transport,
                 Buffer.from("buffer-frame")
             );
             const conversionError = new Error("conversion failed");
             let sameError = false;
             try {
-                ATransport.prototype.onMessage.call(transport, {
+                NetworkTransport.prototype.onMessage.call(transport, {
                     toString() {
                         throw conversionError;
                     }
@@ -103,7 +109,7 @@ export class ATransportProbeService extends ARpcService<
             }
             return { frames, correctReceiver, sameError };
         } finally {
-            this.p2pManager.onRpc = original;
+            this.p2pManager.rpcRouter.onRpc = original;
         }
     }
 
@@ -111,29 +117,35 @@ export class ATransportProbeService extends ARpcService<
         firstAddress: string,
         secondAddress: string
     ): ATransportIdentityProbe {
-        const sameReference = new RecordingTransport(this.p2pManager);
-        const first = new RecordingTransport(this.p2pManager);
-        const second = new RecordingTransport(this.p2pManager);
+        const sameReference = new RecordingTransport(this.p2pManager.rpcRouter);
+        const first = new RecordingTransport(this.p2pManager.rpcRouter);
+        const second = new RecordingTransport(this.p2pManager.rpcRouter);
 
-        const sameReferenceWithoutAddress = ATransport.isSamePeer(
+        const sameReferenceWithoutAddress = NetworkTransport.isSamePeer(
             sameReference,
             sameReference
         );
-        const distinctWithoutAddresses = ATransport.isSamePeer(first, second);
+        const distinctWithoutAddresses = NetworkTransport.isSamePeer(
+            first,
+            second
+        );
 
         first.peerAddress = firstAddress;
-        const oneAddressMissing = ATransport.isSamePeer(first, second);
+        const oneAddressMissing = NetworkTransport.isSamePeer(first, second);
 
         second.peerAddress = firstAddress.toLowerCase();
-        const sameAddressDifferentCase = ATransport.isSamePeer(first, second);
+        const sameAddressDifferentCase = NetworkTransport.isSamePeer(
+            first,
+            second
+        );
 
         second.peerAddress = secondAddress;
-        const differentAddresses = ATransport.isSamePeer(first, second);
+        const differentAddresses = NetworkTransport.isSamePeer(first, second);
 
-        const replacement = new RecordingTransport(this.p2pManager);
+        const replacement = new RecordingTransport(this.p2pManager.rpcRouter);
         replacement.transportType = TransportType.WEBRTC;
         replacement.peerAddress = firstAddress;
-        const replacementTransportType = ATransport.isSamePeer(
+        const replacementTransportType = NetworkTransport.isSamePeer(
             first,
             replacement
         );
@@ -155,7 +167,7 @@ export class ATransportProbeService extends ARpcService<
         rpc: Rpc,
         response: RpcResponse
     ): ATransportDeliveryProbe {
-        const transport = new RecordingTransport(this.p2pManager);
+        const transport = new RecordingTransport(this.p2pManager.rpcRouter);
         transport.send(rpc);
         transport.sendRpcResponse(response);
         return {
@@ -169,7 +181,7 @@ export class ATransportProbeService extends ARpcService<
         isExpected: boolean,
         closeTwice: boolean
     ): ATransportCloseProbe {
-        const transport = new RecordingTransport(this.p2pManager);
+        const transport = new RecordingTransport(this.p2pManager.rpcRouter);
         transport.peerAddress = peerAddress;
         this.p2pManager.addConnection(transport);
         let disconnectCalls = 0;
@@ -208,7 +220,9 @@ export class ATransportProbeService extends ARpcService<
     }
 
     public probeFailures(): ATransportFailureProbe {
-        const serializationTransport = new RecordingTransport(this.p2pManager);
+        const serializationTransport = new RecordingTransport(
+            this.p2pManager.rpcRouter
+        );
         let serializationErrorPropagated = false;
         try {
             serializationTransport.send({
@@ -220,7 +234,7 @@ export class ATransportProbeService extends ARpcService<
             serializationErrorPropagated = true;
         }
 
-        const sendTransport = new RecordingTransport(this.p2pManager);
+        const sendTransport = new RecordingTransport(this.p2pManager.rpcRouter);
         sendTransport.sendError = new Error("recording transport send failed");
         let sendErrorMessage: string | undefined;
         try {

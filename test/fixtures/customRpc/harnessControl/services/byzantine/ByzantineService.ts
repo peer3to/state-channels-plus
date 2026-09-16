@@ -2,9 +2,9 @@
 
 import ByzantineRpcMethods from "./ByzantineRpcMethods";
 import type P2PManager from "@/P2PManager";
-import ARpcService from "@/rpc/ARpcService";
+import ANetworkRpcService from "@/rpc/network/ANetworkRpcService";
 import type Rpc from "@/rpc/Rpc";
-import type ATransport from "@/transport/ATransport";
+import type NetworkTransport from "@/transport/NetworkTransport";
 import type { ForkId, Hash } from "@/types/types";
 import { getChecksumAddress } from "@/utils";
 import { ethers } from "ethers";
@@ -19,10 +19,10 @@ export type NegotiationRawMethod = "exchangeTerms" | "openProposal" | "abort";
  * every method on a `*RpcMethods` instance is routable by name at runtime, so
  * only the public endpoints belong there.
  */
-export class ByzantineService extends ARpcService<ByzantineRpcMethods> {
+export class ByzantineService extends ANetworkRpcService<ByzantineRpcMethods> {
     constructor(p2pManager: P2PManager) {
         super(
-            p2pManager,
+            p2pManager.rpcRouter,
             p2pManager.stateManager.logger.child({
                 component: "HarnessByzantineService"
             })
@@ -54,7 +54,7 @@ export class ByzantineService extends ARpcService<ByzantineRpcMethods> {
             ethers.ZeroHash) as Hash;
     }
 
-    public createRPCMethods(transport: ATransport): ByzantineRpcMethods {
+    public createRPCMethods(transport: NetworkTransport): ByzantineRpcMethods {
         return new ByzantineRpcMethods(transport, this);
     }
 

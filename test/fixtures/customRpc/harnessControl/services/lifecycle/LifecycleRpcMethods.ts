@@ -1,16 +1,13 @@
 // @spec-test-coverage-ignore: host-side lifecycle staging used by mapped tests
 import type { LifecycleService } from "./LifecycleService";
-import ARpcMethods from "@/rpc/ARpcMethods";
-import type ATransport from "@/transport/ATransport";
+import ANetworkRpcMethods from "@/rpc/network/ANetworkRpcMethods";
+import type NetworkTransport from "@/transport/NetworkTransport";
 import type { ChannelId } from "@/types/types";
 
 /** Private lifecycle staging endpoints for the test harness. */
-export class LifecycleRpcMethods extends ARpcMethods {
-    constructor(
-        transport: ATransport,
-        private readonly service: LifecycleService
-    ) {
-        super(transport, service.p2pManager);
+export class LifecycleRpcMethods extends ANetworkRpcMethods<LifecycleService> {
+    constructor(transport: NetworkTransport, service: LifecycleService) {
+        super(transport, service);
     }
 
     public async stageChannelId(channelId: ChannelId): Promise<boolean> {

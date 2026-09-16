@@ -77,4 +77,4 @@ Exact test evidence is mapped against these IDs in the verification test reports
 
 ## Related source reports
 
-- [P2pRuntimeHost](./P2pRuntimeHost.ts.md).
+- [P2pRuntimeHost](../../rpc/internal/roots/P2pRuntimeHostRoot.ts.md).

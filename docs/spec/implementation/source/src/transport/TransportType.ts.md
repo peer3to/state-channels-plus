@@ -77,4 +77,4 @@ Exact test evidence is mapped against these IDs in the verification test reports
 
 ## Related source reports
 
-- [InitHandshakeService](../rpc/services/initHandshake/InitHandshakeService.ts.md).
+- [InitHandshakeService](../rpc/network/services/initHandshake/InitHandshakeService.ts.md).

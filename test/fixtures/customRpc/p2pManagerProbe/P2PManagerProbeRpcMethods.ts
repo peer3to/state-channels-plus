@@ -1,5 +1,4 @@
 // @spec-test-coverage-ignore: loopback endpoints for mapped P2PManager component cases
-import type { PingPongRpc } from "../PingPongRpcManifest";
 import type {
     DispatchHeadProbe,
     DispatchOutcomeProbe,
@@ -44,33 +43,40 @@ import type {
     LobbyExhaustionTimerProbe,
     LobbyLatePickProbe
 } from "./P2PManagerProbeService";
-import type P2PManager from "@/P2PManager";
-import ARpcMethods from "@/rpc/ARpcMethods";
-import type ATransport from "@/transport/ATransport";
+import ANetworkRpcMethods from "@/rpc/network/ANetworkRpcMethods";
+import type NetworkTransport from "@/transport/NetworkTransport";
 
-export class P2PManagerProbeRpcMethods extends ARpcMethods<
-    P2PManager<PingPongRpc>
-> {
-    constructor(
-        transport: ATransport,
-        private readonly service: P2PManagerProbeService
-    ) {
-        super(transport, service.p2pManager);
+export class P2PManagerProbeRpcMethods extends ANetworkRpcMethods<P2PManagerProbeService> {
+    constructor(transport: NetworkTransport, service: P2PManagerProbeService) {
+        super(transport, service);
+    }
+
+    public holdNetworkReply(token: string): Promise<string> {
+        return this.service.holdNetworkReply(token);
+    }
+    public releaseNetworkReply(token: string): boolean {
+        return this.service.releaseNetworkReply(token);
+    }
+    public networkReplyState(token: string, foreignAddress: string) {
+        return this.service.networkReplyState(token, foreignAddress);
+    }
+    public sendNetworkReply(peerAddress: string, requestId: string): void {
+        this.service.sendNetworkReply(peerAddress, requestId);
     }
 
     public recordDispatch(): void {
         this.service.recordDispatch();
     }
 
-    public probeDispatchHead(): DispatchHeadProbe {
+    public probeDispatchHead(): Promise<DispatchHeadProbe> {
         return this.service.probeDispatchHead();
     }
 
-    public probeDispatchOutcomes(): DispatchOutcomeProbe {
+    public probeDispatchOutcomes(): Promise<DispatchOutcomeProbe> {
         return this.service.probeDispatchOutcomes();
     }
 
-    public probeFrameByteBoundaries(): FrameByteBoundaryProbe {
+    public probeFrameByteBoundaries(): Promise<FrameByteBoundaryProbe> {
         return this.service.probeFrameByteBoundaries();
     }
 
@@ -120,6 +126,10 @@ export class P2PManagerProbeRpcMethods extends ARpcMethods<
 
     public probeConcurrentSettlement(): Promise<ConcurrentSettlementProbe> {
         return this.service.probeConcurrentSettlement();
+    }
+
+    public probeDisposalFailure() {
+        return this.service.probeDisposalFailure();
     }
 
     public probeDisposal(): Promise<DisposalProbe> {

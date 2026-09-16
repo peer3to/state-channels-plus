@@ -15,7 +15,7 @@ Pending or participating callers with no balance send no transaction. Top-ups se
 receipt. Force-join cases check the admission flag at the triggering block, then wait for detached dispute
 construction to reach its recorded submission. Deferred cases retain their retry marker and submit nothing.
 
-These cases contribute to [`REQ-TJOIN-2-MFWADG`](../../../../specification/peer-communication/targeted-channel-join.md#req-tjoin-2-mfwadg) and [`REQ-TJOIN-5-Q795M7`](../../../../specification/peer-communication/targeted-channel-join.md#req-tjoin-5-q795m7).
+These cases contribute to [`REQ-TJOIN-2-MFWADG` (Separated matching and handoff)](../../../../specification/peer-communication/targeted-channel-join.md#req-tjoin-2-mfwadg) and [`REQ-TJOIN-5-Q795M7` (Phase-specific failure)](../../../../specification/peer-communication/targeted-channel-join.md#req-tjoin-5-q795m7).
 
 ## Tests and covered test IDs
 

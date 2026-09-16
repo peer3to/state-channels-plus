@@ -35,7 +35,7 @@ Guarantees:
 
 Non-guarantees: no persistence across process restart (storage is in-memory);
 no gossip rate limiting (**Open question** in
-[../security/trust-model.md](../../../../specification/security/trust-model.md), [`OQ-6-4JPNE5`](../../../../specification/open-questions.md#oq-6-4jpne5)); no
+[../security/trust-model.md](../../../../specification/security/trust-model.md), [`OQ-6-4JPNE5` (P2P gossip rate limiting)](../../../../specification/open-questions.md#oq-6-4jpne5)); no
 delivery guarantee — a parked block that never becomes executable is dropped
 after its queue window and re-fetched by sync if needed.
 
@@ -48,7 +48,7 @@ or on the validation entry
 directly:
 
 1. **Peer RPC gossip.**
-   [`StateTransitionRpcMethods.onBlockConfirmation`](../../../../../../src/rpc/services/stateTransition/StateTransitionRpcMethods.ts#L13)
+   [`StateTransitionRpcMethods.onBlockConfirmation`](../../../../../../src/rpc/network/services/stateTransition/StateTransitionRpcMethods.ts#L13)
    (guarded by a completed handshake) calls
    `stateManager.ingestBlockConfirmation(bc, { senderAddress })`. A `false`
    result disconnects and blacklists the sending peer. `senderAddress` feeds
@@ -162,7 +162,7 @@ distinct entries; boundedness is intended to come transitively from a **single R
 limit**: with a finite admission rate and the fixed entry lifetime, only a bounded number of
 entries can coexist. That central rate limiter (one shared mechanism across all RPC services,
 possibly per-peer — deliberately not per-service limits) is not implemented yet and is required
-before production — tracked in [`OQ-6-4JPNE5`](../../../../specification/open-questions.md#oq-6-4jpne5).
+before production — tracked in [`OQ-6-4JPNE5` (P2P gossip rate limiting)](../../../../specification/open-questions.md#oq-6-4jpne5).
 
 Current: the implementation matches the mutex boundary — signature merging into stored blocks
 ([`tryMergeStoredBlockConfirmation`](../../../../../../src/stateManager/StateManager.ts#L478)) and all
@@ -531,7 +531,7 @@ _Non-normative._
 - Persistent block/queue storage and recovery-on-restart semantics.
 - Gossip rate limiting policy (unit of limiting, backpressure, prioritization)
   — required before the p2p security model is complete
-  ([`OQ-6-4JPNE5`](../../../../specification/open-questions.md#oq-6-4jpne5)).
+  ([`OQ-6-4JPNE5` (P2P gossip rate limiting)](../../../../specification/open-questions.md#oq-6-4jpne5)).
 - Move the remaining `DisputeValidationStrategy` special-casing inside
   `success()` behind a strategy hook (code TODO).
 - Author-side check for granted extra time before posting calldata
@@ -548,7 +548,7 @@ _Non-normative._
 | [`INV-BCP-5-NGASJJ`](block-confirmation-pipeline.md#inv-bcp-5-ngasjj) | Persist before gossip.                                                                                                                                                                                                                                                                                         | Covered               | `success()` step order, `tryMergeStoredBlockConfirmation`                                                                                                                                                                                                                      | None.            |
 | [`INV-BCP-6-1E943Z`](block-confirmation-pipeline.md#inv-bcp-6-1e943z) | Every live `DISPUTE` outcome stores a fraud proof before disputing.                                                                                                                                                                                                                                            | Covered               | [src/stateManager/validationStrategy/BlockValidationStrategy.ts](../../../../../../src/stateManager/validationStrategy/BlockValidationStrategy.ts#L1), [src/stateManager/utils/FraudProofService.ts](../../../../../../src/stateManager/utils/FraudProofService.ts#L5)         | None.            |
 | [`INV-BCP-7-ZDZ5WB`](block-confirmation-pipeline.md#inv-bcp-7-zdz5wb) | Subjective lateness never produces a proof or slash.                                                                                                                                                                                                                                                           | Covered               | [src/stateManager/ValidationService.ts](../../../../../../src/stateManager/ValidationService.ts#L15) (`NOT_ENOUGH_TIME` path)                                                                                                                                                  | None.            |
-| [`REQ-BCP-1-X3J4KY`](block-confirmation-pipeline.md#req-bcp-1-x3j4ky) | Both input paths (peer RPC and chain calldata) converge on one ingest with source attribution / on-chain timestamp respectively.                                                                                                                                                                               | Covered               | [src/rpc/services/stateTransition](../../../../../../src/rpc/services/stateTransition), [src/eventHandlers/EventHandler.ts](../../../../../../src/eventHandlers/EventHandler.ts#L1) (`onBlockCalldataPosted`)                                                                  | None.            |
+| [`REQ-BCP-1-X3J4KY`](block-confirmation-pipeline.md#req-bcp-1-x3j4ky) | Both input paths (peer RPC and chain calldata) converge on one ingest with source attribution / on-chain timestamp respectively.                                                                                                                                                                               | Covered               | [src/rpc/network/services/stateTransition](../../../../../../src/rpc/network/services/stateTransition), [src/eventHandlers/EventHandler.ts](../../../../../../src/eventHandlers/EventHandler.ts#L1) (`onBlockCalldataPosted`)                                                  | None.            |
 | [`REQ-BCP-2-1K3HN9`](block-confirmation-pipeline.md#req-bcp-2-1k3hn9) | Objective timestamp rule is evaluated by the canonical Solidity predicate over the exact proof struct.                                                                                                                                                                                                         | Covered               | [src/stateManager/ValidationService.ts](../../../../../../src/stateManager/ValidationService.ts#L15) (`hasInvalidTimestamp.staticCall`)                                                                                                                                        | None.            |
 | [`REQ-BCP-3-1GCEH9`](block-confirmation-pipeline.md#req-bcp-3-1gceh9) | Non-state-mutating intake and merge (older/future/duplicate blocks, late signatures) never require the state-transition mutex; merge rules are deterministic, idempotent, and resource-capped per entry.                                                                                                       | Covered               | [BlockQueueManager](../../../../../../src/stateManager/BlockQueueManager.ts#L31) (scheduled tasks), [QueueStorage](../../../../../../src/storage/QueueStorage.ts#L27), [StateManager.tryMergeStoredBlockConfirmation](../../../../../../src/stateManager/StateManager.ts#L478) | None.            |
 | [`REQ-BCP-4-MS5VVZ`](block-confirmation-pipeline.md#req-bcp-4-ms5vvz) | State application is total-order by `(forkId, height)` — at most one block in execution; same-coordinate competing bodies coexist in the queue, the first validated body wins locally (decided 2026-08-10), and the conflict is surfaced via validation/fraud-proof/drop paths, never hidden by arrival order. | Covered               | mutex sites in [StateManager](../../../../../../src/stateManager/StateManager.ts#L94) (`onBlockConfirmation`, `playTransaction`, `setLatestState`); ordering in [BlockQueueManager.tryExecuteFromQueue](../../../../../../src/stateManager/BlockQueueManager.ts#L244)          | None.            |

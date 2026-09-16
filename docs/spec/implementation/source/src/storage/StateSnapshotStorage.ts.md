@@ -51,14 +51,14 @@ claims complete conformance for a requirement that depends on other files.
 
 ## Assumptions, dependencies, trust boundaries, and limits
 
-- Caller-supplied hashes and the `isGenesis`/`forkID` fields are producer-guaranteed ([`INV-SNAPSTORE-1-DPHPJE`](../../../../specification/storage/snapshots-and-states.md#inv-snapstore-1-dphpje) trust rule); the store never recomputes commitments.
+- Caller-supplied hashes and the `isGenesis`/`forkID` fields are producer-guaranteed ([`INV-SNAPSTORE-1-DPHPJE` (Content addressing)](../../../../specification/storage/snapshots-and-states.md#inv-snapstore-1-dphpje) trust rule); the store never recomputes commitments.
 - In-memory medium for this protocol version: durability across restart is not yet provided; the
   target contract is [durability.md](../../../../specification/storage/durability.md).
 
 ## Specification adherence
 
-- Exact content addressing with explicit absence ([`INV-SNAPSTORE-1-DPHPJE`](../../../../specification/storage/snapshots-and-states.md#inv-snapstore-1-dphpje)).
-- Idempotent genesis registration; conflicts excluded structurally under collision resistance ([`REQ-SNAPSTORE-1-AJW0HJ`](../../../../specification/storage/snapshots-and-states.md#req-snapstore-1-ajw0hj)).
+- Exact content addressing with explicit absence ([`INV-SNAPSTORE-1-DPHPJE` (Content addressing)](../../../../specification/storage/snapshots-and-states.md#inv-snapstore-1-dphpje)).
+- Idempotent genesis registration; conflicts excluded structurally under collision resistance ([`REQ-SNAPSTORE-1-AJW0HJ` (Genesis index consistency)](../../../../specification/storage/snapshots-and-states.md#req-snapstore-1-ajw0hj)).
 
 ## Specification contradictions
 

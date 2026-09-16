@@ -50,7 +50,7 @@ claims complete conformance for a requirement that depends on other files.
 
 ## Specification adherence
 
-- Lifecycle-convergent scheduling ([`REQ-RUNTIME-3-VQXW59`](../../../../specification/runtime/execution.md#req-runtime-3-vqxw59)).
+- Lifecycle-convergent scheduling ([`REQ-RUNTIME-3-VQXW59` (Lifecycle convergence)](../../../../specification/runtime/execution.md#req-runtime-3-vqxw59)).
 
 ## Specification contradictions
 
@@ -80,4 +80,4 @@ Exact test evidence is mapped against these IDs in the verification test reports
 
 ## Related source reports
 
-- [StateManager](../stateManager/StateManager.ts.md), [BlockQueueManager](../stateManager/BlockQueueManager.ts.md).
+- [StateManager](../stateManager/StateManager.ts.md), [BlockQueueManager](../stateManager/ingest/BlockQueueManager.ts.md).

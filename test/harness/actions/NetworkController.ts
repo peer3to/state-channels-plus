@@ -1,6 +1,6 @@
 // @spec-test-coverage-ignore: shared lobby transport actions exercised by owning mapped E2E declarations
 import type { ConnectToChannelOptions } from "@/evm/signer/ConnectToChannelOptions";
-import { compareAddresses } from "@/rpc/services/openChannelNegotiation/OpenChannelNegotiationHelpers";
+import { compareAddresses } from "@/rpc/network/services/openChannelNegotiation/OpenChannelNegotiationHelpers";
 import { Codec, Logger, Type } from "@/utils";
 import type { HarnessControlRpc } from "@test/fixtures/customRpc/harnessControl/HarnessControlRpc";
 import { PeerTestHarness } from "@test/fixtures/PeerTestHarness";

@@ -1,16 +1,8 @@
+import { deployStack, setupBrowserPeer } from "./sdkSetup.js";
 // @spec-test-coverage-ignore: browser page driver for the WebRTC E2E run; evidence is mapped from run-p2p-webrtc-e2e.mjs
-import MathConsumerFacetArtifact from "../../artifacts/contracts/V1/examples/MathStateMachine/MathConsumerFacet.sol/MathConsumerFacet.json";
-import MathStateMachineArtifact from "../../artifacts/contracts/V1/examples/MathStateMachine/MathStateMachine.sol/MathStateMachine.json";
-import { deployFullStack } from "../../scripts/V1/deploy";
-import Clock from "@/Clock";
-import { EvmStateMachine } from "@/evm";
 
-import { installWebRTCMainThreadBridge } from "@/rpc/services/WebRTCSetup/connection/WebRTCMainThreadBridge";
+import { installWebRTCMainThreadBridge } from "@/rpc/internal/roots/WebRTCMainThreadBridge";
 import { Status } from "@/types";
-import { Codec, SignatureUtils, Type } from "@/utils";
-import { connectStateChannelManager } from "@/utils/stateChannelManager";
-import { MathStateMachine__factory } from "@typechain-types";
-import { ethers, NonceManager, ContractFactory } from "ethers";
 
 /**
  * Browser e2e: two REAL p2pSetup peers connect over WebRTC.
@@ -132,106 +124,6 @@ async function waitForAsync(predicate, label, timeoutMs = 45_000) {
 // Generous agreement window: the handshake round-trip (and the peers' clock
 // difference) must fit inside `agreementTime`, and browser workers running the
 // EVM are far slower than node — a tight 2s window flakes on RTT.
-const timeConfig = {
-    p2pTime: 5,
-    agreementTime: 30,
-    chainFallbackTime: 30,
-    evidenceTime: 60
-};
-
-/**
- * Deploy the full stack against the external hardhat node (reached through the
- * same-origin RPC proxy) and derive a shared channel id for discovery. The
- * existing-channel case opens that ID on-chain after the genesis runtime has
- * selected it, so the observer exercises the real sync boundary over WebRTC.
- */
-async function deployStack(providerUrl, openExistingChannel) {
-    const provider = new ethers.JsonRpcProvider(providerUrl);
-    const wallets = [0, 1, 2, 3].map((index) =>
-        ethers.HDNodeWallet.fromPhrase(
-            DEFAULT_HARDHAT_MNEMONIC,
-            undefined,
-            `m/44'/60'/0'/0/${index}`
-        )
-    );
-    const [deployerWallet, peerAWallet, peerBWallet, genesisPeerWallet] =
-        wallets;
-    const deployerSigner = new NonceManager(deployerWallet.connect(provider));
-
-    const scmDeployment = await deployFullStack(deployerSigner, {
-        stateMachineArtifact: MathStateMachineArtifact,
-        consumerFacetArtifact: MathConsumerFacetArtifact,
-        stateMachineArgs: [5_000_000],
-        consumerFacetArgs: [],
-        timeConfig,
-        disputeExecutionGasLimit: 1_000_000
-    });
-
-    await Clock.init(provider);
-
-    const channelId = ethers.keccak256(
-        ethers.AbiCoder.defaultAbiCoder().encode(
-            ["string"],
-            ["browser-webrtc-e2e"]
-        )
-    );
-
-    const openConfirmedChannel = async () => {
-        const latestBlock = await provider.getBlock("latest");
-        const openChannel = {
-            channelId,
-            participants: [deployerWallet.address, genesisPeerWallet.address],
-            balances: [
-                { amount: 500n, data: "0x1234" },
-                { amount: 500n, data: "0x5678" }
-            ],
-            deadlineTimestamp: BigInt(latestBlock.timestamp + 120),
-            isAtomic: true,
-            data: "0x"
-        };
-        const signatures = await Promise.all(
-            [deployerWallet, genesisPeerWallet].map((wallet) =>
-                SignatureUtils.signOpenChannel(openChannel, wallet)
-            )
-        );
-        const manager = connectStateChannelManager(
-            scmDeployment.address,
-            deployerSigner
-        );
-        await (
-            await manager.open({
-                encodedOpenChannel: Codec.encode(openChannel, Type.OpenChannel),
-                signatures: signatures.map(({ signature }) => signature)
-            })
-        ).wait();
-    };
-
-    return {
-        provider,
-        scmAddress: scmDeployment.address,
-        channelId,
-        peerWallets: openExistingChannel
-            ? [deployerWallet, peerAWallet]
-            : [peerAWallet, peerBWallet],
-        openConfirmedChannel
-    };
-}
-
-async function deployLocalStateMachine(stateMachineSigner) {
-    const stateMachineFactory = new ContractFactory(
-        MathStateMachineArtifact.abi,
-        MathStateMachineArtifact.bytecode,
-        stateMachineSigner
-    );
-    const deployTx = await stateMachineFactory.getDeployTransaction(5_000_000);
-    const sent = await stateMachineSigner.sendTransaction(deployTx);
-    const receipt = await sent.wait();
-    if (!receipt?.contractAddress) {
-        throw new Error("No local MathStateMachine address created");
-    }
-    return receipt.contractAddress;
-}
-
 async function setupPeer(
     peerWallet,
     providerUrl,
@@ -239,35 +131,22 @@ async function setupPeer(
     relayUrl,
     peerId
 ) {
-    const provider = new ethers.JsonRpcProvider(providerUrl);
-    const runtimeSigner = peerWallet.connect(provider);
-
-    const stateMachineContractInstance = MathStateMachine__factory.connect(
-        ethers.ZeroAddress,
-        runtimeSigner
-    );
-
-    return EvmStateMachine.p2pSetup(
-        connectStateChannelManager(scmAddress, runtimeSigner),
-        stateMachineContractInstance,
-        deployLocalStateMachine,
-        {
-            peerId,
-            config: {
-                PROVIDER_URL: providerUrl,
-                RUN_SDK_IN_THREAD: true,
-                DEBUG_LOCAL_TRANSPORT: true,
-                LOCAL_DISCOVERY_REGISTRY_URL: relayUrl,
-                LOG_LEVEL: globalThis.__P2P_E2E__?.logLevel ?? "info",
-                // Silence background network work that congests the worker event
-                // loop (and adds noisy errors): no crash-log upload, no
-                // Holepunch relay — discovery here is the local relay hub.
-                CRASH_LOG_UPLOAD_ENDPOINT: "",
-                HOLEPUNCH_RELAYER_URLS: []
-            },
-            signerSecret: peerWallet.privateKey
-        }
-    );
+    return setupBrowserPeer(peerWallet, providerUrl, scmAddress, {
+        peerId,
+        config: {
+            PROVIDER_URL: providerUrl,
+            RUN_SDK_IN_THREAD: true,
+            DEBUG_LOCAL_TRANSPORT: true,
+            LOCAL_DISCOVERY_REGISTRY_URL: relayUrl,
+            LOG_LEVEL: globalThis.__P2P_E2E__?.logLevel ?? "info",
+            // Silence background network work that congests the worker event
+            // loop (and adds noisy errors): no crash-log upload, no
+            // Holepunch relay — discovery here is the local relay hub.
+            CRASH_LOG_UPLOAD_ENDPOINT: "",
+            HOLEPUNCH_RELAYER_URLS: []
+        },
+        signerSecret: peerWallet.privateKey
+    });
 }
 
 globalThis.runP2pWebRTCMainThreadE2E = async () => {

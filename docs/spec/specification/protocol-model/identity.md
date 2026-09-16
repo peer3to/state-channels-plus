@@ -58,14 +58,14 @@ Two signing forms exist, deliberately incapable of colliding:
    message-signing envelope (EIP-191 for the current target). The signed target is always the
    32-byte hash of canonical bytes — never a re-serialization, never a display form.
 2. **Session authentication**: a signature over a _domain-tagged string_ incorporating a fresh
-   challenge ([handshake.md](../peer-communication/handshake.md), [`INV-AUTH-2-VQ6D54`](../peer-communication/handshake.md#inv-auth-2-vq6d54)). The domain tag
+   challenge ([handshake.md](../peer-communication/handshake.md), [`INV-AUTH-2-VQ6D54` (Domain separation)](../peer-communication/handshake.md#inv-auth-2-vq6d54)). The domain tag
    guarantees a session signature can never be replayed as a protocol-object signature even when
    the challenge is chosen adversarially to equal an object hash.
 
 The current protocol-object form carries no domain separation of its own — no chain, deployment,
 version, or object-type binding beyond the struct shape. Cross-deployment and cross-chain replay
 of such signatures is a known open decision, not an accepted design:
-[`OQ-29-EFY4NF`](../open-questions.md#oq-29-efy4nf).
+[`OQ-29-EFY4NF` (Signature domain separation)](../open-questions.md#oq-29-efy4nf).
 
 ## Signing authority
 
@@ -84,7 +84,7 @@ Signing authority is therefore a confined capability, not ambient data:
   handshake response, join countersigning, block confirmation) — each such endpoint validates
   before signing under its own document's rules.
 - Everything signed is either locally produced or fully validated; the signer is never an oracle
-  over unvalidated input ([`REQ-AUTH-1-RF901K`](../peer-communication/handshake.md#req-auth-1-rf901k) is the pattern).
+  over unvalidated input ([`REQ-AUTH-1-RF901K` (Validate before signing)](../peer-communication/handshake.md#req-auth-1-rf901k) is the pattern).
 
 ## Requirements and invariants
 
@@ -110,7 +110,7 @@ validation-before-signing.
 **<a id="req-id-4-bnekcm"></a>`REQ-ID-4-BNEKCM` — Domain-separated signing forms.** Session-authentication signatures MUST be
 domain-tagged such that they cannot verify as any protocol-object signature, and vice versa,
 regardless of adversarially chosen content. (Extending domain separation across protocol objects,
-chains, and deployments is [`OQ-29-EFY4NF`](../open-questions.md#oq-29-efy4nf).)
+chains, and deployments is [`OQ-29-EFY4NF` (Signature domain separation)](../open-questions.md#oq-29-efy4nf).)
 
 ## Assumptions and constraints
 
@@ -130,7 +130,7 @@ Protected asset: the binding between statements and accountability. Threats: key
 abuse (an endpoint tricked into signing attacker-shaped content — contained by [`REQ-ID-3-KR0BE3`](identity.md#req-id-3-kr0be3)/
 [`REQ-ID-4-BNEKCM`](identity.md#req-id-4-bnekcm) and per-endpoint validation); identity-comparison bugs (a checksum-variant address
 slipping past an exclusion list or splitting attribution — [`REQ-ID-2-F3Y8J4`](identity.md#req-id-2-f3y8j4)); cross-context replay of
-protocol-object signatures (open, [`OQ-29-EFY4NF`](../open-questions.md#oq-29-efy4nf)); and malleability of the signature encoding (verification
+protocol-object signatures (open, [`OQ-29-EFY4NF` (Signature domain separation)](../open-questions.md#oq-29-efy4nf)); and malleability of the signature encoding (verification
 MUST NOT treat two encodings of one signature as two distinct commitments where uniqueness
 matters, e.g. counting threshold signatures).
 
@@ -149,6 +149,6 @@ matters, e.g. counting threshold signatures).
 ## Future Work
 
 _Non-normative._ Domain separation for protocol objects (chain, deployment, version, object type —
-[`OQ-29-EFY4NF`](../open-questions.md#oq-29-efy4nf)) and its proof-migration plan; key rotation or session-key delegation with explicit
+[`OQ-29-EFY4NF` (Signature domain separation)](../open-questions.md#oq-29-efy4nf)) and its proof-migration plan; key rotation or session-key delegation with explicit
 revocation semantics; multi-signature or smart-account participant identities; watchtower
 delegation credentials distinct from participant keys.

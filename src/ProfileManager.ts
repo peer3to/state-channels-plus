@@ -1,22 +1,38 @@
 import { Address } from "./types/types";
 import { getChecksumAddress } from "./utils";
 import { LoggerUtils } from "./utils/LoggerUtils";
+import { runCleanupSync } from "./utils/runCleanup";
 import PeerProfile, { BannablePeerInfo } from "@/PeerProfile";
-import ATransport from "@/transport/ATransport";
+import NetworkTransport from "@/transport/NetworkTransport";
 import { TransportType } from "@/transport/TransportType";
 
 // ProfileManager alone owns explicit bans, upgrade bans, and fallback release.
 // An explicit blacklist always wins over transport fallback.
 class ProfileManager {
-    private mapTransportToProfile: WeakMap<ATransport, PeerProfile> =
-        new WeakMap<ATransport, PeerProfile>();
+    private readonly mapTransportToProfile = new Map<
+        NetworkTransport,
+        PeerProfile
+    >();
     private mapEvmAddressToProfile: Map<Address, PeerProfile> = new Map();
     private mapHpAddressToProfile: Map<Address, PeerProfile> = new Map<
         Address,
         PeerProfile
     >();
 
-    public registerTransport(transport: ATransport): PeerProfile {
+    /** Close every registered transport, including peers still authenticating. */
+    public dispose(): void {
+        // Snapshot the keys: removeTransport restores an entry when close fails.
+        runCleanupSync(
+            ...[...this.mapTransportToProfile.keys()].map((transport) => () => {
+                this.removeTransport(transport);
+            }),
+            () => this.mapTransportToProfile.clear(),
+            () => this.mapEvmAddressToProfile.clear(),
+            () => this.mapHpAddressToProfile.clear()
+        );
+    }
+
+    public registerTransport(transport: NetworkTransport): PeerProfile {
         const existingProfile = this.mapTransportToProfile.get(transport);
         if (existingProfile) return existingProfile;
 
@@ -46,7 +62,7 @@ class ProfileManager {
         }
     }
     public authenticateTransport(
-        transport: ATransport,
+        transport: NetworkTransport,
         evmAddress: Address
     ): PeerProfile | undefined {
         const normalizedAddress = getChecksumAddress(evmAddress);
@@ -93,7 +109,7 @@ class ProfileManager {
     }
     public unregisterProfile(
         profile: PeerProfile,
-        detachedTransport?: ATransport
+        detachedTransport?: NetworkTransport
     ) {
         const transport = profile.getTransport();
         if (transport) this.mapTransportToProfile.delete(transport);
@@ -106,7 +122,10 @@ class ProfileManager {
         if (hpAddress) this.mapHpAddressToProfile.delete(hpAddress);
         profile.removeHolepunchPeerInfo();
     }
-    public updateTransport(profileAddress: string, newTransport: ATransport) {
+    public updateTransport(
+        profileAddress: string,
+        newTransport: NetworkTransport
+    ) {
         const profile = this.mapEvmAddressToProfile.get(
             getChecksumAddress(profileAddress)
         );
@@ -137,7 +156,7 @@ class ProfileManager {
 
         this.attachTransportProfile(newTransport, profile);
     }
-    public removeTransport(transport: ATransport, isUpgraded = false) {
+    public removeTransport(transport: NetworkTransport, isUpgraded = false) {
         const profile = this.mapTransportToProfile.get(transport);
         if (!profile) return;
         transport.p2pManager.logger.debug("Removing peer transport", {
@@ -155,7 +174,7 @@ class ProfileManager {
         }
     }
     public getProfileByTransport(
-        transport: ATransport
+        transport: NetworkTransport
     ): PeerProfile | undefined {
         const transportProfile = this.mapTransportToProfile.get(transport);
         if (transportProfile) return transportProfile;
@@ -178,21 +197,25 @@ class ProfileManager {
         return this.mapHpAddressToProfile.get(hpAddress);
     }
 
-    public getTransportByEvmAddress(evmAddress: Address): ATransport | null {
+    public getTransportByEvmAddress(
+        evmAddress: Address
+    ): NetworkTransport | null {
         const transport =
             this.getProfileByEvmAddress(evmAddress)?.getTransport() ?? null;
         return transport && !transport.isClosed ? transport : null;
     }
 
     public setBannablePeerInfo(
-        transport: ATransport,
+        transport: NetworkTransport,
         peerInfo: BannablePeerInfo
     ): void {
         this.registerTransport(transport).setHolepunchPeerInfo(peerInfo);
     }
 
-    public blacklistPeer(peer: ATransport | Address): ATransport | undefined {
-        if (peer instanceof ATransport) {
+    public blacklistPeer(
+        peer: NetworkTransport | Address
+    ): NetworkTransport | undefined {
+        if (peer instanceof NetworkTransport) {
             const profile = this.getProfileByTransport(peer);
             if (profile) this.blacklistProfile(profile);
             return peer;
@@ -220,7 +243,7 @@ class ProfileManager {
         return true;
     }
 
-    public releaseHolepunchBanOnWebRtcClose(transport: ATransport): void {
+    public releaseHolepunchBanOnWebRtcClose(transport: NetworkTransport): void {
         if (transport.transportType !== TransportType.WEBRTC) return;
         const profile = this.getProfileByTransport(transport);
         if (
@@ -243,8 +266,8 @@ class ProfileManager {
     }
 
     private applyUpgradeBanPolicy(
-        oldTransport: ATransport,
-        newTransport: ATransport,
+        oldTransport: NetworkTransport,
+        newTransport: NetworkTransport,
         profile: PeerProfile
     ): void {
         if (
@@ -264,7 +287,7 @@ class ProfileManager {
     }
 
     private attachTransportProfile(
-        transport: ATransport,
+        transport: NetworkTransport,
         profile: PeerProfile
     ): void {
         const transportProfile = this.mapTransportToProfile.get(transport);
