@@ -214,7 +214,6 @@ describe("P2PManager disconnect policy", function () {
 
         expect(result.banCalls).to.deep.equal([]);
         expect(result.profileBlacklisted).to.equal(false);
-        expect(result.profileUpgradeBanned).to.equal(false);
         expect(result.socketDestroyed).to.equal(true);
         expect(result.connectionRemoved).to.equal(true);
     });
@@ -227,7 +226,6 @@ describe("P2PManager disconnect policy", function () {
 
         expect(result.banCalls).to.deep.equal([true]);
         expect(result.profileBlacklisted).to.equal(true);
-        expect(result.profileUpgradeBanned).to.equal(false);
         expect(result.socketDestroyed).to.equal(true);
         expect(result.connectionRemoved).to.equal(true);
     });
@@ -254,27 +252,6 @@ describe("P2PManager disconnect policy", function () {
 
         expect(result.banCalls).to.deep.equal([true, false]);
         expect(result.profileBlacklisted).to.equal(false);
-        expect(result.profileUpgradeBanned).to.equal(false);
         expect(result.connectionRemoved).to.equal(true);
-    });
-
-    it("keeps the fault ban and the upgrade ban as separate facts", async function () {
-        const result = await fixture
-            .control()
-            .p2pManagerProbe.probeBanFactSeparation(fixture.address(1))
-            .request();
-
-        expect(result.afterUpgrade).to.deep.equal({
-            faultBanned: false,
-            upgradeBanned: true,
-            derivedBan: true,
-            banCalls: [true]
-        });
-        expect(result.afterBlacklist).to.deep.equal({
-            faultBanned: true,
-            upgradeBanned: true,
-            derivedBan: true,
-            banCalls: [true, true]
-        });
     });
 });

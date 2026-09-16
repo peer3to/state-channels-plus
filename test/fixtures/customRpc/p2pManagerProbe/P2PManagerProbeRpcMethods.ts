@@ -17,7 +17,6 @@ import type {
     BulkPenaltyProbe,
     ConnectedPeerFallbackProbe,
     BanPolicyProbe,
-    BanFactSeparationProbe,
     DisconnectPolicyProbe,
     RelayAdmissionProbe,
     UpgradeBanPolicyProbe,
@@ -247,10 +246,6 @@ export class P2PManagerProbeRpcMethods extends ANetworkRpcMethods<P2PManagerProb
         address: string
     ): DisconnectPolicyProbe {
         return this.service.probeAllowReleasesUpgradeBan(address);
-    }
-
-    public probeBanFactSeparation(address: string): BanFactSeparationProbe {
-        return this.service.probeBanFactSeparation(address);
     }
 
     public probeUpgradeBanPolicy(address: string): UpgradeBanPolicyProbe {

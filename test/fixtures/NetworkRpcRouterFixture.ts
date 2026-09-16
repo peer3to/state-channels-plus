@@ -5,21 +5,14 @@ import {
 } from "../harness/core/testTimeConfig";
 import { waitFor } from "../utils/waitFor";
 import { withWebRTCBridge } from "./node/WebRTCBridgeFixture";
-import {
-    RecordingBannablePeerInfo,
-    RecordingHolepunchSocket
-} from "./P2PTransportFixture";
 import { withRuntimeRpc } from "./RpcRouterFixture";
-import type P2PManager from "@/P2PManager";
 import { P2pRuntimeHostRoot } from "@/rpc/internal/roots/P2pRuntimeHostRoot";
 import type { WebRTCDataChannelLike } from "@/rpc/network/services/WebRTCSetup/connection/WebRTCConnectionTypes";
 import { ARpcRouter } from "@/rpc/router/ARpcRouter";
 import { NetworkRpcRouter } from "@/rpc/router/NetworkRpcRouter";
-import HolepunchTransport from "@/transport/HolepunchTransport";
 import WebRTCTransport from "@/transport/WebRTCTransport";
 import { Buffer } from "buffer";
 import { expect } from "chai";
-import { ethers } from "ethers";
 
 export async function assertNetworkRouterOwnership(): Promise<void> {
     await withRuntimeRpc(async (sdk) => {
@@ -241,60 +234,6 @@ export async function assertWebRTCTransportDelivery(
             transport?.close(true);
             restoreSend?.();
         }
-    });
-}
-
-/** An authenticated Holepunch peer whose socket and ban handle are observable. */
-function connectAuthenticatedPeer(manager: P2PManager) {
-    const peerInfo = new RecordingBannablePeerInfo();
-    const socket = new RecordingHolepunchSocket();
-    const transport = new HolepunchTransport(
-        socket,
-        peerInfo,
-        manager.rpcRouter
-    );
-    const address = ethers.Wallet.createRandom().address;
-    manager.addConnection(transport);
-    if (!manager.profileManager.authenticateTransport(transport, address)) {
-        throw new Error("Fixture transport was not admitted");
-    }
-    return { transport, socket, peerInfo, address };
-}
-
-/**
- * An unknown service or method is what a version skew between two SDK builds
- * looks like on the wire, so the router refuses the frame and closes without
- * escalating. A malformed envelope on the same router stays punitive.
- */
-export async function assertUnknownServiceRefusedWithoutBlacklist(): Promise<void> {
-    await withRuntimeRpc(async (sdk) => {
-        const host = [...sdk.roots].find(
-            (root): root is P2pRuntimeHostRoot =>
-                root instanceof P2pRuntimeHostRoot
-        );
-        if (!host) throw new Error("Expected the real SDK host");
-        const manager = host.hostRpc.requireManager();
-
-        const skewed = connectAuthenticatedPeer(manager);
-        await manager.rpcRouter.onRpc(
-            JSON.stringify({
-                service: "serviceFromANewerBuild",
-                method: "unknownToThisBuild",
-                params: []
-            }),
-            skewed.transport
-        );
-        expect(skewed.socket.destroyed).to.equal(true);
-        expect(manager.isBlacklisted(skewed.address)).to.equal(false);
-        expect(skewed.peerInfo.banCalls).to.deep.equal([]);
-
-        const malformed = connectAuthenticatedPeer(manager);
-        await manager.rpcRouter.onRpc(
-            JSON.stringify({ notAnRpc: true }),
-            malformed.transport
-        );
-        expect(malformed.socket.destroyed).to.equal(true);
-        expect(manager.isBlacklisted(malformed.address)).to.equal(true);
     });
 }
 

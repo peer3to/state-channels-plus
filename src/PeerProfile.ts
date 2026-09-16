@@ -19,12 +19,7 @@ class PeerProfile {
     evmAddress: Address | undefined; //TODO! - AAdress -> base class for different address types (when we do substrate and other address formats)
     hpAddress: string | undefined;
     isLeader: boolean;
-    // Fault ban: this peer misbehaved and is excluded. Set by ProfileManager.
     isBlackListed: boolean;
-    // Upgrade-preference ban: the Hyperswarm fallback is suppressed while a
-    // WebRTC upgrade is in service. Not a fault, and released on fallback.
-    // ProfileManager derives the one Hyperswarm `ban()` flag from both facts.
-    private hasHolepunchUpgradeBan = false;
     private readonly liveTransports = new Set<NetworkTransport>();
     private readonly disconnectedListeners =
         new Set<ProfileDisconnectedListener>();
@@ -60,19 +55,6 @@ class PeerProfile {
             LoggerUtils.getPeerProfileMetadata(this)
         );
         this.isBlackListed = false;
-    }
-    public setHolepunchUpgradeBan(value: boolean) {
-        this.hasHolepunchUpgradeBan = value;
-    }
-    public getHolepunchUpgradeBan(): boolean {
-        return this.hasHolepunchUpgradeBan;
-    }
-    /**
-     * The Hyperswarm ban flag this profile should currently carry. A fault ban
-     * always wins, so releasing the upgrade ban never un-bans a blacklisted peer.
-     */
-    public isHolepunchBanned(): boolean {
-        return this.isBlackListed || this.hasHolepunchUpgradeBan;
     }
     public getTransport() {
         if (this.transport && !this.transport.isClosed) return this.transport;
@@ -134,10 +116,6 @@ class PeerProfile {
         const peerInfo = profile.takeHolepunchPeerInfo();
         if (peerInfo) this.setHolepunchPeerInfo(peerInfo);
         if (profile.isBlackListed) this.blacklist();
-        // The upgrade ban is a fact about the peer info handle we just took,
-        // so it travels with it. Carrying it keeps the derived flag in step
-        // with the ban already applied to that handle.
-        if (profile.hasHolepunchUpgradeBan) this.setHolepunchUpgradeBan(true);
     }
     public setHolepunchPeerInfo(peerInfo: BannablePeerInfo) {
         this.holepunchPeerInfo = peerInfo;

@@ -19,31 +19,21 @@
 
 ## Responsibility and observable boundary
 
-The per-peer record created with each transport: optional identity, the two independent ban facts, the
-set of live transports, preferred transport, disconnect subscribers, and the Holepunch ban handle that
+The per-peer record created with each transport: optional identity, blacklist flag, the set of
+live transports, preferred transport, disconnect subscribers, and the Holepunch ban handle that
 survives replacement. Exact-transport authentication remains on `NetworkTransport.peerAddress`.
 
 ## Key design decisions
 
-Profile logs cover explicit bans, clearing bans, authentication, transport attachment and detachment, and last-transport loss. The profile retains its owner logger after all transports close. See [PeerProfile.ts](../../../../../src/PeerProfile.ts#L50).
+Profile logs cover explicit bans, clearing bans, authentication, transport attachment and detachment, and last-transport loss. The profile retains its owner logger after all transports close. See [PeerProfile.ts](../../../../../src/PeerProfile.ts#L45).
 
 1. **The ban handle belongs to the profile from transport creation.** Authentication adds the
    verified address and identity index without introducing a second handle store; `ProfileManager`
    remains the only ban-policy owner.
-2. **The bootstrap ban is two facts, not one flag.** A fault exclusion
-   ([`isBlackListed`](../../../../../src/PeerProfile.ts#L23)) and an upgrade preference
-   ([`hasHolepunchUpgradeBan`](../../../../../src/PeerProfile.ts#L27)) are stored separately, and
-   [`isHolepunchBanned`](../../../../../src/PeerProfile.ts#L74) derives the single flag the handle
-   should carry as their disjunction. Exclusion therefore always wins: releasing the upgrade
-   preference on fallback cannot un-ban an excluded peer, which one shared boolean could not express
-   ([`REQ-UPG-4-M2XDBA` (Fallback ban and explicit exclusion)](../../../specification/peer-communication/transport-upgrade.md#req-upg-4-m2xdba)).
-   The upgrade fact travels with the handle in
-   [`absorbLifecycleFrom`](../../../../../src/PeerProfile.ts#L129), because it describes the handle
-   that was just taken over and would otherwise drift from the ban already applied to it.
-3. **Disconnection means loss of the profile, not one pipe.** `onDisconnected` fires once only on
+2. **Disconnection means loss of the profile, not one pipe.** `onDisconnected` fires once only on
    the transition from at least one live transport to none. Authentication rebinding transfers the
    live transport and subscriptions to the identity profile.
-4. **The live set is observable inside the runtime.** `getLiveTransports` lets the lobby take
+3. **The live set is observable inside the runtime.** `getLiveTransports` lets the lobby take
    ownership of every transport for an authenticated profile, so none can remain in the ordinary
    connection set while that profile is only a discovery candidate.
 
@@ -72,9 +62,6 @@ claims complete conformance for a requirement that depends on other files.
 ## Specification adherence
 
 - Role-consistent with the owning views; no divergence observed at this file's boundary.
-- The derived bootstrap-ban accessor keeps exclusion dominant over upgrade preference, as the
-  fallback-ban requirement demands
-  ([`REQ-UPG-4-M2XDBA` (Fallback ban and explicit exclusion)](../../../specification/peer-communication/transport-upgrade.md#req-upg-4-m2xdba)).
 
 ## Specification contradictions
 
@@ -90,10 +77,10 @@ Status enum: `Covered` | `Partial` | `Contradicts` | `Missing`. Evidence cells a
 **Here:** / **Other files:** so each row is auditable from its links alone; genuine gaps go in the
 Gap column. Audit state is file-level (Status header), never a row status.
 
-| Requirement / invariant                                                                                | Implementation status | Evidence                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         | Gap / divergence |
-| ------------------------------------------------------------------------------------------------------ | --------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------- |
-| [`REQ-UPG-4-M2XDBA`](../../../specification/peer-communication/transport-upgrade.md#req-upg-4-m2xdba)  | Covered               | **Here:** the bootstrap handle is attached before authentication and remains on the profile across transport replacement; the fault fact and the upgrade-preference fact are held separately and [`isHolepunchBanned`](../../../../../src/PeerProfile.ts#L74) derives the flag the handle should carry, so exclusion outlives an upgrade-preference release. **Other files:** [ProfileManager](./ProfileManager.ts.md) authenticates and indexes the profile and is the only writer that applies the derived flag to the handle. | None.            |
-| [`REQ-LOBBY-8-31BE0F`](../../../specification/peer-communication/lobby-matching.md#req-lobby-8-31be0f) | Covered               | **Here:** live-set transitions and `onDisconnected`; **Other files:** ProfileManager transfers lifecycle ownership and LobbyMatchingService releases work on the callback.                                                                                                                                                                                                                                                                                                                                                       | None.            |
+| Requirement / invariant                                                                                | Implementation status | Evidence                                                                                                                                                                                                                                          | Gap / divergence |
+| ------------------------------------------------------------------------------------------------------ | --------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------- |
+| [`REQ-UPG-4-M2XDBA`](../../../specification/peer-communication/transport-upgrade.md#req-upg-4-m2xdba)  | Covered               | **Here:** the bootstrap handle is attached before authentication and remains on the profile across transport replacement. **Other files:** [ProfileManager](./ProfileManager.ts.md) authenticates and indexes the profile and applies ban policy. | None.            |
+| [`REQ-LOBBY-8-31BE0F`](../../../specification/peer-communication/lobby-matching.md#req-lobby-8-31be0f) | Covered               | **Here:** live-set transitions and `onDisconnected`; **Other files:** ProfileManager transfers lifecycle ownership and LobbyMatchingService releases work on the callback.                                                                        | None.            |
 
 ## Component test obligations
 

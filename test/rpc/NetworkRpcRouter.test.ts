@@ -2,8 +2,7 @@ import { assertUnauthenticatedTransportCleanup } from "@test/fixtures/NetworkRpc
 import {
     assertInternalClosedAdmission,
     assertNetworkByteForwarding,
-    assertNetworkRouterOwnership,
-    assertUnknownServiceRefusedWithoutBlacklist
+    assertNetworkRouterOwnership
 } from "@test/fixtures/NetworkRpcRouterFixture";
 
 describe("NetworkRpcRouter", () => {
@@ -21,8 +20,5 @@ describe("NetworkRpcRouter", () => {
     });
     it("ignores internal messages after close at both receive entry points", async () => {
         await assertInternalClosedAdmission();
-    });
-    it("refuses an unknown service without blacklisting while a malformed envelope still does", async () => {
-        await assertUnknownServiceRefusedWithoutBlacklist();
     });
 });

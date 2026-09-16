@@ -413,20 +413,7 @@ export type DisconnectPolicyProbe = {
     banCalls: boolean[];
     socketDestroyed: boolean;
     profileBlacklisted: boolean;
-    profileUpgradeBanned: boolean;
     connectionRemoved: boolean;
-};
-
-export type BanFactSnapshot = {
-    faultBanned: boolean;
-    upgradeBanned: boolean;
-    derivedBan: boolean;
-    banCalls: boolean[];
-};
-
-export type BanFactSeparationProbe = {
-    afterUpgrade: BanFactSnapshot;
-    afterBlacklist: BanFactSnapshot;
 };
 
 export type UpgradeBanPolicyProbe = {
@@ -1727,7 +1714,6 @@ export class P2PManagerProbeService extends ANetworkRpcService<
             banCalls: [...peerInfo.banCalls],
             socketDestroyed: socket.destroyed,
             profileBlacklisted: profile.isBlackListed,
-            profileUpgradeBanned: profile.getHolepunchUpgradeBan(),
             connectionRemoved:
                 !this.p2pManager.openConnections.includes(transport)
         };
@@ -1750,7 +1736,6 @@ export class P2PManagerProbeService extends ANetworkRpcService<
             banCalls: [...peerInfo.banCalls],
             socketDestroyed: socket.destroyed,
             profileBlacklisted: profile.isBlackListed,
-            profileUpgradeBanned: profile.getHolepunchUpgradeBan(),
             connectionRemoved:
                 !this.p2pManager.openConnections.includes(transport)
         };
@@ -1771,7 +1756,6 @@ export class P2PManagerProbeService extends ANetworkRpcService<
             banCalls: [...peerInfo.banCalls],
             socketDestroyed: socket.destroyed,
             profileBlacklisted: profile.isBlackListed,
-            profileUpgradeBanned: profile.getHolepunchUpgradeBan(),
             connectionRemoved:
                 !this.p2pManager.openConnections.includes(transport)
         };
@@ -1795,33 +1779,8 @@ export class P2PManagerProbeService extends ANetworkRpcService<
             banCalls: [...peerInfo.banCalls],
             socketDestroyed: webRTC.isClosed,
             profileBlacklisted: profile.isBlackListed,
-            profileUpgradeBanned: profile.getHolepunchUpgradeBan(),
             connectionRemoved: !this.p2pManager.openConnections.includes(webRTC)
         };
-    }
-
-    public probeBanFactSeparation(address: string): BanFactSeparationProbe {
-        const { peerInfo, profile } =
-            this.registeredHolepunchTransport(address);
-        peerInfo.banCalls.length = 0;
-        const snapshot = (): BanFactSnapshot => ({
-            faultBanned: profile.isBlackListed,
-            upgradeBanned: profile.getHolepunchUpgradeBan(),
-            derivedBan: profile.isHolepunchBanned(),
-            banCalls: [...peerInfo.banCalls]
-        });
-
-        const webRTC = new WebRTCTransport(
-            new RecordingWebRTCDataChannel(),
-            this.p2pManager.rpcRouter
-        );
-        this.authenticateTransport(webRTC, address);
-        const afterUpgrade = snapshot();
-
-        this.p2pManager.profileManager.blacklistPeer(address);
-        const afterBlacklist = snapshot();
-
-        return { afterUpgrade, afterBlacklist };
     }
 
     public probeUpgradeBanPolicy(address: string): UpgradeBanPolicyProbe {
