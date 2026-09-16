@@ -2,13 +2,17 @@ import InitHandshakeRpcMethods from "./InitHandshakeRpcMethods";
 import Clock from "@/Clock";
 import type P2PManager from "@/P2PManager";
 import ANetworkRpcService from "@/rpc/network/ANetworkRpcService";
+import {
+    getRpcRequestFailureCause,
+    type RpcRequestFailureCause
+} from "@/rpc/router/ARpcRouter";
 import NetworkTransport from "@/transport/NetworkTransport";
 import { TransportType } from "@/transport/TransportType";
 import { Hash, Signature, Timestamp } from "@/types/types";
 import { DetachedPromises, getChecksumAddress } from "@/utils";
 import EventBarrier from "@/utils/EventBarrier";
 import { EventBarrierCapturedError } from "@/utils/EventBarrier";
-import { LoggerUtils } from "@/utils/LoggerUtils";
+import { type InitHandshakeMessage, LoggerUtils } from "@/utils/LoggerUtils";
 import { TimeoutManager } from "@/utils/TimeoutManager";
 import { ethers } from "ethers";
 
@@ -21,6 +25,20 @@ export type HandshakeResponse = {
     signature: Signature;
     responseTime: Timestamp;
     preferredTransport: TransportType;
+};
+
+/**
+ * How the request leg ended when it produced no response. The catch used to
+ * call every rejection a timeout; each kind is now logged as what it was.
+ */
+const REQUEST_FAILURE_LOG_MESSAGE: Record<
+    RpcRequestFailureCause,
+    InitHandshakeMessage
+> = {
+    "request-timeout": "response-timeout",
+    "remote-error": "response-error",
+    "transport-closed": "transport-closed",
+    "send-failed": "send-failed"
 };
 
 class InitHandshakeService extends ANetworkRpcService<InitHandshakeRpcMethods> {
@@ -104,23 +122,28 @@ class InitHandshakeService extends ANetworkRpcService<InitHandshakeRpcMethods> {
         this.markHandshakeInFlight(transport);
 
         // Request/response: send the challenge and await the signed response.
-        // A timeout/rejection means no valid response arrived -> disconnect.
+        // A timeout/rejection means no valid response arrived -> disconnect,
+        // unless the transport carrying the request is already gone.
         let response: HandshakeResponse;
         try {
             response = await this.remoteRpc.initHandshakeService
                 .onInitHandshakeRequest(randomChallengeHash, initTime)
                 .request(transport, { timeoutMs: agreementTime * 1000 });
         } catch (error) {
+            const cause = getRpcRequestFailureCause(error);
             LoggerUtils.logInitHandshakeMessage(this.logger, transport, {
                 direction: "local",
-                message: "response-timeout",
+                // Router rejections carry their kind; anything else is
+                // unattributable and keeps the original message.
+                message: cause
+                    ? REQUEST_FAILURE_LOG_MESSAGE[cause]
+                    : "response-timeout",
                 challengeHash: randomChallengeHash,
                 challengeInitTime: initTime,
-                reason:
-                    error instanceof Error
-                        ? `handshake response not received in time: ${error.message}`
-                        : "handshake response not received in time"
+                reason: error instanceof Error ? error.message : String(error)
             });
+            // The connection is already closed, so there is nothing to close.
+            if (cause === "transport-closed") return;
             this.p2pManager.disconnectConnection(transport);
             return;
         }

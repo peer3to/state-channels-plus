@@ -52,6 +52,9 @@ export type InitHandshakeMessage =
     | "response"
     | "ack"
     | "response-timeout"
+    | "response-error"
+    | "transport-closed"
+    | "send-failed"
     | "ack-timeout"
     | "rejected"
     | "finalize-check"
@@ -373,6 +376,8 @@ export class LoggerUtils {
         const level: LogLevel =
             args.message === "ack-timeout" ||
             args.message === "response-timeout" ||
+            args.message === "response-error" ||
+            args.message === "send-failed" ||
             args.message === "rejected"
                 ? "warn"
                 : "debug";
