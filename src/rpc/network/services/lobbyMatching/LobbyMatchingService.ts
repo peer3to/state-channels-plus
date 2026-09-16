@@ -10,6 +10,7 @@ import type {
 } from "./LobbyMatchingTypes";
 import { validateMatchTimeout } from "./LobbyMatchingValidation";
 import LobbyRpcAdmissionGuard from "./LobbyRpcAdmissionGuard";
+import { DisconnectPolicy } from "@/DisconnectPolicy";
 import type P2PManager from "@/P2PManager";
 import ANetworkRpcService from "@/rpc/network/ANetworkRpcService";
 import { HandshakeCompletedGuard } from "@/rpc/network/guards";
@@ -271,7 +272,10 @@ export default class LobbyMatchingService extends ANetworkRpcService<LobbyMatchi
             return;
         }
         if (!this.activeTopic || !this.matchResolve) {
-            this.p2pManager.disconnectConnection(transport);
+            this.p2pManager.disconnectConnection(
+                transport,
+                DisconnectPolicy.ALLOW
+            );
             return;
         }
         if (!this.sessionTransports.has(transport)) {
@@ -805,7 +809,10 @@ export default class LobbyMatchingService extends ANetworkRpcService<LobbyMatchi
             if (address === peerAddress && !transport.isClosed) {
                 this.handedOffTransports.add(transport);
             } else {
-                this.p2pManager.disconnectConnection(transport);
+                this.p2pManager.disconnectConnection(
+                    transport,
+                    DisconnectPolicy.ALLOW
+                );
             }
         }
     }
@@ -816,14 +823,20 @@ export default class LobbyMatchingService extends ANetworkRpcService<LobbyMatchi
         ]) {
             unsubscribe();
             this.sessionTransports.delete(transport);
-            this.p2pManager.disconnectConnection(transport);
+            this.p2pManager.disconnectConnection(
+                transport,
+                DisconnectPolicy.ALLOW
+            );
         }
     }
 
     private disconnectHandedOffTransports(): void {
         for (const transport of [...this.handedOffTransports]) {
             this.handedOffTransports.delete(transport);
-            this.p2pManager.disconnectConnection(transport);
+            this.p2pManager.disconnectConnection(
+                transport,
+                DisconnectPolicy.ALLOW
+            );
         }
         this.handedOffPeerAddress = undefined;
     }

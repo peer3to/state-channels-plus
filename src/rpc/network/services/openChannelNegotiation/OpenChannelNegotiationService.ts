@@ -654,7 +654,11 @@ export default class OpenChannelNegotiationService extends ANetworkRpcService<
     private onCommittedPeerDisconnected(attempt: MatchedAttempt): void {
         if (this.state.attempt !== attempt) return;
         if (attempt.mode === "ordinary") {
-            this.p2pManager.profileManager.blacklistPeer(attempt.peerAddress);
+            // Route through P2PManager so the exclusion goes through the one
+            // owner of the disconnect policy instead of banning behind its back.
+            this.p2pManager.disconnectAndBlacklistPeerByEvmAddress(
+                attempt.peerAddress
+            );
         }
         if (!attempt.localOpeningSignatureIssued) {
             void this.clearAttempt(

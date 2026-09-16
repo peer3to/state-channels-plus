@@ -1,5 +1,6 @@
 import InitHandshakeRpcMethods from "./InitHandshakeRpcMethods";
 import Clock from "@/Clock";
+import { DisconnectPolicy } from "@/DisconnectPolicy";
 import type P2PManager from "@/P2PManager";
 import ANetworkRpcService from "@/rpc/network/ANetworkRpcService";
 import NetworkTransport from "@/transport/NetworkTransport";
@@ -121,7 +122,10 @@ class InitHandshakeService extends ANetworkRpcService<InitHandshakeRpcMethods> {
                         ? `handshake response not received in time: ${error.message}`
                         : "handshake response not received in time"
             });
-            this.p2pManager.disconnectConnection(transport);
+            this.p2pManager.disconnectConnection(
+                transport,
+                DisconnectPolicy.ALLOW
+            );
             return;
         }
 
@@ -181,7 +185,10 @@ class InitHandshakeService extends ANetworkRpcService<InitHandshakeRpcMethods> {
                 agreementTimeSeconds: agreementTime,
                 reason: "response RTT outside agreement window"
             });
-            this.p2pManager.disconnectConnection(transport);
+            this.p2pManager.disconnectConnection(
+                transport,
+                DisconnectPolicy.ALLOW
+            );
             return;
         }
         const responseTimeDifference = responseTime - initTime;
@@ -229,7 +236,10 @@ class InitHandshakeService extends ANetworkRpcService<InitHandshakeRpcMethods> {
                 signerAddress,
                 reason: "response signer is blacklisted"
             });
-            this.p2pManager.disconnectConnection(transport);
+            this.p2pManager.disconnectConnection(
+                transport,
+                DisconnectPolicy.ALLOW
+            );
             return;
         }
 
@@ -364,7 +374,10 @@ class InitHandshakeService extends ANetworkRpcService<InitHandshakeRpcMethods> {
                     return;
                 }
 
-                this.p2pManager.disconnectConnection(transport);
+                this.p2pManager.disconnectConnection(
+                    transport,
+                    DisconnectPolicy.ALLOW
+                );
             },
             this.p2pManager.stateManager.timeConfig.agreementTime * 1000,
             "InitHandshakeService - handshake ack timeout"

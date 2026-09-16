@@ -193,3 +193,99 @@ describe("ProfileManager Holepunch ban policy", function () {
         expect(result.usableTrafficSent).to.equal(false);
     });
 });
+
+describe("P2PManager disconnect policy", function () {
+    let fixture: P2PManagerFixture;
+
+    beforeEach(async function () {
+        fixture = new P2PManagerFixture();
+        await fixture.setup();
+    });
+
+    afterEach(async function () {
+        await fixture.cleanup();
+    });
+
+    it("closes an ALLOW disconnect without blacklisting or banning the peer", async function () {
+        const result = await fixture
+            .control()
+            .p2pManagerProbe.probeDisconnectPolicyAllow(fixture.address(1))
+            .request();
+
+        expect(result.banCalls).to.deep.equal([]);
+        expect(result.profileBlacklisted).to.equal(false);
+        expect(result.profileUpgradeBanned).to.equal(false);
+        expect(result.socketDestroyed).to.equal(true);
+        expect(result.connectionRemoved).to.equal(true);
+    });
+
+    it("blacklists and fault-bans the peer on a BLACKLIST disconnect", async function () {
+        const result = await fixture
+            .control()
+            .p2pManagerProbe.probeDisconnectPolicyBlacklist(fixture.address(1))
+            .request();
+
+        expect(result.banCalls).to.deep.equal([true]);
+        expect(result.profileBlacklisted).to.equal(true);
+        expect(result.profileUpgradeBanned).to.equal(false);
+        expect(result.socketDestroyed).to.equal(true);
+        expect(result.connectionRemoved).to.equal(true);
+    });
+
+    it("uses ALLOW for an expected transport close", async function () {
+        const result = await fixture
+            .control()
+            .p2pManagerProbe.probeExpectedCloseDisconnectPolicy(
+                fixture.address(1)
+            )
+            .request();
+
+        expect(result.banCalls).to.deep.equal([]);
+        expect(result.profileBlacklisted).to.equal(false);
+        expect(result.socketDestroyed).to.equal(true);
+        expect(result.connectionRemoved).to.equal(true);
+    });
+
+    it("releases the Holepunch upgrade ban when an ALLOW disconnect closes the WebRTC transport", async function () {
+        const result = await fixture
+            .control()
+            .p2pManagerProbe.probeAllowReleasesUpgradeBan(fixture.address(1))
+            .request();
+
+        expect(result.banCalls).to.deep.equal([true, false]);
+        expect(result.profileBlacklisted).to.equal(false);
+        expect(result.profileUpgradeBanned).to.equal(false);
+        expect(result.connectionRemoved).to.equal(true);
+    });
+
+    it("keeps the fault ban and the upgrade ban as separate facts", async function () {
+        const result = await fixture
+            .control()
+            .p2pManagerProbe.probeBanFactSeparation(fixture.address(1))
+            .request();
+
+        expect(result.afterUpgrade).to.deep.equal({
+            faultBanned: false,
+            upgradeBanned: true,
+            derivedBan: true,
+            banCalls: [true]
+        });
+        expect(result.afterBlacklist).to.deep.equal({
+            faultBanned: true,
+            upgradeBanned: true,
+            derivedBan: true,
+            banCalls: [true, true]
+        });
+    });
+
+    it("keeps a fault-banned peer banned when the upgrade ban is released", async function () {
+        const result = await fixture
+            .control()
+            .p2pManagerProbe.probeBanFactSeparation(fixture.address(1))
+            .request();
+
+        expect(result.afterUpgradeRelease.faultBanned).to.equal(true);
+        expect(result.afterUpgradeRelease.derivedBan).to.equal(true);
+        expect(result.afterUpgradeRelease.banCalls).to.deep.equal([true, true]);
+    });
+});

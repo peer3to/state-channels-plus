@@ -238,7 +238,10 @@ class ProfileManager {
                 (transport) => transport.transportType === TransportType.WEBRTC
             );
         if (!hasLiveWebRtc) {
-            profile.getHolepunchPeerInfo()?.ban(false);
+            // No WebRTC session is left to prefer, so the upgrade ban is gone
+            // too and the fallback goes back into service.
+            profile.setHolepunchUpgradeBan(false);
+            this.applyHolepunchBan(profile);
         }
         return true;
     }
@@ -257,12 +260,22 @@ class ProfileManager {
             "Releasing Holepunch upgrade ban after WebRTC close",
             LoggerUtils.getTransportMetadata(transport)
         );
-        profile.getHolepunchPeerInfo()?.ban(false);
+        profile.setHolepunchUpgradeBan(false);
+        this.applyHolepunchBan(profile);
     }
 
     private blacklistProfile(profile: PeerProfile): void {
         profile.blacklist();
-        profile.getHolepunchPeerInfo()?.ban(true);
+        this.applyHolepunchBan(profile);
+    }
+
+    /**
+     * The one place a Hyperswarm ban is written. The flag is derived from both
+     * facts the profile carries (fault ban || upgrade-preference ban), so an
+     * explicit blacklist always wins over a fallback release.
+     */
+    private applyHolepunchBan(profile: PeerProfile): void {
+        profile.getHolepunchPeerInfo()?.ban(profile.isHolepunchBanned());
     }
 
     private applyUpgradeBanPolicy(
@@ -279,11 +292,13 @@ class ProfileManager {
                 newTransport.transportType === TransportType.HOLEPUNCH &&
                 !profile.isBlackListed
             ) {
-                profile.getHolepunchPeerInfo()?.ban(false);
+                profile.setHolepunchUpgradeBan(false);
+                this.applyHolepunchBan(profile);
             }
             return;
         }
-        profile.getHolepunchPeerInfo()?.ban(true);
+        profile.setHolepunchUpgradeBan(true);
+        this.applyHolepunchBan(profile);
     }
 
     private attachTransportProfile(

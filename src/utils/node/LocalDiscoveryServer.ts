@@ -1,3 +1,4 @@
+import { DisconnectPolicy } from "@/DisconnectPolicy";
 import type P2PManager from "@/P2PManager";
 import { LocalTransport } from "@/transport";
 import type { Address } from "@/types/types";
@@ -1199,7 +1200,10 @@ export class LocalDiscoveryServer {
                     )
                     .then((completed) => {
                         if (!completed) {
-                            p2pManager.disconnectConnection(lt);
+                            p2pManager.disconnectConnection(
+                                lt,
+                                DisconnectPolicy.ALLOW
+                            );
                             scheduleRetry("handshake-timeout");
                             return;
                         }

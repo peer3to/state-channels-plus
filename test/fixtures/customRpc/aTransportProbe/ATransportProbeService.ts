@@ -1,6 +1,7 @@
 // @spec-test-coverage-ignore: host-side support service for the mapped NetworkTransport component cases
 import type { PingPongRpc } from "../PingPongRpcManifest";
 import { ATransportProbeRpcMethods } from "./ATransportProbeRpcMethods";
+import { DisconnectPolicy } from "@/DisconnectPolicy";
 import type P2PManager from "@/P2PManager";
 import ANetworkRpcService from "@/rpc/network/ANetworkRpcService";
 import type Rpc from "@/rpc/Rpc";
@@ -197,9 +198,9 @@ export class ATransportProbeService extends ANetworkRpcService<
             }
         );
 
-        this.p2pManager.disconnectConnection = (candidate): void => {
+        this.p2pManager.disconnectConnection = (candidate, policy): void => {
             disconnectCalls += 1;
-            originalDisconnect(candidate);
+            originalDisconnect(candidate, policy);
         };
         try {
             transport.close(isExpected);

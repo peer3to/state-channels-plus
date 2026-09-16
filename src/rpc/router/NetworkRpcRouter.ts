@@ -1,4 +1,5 @@
 import { ARpcRouter } from "./ARpcRouter";
+import { DisconnectPolicy } from "@/DisconnectPolicy";
 import type P2PManager from "@/P2PManager";
 import Rpc, { MAX_RPC_FRAME_BYTES, deserializeRpcFrame } from "@/rpc/Rpc";
 import NetworkTransport from "@/transport/NetworkTransport";
@@ -108,7 +109,10 @@ export class NetworkRpcRouter<
                 return;
             }
         } catch (e) {
-            this.p2pManager.disconnectConnection(transport);
+            this.p2pManager.disconnectConnection(
+                transport,
+                DisconnectPolicy.ALLOW
+            );
             this.p2pManager.logger.error("onRpc - error handling RPC frame", {
                 error: errorMessage(e),
                 stack: e instanceof Error ? e.stack : undefined,

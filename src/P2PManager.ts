@@ -4,6 +4,7 @@ import RemoteRpcProxy, {
 } from "./rpc/network/RemoteRpcProxy";
 import { Address } from "./types/types";
 import { runCleanup } from "./utils/runCleanup";
+import { DisconnectPolicy } from "@/DisconnectPolicy";
 import { P2pSigner } from "@/evm";
 import Holepunch from "@/Holepunch";
 import ProfileManager from "@/ProfileManager";
@@ -371,7 +372,53 @@ class P2PManager<TCustomRpc extends MainRpcService = MainRpcService> {
         }
     }
 
-    public disconnectConnection(transport: NetworkTransport) {
+    /**
+     * The single owner of every transport-scoped disconnect. The policy is a
+     * required argument so no close inherits another caller's decision:
+     * `ALLOW` closes only, `BLACKLIST` also blacklists the peer's profile.
+     */
+    public disconnectConnection(
+        transport: NetworkTransport,
+        policy: DisconnectPolicy
+    ) {
+        if (policy === DisconnectPolicy.BLACKLIST) {
+            this.logger.warn(
+                "Disconnecting and blacklisting peer transport",
+                LoggerUtils.getTransportMetadata(transport)
+            );
+            const transportToDisconnect = transport.peerAddress
+                ? this.profileManager.blacklistPeer(transport.peerAddress)
+                : this.profileManager.blacklistPeer(transport);
+            if (transportToDisconnect && transportToDisconnect !== transport) {
+                this.closeConnection(transportToDisconnect);
+            }
+        }
+        this.closeConnection(transport);
+    }
+
+    public disconnectAndBlacklistPeer(transport: NetworkTransport) {
+        this.disconnectConnection(transport, DisconnectPolicy.BLACKLIST);
+    }
+
+    public disconnectAndBlacklistPeerByEvmAddress(evmAddress: Address) {
+        this.logger.warn("Disconnecting and blacklisting peer address", {
+            peerAddress: evmAddress
+        });
+        // An identity with no live transport is still blacklisted; there is
+        // simply nothing to close, so this cannot route through the
+        // transport-scoped policy switch above.
+        const transport = this.profileManager.blacklistPeer(evmAddress);
+        if (transport) this.closeConnection(transport);
+    }
+
+    public disconnectAndBlacklistPeers(peers: Iterable<Address>) {
+        for (const peer of peers) {
+            this.disconnectAndBlacklistPeerByEvmAddress(peer);
+        }
+    }
+
+    /** The close itself, shared by every policy. Never punitive. */
+    private closeConnection(transport: NetworkTransport) {
         const profile = this.profileManager.getProfileByTransport(transport);
 
         this.rpcRouter.rejectPendingRpcRequestsForTransport(
@@ -395,34 +442,6 @@ class P2PManager<TCustomRpc extends MainRpcService = MainRpcService> {
         }
     }
 
-    public disconnectAndBlacklistPeer(transport: NetworkTransport) {
-        this.logger.warn(
-            "Disconnecting and blacklisting peer transport",
-            LoggerUtils.getTransportMetadata(transport)
-        );
-        const transportToDisconnect = transport.peerAddress
-            ? this.profileManager.blacklistPeer(transport.peerAddress)
-            : this.profileManager.blacklistPeer(transport);
-        if (transportToDisconnect && transportToDisconnect !== transport) {
-            this.disconnectConnection(transportToDisconnect);
-        }
-        this.disconnectConnection(transport);
-    }
-
-    public disconnectAndBlacklistPeerByEvmAddress(evmAddress: Address) {
-        this.logger.warn("Disconnecting and blacklisting peer address", {
-            peerAddress: evmAddress
-        });
-        const transport = this.profileManager.blacklistPeer(evmAddress);
-        if (transport) this.disconnectConnection(transport);
-    }
-
-    public disconnectAndBlacklistPeers(peers: Iterable<Address>) {
-        for (const peer of peers) {
-            this.disconnectAndBlacklistPeerByEvmAddress(peer);
-        }
-    }
-
     public isBlacklisted(evmAddress: Address): boolean {
         return (
             this.profileManager.getProfileByEvmAddress(evmAddress)
@@ -432,7 +451,7 @@ class P2PManager<TCustomRpc extends MainRpcService = MainRpcService> {
 
     public disconnectAll() {
         for (const transport of this.openConnections) {
-            this.disconnectConnection(transport);
+            this.disconnectConnection(transport, DisconnectPolicy.ALLOW);
         }
     }
 

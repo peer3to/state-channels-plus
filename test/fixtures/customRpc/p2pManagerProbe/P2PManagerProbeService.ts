@@ -2,6 +2,7 @@
 import type { PingPongRpc } from "../PingPongRpcManifest";
 import { P2PManagerProbeRpcMethods } from "./P2PManagerProbeRpcMethods";
 import Clock from "@/Clock";
+import { DisconnectPolicy } from "@/DisconnectPolicy";
 import type P2PManager from "@/P2PManager";
 import PeerProfile from "@/PeerProfile";
 import ANetworkRpcService from "@/rpc/network/ANetworkRpcService";
@@ -403,6 +404,27 @@ export type BanPolicyProbe = {
     banCalls: boolean[];
     socketDestroyed: boolean;
     profileBlacklisted: boolean;
+};
+
+export type DisconnectPolicyProbe = {
+    banCalls: boolean[];
+    socketDestroyed: boolean;
+    profileBlacklisted: boolean;
+    profileUpgradeBanned: boolean;
+    connectionRemoved: boolean;
+};
+
+export type BanFactSnapshot = {
+    faultBanned: boolean;
+    upgradeBanned: boolean;
+    derivedBan: boolean;
+    banCalls: boolean[];
+};
+
+export type BanFactSeparationProbe = {
+    afterUpgrade: BanFactSnapshot;
+    afterBlacklist: BanFactSnapshot;
+    afterUpgradeRelease: BanFactSnapshot;
 };
 
 export type UpgradeBanPolicyProbe = {
@@ -1059,9 +1081,15 @@ export class P2PManagerProbeService extends ANetworkRpcService<
         const request = this.beginRequest(transport);
         if (responseFirst) {
             this.response(transport, request.requestId, true, "response");
-            this.p2pManager.disconnectConnection(transport);
+            this.p2pManager.disconnectConnection(
+                transport,
+                DisconnectPolicy.ALLOW
+            );
         } else {
-            this.p2pManager.disconnectConnection(transport);
+            this.p2pManager.disconnectConnection(
+                transport,
+                DisconnectPolicy.ALLOW
+            );
             this.response(transport, request.requestId, true, "late");
         }
         return {
@@ -1085,9 +1113,15 @@ export class P2PManagerProbeService extends ANetworkRpcService<
         const request = this.beginRequest(transport);
         if (errorFirst) {
             this.response(transport, request.requestId, false, "remote error");
-            this.p2pManager.disconnectConnection(transport);
+            this.p2pManager.disconnectConnection(
+                transport,
+                DisconnectPolicy.ALLOW
+            );
         } else {
-            this.p2pManager.disconnectConnection(transport);
+            this.p2pManager.disconnectConnection(
+                transport,
+                DisconnectPolicy.ALLOW
+            );
             this.response(transport, request.requestId, false, "late error");
         }
         return {
@@ -1112,9 +1146,15 @@ export class P2PManagerProbeService extends ANetworkRpcService<
         const outcome = request.promise.catch((error: Error) => error.message);
         if (timeoutFirst) {
             await new Promise((resolve) => setTimeout(resolve, 25));
-            this.p2pManager.disconnectConnection(transport);
+            this.p2pManager.disconnectConnection(
+                transport,
+                DisconnectPolicy.ALLOW
+            );
         } else {
-            this.p2pManager.disconnectConnection(transport);
+            this.p2pManager.disconnectConnection(
+                transport,
+                DisconnectPolicy.ALLOW
+            );
             await new Promise((resolve) => setTimeout(resolve, 25));
         }
         return {
@@ -1231,7 +1271,7 @@ export class P2PManagerProbeService extends ANetworkRpcService<
         this.p2pManager.addConnection(transport);
         const request = this.beginRequest(transport, 1000);
 
-        this.p2pManager.disconnectConnection(transport);
+        this.p2pManager.disconnectConnection(transport, DisconnectPolicy.ALLOW);
 
         return {
             closeCalls: transport.closeCalls,
@@ -1559,7 +1599,7 @@ export class P2PManagerProbeService extends ANetworkRpcService<
         this.p2pManager.addConnection(pending);
         const first = this.beginRequest(pending);
         const second = this.beginRequest(pending);
-        this.p2pManager.disconnectConnection(pending);
+        this.p2pManager.disconnectConnection(pending, DisconnectPolicy.ALLOW);
         const errors = await Promise.all([
             first.promise.catch((error: Error) => error.message),
             second.promise.catch((error: Error) => error.message)
@@ -1671,6 +1711,118 @@ export class P2PManagerProbeService extends ANetworkRpcService<
             socketDestroyed: socket.destroyed,
             profileBlacklisted: profile?.isBlackListed ?? false
         };
+    }
+
+    public probeDisconnectPolicyAllow(address: string): DisconnectPolicyProbe {
+        const { transport, peerInfo, socket, profile } =
+            this.registeredHolepunchTransport(address);
+        this.p2pManager.addConnection(transport);
+        peerInfo.banCalls.length = 0;
+
+        this.p2pManager.disconnectConnection(transport, DisconnectPolicy.ALLOW);
+
+        return {
+            banCalls: [...peerInfo.banCalls],
+            socketDestroyed: socket.destroyed,
+            profileBlacklisted: profile.isBlackListed,
+            profileUpgradeBanned: profile.getHolepunchUpgradeBan(),
+            connectionRemoved:
+                !this.p2pManager.openConnections.includes(transport)
+        };
+    }
+
+    public probeDisconnectPolicyBlacklist(
+        address: string
+    ): DisconnectPolicyProbe {
+        const { transport, peerInfo, socket, profile } =
+            this.registeredHolepunchTransport(address);
+        this.p2pManager.addConnection(transport);
+        peerInfo.banCalls.length = 0;
+
+        this.p2pManager.disconnectConnection(
+            transport,
+            DisconnectPolicy.BLACKLIST
+        );
+
+        return {
+            banCalls: [...peerInfo.banCalls],
+            socketDestroyed: socket.destroyed,
+            profileBlacklisted: profile.isBlackListed,
+            profileUpgradeBanned: profile.getHolepunchUpgradeBan(),
+            connectionRemoved:
+                !this.p2pManager.openConnections.includes(transport)
+        };
+    }
+
+    public probeExpectedCloseDisconnectPolicy(
+        address: string
+    ): DisconnectPolicyProbe {
+        const { transport, peerInfo, socket, profile } =
+            this.registeredHolepunchTransport(address);
+        this.p2pManager.addConnection(transport);
+        peerInfo.banCalls.length = 0;
+
+        // NetworkTransport.afterClose decides the policy for this close.
+        transport.close(true);
+
+        return {
+            banCalls: [...peerInfo.banCalls],
+            socketDestroyed: socket.destroyed,
+            profileBlacklisted: profile.isBlackListed,
+            profileUpgradeBanned: profile.getHolepunchUpgradeBan(),
+            connectionRemoved:
+                !this.p2pManager.openConnections.includes(transport)
+        };
+    }
+
+    public probeAllowReleasesUpgradeBan(
+        address: string
+    ): DisconnectPolicyProbe {
+        const { peerInfo, profile } =
+            this.registeredHolepunchTransport(address);
+        const webRTC = new WebRTCTransport(
+            new RecordingWebRTCDataChannel(),
+            this.p2pManager.rpcRouter
+        );
+        this.authenticateTransport(webRTC, address);
+        this.p2pManager.addConnection(webRTC);
+
+        this.p2pManager.disconnectConnection(webRTC, DisconnectPolicy.ALLOW);
+
+        return {
+            banCalls: [...peerInfo.banCalls],
+            socketDestroyed: webRTC.isClosed,
+            profileBlacklisted: profile.isBlackListed,
+            profileUpgradeBanned: profile.getHolepunchUpgradeBan(),
+            connectionRemoved: !this.p2pManager.openConnections.includes(webRTC)
+        };
+    }
+
+    public probeBanFactSeparation(address: string): BanFactSeparationProbe {
+        const { peerInfo, profile } =
+            this.registeredHolepunchTransport(address);
+        peerInfo.banCalls.length = 0;
+        const snapshot = (): BanFactSnapshot => ({
+            faultBanned: profile.isBlackListed,
+            upgradeBanned: profile.getHolepunchUpgradeBan(),
+            derivedBan: profile.isHolepunchBanned(),
+            banCalls: [...peerInfo.banCalls]
+        });
+
+        const webRTC = new WebRTCTransport(
+            new RecordingWebRTCDataChannel(),
+            this.p2pManager.rpcRouter
+        );
+        this.authenticateTransport(webRTC, address);
+        const afterUpgrade = snapshot();
+
+        this.p2pManager.profileManager.blacklistPeer(address);
+        const afterBlacklist = snapshot();
+
+        this.p2pManager.profileManager.releaseHolepunchBanOnWebRtcClose(webRTC);
+        const afterUpgradeRelease = snapshot();
+
+        return { afterUpgrade, afterBlacklist, afterUpgradeRelease };
     }
 
     public probeUpgradeBanPolicy(address: string): UpgradeBanPolicyProbe {

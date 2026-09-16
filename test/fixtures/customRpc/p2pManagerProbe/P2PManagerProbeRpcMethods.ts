@@ -17,6 +17,8 @@ import type {
     BulkPenaltyProbe,
     ConnectedPeerFallbackProbe,
     BanPolicyProbe,
+    BanFactSeparationProbe,
+    DisconnectPolicyProbe,
     RelayAdmissionProbe,
     UpgradeBanPolicyProbe,
     UnblacklistBanPolicyProbe,
@@ -223,6 +225,32 @@ export class P2PManagerProbeRpcMethods extends ANetworkRpcMethods<P2PManagerProb
 
     public probeUnauthenticatedClose(): BanPolicyProbe {
         return this.service.probeUnauthenticatedClose();
+    }
+
+    public probeDisconnectPolicyAllow(address: string): DisconnectPolicyProbe {
+        return this.service.probeDisconnectPolicyAllow(address);
+    }
+
+    public probeDisconnectPolicyBlacklist(
+        address: string
+    ): DisconnectPolicyProbe {
+        return this.service.probeDisconnectPolicyBlacklist(address);
+    }
+
+    public probeExpectedCloseDisconnectPolicy(
+        address: string
+    ): DisconnectPolicyProbe {
+        return this.service.probeExpectedCloseDisconnectPolicy(address);
+    }
+
+    public probeAllowReleasesUpgradeBan(
+        address: string
+    ): DisconnectPolicyProbe {
+        return this.service.probeAllowReleasesUpgradeBan(address);
+    }
+
+    public probeBanFactSeparation(address: string): BanFactSeparationProbe {
+        return this.service.probeBanFactSeparation(address);
     }
 
     public probeUpgradeBanPolicy(address: string): UpgradeBanPolicyProbe {
