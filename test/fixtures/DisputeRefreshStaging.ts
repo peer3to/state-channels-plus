@@ -1,6 +1,7 @@
 // @spec-test-coverage-ignore: real dispute attempts with controlled upload/read failures
 import type { MathPeerTestHarness } from "./MathPeerTestHarness";
 import { runtimeEndpointFor } from "./RuntimeRootObservation";
+import { Codec, Type } from "@/utils";
 import { MathTestSession as TestSession } from "@test/harness";
 import { waitFor } from "@test/utils/waitFor";
 import { expect } from "chai";
@@ -210,5 +211,139 @@ export async function assertBackgroundDisputeFailure(
                 "authoritative slash read failed"
             );
         }
+    }
+}
+
+export async function assertInboundHeadMovedDuringUpload(
+    h: MathPeerTestHarness,
+    recoverable: boolean
+): Promise<void> {
+    await h.lifecycle.start(3, 3);
+    const disputer = h.getPeer(0);
+    const forkId = h.activeForkId!;
+    // only the disputer uploads, and no reduction closes the window mid-test
+    for (const peer of h.peers)
+        await h.control(peer).stub.stubHoldReductionTasks().request();
+    await h.dispute.suppressDisputeInitiation([1, 2]);
+    const offender = await h.byzantine.storeInvalidTransitionFraudProof(
+        disputer.index
+    );
+    // the disputer misses the new inbound log: dropped -> recovery can query it,
+    // held -> recovery re-dispatches into the held handler and cannot apply it
+    const dropped = recoverable
+        ? await h.rpcStub.dropInboundMessageLogs(disputer.index)
+        : undefined;
+    const held = recoverable
+        ? undefined
+        : await h.rpcStub.holdInboundMessageEvents(disputer.index);
+    const recorder = await h.rpcStub.recordDisputeSubmissions(disputer.index, {
+        hold: true,
+        forward: true
+    });
+    const attempt = h.execOnHost(
+        disputer,
+        async (sm, args) => {
+            await sm.disputeManager.dispute(args.forkId);
+            return sm.storage.disputes.didIDispute(args.forkId);
+        },
+        { forkId }
+    );
+    const localHead = () =>
+        h.control(disputer).query.getLatestInboundMessageHash().request();
+    try {
+        // step 1 - the dispute is built and parked before its upload
+        await recorder.waitUntilHeld();
+        const stale = Codec.decode(
+            (await recorder.submissions())[0].encodedDispute,
+            Type.Dispute
+        ).input;
+
+        // step 2 - a join appends an inbound block the disputer never applies
+        await h.join.forceInboundJoinWait({ observePeerIndices: [1, 2] });
+        await dropped?.waitUntilDropped();
+        if (held)
+            await waitFor(
+                async () => (await held.heldCount()) > 0,
+                h.event.protocolEventTimeoutMs()
+            );
+        const chainHead = await h.channelManager.getChannelBalance(h.channelId);
+        expect(chainHead.latestInboundMessageBlockHash).to.not.equal(
+            stale.latestInboundMessageBlockHash
+        );
+        expect(await localHead()).to.equal(stale.latestInboundMessageBlockHash);
+
+        // step 3 - the parked upload lands on the moved chain head
+        await recorder.release();
+        const disputed = await attempt;
+        const submissions = await recorder.submissions();
+        expect(submissions[0].revert).to.deep.equal({
+            name: "RaceConditionDisputeInboundNotLatest",
+            args: [
+                chainHead.latestInboundMessageBlockHash,
+                stale.latestInboundMessageBlockHash
+            ]
+        });
+        const committed = [
+            ...(await h.channelManager.queryFilter(
+                h.channelManager.filters.DisputeCommitted(h.channelId)
+            )),
+            ...(await h.channelManager.queryFilter(
+                h.channelManager.filters.DisputeCommittedWithAuditingData(
+                    h.channelId
+                )
+            ))
+        ];
+        if (!recoverable) {
+            // recovery cannot advance the local head -> no re-upload, marker rolled back
+            expect(submissions).to.have.length(1);
+            expect(disputed).to.equal(false);
+            expect(await localHead()).to.equal(
+                stale.latestInboundMessageBlockHash
+            );
+            expect(committed).to.have.length(0);
+            return;
+        }
+        expect(submissions).to.have.length(2);
+        expect(submissions[1].revert).to.equal(null);
+        expect(submissions[1].waited).to.equal(true);
+        expect(disputed).to.equal(true);
+        expect(await localHead()).to.equal(
+            chainHead.latestInboundMessageBlockHash
+        );
+        expect(committed).to.have.length(1);
+        const anchor = Codec.decode(
+            committed[0].args.disputeConfirmation.signedDispute.encodedDispute,
+            Type.Dispute
+        ).input;
+        expect(anchor.latestInboundMessageBlockHash).to.equal(
+            chainHead.latestInboundMessageBlockHash
+        );
+        expect(Number(anchor.lastInboundMessageBlockHeight)).to.equal(
+            Number(chainHead.latestInboundMessageBlockHeight)
+        );
+        // the auditors accept the re-upload -> no dispute fraud proof, only the offender slashed
+        await h.assert.dispute.committedWait({
+            peersIndices: [1, 2],
+            expectedCount: 1,
+            mode: "exact"
+        });
+        for (const auditor of [h.getPeer(1), h.getPeer(2)]) {
+            expect(
+                await h.execOnHost(
+                    auditor,
+                    (sm) =>
+                        sm.storage.disputeFraudProofs.getDisputeFraudProofs()
+                            .length
+                )
+            ).to.equal(0);
+        }
+        expect([
+            ...(await h.channelManager.getOnChainSlashedParticipants(
+                h.channelId
+            ))
+        ]).to.deep.equal([offender.address]);
+    } finally {
+        await recorder.release();
+        await recorder.restore();
     }
 }

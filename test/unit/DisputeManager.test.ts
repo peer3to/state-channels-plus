@@ -3,7 +3,8 @@ import { Codec, hash, Type } from "@/utils";
 import { assertDisputeAdmissionRefuses } from "@test/fixtures/DisputeAdmissionStaging";
 import {
     assertDisputeRefreshPolicy,
-    assertBackgroundDisputeFailure
+    assertBackgroundDisputeFailure,
+    assertInboundHeadMovedDuringUpload
 } from "@test/fixtures/DisputeRefreshStaging";
 import { assertDisputedForkDoesNotSign } from "@test/fixtures/DisputeSigningStaging";
 import {
@@ -1053,8 +1054,19 @@ describe("Unit: DisputeManager", function () {
             expect(r.disputed).to.equal(false);
         });
 
-        // reached when inbound lands between construction and upload; not staged yet. testFuzz_anchorBelowInboundHeadRefused pins the gate
-        it.skip("RaceConditionDisputeInboundNotLatest from a live chain → inbound recovered and re-uploaded", function () {});
+        it("an inbound block landing after construction refuses the upload, and the disputer recovers the block and re-uploads at the new chain head", async function () {
+            await assertInboundHeadMovedDuringUpload(
+                TestSession.getHarness(),
+                true
+            );
+        });
+
+        it("an inbound-head refusal whose block cannot be recovered locally rolls the dispute back without a re-upload", async function () {
+            await assertInboundHeadMovedDuringUpload(
+                TestSession.getHarness(),
+                false
+            );
+        });
 
         it("RaceConditionDisputeTimeoutWindowCreatedTooEarly → consumed no-op, marker reset", async function () {
             const h = TestSession.getHarness();
