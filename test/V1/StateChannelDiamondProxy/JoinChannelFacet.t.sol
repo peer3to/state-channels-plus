@@ -10,6 +10,7 @@ import {
     ErrorJoinChannelParticipantAlreadyExists,
     ErrorTopUpBalanceParticipantNotFound,
     ErrorTopUpBalanceParticipantSlashed,
+    RaceConditionForceInboundJoinForkDisputed,
     RaceConditionSnapshotForkMismatch
 } from "../../../contracts/V1/StateChannelDiamondProxy/Errors.sol";
 import "../../../contracts/V1/types/DataTypes.sol";
@@ -35,6 +36,17 @@ contract JoinChannelFacetHarness is JoinChannelFacet {
         stateSnapshots[channelId].forkId = forkId;
         stateSnapshots[channelId].snapshotData.participants = participants;
         disputeData[channelId].onChainSlashes.push(OnChainSlash(slashedParticipant, block.timestamp));
+    }
+
+    /// Opens a dispute window on `forkId` the same way DisputeManagerFacet does
+    /// on the first dispute, so `_isForkDisputed` reads a real non-zero
+    /// evidence creation timestamp rather than a patched predicate.
+    function seedDisputedFork(bytes32 channelId, bytes32 forkId) external {
+        DisputeWindow storage disputeWindow = disputeData[channelId].disputeWindowMap[forkId];
+        disputeWindow.forkId = forkId;
+        disputeWindow.evidence.creationTimestamp = block.timestamp;
+        disputeWindow.evidence.lastEvidenceSubmissionTimestamp = block.timestamp;
+        disputeData[channelId].disputedForks.push(forkId);
     }
 
     function isForkDisputed(bytes32, bytes32) external pure returns (bool) {
@@ -83,6 +95,8 @@ contract JoinChannelFacetTest is Test {
     bytes32 internal constant FORK_ID = keccak256("join-after-slash-fork");
     bytes32 internal constant THRESHOLD_CHANNEL_ID = keccak256("join-threshold-set-of-two");
     bytes32 internal constant THRESHOLD_FORK_ID = keccak256("join-threshold-set-of-two-fork");
+    bytes32 internal constant DISPUTED_CHANNEL_ID = keccak256("join-onto-disputed-fork-channel");
+    bytes32 internal constant DISPUTED_FORK_ID = keccak256("join-onto-disputed-fork");
 
     function setUp() public {
         harness = new JoinChannelFacetHarness();
@@ -395,6 +409,46 @@ contract JoinChannelFacetTest is Test {
         );
         vm.prank(joinChannel.participant);
         harness.joinChannel(confirmation, keccak256(abi.encode(snapshot)), THRESHOLD_FORK_ID);
+
+        assertFalse(harness.depositCalled());
+    }
+
+    function test_joinChannel_disputedForkRejectionNamesChannelAndFork() public {
+        // a channel of its own, so the open dispute window cannot leak into the
+        // shared seeded channel the other cases join against
+        address[] memory participants = new address[](2);
+        participants[0] = vm.addr(ELIGIBLE_PK);
+        participants[1] = vm.addr(SLASHED_PK);
+        harness.seedChannel(DISPUTED_CHANNEL_ID, DISPUTED_FORK_ID, participants, address(0));
+        harness.seedDisputedFork(DISPUTED_CHANNEL_ID, DISPUTED_FORK_ID);
+
+        JoinChannel memory joinChannel = JoinChannel({
+            channelId: DISPUTED_CHANNEL_ID,
+            participant: vm.addr(JOINER_PK),
+            deadlineTimestamp: block.timestamp + 120,
+            balance: Balance({amount: 500, data: ""})
+        });
+        bytes memory encodedJoinChannel = abi.encode(joinChannel);
+
+        // fully countersigned by both threshold members, so the only thing left
+        // that can reject this join is the undisputed-fork gate
+        JoinChannelConfirmation memory confirmation;
+        confirmation.signedJoinChannel =
+            SignedJoinChannel({encodedJoinChannel: encodedJoinChannel, signature: _sign(JOINER_PK, encodedJoinChannel)});
+        confirmation.signatures = new bytes[](2);
+        confirmation.signatures[0] = _sign(ELIGIBLE_PK, encodedJoinChannel);
+        confirmation.signatures[1] = _sign(SLASHED_PK, encodedJoinChannel);
+
+        StateSnapshot memory snapshot = harness.getStateSnapshot(DISPUTED_CHANNEL_ID);
+        // the two operands are separate constants with different preimages, so
+        // a payload that swapped the channel and the fork would not match
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                RaceConditionForceInboundJoinForkDisputed.selector, DISPUTED_CHANNEL_ID, DISPUTED_FORK_ID
+            )
+        );
+        vm.prank(joinChannel.participant);
+        harness.joinChannel(confirmation, keccak256(abi.encode(snapshot)), DISPUTED_FORK_ID);
 
         assertFalse(harness.depositCalled());
     }

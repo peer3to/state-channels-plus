@@ -1,3 +1,4 @@
+import { SignedBlockEthersType } from "@/types/ethers";
 import {
     CustomEvmError,
     tryDecodeCustomError,
@@ -150,12 +151,15 @@ describe("ContractCaller and ContractErrors", () => {
     describe("Real contract calls", () => {
         let mathChannelManager: StateChannelManagerInterface;
         let testSigner: HardhatEthersSigner;
+        // a second account, so a block author can differ from the sender
+        let blockAuthorSigner: HardhatEthersSigner;
 
         beforeEach(async () => {
             const contracts = await deployMathChannelProxyFixture(hre);
             mathChannelManager = contracts.mathChannelManager;
             const signers = await hre.getSigners();
             testSigner = signers[0];
+            blockAuthorSigner = signers[1];
         });
 
         it("should handle postBlockCalldata success case", async () => {
@@ -181,7 +185,14 @@ describe("ContractCaller and ContractErrors", () => {
         });
 
         it("should handle ErrorBlockCalldataMsgSenderNotBlockAuthor custom error", async () => {
-            const signedBlock = factory.signedBlock(); //will be random signer
+            // the block names the second account as its author while the
+            // transaction is sent by the first, so the two payload addresses
+            // are different and cannot be swapped without failing
+            const signedBlock = factory.signedBlock({
+                encodedBlock: factory
+                    .block(undefined, blockAuthorSigner)
+                    .encode()
+            });
 
             const currentBlock = await hre.provider.getBlock("latest");
             const maxTimestamp = currentBlock!.timestamp + 100;
@@ -200,6 +211,10 @@ describe("ContractCaller and ContractErrors", () => {
                 expect(customError!.errorDescription.name).to.equal(
                     "ErrorBlockCalldataMsgSenderNotBlockAuthor"
                 );
+                // expectedAuthor is the block's participant, actualSender the caller
+                const args = customError!.errorDescription.args;
+                expect(args[0]).to.equal(blockAuthorSigner.address);
+                expect(args[1]).to.equal(testSigner.address);
             }
         });
 
@@ -228,16 +243,40 @@ describe("ContractCaller and ContractErrors", () => {
         });
 
         it("should handle ErrorBlockCalldataAlreadyPosted custom error", async () => {
-            const signedBlock = factory.signedBlock(undefined, testSigner);
+            // mutually distinguishable operands: a fork id that is not the
+            // factory default and a non-zero transaction count
+            const forkId = ethers.id("already-posted-fork");
+            const transactionCnt = 7n;
+            const signedBlock = factory.signedBlock({
+                encodedBlock: factory
+                    .block({ header: { forkId, transactionCnt } }, testSigner)
+                    .encode()
+            });
 
             // Set maxTimestamp to be in the future
             const currentBlock = await hre.provider.getBlock("latest");
             const maxTimestamp = currentBlock!.timestamp + 100;
 
             // First call should succeed
-            await mathChannelManager.postBlockCalldata(
+            const firstPost = await mathChannelManager.postBlockCalldata(
                 signedBlock,
                 maxTimestamp
+            );
+            const firstPostReceipt = await firstPost.wait();
+            const firstPostBlock = await hre.provider.getBlock(
+                firstPostReceipt!.blockNumber
+            );
+
+            // Derived here from the first post's payload and its mined
+            // timestamp - never read back out of the contract under test
+            const expectedCommitment = ethers.keccak256(
+                ethers.AbiCoder.defaultAbiCoder().encode(
+                    [SignedBlockEthersType, "uint256"],
+                    [
+                        [signedBlock.encodedBlock, signedBlock.signature],
+                        firstPostBlock!.timestamp
+                    ]
+                )
             );
 
             // Second call with the same data should fail
@@ -255,6 +294,12 @@ describe("ContractCaller and ContractErrors", () => {
                 expect(customError!.errorDescription.name).to.equal(
                     "ErrorBlockCalldataAlreadyPosted"
                 );
+                // forkId, transactionCnt, participant, existingCommitment
+                const args = customError!.errorDescription.args;
+                expect(args[0]).to.equal(forkId);
+                expect(args[1]).to.equal(transactionCnt);
+                expect(args[2]).to.equal(testSigner.address);
+                expect(args[3]).to.equal(expectedCommitment);
             }
         });
     });

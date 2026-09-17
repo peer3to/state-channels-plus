@@ -8,17 +8,22 @@ import {StateProofFacet} from "../../../contracts/V1/StateChannelDiamondProxy/St
 import {UtilityFacet} from "../../../contracts/V1/StateChannelDiamondProxy/UtilityFacet.sol";
 import {StateChannelCommon} from "../../../contracts/V1/StateChannelDiamondProxy/StateChannelCommon.sol";
 import {
+    ErrorDisputeChallengePeriodExpired,
     ErrorDisputeCommitmentNotAvailable,
     ErrorDisputeCommitmentNotFound,
     ErrorDisputeInboundMessageBlocksInvalid,
     ErrorDisputeStateMachineInboundProcessingFailed,
+    ErrorInboundMessageBlockAlreadyPersisted,
     ErrorInvalidStateSnapshotHash,
+    ErrorOutboundMessageBalanceMismatch,
     ErrorSnapshotDataForkMismatch,
     RaceConditionOnChainSlashes,
     INBOUND_FAILURE_FINAL_TARGET,
     INBOUND_FAILURE_HASH_LINK,
     INBOUND_FAILURE_HEIGHT_SEQUENCE,
+    RaceConditionDisputeAlreadyReduced,
     RaceConditionDisputeKillPeriodExpired,
+    RaceConditionDisputeKillPeriodNotExpired,
     RaceConditionDisputeTimeoutWindowCreatedTooEarly,
     RaceConditionDisputeWindowNotOpen
 } from "../../../contracts/V1/StateChannelDiamondProxy/Errors.sol";
@@ -61,6 +66,16 @@ contract DisputeExpiryGuardHarness is DisputeFraudProofFacet, DisputeVerificatio
 
     function commitmentCount(bytes32 channelId, bytes32 forkId) external view returns (uint256) {
         return disputeData[channelId].disputeWindowMap[forkId].evidence.disputeCommitments.length;
+    }
+
+    /// Opens a dispute window the way `DisputeManagerFacet.uploadDispute` does,
+    /// including the window's own fork id, so a reduced-result guard can report
+    /// a window fork distinct from the reduced forks it compares.
+    function seedDisputeWindow(bytes32 channelId, bytes32 windowForkId, uint256 creationTimestamp) external {
+        DisputeWindow storage window = disputeData[channelId].disputeWindowMap[windowForkId];
+        window.forkId = windowForkId;
+        window.evidence.creationTimestamp = creationTimestamp;
+        window.evidence.lastEvidenceSubmissionTimestamp = creationTimestamp;
     }
 
     /// Drives the reduced-result commit against an arbitrary window slot, so the
@@ -162,6 +177,14 @@ contract InboundVerificationHarness is StateChannelCommon {
             previousInboundMessageBlockHash, latestInboundMessageBlockHash, inboundMessageBlocks
         );
     }
+
+    /// Drives the inbound-block store directly, so the already-persisted guard
+    /// is reachable without an append flow that recomputes the block hash.
+    function persistInboundMessageBlock(bytes32 channelId, bytes32 blockHash, MessageBlock memory messageBlock)
+        external
+    {
+        _persistInboundMessageBlock(channelId, blockHash, messageBlock);
+    }
 }
 
 /// Wires SM + Utility so public computeDisputeOutputState (and _calculateRemovals) can be exercised.
@@ -169,6 +192,12 @@ contract DisputeOutputStateHarness is DisputeVerificationFacet {
     constructor(AStateMachine sm, address util) {
         stateMachineImplementation = sm;
         utilityFacetAddress = util;
+    }
+
+    /// Exposes the outbound dispatch so its balance agreement check can be
+    /// driven without a full snapshot-application flow.
+    function processOutboundMessage(Message memory message) external returns (bool) {
+        return _processOutboundMessage(message);
     }
 }
 
@@ -1433,6 +1462,163 @@ contract DisputeVerificationFacetTest is DiamondHarness {
             )
         );
         outputHarness.computeDisputeOutputState(input, snapshot, encodedState, inboundMessageBlocks);
+    }
+
+    // the sibling case above fails at block 0 / message 1, where a zero index
+    // cannot prove the two indices are not swapped or confused. Here the refusal
+    // is at block 1 / message 2: two distinct non-zero indices.
+    function test_computeDisputeOutputState_refusedMessageInLaterBlockRevertsCarryingBothIndices() public {
+        MathState memory state;
+        state.participants = _participants();
+        state.balances = _participantBalances(state.participants.length);
+        bytes memory encodedState = abi.encode(state);
+
+        StateSnapshot memory snapshot;
+        snapshot.forkId = FORK_ID;
+        snapshot.snapshotData.stateMachineStateHash = keccak256(encodedState);
+        snapshot.snapshotData.participants = state.participants;
+
+        bytes32 unsupportedMessageType = keccak256("a message type the state machine does not handle");
+        // Heights and the previous-block link are kept consistent for realism
+        // only - this path applies the blocks directly and never walks the chain.
+        MessageBlock[] memory inboundMessageBlocks = new MessageBlock[](2);
+        inboundMessageBlocks[0].blockHeight = 1;
+        inboundMessageBlocks[0].messages = new Message[](1);
+        inboundMessageBlocks[0].messages[0] = _joinInboundMessage(address(0xB0B));
+        inboundMessageBlocks[1].blockHeight = 2;
+        inboundMessageBlocks[1].previousBlockHash = keccak256(abi.encode(inboundMessageBlocks[0]));
+        inboundMessageBlocks[1].messages = new Message[](3);
+        inboundMessageBlocks[1].messages[0] = _joinInboundMessage(address(0xB0C));
+        inboundMessageBlocks[1].messages[1] = _joinInboundMessage(address(0xB0D));
+        inboundMessageBlocks[1].messages[2].messageType = unsupportedMessageType;
+        inboundMessageBlocks[1].messages[2].participant = state.participants[1];
+
+        DisputeInput memory input;
+        input.channelId = CHANNEL_ID;
+        input.forkId = FORK_ID;
+        input.disputer = state.participants[0];
+
+        // three joins were applied before the refusal, so the reported hash can
+        // only be the seed the walk started from
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                ErrorDisputeStateMachineInboundProcessingFailed.selector,
+                uint256(1),
+                uint256(2),
+                state.participants[1],
+                unsupportedMessageType,
+                keccak256(encodedState)
+            )
+        );
+        outputHarness.computeDisputeOutputState(input, snapshot, encodedState, inboundMessageBlocks);
+    }
+
+    function test_processOutboundMessage_exitAmountDisagreesWithMessageRevertsCarryingBothAmounts() public {
+        address exiting = address(0xEE17);
+        // the embedded exit amount, the message amount and the participant are
+        // three mutually distinguishable values
+        Balance memory messageBalance = Balance({amount: 17, data: ""});
+        Balance memory exitBalance = Balance({amount: 41, data: ""});
+        Message memory message = Message({
+            messageType: MESSAGE_TYPE_EXIT,
+            participant: exiting,
+            balance: messageBalance,
+            data: abi.encode(ExitChannel({participant: exiting, balance: exitBalance}))
+        });
+
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                ErrorOutboundMessageBalanceMismatch.selector, exiting, exitBalance.amount, messageBalance.amount
+            )
+        );
+        outputHarness.processOutboundMessage(message);
+    }
+
+    function test_persistInboundMessageBlock_repeatedBlockRevertsNamingChannelAndBlockHash() public {
+        bytes32 channelId = keccak256("persist-channel");
+        bytes32 blockHash = keccak256("persist-block");
+        MessageBlock memory messageBlock;
+        messageBlock.previousBlockHash = SNAPSHOT_HEAD;
+        messageBlock.blockHeight = 1;
+        messageBlock.timestamp = 1234;
+
+        verificationHarness.persistInboundMessageBlock(channelId, blockHash, messageBlock);
+
+        // the channel and the block hash are unrelated values, so a payload that
+        // reported the same identifier twice cannot pass
+        vm.expectRevert(abi.encodeWithSelector(ErrorInboundMessageBlockAlreadyPersisted.selector, channelId, blockHash));
+        verificationHarness.persistInboundMessageBlock(channelId, blockHash, messageBlock);
+    }
+
+    function test_commitToDisputeReducedResult_killPeriodStillRunningRevertsCarryingDeadlineAndCurrentTime() public {
+        DisputeExpiryGuardHarness harness = new DisputeExpiryGuardHarness();
+        bytes32 windowForkId = keccak256("kill-period-active-fork");
+        uint256 seededAt = KILL_PERIOD_BASE_TIMESTAMP;
+        vm.warp(seededAt);
+        harness.seedDisputeWindow(CHANNEL_ID, windowForkId, seededAt);
+        // the harness kill period is 10s, so it ends at seededAt + 10 and this
+        // call lands 4s in, while the window is still open
+        vm.warp(seededAt + 4);
+
+        vm.expectRevert(
+            abi.encodeWithSelector(RaceConditionDisputeKillPeriodNotExpired.selector, seededAt + 10, seededAt + 4)
+        );
+        harness.commitReducedResult(CHANNEL_ID, windowForkId, keccak256("kill-period-active-reduced-fork"));
+    }
+
+    function test_commitToDisputeReducedResult_windowAlreadyReducedRevertsCarryingAllThreeForkIds() public {
+        DisputeExpiryGuardHarness harness = new DisputeExpiryGuardHarness();
+        // three distinct forks: the window's own, the one already committed, and
+        // the one submitted now
+        bytes32 windowForkId = keccak256("already-reduced-window-fork");
+        bytes32 existingReducedForkId = keccak256("already-reduced-existing-fork");
+        bytes32 submittedReducedForkId = keccak256("already-reduced-submitted-fork");
+        uint256 seededAt = KILL_PERIOD_BASE_TIMESTAMP;
+        vm.warp(seededAt);
+        harness.seedDisputeWindow(CHANNEL_ID, windowForkId, seededAt);
+        // the harness kill period is 10s, so the first commit is accepted here
+        vm.warp(seededAt + 10);
+        harness.commitReducedResult(CHANNEL_ID, windowForkId, existingReducedForkId);
+
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                RaceConditionDisputeAlreadyReduced.selector, windowForkId, existingReducedForkId, submittedReducedForkId
+            )
+        );
+        harness.commitReducedResult(CHANNEL_ID, windowForkId, submittedReducedForkId);
+    }
+
+    function test_challengeDisputeReduction_afterChallengePeriodRevertsCarryingDeadlineAndCurrentTime() public {
+        DisputeExpiryGuardHarness harness = new DisputeExpiryGuardHarness();
+        address challenger = address(0xA1);
+        uint256 seededAt = KILL_PERIOD_BASE_TIMESTAMP;
+        vm.warp(seededAt);
+        Dispute memory committed = _structurallyInvalidDispute(FORK_ID, challenger);
+        harness.seedDispute(committed, seededAt);
+        // makes `challenger` the channel's one eligible participant, so the
+        // challenge-period gate is what rejects, not the participation guard
+        harness.seedReducedChannel(CHANNEL_ID, FORK_ID, SNAPSHOT_HEAD, challenger, address(0xB0B), seededAt);
+
+        // the harness kill period is 10s, so the reduced result can be committed
+        // at seededAt + 10, and its reduce-challenge period runs 10s from there
+        uint256 reducedAt = seededAt + 10;
+        vm.warp(reducedAt);
+        harness.commitReducedResult(CHANNEL_ID, FORK_ID, keccak256("challenge-period-reduced-fork"));
+
+        // the challenge lands 5s past the deadline, so the two reported
+        // timestamps are distinct
+        uint256 challengePeriodEnd = reducedAt + 10;
+        uint256 challengedAt = challengePeriodEnd + 5;
+        vm.warp(challengedAt);
+
+        Dispute[] memory disputes = new Dispute[](1);
+        disputes[0] = committed;
+        StateSnapshot memory snapshot;
+        vm.expectRevert(
+            abi.encodeWithSelector(ErrorDisputeChallengePeriodExpired.selector, challengePeriodEnd, challengedAt)
+        );
+        vm.prank(challenger);
+        harness.challengeDisputeReduction(disputes, snapshot, "", new MessageBlock[](0));
     }
 
     function _joinInboundMessage(address participant) internal view returns (Message memory message) {

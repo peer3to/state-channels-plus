@@ -2,7 +2,11 @@
 
 import {DiamondHarness} from "../harness/DiamondHarness.sol";
 import {FraudProofFacet} from "../../../contracts/V1/StateChannelDiamondProxy/FraudProofFacet.sol";
-import {RaceConditionDisputeWindowNotOpen} from "../../../contracts/V1/StateChannelDiamondProxy/Errors.sol";
+import {
+    RaceConditionDisputeKillPeriodNotExpired,
+    RaceConditionDisputeWindowNotOpen,
+    RaceConditionGenesisTimestampNotAvailable
+} from "../../../contracts/V1/StateChannelDiamondProxy/Errors.sol";
 import {StateChannelManagerInterface} from "../../../contracts/V1/StateChannelManagerInterface.sol";
 import {UtilityFacet} from "../../../contracts/V1/StateChannelDiamondProxy/UtilityFacet.sol";
 import "../../../contracts/V1/types/DataTypes.sol";
@@ -10,10 +14,24 @@ import "../../../contracts/V1/types/FraudProofTypes.sol";
 import "../../../contracts/V1/types/ProofTypes.sol";
 
 /// Runs the fraud-proof handlers against the facet's own storage: no channel,
-/// no dispute window, and a real UtilityFacet so block authenticity resolves.
+/// no on-chain snapshot, and a real UtilityFacet so block authenticity resolves.
+/// The dispute window a case needs is seeded directly; `evidenceTime` is the
+/// facet's own config slot, so every period deadline is real arithmetic.
 contract WrongGenesisHarness is FraudProofFacet {
-    constructor() {
+    constructor(uint256 harnessEvidenceTime) {
+        evidenceTime = harnessEvidenceTime;
         utilityFacetAddress = address(new UtilityFacet());
+    }
+
+    function seedDisputeWindow(
+        bytes32 channelId,
+        bytes32 originForkId,
+        uint256 creationTimestamp,
+        uint256 lastEvidenceSubmissionTimestamp
+    ) external {
+        DisputeWindow storage disputeWindow = disputeData[channelId].disputeWindowMap[originForkId];
+        disputeWindow.evidence.creationTimestamp = creationTimestamp;
+        disputeWindow.evidence.lastEvidenceSubmissionTimestamp = lastEvidenceSubmissionTimestamp;
     }
 }
 
@@ -24,6 +42,8 @@ contract FraudProofFacetTest is DiamondHarness {
     uint256 internal constant AUTHOR_PK = 0xA11CE;
     bytes32 internal constant CHANNEL_ID = keccak256("channel");
     bytes32 internal constant FORK_ID = keccak256("fork");
+    // non-zero so a deadline is never just the timestamp it was measured from
+    uint256 internal constant HARNESS_EVIDENCE_TIME = 10;
 
     function setUp() public {
         diamond = deployDiamond();
@@ -138,29 +158,87 @@ contract FraudProofFacetTest is DiamondHarness {
         assertFalse(diamond.hasInvalidTimestamp(proof), "forged-signature block treated as authentic");
     }
 
-    // the submitter names originForkId, so a fork with no window must say so
-    function test_runFraudProof_wrongGenesisWithoutDisputeWindow_revertsNamingTheMissingWindow() public {
-        WrongGenesisHarness harness = new WrongGenesisHarness();
-        bytes32 channelId = keccak256("wrong-genesis-channel");
-        bytes32 originForkId = keccak256("wrong-genesis-origin-fork");
-
+    /// A wrong-genesis proof whose genesis snapshot names `originForkId` and
+    /// whose block carries the fork that snapshot data hashes to: the handler
+    /// only reaches the dispute-window lookup for a snapshot linked to the
+    /// block's fork. The block timestamp plays no part on that path.
+    function _wrongGenesisProof(bytes32 channelId, bytes32 originForkId)
+        internal
+        pure
+        returns (FraudProof memory fraudProof, bytes32 forkId)
+    {
         SnapshotData memory genesisSnapshotData;
         genesisSnapshotData.originForkId = originForkId;
-        // the handler only reaches the window lookup for a genesis snapshot that
-        // hashes to the block's fork
-        bytes32 forkId = keccak256(abi.encode(genesisSnapshotData));
+        forkId = keccak256(abi.encode(genesisSnapshotData));
 
         WrongGenesisProof memory proof;
         proof.invalidBlock = _makeSignedGenesisBlock(AUTHOR_PK, channelId, forkId, 1, bytes32(0));
         proof.genesisSnapshot.snapshotData = genesisSnapshotData;
 
-        FraudProof memory fraudProof = FraudProof({
+        fraudProof = FraudProof({
             proofType: FraudProofType.WrongGenesis,
             participant: vm.addr(AUTHOR_PK),
             encodedProof: abi.encode(proof)
         });
+    }
+
+    // the submitter names originForkId, so a fork with no window must say so
+    function test_runFraudProof_wrongGenesisWithoutDisputeWindow_revertsNamingTheMissingWindow() public {
+        WrongGenesisHarness harness = new WrongGenesisHarness(HARNESS_EVIDENCE_TIME);
+        bytes32 channelId = keccak256("wrong-genesis-channel");
+        bytes32 originForkId = keccak256("wrong-genesis-origin-fork");
+
+        (FraudProof memory fraudProof,) = _wrongGenesisProof(channelId, originForkId);
 
         vm.expectRevert(abi.encodeWithSelector(RaceConditionDisputeWindowNotOpen.selector, channelId, originForkId));
+        harness.runFraudProof(fraudProof, FraudProofVerificationContext({channelId: channelId}));
+    }
+
+    // the kill period runs from the LAST evidence submission, not from window
+    // creation, and the revert must name that deadline next to the current time
+    function test_runFraudProof_wrongGenesisInsideKillPeriod_revertsNamingDeadlineAndCurrentTimestamp() public {
+        WrongGenesisHarness harness = new WrongGenesisHarness(HARNESS_EVIDENCE_TIME);
+        bytes32 channelId = keccak256("kill-period-channel");
+        bytes32 originForkId = keccak256("kill-period-origin-fork");
+
+        // creation is far enough behind the last submission that a deadline
+        // measured from creation would already be over at `currentTimestamp`
+        uint256 windowCreationTimestamp = 1_234;
+        uint256 lastEvidenceSubmissionTimestamp = 5_000;
+        uint256 expectedKillPeriodEnd = lastEvidenceSubmissionTimestamp + HARNESS_EVIDENCE_TIME;
+        uint256 currentTimestamp = 4_321;
+
+        harness.seedDisputeWindow(channelId, originForkId, windowCreationTimestamp, lastEvidenceSubmissionTimestamp);
+        vm.warp(currentTimestamp);
+
+        (FraudProof memory fraudProof,) = _wrongGenesisProof(channelId, originForkId);
+
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                RaceConditionDisputeKillPeriodNotExpired.selector, expectedKillPeriodEnd, currentTimestamp
+            )
+        );
+        harness.runFraudProof(fraudProof, FraudProofVerificationContext({channelId: channelId}));
+    }
+
+    // an open window whose kill period is already over with a zero deadline
+    // leaves the handler with no genesis timestamp at all: the fallback reads
+    // the on-chain snapshot, which this channel never posted
+    function test_runFraudProof_wrongGenesisWithoutGenesisTimestamp_revertsNamingChannelAndBothForks() public {
+        WrongGenesisHarness harness = new WrongGenesisHarness(0);
+        bytes32 channelId = keccak256("genesis-timestamp-channel");
+        bytes32 originForkId = keccak256("genesis-timestamp-origin-fork");
+
+        // creation opens the window; no evidence has been submitted into it, so
+        // with a zero evidence time the kill period ends at timestamp zero
+        harness.seedDisputeWindow(channelId, originForkId, 1_234, 0);
+
+        (FraudProof memory fraudProof, bytes32 forkId) = _wrongGenesisProof(channelId, originForkId);
+        assertTrue(forkId != originForkId, "fork operands must be distinguishable");
+
+        vm.expectRevert(
+            abi.encodeWithSelector(RaceConditionGenesisTimestampNotAvailable.selector, channelId, originForkId, forkId)
+        );
         harness.runFraudProof(fraudProof, FraudProofVerificationContext({channelId: channelId}));
     }
 

@@ -5,6 +5,7 @@ import {StateChannelManagerInterface} from "../../../contracts/V1/StateChannelMa
 import {
     ErrorNotGenesisSnapshot,
     ErrorSnapshotGenesisTimestampMismatch,
+    ErrorStateSnapshotNotValid,
     RaceConditionGenesisTimestampNotAvailable
 } from "../../../contracts/V1/StateChannelDiamondProxy/Errors.sol";
 import "../../../contracts/V1/types/DataTypes.sol";
@@ -66,6 +67,25 @@ contract StateSnapshotFacetUpdateForkTest is DiamondHarness {
         vm.expectRevert(
             abi.encodeWithSelector(ErrorSnapshotGenesisTimestampMismatch.selector, genesisTimestamp, target.timestamp)
         );
+        diamond.updateStateSnapshotFork(CHANNEL_ID, target, new MessageBlock[](0));
+    }
+
+    // a genesis-shaped, correctly dated target is still rejected when no chain
+    // of expired reduced results leads from the current fork to it: the origin
+    // window here has evidence but was never reduced, so the walk never starts
+    function test_updateStateSnapshotFork_targetForkUnreachableByReductions_revertsCarryingCurrentAndTargetForkIds()
+        public
+    {
+        uint256 genesisTimestamp = _expireDisputeWindowOnCurrentFork();
+        bytes32 currentForkId = diamond.getStateSnapshot(CHANNEL_ID).forkId;
+
+        StateSnapshot memory target = _genesisShapedSnapshot();
+        target.timestamp = genesisTimestamp;
+        // the two reported forks must be distinguishable, or a swapped payload
+        // would still satisfy the oracle below
+        assertTrue(currentForkId != target.forkId);
+
+        vm.expectRevert(abi.encodeWithSelector(ErrorStateSnapshotNotValid.selector, currentForkId, target.forkId));
         diamond.updateStateSnapshotFork(CHANNEL_ID, target, new MessageBlock[](0));
     }
 
