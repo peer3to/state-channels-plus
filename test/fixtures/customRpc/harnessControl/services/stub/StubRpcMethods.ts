@@ -1547,9 +1547,11 @@ export class StubRpcMethods extends ANetworkRpcMethods<StubService> {
         return true;
     }
 
-    /** Release the parked send and restore the real contract method. */
-    public restoreSnapshotPostSend(): boolean {
-        return this.service.releaseSnapshotPostSendHold();
+    /** Release the parked send and restore the real contract method; the first released send's revert name, or null. */
+    public async restoreSnapshotPostSend(): Promise<string | null> {
+        const outcome = this.service.snapshotPostSendOutcome;
+        this.service.releaseSnapshotPostSendHold();
+        return (await outcome) ?? null;
     }
 
     /** Resolves once a post is parked at its send; parked count. */

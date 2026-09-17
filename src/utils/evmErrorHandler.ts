@@ -5,33 +5,20 @@ import { ForkId } from "@/types";
 import { ErrorDescription, Signer, ethers } from "ethers";
 import { TransactionResponse } from "ethers";
 
-export type RaceConditionErrorName =
-    | "RaceConditionChannelAlreadyOpen"
-    | "RaceConditionBlockCalldataTimestampTooLate"
-    | "RaceConditionSnapshotForkMismatch"
-    | "RaceConditionBlockHeightTooOld"
-    | "RaceConditionJoinChannelExpired"
-    | "RaceConditionJoinChannelSnapshotMismatch"
-    | "RaceConditionPendingInboundNotConsumed"
-    | "RaceConditionForceInboundJoinForkDisputed"
-    | "RaceConditionDisputeWindowNotOpen"
-    | "RaceConditionDisputeEvidencePeriodExpired"
-    | "RaceConditionDisputeKillPeriodNotExpired"
-    | "RaceConditionDisputeKillPeriodExpired"
-    | "RaceConditionDisputeAlreadyReduced"
-    | "RaceConditionReductionExpectationDoesntMatch"
-    | "RaceConditionDisputeAuditingRequired"
-    | "RaceConditionDisputeTimeoutCalldataPosted"
-    | "RaceConditionDisputeTimeoutPreviousBlockProducerPostedCalldataMismatch"
-    | "RaceConditionDisputeTimeoutNotMinTimestamp"
-    | "RaceConditionDisputeTimeoutWindowCreatedTooEarly"
-    | "RaceConditionUnexpectedBlockCalldataPosted"
-    | "RaceConditionGenesisTimestampNotAvailable"
-    | "RaceConditionOnChainSlashes"
+// every custom error the contracts declare, plus ethers' built-in Error(string) and Panic(uint256)
+export type ContractErrorName =
+    | (typeof errorAbis)[number]["name"]
+    | "Error"
+    | "Panic";
+
+export type RaceConditionErrorName = Extract<
+    ContractErrorName,
+    | `RaceCondition${string}`
     | "ErrorCantParticipateInDispute"
     | "ErrorDisputePostedAuditingDataMismatch"
     | "ErrorDisputeChallengePeriodExpired"
-    | "ErrorDisputeCommitmentNotAvailable";
+    | "ErrorDisputeCommitmentNotAvailable"
+>;
 
 export type RaceConditionErrorHandlers = Partial<
     Record<RaceConditionErrorName, (error: CustomEvmError) => void>
@@ -40,6 +27,8 @@ export type RaceConditionErrorHandlers = Partial<
 // interface for parsing errors
 const errorInterface = new ethers.Interface(errorAbis);
 export class CustomEvmError extends Error {
+    // Error.name narrowed to the decoded contract error
+    public override name: ContractErrorName;
     public readonly errorDescription: ErrorDescription;
     public readonly isCustomError = true;
     public readonly originalError: any;
@@ -48,7 +37,8 @@ export class CustomEvmError extends Error {
         super(
             `${customError.name}${customError.args.length > 0 ? ` (args: ${customError.args.join(", ")})` : ""}`
         );
-        this.name = customError.name;
+        // errorInterface is built from errorAbis, so ethers only decodes those names
+        this.name = customError.name as ContractErrorName;
         this.errorDescription = customError;
         this.originalError = originalError;
     }

@@ -358,7 +358,7 @@ contract UtilityFacet is UtilityFacetInterface, StateChannelCommon {
     }
 
     function canParticipateInDisputes(bytes32 channelId, address participant) public view returns (bool) {
-        return _canParticipateInDisputes(channelId, participant);
+        return _canParticipateInDisputesNow(channelId, participant);
     }
 
     function isChannelOpen(bytes32 channelId) public view returns (bool, StateSnapshot memory) {

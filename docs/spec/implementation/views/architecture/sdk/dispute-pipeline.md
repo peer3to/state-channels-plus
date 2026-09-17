@@ -156,6 +156,9 @@ assembles `ConstructDisputeResult = { dispute, disputeConfirmation, auditingData
 6. **`postedAuditingData` = `!SCM.isLastMilestoneFinalByEveryone(dispute)`** —
    auditing data is posted as calldata only when the proof's final anchor is
    not already known-final to everyone (data availability for auditors).
+   The chain judges it against the dispute's historic threshold: its snapshot participants (no adoption onto
+   the fork while a proof can land), joiners at or below the dispute's inbound anchor, minus the dispute's own
+   `onChainSlashes` only, so the same verdict holds for every later read of the committed dispute.
    A code TODO flags re-evaluating this under early finalization.
 7. Sign the encoded dispute (`SignatureUtils.signDispute`) →
    `DisputeConfirmation` with an empty co-signature list.
@@ -165,7 +168,9 @@ without: the plain upload (gas limit 2.5M). Race reverts are classified:
 `ErrorCantParticipateInDispute` (we are slashed — warn),
 `RaceConditionDisputeTimeoutWindowCreatedTooEarly` (no-op),
 `RaceConditionDisputeEvidencePeriodExpired` (rethrown — evidence window
-closed). On failure the `didIDispute` flag is rolled back so a later attempt
+closed), `RaceConditionDisputeInboundNotLatest` (the upload must anchor exactly at
+the chain's inbound head -> load the missing inbound run up to that head and
+rebuild). On failure the `didIDispute` flag is rolled back so a later attempt
 can retry.
 
 ## 5. Audit: validity and authorization checks
@@ -179,12 +184,12 @@ on-chain apply-handler ([`INV-DVP-2-Q13TVQ`](dispute-pipeline.md#inv-dvp-2-q13tv
 
 | #   | Check                                                                    | Canonical predicate                                                                                                                                                                                                                                            | Fraud proof on failure                          |
 | --- | ------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------- |
-| 1   | Inbound hash is a real on-chain inbound tip                              | `isDisputeInboundHashValid` (LocalDiamond, then chain re-check)                                                                                                                                                                                                | `DisputeInboundHashNotInChain`                  |
+| 1   | Inbound hash is a real on-chain inbound tip                              | `isDisputeInboundHashValid` (LocalDiamond, then chain re-check); unreachable for a committed dispute, which upload anchors at the inbound head — kept as defence in depth                                                                                      | `DisputeInboundHashNotInChain`                  |
 | 2   | State proof decodes                                                      | `StateProof.tryFrom` (undecodable + posted data → invalid state proof; undecodable + no posted data → **no fireable proof**, audit skipped as valid)                                                                                                           | `DisputeInvalidStateProof`                      |
 | 3   | Proof header matches input                                               | `SCM.hasStateProofHeaderMismatch`                                                                                                                                                                                                                              | `DisputeStateProofHeaderMismatch`               |
 | 4   | Block structure in proof                                                 | `LocalDiamond.findFirstInvalidBlockStructureInStateProof`                                                                                                                                                                                                      | `DisputeInvalidBlockStructure(blockIndex)`      |
 | 5a  | Posted auditing data: proof verifies                                     | `SCM.verifyStateProof(dispute, auditingData)` (revert = false)                                                                                                                                                                                                 | `DisputeInvalidStateProof`                      |
-| 5b  | No posted data: last milestone final by everyone                         | `SCM.isLastMilestoneFinalByEveryone`                                                                                                                                                                                                                           | `DisputeLastMilestoneNotFinalAndNoAuditingData` |
+| 5b  | No posted data: last milestone final by everyone                         | `SCM.isLastMilestoneFinalByEveryone` (snapshot participants ∪ joiners at or below the anchor − `input.onChainSlashes`)                                                                                                                                         | `DisputeLastMilestoneNotFinalAndNoAuditingData` |
 | 5c  | No posted data: anchor available locally                                 | `isLastMilestoneStoredLocally` — if not, audit is skipped as valid (cannot judge without the baseline)                                                                                                                                                         | —                                               |
 | 6   | Replay                                                                   | §5.1                                                                                                                                                                                                                                                           | per-block proofs                                |
 | 7   | Latest state consistent with replayed proof (no posted data)             | `SCM.isCorrectLatestState`                                                                                                                                                                                                                                     | `DisputeInvalidStateProof`                      |
@@ -235,7 +240,7 @@ In [`EventHandler.handleDisputeCommitted`](../../../../../../src/eventHandlers/E
   (`persistDisputeDataWithoutAudit` with unfinalized blocks) and schedule
   reduction at `killPeriodEnd`.
 - **Auditable**: run §5. Invalid → the stored dispute fraud proof is submitted
-  by [`DisputeManager.killDispute`](../../../../../../src/disputeManager/DisputeManager.ts#L211)
+  by [`DisputeManager.killDispute`](../../../../../../src/disputeManager/DisputeManager.ts#L295)
   via `SCM.applyDisputeFraudProofs([proof])`, guarded by a fresh
   `isKillPeriodExpired` read and tolerant of the kill races
   (`RaceConditionDisputeKillPeriodExpired`, `RaceConditionOnChainSlashes`,

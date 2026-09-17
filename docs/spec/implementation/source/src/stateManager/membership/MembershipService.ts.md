@@ -10,7 +10,7 @@ It does not announce membership to peers or control connection admission.
 
 ## Key design decisions
 
-Both authored-exit fallback paths report a missing dispute marker or a thrown upload error to `LeaveChannelService.onExitFallbackFailed` after logging. A failed snapshot post first attempts the dispute; only failure of that fallback rejects pending leave.
+Both authored-exit fallback paths report a missing dispute marker or a thrown upload error to `LeaveChannelService.onExitFallbackFailed` after logging. A snapshot post that resolves `false` (the chain refused it on a disputed fork, already logged at warn by the post) or throws (logged at error) first attempts the dispute; a failure of that fallback rejects pending leave, except an evidence-expired refusal, which leaves it awaiting settlement.
 
 startSelfRemovalDispute sets force-exit, invokes normal dispute construction and returns the resulting marker. Terminal leave turns a missing marker into failure; membership fallbacks log and notify the matching authored leave on failure. Signer membership predicates name the local set or the on-chain union; pending-only event checks remain pending-only. See [MembershipService.ts](../../../../../../../src/stateManager/membership/MembershipService.ts#L63).
 
@@ -82,7 +82,9 @@ commitment exists. An uncertain outcome keeps pending status and the force-join 
 on-chain membership read can reconcile it as success. A duplicate result proving the participant already
 exists returns success while preserving pending state.
 `topUpBalance` is the one receipt-gated update
-for a supplied balance on pending or participating state; failure preserves that committed runtime. Omitted
+for a supplied balance on pending or participating state; failure preserves that committed runtime. A first join refused
+with `RaceConditionJoinChannelForkDisputed` ([#L164](../../../../../../src/stateManager/membership/MembershipService.ts#L164)) aborts and returns `false`; a top-up refused on a
+disputed fork with the same error returns `false` through its decoded-error branch ([#L206](../../../../../../src/stateManager/membership/MembershipService.ts#L206)). Omitted
 balance reuse sends no transaction in the signer wrapper. This service never receives matcher `timeoutMs`.
 
 # Terminal leave contribution

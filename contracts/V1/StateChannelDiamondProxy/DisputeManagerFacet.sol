@@ -44,8 +44,16 @@ contract DisputeManagerFacet is StateChannelCommon {
         Dispute memory dispute = abi.decode(disputeConfirmation.signedDispute.encodedDispute, (Dispute));
         require(msg.sender == dispute.input.disputer, ErrorDisputerNotMsgSender(dispute.input.disputer, msg.sender));
         require(
-            _canParticipateInDisputes(dispute.input.channelId, msg.sender),
+            _canParticipateInDisputesNow(dispute.input.channelId, msg.sender),
             ErrorCantParticipateInDispute(dispute.input.channelId, msg.sender)
+        );
+        ChannelBalance storage inboundHead = channelBalances[dispute.input.channelId];
+        require(
+            dispute.input.latestInboundMessageBlockHash == inboundHead.latestInboundMessageBlockHash
+                && dispute.input.lastInboundMessageBlockHeight == inboundHead.latestInboundMessageBlockHeight,
+            RaceConditionDisputeInboundNotLatest(
+                inboundHead.latestInboundMessageBlockHash, dispute.input.latestInboundMessageBlockHash
+            )
         );
 
         if (dispute.input.requireExistingDisputeWindow) {

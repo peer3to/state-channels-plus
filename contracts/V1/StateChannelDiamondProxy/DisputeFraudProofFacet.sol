@@ -29,7 +29,7 @@ contract DisputeFraudProofFacet is StateChannelCommon {
                 _delegatecall(
                     disputeVerificationFacetAddress, abi.encodeCall(DisputeVerificationFacet.killDispute, (dispute))
                 );
-            } else if (_canParticipateInDisputes(dispute.input.channelId, msg.sender)) {
+            } else if (_canParticipateInDisputesNow(dispute.input.channelId, msg.sender)) {
                 addOnChainSlashedParticipant(dispute.input.channelId, msg.sender);
             }
         }
@@ -767,14 +767,18 @@ contract DisputeFraudProofFacet is StateChannelCommon {
         return _isDisputeInboundHashValid(dispute);
     }
 
-    function _deriveExpectedParticipantsForDispute(Dispute memory dispute)
-        internal
-        view
-        returns (address[] memory expectedParticipants)
-    {
-        return _deriveEligibleParticipantsFromInboundHash(
-            dispute.input.channelId, dispute.input.latestInboundMessageBlockHash
+    /// the historic set a dispute commits to at its inbound anchor; `_canParticipateInDisputesNow` is live eligibility
+    function _getHistoricThresholdSet(Dispute memory dispute) internal view returns (address[] memory thresholdSet) {
+        bytes32 channelId = dispute.input.channelId;
+        // the chain set is frozen for the kill period (adoption onto the fork refused)
+        address[] memory participants = UtilityFacet(utilityFacetAddress).concatAddressArraysNoDuplicates(
+            _getSnapshotParticipants(channelId),
+            _derivePendingParticipantsFromInboundHash(
+                channelId, dispute.input.latestInboundMessageBlockHash, bytes32(0)
+            )
         );
+        // the disputer picks the slashes; over-listing is provable by DisputeOnChainSlashesNotSubset
+        return UtilityFacet(utilityFacetAddress).subtractAddressArrays(participants, dispute.input.onChainSlashes);
     }
 
     function _isLastMilestoneFinalByEveryone(Dispute memory dispute) internal returns (bool isFinal) {
@@ -782,7 +786,7 @@ contract DisputeFraudProofFacet is StateChannelCommon {
             return true;
         }
 
-        address[] memory expectedParticipants = _deriveExpectedParticipantsForDispute(dispute);
+        address[] memory expectedParticipants = _getHistoricThresholdSet(dispute);
 
         MilestoneProof memory lastMilestone =
             dispute.input.stateProof.milestones[dispute.input.stateProof.milestones.length - 1];

@@ -191,6 +191,78 @@ describe("Unit: SpectateService", function () {
     });
 
     describe("applySyncResponse", function () {
+        it("a dispute opens on the pinned fork after the proof was served → accepted, responder neither rejected nor blacklisted", async function () {
+            const h = TestSession.getHarness();
+            await h.scenario.preDisputeSetup();
+            const forkId = h.activeForkId!;
+            const responder = h.getPeer(0);
+            const requester = h.getPeer(2);
+
+            const latestHeight = await h
+                .control(responder)
+                .query.getLatestBlockHeight(forkId)
+                .request();
+            expect(latestHeight).to.not.equal(null);
+            const payload = await h
+                .control(responder)
+                .spectate.generateSyncPayload(
+                    h.channelId,
+                    forkId,
+                    latestHeight!
+                )
+                .request({ timeoutMs: h.event.protocolEventTimeoutMs() });
+            expect(payload).to.not.equal(null);
+            const decodedPayload = Codec.decode(
+                payload!.encodedSyncPayload,
+                Type.SyncPayload
+            );
+            // the same-fork call is in the simulation, and the fork was
+            // undisputed when the proof was served
+            expect(decodedPayload.milestoneSnapshots.length).to.be.greaterThan(
+                0
+            );
+            expect(decodedPayload.disputeWindows).to.deep.equal([]);
+
+            await h.tamper.postTamperedDispute(1, (dispute) => {
+                dispute.input.stateProof.milestones = [];
+                dispute.input.stateProof.signedBlocks = [];
+            });
+            const killPeriod = await h.query.killPeriod(
+                forkId,
+                requester.index
+            );
+            expect(killPeriod.windowExists).to.equal(true);
+            expect(killPeriod.isExpired).to.equal(false);
+
+            const stub = h.control(requester).stub;
+            await stub.recordSyncRejections().request();
+            try {
+                const accepted = await h
+                    .control(requester)
+                    .spectate.applySyncResponse(
+                        responder.address,
+                        forkId,
+                        latestHeight!,
+                        payload!.encodedSyncPayload
+                    )
+                    .request({ timeoutMs: h.event.protocolEventTimeoutMs() });
+                expect(accepted).to.equal(true);
+                expect(
+                    await stub.restoreRecordedSyncRejections().request()
+                ).to.deep.equal([]);
+                expect(
+                    await h
+                        .control(requester)
+                        .query.isBlacklisted(responder.address)
+                        .request()
+                ).to.equal(false);
+            } finally {
+                await stub.restoreRecordedSyncRejections().request();
+            }
+
+            await h.dispute.resolveDisputeWait({ forkId });
+        });
+
         it("the same-fork target snapshot lands before validation → accepts the proof", async function () {
             const h = TestSession.getHarness();
             // Create the requester before genesis starts the block-zero deadline.

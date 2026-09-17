@@ -1,6 +1,7 @@
 // @spec-test-coverage-ignore: real dispute attempts with controlled upload/read failures
 import type { MathPeerTestHarness } from "./MathPeerTestHarness";
 import { runtimeEndpointFor } from "./RuntimeRootObservation";
+import { Codec, Type } from "@/utils";
 import { MathTestSession as TestSession } from "@test/harness";
 import { waitFor } from "@test/utils/waitFor";
 import { expect } from "chai";
@@ -210,5 +211,99 @@ export async function assertBackgroundDisputeFailure(
                 "authoritative slash read failed"
             );
         }
+    }
+}
+
+export async function assertInboundHeadMovedDuringUpload(
+    h: MathPeerTestHarness
+): Promise<void> {
+    await h.lifecycle.start(3, 3);
+    const disputer = h.getPeer(0);
+    const forkId = h.activeForkId!;
+    // only the disputer uploads, and no reduction closes the window mid-test
+    for (const peer of h.peers)
+        await h.control(peer).stub.stubHoldReductionTasks().request();
+    await h.dispute.suppressDisputeInitiation([1, 2]);
+    // a stored fraud proof puts the upload in a multicall with applyFraudProofs,
+    // so the refusal below reverts the whole batch, not just the upload
+    await h.byzantine.storeInvalidTransitionFraudProof(disputer.index);
+    // the disputer's own inbound event handler is held, so its local head
+    // provably cannot advance while the join lands and the upload is checked
+    const held = await h.rpcStub.holdInboundMessageEvents(disputer.index);
+    const recorder = await h.rpcStub.recordDisputeSubmissions(disputer.index, {
+        hold: true,
+        forward: true
+    });
+    const attempt = h.execOnHost(
+        disputer,
+        async (sm, args) => {
+            await sm.disputeManager.dispute(args.forkId);
+            return sm.storage.disputes.didIDispute(args.forkId);
+        },
+        { forkId }
+    );
+    const localHead = () =>
+        h.control(disputer).query.getLatestInboundMessageHash().request();
+    try {
+        // step 1 - the dispute is built and parked before its upload
+        await recorder.waitUntilHeld();
+        const stale = Codec.decode(
+            (await recorder.submissions())[0].encodedDispute,
+            Type.Dispute
+        ).input;
+
+        // step 2 - a join appends an inbound block above the parked anchor;
+        // the disputer's held handler cannot apply it before the upload lands
+        await h.join.forceInboundJoinWait({
+            observePeerIndices: [1, 2]
+        });
+        await waitFor(
+            async () => (await held.heldCount()) > 0,
+            h.event.protocolEventTimeoutMs()
+        );
+        const chainHead = await h.channelManager.getChannelBalance(h.channelId);
+        expect(chainHead.latestInboundMessageBlockHash).to.not.equal(
+            stale.latestInboundMessageBlockHash
+        );
+        expect(await localHead()).to.equal(stale.latestInboundMessageBlockHash);
+
+        // step 3 - the parked upload lands on the moved chain head and is refused;
+        // local storage is assumed current by event sync, so a stale anchor is a
+        // lost race, not retried
+        await recorder.release();
+        const disputed = await attempt;
+        const submissions = await recorder.submissions();
+        expect(submissions[0].revert).to.deep.equal({
+            name: "RaceConditionDisputeInboundNotLatest",
+            args: [
+                chainHead.latestInboundMessageBlockHash,
+                stale.latestInboundMessageBlockHash
+            ]
+        });
+        expect(submissions).to.have.length(1);
+        expect(disputed).to.equal(false);
+        expect(await localHead()).to.equal(stale.latestInboundMessageBlockHash);
+        const committed = [
+            ...(await h.channelManager.queryFilter(
+                h.channelManager.filters.DisputeCommitted(h.channelId)
+            )),
+            ...(await h.channelManager.queryFilter(
+                h.channelManager.filters.DisputeCommittedWithAuditingData(
+                    h.channelId
+                )
+            ))
+        ];
+        expect(committed).to.have.length(0);
+        // the refused upload was multicalled with the fraud proof against the
+        // offender, so the whole batch reverts and nobody is slashed either
+        expect([
+            ...(await h.channelManager.getOnChainSlashedParticipants(
+                h.channelId
+            ))
+        ]).to.deep.equal([]);
+    } finally {
+        await recorder.release();
+        await recorder.restore();
+        await held.release({ replay: false });
     }
 }

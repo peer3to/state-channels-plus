@@ -161,7 +161,7 @@ export default class MembershipService {
                 case "RaceConditionJoinChannelExpired":
                 case "RaceConditionSnapshotForkMismatch":
                 case "RaceConditionJoinChannelSnapshotMismatch":
-                case "RaceConditionForceInboundJoinForkDisputed":
+                case "RaceConditionJoinChannelForkDisputed":
                 case "ErrorJoinChannelInvalidSignature":
                     this.logger.warn(
                         `joinChannel - race condition: ${custom.name}`,
@@ -341,17 +341,19 @@ export default class MembershipService {
                         `startMaybeExitOnChain - everyone signed block ${block.height}, posting state snapshot`,
                         { blockHeight: block.height, forkId: block.forkId }
                     );
+                    let posted = false;
                     try {
-                        await sm.snapshotUpdateService.postStateSnapshotWait(
-                            block.forkId
-                        );
+                        posted =
+                            await sm.snapshotUpdateService.postStateSnapshotWait(
+                                block.forkId
+                            );
                     } catch (error) {
                         this.logger.error(
                             `startMaybeExitOnChain - failed to post state snapshot`,
-                            {
-                                error: errorMessage(error)
-                            }
+                            { error: errorMessage(error) }
                         );
+                    }
+                    if (!posted) {
                         try {
                             if (
                                 !(await this.startSelfRemovalDispute(

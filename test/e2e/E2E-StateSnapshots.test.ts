@@ -1,5 +1,6 @@
 import { StateSnapshot } from "@/models";
 import { DisputeFraudProofType } from "@/types/sol-enums";
+import { tryDecodeCustomError } from "@/utils";
 import { MathTestSession as TestSession } from "@test/harness";
 import { waitFor } from "@test/utils/waitFor";
 import { expect } from "chai";
@@ -383,7 +384,7 @@ describe("E2E: State Snapshots", function () {
     });
 
     describe("updateStateSnapshotSameFork during active dispute", function () {
-        it("disputeWindow.evidence.creationTimestamp != 0 → on-chain snapshot updates but disputeWindowMap NOT cleared (dispute kill still resolves)", async function () {
+        it("same-fork post on a disputed fork reverts with RaceConditionSnapshotUpdateDisputedFork; the window survives and the kill still resolves", async function () {
             const h = TestSession.getHarness();
             await h.scenario.preDisputeSetup();
             const forkId = h.activeForkId!;
@@ -392,21 +393,19 @@ describe("E2E: State Snapshots", function () {
                 dispute.input.stateProof.milestones = [];
                 dispute.input.stateProof.signedBlocks = [];
             });
+            const snapshotBefore = await h.query.getOnChainSnapshotHash();
 
-            // _updateStateSnapshot(shouldClearStorage=true) guards on creationTimestamp==0.
-            // If the guard failed, _clearStorage → _clearDisputeData would delete
-            // disputeWindowMap, and the kill TX below would revert (no dispute on-chain).
-            const snapshotSubmission =
-                await h.transition.postSameForkSnapshotOnlyWait({
-                    peerIndex: 0
-                });
-            expect(
-                snapshotSubmission,
-                "same-fork snapshot transaction was not prepared"
-            ).to.not.be.undefined;
-            await h.assert.snapshot.localSnapshotsChangedWait({
-                expectedSnapshot: snapshotSubmission?.snapshot
-            });
+            // a disputed fork only advances by reduction to a new fork
+            const refusal = await h.transition
+                .postSameForkSnapshotOnlyWait({ peerIndex: 0 })
+                .then(
+                    () => "posted",
+                    (error) => tryDecodeCustomError(error)?.name
+                );
+            expect(refusal).to.equal("RaceConditionSnapshotUpdateDisputedFork");
+            expect(await h.query.getOnChainSnapshotHash()).to.equal(
+                snapshotBefore
+            );
 
             await h.event.waitForPeers("onDisputeKilled", [0, 2], 1, {
                 mode: "atLeast"
@@ -418,17 +417,22 @@ describe("E2E: State Snapshots", function () {
 
             const hostErrors = await h.quiesceHosts();
             expect(hostErrors.map((error) => error.message)).to.deep.equal([]);
-            expect(
-                (await snapshotSubmission!.transaction.wait())?.status
-            ).to.equal(1);
-            expect(snapshotSubmission!.transaction.nonce).to.be.lessThan(
-                await h.provider.getTransactionCount(
-                    h.getPeer(0).address,
-                    "latest"
-                )
-            );
 
             await h.dispute.resolveDisputeWait({ forkId });
+
+            // the reduced fork has no window -> same-fork adoption lands again
+            // once the fork update itself is on chain
+            await h.assert.sync.onChainSnapshotAndPeersSameForkWait();
+            await h.transition.advanceState();
+            const posted = await h.transition.postSnapshotWait({
+                peerIndex: 0
+            });
+            expect(posted, "snapshot posted on the reduced fork").to.not.equal(
+                undefined
+            );
+            expect(await h.query.getOnChainSnapshotHash()).to.equal(
+                posted!.hash
+            );
         });
     });
 });

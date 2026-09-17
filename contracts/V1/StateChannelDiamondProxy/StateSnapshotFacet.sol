@@ -30,6 +30,12 @@ contract StateSnapshotFacet is StateChannelCommon {
                 && _isReduceChallengePeriodExpired(disputeWindow, _getEvidenceTime())
         ) {
             if (disputeWindow.reducedResult.forkId == targetForkId) {
+                DisputeWindow storage targetWindow = disputeWindowMap[targetForkId];
+                (bool killPeriodExpired, uint256 killPeriodEnd) = _isKillPeriodExpired(targetWindow, _getEvidenceTime());
+                require(
+                    !_isDisputeWidnowCreated(targetWindow) || killPeriodExpired,
+                    RaceConditionSnapshotUpdateDisputedFork(channelId, targetForkId, killPeriodEnd, block.timestamp)
+                );
                 _updateStateSnapshot(channelId, currentStateSnapshot, newStateSnapshot, outboundMessageBlocks, false);
                 updated = true;
                 break;
@@ -69,6 +75,14 @@ contract StateSnapshotFacet is StateChannelCommon {
                 channelBalances[channelId].latestInboundMessageBlockHash
             )
         );
+        if (_isForkDisputed(channelId, currentStateSnapshot.forkId)) {
+            (, uint256 killPeriodEnd) = _isKillPeriodExpired(
+                disputeData[channelId].disputeWindowMap[currentStateSnapshot.forkId], _getEvidenceTime()
+            );
+            revert RaceConditionSnapshotUpdateDisputedFork(
+                channelId, currentStateSnapshot.forkId, killPeriodEnd, block.timestamp
+            );
+        }
 
         _updateStateSnapshot(channelId, currentStateSnapshot, newStateSnapshot, outboundMessageBlocks, true);
     }

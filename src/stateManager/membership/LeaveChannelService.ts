@@ -6,6 +6,7 @@ import { isCommittedParticipantStatus } from "@/types/flags";
 import type { Address, ForkId } from "@/types/types";
 import { addressesEqual, DetachedPromises, Logger } from "@/utils";
 import { config } from "@/utils/config";
+import { tryDecodeCustomError } from "@/utils/evmErrorHandler";
 
 type LeavePhase =
     | "starting"
@@ -154,6 +155,14 @@ export default class LeaveChannelService {
             operation.forkId !== forkId
         )
             return;
+        // the window already holds commitments -> its reduction settles the leave
+        if (
+            tryDecodeCustomError(error)?.name ===
+            "RaceConditionDisputeEvidencePeriodExpired"
+        ) {
+            operation.phase = "awaiting-settlement";
+            return;
+        }
         this.fail(operation, error);
     }
 

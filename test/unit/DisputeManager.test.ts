@@ -3,7 +3,8 @@ import { Codec, hash, Type } from "@/utils";
 import { assertDisputeAdmissionRefuses } from "@test/fixtures/DisputeAdmissionStaging";
 import {
     assertDisputeRefreshPolicy,
-    assertBackgroundDisputeFailure
+    assertBackgroundDisputeFailure,
+    assertInboundHeadMovedDuringUpload
 } from "@test/fixtures/DisputeRefreshStaging";
 import { assertDisputedForkDoesNotSign } from "@test/fixtures/DisputeSigningStaging";
 import {
@@ -1051,6 +1052,10 @@ describe("Unit: DisputeManager", function () {
             // the handler consumes the error -> no rejection, marker cleared
             expect(r.rejected).to.equal("");
             expect(r.disputed).to.equal(false);
+        });
+
+        it("an inbound block landing after construction refuses the upload and rolls the dispute back without a re-upload", async function () {
+            await assertInboundHeadMovedDuringUpload(TestSession.getHarness());
         });
 
         it("RaceConditionDisputeTimeoutWindowCreatedTooEarly → consumed no-op, marker reset", async function () {
