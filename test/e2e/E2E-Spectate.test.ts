@@ -1032,16 +1032,49 @@ describe("E2E: Spectate Service", function () {
                     prepared.expectedForkId
                 )
             ).to.equal(false);
+            // The abort path sets OPENED itself, so the terminal status alone
+            // says nothing about the two cleanup effects the terminal-revert
+            // branch owes before aborting: restoring SYNCED and clearing the
+            // force-join marker. Status hooks cross the runtime port ahead of
+            // the joinChannel response, so the transient restore is still
+            // observable here, and the abort follows it rather than replacing
+            // it: without the restore the peer would go straight from
+            // PENDING_PARTICIPANT to OPENED and neither index would be found.
+            const statusChanges = (
+                joinerA.eventSpies.onStatusChanged?.getCalls() ?? []
+            ).map((call): [Status, Status] => [call.args[0], call.args[1]]);
+            const restoredSyncedIndex = statusChanges.findIndex(
+                ([oldStatus, newStatus]) =>
+                    oldStatus === Status.PENDING_PARTICIPANT &&
+                    newStatus === Status.SYNCED
+            );
+            expect(restoredSyncedIndex).to.be.greaterThan(-1);
+            const abortedIndex = statusChanges.findIndex(
+                ([oldStatus, newStatus], index) =>
+                    index > restoredSyncedIndex &&
+                    oldStatus === Status.SYNCED &&
+                    newStatus === Status.OPENED
+            );
+            expect(abortedIndex).to.be.greaterThan(restoredSyncedIndex);
+
             const failedJoinState = await h.execOnHost(
                 h.getPeer(joinerA.index),
                 async (stateManager) => ({
                     status: stateManager.status,
-                    isDisposed: stateManager.isDisposed
+                    isDisposed: stateManager.isDisposed,
+                    joinSubmissionBlockHeight:
+                        stateManager.storage.forceJoin.getJoinSubmissionBlockHeight()
                 }),
                 {}
             );
             expect(failedJoinState.status).to.equal(Status.OPENED);
             expect(failedJoinState.isDisposed).to.equal(true);
+            // joinChannel recorded the submission height before submitting; the
+            // terminal branch must drop it, otherwise the dead join keeps a
+            // force-join trigger height on record.
+            expect(failedJoinState.joinSubmissionBlockHeight).to.equal(
+                undefined
+            );
         });
     });
 
