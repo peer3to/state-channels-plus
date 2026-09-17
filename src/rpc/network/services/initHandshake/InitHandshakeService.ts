@@ -35,6 +35,16 @@ class InitHandshakeService extends ANetworkRpcService<InitHandshakeRpcMethods> {
      */
     public static readonly HANDSHAKE_DOMAIN = "peer3:init-handshake:v1";
 
+    /**
+     * How many timing failures a peer gets before the handshake stops letting
+     * it back in. Clock skew and latency are environment faults, not
+     * misbehaviour, so the earlier failures only close the connection and the
+     * one that reaches this bound suspends the peer for the session. The
+     * counter is per peer and shared by every timing check, here and in
+     * `InitHandshakeRpcMethods`.
+     */
+    public static readonly TIMING_RETRY_LIMIT = 3;
+
     timeoutManager: TimeoutManager;
 
     // Transports with an in-flight handshake negotiation (challenge sent and
@@ -124,7 +134,9 @@ class InitHandshakeService extends ANetworkRpcService<InitHandshakeRpcMethods> {
             });
             this.p2pManager.disconnectConnection(
                 transport,
-                DisconnectPolicy.ALLOW
+                DisconnectPolicy.allowRetry(
+                    InitHandshakeService.TIMING_RETRY_LIMIT
+                )
             );
             return;
         }
@@ -187,7 +199,9 @@ class InitHandshakeService extends ANetworkRpcService<InitHandshakeRpcMethods> {
             });
             this.p2pManager.disconnectConnection(
                 transport,
-                DisconnectPolicy.ALLOW
+                DisconnectPolicy.allowRetry(
+                    InitHandshakeService.TIMING_RETRY_LIMIT
+                )
             );
             return;
         }
@@ -206,7 +220,14 @@ class InitHandshakeService extends ANetworkRpcService<InitHandshakeRpcMethods> {
                 agreementTimeSeconds: agreementTime,
                 reason: "response timestamp outside agreement window"
             });
-            this.p2pManager.disconnectAndBlacklistPeer(transport);
+            // Same clock-skew class as the RTT check above, so it shares the
+            // peer's retry bound instead of recording a verdict.
+            this.p2pManager.disconnectConnection(
+                transport,
+                DisconnectPolicy.allowRetry(
+                    InitHandshakeService.TIMING_RETRY_LIMIT
+                )
+            );
             return;
         }
         //verify signature
@@ -353,9 +374,10 @@ class InitHandshakeService extends ANetworkRpcService<InitHandshakeRpcMethods> {
         this.timeoutManager.scheduleTask(
             () => {
                 if (this.didReceiveAck(transport)) return;
-                // Handshake negotiation started but never finalized.
-                // If we have an authenticated peer address, blacklist by address;
-                // otherwise just disconnect the transport.
+                // Handshake negotiation started but never finalized. The proof
+                // leg already passed, so this is not a timing retry: bar the
+                // peer for the session rather than letting it redial into the
+                // same dead negotiation.
                 const peerAddress =
                     transport.peerAddress ||
                     this.verifiedPeerAddressByTransport.get(transport);
@@ -367,16 +389,9 @@ class InitHandshakeService extends ANetworkRpcService<InitHandshakeRpcMethods> {
                     reason: "handshake ack not received in time"
                 });
 
-                if (peerAddress) {
-                    this.p2pManager.disconnectAndBlacklistPeerByEvmAddress(
-                        peerAddress
-                    );
-                    return;
-                }
-
                 this.p2pManager.disconnectConnection(
                     transport,
-                    DisconnectPolicy.ALLOW
+                    DisconnectPolicy.SUSPEND
                 );
             },
             this.p2pManager.stateManager.timeConfig.agreementTime * 1000,

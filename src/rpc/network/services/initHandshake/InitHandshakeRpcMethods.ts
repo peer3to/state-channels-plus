@@ -2,6 +2,7 @@ import InitHandshakeService, {
     HandshakeResponse
 } from "./InitHandshakeService";
 import Clock from "@/Clock";
+import { DisconnectPolicy } from "@/DisconnectPolicy";
 import ANetworkRpcMethods from "@/rpc/network/ANetworkRpcMethods";
 import { NetworkTransport } from "@/transport";
 import { Hash, Timestamp } from "@/types/types";
@@ -71,7 +72,14 @@ class InitHandshakeRpcMethods extends ANetworkRpcMethods<InitHandshakeService> {
                     reason: "request time outside agreement window"
                 }
             );
-            this.p2pManager.disconnectAndBlacklistPeer(this.senderTransport);
+            // Clock skew is an environment fault, not misconduct: this used
+            // to blacklist, and now spends the sender's shared retry bound.
+            this.p2pManager.disconnectConnection(
+                this.senderTransport,
+                DisconnectPolicy.allowRetry(
+                    InitHandshakeService.TIMING_RETRY_LIMIT
+                )
+            );
             throw new Error("request time outside agreement window");
         }
         const challengeMessage =

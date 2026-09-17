@@ -19,15 +19,30 @@
 
 ## Responsibility and observable boundary
 
-The two-value vocabulary every transport close is stated in: `ALLOW` closes the connection only and
-leaves the peer's standing untouched, `BLACKLIST` closes it and excludes the profile. The file holds
-the enum and nothing else; the switch that acts on it lives in [P2PManager](./P2PManager.ts.md).
+The vocabulary every transport close is stated in, as an ordered ladder: `ALLOW` closes the
+connection only and leaves the peer's standing untouched; `allowRetry(maxRetries)` closes only but
+counts the close against the peer's session bound, so the close that reaches the bound is applied as
+the next rung; `SUSPEND` closes and bars the identity for the rest of the session without recording
+anything on its profile; `BLACKLIST` has the same immediate effect and additionally records the
+verdict on the profile. The file holds the tier names and the four values and nothing else; the
+switch that acts on them lives in [P2PManager](./P2PManager.ts.md) and the ban state they name lives
+in [ProfileManager](./ProfileManager.ts.md).
 
 ## Key design decisions
 
-The enum has exactly two members and no suspended middle tier. A session-scoped bar already expresses
-everything a third tier would, and it belongs to the service that owns the session rather than to the
-connection layer ([`REQ-LOBBY-10-V8MA22` (Session-scoped do-not-rematch set)](../../../specification/peer-communication/lobby-matching.md#req-lobby-10-v8ma22)).
+Only one tier carries a value, so the file is a plain enum of tier names plus a small frozen object:
+the three constant tiers keep their `DisconnectPolicy.ALLOW` spelling and the bounded tier comes from
+an `allowRetry(maxRetries)` factory. A bare string enum cannot carry the bound, and a general policy
+object would be a framework for four fixed values.
+
+The bounded tier is a bound, not a policy engine: the counter, its key, and the decision to escalate
+belong to the owner of ban state ([ProfileManager](./ProfileManager.ts.md)), and this file names only
+the rung. One counter per peer is shared by every call site, so a peer cannot spread its allowance
+over different checks; that also means two call sites naming different bounds still draw on the same
+counter.
+
+The lobby keeps its own session-scoped do-not-rematch set ([`REQ-LOBBY-10-V8MA22` (Session-scoped do-not-rematch set)](../../../specification/peer-communication/lobby-matching.md#req-lobby-10-v8ma22)); `SUSPEND`
+is the connection layer's equivalent and does not replace it.
 
 The policy is a required argument of the close entry point rather than a default, so no close can
 inherit the decision of an unrelated caller.
@@ -36,7 +51,7 @@ inherit the decision of an unrelated caller.
 
 | Aspect       | Contents                                               |
 | ------------ | ------------------------------------------------------ |
-| Inputs       | None — a declarative enum.                             |
+| Inputs       | The retry bound handed to `allowRetry`.                |
 | Outputs      | The policy value passed to the disconnect entry point. |
 | Owned state  | None.                                                  |
 | Side effects | None; consumers own every effect.                      |
@@ -54,13 +69,14 @@ claims complete conformance for a requirement that depends on other files.
 
 - Declarative only: every behavioral guarantee is owned by the caller that supplies the value and by
   the switch in [P2PManager](./P2PManager.ts.md).
-- The values are in-memory session policy. Durability of an exclusion across a restart is undecided
+- The values are in-memory session policy. `SUSPEND` is explicitly session-scoped; durability of the
+  recorded `BLACKLIST` verdict across a restart is undecided
   ([`OQ-34-FY08V2` (RPC boundary decisions)](../../../specification/open-questions.md#oq-34-fy08v2)).
 
 ## Specification adherence
 
-- The two members are exactly the two outcomes the ingress requirement names, so a close cannot be
-  expressed in any third way ([`REQ-RPC-6-E60S4J` (Ordered ingress verification)](../../../specification/peer-communication/rpc.md#req-rpc-6-e60s4j)).
+- The four members are exactly the four outcomes the ingress requirement names, so a close cannot be
+  expressed in any fifth way ([`REQ-RPC-6-E60S4J` (Ordered ingress verification)](../../../specification/peer-communication/rpc.md#req-rpc-6-e60s4j)).
 
 ## Specification contradictions
 
@@ -78,7 +94,7 @@ Gap column. Audit state is file-level (Status header), never a row status.
 
 | Requirement / invariant                                                                 | Implementation status | Evidence                                                                                                                                                                                                      | Gap / divergence                                                                            |
 | --------------------------------------------------------------------------------------- | --------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------- |
-| [`REQ-RPC-6-E60S4J`](../../../specification/peer-communication/rpc.md#req-rpc-6-e60s4j) | Partial               | **Here:** the enum admits exactly the two named outcomes and no third. **Other files:** [P2PManager](./P2PManager.ts.md) owns the switch and the exclusion write; every calling service states its own value. | The file decides nothing on its own; the stage-by-stage consequences live with the callers. |
+| [`REQ-RPC-6-E60S4J`](../../../specification/peer-communication/rpc.md#req-rpc-6-e60s4j) | Partial               | **Here:** the ladder admits exactly the four named outcomes and no fifth. **Other files:** [P2PManager](./P2PManager.ts.md) owns the switch and the retry collapse; [ProfileManager](./ProfileManager.ts.md) owns the counter and the exclusion write; every calling service states its own value. | The file decides nothing on its own; the stage-by-stage consequences live with the callers. |
 
 ## Component test obligations
 

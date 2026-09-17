@@ -4,7 +4,7 @@ import RemoteRpcProxy, {
 } from "./rpc/network/RemoteRpcProxy";
 import { Address } from "./types/types";
 import { runCleanup } from "./utils/runCleanup";
-import { DisconnectPolicy } from "@/DisconnectPolicy";
+import { DisconnectPolicy, DisconnectTier } from "@/DisconnectPolicy";
 import { P2pSigner } from "@/evm";
 import Holepunch from "@/Holepunch";
 import ProfileManager from "@/ProfileManager";
@@ -375,25 +375,56 @@ class P2PManager<TCustomRpc extends MainRpcService = MainRpcService> {
     /**
      * The single owner of every transport-scoped disconnect. The policy is a
      * required argument so no close inherits another caller's decision:
-     * `ALLOW` closes only, `BLACKLIST` also blacklists the peer's profile.
+     * `ALLOW` closes only, `allowRetry(n)` closes until the peer's session
+     * bound is reached, `SUSPEND` bars the peer for this session, and
+     * `BLACKLIST` also records the verdict on the peer's profile.
      */
     public disconnectConnection(
         transport: NetworkTransport,
         policy: DisconnectPolicy
     ) {
-        if (policy === DisconnectPolicy.BLACKLIST) {
+        const appliedTier = this.resolveDisconnectTier(transport, policy);
+        if (
+            appliedTier === DisconnectTier.BLACKLIST ||
+            appliedTier === DisconnectTier.SUSPEND
+        ) {
+            const isBlacklist = appliedTier === DisconnectTier.BLACKLIST;
             this.logger.warn(
-                "Disconnecting and blacklisting peer transport",
+                isBlacklist
+                    ? "Disconnecting and blacklisting peer transport"
+                    : "Disconnecting and suspending peer transport",
                 LoggerUtils.getTransportMetadata(transport)
             );
-            const transportToDisconnect = transport.peerAddress
-                ? this.profileManager.blacklistPeer(transport.peerAddress)
-                : this.profileManager.blacklistPeer(transport);
+            // A proven peer is excluded by identity, which can resolve a second
+            // live transport that must close too.
+            const peer = transport.peerAddress || transport;
+            const transportToDisconnect = isBlacklist
+                ? this.profileManager.blacklistPeer(peer)
+                : this.profileManager.suspendPeer(peer);
             if (transportToDisconnect && transportToDisconnect !== transport) {
                 this.closeConnection(transportToDisconnect);
             }
         }
         this.closeConnection(transport);
+    }
+
+    /**
+     * Collapses the bounded tier onto a constant one. Each `ALLOW_RETRY` close
+     * counts against the peer's single session counter; the close that reaches
+     * the bound is applied as `SUSPEND`, every earlier one as `ALLOW`. An
+     * unproven transport has no identity to count or bar, so it stays `ALLOW`.
+     */
+    private resolveDisconnectTier(
+        transport: NetworkTransport,
+        policy: DisconnectPolicy
+    ): DisconnectTier {
+        if (policy.tier !== DisconnectTier.ALLOW_RETRY) return policy.tier;
+        if (!transport.peerAddress) return DisconnectTier.ALLOW;
+        const boundReached = this.profileManager.countRetryDisconnect(
+            transport.peerAddress,
+            policy.maxRetries
+        );
+        return boundReached ? DisconnectTier.SUSPEND : DisconnectTier.ALLOW;
     }
 
     public disconnectAndBlacklistPeer(transport: NetworkTransport) {
@@ -447,6 +478,10 @@ class P2PManager<TCustomRpc extends MainRpcService = MainRpcService> {
             this.profileManager.getProfileByEvmAddress(evmAddress)
                 ?.isBlackListed || false
         );
+    }
+
+    public isSuspended(evmAddress: Address): boolean {
+        return this.profileManager.isSuspended(evmAddress);
     }
 
     public disconnectAll() {

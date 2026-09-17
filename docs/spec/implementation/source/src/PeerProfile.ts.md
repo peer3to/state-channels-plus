@@ -30,10 +30,13 @@ Profile logs cover explicit bans, clearing bans, authentication, transport attac
 1. **The ban handle belongs to the profile from transport creation.** Authentication adds the
    verified address and identity index without introducing a second handle store; `ProfileManager`
    remains the only ban-policy owner.
-2. **Disconnection means loss of the profile, not one pipe.** `onDisconnected` fires once only on
+2. **Only the recorded verdict is profile state.** The blacklist flag lives here and travels with
+   the profile; a session bar deliberately does not, so nothing it decides can leak into a record
+   that outlives the session ([ProfileManager](./ProfileManager.ts.md) owns the suspension set).
+3. **Disconnection means loss of the profile, not one pipe.** `onDisconnected` fires once only on
    the transition from at least one live transport to none. Authentication rebinding transfers the
    live transport and subscriptions to the identity profile.
-3. **The live set is observable inside the runtime.** `getLiveTransports` lets the lobby take
+4. **The live set is observable inside the runtime.** `getLiveTransports` lets the lobby take
    ownership of every transport for an authenticated profile, so none can remain in the ordinary
    connection set while that profile is only a discovery candidate.
 

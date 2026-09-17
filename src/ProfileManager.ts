@@ -7,7 +7,10 @@ import NetworkTransport from "@/transport/NetworkTransport";
 import { TransportType } from "@/transport/TransportType";
 
 // ProfileManager alone owns explicit bans, upgrade bans, and fallback release.
-// An explicit blacklist always wins over transport fallback.
+// An explicit blacklist always wins over transport fallback. It also owns the
+// two session-scoped halves of the disconnect ladder: the suspension set and
+// the retry counters. Both live on the manager rather than on a profile, so
+// they die with the session instead of travelling with a recorded verdict.
 class ProfileManager {
     private readonly mapTransportToProfile = new Map<
         NetworkTransport,
@@ -18,6 +21,11 @@ class ProfileManager {
         Address,
         PeerProfile
     >();
+    // Checksummed EVM addresses barred for the rest of this session.
+    private readonly suspendedEvmAddresses = new Set<Address>();
+    // Keys are checksummed EVM addresses; values count the retry-tier
+    // disconnects taken against that peer in this session. Never reset.
+    private readonly mapEvmAddressToRetryCount = new Map<Address, number>();
 
     /** Close every registered transport, including peers still authenticating. */
     public dispose(): void {
@@ -28,7 +36,9 @@ class ProfileManager {
             }),
             () => this.mapTransportToProfile.clear(),
             () => this.mapEvmAddressToProfile.clear(),
-            () => this.mapHpAddressToProfile.clear()
+            () => this.mapHpAddressToProfile.clear(),
+            () => this.suspendedEvmAddresses.clear(),
+            () => this.mapEvmAddressToRetryCount.clear()
         );
     }
 
@@ -68,19 +78,28 @@ class ProfileManager {
         const normalizedAddress = getChecksumAddress(evmAddress);
         const existingProfile =
             this.mapEvmAddressToProfile.get(normalizedAddress);
+        // The suspension set is checked independently of the profile: a
+        // suspended identity that dials back on a fresh handle has no profile
+        // of its own to carry the bar.
+        const isSuspended = this.isSuspended(normalizedAddress);
+        if (existingProfile?.isBlackListed || isSuspended) {
+            transport.p2pManager.logger.warn(
+                "Rejecting transport for excluded profile",
+                {
+                    ...LoggerUtils.getTransportMetadata(transport),
+                    peerAddress: normalizedAddress,
+                    blacklisted: existingProfile?.isBlackListed ?? false,
+                    suspended: isSuspended
+                }
+            );
+            // Re-apply the exclusion to the arriving transport so its own peer
+            // info is banned too; a bare close lets the peer redial.
+            if (existingProfile?.isBlackListed) this.blacklistPeer(transport);
+            else this.suspendPeer(transport);
+            transport.close(true);
+            return undefined;
+        }
         if (existingProfile) {
-            if (existingProfile.isBlackListed) {
-                transport.p2pManager.logger.warn(
-                    "Rejecting transport for blacklisted profile",
-                    {
-                        ...LoggerUtils.getTransportMetadata(transport),
-                        peerAddress: normalizedAddress
-                    }
-                );
-                this.blacklistPeer(transport);
-                transport.close(true);
-                return undefined;
-            }
             const currentTransport = existingProfile.getTransport();
             if (
                 currentTransport?.transportType === TransportType.WEBRTC &&
@@ -227,6 +246,52 @@ class ProfileManager {
         return profile.getTransport();
     }
 
+    /**
+     * Session-scoped exclusion: bar the identity and ban its Hyperswarm peer
+     * info so the peer is not redialled for the rest of this session. Unlike
+     * the blacklist it records no verdict on the profile and has no release
+     * path.
+     */
+    public suspendPeer(
+        peer: NetworkTransport | Address
+    ): NetworkTransport | undefined {
+        if (peer instanceof NetworkTransport) {
+            const profile = this.getProfileByTransport(peer);
+            if (profile) this.suspendProfile(profile);
+            return peer;
+        }
+
+        const profile = this.getProfileByEvmAddress(peer);
+        if (!profile) {
+            // An identity with no profile is still barred; there is simply no
+            // peer info to ban yet.
+            this.suspendedEvmAddresses.add(getChecksumAddress(peer));
+            return undefined;
+        }
+        this.suspendProfile(profile);
+        return profile.getTransport();
+    }
+
+    public isSuspended(evmAddress: Address): boolean {
+        return this.suspendedEvmAddresses.has(getChecksumAddress(evmAddress));
+    }
+
+    /**
+     * Count one retry-tier disconnect for this peer and report whether the
+     * session bound is now reached. One counter per peer, shared by every call
+     * site, so a peer cannot spread its retries over different checks.
+     */
+    public countRetryDisconnect(
+        evmAddress: Address,
+        maxRetries: number
+    ): boolean {
+        const normalizedAddress = getChecksumAddress(evmAddress);
+        const count =
+            (this.mapEvmAddressToRetryCount.get(normalizedAddress) ?? 0) + 1;
+        this.mapEvmAddressToRetryCount.set(normalizedAddress, count);
+        return count >= maxRetries;
+    }
+
     public unblacklistPeer(evmAddress: Address): boolean {
         const profile = this.getProfileByEvmAddress(evmAddress);
         if (!profile) return false;
@@ -237,7 +302,7 @@ class ProfileManager {
             .some(
                 (transport) => transport.transportType === TransportType.WEBRTC
             );
-        if (!hasLiveWebRtc) {
+        if (!hasLiveWebRtc && !this.isProfileSuspended(profile)) {
             profile.getHolepunchPeerInfo()?.ban(false);
         }
         return true;
@@ -249,7 +314,8 @@ class ProfileManager {
         if (
             !profile ||
             !profile.isPreferredTransport(transport) ||
-            profile.isBlackListed
+            profile.isBlackListed ||
+            this.isProfileSuspended(profile)
         ) {
             return;
         }
@@ -265,6 +331,19 @@ class ProfileManager {
         profile.getHolepunchPeerInfo()?.ban(true);
     }
 
+    private suspendProfile(profile: PeerProfile): void {
+        const evmAddress = profile.getEvmAddress();
+        if (evmAddress) {
+            this.suspendedEvmAddresses.add(getChecksumAddress(evmAddress));
+        }
+        profile.getHolepunchPeerInfo()?.ban(true);
+    }
+
+    private isProfileSuspended(profile: PeerProfile): boolean {
+        const evmAddress = profile.getEvmAddress();
+        return evmAddress !== undefined && this.isSuspended(evmAddress);
+    }
+
     private applyUpgradeBanPolicy(
         oldTransport: NetworkTransport,
         newTransport: NetworkTransport,
@@ -277,7 +356,8 @@ class ProfileManager {
             if (
                 oldTransport.transportType === TransportType.WEBRTC &&
                 newTransport.transportType === TransportType.HOLEPUNCH &&
-                !profile.isBlackListed
+                !profile.isBlackListed &&
+                !this.isProfileSuspended(profile)
             ) {
                 profile.getHolepunchPeerInfo()?.ban(false);
             }

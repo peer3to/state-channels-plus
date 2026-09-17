@@ -26,11 +26,16 @@ check, mark acked, try finalize). The only unguarded endpoints in the system.
 ## Key design decisions
 
 1. **Validate before signing, structurally.** Non-32-byte challenge or non-finite time is rejected
-   before any signature exists. An already authenticated sender is excluded; a sender without
-   proven identity is only disconnected. The NaN check is load-bearing because NaN defeats window
+   before any signature exists. A malformed request from an already authenticated sender is
+   excluded with a recorded verdict; a sender without proven identity is only disconnected. The NaN
+   check is load-bearing because NaN defeats window
    comparisons ([`REQ-AUTH-1-RF901K` (Validate before signing)](../../../../../../../specification/peer-communication/handshake.md#req-auth-1-rf901k)).
-2. **The ack's challenge parameter is diagnostic only** — never trusted for decisions ([`INV-AUTH-1-J0PRYA` (Signature is the only proof)](../../../../../../../specification/peer-communication/handshake.md#inv-auth-1-j0prya) keeps authority with the signature).
-3. **Duplicate ack = violation** (replay-rejecting class, [`REQ-RPC-4-9VX0B9` (Replay and concurrency)](../../../../../../../specification/peer-communication/rpc.md#req-rpc-4-9vx0b9)).
+2. **Request-time skew is bounded, not punitive.** An out-of-window request time states the bounded
+   tier under the service's shared `TIMING_RETRY_LIMIT`, so clock skew costs the connection but not
+   the sender's standing until its session bound is reached
+   ([DisconnectPolicy](../../../../DisconnectPolicy.ts.md), [`REQ-AUTH-4-JWCF71` (Penalty requires proof)](../../../../../../../specification/peer-communication/handshake.md#req-auth-4-jwcf71)).
+3. **The ack's challenge parameter is diagnostic only** — never trusted for decisions ([`INV-AUTH-1-J0PRYA` (Signature is the only proof)](../../../../../../../specification/peer-communication/handshake.md#inv-auth-1-j0prya) keeps authority with the signature).
+4. **Duplicate ack = violation** (replay-rejecting class, [`REQ-RPC-4-9VX0B9` (Replay and concurrency)](../../../../../../../specification/peer-communication/rpc.md#req-rpc-4-9vx0b9)).
 
 ## Inputs, outputs, state, and side effects
 
@@ -39,7 +44,7 @@ check, mark acked, try finalize). The only unguarded endpoints in the system.
 | Inputs       | Challenge+time (request); optional challenge (ack).                  |
 | Outputs      | Signature+time+transport preference; ack bookkeeping.                |
 | Owned state  | None (per-dispatch).                                                 |
-| Side effects | Signing; disconnect or authenticated-peer exclusion; timeout arming. |
+| Side effects | Signing; disconnect, bounded-retry close, or authenticated-peer exclusion; timeout arming. |
 
 ## Linked requirements
 
@@ -87,8 +92,10 @@ Exact test evidence is mapped against these IDs in the verification test reports
 | <a id="unit-test-init-handshake-methods-1-2739t4"></a>`UNIT-TEST-INIT-HANDSHAKE-METHODS-1-2739T4` | Endpoint validation | Send malformed shapes, NaN/inf/boundary times, valid requests, and duplicate acks | Invalid input disconnects before signing; valid requests sign under the tag; duplicate ack terminates+excludes | <a id="unit-test-init-handshake-methods-1-2739t4.p1"></a>`UNIT-TEST-INIT-HANDSHAKE-METHODS-1-2739T4.P1` — non-hex challenge; <a id="unit-test-init-handshake-methods-1-2739t4.p2"></a>`UNIT-TEST-INIT-HANDSHAKE-METHODS-1-2739T4.P2` — NaN time; <a id="unit-test-init-handshake-methods-1-2739t4.p3"></a>`UNIT-TEST-INIT-HANDSHAKE-METHODS-1-2739T4.P3` — window boundary; <a id="unit-test-init-handshake-methods-1-2739t4.p4"></a>`UNIT-TEST-INIT-HANDSHAKE-METHODS-1-2739T4.P4` — valid sign path; <a id="unit-test-init-handshake-methods-1-2739t4.p5"></a>`UNIT-TEST-INIT-HANDSHAKE-METHODS-1-2739T4.P5` — duplicate ack violation; <a id="unit-test-init-handshake-methods-1-2739t4.p6"></a>`UNIT-TEST-INIT-HANDSHAKE-METHODS-1-2739T4.P6` — wrong-length challenge; <a id="unit-test-init-handshake-methods-1-2739t4.p7"></a>`UNIT-TEST-INIT-HANDSHAKE-METHODS-1-2739T4.P7` — infinite time |
 
 For [`UNIT-TEST-INIT-HANDSHAKE-METHODS-1-2739T4`](InitHandshakeRpcMethods.ts.md#unit-test-init-handshake-methods-1-2739t4), malformed challenge and time inputs
-must be rejected before signing. When the transport already carries an authenticated address,
-the rejection also blacklists that peer; without identity proof it only closes the transport.
+must be rejected before signing. When the transport already carries an authenticated address, a
+malformed rejection also blacklists that peer; without identity proof it only closes the transport.
+An out-of-window request time never blacklists: it closes under the shared per-peer bound and bars
+the sender for the session only on the close that reaches it.
 
 ## Related source reports
 

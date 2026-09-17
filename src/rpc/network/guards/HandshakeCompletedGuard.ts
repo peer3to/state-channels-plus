@@ -59,9 +59,11 @@ class HandshakeAdmissionPolicy implements DeferredAdmissionPolicy {
                 peerAddress: transport.peerAddress
             }
         );
+        // The waiter expired rather than the peer misbehaving, so bar it for
+        // this session instead of recording a verdict against it.
         this.service.p2pManager.disconnectConnection(
             transport,
-            DisconnectPolicy.BLACKLIST
+            DisconnectPolicy.SUSPEND
         );
     }
 
