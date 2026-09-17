@@ -322,10 +322,8 @@ contract JoinChannelFacetTest is Test {
     function test_joinChannel_confirmationNotThresholdSignedRejected() public {
         // a second channel whose two participants are both eligible (nothing is
         // slashed on it), so the threshold set holds 2 addresses
-        address[] memory participants = new address[](2);
-        participants[0] = vm.addr(ELIGIBLE_PK);
-        participants[1] = vm.addr(SLASHED_PK);
-        harness.seedChannel(THRESHOLD_CHANNEL_ID, THRESHOLD_FORK_ID, participants, address(0));
+        address[] memory expectedThresholdParticipants = _eligibleParticipantPair();
+        harness.seedChannel(THRESHOLD_CHANNEL_ID, THRESHOLD_FORK_ID, expectedThresholdParticipants, address(0));
 
         JoinChannel memory joinChannel = JoinChannel({
             channelId: THRESHOLD_CHANNEL_ID,
@@ -343,11 +341,7 @@ contract JoinChannelFacetTest is Test {
         confirmation.signatures = new bytes[](1);
         confirmation.signatures[0] = _sign(ELIGIBLE_PK, encodedJoinChannel);
 
-        // both compared sets, hand-built from the keys this test seeded and
-        // signed with - never read back out of the facet under test
-        address[] memory expectedThresholdParticipants = new address[](2);
-        expectedThresholdParticipants[0] = vm.addr(ELIGIBLE_PK);
-        expectedThresholdParticipants[1] = vm.addr(SLASHED_PK);
+        // the signer set, hand-built from the key this test signed with
         address[] memory expectedSigners = new address[](1);
         expectedSigners[0] = vm.addr(ELIGIBLE_PK);
 
@@ -368,10 +362,8 @@ contract JoinChannelFacetTest is Test {
 
     function test_joinChannel_confirmationSignedByOutsiderNamesTheRecoveredSigner() public {
         // same two-member eligibility set as the shortfall case
-        address[] memory participants = new address[](2);
-        participants[0] = vm.addr(ELIGIBLE_PK);
-        participants[1] = vm.addr(SLASHED_PK);
-        harness.seedChannel(THRESHOLD_CHANNEL_ID, THRESHOLD_FORK_ID, participants, address(0));
+        address[] memory expectedThresholdParticipants = _eligibleParticipantPair();
+        harness.seedChannel(THRESHOLD_CHANNEL_ID, THRESHOLD_FORK_ID, expectedThresholdParticipants, address(0));
 
         JoinChannel memory joinChannel = JoinChannel({
             channelId: THRESHOLD_CHANNEL_ID,
@@ -391,9 +383,6 @@ contract JoinChannelFacetTest is Test {
         confirmation.signatures[0] = _sign(ELIGIBLE_PK, encodedJoinChannel);
         confirmation.signatures[1] = _sign(JOINER_PK, encodedJoinChannel);
 
-        address[] memory expectedThresholdParticipants = new address[](2);
-        expectedThresholdParticipants[0] = vm.addr(ELIGIBLE_PK);
-        expectedThresholdParticipants[1] = vm.addr(SLASHED_PK);
         address[] memory expectedSigners = new address[](2);
         expectedSigners[0] = vm.addr(ELIGIBLE_PK);
         expectedSigners[1] = vm.addr(JOINER_PK);
@@ -416,10 +405,7 @@ contract JoinChannelFacetTest is Test {
     function test_joinChannel_disputedForkRejectionNamesChannelAndFork() public {
         // a channel of its own, so the open dispute window cannot leak into the
         // shared seeded channel the other cases join against
-        address[] memory participants = new address[](2);
-        participants[0] = vm.addr(ELIGIBLE_PK);
-        participants[1] = vm.addr(SLASHED_PK);
-        harness.seedChannel(DISPUTED_CHANNEL_ID, DISPUTED_FORK_ID, participants, address(0));
+        harness.seedChannel(DISPUTED_CHANNEL_ID, DISPUTED_FORK_ID, _eligibleParticipantPair(), address(0));
         harness.seedDisputedFork(DISPUTED_CHANNEL_ID, DISPUTED_FORK_ID);
 
         JoinChannel memory joinChannel = JoinChannel({
@@ -451,6 +437,16 @@ contract JoinChannelFacetTest is Test {
         harness.joinChannel(confirmation, keccak256(abi.encode(snapshot)), DISPUTED_FORK_ID);
 
         assertFalse(harness.depositCalled());
+    }
+
+    /// The two-member eligibility set the threshold cases seed their channel
+    /// with. Neither key is slashed on those channels, so the facet's threshold
+    /// set is these two addresses in this order - hand-built here, never read
+    /// back out of the facet under test.
+    function _eligibleParticipantPair() internal pure returns (address[] memory participants) {
+        participants = new address[](2);
+        participants[0] = vm.addr(ELIGIBLE_PK);
+        participants[1] = vm.addr(SLASHED_PK);
     }
 
     function _sign(uint256 privateKey, bytes memory encodedData) internal pure returns (bytes memory) {

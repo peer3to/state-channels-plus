@@ -211,10 +211,9 @@ describe("ContractCaller and ContractErrors", () => {
                 expect(customError!.errorDescription.name).to.equal(
                     "ErrorBlockCalldataMsgSenderNotBlockAuthor"
                 );
-                // expectedAuthor is the block's participant, actualSender the caller
                 const args = customError!.errorDescription.args;
-                expect(args[0]).to.equal(blockAuthorSigner.address);
-                expect(args[1]).to.equal(testSigner.address);
+                expect(args.expectedAuthor).to.equal(blockAuthorSigner.address);
+                expect(args.actualSender).to.equal(testSigner.address);
             }
         });
 
@@ -294,12 +293,11 @@ describe("ContractCaller and ContractErrors", () => {
                 expect(customError!.errorDescription.name).to.equal(
                     "ErrorBlockCalldataAlreadyPosted"
                 );
-                // forkId, transactionCnt, participant, existingCommitment
                 const args = customError!.errorDescription.args;
-                expect(args[0]).to.equal(forkId);
-                expect(args[1]).to.equal(transactionCnt);
-                expect(args[2]).to.equal(testSigner.address);
-                expect(args[3]).to.equal(expectedCommitment);
+                expect(args.forkId).to.equal(forkId);
+                expect(args.transactionCnt).to.equal(transactionCnt);
+                expect(args.participant).to.equal(testSigner.address);
+                expect(args.existingCommitment).to.equal(expectedCommitment);
             }
         });
     });

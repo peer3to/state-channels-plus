@@ -58,7 +58,10 @@ contract StateChannelManagerProxyOpenTest is DiamondHarness {
         amounts[1] = 0;
         amounts[2] = 0;
 
-        OpenChannelConfirmation memory confirmation = _partialOpenConfirmation(participantPrivateKeys, amounts);
+        // non-atomic: an atomic batch reverts on the first failing deposit and
+        // never reaches the successful-join count guard
+        OpenChannelConfirmation memory confirmation =
+            _openChannelConfirmation(PARTIAL_CHANNEL_ID, participantPrivateKeys, amounts, false);
 
         // The payload is the oracle: 1 is the number of deposits the consumer
         // accepted, against 3 submitted addresses. A post-revert storage read
@@ -81,33 +84,5 @@ contract StateChannelManagerProxyOpenTest is DiamondHarness {
         oc.isAtomic = true;
         oc.data = "";
         return abi.encode(oc);
-    }
-
-    /// Unanimously signed non-atomic open. Non-atomic is required: an atomic
-    /// batch reverts on the first failing deposit and never reaches the
-    /// successful-join count guard.
-    function _partialOpenConfirmation(uint256[] memory participantPrivateKeys, uint256[] memory amounts)
-        internal
-        view
-        returns (OpenChannelConfirmation memory confirmation)
-    {
-        OpenChannel memory oc;
-        oc.channelId = PARTIAL_CHANNEL_ID;
-        oc.participants = new address[](participantPrivateKeys.length);
-        oc.balances = new Balance[](participantPrivateKeys.length);
-        for (uint256 i = 0; i < participantPrivateKeys.length; i++) {
-            oc.participants[i] = vm.addr(participantPrivateKeys[i]);
-            oc.balances[i] = Balance({amount: amounts[i], data: ""});
-        }
-        oc.deadlineTimestamp = block.timestamp + 120;
-        oc.isAtomic = false;
-        oc.data = "";
-
-        bytes memory encodedOpenChannel = abi.encode(oc);
-        bytes[] memory signatures = new bytes[](participantPrivateKeys.length);
-        for (uint256 i = 0; i < participantPrivateKeys.length; i++) {
-            signatures[i] = _sign(participantPrivateKeys[i], encodedOpenChannel);
-        }
-        confirmation = OpenChannelConfirmation({encodedOpenChannel: encodedOpenChannel, signatures: signatures});
     }
 }

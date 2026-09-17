@@ -17,7 +17,6 @@ import {
     ErrorInvalidStateSnapshotHash,
     ErrorOutboundMessageBalanceMismatch,
     ErrorSnapshotDataForkMismatch,
-    RaceConditionOnChainSlashes,
     INBOUND_FAILURE_FINAL_TARGET,
     INBOUND_FAILURE_HASH_LINK,
     INBOUND_FAILURE_HEIGHT_SEQUENCE,
@@ -25,7 +24,8 @@ import {
     RaceConditionDisputeKillPeriodExpired,
     RaceConditionDisputeKillPeriodNotExpired,
     RaceConditionDisputeTimeoutWindowCreatedTooEarly,
-    RaceConditionDisputeWindowNotOpen
+    RaceConditionDisputeWindowNotOpen,
+    RaceConditionOnChainSlashes
 } from "../../../contracts/V1/StateChannelDiamondProxy/Errors.sol";
 import {_isKillPeriodExpired} from "../../../contracts/V1/StateChannelDiamondProxy/utils/DisputeUtils.sol";
 import {
@@ -1087,19 +1087,44 @@ contract DisputeVerificationFacetTest is DiamondHarness {
         arr[0] = amount;
     }
 
-    function _computeDisputeOutputState(address[] memory participants, DisputeInput memory input)
+    function _joinInboundMessage(address participant) internal view returns (Message memory message) {
+        Balance memory balance = Balance({amount: 0, data: ""});
+        message.messageType = MESSAGE_TYPE_JOIN;
+        message.participant = participant;
+        message.balance = balance;
+        message.data = abi.encode(
+            JoinChannel({
+                channelId: CHANNEL_ID,
+                participant: participant,
+                deadlineTimestamp: block.timestamp + 1,
+                balance: balance
+            })
+        );
+    }
+
+    /// The math state a walk is seeded with, next to the snapshot that commits
+    /// to it: the snapshot's state hash is the hash of `encodedState`, so the
+    /// walk starts from a state the snapshot vouches for.
+    function _seededMathState(address[] memory participants)
         internal
-        returns (DisputeOutputState memory out, MathState memory result)
+        pure
+        returns (bytes memory encodedState, StateSnapshot memory snapshot)
     {
         MathState memory state;
         state.participants = participants;
         state.balances = _participantBalances(participants.length);
-        bytes memory encodedState = abi.encode(state);
+        encodedState = abi.encode(state);
 
-        StateSnapshot memory snapshot;
         snapshot.forkId = FORK_ID;
         snapshot.snapshotData.stateMachineStateHash = keccak256(encodedState);
         snapshot.snapshotData.participants = participants;
+    }
+
+    function _computeDisputeOutputState(address[] memory participants, DisputeInput memory input)
+        internal
+        returns (DisputeOutputState memory out, MathState memory result)
+    {
+        (bytes memory encodedState, StateSnapshot memory snapshot) = _seededMathState(participants);
 
         MessageBlock[] memory inboundMessageBlocks = new MessageBlock[](0);
         out = outputHarness.computeDisputeOutputState(input, snapshot, encodedState, inboundMessageBlocks);
@@ -1426,15 +1451,8 @@ contract DisputeVerificationFacetTest is DiamondHarness {
     }
 
     function test_computeDisputeOutputState_unsupportedInboundMessageRevertsCarryingSeedStateHash() public {
-        MathState memory state;
-        state.participants = _participants();
-        state.balances = _participantBalances(state.participants.length);
-        bytes memory encodedState = abi.encode(state);
-
-        StateSnapshot memory snapshot;
-        snapshot.forkId = FORK_ID;
-        snapshot.snapshotData.stateMachineStateHash = keccak256(encodedState);
-        snapshot.snapshotData.participants = state.participants;
+        address[] memory participants = _participants();
+        (bytes memory encodedState, StateSnapshot memory snapshot) = _seededMathState(participants);
 
         // message 0 is a real join and is applied before message 1 fails, so the
         // reported hash can only be the state the walk was seeded with - a hash
@@ -1444,19 +1462,19 @@ contract DisputeVerificationFacetTest is DiamondHarness {
         inboundMessageBlocks[0].messages = new Message[](2);
         inboundMessageBlocks[0].messages[0] = _joinInboundMessage(address(0xB0B));
         inboundMessageBlocks[0].messages[1].messageType = unsupportedMessageType;
-        inboundMessageBlocks[0].messages[1].participant = state.participants[1];
+        inboundMessageBlocks[0].messages[1].participant = participants[1];
 
         DisputeInput memory input;
         input.channelId = CHANNEL_ID;
         input.forkId = FORK_ID;
-        input.disputer = state.participants[0];
+        input.disputer = participants[0];
 
         vm.expectRevert(
             abi.encodeWithSelector(
                 ErrorDisputeStateMachineInboundProcessingFailed.selector,
                 uint256(0),
                 uint256(1),
-                state.participants[1],
+                participants[1],
                 unsupportedMessageType,
                 keccak256(encodedState)
             )
@@ -1468,15 +1486,8 @@ contract DisputeVerificationFacetTest is DiamondHarness {
     // cannot prove the two indices are not swapped or confused. Here the refusal
     // is at block 1 / message 2: two distinct non-zero indices.
     function test_computeDisputeOutputState_refusedMessageInLaterBlockRevertsCarryingBothIndices() public {
-        MathState memory state;
-        state.participants = _participants();
-        state.balances = _participantBalances(state.participants.length);
-        bytes memory encodedState = abi.encode(state);
-
-        StateSnapshot memory snapshot;
-        snapshot.forkId = FORK_ID;
-        snapshot.snapshotData.stateMachineStateHash = keccak256(encodedState);
-        snapshot.snapshotData.participants = state.participants;
+        address[] memory participants = _participants();
+        (bytes memory encodedState, StateSnapshot memory snapshot) = _seededMathState(participants);
 
         bytes32 unsupportedMessageType = keccak256("a message type the state machine does not handle");
         // Heights and the previous-block link are kept consistent for realism
@@ -1491,12 +1502,12 @@ contract DisputeVerificationFacetTest is DiamondHarness {
         inboundMessageBlocks[1].messages[0] = _joinInboundMessage(address(0xB0C));
         inboundMessageBlocks[1].messages[1] = _joinInboundMessage(address(0xB0D));
         inboundMessageBlocks[1].messages[2].messageType = unsupportedMessageType;
-        inboundMessageBlocks[1].messages[2].participant = state.participants[1];
+        inboundMessageBlocks[1].messages[2].participant = participants[1];
 
         DisputeInput memory input;
         input.channelId = CHANNEL_ID;
         input.forkId = FORK_ID;
-        input.disputer = state.participants[0];
+        input.disputer = participants[0];
 
         // three joins were applied before the refusal, so the reported hash can
         // only be the seed the walk started from
@@ -1505,7 +1516,7 @@ contract DisputeVerificationFacetTest is DiamondHarness {
                 ErrorDisputeStateMachineInboundProcessingFailed.selector,
                 uint256(1),
                 uint256(2),
-                state.participants[1],
+                participants[1],
                 unsupportedMessageType,
                 keccak256(encodedState)
             )
@@ -1619,21 +1630,6 @@ contract DisputeVerificationFacetTest is DiamondHarness {
         );
         vm.prank(challenger);
         harness.challengeDisputeReduction(disputes, snapshot, "", new MessageBlock[](0));
-    }
-
-    function _joinInboundMessage(address participant) internal view returns (Message memory message) {
-        Balance memory balance = Balance({amount: 0, data: ""});
-        message.messageType = MESSAGE_TYPE_JOIN;
-        message.participant = participant;
-        message.balance = balance;
-        message.data = abi.encode(
-            JoinChannel({
-                channelId: CHANNEL_ID,
-                participant: participant,
-                deadlineTimestamp: block.timestamp + 1,
-                balance: balance
-            })
-        );
     }
 
     function test_commitToDisputeReducedResult_noDisputeWindow_revertsNamingTheMissingWindow() public {
