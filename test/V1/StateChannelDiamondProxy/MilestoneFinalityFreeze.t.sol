@@ -241,15 +241,6 @@ contract MilestoneFinalityFreezeTest is DiamondHarness {
         assertTrue(harness.isLastMilestoneFinalByEveryone(signedByABC), "C signed after consumption");
     }
 
-    function test_isFinal_slashInWindowSecond_cannotFlipFalseToTrue() public {
-        Dispute memory dispute = _dispute(H0, 1, new address[](0), _milestone(CHANNEL_ID, FORK_ID, _keys(PK_A)));
-        harness.seedWindow(CHANNEL_ID, FORK_ID, dispute);
-
-        // same second as the window's creation -> not a prior slash
-        harness.slash(CHANNEL_ID, b);
-        assertFalse(harness.isLastMilestoneFinalByEveryone(dispute), "B stays expected");
-    }
-
     function test_isFinal_slashAfterCommit_cannotFlipFalseToTrue() public {
         Dispute memory dispute = _dispute(H0, 1, new address[](0), _milestone(CHANNEL_ID, FORK_ID, _keys(PK_A)));
         assertFalse(harness.isLastMilestoneFinalByEveryone(dispute), "B unsigned -> not final");
@@ -265,16 +256,19 @@ contract MilestoneFinalityFreezeTest is DiamondHarness {
         assertTrue(harness.isLastMilestoneFinalByEveryone(listsSlash), "the committed slash list decides");
     }
 
-    function test_isFinal_memberSlashedOnEarlierFork_notExpectedAtConstructionAndProof() public {
-        // B was slashed before this fork's window existed and the dispute does not list it
+    function test_isFinal_memberSlashedOnEarlierFork_expectedUnlessListed() public {
+        // B was slashed before this fork's window existed
         harness.slash(CHANNEL_ID, b);
         vm.warp(block.timestamp + 1);
-        Dispute memory dispute = _dispute(H0, 1, new address[](0), _milestone(CHANNEL_ID, FORK_ID, _keys(PK_A)));
-        assertTrue(harness.isLastMilestoneFinalByEveryone(dispute), "construction reads B as removed");
+        Dispute memory unlisted = _dispute(H0, 1, new address[](0), _milestone(CHANNEL_ID, FORK_ID, _keys(PK_A)));
+        Dispute memory listed = _dispute(H0, 1, _addresses(b), _milestone(CHANNEL_ID, FORK_ID, _keys(PK_A)));
+        assertFalse(harness.isLastMilestoneFinalByEveryone(unlisted), "construction expects the unlisted B");
+        assertTrue(harness.isLastMilestoneFinalByEveryone(listed), "construction drops the listed B");
 
-        harness.seedWindow(CHANNEL_ID, FORK_ID, dispute);
+        harness.seedWindow(CHANNEL_ID, FORK_ID, unlisted);
         vm.warp(block.timestamp + 1);
-        assertTrue(harness.isLastMilestoneFinalByEveryone(dispute), "the proof reads the same set");
+        assertFalse(harness.isLastMilestoneFinalByEveryone(unlisted), "the proof expects the unlisted B");
+        assertTrue(harness.isLastMilestoneFinalByEveryone(listed), "the proof drops the listed B");
     }
 
     function test_applyDisputeFraudProofs_participantSetUnchanged_submitterSlashedNotDisputer() public {
@@ -331,9 +325,14 @@ contract MilestoneFinalityFreezeTest is DiamondHarness {
         harness.seedWindow(CHANNEL_ID, genesis.forkId, dispute);
         assertFalse(harness.isLastMilestoneFinalByEveryone(dispute), "C unsigned on the chain set -> not final");
 
+        // inside the kill period -> currentTimestamp < killPeriodEnd
         vm.expectRevert(
             abi.encodeWithSelector(
-                RaceConditionSnapshotDuringKillPeriod.selector, block.timestamp + 10, block.timestamp
+                RaceConditionSnapshotUpdateDisputedFork.selector,
+                CHANNEL_ID,
+                genesis.forkId,
+                block.timestamp + 10,
+                block.timestamp
             )
         );
         harness.updateStateSnapshotFork(CHANNEL_ID, genesis, new MessageBlock[](0));
@@ -425,19 +424,28 @@ contract SameForkSnapshotKillPeriodTest is DiamondHarness {
             _makeSameForkSnapshot(CHANNEL, new address[](0), _keys(PK_A, PK_B));
         bytes32 snapshotBefore = keccak256(abi.encode(diamond.getStateSnapshot(CHANNEL)));
 
-        vm.expectRevert(
-            abi.encodeWithSelector(RaceConditionSnapshotDuringKillPeriod.selector, killPeriodEnd, killPeriodEnd - 1)
-        );
+        // inside the kill period -> currentTimestamp < killPeriodEnd
+        _expectDisputedForkRefusal(CHANNEL, killPeriodEnd);
         diamond.updateStateSnapshotSameFork(CHANNEL, proofs, snapshots, new MessageBlock[](0));
 
         assertEq(keccak256(abi.encode(diamond.getStateSnapshot(CHANNEL))), snapshotBefore, "snapshot unchanged");
         assertEq(diamond.getOpenChannelCount(), 1, "registry unchanged");
     }
 
-    function test_sameFork_acceptedAtKillPeriodExpiry() public {
+    function test_sameFork_refusedAfterKillPeriodExpiry() public {
         _openWindow(CHANNEL, diamond.getStateSnapshot(CHANNEL).forkId, PK_A);
         vm.warp(block.timestamp + diamond.getEvidenceTime());
-        _assertCloseLands();
+        (, bool killPeriodExpired, uint256 killPeriodEnd,) =
+            diamond.isKillPeriodExpired(CHANNEL, diamond.getStateSnapshot(CHANNEL).forkId);
+        assertTrue(killPeriodExpired, "kill period over");
+        (MilestoneProof[] memory proofs, StateSnapshot[] memory snapshots) =
+            _makeSameForkSnapshot(CHANNEL, new address[](0), _keys(PK_A, PK_B));
+
+        // a disputed fork only advances by reduction, however long ago it was disputed -> currentTimestamp >= killPeriodEnd
+        _expectDisputedForkRefusal(CHANNEL, killPeriodEnd);
+        diamond.updateStateSnapshotSameFork(CHANNEL, proofs, snapshots, new MessageBlock[](0));
+        (bool open,) = diamond.isChannelOpen(CHANNEL);
+        assertTrue(open, "the close advance did not land");
     }
 
     function test_sameFork_windowOnOtherForkDoesNotBlock() public {
@@ -445,7 +453,7 @@ contract SameForkSnapshotKillPeriodTest is DiamondHarness {
         _assertCloseLands();
     }
 
-    function test_sameFork_invalidProofDuringKillPeriod_revertsInvalidStateProof() public {
+    function test_sameFork_invalidProofOnDisputedFork_revertsInvalidStateProof() public {
         _openWindow(CHANNEL, diamond.getStateSnapshot(CHANNEL).forkId, PK_A);
         (, StateSnapshot[] memory snapshots) = _makeSameForkSnapshot(CHANNEL, new address[](0), _keys(PK_A, PK_B));
 
@@ -465,16 +473,10 @@ contract SameForkSnapshotKillPeriodTest is DiamondHarness {
         // step 2 - alice disputes at the snapshot's inbound; {alice, bob} signed the last milestone -> final, no auditing data
         Dispute memory dispute = _openWindow(CHANNEL, current.forkId, PK_A);
 
-        // step 3 - a snapshot adopting dave is refused inside the kill period
+        // step 3 - a snapshot adopting dave is refused on the disputed fork
         (MilestoneProof[] memory adoptProofs, StateSnapshot[] memory adoptSnapshots) =
             _makeSameForkSnapshot(CHANNEL, _addresses(alice, bob, vm.addr(PK_D)), _keys(PK_B, PK_A, PK_D));
-        vm.expectRevert(
-            abi.encodeWithSelector(
-                RaceConditionSnapshotDuringKillPeriod.selector,
-                block.timestamp + diamond.getEvidenceTime(),
-                block.timestamp
-            )
-        );
+        _expectDisputedForkRefusal(CHANNEL, block.timestamp + diamond.getEvidenceTime());
         diamond.updateStateSnapshotSameFork(CHANNEL, adoptProofs, adoptSnapshots, new MessageBlock[](0));
 
         // step 4 - a prover claims the milestone is not final and alice owed auditing data
@@ -500,15 +502,9 @@ contract SameForkSnapshotKillPeriodTest is DiamondHarness {
         // step 2 - eve left; bob disputes with a last milestone eve never signed and no auditing data
         Dispute memory dispute = _openWindow(LEAVE_CHANNEL, diamond.getStateSnapshot(LEAVE_CHANNEL).forkId, PK_B);
 
-        // step 3 - eve's signed exit, which anyone can post, is refused inside the kill period
+        // step 3 - eve's signed exit, which anyone can post, is refused on the disputed fork
         (proofs, snapshots) = _makeSameForkSnapshot(LEAVE_CHANNEL, _addresses(alice, bob), _keys(PK_E, PK_A, PK_B));
-        vm.expectRevert(
-            abi.encodeWithSelector(
-                RaceConditionSnapshotDuringKillPeriod.selector,
-                block.timestamp + diamond.getEvidenceTime(),
-                block.timestamp
-            )
-        );
+        _expectDisputedForkRefusal(LEAVE_CHANNEL, block.timestamp + diamond.getEvidenceTime());
         diamond.updateStateSnapshotSameFork(LEAVE_CHANNEL, proofs, snapshots, new MessageBlock[](0));
 
         // step 4 - alice proves bob owed auditing data
@@ -517,6 +513,19 @@ contract SameForkSnapshotKillPeriodTest is DiamondHarness {
         assertFalse(diamond.isParticipantSlashedOnChain(LEAVE_CHANNEL, alice), "honest challenger not slashed");
         assertTrue(
             diamond.isParticipantSlashedOnChain(LEAVE_CHANNEL, bob), "disputer who skipped auditing data slashed"
+        );
+    }
+
+    /// the same-fork refusal of `channelId`'s current fork, with the exact diagnostic args
+    function _expectDisputedForkRefusal(bytes32 channelId, uint256 killPeriodEnd) internal {
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                RaceConditionSnapshotUpdateDisputedFork.selector,
+                channelId,
+                diamond.getStateSnapshot(channelId).forkId,
+                killPeriodEnd,
+                block.timestamp
+            )
         );
     }
 

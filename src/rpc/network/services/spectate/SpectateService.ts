@@ -959,11 +959,11 @@ class SpectateService extends ANetworkRpcService<SpectateServiceRpcMethods> {
                 );
             } catch (e) {
                 const custom = tryDecodeCustomError(e);
-                // multicall stops at the first failure and the freeze is an adoption's last check
-                // -> every earlier check passed and only the adoption is deferred
-                if (custom?.name === "RaceConditionSnapshotDuringKillPeriod") {
+                if (
+                    custom?.name === "RaceConditionSnapshotUpdateDisputedFork"
+                ) {
                     this.logger.debug(
-                        "Spectate multicall target fork is in its kill period",
+                        "Spectate multicall target fork is disputed",
                         { forkId: syncPayload.latestForkGenesisSnapshot.forkId }
                     );
                     return true;

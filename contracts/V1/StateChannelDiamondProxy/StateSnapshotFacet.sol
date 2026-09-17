@@ -30,6 +30,12 @@ contract StateSnapshotFacet is StateChannelCommon {
                 && _isReduceChallengePeriodExpired(disputeWindow, _getEvidenceTime())
         ) {
             if (disputeWindow.reducedResult.forkId == targetForkId) {
+                DisputeWindow storage targetWindow = disputeWindowMap[targetForkId];
+                (bool killPeriodExpired, uint256 killPeriodEnd) = _isKillPeriodExpired(targetWindow, _getEvidenceTime());
+                require(
+                    !_isDisputeWidnowCreated(targetWindow) || killPeriodExpired,
+                    RaceConditionSnapshotUpdateDisputedFork(channelId, targetForkId, killPeriodEnd, block.timestamp)
+                );
                 _updateStateSnapshot(channelId, currentStateSnapshot, newStateSnapshot, outboundMessageBlocks, false);
                 updated = true;
                 break;
@@ -69,6 +75,14 @@ contract StateSnapshotFacet is StateChannelCommon {
                 channelBalances[channelId].latestInboundMessageBlockHash
             )
         );
+        if (_isForkDisputed(channelId, currentStateSnapshot.forkId)) {
+            (, uint256 killPeriodEnd) = _isKillPeriodExpired(
+                disputeData[channelId].disputeWindowMap[currentStateSnapshot.forkId], _getEvidenceTime()
+            );
+            revert RaceConditionSnapshotUpdateDisputedFork(
+                channelId, currentStateSnapshot.forkId, killPeriodEnd, block.timestamp
+            );
+        }
 
         _updateStateSnapshot(channelId, currentStateSnapshot, newStateSnapshot, outboundMessageBlocks, true);
     }
@@ -88,13 +102,6 @@ contract StateSnapshotFacet is StateChannelCommon {
                 outboundMessageBlocks, currentOnChainSnapshot.snapshotData, newSnapshot.snapshotData
             ),
             ErrorOutboundMessageBlocksInvalid()
-        );
-        DisputeWindow storage disputeWindow = disputeData[channelId].disputeWindowMap[newSnapshot.forkId];
-        (bool killPeriodExpired, uint256 killPeriodEnd) = _isKillPeriodExpired(disputeWindow, _getEvidenceTime());
-        // a fork's membership is frozen while its committed disputes can still be killed
-        require(
-            !_isDisputeWidnowCreated(disputeWindow) || killPeriodExpired,
-            RaceConditionSnapshotDuringKillPeriod(killPeriodEnd, block.timestamp)
         );
         _applyOutboundMessageBlocks(channelId, outboundMessageBlocks, newSnapshot.snapshotData);
 

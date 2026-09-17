@@ -256,7 +256,7 @@ contract DisputeWindowAdmissionTest is Test {
     function testFuzz_anchorBelowConsumedInboundRefused(bool withCalldata) public {
         target.setSnapshotInboundHeight(CHANNEL, 2);
         bytes32 beforeState = _state();
-        vm.expectRevert(abi.encodeWithSelector(RaceConditionDisputeAnchorBehindSnapshot.selector, 2, 1));
+        vm.expectRevert(abi.encodeWithSelector(RaceConditionDisputeInboundNotLatest.selector, 2, 1));
         _uploadAnchoredAt(false, withCalldata, 1);
         assertEq(_state(), beforeState, "refusal changes no admission state");
     }

@@ -3,7 +3,7 @@ import { expect } from "chai";
 import { ethers } from "ethers";
 
 describe("E2E: dispute validation / uploadRevert / latestInboundMessageBlockHash", function () {
-    it("dispute.input.lastInboundMessageBlockHeight below the consumed inbound → RaceConditionDisputeAnchorBehindSnapshot", async function () {
+    it("dispute.input.lastInboundMessageBlockHeight below the consumed inbound → RaceConditionDisputeInboundNotLatest", async function () {
         const h = TestSession.getHarness();
         await h.lifecycle.start(3, 3);
         const forkId = h.activeForkId!;
@@ -34,7 +34,7 @@ describe("E2E: dispute validation / uploadRevert / latestInboundMessageBlockHash
         await expect(contract.uploadDispute(disputeConfirmation))
             .to.be.revertedWithCustomError(
                 contract,
-                "RaceConditionDisputeAnchorBehindSnapshot"
+                "RaceConditionDisputeInboundNotLatest"
             )
             .withArgs(consumedHeight, 0n);
         expect(

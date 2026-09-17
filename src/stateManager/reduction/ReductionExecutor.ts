@@ -8,9 +8,9 @@ import type { ForkId, Timestamp } from "@/types/types";
 import { DetachedPromises, Logger, Mutex } from "@/utils";
 import { errorMessage } from "@/utils/errorMessage";
 import {
+    type ContractErrorName,
     type CustomEvmError,
     type RaceConditionErrorHandlers,
-    type RaceConditionErrorName,
     tryDecodeCustomError,
     tryHandleEvmError
 } from "@/utils/evmErrorHandler";
@@ -41,11 +41,11 @@ const REDUCTION_RACE_ERRORS = [
     "RaceConditionDisputeAlreadyReduced",
     "RaceConditionBlockHeightTooOld",
     "RaceConditionReductionExpectationDoesntMatch"
-] as const satisfies readonly RaceConditionErrorName[];
+] as const;
 type ReductionRaceErrorName = (typeof REDUCTION_RACE_ERRORS)[number];
 
 function isReductionRaceErrorName(
-    errorName: string | undefined
+    errorName: ContractErrorName | undefined
 ): errorName is ReductionRaceErrorName {
     return REDUCTION_RACE_ERRORS.some((candidate) => candidate === errorName);
 }
@@ -363,10 +363,9 @@ export default class ReductionExecutor {
             return "submit";
         } catch (error) {
             const customError = tryDecodeCustomError(error);
-            // the reduce passed (multicall stops at the first failure); only the
-            // reduced fork's adoption is frozen by its open kill period
             if (
-                customError?.name === "RaceConditionSnapshotDuringKillPeriod" &&
+                customError?.name ===
+                    "RaceConditionSnapshotUpdateDisputedFork" &&
                 submission.calldata.length > 1
             ) {
                 this.logger.info("Reduction submits without fork adoption", {
@@ -425,7 +424,7 @@ export default class ReductionExecutor {
                 let raceErrorName: ReductionRaceErrorName | undefined;
                 let adoptionFrozen = false;
                 const handlers: RaceConditionErrorHandlers = {
-                    RaceConditionSnapshotDuringKillPeriod: () => {
+                    RaceConditionSnapshotUpdateDisputedFork: () => {
                         adoptionFrozen = true;
                     }
                 };
@@ -497,7 +496,7 @@ export default class ReductionExecutor {
     }
 
     private async classifyReductionRace(
-        errorName: string | undefined,
+        errorName: ContractErrorName | undefined,
         forkId: ForkId,
         disputes: DisputeStruct[]
     ): Promise<ReductionSubmissionStatus | undefined> {

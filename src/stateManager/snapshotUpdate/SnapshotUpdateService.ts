@@ -15,7 +15,7 @@ import { ethers, TransactionResponse } from "ethers";
 
 type SnapshotSubmission = {
     expectedSnapshot: StateSnapshot;
-    completion: Promise<void>;
+    completion: Promise<boolean>;
 };
 
 type ForkSnapshotUpdatePreparation = {
@@ -54,14 +54,10 @@ export default class SnapshotUpdateService {
         return submission.expectedSnapshot;
     }
 
-    public async postStateSnapshotWait(
-        forkId: ForkId
-    ): Promise<StateSnapshot | undefined> {
+    /** Resolves false only when the chain refused the post on a disputed fork. */
+    public async postStateSnapshotWait(forkId: ForkId): Promise<boolean> {
         const submission = await this.submitStateSnapshot(forkId);
-        if (!submission) return undefined;
-
-        await submission.completion;
-        return submission.expectedSnapshot;
+        return submission?.completion ?? true;
     }
 
     private async submitStateSnapshot(
@@ -131,8 +127,10 @@ export default class SnapshotUpdateService {
             .then(async (response) => {
                 transactionResponse = response;
                 await response.wait();
+                return true;
             })
             .catch(async (error) => {
+                let refused = false;
                 const success = await tryHandleEvmError(error, {
                     tx: transactionResponse,
                     logger: this.logger,
@@ -160,13 +158,12 @@ export default class SnapshotUpdateService {
                                 `postStateSnapshot: pending inbound not consumed for forkId=${forkId}`
                             );
                         },
-                        RaceConditionSnapshotDuringKillPeriod: (custom) => {
+                        RaceConditionSnapshotUpdateDisputedFork: () => {
                             this.logger.warn(
-                                "postStateSnapshot: adoption refused while the target fork's kill period is open",
+                                "postStateSnapshot: adoption refused on a disputed fork",
                                 { forkId }
                             );
-                            // callers tell the expected freeze from a failure by its name
-                            throw custom;
+                            refused = true;
                         },
                         RaceConditionReductionExpectationDoesntMatch: () => {
                             this.logger.error(
@@ -179,7 +176,7 @@ export default class SnapshotUpdateService {
                         }
                     }
                 });
-                if (success) return;
+                if (success) return !refused;
                 const custom = tryDecodeCustomError(error);
                 this.logger.error("Error posting state snapshot", {
                     custom,

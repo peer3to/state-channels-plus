@@ -584,7 +584,12 @@ contract StateChannelCommon is StateChannelManagerStorage, StateChannelManagerEv
         return false;
     }
 
-    function _canParticipateInDisputes(bytes32 channelId, address participant) internal view virtual returns (bool) {
+    function _canParticipateInDisputesNow(bytes32 channelId, address participant)
+        internal
+        view
+        virtual
+        returns (bool)
+    {
         address[] memory eligibleParticipants = _deriveEligibleParticipantsFromInboundHashAndSnapshotParticipants(
             channelId,
             channelBalances[channelId].latestInboundMessageBlockHash,

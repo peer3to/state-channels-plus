@@ -384,7 +384,7 @@ describe("E2E: State Snapshots", function () {
     });
 
     describe("updateStateSnapshotSameFork during active dispute", function () {
-        it("same-fork post during the kill period reverts with RaceConditionSnapshotDuringKillPeriod; the window survives and the kill still resolves", async function () {
+        it("same-fork post on a disputed fork reverts with RaceConditionSnapshotUpdateDisputedFork; the window survives and the kill still resolves", async function () {
             const h = TestSession.getHarness();
             await h.scenario.preDisputeSetup();
             const forkId = h.activeForkId!;
@@ -395,14 +395,14 @@ describe("E2E: State Snapshots", function () {
             });
             const snapshotBefore = await h.query.getOnChainSnapshotHash();
 
-            // membership is frozen while the fork's kill period is open
+            // a disputed fork only advances by reduction to a new fork
             const refusal = await h.transition
                 .postSameForkSnapshotOnlyWait({ peerIndex: 0 })
                 .then(
                     () => "posted",
                     (error) => tryDecodeCustomError(error)?.name
                 );
-            expect(refusal).to.equal("RaceConditionSnapshotDuringKillPeriod");
+            expect(refusal).to.equal("RaceConditionSnapshotUpdateDisputedFork");
             expect(await h.query.getOnChainSnapshotHash()).to.equal(
                 snapshotBefore
             );

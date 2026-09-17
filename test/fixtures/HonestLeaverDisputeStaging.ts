@@ -250,7 +250,7 @@ export async function assertHonestLeaverKillPeriodRefusal(
     leaverDisputesFirst: boolean
 ): Promise<void> {
     // a dispute commits between the post's chain read and its broadcast ->
-    // the chain refuses the post because the fork's kill period is open
+    // the chain refuses the post because the fork is disputed
     const { forkId, leaver, others, leaverReduction, send, rebuild } =
         await stageHeldLeaverExitPost(h);
     let signedAtDispute: { height: number } | null = null;
@@ -290,9 +290,9 @@ export async function assertHonestLeaverKillPeriodRefusal(
                     )) !== undefined
             );
         }
-        // the chain refused the post for the open kill period, not another reason
+        // the chain refused the post for the disputed fork, not another reason
         expect(await send.release()).to.equal(
-            "RaceConditionSnapshotDuringKillPeriod"
+            "RaceConditionSnapshotUpdateDisputedFork"
         );
         if (!leaverDisputesFirst) {
             // the leaver's own dispute against the invalid block is already

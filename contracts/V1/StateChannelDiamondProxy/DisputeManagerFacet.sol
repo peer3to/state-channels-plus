@@ -44,7 +44,7 @@ contract DisputeManagerFacet is StateChannelCommon {
         Dispute memory dispute = abi.decode(disputeConfirmation.signedDispute.encodedDispute, (Dispute));
         require(msg.sender == dispute.input.disputer, ErrorDisputerNotMsgSender(dispute.input.disputer, msg.sender));
         require(
-            _canParticipateInDisputes(dispute.input.channelId, msg.sender),
+            _canParticipateInDisputesNow(dispute.input.channelId, msg.sender),
             ErrorCantParticipateInDispute(dispute.input.channelId, msg.sender)
         );
         uint256 consumedInboundHeight =
@@ -52,7 +52,7 @@ contract DisputeManagerFacet is StateChannelCommon {
         // a dispute built before a same-fork advance would be judged against a set it never saw
         require(
             dispute.input.lastInboundMessageBlockHeight >= consumedInboundHeight,
-            RaceConditionDisputeAnchorBehindSnapshot(consumedInboundHeight, dispute.input.lastInboundMessageBlockHeight)
+            RaceConditionDisputeInboundNotLatest(consumedInboundHeight, dispute.input.lastInboundMessageBlockHeight)
         );
 
         if (dispute.input.requireExistingDisputeWindow) {

@@ -196,7 +196,9 @@ contract DisputeVerificationFacet is StateChannelCommon {
         require(disputes.length > 0, ErrorNoDisputesProvided());
         bytes32 channelId = disputes[0].input.channelId;
         bytes32 forkId = disputes[0].input.forkId;
-        require(_canParticipateInDisputes(channelId, msg.sender), ErrorCantParticipateInDispute(channelId, msg.sender));
+        require(
+            _canParticipateInDisputesNow(channelId, msg.sender), ErrorCantParticipateInDispute(channelId, msg.sender)
+        );
         DisputeData storage disputeData = disputeData[channelId];
         DisputeWindow storage disputeWindow = disputeData.disputeWindowMap[disputes[0].input.forkId];
         //require all disputes are part of commitment
@@ -256,7 +258,7 @@ contract DisputeVerificationFacet is StateChannelCommon {
             return;
         }
 
-        // require(_canParticipateInDisputes(channelId, msg.sender), ErrorCantParticipateInDispute());
+        // require(_canParticipateInDisputesNow(channelId, msg.sender), ErrorCantParticipateInDispute());
         // require that provided disputes correspond to committed set
         require(areDisputesCommitted(disputeWindow, disputes), ErrorDisputeCommitmentNotAvailable());
 

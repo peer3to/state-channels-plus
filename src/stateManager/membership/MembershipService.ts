@@ -341,22 +341,19 @@ export default class MembershipService {
                         `startMaybeExitOnChain - everyone signed block ${block.height}, posting state snapshot`,
                         { blockHeight: block.height, forkId: block.forkId }
                     );
+                    let posted = false;
                     try {
-                        await sm.snapshotUpdateService.postStateSnapshotWait(
-                            block.forkId
-                        );
-                    } catch (error) {
-                        // the kill-period refusal is an expected race the post already logged
-                        if (
-                            tryDecodeCustomError(error)?.name !==
-                            "RaceConditionSnapshotDuringKillPeriod"
-                        )
-                            this.logger.error(
-                                `startMaybeExitOnChain - failed to post state snapshot`,
-                                {
-                                    error: errorMessage(error)
-                                }
+                        posted =
+                            await sm.snapshotUpdateService.postStateSnapshotWait(
+                                block.forkId
                             );
+                    } catch (error) {
+                        this.logger.error(
+                            `startMaybeExitOnChain - failed to post state snapshot`,
+                            { error: errorMessage(error) }
+                        );
+                    }
+                    if (!posted) {
                         try {
                             if (
                                 !(await this.startSelfRemovalDispute(

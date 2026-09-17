@@ -1056,7 +1056,7 @@ describe("Unit: DisputeManager", function () {
         // no live trigger: an honest anchor is at or above its head snapshot, and adoption on its fork
         // needs its signature (test_isFinal_joinAtAnchor_expectedBeforeAndAfterConsumption); a left
         // fork takes no upload (testFuzz_trueFinalizedWindowRefused). testFuzz_anchorBelowConsumedInboundRefused pins the gate
-        it.skip("RaceConditionDisputeAnchorBehindSnapshot from a live chain → refreshed and re-uploaded (unreachable)", function () {});
+        it.skip("RaceConditionDisputeInboundNotLatest from a live chain → refreshed and re-uploaded (unreachable)", function () {});
 
         it("RaceConditionDisputeTimeoutWindowCreatedTooEarly → consumed no-op, marker reset", async function () {
             const h = TestSession.getHarness();

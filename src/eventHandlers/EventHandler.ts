@@ -928,7 +928,7 @@ export class EventHandler {
         } catch (error) {
             const customError = tryDecodeCustomError(error);
             if (
-                customError?.errorDescription.name ===
+                customError?.name ===
                 "RaceConditionDisputeEvidencePeriodExpired"
             ) {
                 this.logger.info(

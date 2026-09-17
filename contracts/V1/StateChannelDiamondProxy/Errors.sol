@@ -120,11 +120,12 @@ error RaceConditionJoinChannelSnapshotMismatch();
 error RaceConditionPendingInboundNotConsumed(
     bytes32 submittedInboundMessageBlockHash, bytes32 onChainInboundMessageBlockHash
 );
-error RaceConditionSnapshotDuringKillPeriod(uint256 killPeriodEnd, uint256 currentTimestamp);
+error RaceConditionSnapshotUpdateDisputedFork(
+    bytes32 channelId, bytes32 forkId, uint256 killPeriodEnd, uint256 currentTimestamp
+);
 error RaceConditionForceInboundJoinForkDisputed();
+error RaceConditionDisputeWindowNotOpen(bytes32 channelId, bytes32 forkId);
+error RaceConditionDisputeInboundNotLatest(uint256 consumedInboundHeight, uint256 disputeInboundHeight);
 error ErrorDisputeThrottled(address disputer, uint256 throttleExpiry, uint256 currentTimestamp);
 error ErrorDuplicateSelectorRegistration(bytes4 selector);
 error ErrorRouteTargetHasNoCode(bytes4 selector, address target);
-
-error RaceConditionDisputeWindowNotOpen(bytes32 channelId, bytes32 forkId);
-error RaceConditionDisputeAnchorBehindSnapshot(uint256 consumedInboundHeight, uint256 disputeInboundHeight);
