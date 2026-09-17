@@ -27,6 +27,7 @@ contract DisputeWindowAdmissionHarness is DisputeManagerFacet {
         MessageBlock storage inbound = inboundMessageBlockMap[channelId][hash];
         inbound.timestamp = block.timestamp;
         inbound.previousBlockHash = previous;
+        inbound.blockHeight = ++channelBalances[channelId].latestInboundMessageBlockHeight;
         Balance memory balance = Balance({amount: 0, data: ""});
         inbound.messages.push(
             Message({
@@ -82,6 +83,7 @@ contract DisputeWindowAdmissionTest is Test {
     uint256 internal constant KEY = 12345;
     address internal disputer;
     bytes32 internal inboundHead;
+    uint256 internal inboundHeight;
 
     function setUp() public {
         vm.warp(100);
@@ -93,9 +95,10 @@ contract DisputeWindowAdmissionTest is Test {
     function _seedJoin(bytes32 hash, bytes32 previous, address participant) internal {
         target.seedInboundJoin(CHANNEL, hash, previous, participant);
         inboundHead = hash;
+        inboundHeight++;
     }
 
-    function _confirmation(bool required, bool withCalldata, bytes32 anchorHash)
+    function _confirmation(bool required, bool withCalldata, bytes32 anchorHash, uint256 anchorHeight)
         internal
         returns (DisputeConfirmation memory confirmation, DisputeAuditingData memory auditing)
     {
@@ -104,6 +107,7 @@ contract DisputeWindowAdmissionTest is Test {
         dispute.input.forkId = FORK;
         dispute.input.disputer = disputer;
         dispute.input.latestInboundMessageBlockHash = anchorHash;
+        dispute.input.lastInboundMessageBlockHeight = anchorHeight;
         dispute.input.requireExistingDisputeWindow = required;
         dispute.postedAuditingData = withCalldata;
         dispute.input.disputeAuditingDataHash = keccak256(abi.encode(auditing));
@@ -114,12 +118,12 @@ contract DisputeWindowAdmissionTest is Test {
     }
 
     function _upload(bool required, bool withCalldata) internal {
-        _uploadAnchoredAt(required, withCalldata, inboundHead);
+        _uploadAnchoredAt(required, withCalldata, inboundHead, inboundHeight);
     }
 
-    function _uploadAnchoredAt(bool required, bool withCalldata, bytes32 anchorHash) internal {
+    function _uploadAnchoredAt(bool required, bool withCalldata, bytes32 anchorHash, uint256 anchorHeight) internal {
         (DisputeConfirmation memory confirmation, DisputeAuditingData memory auditing) =
-            _confirmation(required, withCalldata, anchorHash);
+            _confirmation(required, withCalldata, anchorHash, anchorHeight);
         vm.prank(disputer);
         if (withCalldata) target.uploadDisputeWithCalldata(confirmation, auditing);
         else target.uploadDispute(confirmation);
@@ -263,15 +267,27 @@ contract DisputeWindowAdmissionTest is Test {
                 RaceConditionDisputeInboundNotLatest.selector, keccak256("head"), keccak256("consumed")
             )
         );
-        _uploadAnchoredAt(false, withCalldata, keccak256("consumed"));
+        _uploadAnchoredAt(false, withCalldata, keccak256("consumed"), inboundHeight - 1);
         assertEq(_state(), beforeState, "refusal changes no admission state");
     }
 
     function testFuzz_anchorAtInboundHeadAccepted(bool withCalldata) public {
         _seedJoin(keccak256("head"), keccak256("consumed"), vm.addr(67890));
-        _uploadAnchoredAt(false, withCalldata, keccak256("head"));
+        _uploadAnchoredAt(false, withCalldata, keccak256("head"), inboundHeight);
         (uint256 created,, uint256 count,,) = target.readAdmissionState(CHANNEL, FORK, disputer);
         assertEq(created, 100);
         assertEq(count, 1);
+    }
+
+    function testFuzz_anchorAtInboundHeadWrongHeightRefused(bool withCalldata, uint256 anchorHeight) public {
+        _seedJoin(keccak256("consumed"), bytes32(0), vm.addr(67890));
+        _seedJoin(keccak256("head"), keccak256("consumed"), vm.addr(98765));
+        vm.assume(anchorHeight != inboundHeight);
+        bytes32 beforeState = _state();
+        vm.expectRevert(
+            abi.encodeWithSelector(RaceConditionDisputeInboundNotLatest.selector, keccak256("head"), keccak256("head"))
+        );
+        _uploadAnchoredAt(false, withCalldata, keccak256("head"), anchorHeight);
+        assertEq(_state(), beforeState, "refusal changes no admission state");
     }
 }
