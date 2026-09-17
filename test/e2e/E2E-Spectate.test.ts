@@ -1005,6 +1005,25 @@ describe("E2E: Spectate Service", function () {
             expect(thresholdError.errorDescription.args.participant).to.equal(
                 joinerA.address
             );
+            // The payload carries the two compared sets, so the missing signer
+            // is identifiable: forceInboundJoin widened the threshold to the
+            // three participants plus joinerB, while joinerA's pre-signed
+            // confirmation still only recovers to the three participants.
+            const originalParticipants = [0, 1, 2].map(
+                (peerIndex) => h.getPeer(peerIndex).address
+            );
+            const thresholdParticipants = [
+                ...thresholdError.errorDescription.args.thresholdParticipants
+            ];
+            const confirmationSigners = [
+                ...thresholdError.errorDescription.args.signers
+            ];
+            expect(thresholdParticipants).to.have.members([
+                ...originalParticipants,
+                joinerB.address
+            ]);
+            expect(confirmationSigners).to.have.members(originalParticipants);
+            expect(confirmationSigners).to.not.include(joinerB.address);
 
             expect(
                 await joinerA.p2pInstance.p2pSigner.joinChannel(

@@ -8,10 +8,13 @@ import {StateProofFacet} from "../../../contracts/V1/StateChannelDiamondProxy/St
 import {UtilityFacet} from "../../../contracts/V1/StateChannelDiamondProxy/UtilityFacet.sol";
 import {StateChannelCommon} from "../../../contracts/V1/StateChannelDiamondProxy/StateChannelCommon.sol";
 import {
+    ErrorDisputeCommitmentNotAvailable,
     ErrorDisputeCommitmentNotFound,
     ErrorDisputeInboundMessageBlocksInvalid,
+    ErrorDisputeStateMachineInboundProcessingFailed,
     ErrorInvalidStateSnapshotHash,
     ErrorSnapshotDataForkMismatch,
+    RaceConditionOnChainSlashes,
     INBOUND_FAILURE_FINAL_TARGET,
     INBOUND_FAILURE_HASH_LINK,
     INBOUND_FAILURE_HEIGHT_SEQUENCE,
@@ -115,6 +118,24 @@ contract DisputeExpiryGuardHarness is DisputeFraudProofFacet, DisputeVerificatio
 
     function pendingParticipants(bytes32 channelId) external view returns (address[] memory) {
         return _getPendingParticipants(channelId);
+    }
+
+    /// Seeds only the channel's recorded on-chain slash set, so the slash-subset
+    /// handler can be driven against an exact set without the rest of a channel.
+    function seedOnChainSlashes(bytes32 channelId, address[] memory slashedParticipants) external {
+        for (uint256 i = 0; i < slashedParticipants.length; i++) {
+            disputeData[channelId].onChainSlashes.push(
+                OnChainSlash({participant: slashedParticipants[i], timestamp: block.timestamp})
+            );
+        }
+    }
+
+    function handleOnChainSlashesNotSubset(bytes memory encodedProof, Dispute memory dispute)
+        external
+        view
+        returns (address)
+    {
+        return _handleDisputeOnChainSlashesNotSubset(encodedProof, dispute);
     }
 
     function _joinMessage(bytes32 channelId, address participant) private pure returns (Message memory) {
@@ -1281,6 +1302,152 @@ contract DisputeVerificationFacetTest is DiamondHarness {
         );
         harness.killDispute(uncommitted);
         assertEq(harness.commitmentCount(CHANNEL_ID, committed.input.forkId), 1);
+    }
+
+    function test_reduceAndFinalize_uncommittedDisputeRevertsCarryingBothCommitmentSets() public {
+        DisputeExpiryGuardHarness harness = new DisputeExpiryGuardHarness();
+        Dispute memory committed = _structurallyInvalidDispute(FORK_ID, address(0xA1));
+        // same window, a different disputer -> a commitment that was never pushed
+        Dispute memory submitted = _structurallyInvalidDispute(FORK_ID, address(0xA2));
+        harness.seedDispute(committed, block.timestamp);
+
+        Dispute[] memory disputes = new Dispute[](1);
+        disputes[0] = submitted;
+
+        // equal lengths, so only the hashes themselves distinguish the two sets
+        bytes32[] memory expectedCommittedHashes = new bytes32[](1);
+        expectedCommittedHashes[0] = keccak256(abi.encode(committed));
+        bytes32[] memory expectedSubmittedHashes = new bytes32[](1);
+        expectedSubmittedHashes[0] = keccak256(abi.encode(submitted));
+
+        StateSnapshot memory snapshot;
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                ErrorDisputeCommitmentNotAvailable.selector,
+                CHANNEL_ID,
+                FORK_ID,
+                expectedCommittedHashes,
+                expectedSubmittedHashes
+            )
+        );
+        harness.reduceAndFinalize(disputes, snapshot, "", new MessageBlock[](0), bytes32(0));
+    }
+
+    function test_challengeDisputeReduction_extraSubmittedDisputeRevertsCarryingBothCommitmentSets() public {
+        DisputeExpiryGuardHarness harness = new DisputeExpiryGuardHarness();
+        address challenger = address(0xA1);
+        Dispute memory committed = _structurallyInvalidDispute(FORK_ID, challenger);
+        Dispute memory extra = _structurallyInvalidDispute(FORK_ID, address(0xA2));
+        harness.seedDispute(committed, block.timestamp);
+        // makes `challenger` the channel's one eligible participant so the
+        // commitment comparison, not the participation guard, is what rejects
+        harness.seedReducedChannel(CHANNEL_ID, FORK_ID, SNAPSHOT_HEAD, challenger, address(0xB0B), block.timestamp);
+
+        Dispute[] memory disputes = new Dispute[](2);
+        disputes[0] = committed;
+        disputes[1] = extra;
+
+        bytes32[] memory expectedCommittedHashes = new bytes32[](1);
+        expectedCommittedHashes[0] = keccak256(abi.encode(committed));
+        bytes32[] memory expectedSubmittedHashes = new bytes32[](2);
+        expectedSubmittedHashes[0] = keccak256(abi.encode(committed));
+        expectedSubmittedHashes[1] = keccak256(abi.encode(extra));
+
+        StateSnapshot memory snapshot;
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                ErrorDisputeCommitmentNotAvailable.selector,
+                CHANNEL_ID,
+                FORK_ID,
+                expectedCommittedHashes,
+                expectedSubmittedHashes
+            )
+        );
+        vm.prank(challenger);
+        harness.challengeDisputeReduction(disputes, snapshot, "", new MessageBlock[](0));
+    }
+
+    function test_handleDisputeOnChainSlashesNotSubset_listedSlashesAreSubsetRevertsCarryingBothSlashSets() public {
+        DisputeExpiryGuardHarness harness = new DisputeExpiryGuardHarness();
+        address[] memory recordedSlashes = new address[](3);
+        recordedSlashes[0] = address(0xA1);
+        recordedSlashes[1] = address(0xA2);
+        recordedSlashes[2] = address(0xA3);
+        harness.seedOnChainSlashes(CHANNEL_ID, recordedSlashes);
+
+        // a strict subset, in a different order: every listed slash is recorded,
+        // so the proof fails and the revert has to name both sets - the counts
+        // alone (2 and 3) say nothing about which slash the dispute omitted
+        Dispute memory dispute;
+        dispute.input.channelId = CHANNEL_ID;
+        dispute.input.onChainSlashes = new address[](2);
+        dispute.input.onChainSlashes[0] = address(0xA3);
+        dispute.input.onChainSlashes[1] = address(0xA1);
+
+        address[] memory expectedDisputeSlashes = new address[](2);
+        expectedDisputeSlashes[0] = address(0xA3);
+        expectedDisputeSlashes[1] = address(0xA1);
+
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                RaceConditionOnChainSlashes.selector, CHANNEL_ID, expectedDisputeSlashes, recordedSlashes
+            )
+        );
+        harness.handleOnChainSlashesNotSubset("", dispute);
+    }
+
+    function test_computeDisputeOutputState_unsupportedInboundMessageRevertsCarryingSeedStateHash() public {
+        MathState memory state;
+        state.participants = _participants();
+        state.balances = _participantBalances(state.participants.length);
+        bytes memory encodedState = abi.encode(state);
+
+        StateSnapshot memory snapshot;
+        snapshot.forkId = FORK_ID;
+        snapshot.snapshotData.stateMachineStateHash = keccak256(encodedState);
+        snapshot.snapshotData.participants = state.participants;
+
+        // message 0 is a real join and is applied before message 1 fails, so the
+        // reported hash can only be the state the walk was seeded with - a hash
+        // of the live state machine after the join would be a different value
+        bytes32 unsupportedMessageType = keccak256("a message type the state machine does not handle");
+        MessageBlock[] memory inboundMessageBlocks = new MessageBlock[](1);
+        inboundMessageBlocks[0].messages = new Message[](2);
+        inboundMessageBlocks[0].messages[0] = _joinInboundMessage(address(0xB0B));
+        inboundMessageBlocks[0].messages[1].messageType = unsupportedMessageType;
+        inboundMessageBlocks[0].messages[1].participant = state.participants[1];
+
+        DisputeInput memory input;
+        input.channelId = CHANNEL_ID;
+        input.forkId = FORK_ID;
+        input.disputer = state.participants[0];
+
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                ErrorDisputeStateMachineInboundProcessingFailed.selector,
+                uint256(0),
+                uint256(1),
+                state.participants[1],
+                unsupportedMessageType,
+                keccak256(encodedState)
+            )
+        );
+        outputHarness.computeDisputeOutputState(input, snapshot, encodedState, inboundMessageBlocks);
+    }
+
+    function _joinInboundMessage(address participant) internal view returns (Message memory message) {
+        Balance memory balance = Balance({amount: 0, data: ""});
+        message.messageType = MESSAGE_TYPE_JOIN;
+        message.participant = participant;
+        message.balance = balance;
+        message.data = abi.encode(
+            JoinChannel({
+                channelId: CHANNEL_ID,
+                participant: participant,
+                deadlineTimestamp: block.timestamp + 1,
+                balance: balance
+            })
+        );
     }
 
     function test_commitToDisputeReducedResult_noDisputeWindow_revertsNamingTheMissingWindow() public {

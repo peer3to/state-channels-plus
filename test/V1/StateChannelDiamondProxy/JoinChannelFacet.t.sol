@@ -329,10 +329,68 @@ contract JoinChannelFacetTest is Test {
         confirmation.signatures = new bytes[](1);
         confirmation.signatures[0] = _sign(ELIGIBLE_PK, encodedJoinChannel);
 
+        // both compared sets, hand-built from the keys this test seeded and
+        // signed with - never read back out of the facet under test
+        address[] memory expectedThresholdParticipants = new address[](2);
+        expectedThresholdParticipants[0] = vm.addr(ELIGIBLE_PK);
+        expectedThresholdParticipants[1] = vm.addr(SLASHED_PK);
+        address[] memory expectedSigners = new address[](1);
+        expectedSigners[0] = vm.addr(ELIGIBLE_PK);
+
         StateSnapshot memory snapshot = harness.getStateSnapshot(THRESHOLD_CHANNEL_ID);
         vm.expectRevert(
             abi.encodeWithSelector(
-                ErrorJoinChannelConfirmationNotThresholdSigned.selector, joinChannel.participant, uint256(2), uint256(1)
+                ErrorJoinChannelConfirmationNotThresholdSigned.selector,
+                joinChannel.participant,
+                expectedThresholdParticipants,
+                expectedSigners
+            )
+        );
+        vm.prank(joinChannel.participant);
+        harness.joinChannel(confirmation, keccak256(abi.encode(snapshot)), THRESHOLD_FORK_ID);
+
+        assertFalse(harness.depositCalled());
+    }
+
+    function test_joinChannel_confirmationSignedByOutsiderNamesTheRecoveredSigner() public {
+        // same two-member eligibility set as the shortfall case
+        address[] memory participants = new address[](2);
+        participants[0] = vm.addr(ELIGIBLE_PK);
+        participants[1] = vm.addr(SLASHED_PK);
+        harness.seedChannel(THRESHOLD_CHANNEL_ID, THRESHOLD_FORK_ID, participants, address(0));
+
+        JoinChannel memory joinChannel = JoinChannel({
+            channelId: THRESHOLD_CHANNEL_ID,
+            participant: vm.addr(JOINER_PK),
+            deadlineTimestamp: block.timestamp + 120,
+            balance: Balance({amount: 500, data: ""})
+        });
+        bytes memory encodedJoinChannel = abi.encode(joinChannel);
+
+        JoinChannelConfirmation memory confirmation;
+        confirmation.signedJoinChannel =
+            SignedJoinChannel({encodedJoinChannel: encodedJoinChannel, signature: _sign(JOINER_PK, encodedJoinChannel)});
+        // as many signatures as the threshold has members, but the second one is
+        // the joiner signing for itself - counting alone cannot tell this apart
+        // from a valid confirmation, only the recovered addresses can
+        confirmation.signatures = new bytes[](2);
+        confirmation.signatures[0] = _sign(ELIGIBLE_PK, encodedJoinChannel);
+        confirmation.signatures[1] = _sign(JOINER_PK, encodedJoinChannel);
+
+        address[] memory expectedThresholdParticipants = new address[](2);
+        expectedThresholdParticipants[0] = vm.addr(ELIGIBLE_PK);
+        expectedThresholdParticipants[1] = vm.addr(SLASHED_PK);
+        address[] memory expectedSigners = new address[](2);
+        expectedSigners[0] = vm.addr(ELIGIBLE_PK);
+        expectedSigners[1] = vm.addr(JOINER_PK);
+
+        StateSnapshot memory snapshot = harness.getStateSnapshot(THRESHOLD_CHANNEL_ID);
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                ErrorJoinChannelConfirmationNotThresholdSigned.selector,
+                joinChannel.participant,
+                expectedThresholdParticipants,
+                expectedSigners
             )
         );
         vm.prank(joinChannel.participant);

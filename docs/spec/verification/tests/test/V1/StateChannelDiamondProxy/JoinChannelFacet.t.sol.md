@@ -10,7 +10,7 @@
 
 ## Overview
 
-Nine direct Foundry component tests deploy `JoinChannelFacet` with a real `UtilityFacet` and a
+Ten direct Foundry component tests deploy `JoinChannelFacet` with a real `UtilityFacet` and a
 harness-only manager boundary. They seed two snapshot participants and record one as slashed
 on-chain. The join case submits a later join carrying only the remaining participant's
 countersignature; it must reach the composable-deposit boundary, and the shared threshold set must
@@ -21,8 +21,12 @@ fork pin, a top-up by an unknown participant, a participant signature made by th
 join attempted by a snapshot participant, the exact accepted deadline, and unchanged propagation of
 a deposit revert — the harness stub raises a payload the real single-join loop could not build, so
 the facet is shown to bubble it rather than rebuild it. A second seeded channel with two unslashed
-participants receives only one countersignature, so the threshold shortfall reports distinct
-required and supplied counts. Every gate rejection proves the deposit boundary was not reached; the
+participants carries the threshold cases. It first receives only one countersignature, and the
+revert is matched against the exact two-member threshold set and the single recovered signer,
+both hand-built in the test from the keys it signed with. It then receives two signatures — as
+many as the threshold has members, but the second made by the joiner rather than a member — so
+the counts alone cannot distinguish the rejection, and the revert is matched against the same
+threshold set beside the recovered pair that names the outsider. Every gate rejection proves the deposit boundary was not reached; the
 deposit-failure case proves the attempted admission leaves no recorded deposit effect.
 
 ## Tests and covered test IDs
@@ -43,3 +47,4 @@ report but are kept here.
 | [`test_joinChannel_exactDeadlineAccepted`](../../../../../../../test/V1/StateChannelDiamondProxy/JoinChannelFacet.t.sol#L251) (line 251)                  | [`REQ-ENFADM-1-V926CA.T1.P3`](../../../../../specification/enforcement/admission-and-funds.md#req-enfadm-1-v926ca.t1.p3), [`UNIT-TEST-JOIN-CHANNEL-FACET-1-VBJY1A.P18`](../../../../../implementation/source/contracts/V1/StateChannelDiamondProxy/JoinChannelFacet.sol.md#unit-test-join-channel-facet-1-vbjy1a.p18) |
 | [`test_joinChannel_depositRevertBubblesUnchanged`](../../../../../../../test/V1/StateChannelDiamondProxy/JoinChannelFacet.t.sol#L277) (line 277)          | [`UNIT-TEST-JOIN-CHANNEL-FACET-1-VBJY1A.P20`](../../../../../implementation/source/contracts/V1/StateChannelDiamondProxy/JoinChannelFacet.sol.md#unit-test-join-channel-facet-1-vbjy1a.p20)                                                                                                                           |
 | [`test_joinChannel_confirmationNotThresholdSignedRejected`](../../../../../../../test/V1/StateChannelDiamondProxy/JoinChannelFacet.t.sol#L308) (line 308) | [`UNIT-TEST-JOIN-CHANNEL-FACET-1-VBJY1A.P21`](../../../../../implementation/source/contracts/V1/StateChannelDiamondProxy/JoinChannelFacet.sol.md#unit-test-join-channel-facet-1-vbjy1a.p21)                                                                                                                           |
+| [`test_joinChannel_confirmationSignedByOutsiderNamesTheRecoveredSigner`](../../../../../../../test/V1/StateChannelDiamondProxy/JoinChannelFacet.t.sol#L355) (line 355) | [`UNIT-TEST-JOIN-CHANNEL-FACET-1-VBJY1A.P22`](../../../../../implementation/source/contracts/V1/StateChannelDiamondProxy/JoinChannelFacet.sol.md#unit-test-join-channel-facet-1-vbjy1a.p22)                                                                                                                           |
