@@ -13,7 +13,7 @@ import type {
 } from "@/rpc/network/services/openChannelNegotiation/OpenChannelNegotiationService";
 import type SpectateService from "@/rpc/network/services/spectate/SpectateService";
 import type NetworkTransport from "@/transport/NetworkTransport";
-import type { Address, ForkId } from "@/types/types";
+import type { Address, BlockHeight, ForkId } from "@/types/types";
 import {
     Codec,
     LocalDiscoveryServer,
@@ -39,7 +39,11 @@ import { WebSocketServer } from "ws";
 
 // `NetworkTransport` is used both for `createRPCMethods` and the captured transport.
 
-export type BlockWorkHoldPoint = "authoring" | "commit" | "signature";
+export type BlockWorkHoldPoint =
+    | "authoring"
+    | "commit"
+    | "signature"
+    | "confirmation";
 
 export type SignatureBlockMatch = {
     forkId: ForkId;
@@ -1119,10 +1123,13 @@ export class StubService extends ANetworkRpcService<
         this.originalQueueProbe = undefined;
     }
 
-    public async startTimeoutConstruction(writer: string): Promise<boolean> {
+    public async startTimeoutConstruction(
+        writer: string,
+        height: BlockHeight = 1
+    ): Promise<boolean> {
         await this.sm.participantTimeoutService["createTimeOutDispute"](
             this.sm.forkId,
-            1,
+            height,
             writer,
             0
         );
@@ -1371,6 +1378,19 @@ export class StubService extends ANetworkRpcService<
             };
             owner.success = async (...args) => {
                 await enter();
+                return original.apply(owner, args);
+            };
+        } else if (point === "confirmation") {
+            // parks every queued confirmation until release, so a timeout
+            // check meets the posted block still in flight
+            const owner = this.sm.blockIngestService;
+            const original = owner.onBlockConfirmation;
+            this.blockWorkRestore = () => {
+                owner.onBlockConfirmation = original;
+            };
+            owner.onBlockConfirmation = async (...args) => {
+                this.blockWorkEntered += 1;
+                await gate;
                 return original.apply(owner, args);
             };
         } else {

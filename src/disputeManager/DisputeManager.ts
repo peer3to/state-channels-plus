@@ -103,6 +103,7 @@ class DisputeManager {
         let refreshSlashes = false;
         let submittedTimeout: TimeoutStruct | undefined;
         let timeoutRetryDelaySeconds: number | undefined;
+        let postedTimeout: TimeoutStruct | undefined;
         let observedOnChainSlashes: Address[] = [];
         try {
             await this.mutex.lock({ taskName: "dispute" });
@@ -221,6 +222,16 @@ class DisputeManager {
                             Number(minimum) - Number(current)
                         );
                     },
+                    // the writer posted first -> drop the refused timeout so
+                    // later disputes on the fork do not carry it
+                    RaceConditionDisputeTimeoutCalldataPosted: () => {
+                        postedTimeout = submittedTimeout;
+                        if (postedTimeout)
+                            this.storage.timeout.deleteTimeout(
+                                forkId,
+                                postedTimeout
+                            );
+                    },
                     RaceConditionDisputeTimeoutWindowCreatedTooEarly: () => {
                         this.logger.info(
                             "dispute no-op: existing window predates timeout deadline",
@@ -270,6 +281,16 @@ class DisputeManager {
                 "timeoutParticipantAfterEarlySubmission"
             );
         }
+        // our marker dropped the posted block at ingest -> hand it back once
+        const posted =
+            postedTimeout &&
+            this.storage.blockCalldata.getBlockCalldata(
+                forkId,
+                Number(postedTimeout.blockHeight),
+                postedTimeout.participant
+            );
+        if (posted)
+            await this.stateManager.blockQueueManager.ingestPostedBlock(posted);
         if (
             refreshSlashes &&
             !this.stateManager.isDisposed &&
