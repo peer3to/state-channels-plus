@@ -21,6 +21,8 @@
 
 Dispute upload: disputer==sender + eligibility, auditing-data hash binding, timeout race checks,
 per-address throttle + one-post-per-window, window creation/commitment/kill-refresh bookkeeping
+(the commitment it pushes comes from the shared
+[`_disputeCommitmentHash`](./utils/DisputeUtils.sol.md) owner, not a local hash)
 with the fully-killed reopen, and the full-threshold immediate-finalization shortcut.
 
 ## Key design decisions

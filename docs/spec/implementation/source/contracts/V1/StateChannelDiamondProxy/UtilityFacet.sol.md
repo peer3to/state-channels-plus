@@ -60,6 +60,21 @@ Two surfaces on one deployment
    [#L244](../../../../../../../contracts/V1/StateChannelDiamondProxy/UtilityFacet.sol#L244)).
 4. **Stateless helpers are called, not delegatecalled** — pure helpers need no storage context,
    shaving delegate overhead and keeping them trivially auditable.
+5. **One owner for the EIP-191 digest, three signature entry points.**
+   [`_eip191SignedHash`](../../../../../../../contracts/V1/StateChannelDiamondProxy/UtilityFacet.sol#L18)
+   is the single definition of the personal-sign prefix over `keccak256(encodedData)`;
+   `verifyThresholdSigned`, `retrieveSignerAddress` and
+   [`retrieveSignerAddresses`](../../../../../../../contracts/V1/StateChannelDiamondProxy/UtilityFacet.sol#L26)
+   all derive their digest from it. A second copy of the prefix would let a recovered signer set
+   disagree with the set the threshold check compared, which is exactly the disagreement a
+   rejection payload exists to report.
+6. **`retrieveSignerAddresses` reports, it does not verify.** It returns one address per supplied
+   signature in submission order and substitutes `address(0)` for a signature that fails to
+   recover, rather than reverting, because its only caller is already on a failure branch
+   ([JoinChannelFacet](./JoinChannelFacet.sol.md)) and a revert there would replace the
+   diagnostic with a bare ECDSA error. Like the other stateless helpers it stays off the
+   diamond's routed surface — callers reach it as a plain `CALL` on the deployed facet, and the
+   routing fixture records that exclusion.
 
 ## Inputs, outputs, state, and side effects
 

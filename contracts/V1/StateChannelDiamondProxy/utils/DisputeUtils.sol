@@ -115,12 +115,26 @@ function _isDisputeWidnowCreated(DisputeWindow storage disputeWindow) view retur
     return disputeWindow.evidence.creationTimestamp != 0;
 }
 
+/// The single owner of the dispute-commitment preimage. Everything that
+/// commits, looks up, or reports a dispute commitment hashes it through here,
+/// so the window contents and an error payload can never drift apart.
+function _disputeCommitmentHash(Dispute memory dispute) pure returns (bytes32) {
+    return keccak256(abi.encode(dispute));
+}
+
+function _disputeCommitmentHashes(Dispute[] memory disputes) pure returns (bytes32[] memory commitments) {
+    commitments = new bytes32[](disputes.length);
+    for (uint256 i = 0; i < disputes.length; i++) {
+        commitments[i] = _disputeCommitmentHash(disputes[i]);
+    }
+}
+
 function areDisputesCommitted(DisputeWindow storage disputeWindow, Dispute[] memory disputes) view returns (bool) {
     if (disputes.length != disputeWindow.evidence.disputeCommitments.length) {
         return false;
     }
     for (uint256 i = 0; i < disputes.length; i++) {
-        bytes32 commitment = keccak256(abi.encode(disputes[i]));
+        bytes32 commitment = _disputeCommitmentHash(disputes[i]);
         // off-chain client puts the disputes in correct order - save on gas
         if (disputeWindow.evidence.disputeCommitments[i] != commitment) {
             return false;

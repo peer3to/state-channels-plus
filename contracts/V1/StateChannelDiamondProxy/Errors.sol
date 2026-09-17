@@ -34,8 +34,11 @@ error ErrorOutboundMessageTypeUnsupported(bytes32 messageType);
 //Join channel
 error ErrorInvalidChannelId();
 error ErrorJoinChannelInvalidSignature(address expectedSigner, address actualSigner);
+/// `thresholdParticipants` is the eligibility set the confirmation had to
+/// cover, `signers` the addresses recovered from the supplied signatures - the
+/// two sets being compared, so the caller can see which signer is missing.
 error ErrorJoinChannelConfirmationNotThresholdSigned(
-    address participant, uint256 thresholdParticipantCount, uint256 signatureCount
+    address participant, address[] thresholdParticipants, address[] signers
 );
 error ErrorJoinChannelInvalidSubmitter(address expectedParticipant, address actualSubmitter);
 error ErrorJoinChannelParticipantAlreadyExists(bytes32 channelId, address participant);
@@ -66,12 +69,14 @@ error ErrorNoDisputesProvided();
 //Auditing errors
 /// The submitted dispute set does not match the window's commitment list.
 error ErrorDisputeCommitmentNotAvailable(
-    bytes32 channelId, bytes32 forkId, uint256 committedDisputeCount, uint256 submittedDisputeCount
+    bytes32 channelId, bytes32 forkId, bytes32[] committedDisputeHashes, bytes32[] submittedDisputeHashes
 );
 /// One specific dispute commitment is absent from the window.
 error ErrorDisputeCommitmentNotFound(bytes32 channelId, bytes32 forkId, bytes32 commitment);
+/// `stateMachineStateHash` is the state the walk was seeded with before the
+/// first message, so a rejected replay can be reproduced from its exact input.
 error ErrorDisputeStateMachineInboundProcessingFailed(
-    uint256 blockIndex, uint256 messageIndex, address participant, bytes32 messageType
+    uint256 blockIndex, uint256 messageIndex, address participant, bytes32 messageType, bytes32 stateMachineStateHash
 );
 // Why the inbound walk rejected the chain. Plain `uint8` constants rather than
 // an enum on purpose: `scripts/generate-enums.ts` numbers the generated TS
@@ -122,7 +127,9 @@ error RaceConditionUnexpectedBlockCalldataPosted(
     bytes32 forkId, uint256 blockHeight, address participant, bytes32 blockCalldataCommitment
 );
 error RaceConditionGenesisTimestampNotAvailable(bytes32 channelId, bytes32 originForkId, bytes32 forkId);
-error RaceConditionOnChainSlashes(bytes32 channelId, uint256 disputeSlashCount, uint256 onChainSlashCount);
+/// `disputeSlashes` is the slash set the dispute listed, `onChainSlashes` the
+/// set recorded on chain - the two compared sets, not their sizes.
+error RaceConditionOnChainSlashes(bytes32 channelId, address[] disputeSlashes, address[] onChainSlashes);
 error RaceConditionJoinChannelSnapshotMismatch(bytes32 currentSnapshotHash, bytes32 submittedSnapshotHash);
 error RaceConditionPendingInboundNotConsumed(
     bytes32 submittedInboundMessageBlockHash, bytes32 onChainInboundMessageBlockHash

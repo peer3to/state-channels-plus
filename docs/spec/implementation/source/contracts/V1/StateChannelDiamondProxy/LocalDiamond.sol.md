@@ -22,7 +22,10 @@
 The temporary client-local mirror deployment: extends the proxy with event-driven storage-sync
 handlers and a zero consumer facet — the local half of dual execution. Never production-deployed.
 It mirrors only events indexed by its selected channel. It does not synchronize or answer global
-manager state such as the enumerable open-channel registry.
+manager state such as the enumerable open-channel registry. Its mirrored dispute-window
+bookkeeping resolves commitments through the shared
+[`_disputeCommitmentHash`](./utils/DisputeUtils.sol.md) owner, so a locally mirrored window keys
+on exactly the preimage the manager committed.
 
 Because it derives from [StateChannelManagerProxy](./StateChannelManagerProxy.sol.md), its
 generated ABI carries only its own declarations plus the proxy's; every selector the proxy routes to

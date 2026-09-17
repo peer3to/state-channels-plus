@@ -384,7 +384,7 @@ contract DisputeFraudProofFacet is StateChannelCommon {
             if (!found) return _valid(dispute.input.disputer);
         }
 
-        revert RaceConditionOnChainSlashes(dispute.input.channelId, disputeSlashes.length, onChainSlashes.length);
+        revert RaceConditionOnChainSlashes(dispute.input.channelId, disputeSlashes, onChainSlashes);
     }
 
     function _handleTimeoutThreshold(bytes memory encodedFraudProof, Dispute memory dispute)

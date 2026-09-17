@@ -540,15 +540,17 @@ contract StateChannelCommon is StateChannelManagerStorage, StateChannelManagerEv
         for (uint256 i = 0; i < inboundMessageBlocks.length; i++) {
             for (uint256 j = 0; j < inboundMessageBlocks[i].messages.length; j++) {
                 bool success = stateMachineImplementation.processInboundMessage(inboundMessageBlocks[i].messages[j]);
-                require(
-                    success,
-                    ErrorDisputeStateMachineInboundProcessingFailed(
+                // `if (!success) revert` so the seed-state hash is only hashed
+                // on the failure path - `require` would compute it every message.
+                if (!success) {
+                    revert ErrorDisputeStateMachineInboundProcessingFailed(
                         i,
                         j,
                         inboundMessageBlocks[i].messages[j].participant,
-                        inboundMessageBlocks[i].messages[j].messageType
-                    )
-                );
+                        inboundMessageBlocks[i].messages[j].messageType,
+                        keccak256(encodedStateMachineState)
+                    );
+                }
                 newTotalDeposits =
                     stateMachineImplementation.addBalance(newTotalDeposits, inboundMessageBlocks[i].messages[j].balance);
             }
@@ -579,7 +581,7 @@ contract StateChannelCommon is StateChannelManagerStorage, StateChannelManagerEv
         bytes32 channelId = dispute.input.channelId;
         DisputeData storage disputeData = disputeData[channelId];
         DisputeWindow storage disputeWindow = disputeData.disputeWindowMap[_getDisputeFork(dispute)];
-        bytes32 commitment = keccak256(abi.encode(dispute));
+        bytes32 commitment = _disputeCommitmentHash(dispute);
 
         for (uint256 i = 0; i < disputeWindow.evidence.disputeCommitments.length; i++) {
             if (disputeWindow.evidence.disputeCommitments[i] == commitment) {

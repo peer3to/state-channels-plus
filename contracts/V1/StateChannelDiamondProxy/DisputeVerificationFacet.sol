@@ -200,11 +200,12 @@ contract DisputeVerificationFacet is StateChannelCommon {
         DisputeData storage disputeData = disputeData[channelId];
         DisputeWindow storage disputeWindow = disputeData.disputeWindowMap[disputes[0].input.forkId];
         //require all disputes are part of commitment
-        // `if (!...) revert` because the committed count is a storage read
-        // `areDisputesCommitted` makes internally and the caller does not (P4).
+        // `if (!...) revert` because the committed list is a storage read
+        // `areDisputesCommitted` makes internally and the submitted hashes are
+        // only worth computing once the comparison has already failed (P4).
         if (!areDisputesCommitted(disputeWindow, disputes)) {
             revert ErrorDisputeCommitmentNotAvailable(
-                channelId, forkId, disputeWindow.evidence.disputeCommitments.length, disputes.length
+                channelId, forkId, disputeWindow.evidence.disputeCommitments, _disputeCommitmentHashes(disputes)
             );
         }
         //require reduce challenge period is not expired - this also assures it's committed
@@ -263,11 +264,12 @@ contract DisputeVerificationFacet is StateChannelCommon {
         }
 
         // require that provided disputes correspond to committed set
-        // `if (!...) revert` because the committed count is a storage read
-        // `areDisputesCommitted` makes internally and the caller does not (P4).
+        // `if (!...) revert` because the committed list is a storage read
+        // `areDisputesCommitted` makes internally and the submitted hashes are
+        // only worth computing once the comparison has already failed (P4).
         if (!areDisputesCommitted(disputeWindow, disputes)) {
             revert ErrorDisputeCommitmentNotAvailable(
-                channelId, forkId, disputeWindow.evidence.disputeCommitments.length, disputes.length
+                channelId, forkId, disputeWindow.evidence.disputeCommitments, _disputeCommitmentHashes(disputes)
             );
         }
 
@@ -529,7 +531,7 @@ contract DisputeVerificationFacet is StateChannelCommon {
         // require that the dispute window exists and is not expired
         (bool isExpired, uint256 killPeriodEnd) = _isKillPeriodExpired(disputeWindow, _getEvidenceTime());
         require(!isExpired, RaceConditionDisputeKillPeriodExpired(killPeriodEnd, block.timestamp));
-        bytes32 commitment = keccak256(abi.encode(dispute));
+        bytes32 commitment = _disputeCommitmentHash(dispute);
         bool isFound = false;
         uint256 foundIndex;
         for (uint256 i = 0; i < disputeWindow.evidence.disputeCommitments.length; i++) {

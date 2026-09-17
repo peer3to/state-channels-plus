@@ -22,7 +22,9 @@
 The shared base every facet inherits: storage access, slash-set maintenance (append + queries up
 to timestamp), pending-participant derivation by walking unconsumed inbound JOINs, inbound/
 outbound chain verification and application, snapshot/block linkage predicates, dispute-window
-commitment helpers, threshold-set derivation, `canParticipateInDisputes`, block authenticity, and
+commitment helpers (which look the window up by the shared
+[`_disputeCommitmentHash`](./utils/DisputeUtils.sol.md)), threshold-set derivation,
+`canParticipateInDisputes`, block authenticity, and
 the enumerable open-channel append/removal helpers, and the channel-open and fork-disputed predicates
 ([`_isChannelOpen`](../../../../../../../contracts/V1/StateChannelDiamondProxy/StateChannelCommon.sol#L218),
 [`_isForkDisputed`](../../../../../../../contracts/V1/StateChannelDiamondProxy/StateChannelCommon.sol#L224)).
@@ -69,7 +71,17 @@ Current upload eligibility is the snapshot participant set plus JOINs after its 
    `reduce` is the one reader that keeps the unbounded walk for slash eligibility: after a reduction is
    mined the snapshot lists only the survivors, and a late reducer must still fold the same slashes
    ([DisputeVerificationFacet.sol.md](DisputeVerificationFacet.sol.md)).
-5. **The reduced-result commit names a missing window before it names a deadline.**
+5. **The rejected inbound replay names the state it was seeded with.**
+   `_applyInboundMessages` sets the state machine to `encodedStateMachineState` once and then walks
+   every message; when a message is refused it raises
+   `ErrorDisputeStateMachineInboundProcessingFailed(blockIndex, messageIndex, participant, messageType, stateMachineStateHash)`
+   ([#L546](../../../../../../../contracts/V1/StateChannelDiamondProxy/StateChannelCommon.sol#L546)).
+   The two indices locate the message but not the input it was applied to, and the same message can
+   be valid or invalid depending on the seed state, so the seed's hash is what makes a rejected
+   replay reproducible. It is `if (!success) revert`, not `require`: the hash is over the whole
+   encoded state, and eager argument evaluation inside `require` would pay for it on every message
+   of every successful walk.
+6. **The reduced-result commit names a missing window before it names a deadline.**
    `_commitToDisputeReducedResult` checks window existence first
    ([#L641](../../../../../../../contracts/V1/StateChannelDiamondProxy/StateChannelCommon.sol#L641)),
    because `_isKillPeriodExpired` derives its deadline from a zero

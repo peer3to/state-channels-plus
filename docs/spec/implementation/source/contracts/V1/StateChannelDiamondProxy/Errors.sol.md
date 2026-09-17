@@ -35,6 +35,13 @@ The conditional-window refusal has its own channel/fork error, `RaceConditionDis
    no client-side decoder is added per error. Arguments are evaluated eagerly, so an argument the
    guard's own condition did not already compute is raised from an `if (!cond) revert Err(args);`
    branch rather than from inside `require` — the happy path never pays for a failure operand.
+   When the rejected comparison is between two collections, the operands are the collections
+   themselves, not their lengths: a pair of counts cannot say which member differed, and equal
+   counts make the payload say nothing at all. `RaceConditionOnChainSlashes` carries both slash
+   address arrays, `ErrorDisputeCommitmentNotAvailable` both dispute-commitment hash arrays, and
+   `ErrorJoinChannelConfirmationNotThresholdSigned` the threshold set alongside the addresses the
+   supplied signatures recover to. Each of those payloads is derived only on the failure branch,
+   because recovering signers or hashing a submitted set is work the guard itself never did.
 3. **One cause, one name; bare only when there is nothing to carry:** a name covers exactly one
    failing comparison, so a guard that folded two causes is split into two names rather than
    reusing one (the genesis-snapshot check, the join-confirmation signature check, and the two
@@ -83,9 +90,17 @@ claims complete conformance for a requirement that depends on other files.
   chain's value, then the caller's — so adjacent reverts read the same way without consulting
   the ABI: `RaceConditionJoinChannelSnapshotMismatch(currentSnapshotHash, submittedSnapshotHash)`
   matches its neighbour `RaceConditionSnapshotForkMismatch(currentForkId, submittedForkId)`, and
-  `ErrorDisputeCommitmentNotAvailable(channelId, forkId, committedDisputeCount, submittedDisputeCount)`
-  reports the window's committed count before the caller's. Errors whose failure carries no
+  `ErrorDisputeCommitmentNotAvailable(channelId, forkId, committedDisputeHashes, submittedDisputeHashes)`
+  reports the window's committed hashes before the caller's. Errors whose failure carries no
   operand — an empty-array guard, for example — stay argument-less on purpose.
+- Collection comparisons report both collections:
+  `RaceConditionOnChainSlashes(channelId, disputeSlashes, onChainSlashes)`,
+  `ErrorJoinChannelConfirmationNotThresholdSigned(participant, thresholdParticipants, signers)`
+  and the commitment error above name the exact members on each side, so the missing or extra
+  member is identifiable from the revert alone.
+- `ErrorDisputeStateMachineInboundProcessingFailed` appends `stateMachineStateHash`, the state the
+  inbound walk was seeded with before its first message, so a rejected replay is reproducible from
+  the revert's own operands rather than from a follow-up chain read.
 
 ## Specification contradictions
 

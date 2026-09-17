@@ -116,7 +116,7 @@ contract DisputeManagerFacet is StateChannelCommon {
             );
         }
         {
-            bytes32 c = keccak256(abi.encode(dispute));
+            bytes32 c = _disputeCommitmentHash(dispute);
             disputeWindow.evidence.disputeCommitments.push(c);
         }
         disputeWindow.evidence.hasPosted.push(dispute.input.disputer); //disputer has posted the dispute

@@ -162,7 +162,9 @@ Dispatch: `messageType == MESSAGE_TYPE_JOIN` (`keccak256("JOIN_CHANNEL_MESSAGE")
 `JoinChannel` → `_joinChannel`. Anything else → `_processCustomInboundMessage` (default `false`).
 The manager calls this during dispute output generation (`_applyInboundMessages`) and requires
 success — a `false` return reverts the manager with
-`ErrorDisputeStateMachineInboundProcessingFailed`.
+`ErrorDisputeStateMachineInboundProcessingFailed(blockIndex, messageIndex, participant, messageType, stateMachineStateHash)`,
+whose last operand is the state the walk was seeded with, not the state reached by the time the
+message was refused.
 
 ### 3.3 Guarded wrappers used during on-chain re-execution
 

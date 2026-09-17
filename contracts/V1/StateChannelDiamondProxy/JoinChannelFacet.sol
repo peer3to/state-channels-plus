@@ -88,12 +88,17 @@ contract JoinChannelFacet is StateChannelCommon {
         (bool isValid,) = UtilityFacet(utilityFacetAddress).verifyThresholdSigned(
             thresholdParticipants, sjc.encodedJoinChannel, joinChannelConfirmation.signatures
         );
-        require(
-            isValid,
-            ErrorJoinChannelConfirmationNotThresholdSigned(
-                jc.participant, thresholdParticipants.length, joinChannelConfirmation.signatures.length
-            )
-        );
+        // `if (!isValid) revert` so the signer set is only recovered on the
+        // failure path - `require` would recover on every successful join.
+        if (!isValid) {
+            revert ErrorJoinChannelConfirmationNotThresholdSigned(
+                jc.participant,
+                thresholdParticipants,
+                UtilityFacet(utilityFacetAddress).retrieveSignerAddresses(
+                    sjc.encodedJoinChannel, joinChannelConfirmation.signatures
+                )
+            );
+        }
 
         // Deposit funds
         JoinChannel[] memory jcs = new JoinChannel[](1);

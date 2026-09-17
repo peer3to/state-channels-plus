@@ -20,7 +20,8 @@
 ## Responsibility and observable boundary
 
 Free functions for dispute/window accessors, period predicates, `_hasDisputeReason`, header
-mismatch, and the positional committed-set matching `areDisputesCommitted`.
+mismatch, the dispute-commitment hash owner `_disputeCommitmentHash`/`_disputeCommitmentHashes`,
+and the positional committed-set matching `areDisputesCommitted`.
 
 ## Key design decisions
 
@@ -31,6 +32,15 @@ mismatch, and the positional committed-set matching `areDisputesCommitted`.
    it compared `block.timestamp` against, and recomputing it at the call site would duplicate the
    `+ evidenceTime` arithmetic in every guard. Callers that only need the verdict discard the
    second value.
+3. **One owner for the dispute-commitment preimage.**
+   [`_disputeCommitmentHash`](../../../../../../../../contracts/V1/StateChannelDiamondProxy/utils/DisputeUtils.sol#L121)
+   is the single definition of `keccak256(abi.encode(dispute))`; everything that pushes a
+   commitment, searches the window for one, or reports one in a revert calls it, and
+   [`_disputeCommitmentHashes`](../../../../../../../../contracts/V1/StateChannelDiamondProxy/utils/DisputeUtils.sol#L125)
+   maps it over a submitted set. `areDisputesCommitted` compares with the same function, so the
+   hashes a commitment-mismatch revert reports are by construction the hashes the comparison
+   tested — a second inline copy of the preimage could drift from the committed one and make the
+   payload describe a comparison that never happened.
 
 ## Inputs, outputs, state, and side effects
 
