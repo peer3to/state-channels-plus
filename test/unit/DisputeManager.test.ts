@@ -1054,18 +1054,8 @@ describe("Unit: DisputeManager", function () {
             expect(r.disputed).to.equal(false);
         });
 
-        it("an inbound block landing after construction refuses the upload, and the disputer recovers the block and re-uploads at the new chain head", async function () {
-            await assertInboundHeadMovedDuringUpload(
-                TestSession.getHarness(),
-                true
-            );
-        });
-
-        it("an inbound-head refusal whose block cannot be recovered locally rolls the dispute back without a re-upload", async function () {
-            await assertInboundHeadMovedDuringUpload(
-                TestSession.getHarness(),
-                false
-            );
+        it("an inbound block landing after construction refuses the upload and rolls the dispute back without a re-upload", async function () {
+            await assertInboundHeadMovedDuringUpload(TestSession.getHarness());
         });
 
         it("RaceConditionDisputeTimeoutWindowCreatedTooEarly → consumed no-op, marker reset", async function () {

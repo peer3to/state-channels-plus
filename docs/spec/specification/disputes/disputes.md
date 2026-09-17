@@ -132,7 +132,7 @@ feeds the next dispute.
   only — it never applies to historical proof thresholds
   ([finality.md §6](../protocol-model/finality.md)).
 - The dispute's inbound anchor (`latestInboundMessageBlockHash` and its height) MUST equal the chain's
-  inbound head at upload; any other anchor is refused as a race and the disputer rebuilds on the head
+  inbound head at upload; any other anchor is refused as a race, not retried, and must be rebuilt
   ([`REQ-DIS-2-PKVZ7E`](disputes.md#req-dis-2-pkvz7e)).
 - If the dispute's last milestone is not provably final on its own, the full
   `DisputeAuditingData` MUST be posted as calldata (`postedAuditingData = true`,

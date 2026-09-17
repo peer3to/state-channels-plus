@@ -35,8 +35,8 @@ Window creation uses the existing predicate. The reduced-result condition is ret
    participant set it never saw. Joins and top-ups are refused once the fork is disputed
    ([JoinChannelFacet.sol.md](JoinChannelFacet.sol.md)), so the head cannot move under a committed dispute and
    `DisputeInboundHashNotInChain` / `DisputeInboundAnchorBehindLatestState` are unreachable for committed disputes
-   ([DisputeFraudProofFacet.sol.md](DisputeFraudProofFacet.sol.md)). The SDK recovers the missing inbound run and
-   rebuilds on this refusal ([DisputeManager.ts.md](../../../src/disputeManager/DisputeManager.ts.md)).
+   ([DisputeFraudProofFacet.sol.md](DisputeFraudProofFacet.sol.md)). This refusal is not retried by the SDK
+   ([DisputeManager.ts.md](../../../src/disputeManager/DisputeManager.ts.md)).
 
 ## Inputs, outputs, state, and side effects
 

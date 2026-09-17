@@ -215,8 +215,7 @@ export async function assertBackgroundDisputeFailure(
 }
 
 export async function assertInboundHeadMovedDuringUpload(
-    h: MathPeerTestHarness,
-    recoverable: boolean
+    h: MathPeerTestHarness
 ): Promise<void> {
     await h.lifecycle.start(3, 3);
     const disputer = h.getPeer(0);
@@ -225,17 +224,12 @@ export async function assertInboundHeadMovedDuringUpload(
     for (const peer of h.peers)
         await h.control(peer).stub.stubHoldReductionTasks().request();
     await h.dispute.suppressDisputeInitiation([1, 2]);
-    const offender = await h.byzantine.storeInvalidTransitionFraudProof(
-        disputer.index
-    );
-    // the disputer misses the new inbound log: dropped -> recovery can query it,
-    // held -> recovery re-dispatches into the held handler and cannot apply it
-    const dropped = recoverable
-        ? await h.rpcStub.dropInboundMessageLogs(disputer.index)
-        : undefined;
-    const held = recoverable
-        ? undefined
-        : await h.rpcStub.holdInboundMessageEvents(disputer.index);
+    // a stored fraud proof puts the upload in a multicall with applyFraudProofs,
+    // so the refusal below reverts the whole batch, not just the upload
+    await h.byzantine.storeInvalidTransitionFraudProof(disputer.index);
+    // the disputer's own inbound event handler is held, so its local head
+    // provably cannot advance while the join lands and the upload is checked
+    const held = await h.rpcStub.holdInboundMessageEvents(disputer.index);
     const recorder = await h.rpcStub.recordDisputeSubmissions(disputer.index, {
         hold: true,
         forward: true
@@ -258,21 +252,24 @@ export async function assertInboundHeadMovedDuringUpload(
             Type.Dispute
         ).input;
 
-        // step 2 - a join appends an inbound block the disputer never applies
-        await h.join.forceInboundJoinWait({ observePeerIndices: [1, 2] });
-        await dropped?.waitUntilDropped();
-        if (held)
-            await waitFor(
-                async () => (await held.heldCount()) > 0,
-                h.event.protocolEventTimeoutMs()
-            );
+        // step 2 - a join appends an inbound block above the parked anchor;
+        // the disputer's held handler cannot apply it before the upload lands
+        await h.join.forceInboundJoinWait({
+            observePeerIndices: [1, 2]
+        });
+        await waitFor(
+            async () => (await held.heldCount()) > 0,
+            h.event.protocolEventTimeoutMs()
+        );
         const chainHead = await h.channelManager.getChannelBalance(h.channelId);
         expect(chainHead.latestInboundMessageBlockHash).to.not.equal(
             stale.latestInboundMessageBlockHash
         );
         expect(await localHead()).to.equal(stale.latestInboundMessageBlockHash);
 
-        // step 3 - the parked upload lands on the moved chain head
+        // step 3 - the parked upload lands on the moved chain head and is refused;
+        // local storage is assumed current by event sync, so a stale anchor is a
+        // lost race, not retried
         await recorder.release();
         const disputed = await attempt;
         const submissions = await recorder.submissions();
@@ -283,6 +280,9 @@ export async function assertInboundHeadMovedDuringUpload(
                 stale.latestInboundMessageBlockHash
             ]
         });
+        expect(submissions).to.have.length(1);
+        expect(disputed).to.equal(false);
+        expect(await localHead()).to.equal(stale.latestInboundMessageBlockHash);
         const committed = [
             ...(await h.channelManager.queryFilter(
                 h.channelManager.filters.DisputeCommitted(h.channelId)
@@ -293,57 +293,17 @@ export async function assertInboundHeadMovedDuringUpload(
                 )
             ))
         ];
-        if (!recoverable) {
-            // recovery cannot advance the local head -> no re-upload, marker rolled back
-            expect(submissions).to.have.length(1);
-            expect(disputed).to.equal(false);
-            expect(await localHead()).to.equal(
-                stale.latestInboundMessageBlockHash
-            );
-            expect(committed).to.have.length(0);
-            return;
-        }
-        expect(submissions).to.have.length(2);
-        expect(submissions[1].revert).to.equal(null);
-        expect(submissions[1].waited).to.equal(true);
-        expect(disputed).to.equal(true);
-        expect(await localHead()).to.equal(
-            chainHead.latestInboundMessageBlockHash
-        );
-        expect(committed).to.have.length(1);
-        const anchor = Codec.decode(
-            committed[0].args.disputeConfirmation.signedDispute.encodedDispute,
-            Type.Dispute
-        ).input;
-        expect(anchor.latestInboundMessageBlockHash).to.equal(
-            chainHead.latestInboundMessageBlockHash
-        );
-        expect(Number(anchor.lastInboundMessageBlockHeight)).to.equal(
-            Number(chainHead.latestInboundMessageBlockHeight)
-        );
-        // the auditors accept the re-upload -> no dispute fraud proof, only the offender slashed
-        await h.assert.dispute.committedWait({
-            peersIndices: [1, 2],
-            expectedCount: 1,
-            mode: "exact"
-        });
-        for (const auditor of [h.getPeer(1), h.getPeer(2)]) {
-            expect(
-                await h.execOnHost(
-                    auditor,
-                    (sm) =>
-                        sm.storage.disputeFraudProofs.getDisputeFraudProofs()
-                            .length
-                )
-            ).to.equal(0);
-        }
+        expect(committed).to.have.length(0);
+        // the refused upload was multicalled with the fraud proof against the
+        // offender, so the whole batch reverts and nobody is slashed either
         expect([
             ...(await h.channelManager.getOnChainSlashedParticipants(
                 h.channelId
             ))
-        ]).to.deep.equal([offender.address]);
+        ]).to.deep.equal([]);
     } finally {
         await recorder.release();
         await recorder.restore();
+        await held.release({ replay: false });
     }
 }
