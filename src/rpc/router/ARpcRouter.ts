@@ -9,6 +9,42 @@ export type RpcDeliveryOptions = {
     transfer?: unknown[];
 };
 
+/**
+ * Why a `sendRpcRequest` promise rejected. Carried as the standard `Error`
+ * `cause` so callers branch on the kind instead of matching message text.
+ */
+export type RpcRequestFailureCause =
+    | "request-timeout"
+    | "remote-error"
+    | "transport-closed"
+    | "send-failed";
+
+const RPC_REQUEST_FAILURE_CAUSES: readonly RpcRequestFailureCause[] = [
+    "request-timeout",
+    "remote-error",
+    "transport-closed",
+    "send-failed"
+];
+
+/**
+ * A transport-close reason belongs to the caller that closed the transport, so
+ * its kind cannot be written onto the error: replacing it would drop the
+ * caller's error class and fields, and mutating it would change an object the
+ * caller still owns. The reasons this router rejected with are recorded here
+ * instead, so the rejection stays the supplied reason itself.
+ */
+const transportClosedReasons = new WeakSet<Error>();
+
+/** Reads back the cause this router attached, or `undefined` for anything else. */
+export function getRpcRequestFailureCause(
+    error: unknown
+): RpcRequestFailureCause | undefined {
+    if (!(error instanceof Error)) return undefined;
+    if (transportClosedReasons.has(error)) return "transport-closed";
+    const cause = error.cause;
+    return RPC_REQUEST_FAILURE_CAUSES.find((known) => known === cause);
+}
+
 export abstract class ARpcRouter<TTransport extends ATransport = ATransport> {
     private rpcRequestCounter = 0;
     private readonly pendingRpcRequests = new Map<
@@ -89,7 +125,10 @@ export abstract class ARpcRouter<TTransport extends ATransport = ATransport> {
 
     protected restoreRpcError(error: unknown): Error {
         return new Error(
-            typeof error === "string" ? error : "RPC request failed on the peer"
+            typeof error === "string"
+                ? error
+                : "RPC request failed on the peer",
+            { cause: "remote-error" satisfies RpcRequestFailureCause }
         );
     }
 
@@ -126,7 +165,10 @@ export abstract class ARpcRouter<TTransport extends ATransport = ATransport> {
                             this.rejectRpcRequest(
                                 requestId,
                                 new Error(
-                                    `RPC request '${rpc.service}.${rpc.method}' timed out after ${timeoutMs}ms`
+                                    `RPC request '${rpc.service}.${rpc.method}' timed out after ${timeoutMs}ms`,
+                                    {
+                                        cause: "request-timeout" satisfies RpcRequestFailureCause
+                                    }
                                 )
                             );
                         },
@@ -138,7 +180,12 @@ export abstract class ARpcRouter<TTransport extends ATransport = ATransport> {
             } catch (error: unknown) {
                 this.rejectRpcRequest(
                     requestId,
-                    error instanceof Error ? error : new Error(String(error))
+                    new Error(
+                        error instanceof Error ? error.message : String(error),
+                        {
+                            cause: "send-failed" satisfies RpcRequestFailureCause
+                        }
+                    )
                 );
             }
         });
@@ -181,12 +228,22 @@ export abstract class ARpcRouter<TTransport extends ATransport = ATransport> {
     ): void {
         for (const [requestId, pending] of this.pendingRpcRequests) {
             if (pending.transport === transport)
-                this.rejectRpcRequest(requestId, reason);
+                this.rejectAsTransportClosed(requestId, reason);
         }
     }
 
     public rejectAllRpcRequests(reason: Error): void {
         for (const requestId of this.pendingRpcRequests.keys())
-            this.rejectRpcRequest(requestId, reason);
+            this.rejectAsTransportClosed(requestId, reason);
+    }
+
+    // Reject with the caller's own error, and record the kind the callers
+    // cannot know about.
+    private rejectAsTransportClosed(
+        requestId: RpcRequestId,
+        reason: Error
+    ): void {
+        transportClosedReasons.add(reason);
+        this.rejectRpcRequest(requestId, reason);
     }
 }

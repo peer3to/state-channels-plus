@@ -8,6 +8,7 @@ import type {
     P2PManagerProbeService,
     ConcurrentSettlementProbe,
     DisposalProbe,
+    RequestFailureCauseProbe,
     RequestRaceProbe,
     RequestRegistryProbe,
     RequestSettlementProbe,
@@ -82,6 +83,10 @@ export class P2PManagerProbeRpcMethods extends ANetworkRpcMethods<P2PManagerProb
 
     public probeRequestSettlement(): Promise<RequestSettlementProbe> {
         return this.service.probeRequestSettlement();
+    }
+
+    public probeRequestFailureCauses(): Promise<RequestFailureCauseProbe> {
+        return this.service.probeRequestFailureCauses();
     }
 
     public probeTimeoutSelection(): Promise<TimeoutSelectionProbe> {
