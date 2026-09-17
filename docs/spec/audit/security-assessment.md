@@ -315,9 +315,10 @@ This is the recorded owner policy under [terminal channel leave](../specificatio
 Current dispute upload eligibility now uses the snapshot participant set plus the unconsumed inbound
 JOIN interval, with the snapshot boundary excluded, the latest head included, and on-chain slashes
 removed. Snapshot participants retain eligibility regardless of JOIN age. Historical proof thresholds
-retain their historical pending walk, and the milestone-finality read is judged against a participant set frozen
-for the kill period on both adoption paths, minus the dispute's listed slashes and the on-chain slashes recorded before
-its window opened ([`FIND-DISPUTE-2-1NNNDD`](open-findings.md#find-dispute-2-1nnndd), resolved). A leave whose exit post meets the freeze after the
+retain their historical pending walk, and the milestone-finality read is judged against the dispute's historic threshold:
+a participant set no adoption can change while its disputes can be killed (same-fork advances refused on a disputed
+fork, successor-fork updates during the target's kill period), minus only the slashes the dispute lists
+([`FIND-DISPUTE-2-1NNNDD`](open-findings.md#find-dispute-2-1nnndd), resolved). A leave whose exit post meets the freeze after the
 evidence period ends waits for that window's settlement instead of rejecting ([`FIND-LEAVE-3-XZBAJQ`](open-findings.md#find-leave-3-xzbajq), resolved). See the [shared Solidity report](../implementation/source/contracts/V1/StateChannelDiamondProxy/StateChannelCommon.sol.md)
 and [upload rule](../specification/disputes/disputes.md#req-dis-2-pkvz7e).
 

@@ -4,7 +4,7 @@
 
 ## Overview
 
-Exercises the public component behavior listed below with real contract or runtime state. The anchor cases set the snapshot's consumed inbound height to 2 and upload in both modes anchored at 1 and 2: below reverts `RaceConditionDisputeAnchorBehindSnapshot(2, 1)` with no admission-state change, at creates the window with one commitment.
+Exercises the public component behavior listed below with real contract or runtime state. The anchor cases set the snapshot's consumed inbound height to 2 and upload in both modes anchored at 1 and 2: below reverts `RaceConditionDisputeInboundNotLatest(2, 1)` with no admission-state change, at creates the window with one commitment.
 
 ## Tests and covered test IDs
 

@@ -10,7 +10,7 @@ It does not announce membership to peers or control connection admission.
 
 ## Key design decisions
 
-Both authored-exit fallback paths report a missing dispute marker or a thrown upload error to `LeaveChannelService.onExitFallbackFailed` after logging. A failed snapshot post first attempts the dispute (a `RaceConditionSnapshotDuringKillPeriod` refusal is an expected race the post already logged at warn; every other post failure is logged at error); a failure of that fallback rejects pending leave, except an evidence-expired refusal, which leaves it awaiting settlement.
+Both authored-exit fallback paths report a missing dispute marker or a thrown upload error to `LeaveChannelService.onExitFallbackFailed` after logging. A snapshot post that resolves `false` (the chain refused it on a disputed fork, already logged at warn by the post) or throws (logged at error) first attempts the dispute; a failure of that fallback rejects pending leave, except an evidence-expired refusal, which leaves it awaiting settlement.
 
 startSelfRemovalDispute sets force-exit, invokes normal dispute construction and returns the resulting marker. Terminal leave turns a missing marker into failure; membership fallbacks log and notify the matching authored leave on failure. Signer membership predicates name the local set or the on-chain union; pending-only event checks remain pending-only. See [MembershipService.ts](../../../../../../../src/stateManager/membership/MembershipService.ts#L63).
 

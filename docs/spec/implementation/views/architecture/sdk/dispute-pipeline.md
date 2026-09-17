@@ -156,10 +156,9 @@ assembles `ConstructDisputeResult = { dispute, disputeConfirmation, auditingData
 6. **`postedAuditingData` = `!SCM.isLastMilestoneFinalByEveryone(dispute)`** —
    auditing data is posted as calldata only when the proof's final anchor is
    not already known-final to everyone (data availability for auditors).
-   The chain judges it against its snapshot participants (no adoption onto the fork while its kill period
-   is open), joiners at or below the dispute's inbound anchor, minus the dispute's own `onChainSlashes` and
-   the on-chain slashes recorded before the dispute window opened, so the same verdict holds for every
-   later read of the committed dispute.
+   The chain judges it against the dispute's historic threshold: its snapshot participants (no adoption onto
+   the fork while a proof can land), joiners at or below the dispute's inbound anchor, minus the dispute's own
+   `onChainSlashes` only, so the same verdict holds for every later read of the committed dispute.
    A code TODO flags re-evaluating this under early finalization.
 7. Sign the encoded dispute (`SignatureUtils.signDispute`) →
    `DisputeConfirmation` with an empty co-signature list.

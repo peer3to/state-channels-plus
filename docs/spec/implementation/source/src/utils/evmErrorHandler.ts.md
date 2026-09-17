@@ -27,7 +27,7 @@ decisions.
 
 The race-error union includes `RaceConditionDisputeWindowNotOpen`. Generic ABI decoding dispatches that exact name; DisputeManager owns rollback, slash recovery, and normal re-entry. Other custom errors keep their existing handlers.
 
-The union also names `RaceConditionSnapshotDuringKillPeriod` (handled by SnapshotUpdateService and ReductionExecutor, read by SpectateService) ([#L16](../../../../../../src/utils/evmErrorHandler.ts#L16)).
+`ContractErrorName` is the union of the names in `GeneratedArtifacts.errorAbis`, emitted `as const`, plus ethers' built-in `Error` and `Panic` ([#L8](../../../../../../src/utils/evmErrorHandler.ts#L8)). `CustomEvmError.name` carries that type, so comparing a decoded name with a name no contract declares fails type checking. `RaceConditionErrorName` is extracted from it (every `RaceCondition*` name plus four dispute `Error*` names) and keys the handler map, so a stale handler key fails the same way. It includes `RaceConditionSnapshotUpdateDisputedFork`, handled by SnapshotUpdateService and ReductionExecutor and compared by SpectateService.
 
 `GeneratedArtifacts.errorAbis` is the single reachable-manager error union. It includes the
 `StateProofFacet` and `UtilityFacet` ECDSA errors used by both the decoder and canonical binding.
