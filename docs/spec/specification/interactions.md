@@ -138,6 +138,14 @@ and evidence MUST survive storage exactly so they remain usable as evidence. Fai
 record reads as nothing rather than a default that masquerades as protocol state; a failed
 multi-module write leaves the operation retryable per [`REQ-STOR-2-TARP8S` (Commit-aligned durability)](storage/durability.md#req-stor-2-tarp8s).
 
+At peer block ingress, the authenticated transport owns its admitted signature contribution. Source
+eligibility is checked before both queue insertion and stored-block merging ([`REQ-GOSSIP-4-J5Z4DF` (Eligible transport contribution)](peer-communication/block-gossip.md#req-gossip-4-j5z4df)).
+Verified state application and block commit publish the current off-chain membership cache atomically;
+chain observation supplies current/pending membership and slash precedence. The retained queue owns
+per-source allowances through all processing snapshots ([`REQ-QSTORE-2-VYWJAQ` (Independent source allowances)](storage/queue.md#req-qstore-2-vywjaq)). Explicit chain and proof
+origins keep objective evidence separate and avoid recursive source-admission sync. Participating peers
+relay accepted growth; spectators and pending joiners retain it without relaying ([`REQ-GOSSIP-3-HQZNQX` (Re-broadcast on growth)](peer-communication/block-gossip.md#req-gossip-3-hqznqx)).
+
 ## Assumptions and constraints
 
 - Every edge presumes both endpoint systems honor their own owned requirements; an interaction

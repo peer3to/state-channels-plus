@@ -1,5 +1,9 @@
 import { Status } from "@/types";
 import { addressesEqual } from "@/utils";
+import {
+    assertCommitCachePreserved,
+    assertSpectatorCommit
+} from "@test/fixtures/CommitEligibilityFixture";
 import { MathTestSession as TestSession } from "@test/harness";
 import { expect } from "chai";
 
@@ -8,6 +12,16 @@ import { expect } from "chai";
 // stored blocks, with the disqualifying condition staged per case.
 
 describe("Unit: BlockCommitService", function () {
+    it("a spectator commit persists state and calls success without signing or gossip", async () => {
+        await assertSpectatorCommit(false);
+    });
+    it("a commit inserting the spectator promotes it and signs and gossips once", async () => {
+        await assertSpectatorCommit(true);
+    });
+
+    it("dispute replay with a historical union preserves current off-chain eligibility", async () => {
+        await assertCommitCachePreserved();
+    });
     describe("shouldSignBlock", function () {
         it("an ordinary block from a participant → signed", async function () {
             const h = TestSession.getHarness();

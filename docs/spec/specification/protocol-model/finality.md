@@ -225,6 +225,13 @@ If the threshold still never arrives, route 3 applies: any eligible participant 
 latest proved state ([state-proofs.md](../disputes/state-proofs.md)), and the reduction carries the valid
 suffix forward (§7).
 
+Transport source admission and signature validity use different sets. Admission accepts a sender in the
+cached on-chain current/pending set or the latest verified current-fork participant union, except known
+slashes ([`REQ-GOSSIP-4-J5Z4DF` (Eligible transport contribution)](../peer-communication/block-gossip.md#req-gossip-4-j5z4df)). The finality threshold still uses the particular block's previous/resulting
+union ([`REQ-FIN-7-RTZWQZ`](finality.md#req-fin-7-rtzwqz)). Historical proof replay does not substitute present-day transport eligibility
+for that historical union. Local off-chain inclusion and finality do not establish on-chain dispute standing;
+that standing changes only when the chain's authoritative snapshot or inbound membership includes the peer.
+
 ## Assumptions and constraints
 
 Finality assumes unforgeable, domain-separated signatures; a known participant set at each membership point;

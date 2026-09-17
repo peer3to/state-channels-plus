@@ -1,7 +1,16 @@
 import { Block } from "@/models";
 import { Status } from "@/types";
 import { Codec, Type } from "@/utils";
+import {
+    assertOffChainPromotion,
+    assertVerifiedSyncPromotion,
+    assertPromotionBeforeReceiverApplication
+} from "@test/fixtures/OffChainPromotionFixture";
 import { expectSyncPayloadAboveRequestedHeightWhileAhead } from "@test/fixtures/PinnedSyncStaging";
+import {
+    assertSpectatorSilence,
+    assertSpectatorRejectedWork
+} from "@test/fixtures/SpectatorSilenceFixture";
 import { MathTestSession as TestSession } from "@test/harness";
 import { waitFor } from "@test/utils/waitFor";
 import { expect } from "chai";
@@ -17,6 +26,30 @@ import { ethers } from "ethers";
  * Tests spectator joining, syncing, and fork traversal mechanisms.
  */
 describe("E2E: Spectate Service", function () {
+    it("spectator rejects an invalid envelope without executing or relaying it", async () => {
+        await assertSpectatorRejectedWork("invalid");
+    });
+    it("spectator parks not-ready work without executing or relaying it", async () => {
+        await assertSpectatorRejectedWork("not-ready");
+    });
+
+    it("new participant gossip can precede another peer applying insertion", async () => {
+        await assertPromotionBeforeReceiverApplication();
+    });
+    it("verified sync promotes an off-chain inserted spectator before chain membership changes", async () => {
+        await assertVerifiedSyncPromotion();
+    });
+    it("spectators apply fresh and late confirmations without relaying and still serve sync", async () => {
+        await assertSpectatorSilence();
+    });
+    it("spectator becomes participant through an off-chain balance transfer", async () => {
+        await assertOffChainPromotion(TestSession.getHarness());
+    });
+
+    it("full-capacity insertion advances the turn without promoting a spectator", async () => {
+        await assertOffChainPromotion(TestSession.getHarness(), true);
+    });
+
     describe("Guard Protection", function () {
         it("should NOT allow spectate RPC before handshake completes", async function () {
             const harness = TestSession.getHarness();

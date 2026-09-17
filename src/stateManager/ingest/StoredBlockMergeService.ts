@@ -38,6 +38,14 @@ export default class StoredBlockMergeService {
             );
         }
 
+        const normalization =
+            await sm.validationService.normalizeConfirmationSignatures(
+                entry,
+                strategy
+            );
+        if (normalization !== BlockValidationResult.SUCCESS)
+            return normalization;
+
         const existingSignatures = existingBlock.confirmationSignatures;
         const incomingSignatures = block.confirmationSignatures;
         const newSignatures = difference(

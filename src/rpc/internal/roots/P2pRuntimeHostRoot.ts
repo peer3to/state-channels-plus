@@ -230,6 +230,14 @@ export class P2pRuntimeHostRoot extends AInternalRpcRoot<P2pRuntimeClientRoot> {
         this.maxChannelParticipants = Number(
             await connectedScmContract.getMaxChannelParticipants()
         );
+        if (
+            !Number.isSafeInteger(this.maxChannelParticipants) ||
+            this.maxChannelParticipants < 1
+        ) {
+            throw new Error(
+                "Deployed maximum participant count is not a positive safe integer"
+            );
+        }
         await LoggerUtils.logTimestamp(logger, "info", timeConfig);
 
         this.connectedScmContract = connectedScmContract;

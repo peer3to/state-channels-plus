@@ -16,3 +16,9 @@ _Pending authoring: shared responsibility, design decisions, assumptions, cross-
 - [spectate.ts](./spectate.ts.md)
 - [time.ts](./time.ts.md)
 - [types.ts](./types.ts.md)
+
+## Queue admission contributions
+
+| Source report | Contribution | Requirements |
+| --- | --- | --- |
+| [types.ts](types.ts.md) | Address and Signature are the source map key and value types; ChecksumAddress names normalized eligibility-cache identities. | [`REQ-QSTORE-2-VYWJAQ`](../../../../specification/storage/queue.md#req-qstore-2-vywjaq) |

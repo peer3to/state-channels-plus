@@ -66,6 +66,7 @@ the decision.
 Each alternative must identify the black-box cases whose stimulus or oracle changes. Resolution requires an
 update to the owning specification, assumptions/constraints, security analysis, verification plan,
 implementation mirrors, exact test mappings, generated reports, and any invalidated approval fingerprint.
+| [`OQ-SPEC-SPECTATOR-RELAY-1-V6F216`](open-questions.md#oq-spec-spectator-relay-1-v6f216) | Future spectator relaying | Plan | Current queue admission and optional promotion | Future; non-blocking |
 
 <a id="oq-1-ntjba1"></a>
 
@@ -586,3 +587,16 @@ result; the policy is unavailable or errors and the node must choose between con
 temporary refusal, and termination; new evidence arrives after an earlier decision and the opinion
 is reevaluated. Requested decision: whether and when to specify this policy, and its default until
 then (the current default is the no-opinion baseline).
+
+<a id="oq-spec-spectator-relay-1-v6f216"></a>
+
+## OQ-SPEC-SPECTATOR-RELAY-1-V6F216 — Future spectator relaying
+
+Open future design; non-blocking for the current no-relay policy ([`REQ-GOSSIP-3-HQZNQX` (Re-broadcast on growth)](peer-communication/block-gossip.md#req-gossip-3-hqznqx)).
+
+Decide whether spectators may relay unsolicited confirmations. Relaying could improve connectivity,
+but transport attribution currently makes the forwarder accountable and eligible source identities
+bound retention. A future design must specify how a spectator earns a bounded source allowance,
+who is punished for junk it forwards, how identity rotation is bounded, and how peers distinguish
+relay authorization from author/signature membership. Keeping participant-only relaying is the
+settled present behavior. A role claim or valid proof alone must not silently grant relay authority.

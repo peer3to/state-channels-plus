@@ -1,6 +1,7 @@
 // @spec-test-coverage-ignore: real dispute attempts with controlled upload/read failures
 import type { MathPeerTestHarness } from "./MathPeerTestHarness";
 import { runtimeEndpointFor } from "./RuntimeRootObservation";
+import { BlockOrigin } from "@/storage/QueueStorage";
 import { MathTestSession as TestSession } from "@test/harness";
 import { waitFor } from "@test/utils/waitFor";
 import { expect } from "chai";
@@ -164,7 +165,9 @@ export async function assertBackgroundDisputeFailure(
     try {
         await h
             .control(peer)
-            .transition.ingestBlockConfirmation(encodedBlock)
+            .transition.ingestBlockConfirmation(encodedBlock, {
+                origin: BlockOrigin.PROOF
+            })
             .request();
         await waitFor(async () => (await recorder.submissions()).length === 1);
         // Only the already-entered attempt is under test. Later timeout/event disputes

@@ -16,7 +16,7 @@ import { TimeoutStorage } from "./TimeoutStorage";
 import { BlockCoordinates, StateSnapshot } from "@/models";
 import { ForkId, Bytes, BlockOrSnapshot, Hash } from "@/types/types";
 import { Address } from "@/types/types";
-import { deepCopyProxy } from "@/utils";
+import { deepCopyProxy, getChecksumAddress } from "@/utils";
 
 export class Storage {
     public readonly blocks: BlockStorage;
@@ -110,15 +110,6 @@ export class Storage {
         resultingStateSnapshotHash?: Hash
     ): Address[] {
         const previousSnapshot = this.getPreviousStateSnapshot(coordinates);
-        const participants = new Set<Address>();
-
-        if (previousSnapshot?.snapshotData.participants) {
-            for (const participant of previousSnapshot.snapshotData
-                .participants) {
-                participants.add(participant);
-            }
-        }
-
         let resultingSnapshot: StateSnapshot | undefined;
         if (resultingStateSnapshotHash) {
             resultingSnapshot = this.stateSnapshots.getStateSnapshotByHash(
@@ -136,13 +127,23 @@ export class Storage {
             }
         }
 
-        if (resultingSnapshot?.snapshotData.participants) {
-            for (const participant of resultingSnapshot.snapshotData
-                .participants) {
-                participants.add(participant);
+        return this.getParticipantsUnionFromSnapshots(
+            previousSnapshot,
+            resultingSnapshot
+        );
+    }
+
+    getParticipantsUnionFromSnapshots(
+        previous?: StateSnapshot,
+        resulting?: StateSnapshot
+    ): Address[] {
+        const participants = new Set<Address>();
+        for (const snapshot of [previous, resulting]) {
+            for (const participant of snapshot?.snapshotData.participants ??
+                []) {
+                participants.add(getChecksumAddress(participant));
             }
         }
-
         return [...participants];
     }
 

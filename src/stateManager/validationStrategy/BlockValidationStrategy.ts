@@ -10,10 +10,11 @@ import { Block } from "@/models";
 import type P2PManager from "@/P2PManager";
 import Storage from "@/storage";
 import {
-    sourcePeersAndAuthor,
+    getSourcePeersAndAuthor,
+    getSourcePeers,
     type QueuedBlockEntry
 } from "@/storage/QueueStorage";
-import { BlockValidationResult, Signature } from "@/types";
+import { BlockValidationResult, Signature, Status } from "@/types";
 import { Logger } from "@/utils";
 import { LoggerUtils } from "@/utils/LoggerUtils";
 import {
@@ -83,6 +84,15 @@ export default class BlockValidationStrategy extends AValidationStrategy {
         this.blockQueueManager.restoreQueuedEntry(entry, this);
         return BlockValidationResult.NOT_READY;
     }
+    public async malformedConfirmationSignatures(
+        entry: QueuedBlockEntry,
+        signatures: Set<Signature>
+    ): Promise<BlockValidationResult> {
+        this.blockQueueManager.disconnectPeersForSignatures(entry, signatures);
+        entry.block.removeConfirmationSignatures(signatures);
+        return BlockValidationResult.SUCCESS;
+    }
+
     public async notAllSingersAreParticipants(
         entry: QueuedBlockEntry,
         unexpectedSignatures: Set<Signature>,
@@ -120,8 +130,11 @@ export default class BlockValidationStrategy extends AValidationStrategy {
     public async goodNewSignaturesOnExistingBlock(
         block: Block
     ): Promise<BlockValidationResult> {
-        // Store new signatures and broadcast
+        // Pending joiners also receive late confirmations before their join lands.
+        // Persist them, but start relaying only after participant promotion.
         this.storage.blocks.storeBlock(block);
+        if (this.p2pManager.stateManager.status !== Status.PARTICIPATING)
+            return BlockValidationResult.SUCCESS;
         this.p2pManager.remoteRpc.stateTransitionService
             .onBlockConfirmation(block.blockConfirmationStruct)
             .broadcast();
@@ -131,7 +144,7 @@ export default class BlockValidationStrategy extends AValidationStrategy {
         entry: QueuedBlockEntry
     ): Promise<BlockValidationResult> {
         this.p2pManager.disconnectAndBlacklistPeers(
-            sourcePeersAndAuthor(entry)
+            getSourcePeersAndAuthor(entry)
         );
         return BlockValidationResult.DISCONNECT;
     }
@@ -171,7 +184,7 @@ export default class BlockValidationStrategy extends AValidationStrategy {
             // unknown-fork blocks out of validation entirely. No genesis
             // snapshot means no fraud proof to build and no dispute to raise
             // — cut the suppliers instead.
-            const culprits = sourcePeersAndAuthor(entry);
+            const culprits = getSourcePeersAndAuthor(entry);
             this.logger.warn(
                 "Missing genesis reached validation despite fork gate - blacklisting sources and author",
                 {
@@ -216,7 +229,7 @@ export default class BlockValidationStrategy extends AValidationStrategy {
         entry: QueuedBlockEntry
     ): Promise<BlockValidationResult> {
         // Malformed linkage, not a provable fraud proof - drop the sender.
-        this.p2pManager.disconnectAndBlacklistPeers(entry.sourcePeers);
+        this.p2pManager.disconnectAndBlacklistPeers(getSourcePeers(entry));
         return BlockValidationResult.DISCONNECT;
     }
     public async blockForkIsDisputed(
@@ -226,7 +239,7 @@ export default class BlockValidationStrategy extends AValidationStrategy {
         // Suppliers that already acknowledged the dispute knowingly built on
         // a dead fork - disconnect/blacklist them.
         let acknowledgedCount = 0;
-        for (const peer of entry.sourcePeers) {
+        for (const peer of getSourcePeers(entry)) {
             if (
                 this.p2pManager.localRpc.isForkDisputedService.didPeerAcknowledgeDisputedFork(
                     peer as string,
@@ -238,8 +251,8 @@ export default class BlockValidationStrategy extends AValidationStrategy {
             }
         }
         if (
-            entry.sourcePeers.size > 0 &&
-            acknowledgedCount === entry.sourcePeers.size
+            getSourcePeers(entry).size > 0 &&
+            acknowledgedCount === getSourcePeers(entry).size
         ) {
             // Every supplier was byzantine - nothing honest to wait for.
             return BlockValidationResult.DISCONNECT;
@@ -261,7 +274,7 @@ export default class BlockValidationStrategy extends AValidationStrategy {
         entry: QueuedBlockEntry
     ): Promise<BlockValidationResult> {
         // Malformed linkage, not a provable fraud proof - drop the sender.
-        this.p2pManager.disconnectAndBlacklistPeers(entry.sourcePeers);
+        this.p2pManager.disconnectAndBlacklistPeers(getSourcePeers(entry));
         return BlockValidationResult.DISCONNECT;
     }
     public async prepareStateMachineForLeaderCheck(

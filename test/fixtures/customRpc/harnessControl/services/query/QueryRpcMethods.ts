@@ -362,23 +362,32 @@ export class QueryRpcMethods extends ANetworkRpcMethods<QueryService> {
         );
     }
 
-    /**
-     * Retention shape of the queued entry for `blockHash`: how many
-     * confirmation signatures it kept, how many attribution keys it holds, and
-     * whether a cap was exceeded. Lets a test observe the per-entry bound from
-     * outside the process instead of reaching into storage.
-     */
-    public getQueuedRetention(blockHash: Hash): {
-        confirmationSignatures: number;
-        attributionKeys: number;
-        overflowed: boolean;
-    } | null {
-        const entry = this.service.storage.queues.getQueuedEntry(blockHash);
+    public getSourceEligibility(source: Address) {
+        return this.service.sm.membershipService.getCachedSourceEligibility(
+            source
+        );
+    }
+
+    /** Plain projection of the queued entry's source contributions. */
+    public getQueuedRetention(blockHash: Hash) {
+        const queues = this.service.storage.queues;
+        const entry = queues.getQueuedEntry(blockHash);
         if (!entry) return null;
         return {
+            origin: entry.origin,
+            firstSeenAt: entry.firstSeenAt,
+            onChainTimestamp: entry.block.onChainTimestamp ?? null,
             confirmationSignatures: entry.block.confirmationSignatures.size,
-            attributionKeys: entry.signatureSources.size,
-            overflowed: entry.overflowedSources === true
+            retainedSignatures: new Set(
+                [...entry.sourcesToSignatures.values()].flatMap((values) => [
+                    ...values
+                ])
+            ).size,
+            sourceCount: entry.sourcesToSignatures.size,
+            perSource: [...entry.sourcesToSignatures].map(
+                ([source, values]) => ({ source, count: values.size })
+            ),
+            maxChannelParticipants: queues.maxChannelParticipants
         };
     }
 

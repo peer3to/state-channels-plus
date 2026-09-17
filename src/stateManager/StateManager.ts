@@ -283,6 +283,7 @@ class StateManager<
     public abort() {
         if (this.isDisposed) return;
         this.isDisposed = true;
+        this.membershipService.resetEligibility();
         this.logger.warn("Aborting channel participation", {
             channelId: this.channelId,
             status: Status[this.status]
@@ -323,6 +324,7 @@ class StateManager<
         }
 
         this.isDisposed = true;
+        this.membershipService.resetEligibility();
         this.leaveChannelService.dispose();
         this.reductionManager.dispose();
 
@@ -348,6 +350,7 @@ class StateManager<
                 // needs the EVM executor and p2p below. The drain is bounded
                 // by the timeout manager's dispose wait.
                 await this.timeoutManager.dispose();
+                this.blockQueueManager.dispose();
             }
             if (customRpcError) {
                 throw customRpcError;
@@ -436,6 +439,7 @@ class StateManager<
 
     public async setChannelId(channelId: ChannelId): Promise<void> {
         this.logger.verbose("Setting channel ID", { channelId });
+        this.membershipService.resetEligibility();
         this._channelId = channelId;
         this.logger.updateSharedContext({ channelId: String(channelId) });
         this.disputeManager.setChannelId(channelId);
@@ -445,6 +449,7 @@ class StateManager<
 
     public async clearChannelId(): Promise<void> {
         this.logger.verbose("Clearing channel ID");
+        this.membershipService.resetEligibility();
         this._channelId = NULL;
         this.logger.updateSharedContext({ channelId: String(NULL) });
         this.disputeManager.setChannelId(NULL);
@@ -462,7 +467,8 @@ class StateManager<
         return this.latestForkId;
     }
     public set forkId(forkId: ForkId) {
-        if (this.latestForkId !== forkId) {
+        const changed = this.latestForkId !== forkId;
+        if (changed) {
             // Queue recovery gates are tied to the active fork. Reduction
             // operations and their kill-period observations remain fork-scoped.
             this.blockQueueManager.onForkTransition();

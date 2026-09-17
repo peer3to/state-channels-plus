@@ -17,7 +17,7 @@ import {
 const DEFAULT_DISPUTE_EXECUTION_GAS_LIMIT = 3_000_000;
 // Mirrors DEFAULT_MAX_CHANNEL_PARTICIPANTS in StateChannelManagerProxy: the
 // deployer picks the value, the chain stores it, and clients read it back.
-const DEFAULT_MAX_CHANNEL_PARTICIPANTS = 32;
+export const DEFAULT_MAX_CHANNEL_PARTICIPANTS = 32;
 const FACET_DEPLOY_GAS_LIMIT = 12_000_000;
 const NONCE_GAP_RETRY_DELAY_MS = 10;
 const NONCE_GAP_MAX_RETRIES = 500;

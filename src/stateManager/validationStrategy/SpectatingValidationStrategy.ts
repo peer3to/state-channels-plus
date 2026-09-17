@@ -8,7 +8,8 @@ import { Block } from "@/models";
 import type P2PManager from "@/P2PManager";
 import Storage from "@/storage";
 import {
-    sourcePeersAndAuthor,
+    getSourcePeersAndAuthor,
+    getSourcePeers,
     type QueuedBlockEntry
 } from "@/storage/QueueStorage";
 import { BlockValidationResult, Signature } from "@/types";
@@ -81,6 +82,15 @@ export default class SpectatingValidationStrategy extends AValidationStrategy {
         this.blockQueueManager.restoreQueuedEntry(entry, this);
         return BlockValidationResult.NOT_READY;
     }
+    public async malformedConfirmationSignatures(
+        entry: QueuedBlockEntry,
+        signatures: Set<Signature>
+    ): Promise<BlockValidationResult> {
+        this.blockQueueManager.disconnectPeersForSignatures(entry, signatures);
+        entry.block.removeConfirmationSignatures(signatures);
+        return BlockValidationResult.SUCCESS;
+    }
+
     public async notAllSingersAreParticipants(
         entry: QueuedBlockEntry,
         unexpectedSignatures: Set<Signature>,
@@ -116,12 +126,14 @@ export default class SpectatingValidationStrategy extends AValidationStrategy {
     public async goodNewSignaturesOnExistingBlock(
         block: Block
     ): Promise<BlockValidationResult> {
-        // Store new signatures and broadcast
+        // Participants replaying sync still gossip; spectators only persist.
+        if (isCommittedParticipantStatus(this.p2pManager.stateManager.status)) {
+            return this.blockValidationStrategy.goodNewSignaturesOnExistingBlock(
+                block
+            );
+        }
         this.storage.blocks.storeBlock(block);
-        this.p2pManager.remoteRpc.stateTransitionService
-            .onBlockConfirmation(block.blockConfirmationStruct)
-            .broadcast();
-        return BlockValidationResult.BROADCAST;
+        return BlockValidationResult.SUCCESS;
     }
     public async blockAuthorIsNotParticipant(
         entry: QueuedBlockEntry
@@ -130,7 +142,7 @@ export default class SpectatingValidationStrategy extends AValidationStrategy {
         // own key) but they are not in the channel. Drop + blacklist the sender,
         // keep spectating - this is the DoS vector, never an abort.
         this.p2pManager.disconnectAndBlacklistPeers(
-            sourcePeersAndAuthor(entry)
+            getSourcePeersAndAuthor(entry)
         );
         return BlockValidationResult.DISCONNECT;
     }
@@ -170,7 +182,7 @@ export default class SpectatingValidationStrategy extends AValidationStrategy {
             // proven against a participant, so cut the suppliers and the author
             // and keep spectating rather than abort.
             this.p2pManager.disconnectAndBlacklistPeers(
-                sourcePeersAndAuthor(entry)
+                getSourcePeersAndAuthor(entry)
             );
             return BlockValidationResult.DISCONNECT;
         }
@@ -195,7 +207,7 @@ export default class SpectatingValidationStrategy extends AValidationStrategy {
         entry: QueuedBlockEntry
     ): Promise<BlockValidationResult> {
         // Malformed linkage, not a provable fraud proof - drop the sender
-        this.p2pManager.disconnectAndBlacklistPeers(entry.sourcePeers);
+        this.p2pManager.disconnectAndBlacklistPeers(getSourcePeers(entry));
         return BlockValidationResult.DISCONNECT;
     }
     public async blockForkIsDisputed(
@@ -218,7 +230,7 @@ export default class SpectatingValidationStrategy extends AValidationStrategy {
         entry: QueuedBlockEntry
     ): Promise<BlockValidationResult> {
         // Malformed linkage, not a provable fraud proof - drop the sender
-        this.p2pManager.disconnectAndBlacklistPeers(entry.sourcePeers);
+        this.p2pManager.disconnectAndBlacklistPeers(getSourcePeers(entry));
         return BlockValidationResult.DISCONNECT;
     }
     public async prepareStateMachineForLeaderCheck(

@@ -5,6 +5,7 @@ import HarnessControlRpc from "./customRpc/harnessControl/HarnessControlRpc";
 
 import { HarnessDebug } from "./HarnessDebug";
 import { RootCreationControl } from "./runtimeRpc/RootCreationControl";
+import { DEFAULT_MAX_CHANNEL_PARTICIPANTS } from "../../scripts/V1/deploy";
 import {
     deployFacets,
     type LocalStateMachineDeployer
@@ -277,6 +278,9 @@ export class PeerTestHarness<
                 `test-channel-${Date.now()}-${process.pid}-${Math.floor(Math.random() * 1e9)}`,
             initialBalance: options?.initialBalance || 500,
             stateMachineGasLimit: options?.stateMachineGasLimit ?? 500000,
+            maxChannelParticipants:
+                options?.maxChannelParticipants ??
+                DEFAULT_MAX_CHANNEL_PARTICIPANTS,
             disputeExecutionGasLimit:
                 options?.disputeExecutionGasLimit ??
                 DEFAULT_HARNESS_DISPUTE_EXECUTION_GAS_LIMIT,
@@ -427,6 +431,9 @@ export class PeerTestHarness<
         return async (signer) => {
             const deployedAddress = await deployLocalStateMachine({
                 signer,
+                maxChannelParticipants:
+                    this.options.maxChannelParticipants ??
+                    DEFAULT_MAX_CHANNEL_PARTICIPANTS,
                 stateMachineGasLimit: this.options.stateMachineGasLimit!,
                 disputeExecutionGasLimit:
                     this.options.disputeExecutionGasLimit!,
@@ -467,6 +474,9 @@ export class PeerTestHarness<
                     tc: sortedTc,
                     sm: String(stateMachineGasLimit),
                     de: String(disputeExecutionGasLimit),
+                    maximum:
+                        this.options.maxChannelParticipants ??
+                        DEFAULT_MAX_CHANNEL_PARTICIPANTS,
                     // Consumer-side identity (e.g. poker's maxPlayers): a
                     // stack built with different parameters must never be
                     // served from this cache.
@@ -518,6 +528,9 @@ export class PeerTestHarness<
                 const deployedAddress = await deployment.deployOnChainContracts(
                     {
                         signer: deployerSigner,
+                        maxChannelParticipants:
+                            this.options.maxChannelParticipants ??
+                            DEFAULT_MAX_CHANNEL_PARTICIPANTS,
                         stateMachineGasLimit:
                             this.options.stateMachineGasLimit!,
                         disputeExecutionGasLimit:

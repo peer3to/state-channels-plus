@@ -233,31 +233,30 @@ The engineer chose to close RY1 at the parent owner. [Root creation](../implemen
 
 ## Per-entry queue retention bound — 2026-09-08
 
-Queue retention is now bounded in two dimensions rather than one. The per-entry source caps were
-already in place; the block's own confirmation-signature set was not bounded at all, and intake
-authenticates only the signed block a copy carries, so one authenticated peer could grow a single
-entry without limit. All three write paths — the creating copy, a duplicate merge, and restore —
-now cap retention, drop values that are not recoverable ECDSA signatures, and confine attribution to
-signatures the entry kept. Bounding cardinality alone would not have bounded memory: confirmation
-values were never format-checked and a frame may approach the transport limit, so the byte bound
-depends on the value check rather than the count.
+Queue retention uses independent source allowances ([`REQ-QSTORE-2-VYWJAQ` (Independent source allowances)](../specification/storage/queue.md#req-qstore-2-vywjaq)): at most N admitted
+identities and N supplied values per source, including the author. The contribution map travels with the dequeued entry into ordinary validation. Later copies form an independent entry; restore merges source contributions under the limits. No queue-side recovery budget
+or shared signature pool remains. Storage bounds the number of supplied values; ValidationService handles invalid values through each strategy. No queue-side encoding filter or fixed-byte bound remains. The wire intake and stored shortcut both gate
+transport eligibility before retention.
 
-Two residuals are assessed as accepted for this change and are visible in the maintained layers.
-Retention above the cap is first-come, so a signature offered while an entry is overflowed is not
-retained until validation strips unexpected signatures and frees room; this is specified in
-[`REQ-QSTORE-2-VYWJAQ`](../specification/storage/queue.md#req-qstore-2-vywjaq) and covered by an
-exact test. The cap is now sized against an enforced maximum union size rather than an assumed one:
-`open` and `_processJoinChannel` both reject a union larger than the channel's configured
-participant maximum, and the client reads that maximum from the contract instead of restating it,
-so the two cannot drift. That is sizing, not proof. Two findings record why: the maximum is not
-enforced on every path that makes a participant set authoritative, and retention counts signature
-bytes while validity counts recovered signers. The cap
-bounds per-entry memory, which is what it was added for, and recovery cost is bounded per block
-hash so a dequeue cannot refill the allowance. No end-to-end evidence covers the peer-observable path. A case written for it was
-withdrawn once it proved vacuous: a block padded with foreign confirmation signatures is cut before
-it parks, so the test passed with no signatures sent at all. Reaching the caps end to end requires a
-block that parks without being cut, which is a larger fixture than this change warranted; the caps
-are covered by unit tests and the gap is recorded rather than papered over.
+The two caches accept chain current/pending membership or verified current-fork off-chain membership,
+with known slash precedence. Positive hits avoid chain/VM reads. An absent source after refresh
+triggers ordinary sync. Intake awaits it and returns; no candidate registry, retry-window limits,
+admission cancellation or post-sync block insertion remains. SpectateService is unchanged.
+
+Real network scenarios now cover independent supplier slots, alternate valid signatures, stored merges,
+pre-dequeue accumulation, independent stored copies, unknown-source sync success/failure, pending joins and slashes. Exact evidence belongs in
+the verification reports. Runtime-mode and canonical regression evidence, including environment
+limits for browser execution, is recorded in the implementation handoff. Browser execution is not
+inferred from TypeScript or distributed success.
+
+[`FIND-QSTORE-3-1HF4V6`](open-findings.md#find-qstore-3-1hf4v6) is resolved for shared-slot monopolization. [`FIND-SETTLE-1-G2CPV6`](open-findings.md#find-settle-1-g2cpv6) remains open
+for generic authoritative roster writes. Positive cache staleness, first-N source churn, aggregate
+hash/connection/rate limits, and repeated work across later lifetimes remain explicit limits. The
+reference math insertion bounds its producer and preserves balances; it does not grant chain dispute
+standing before confirmed adoption. Pending joiners persist late confirmations silently until promotion,
+matching the fresh-block relay guard and avoiding premature admission sync during join submission.
+
+Both TypeScript builds, import checks, compilation and focused Docker tests pass for the source-map correction. The implementation handoff records the final canonical run and isolated guard checks; earlier ownership and byte-filter results do not verify this correction. Specification generation and ID links pass; strict completeness remains blocked by existing repository gaps and pending engineer approvals. Browser constructor wiring and its separate runtime evidence are recorded in that handoff.
 
 The simplification review fixes narrow bytes32 inputs through an assertion signature and remove the remaining queue-key forwarding method. The separate import-order change preserves all non-import executable statements, all imported bindings, and side-effect import boundaries. Runtime initialization order is checked by the distributed and browser gates; TypeScript suppression comments remain attached to their original imports.
 
@@ -334,3 +333,13 @@ the structural Result predicate.
 Other specification-mirrored implementation subjects, exhaustive source inventories, conformance decisions, and unit variants remain visible in generated coverage.
 
 Balance validation, byte/key conversion, same-block copy merge, frame classification and log reporting have single owners. Extraction retains input/error order, raw commitment comparisons, timestamp-defined checks, response precedence and platform timer lifetime. Existing strategy instanceof checks remain. The deleted connectivity utility had no reachable consumer; each of its five data-type IDs retains other source contributors.
+
+Proof replay builds standalone processing input. Queue cleanup cannot cancel it through a storage handle. The replay/cleanup regression continues to exercise snapshot persistence and fork reduction.
+
+### Optimistic membership mirror correction
+
+The engineer removed membership generations, pending-read invalidation and automatic read retries. Cached positives remain optimistic; concurrent misses now share one in-flight refresh, cleared on completion or failure. Intake rechecks cached eligibility after ordinary sync and blacklists a sender that remains ineligible, including the accepted in-flight collision case. Observed slashes still override cached membership, and channel selection clears the three plain sets. There is no metadata wrapper or channel/fork check in membership lookups. A read already in flight can complete after a newer push; no latest-generation guarantee is claimed. Queue processing and ordinary sync remain unchanged. [MembershipService](../implementation/source/src/stateManager/membership/MembershipService.ts.md) and its [exact tests](../verification/tests/test/unit/MembershipService.test.ts.md) describe the current behavior. Earlier invalidation permutations remain withdrawn; the current shared-refresh case asserts one read for concurrent misses.
+
+Eligibility now has three enum values. A failed refresh leaves the sets unchanged; an absent sender follows ordinary sync. The earlier unavailable-result path and its separate no-sync guarantee are withdrawn by the engineer. The ordinary sync service retains its existing peer-failure behavior.
+
+Membership events now push into the fast sets without membership reads. A miss pulls pinned snapshot/inbound/slash data and reuses event handlers to update LocalDiamond and the fast mirror. Positive-hit staleness before unseen events remains the accepted optimistic-cache policy. Focused tests verify delivered and missed JOINs, snapshot preservation of pending JOINs, slash publication, post-sync supplier exclusion, cache cleanup and failed chain-inspection rollback. Equivalent source-address casing uses one queue allowance. The full distributed gate passes all 2,539 tests; seven automatic starvation retries recovered.

@@ -28,11 +28,12 @@ abstract contract DiamondHarness is Test {
     // non-zero so tests check against a known value, not the contract default
     uint256 internal constant P2P_TIME = 100;
     uint256 internal constant SM_GAS_LIMIT = 3_000_000;
+    uint256 internal constant MAX_CHANNEL_PARTICIPANTS = 32;
 
     /// @dev Returns the diamond typed as its full external surface: the proxy
     /// implements only a few selectors itself and routes the rest to facets.
     function deployDiamond() internal returns (StateChannelManagerInterface diamond) {
-        stateMachine = new MathStateMachine(SM_GAS_LIMIT);
+        stateMachine = new MathStateMachine(SM_GAS_LIMIT, MAX_CHANNEL_PARTICIPANTS);
         DisputeManagerFacet disputeManager = new DisputeManagerFacet();
         DisputeVerificationFacet disputeVerification = new DisputeVerificationFacet();
         fraudProofFacet = new FraudProofFacet();
@@ -61,7 +62,7 @@ abstract contract DiamondHarness is Test {
                     0, // chainFallbackTime -> default
                     0, // evidenceTime -> default
                     0, // disputeExecutionGasLimit -> default
-                    0 // maxChannelParticipants -> default
+                    MAX_CHANNEL_PARTICIPANTS
                 )
             )
         );

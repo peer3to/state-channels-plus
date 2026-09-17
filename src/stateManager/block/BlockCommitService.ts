@@ -83,6 +83,14 @@ export default class BlockCommitService {
         sm.storage.blocks.storeBlock(block, {
             justPersist: options?.strategy instanceof DisputeValidationStrategy
         });
+        if (!(options?.strategy instanceof DisputeValidationStrategy)) {
+            sm.membershipService.publishOffChainEligibility(
+                sm.storage.getParticipantsUnion(
+                    block.coordinates,
+                    block.stateSnapshotHash
+                )
+            );
+        }
         // The block is canonical from here: a failure in the remaining side
         // effects must not roll the VM back behind stored state.
         options?.onBlockCommitted?.();

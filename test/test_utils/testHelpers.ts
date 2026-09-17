@@ -1,3 +1,4 @@
+import { DEFAULT_MAX_CHANNEL_PARTICIPANTS } from "../../scripts/V1/deploy";
 // @spec-test-coverage-ignore: shared deployment helpers for test files; declares no runnable case, so no specification or implementation IDs apply
 import Clock from "@/Clock";
 import { hash } from "@/utils";
@@ -120,7 +121,10 @@ export async function deployMathChannelProxyFixture(
 
     //State machine logic
     const mathSmFactory = await _ethers.getContractFactory("MathStateMachine");
-    const mathContactInstance = await mathSmFactory.deploy(500000);
+    const mathContactInstance = await mathSmFactory.deploy(
+        500000,
+        DEFAULT_MAX_CHANNEL_PARTICIPANTS
+    );
 
     //Deploy MathStateChannelManager with all facet addresses
     const mathSmcFactory = await _ethers.getContractFactory(

@@ -60,6 +60,7 @@ export class HarnessContext {
 }
 
 export type HarnessDeploymentParams = {
+    maxChannelParticipants?: number;
     signer: Signer;
     stateMachineGasLimit: number;
     disputeExecutionGasLimit: number;
@@ -113,6 +114,7 @@ export type HarnessConstructorOptions<
  * Options for configuring the test harness
  */
 export type HarnessOptions = {
+    maxChannelParticipants?: number;
     /**
      * ⚙️ LOG LEVEL CONTROL (for cleaner test output)
      *

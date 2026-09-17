@@ -1,5 +1,15 @@
+import { hash as randomHash } from "../factory";
+import { SourceEligibility } from "@/stateManager/membership/MembershipService";
 import { Status } from "@/types";
 import { sleep } from "@/utils";
+import { assertSlashAdmission } from "@test/fixtures/QueueSlashFixture";
+import {
+    concurrentUnknownEligibility,
+    missingInboundEligibility,
+    eligibilityAppearsDuringRefresh,
+    observeSourceEligibility,
+    observeSlashDuringRefresh
+} from "@test/fixtures/SourceEligibilityFixture";
 import { TargetedChannelJoinFixture } from "@test/fixtures/TargetedChannelJoinFixture";
 import { MathTestSession as TestSession } from "@test/harness";
 import { waitFor } from "@test/utils/waitFor";
@@ -10,6 +20,258 @@ import { ethers } from "ethers";
 // (p2pSigner.joinChannel / topUpBalance) and through a real leave.
 
 describe("Unit: MembershipService", function () {
+    it("unavailable inbound recovery leaves cached membership unchanged and does not blacklist the source", async () => {
+        const observed = await missingInboundEligibility();
+        expect(observed.before).to.deep.equal([
+            SourceEligibility.ELIGIBLE,
+            SourceEligibility.ELIGIBLE,
+            SourceEligibility.ABSENT
+        ]);
+        expect(observed.after).to.deep.equal(observed.before);
+        expect(observed.result).to.equal(SourceEligibility.ABSENT);
+        expect(observed.reads.chainReads).to.equal(1);
+        expect(observed.blacklisted).to.equal(false);
+    });
+
+    it("the storage-clear event clears chain, off-chain and slashed eligibility", async () => {
+        const h = TestSession.getHarness();
+        await h.lifecycle.start(2, 0);
+        const local = ethers.Wallet.createRandom().address;
+        const slashed = ethers.Wallet.createRandom().address;
+        const result = await h.execOnHost(
+            h.getPeer(0),
+            async (sm, args) => {
+                sm.membershipService.publishOffChainEligibility([args.local]);
+                sm.membershipService.observeOnChainSlash(args.slashed);
+                const sources = [args.chain, args.local, args.slashed];
+                const before = sources.map((source) =>
+                    sm.membershipService.getCachedSourceEligibility(source)
+                );
+                const snapshot =
+                    await sm.stateChannelManagerContract.getStateSnapshot(
+                        sm.channelId
+                    );
+                await sm.eventHandler.onChannelStorageCleared(
+                    sm.channelId,
+                    snapshot.snapshotData.latestInboundMessageBlockHash,
+                    { blockNumber: 0, logIndex: 0 }
+                );
+                return {
+                    before,
+                    after: sources.map((source) =>
+                        sm.membershipService.getCachedSourceEligibility(source)
+                    )
+                };
+            },
+            { chain: h.getPeer(1).address, local, slashed }
+        );
+        expect(result.before).to.deep.equal([
+            SourceEligibility.ELIGIBLE,
+            SourceEligibility.ELIGIBLE,
+            SourceEligibility.SLASHED
+        ]);
+        expect(result.after).to.deep.equal([
+            SourceEligibility.ABSENT,
+            SourceEligibility.ABSENT,
+            SourceEligibility.ABSENT
+        ]);
+    });
+
+    it("an unopened channel refresh has no eligible source and retains no old-channel positives", async () => {
+        const h = TestSession.getHarness();
+        await h.lifecycle.start(2, 0);
+        const result = await h.execOnHost(
+            h.getPeer(0),
+            async (sm, args) => {
+                await sm.setChannelId(args.channelId);
+                const ready =
+                    await sm.membershipService.refreshOnChainEligibility();
+                return {
+                    ready,
+                    source: sm.membershipService.getCachedSourceEligibility(
+                        args.source
+                    )
+                };
+            },
+            { channelId: randomHash(), source: h.getPeer(1).address }
+        );
+        expect(result.ready).to.equal(true);
+        expect(result.source).to.equal(SourceEligibility.ABSENT);
+    });
+    it("a slash observed during a held refresh cannot be undone by its older result", async () => {
+        const observed = await observeSlashDuringRefresh();
+        expect(observed.result).to.equal(true);
+        expect(observed.reads).to.equal(1);
+        expect(observed.state).to.equal(SourceEligibility.SLASHED);
+    });
+    it("a committed off-chain addition during refresh is eligible when the chain result misses it", async () => {
+        const observed = await eligibilityAppearsDuringRefresh();
+        expect(observed.result).to.equal(SourceEligibility.ELIGIBLE);
+        expect(observed.beforeRelease).to.equal(SourceEligibility.ELIGIBLE);
+        expect(observed.after).to.equal(SourceEligibility.ELIGIBLE);
+    });
+    it("an unseen slash does not force a read on an existing positive cache hit", async () => {
+        await assertSlashAdmission("unseen");
+    });
+
+    it("current membership is an O(1) cached hit with no chain or VM reads", async () => {
+        const h = TestSession.getHarness();
+        await h.lifecycle.start(2, 0);
+        const observed = await observeSourceEligibility(
+            h,
+            h.getPeer(1).address,
+            { refresh: true }
+        );
+        expect(observed.result).to.equal(SourceEligibility.ELIGIBLE);
+        expect(observed.reads.chainReads).to.equal(0);
+        expect(observed.reads.localMembershipReads).to.equal(0);
+    });
+
+    it("equivalent address casing uses the same cached identity", async () => {
+        const h = TestSession.getHarness();
+        await h.lifecycle.start(2, 0);
+        const observed = await observeSourceEligibility(
+            h,
+            h.getPeer(1).address,
+            { refresh: true, lowercase: true }
+        );
+        expect(observed.result).to.equal(SourceEligibility.ELIGIBLE);
+        expect(observed.reads.chainReads).to.equal(0);
+    });
+
+    it("an unknown source refreshes once and remains absent", async () => {
+        const h = TestSession.getHarness();
+        await h.lifecycle.start(2, 0);
+        const observed = await observeSourceEligibility(
+            h,
+            ethers.Wallet.createRandom().address,
+            { refresh: true }
+        );
+        expect(observed.result).to.equal(SourceEligibility.ABSENT);
+        expect(observed.reads.chainReads).to.equal(1);
+        // Snapshot event processing checks local participation after updating the mirrors.
+        expect(observed.reads.localMembershipReads).to.equal(1);
+    });
+
+    it("concurrent cache misses share one refresh and decide from chain membership", async () => {
+        const observed = await concurrentUnknownEligibility();
+        expect(observed.results).to.deep.equal([
+            SourceEligibility.ABSENT,
+            SourceEligibility.ABSENT
+        ]);
+        expect(observed.beforeRelease.chainReads).to.equal(1);
+        expect(observed.afterRelease.chainReads).to.equal(1);
+    });
+
+    it("a failed provider read leaves cached members intact and allows a later retry", async () => {
+        const h = TestSession.getHarness();
+        await h.lifecycle.start(2, 0);
+        const source = ethers.Wallet.createRandom().address;
+        const failed = await observeSourceEligibility(h, source, {
+            refresh: true,
+            failRead: true
+        });
+        expect(failed.result).to.equal(SourceEligibility.ABSENT);
+        const existing = await observeSourceEligibility(
+            h,
+            h.getPeer(1).address,
+            { refresh: true }
+        );
+        expect(existing.result).to.equal(SourceEligibility.ELIGIBLE);
+        expect(existing.reads.chainReads).to.equal(0);
+        const retry = await observeSourceEligibility(h, source, {
+            refresh: true
+        });
+        expect(retry.result).to.equal(SourceEligibility.ABSENT);
+        expect(retry.reads.chainReads).to.equal(1);
+    });
+
+    it("reset removes both cached sets until a verified chain refresh", async () => {
+        const h = TestSession.getHarness();
+        await h.lifecycle.start(2, 0);
+        const observed = await observeSourceEligibility(
+            h,
+            h.getPeer(1).address,
+            { reset: true, refresh: true }
+        );
+        expect(observed.before).to.equal(SourceEligibility.ABSENT);
+        expect(observed.after).to.equal(SourceEligibility.ELIGIBLE);
+        expect(observed.reads.chainReads).to.equal(1);
+    });
+
+    it("a delivered join event makes a pending-only sender a cache hit", async () => {
+        const h = TestSession.getHarness();
+        const prepared = await h.scenario.syncSpectatorAndPrepareJoin(0);
+        const control = h.control(h.getPeer(0));
+        await control.stub.observeAdmission().request();
+        try {
+            await prepared.joiner.p2pInstance.p2pSigner.joinChannel(
+                prepared.confirmation,
+                prepared.expectedSnapshotHash,
+                prepared.expectedForkId
+            );
+            await h.assert.storage.honestPeersObserveInboundMessageWait();
+            await waitFor(
+                async () =>
+                    (await control.query
+                        .getSourceEligibility(prepared.joiner.address)
+                        .request()) === SourceEligibility.ELIGIBLE
+            );
+            const result = await h.execOnHost(
+                h.getPeer(0),
+                (sm, args) =>
+                    sm.membershipService.resolveSourceEligibility(args.source),
+                { source: prepared.joiner.address }
+            );
+            const reads = await control.stub
+                .getAdmissionObservation()
+                .request();
+            expect(result).to.equal(SourceEligibility.ELIGIBLE);
+            expect(reads.chainReads).to.equal(0);
+            expect(reads.localMembershipReads).to.equal(0);
+        } finally {
+            await control.stub.restoreAdmissionObservation().request();
+        }
+    });
+
+    it("a pushed snapshot preserves unconsumed pending JOINs without a membership read", async () => {
+        const h = TestSession.getHarness();
+        const prepared = await h.scenario.syncSpectatorAndPrepareJoin(0);
+        await prepared.joiner.p2pInstance.p2pSigner.joinChannel(
+            prepared.confirmation,
+            prepared.expectedSnapshotHash,
+            prepared.expectedForkId
+        );
+        await h.assert.storage.honestPeersObserveInboundMessageWait();
+        const observer = h.getPeer(0);
+        const control = h.control(observer);
+        await control.stub.observeAdmission().request();
+        try {
+            const result = await h.execOnHost(
+                observer,
+                async (sm, args) => {
+                    const snapshot =
+                        await sm.stateChannelManagerContract.getStateSnapshot(
+                            sm.channelId
+                        );
+                    sm.membershipService.publishOnChainSnapshot(snapshot);
+                    return sm.membershipService.getCachedSourceEligibility(
+                        args.source
+                    );
+                },
+                { source: prepared.joiner.address }
+            );
+            expect(result).to.equal(SourceEligibility.ELIGIBLE);
+            const reads = await control.stub
+                .getAdmissionObservation()
+                .request();
+            expect(reads.chainReads).to.equal(0);
+            expect(reads.localMembershipReads).to.equal(0);
+        } finally {
+            await control.stub.restoreAdmissionObservation().request();
+        }
+    });
+
     describe("connect membership reuse", function () {
         it("already-open join forwards supplied and default balances with an internal deadline", async function () {
             const h = TestSession.getHarness();

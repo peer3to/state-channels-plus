@@ -12,8 +12,9 @@ import type {
     NegotiationOutcome
 } from "@/rpc/network/services/openChannelNegotiation/OpenChannelNegotiationService";
 import type SpectateService from "@/rpc/network/services/spectate/SpectateService";
+import { BlockOrigin, type QueuedBlockEntry } from "@/storage/QueueStorage";
 import type NetworkTransport from "@/transport/NetworkTransport";
-import type { Address, ForkId } from "@/types/types";
+import type { Address, ForkId, Hash } from "@/types/types";
 import {
     Codec,
     LocalDiscoveryServer,
@@ -35,7 +36,15 @@ import { WebSocketServer } from "ws";
 
 // `NetworkTransport` is used both for `createRPCMethods` and the captured transport.
 
-export type BlockWorkHoldPoint = "authoring" | "commit" | "signature";
+export type BlockWorkHoldPoint =
+    | "queueDequeue"
+    | "authoring"
+    | "commit"
+    | "signature"
+    | "confirmationValidation"
+    | "proofConfirmationValidation"
+    | "storedMerge"
+    | "stateApplicationInspection";
 
 export type SignatureBlockMatch = {
     forkId: ForkId;
@@ -319,6 +328,28 @@ export class StubService extends ANetworkRpcService<
     }[] = [];
     private blockWorkRelease?: () => void;
     private blockWorkRestore?: () => void;
+    private disputeParticipationObservation?: {
+        attempts: number;
+        warnings: number;
+        restore: () => void;
+    };
+    private admissionObservation?: {
+        completedIntakes: number;
+        completedSyncs: number;
+        successfulSyncs: number;
+        networkEntries: number;
+        proofEntries: number;
+        proofSources: number;
+        chainReads: number;
+        localMembershipReads: number;
+        syncRequests: number;
+        broadcasts: number;
+        holdGossip: boolean;
+        heldGossip: (() => void)[];
+        releaseMembership: () => void;
+        restore: () => void;
+    };
+
     public blockWorkEntered = 0;
     private leaveWatchdogRestore?: () => void;
     public leaveWatchdogObservation = {
@@ -543,6 +574,214 @@ export class StubService extends ANetworkRpcService<
                 component: "HarnessStubService"
             })
         );
+    }
+
+    public observeDisputeParticipation(): void {
+        this.restoreDisputeParticipationObservation();
+        const manager = this.sm.disputeManager;
+        const dispute = manager.dispute.bind(manager);
+        // Observe the private logger while forwarding every real message.
+        const logger = manager["logger"];
+        const warn = logger.warn.bind(logger);
+        const observation = {
+            attempts: 0,
+            warnings: 0,
+            restore: () => {
+                manager.dispute = dispute;
+                logger.warn = warn;
+            }
+        };
+        manager.dispute = async (...args) => {
+            observation.attempts++;
+            return dispute(...args);
+        };
+        logger.warn = (...args) => {
+            if (args[0] === "dispute: signer cannot participate in dispute")
+                observation.warnings++;
+            return warn(...args);
+        };
+        this.disputeParticipationObservation = observation;
+    }
+
+    public getDisputeParticipationObservation() {
+        return {
+            attempts: this.disputeParticipationObservation?.attempts ?? 0,
+            warnings: this.disputeParticipationObservation?.warnings ?? 0,
+            status: this.sm.status,
+            disposed: this.sm.isDisposed,
+            didDispute: this.sm.storage.disputes.didIDispute(this.sm.forkId)
+        };
+    }
+
+    public restoreDisputeParticipationObservation(): void {
+        this.disputeParticipationObservation?.restore();
+        this.disputeParticipationObservation = undefined;
+    }
+
+    public observeAdmission(
+        options: {
+            source?: Address;
+            holdGossip?: boolean;
+            holdMembership?: boolean;
+            failMembership?: boolean;
+        } = {}
+    ): void {
+        this.restoreAdmissionObservation();
+        const queue = this.sm.blockQueueManager;
+        const intake = queue.ingestBlockConfirmation.bind(queue);
+        const queues = this.sm.storage.queues;
+        const createEntry = queues.createEntry.bind(queues);
+        const chain = this.sm.eventSyncService;
+        const machine = this.sm.diamondStateMachine;
+        const router = this.p2pManager.rpcRouter;
+        const read = chain.readPinnedChainMembership.bind(chain);
+        const participants = machine.getParticipants.bind(machine);
+        const broadcast = router.broadcastRpc.bind(router);
+        const request = router.sendRpcRequest.bind(router);
+        const spectate = this.p2pManager.localRpc.spectateService;
+        const sync = spectate.sync.bind(spectate);
+        let releaseMembership: () => void = () => {};
+        const gate = new Promise<void>((resolve) => {
+            releaseMembership = resolve;
+        });
+        if (!options.holdMembership) releaseMembership();
+        const observation = {
+            completedIntakes: 0,
+            completedSyncs: 0,
+            successfulSyncs: 0,
+            networkEntries: 0,
+            proofEntries: 0,
+            proofSources: 0,
+            chainReads: 0,
+            localMembershipReads: 0,
+            syncRequests: 0,
+            broadcasts: 0,
+            holdGossip: options.holdGossip ?? false,
+            heldGossip: [] as (() => void)[],
+            releaseMembership,
+            restore: () => {
+                queue.ingestBlockConfirmation = intake;
+                spectate.sync = sync;
+                queues.createEntry = createEntry;
+                chain.readPinnedChainMembership = read;
+                machine.getParticipants = participants;
+                router.broadcastRpc = broadcast;
+                router.sendRpcRequest = request;
+            }
+        };
+        this.admissionObservation = observation;
+        spectate.sync = async (...args) => {
+            try {
+                const result = await sync(...args);
+                if (result) observation.successfulSyncs++;
+                return result;
+            } finally {
+                observation.completedSyncs++;
+            }
+        };
+        queues.createEntry = (...args) => {
+            const entry = createEntry(...args);
+            if (entry.origin === BlockOrigin.NETWORK)
+                observation.networkEntries++;
+            if (entry.origin === BlockOrigin.PROOF) {
+                observation.proofEntries++;
+                observation.proofSources += entry.sourcesToSignatures.size;
+            }
+            return entry;
+        };
+        queue.ingestBlockConfirmation = async (...args) => {
+            try {
+                return await intake(...args);
+            } finally {
+                if (
+                    !options.source ||
+                    (args[1].origin === BlockOrigin.NETWORK &&
+                        args[1].senderAddress === options.source)
+                )
+                    observation.completedIntakes++;
+            }
+        };
+        chain.readPinnedChainMembership = async (...args) => {
+            observation.chainReads++;
+            if (options.failMembership)
+                throw new Error("Injected membership provider failure");
+            const result = await read(...args);
+            await gate;
+            return result;
+        };
+        machine.getParticipants = async () => {
+            observation.localMembershipReads++;
+            return participants();
+        };
+        router.broadcastRpc = (rpc) => {
+            if (
+                rpc.service === "stateTransitionService" &&
+                rpc.method === "onBlockConfirmation"
+            ) {
+                observation.broadcasts++;
+                if (observation.holdGossip) {
+                    observation.heldGossip.push(() => broadcast(rpc));
+                    return;
+                }
+            }
+            return broadcast(rpc);
+        };
+        router.sendRpcRequest = <T>(
+            ...args: Parameters<typeof request>
+        ): Promise<T> => {
+            if (
+                args[0].service === "spectateService" &&
+                args[0].method === "onSpectateRequest"
+            )
+                observation.syncRequests++;
+            return request<T>(...args);
+        };
+    }
+
+    public getAdmissionObservation() {
+        const observation = this.admissionObservation;
+        return {
+            completedIntakes: observation?.completedIntakes ?? 0,
+            completedSyncs: observation?.completedSyncs ?? 0,
+            successfulSyncs: observation?.successfulSyncs ?? 0,
+            networkEntries: observation?.networkEntries ?? 0,
+            proofEntries: observation?.proofEntries ?? 0,
+            proofSources: observation?.proofSources ?? 0,
+            chainReads: observation?.chainReads ?? 0,
+            localMembershipReads: observation?.localMembershipReads ?? 0,
+            syncRequests: observation?.syncRequests ?? 0,
+            broadcasts: observation?.broadcasts ?? 0,
+            heldGossip: observation?.heldGossip.length ?? 0
+        };
+    }
+
+    public releaseAdmissionMembership(): void {
+        this.admissionObservation?.releaseMembership();
+    }
+
+    public releaseAdmissionGossip(): void {
+        const observation = this.admissionObservation;
+        if (!observation) return;
+        observation.holdGossip = false;
+        for (const send of observation.heldGossip.splice(0)) send();
+    }
+
+    public restoreAdmissionObservation(): void {
+        this.releaseAdmissionMembership();
+        this.releaseAdmissionGossip();
+        this.admissionObservation?.restore();
+        this.admissionObservation = undefined;
+    }
+
+    /** Scoped clock read for deadline tests; the action must be synchronous. */
+    public withQueueClockOffset<T>(seconds: number, action: () => T): T {
+        const original = Clock.getTimeInSeconds;
+        Clock.getTimeInSeconds = () => original.call(Clock) + seconds;
+        try {
+            return action();
+        } finally {
+            Clock.getTimeInSeconds = original;
+        }
     }
 
     /** Schedule one zero-delay task host-side and report whether it ran. */
@@ -1345,7 +1584,56 @@ export class StubService extends ANetworkRpcService<
             this.blockWorkEntered += 1;
             await gate;
         };
-        if (point === "authoring") {
+        if (point === "queueDequeue") {
+            const owner = this.sm.blockQueueManager;
+            const original = owner.tryExecuteFromQueue;
+            this.blockWorkRestore = () => {
+                owner.tryExecuteFromQueue = original;
+            };
+            owner.tryExecuteFromQueue = async (...args) => {
+                this.blockWorkEntered += 1;
+                await gate;
+                return original.apply(owner, args);
+            };
+        } else if (point === "stateApplicationInspection") {
+            const owner = this.sm.diamondStateMachine;
+            const original = owner.getNextToWrite;
+            this.blockWorkRestore = () => {
+                owner.getNextToWrite = original;
+            };
+            owner.getNextToWrite = async () => {
+                const result = await original.call(owner);
+                await enter();
+                return result;
+            };
+        } else if (point === "storedMerge") {
+            const owner = this.sm.storedBlockMergeService;
+            const original = owner.tryMergeStoredBlockConfirmation;
+            this.blockWorkRestore = () => {
+                owner.tryMergeStoredBlockConfirmation = original;
+            };
+            owner.tryMergeStoredBlockConfirmation = async (...args) => {
+                await enter();
+                return original.apply(owner, args);
+            };
+        } else if (
+            point === "confirmationValidation" ||
+            point === "proofConfirmationValidation"
+        ) {
+            const owner = this.sm.validationService;
+            const original = owner.normalizeConfirmationSignatures;
+            this.blockWorkRestore = () => {
+                owner.normalizeConfirmationSignatures = original;
+            };
+            owner.normalizeConfirmationSignatures = async (...args) => {
+                if (
+                    point === "confirmationValidation" ||
+                    args[0].origin === BlockOrigin.PROOF
+                )
+                    await enter();
+                return original.apply(owner, args);
+            };
+        } else if (point === "authoring") {
             const owner = this.sm.snapshotAssemblyService;
             const original = owner.assembleFromTransaction;
             this.blockWorkRestore = () => {
@@ -1428,6 +1716,8 @@ export class StubService extends ANetworkRpcService<
     }
 
     public releaseReductionHolds(): void {
+        this.restoreDisputeParticipationObservation();
+        this.restoreAdmissionObservation();
         this.restoreForkLeave();
         this.releaseBlockWorkHold();
         this.restoreReductionApplication();
@@ -1894,22 +2184,26 @@ export class StubService extends ANetworkRpcService<
         if (!this.stubOriginals.has("onChainSlashesRead")) {
             this.stubOriginals.set(
                 "onChainSlashesRead",
-                contract.getOnChainSlashedParticipants
+                this.chainProvider.call.bind(this.chainProvider)
             );
         }
-        Reflect.set(contract, "getOnChainSlashedParticipants", async () => {
-            throw new Error("authoritative slash read failed");
-        });
+        const original = this.stubOriginals.get(
+            "onChainSlashesRead"
+        ) as typeof this.chainProvider.call;
+        const selector = contract.interface
+            .getFunction("getOnChainSlashedParticipants")!
+            .selector.slice(2);
+        this.chainProvider.call = async (transaction) => {
+            if (String(transaction.data).includes(selector))
+                throw new Error("authoritative slash read failed");
+            return original(transaction);
+        };
     }
 
     restoreOnChainSlashesRead(): boolean {
         const original = this.stubOriginals.get("onChainSlashesRead");
         if (original === undefined) return false;
-        Reflect.set(
-            this.sm.stateChannelManagerContract,
-            "getOnChainSlashedParticipants",
-            original
-        );
+        this.chainProvider.call = original as typeof this.chainProvider.call;
         this.stubOriginals.delete("onChainSlashesRead");
         return true;
     }
