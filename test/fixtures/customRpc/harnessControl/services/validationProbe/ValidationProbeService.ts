@@ -7,7 +7,6 @@ import { Block, StateSnapshot } from "@/models";
 import type P2PManager from "@/P2PManager";
 import ANetworkRpcService from "@/rpc/network/ANetworkRpcService";
 import type AValidationStrategy from "@/stateManager/validationStrategy/AValidationStrategy";
-import CalldataCommittedStrategy from "@/stateManager/validationStrategy/CalldataCommittedStrategy";
 import DisputeValidationStrategy from "@/stateManager/validationStrategy/DisputeValidationStrategy";
 import type { QueuedBlockEntry } from "@/storage/QueueStorage";
 import type NetworkTransport from "@/transport/NetworkTransport";
@@ -641,11 +640,7 @@ export class ValidationProbeService extends ANetworkRpcService<
                 strategy = sm.spectatingValidationStrategy;
                 break;
             case "calldata":
-                // built as EventHandler builds it for a CalldataPosted event
-                strategy = new CalldataCommittedStrategy(
-                    sm.disputeManager,
-                    sm.blockValidationStrategy
-                );
+                strategy = sm.calldataCommittedStrategy;
                 break;
             default:
                 strategy = sm.blockValidationStrategy;

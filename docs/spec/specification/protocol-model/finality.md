@@ -234,6 +234,10 @@ as calldata on-chain
   `DisputeManagerFacet._disputeRaceConditionCheck`).
   When peers do not cooperate, this extra on-chain time is a deliberate UX and fee cost of the
   protocol design.
+  A disputer refused for that reason releases its timeout claim for the slot and puts the posted
+  block through ordinary validation instead; only a validation rejection it cannot prove on chain
+  turns into a forced timeout ([`REQ-DISPUTE-PIPE-11-HRGJ43` (Release a timeout refused for posted calldata)](../disputes/dispute-processing.md#req-dispute-pipe-11-hrgj43),
+  [`REQ-DISPUTE-PIPE-12-F85KF2` (Force a timeout only over a rejected posted block)](../disputes/dispute-processing.md#req-dispute-pipe-12-f85kf2)).
 
 If the threshold still never arrives, route 3 applies: any eligible participant disputes with the
 latest proved state ([state-proofs.md](../disputes/state-proofs.md)), and the reduction carries the valid
