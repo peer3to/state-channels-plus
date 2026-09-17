@@ -28,9 +28,10 @@ describe("NetworkRpcRouter", () => {
 /**
  * Maps to: src/rpc/router/ARpcRouter.ts
  *
- * Every rejection the router produces carries the kind of failure as the
- * standard `Error` cause, so a caller branches on it instead of matching
- * message text.
+ * Every rejection the router produces carries the kind of failure, so a caller
+ * branches on it instead of matching message text. A transport close rejects
+ * with the reason its caller supplied, so the kind is read back from the
+ * router rather than written onto that error.
  */
 describe("NetworkRpcRouter request failure causes", function () {
     let fixture: P2PManagerFixture;
@@ -44,7 +45,7 @@ describe("NetworkRpcRouter request failure causes", function () {
         await fixture.cleanup();
     });
 
-    it("tags timeout, remote-error, transport-close, and send failures distinctly", async function () {
+    it("tags each failure kind and rejects a transport close with the supplied reason", async function () {
         const result = await fixture
             .control()
             .p2pManagerProbe.probeRequestFailureCauses()
@@ -54,6 +55,7 @@ describe("NetworkRpcRouter request failure causes", function () {
             timeoutCause: "request-timeout",
             remoteErrorCause: "remote-error",
             transportClosedCause: "transport-closed",
+            transportClosedReasonIsSupplied: true,
             sendFailedCause: "send-failed",
             pendingCount: 0,
             timerCount: 0

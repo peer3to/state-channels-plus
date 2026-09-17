@@ -115,6 +115,8 @@ export type RequestFailureCauseProbe = {
     timeoutCause: ObservedRequestFailureCause;
     remoteErrorCause: ObservedRequestFailureCause;
     transportClosedCause: ObservedRequestFailureCause;
+    /** The pending caller rejected with the very close reason that was supplied. */
+    transportClosedReasonIsSupplied: boolean;
     sendFailedCause: ObservedRequestFailureCause;
     pendingCount: number;
     timerCount: number;
@@ -967,6 +969,20 @@ export class P2PManagerProbeService extends ANetworkRpcService<
         );
     }
 
+    private transportCloseFailure(promise: Promise<string>, reason: Error) {
+        return promise.then(
+            () => ({
+                cause: "resolved" as ObservedRequestFailureCause,
+                isSuppliedReason: false
+            }),
+            (error: unknown) => ({
+                cause:
+                    getRpcRequestFailureCause(error) ?? ("untagged" as const),
+                isSuppliedReason: error === reason
+            })
+        );
+    }
+
     public async probeRequestFailureCauses(): Promise<RequestFailureCauseProbe> {
         const resourceBaseline = this.resourceCounts();
 
@@ -992,10 +1008,16 @@ export class P2PManagerProbeService extends ANetworkRpcService<
             "0x6000000000000000000000000000000000000006"
         );
         const closedRequest = this.beginRequest(closed);
-        const transportClosedCause = this.failureCause(closedRequest.promise);
+        const closeReason = new Error(
+            "Peer disconnected before RPC response arrived"
+        );
+        const transportClosed = this.transportCloseFailure(
+            closedRequest.promise,
+            closeReason
+        );
         this.p2pManager.rpcRouter.rejectPendingRpcRequestsForTransport(
             closed,
-            new Error("Peer disconnected before RPC response arrived")
+            closeReason
         );
 
         const sendFailure = this.transport();
@@ -1008,10 +1030,13 @@ export class P2PManagerProbeService extends ANetworkRpcService<
             )
         );
 
+        const transportClosedOutcome = await transportClosed;
         return {
             timeoutCause: await timeoutCause,
             remoteErrorCause: await remoteErrorCause,
-            transportClosedCause: await transportClosedCause,
+            transportClosedCause: transportClosedOutcome.cause,
+            transportClosedReasonIsSupplied:
+                transportClosedOutcome.isSuppliedReason,
             sendFailedCause: await sendFailedCause,
             ...this.resourceCounts(resourceBaseline)
         };
