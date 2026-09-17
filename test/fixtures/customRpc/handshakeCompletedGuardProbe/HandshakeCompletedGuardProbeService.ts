@@ -190,7 +190,7 @@ export type TimeoutGuardProbe = {
     waitCalls: number;
     timeoutMs: number[];
     expectedTimeoutMs: number;
-    firstBlacklisted: boolean;
+    firstSuspended: boolean;
     firstDisconnected: boolean;
     invocations: string[];
 };
@@ -235,7 +235,7 @@ export type DisposedWaiterGuardProbe = {
 export type LateCompletionGuardProbe = {
     waitCalls: number;
     invocations: string[];
-    originalBlacklisted: boolean;
+    originalSuspended: boolean;
     originalDisconnected: boolean;
     replacementConnected: boolean;
 };
@@ -520,10 +520,9 @@ export class HandshakeCompletedGuardProbeService extends ANetworkRpcService<
     }
 
     public async probeTimeoutAndFreshWaiter(): Promise<TimeoutGuardProbe> {
-        const transport = this.transport(
-            "0xA000000000000000000000000000000000000005"
-        );
-        const profile = this.register(transport, false);
+        const address = "0xA000000000000000000000000000000000000005";
+        const transport = this.transport(address);
+        this.register(transport, false);
         const target = new GuardTargetService(this.p2pManager);
         const init = this.p2pManager.localRpc.initHandshakeService;
         const originalIsNegotiating = init.isNegotiating.bind(init);
@@ -543,13 +542,11 @@ export class HandshakeCompletedGuardProbeService extends ANetworkRpcService<
             target.runRPC(this.rpc("timed-out"), transport);
             resolvers[0](false);
             await this.flush();
-            const firstBlacklisted = profile.isBlackListed;
+            const firstSuspended = this.p2pManager.isSuspended(address);
             const firstDisconnected =
                 !this.p2pManager.openConnections.includes(transport);
 
-            const freshTransport = this.transport(
-                "0xA000000000000000000000000000000000000005"
-            );
+            const freshTransport = this.transport(address);
             const freshProfile = this.register(freshTransport, false);
             target.runRPC(this.rpc("fresh"), freshTransport);
             await this.flush();
@@ -563,7 +560,7 @@ export class HandshakeCompletedGuardProbeService extends ANetworkRpcService<
                     this.p2pManager.stateManager.timeConfig.agreementTime *
                     2 *
                     1000,
-                firstBlacklisted,
+                firstSuspended,
                 firstDisconnected,
                 invocations: [...target.invocations]
             };
@@ -777,7 +774,7 @@ export class HandshakeCompletedGuardProbeService extends ANetworkRpcService<
     public async probeLateCompletionAfterTimeout(): Promise<LateCompletionGuardProbe> {
         const address = "0xA000000000000000000000000000000000000011";
         const original = this.transport(address);
-        const originalProfile = this.register(original, false);
+        this.register(original, false);
         const target = new GuardTargetService(this.p2pManager);
         const init = this.p2pManager.localRpc.initHandshakeService;
         const originalIsNegotiating = init.isNegotiating.bind(init);
@@ -809,7 +806,7 @@ export class HandshakeCompletedGuardProbeService extends ANetworkRpcService<
             return {
                 waitCalls,
                 invocations: [...target.invocations],
-                originalBlacklisted: originalProfile.isBlackListed,
+                originalSuspended: this.p2pManager.isSuspended(address),
                 originalDisconnected:
                     !this.p2pManager.openConnections.includes(original),
                 replacementConnected:

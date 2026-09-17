@@ -10,7 +10,10 @@ transports, profiles, a real service, controlled exact-transport handshake compl
 grace overlap, retirement, late dispatch after close, timeout, and manager disposal. The closed-
 transport case proves local retirement cannot execute the frame or punish a healthy replacement.
 The request-during-negotiation case uses the real pending-request correlation path and proves no
-premature guard response is sent: the caller settles only after the queued RPC replays once.
+premature guard response is sent: the caller settles only after the queued RPC replays once. The
+two waiter-expiry cases read the session bar rather than the profile verdict, which is the oracle
+separating an expired deadline from proven misconduct; the non-negotiating case still reads the
+recorded verdict.
 
 ## Tests and covered test IDs
 

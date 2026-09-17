@@ -5,6 +5,7 @@ import Clock from "@/Clock";
 import { DisconnectPolicy } from "@/DisconnectPolicy";
 import type P2PManager from "@/P2PManager";
 import PeerProfile from "@/PeerProfile";
+import ProfileManager from "@/ProfileManager";
 import ANetworkRpcService from "@/rpc/network/ANetworkRpcService";
 import LobbyMatchingService from "@/rpc/network/services/lobbyMatching/LobbyMatchingService";
 import type { LobbyMatch } from "@/rpc/network/services/lobbyMatching/LobbyMatchingTypes";
@@ -414,6 +415,22 @@ export type DisconnectPolicyProbe = {
     socketDestroyed: boolean;
     profileBlacklisted: boolean;
     connectionRemoved: boolean;
+};
+
+export type SuspendPolicyProbe = DisconnectPolicyProbe & {
+    profileSuspended: boolean;
+};
+
+export type RetryTierProbe = {
+    suspended: boolean;
+    blacklisted: boolean;
+    readmitted: boolean;
+    banCalls: boolean[];
+};
+
+export type ExclusionScopeProbe = {
+    barredInCurrentSession: boolean;
+    barredInFreshSession: boolean;
 };
 
 export type UpgradeBanPolicyProbe = {
@@ -1703,39 +1720,36 @@ export class P2PManagerProbeService extends ANetworkRpcService<
     }
 
     public probeDisconnectPolicyAllow(address: string): DisconnectPolicyProbe {
-        const { transport, peerInfo, socket, profile } =
-            this.registeredHolepunchTransport(address);
-        this.p2pManager.addConnection(transport);
-        peerInfo.banCalls.length = 0;
-
-        this.p2pManager.disconnectConnection(transport, DisconnectPolicy.ALLOW);
-
-        return {
-            banCalls: [...peerInfo.banCalls],
-            socketDestroyed: socket.destroyed,
-            profileBlacklisted: profile.isBlackListed,
-            connectionRemoved:
-                !this.p2pManager.openConnections.includes(transport)
-        };
+        return this.probeDisconnectPolicy(address, DisconnectPolicy.ALLOW);
     }
 
     public probeDisconnectPolicyBlacklist(
         address: string
     ): DisconnectPolicyProbe {
+        return this.probeDisconnectPolicy(address, DisconnectPolicy.BLACKLIST);
+    }
+
+    public probeDisconnectPolicySuspend(address: string): SuspendPolicyProbe {
+        return this.probeDisconnectPolicy(address, DisconnectPolicy.SUSPEND);
+    }
+
+    /** Close one registered Holepunch transport under `policy` and read the outcome. */
+    private probeDisconnectPolicy(
+        address: string,
+        policy: DisconnectPolicy
+    ): SuspendPolicyProbe {
         const { transport, peerInfo, socket, profile } =
             this.registeredHolepunchTransport(address);
         this.p2pManager.addConnection(transport);
         peerInfo.banCalls.length = 0;
 
-        this.p2pManager.disconnectConnection(
-            transport,
-            DisconnectPolicy.BLACKLIST
-        );
+        this.p2pManager.disconnectConnection(transport, policy);
 
         return {
             banCalls: [...peerInfo.banCalls],
             socketDestroyed: socket.destroyed,
             profileBlacklisted: profile.isBlackListed,
+            profileSuspended: this.p2pManager.isSuspended(address),
             connectionRemoved:
                 !this.p2pManager.openConnections.includes(transport)
         };
@@ -1781,6 +1795,98 @@ export class P2PManagerProbeService extends ANetworkRpcService<
             profileBlacklisted: profile.isBlackListed,
             connectionRemoved: !this.p2pManager.openConnections.includes(webRTC)
         };
+    }
+
+    /**
+     * Apply `closes` retry-tier disconnects against one peer under a bound of
+     * `maxRetries`, re-admitting a fresh Holepunch transport before each one,
+     * then report the peer's standing and whether it can still be admitted.
+     */
+    public probeRetryTier(
+        address: string,
+        maxRetries: number,
+        closes: number
+    ): RetryTierProbe {
+        let banCalls: boolean[] = [];
+        for (let close = 0; close < closes; close++) {
+            const { transport, peerInfo } =
+                this.registeredHolepunchTransport(address);
+            this.p2pManager.addConnection(transport);
+            peerInfo.banCalls.length = 0;
+            this.p2pManager.disconnectConnection(
+                transport,
+                DisconnectPolicy.allowRetry(maxRetries)
+            );
+            banCalls = [...peerInfo.banCalls];
+        }
+
+        return {
+            suspended: this.p2pManager.isSuspended(address),
+            blacklisted: this.p2pManager.isBlacklisted(address),
+            readmitted: this.readmitHolepunchTransport(address),
+            banCalls
+        };
+    }
+
+    /**
+     * A suspension is session state on the manager, so a fresh manager holding
+     * the very same profile knows nothing about it.
+     */
+    public probeSuspensionScope(address: string): ExclusionScopeProbe {
+        const freshManager = this.excludeThenRehomeProfile(
+            address,
+            DisconnectPolicy.SUSPEND
+        );
+        return {
+            barredInCurrentSession: this.p2pManager.isSuspended(address),
+            barredInFreshSession: freshManager.isSuspended(address)
+        };
+    }
+
+    /**
+     * A blacklist is a verdict recorded on the profile, so it travels with the
+     * profile into a fresh manager.
+     */
+    public probeBlacklistScope(address: string): ExclusionScopeProbe {
+        const freshManager = this.excludeThenRehomeProfile(
+            address,
+            DisconnectPolicy.BLACKLIST
+        );
+        return {
+            barredInCurrentSession: this.p2pManager.isBlacklisted(address),
+            barredInFreshSession:
+                freshManager.getProfileByEvmAddress(address)?.isBlackListed ??
+                false
+        };
+    }
+
+    /** Exclude one peer under `policy`, then hand its profile to a fresh manager. */
+    private excludeThenRehomeProfile(
+        address: string,
+        policy: DisconnectPolicy
+    ): ProfileManager {
+        const { transport, profile } =
+            this.registeredHolepunchTransport(address);
+        this.p2pManager.addConnection(transport);
+        this.p2pManager.disconnectConnection(transport, policy);
+
+        const freshManager = new ProfileManager();
+        freshManager.registerProfile(profile);
+        return freshManager;
+    }
+
+    /**
+     * Dial back on a fresh Holepunch handle and report whether admission took
+     * it. The handle is dropped again so the probe leaves no live transport.
+     */
+    private readmitHolepunchTransport(address: string): boolean {
+        const { transport } = this.holepunchTransport();
+        const profile = this.p2pManager.profileManager.authenticateTransport(
+            transport,
+            address
+        );
+        this.p2pManager.disconnectConnection(transport, DisconnectPolicy.ALLOW);
+        return profile !== undefined;
     }
 
     public probeUpgradeBanPolicy(address: string): UpgradeBanPolicyProbe {

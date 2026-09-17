@@ -18,6 +18,9 @@ import type {
     ConnectedPeerFallbackProbe,
     BanPolicyProbe,
     DisconnectPolicyProbe,
+    SuspendPolicyProbe,
+    RetryTierProbe,
+    ExclusionScopeProbe,
     RelayAdmissionProbe,
     UpgradeBanPolicyProbe,
     UnblacklistBanPolicyProbe,
@@ -234,6 +237,26 @@ export class P2PManagerProbeRpcMethods extends ANetworkRpcMethods<P2PManagerProb
         address: string
     ): DisconnectPolicyProbe {
         return this.service.probeDisconnectPolicyBlacklist(address);
+    }
+
+    public probeDisconnectPolicySuspend(address: string): SuspendPolicyProbe {
+        return this.service.probeDisconnectPolicySuspend(address);
+    }
+
+    public probeRetryTier(
+        address: string,
+        maxRetries: number,
+        closes: number
+    ): RetryTierProbe {
+        return this.service.probeRetryTier(address, maxRetries, closes);
+    }
+
+    public probeSuspensionScope(address: string): ExclusionScopeProbe {
+        return this.service.probeSuspensionScope(address);
+    }
+
+    public probeBlacklistScope(address: string): ExclusionScopeProbe {
+        return this.service.probeBlacklistScope(address);
     }
 
     public probeExpectedCloseDisconnectPolicy(

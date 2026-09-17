@@ -75,7 +75,7 @@ describe("HandshakeCompletedGuard", function () {
             result.expectedTimeoutMs,
             result.expectedTimeoutMs
         ]);
-        expect(result.firstBlacklisted).to.equal(true);
+        expect(result.firstSuspended).to.equal(true);
         expect(result.firstDisconnected).to.equal(true);
         expect(result.invocations).to.deep.equal(["fresh"]);
     });
@@ -163,7 +163,7 @@ describe("HandshakeCompletedGuard", function () {
 
         expect(result.waitCalls).to.equal(2);
         expect(result.invocations).to.deep.equal(["replacement"]);
-        expect(result.originalBlacklisted).to.equal(true);
+        expect(result.originalSuspended).to.equal(true);
         expect(result.originalDisconnected).to.equal(true);
         expect(result.replacementConnected).to.equal(true);
     });

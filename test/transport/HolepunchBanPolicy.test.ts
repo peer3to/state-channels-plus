@@ -254,4 +254,68 @@ describe("P2PManager disconnect policy", function () {
         expect(result.profileBlacklisted).to.equal(false);
         expect(result.connectionRemoved).to.equal(true);
     });
+
+    it("fault-bans the peer on a SUSPEND disconnect without blacklisting it", async function () {
+        const result = await fixture
+            .control()
+            .p2pManagerProbe.probeDisconnectPolicySuspend(fixture.address(1))
+            .request();
+
+        expect(result.banCalls).to.deep.equal([true]);
+        expect(result.profileSuspended).to.equal(true);
+        expect(result.profileBlacklisted).to.equal(false);
+        expect(result.socketDestroyed).to.equal(true);
+        expect(result.connectionRemoved).to.equal(true);
+    });
+
+    it("leaves a peer reconnectable while its retry-tier closes stay below the bound", async function () {
+        const result = await fixture
+            .control()
+            .p2pManagerProbe.probeRetryTier(fixture.address(1), 3, 2)
+            .request();
+
+        expect(result.suspended).to.equal(false);
+        expect(result.readmitted).to.equal(true);
+        expect(result.banCalls).to.deep.equal([]);
+    });
+
+    it("suspends a peer on the retry-tier close that reaches its bound", async function () {
+        const result = await fixture
+            .control()
+            .p2pManagerProbe.probeRetryTier(fixture.address(1), 3, 3)
+            .request();
+
+        expect(result.suspended).to.equal(true);
+        expect(result.banCalls).to.deep.equal([true]);
+        expect(result.blacklisted).to.equal(false);
+    });
+
+    it("refuses a suspended peer's reconnect for the rest of the session", async function () {
+        const result = await fixture
+            .control()
+            .p2pManagerProbe.probeRetryTier(fixture.address(1), 3, 3)
+            .request();
+
+        expect(result.readmitted).to.equal(false);
+    });
+
+    it("forgets a suspension in a fresh session holding the same profile", async function () {
+        const result = await fixture
+            .control()
+            .p2pManagerProbe.probeSuspensionScope(fixture.address(1))
+            .request();
+
+        expect(result.barredInCurrentSession).to.equal(true);
+        expect(result.barredInFreshSession).to.equal(false);
+    });
+
+    it("keeps a blacklist in a fresh session holding the same profile", async function () {
+        const result = await fixture
+            .control()
+            .p2pManagerProbe.probeBlacklistScope(fixture.address(1))
+            .request();
+
+        expect(result.barredInCurrentSession).to.equal(true);
+        expect(result.barredInFreshSession).to.equal(true);
+    });
 });

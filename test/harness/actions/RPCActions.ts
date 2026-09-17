@@ -222,6 +222,22 @@ export class RPCActions<
         );
     }
 
+    /**
+     * One round of the request-time skew filter. Make sure a completed
+     * handshake toward `toPeer` exists again, then deliver a request whose
+     * timestamp sits outside the agreement window. Each round below the
+     * responder's retry bound only closes the connection, so the round can be
+     * repeated until the bound is reached.
+     */
+    async skewedHandshakeRequestRound(options: {
+        fromPeer: number;
+        toPeer: number;
+        timeOffset: number;
+    }): Promise<void> {
+        await this.joinPeerToChannel(options.fromPeer, options.toPeer);
+        await this.sendInvalidTimeHandshakeRequest(options);
+    }
+
     async sendInvalidTimeHandshakeRequest(options: {
         fromPeer: number;
         toPeer: number;

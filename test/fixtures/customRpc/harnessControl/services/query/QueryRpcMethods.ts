@@ -355,6 +355,11 @@ export class QueryRpcMethods extends ANetworkRpcMethods<QueryService> {
         return this.p2pManager.isBlacklisted(evmAddress);
     }
 
+    /** Whether this peer has suspended `evmAddress` for this session. */
+    public isSuspended(evmAddress: Address): boolean {
+        return this.p2pManager.isSuspended(evmAddress);
+    }
+
     /** Whether the block confirmation queue holds an entry for `blockHash`. */
     public isBlockQueued(blockHash: Hash): boolean {
         return (
