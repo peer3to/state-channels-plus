@@ -317,7 +317,8 @@ JOIN interval, with the snapshot boundary excluded, the latest head included, an
 removed. Snapshot participants retain eligibility regardless of JOIN age. Historical proof thresholds
 retain their historical pending walk, and the milestone-finality read is judged against the dispute's historic threshold:
 a participant set no adoption can change while its disputes can be killed (same-fork advances refused on a disputed
-fork, successor-fork updates during the target's kill period), minus only the slashes the dispute lists
+fork, successor-fork updates during the target's kill period, joins and top-ups refused on a disputed fork, and uploads
+admitted only when anchored exactly at the chain's inbound head), minus only the slashes the dispute lists
 ([`FIND-DISPUTE-2-1NNNDD`](open-findings.md#find-dispute-2-1nnndd), resolved). A leave whose exit post meets the freeze after the
 evidence period ends waits for that window's settlement instead of rejecting ([`FIND-LEAVE-3-XZBAJQ`](open-findings.md#find-leave-3-xzbajq), resolved). See the [shared Solidity report](../implementation/source/contracts/V1/StateChannelDiamondProxy/StateChannelCommon.sol.md)
 and [upload rule](../specification/disputes/disputes.md#req-dis-2-pkvz7e).

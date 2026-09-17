@@ -45,6 +45,10 @@ Dispute-fraud targets use the same bounded current eligibility as ordinary fraud
    later proof read the same set; over-listing stays provable through `DisputeOnChainSlashesNotSubset`, and an unlisted
    slash only makes the threshold stricter. The participant half cannot move while a proof can land, because
    adoption onto the fork is refused then ([StateSnapshotFacet.sol.md](StateSnapshotFacet.sol.md)).
+4. **The inbound-anchor families stay as defence in depth.** Upload admits only a dispute anchored exactly at the
+   chain's inbound head ([DisputeManagerFacet.sol.md](DisputeManagerFacet.sol.md)), so
+   `DisputeInboundHashNotInChain` ([#L127](../../../../../../../contracts/V1/StateChannelDiamondProxy/DisputeFraudProofFacet.sol#L127)) and `DisputeInboundAnchorBehindLatestState`
+   ([#L254](../../../../../../../contracts/V1/StateChannelDiamondProxy/DisputeFraudProofFacet.sol#L254)) are unreachable for committed disputes. Their handlers are kept unchanged.
 
 ## Inputs, outputs, state, and side effects
 

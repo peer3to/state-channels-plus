@@ -82,7 +82,9 @@ commitment exists. An uncertain outcome keeps pending status and the force-join 
 on-chain membership read can reconcile it as success. A duplicate result proving the participant already
 exists returns success while preserving pending state.
 `topUpBalance` is the one receipt-gated update
-for a supplied balance on pending or participating state; failure preserves that committed runtime. Omitted
+for a supplied balance on pending or participating state; failure preserves that committed runtime. A first join refused
+with `RaceConditionJoinChannelForkDisputed` ([#L164](../../../../../../src/stateManager/membership/MembershipService.ts#L164)) aborts and returns `false`; a top-up refused on a
+disputed fork with the same error returns `false` through its decoded-error branch ([#L206](../../../../../../src/stateManager/membership/MembershipService.ts#L206)). Omitted
 balance reuse sends no transaction in the signer wrapper. This service never receives matcher `timeoutMs`.
 
 # Terminal leave contribution

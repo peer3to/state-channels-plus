@@ -233,10 +233,10 @@ declaration and the implementation in sync.
   `expectedSnapshotHash` must match the current on-chain snapshot
   (`RaceConditionSnapshotForkMismatch`, `RaceConditionJoinChannelSnapshotMismatch`) — the submitter
   states which channel state it is comfortable joining.
+- Both entries require the fork is not under dispute (`RaceConditionJoinChannelForkDisputed`).
 - Membership split: `joinChannel` requires the participant is **not** already in
-  snapshot ∪ pending (`ErrorJoinChannelParticipantAlreadyExists`) and that the fork is not under
-  dispute (`RaceConditionForceInboundJoinForkDisputed`); `topUpBalance` requires it **is**
-  (`ErrorTopUpBalanceParticipantNotFound`).
+  snapshot ∪ pending (`ErrorJoinChannelParticipantAlreadyExists`); `topUpBalance` requires it **is**
+  (`ErrorTopUpBalanceParticipantNotFound`) and is not on-chain-slashed.
 - Verifies the participant's own signature and the unanimous threshold of snapshot ∪ pending
   participants over `encodedJoinChannel`, then deposits atomically via `depositAssetsComposable`.
 - Effect on-chain is an appended inbound `JOIN` message block; the channel applies it off-chain via
@@ -466,7 +466,7 @@ families:
   because of ordering between competing on-chain actions: `RaceConditionChannelAlreadyOpen`,
   `RaceConditionBlockCalldataTimestampTooLate`, `RaceConditionSnapshotForkMismatch`,
   `RaceConditionJoinChannelExpired` / `…JoinChannelSnapshotMismatch` /
-  `…ForceInboundJoinForkDisputed` / `…PendingInboundNotConsumed`, the dispute-window family
+  `…JoinChannelForkDisputed` / `…PendingInboundNotConsumed`, the dispute-window family
   (`…DisputeEvidencePeriodExpired`, `…DisputeKillPeriodNotExpired`, `…DisputeKillPeriodExpired`,
   `…DisputeAlreadyReduced`, `…ReductionExpectationDoesntMatch`, `…DisputeAuditingRequired`), the
   timeout family (`…DisputeTimeoutCalldataPosted`,

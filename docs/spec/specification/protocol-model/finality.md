@@ -141,8 +141,9 @@ Finality arrives by exactly one of three routes:
   leaving one out only makes the threshold stricter. The live slash set is never read, so a slash landing
   at any time moves the verdict only through the committed list. The chain refuses a same-fork advance on a
   disputed fork and a successor-fork update onto a fork whose kill period is open
-  ([`REQ-ENFSNAP-4-ESP98F` (Disputed-fork freeze)](../enforcement/snapshot-adoption.md#req-enfsnap-4-esp98f)), and refuses uploads anchored below its consumed
-  inbound height ([`REQ-DIS-2-PKVZ7E`](../disputes/disputes.md#req-dis-2-pkvz7e)), so the participant half cannot
+  ([`REQ-ENFSNAP-4-ESP98F` (Disputed-fork freeze)](../enforcement/snapshot-adoption.md#req-enfsnap-4-esp98f)), refuses joins and top-ups on a disputed fork
+  ([`REQ-ENFADM-2-K6K9SP` (Membership-split correctness)](../enforcement/admission-and-funds.md#req-enfadm-2-k6k9sp)), and refuses uploads not anchored exactly at its
+  inbound head ([`REQ-DIS-2-PKVZ7E`](../disputes/disputes.md#req-dis-2-pkvz7e)), so the participant half cannot
   change while a proof against the dispute can still land. Unlike the off-chain threshold, this set has an
   on-chain anchor that bounds it.
 
