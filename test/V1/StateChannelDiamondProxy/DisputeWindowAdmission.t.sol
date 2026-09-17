@@ -45,10 +45,6 @@ contract DisputeWindowAdmissionHarness is DisputeManagerFacet {
         stateSnapshots[channelId].snapshotData.latestInboundMessageBlockHash = hash;
     }
 
-    function setSnapshotInboundHeight(bytes32 channelId, uint256 height) external {
-        stateSnapshots[channelId].snapshotData.latestInboundMessageBlockHeight = height;
-    }
-
     function slash(bytes32 channelId, address participant) external {
         disputeData[channelId].onChainSlashes.push(OnChainSlash({participant: participant, timestamp: block.timestamp}));
     }
@@ -85,6 +81,7 @@ contract DisputeWindowAdmissionTest is Test {
     bytes32 internal constant FORK = keccak256("fork");
     uint256 internal constant KEY = 12345;
     address internal disputer;
+    bytes32 internal inboundHead;
 
     function setUp() public {
         vm.warp(100);
@@ -93,7 +90,12 @@ contract DisputeWindowAdmissionTest is Test {
         target.seedChannel(CHANNEL, disputer, vm.addr(67890));
     }
 
-    function _confirmation(bool required, bool withCalldata, uint256 lastInboundMessageBlockHeight)
+    function _seedJoin(bytes32 hash, bytes32 previous, address participant) internal {
+        target.seedInboundJoin(CHANNEL, hash, previous, participant);
+        inboundHead = hash;
+    }
+
+    function _confirmation(bool required, bool withCalldata, bytes32 anchorHash)
         internal
         returns (DisputeConfirmation memory confirmation, DisputeAuditingData memory auditing)
     {
@@ -101,7 +103,7 @@ contract DisputeWindowAdmissionTest is Test {
         dispute.input.channelId = CHANNEL;
         dispute.input.forkId = FORK;
         dispute.input.disputer = disputer;
-        dispute.input.lastInboundMessageBlockHeight = lastInboundMessageBlockHeight;
+        dispute.input.latestInboundMessageBlockHash = anchorHash;
         dispute.input.requireExistingDisputeWindow = required;
         dispute.postedAuditingData = withCalldata;
         dispute.input.disputeAuditingDataHash = keccak256(abi.encode(auditing));
@@ -112,12 +114,12 @@ contract DisputeWindowAdmissionTest is Test {
     }
 
     function _upload(bool required, bool withCalldata) internal {
-        _uploadAnchoredAt(required, withCalldata, 0);
+        _uploadAnchoredAt(required, withCalldata, inboundHead);
     }
 
-    function _uploadAnchoredAt(bool required, bool withCalldata, uint256 lastInboundMessageBlockHeight) internal {
+    function _uploadAnchoredAt(bool required, bool withCalldata, bytes32 anchorHash) internal {
         (DisputeConfirmation memory confirmation, DisputeAuditingData memory auditing) =
-            _confirmation(required, withCalldata, lastInboundMessageBlockHeight);
+            _confirmation(required, withCalldata, anchorHash);
         vm.prank(disputer);
         if (withCalldata) target.uploadDisputeWithCalldata(confirmation, auditing);
         else target.uploadDispute(confirmation);
@@ -199,32 +201,32 @@ contract DisputeWindowAdmissionTest is Test {
     }
 
     function testFuzz_currentSnapshotParticipantWithOldJoinCanUpload(bool withCalldata) public {
-        target.seedInboundJoin(CHANNEL, keccak256("old"), bytes32(0), disputer);
-        target.seedInboundJoin(CHANNEL, keccak256("boundary"), keccak256("old"), vm.addr(67890));
+        _seedJoin(keccak256("old"), bytes32(0), disputer);
+        _seedJoin(keccak256("boundary"), keccak256("old"), vm.addr(67890));
         target.setInboundBoundary(CHANNEL, keccak256("boundary"));
         _upload(false, withCalldata);
     }
 
     function testFuzz_joinAtLatestInboundHeadCanUpload(bool withCalldata) public {
         target.clearSnapshotParticipants(CHANNEL);
-        target.seedInboundJoin(CHANNEL, keccak256("boundary"), bytes32(0), vm.addr(67890));
+        _seedJoin(keccak256("boundary"), bytes32(0), vm.addr(67890));
         target.setInboundBoundary(CHANNEL, keccak256("boundary"));
-        target.seedInboundJoin(CHANNEL, keccak256("head"), keccak256("boundary"), disputer);
+        _seedJoin(keccak256("head"), keccak256("boundary"), disputer);
         _upload(false, withCalldata);
     }
 
     function testFuzz_joinInsideInboundIntervalCanUpload(bool withCalldata) public {
         target.clearSnapshotParticipants(CHANNEL);
-        target.seedInboundJoin(CHANNEL, keccak256("boundary"), bytes32(0), vm.addr(67890));
+        _seedJoin(keccak256("boundary"), bytes32(0), vm.addr(67890));
         target.setInboundBoundary(CHANNEL, keccak256("boundary"));
-        target.seedInboundJoin(CHANNEL, keccak256("middle"), keccak256("boundary"), disputer);
-        target.seedInboundJoin(CHANNEL, keccak256("head"), keccak256("middle"), vm.addr(98765));
+        _seedJoin(keccak256("middle"), keccak256("boundary"), disputer);
+        _seedJoin(keccak256("head"), keccak256("middle"), vm.addr(98765));
         _upload(false, withCalldata);
     }
 
     function testFuzz_joinAtConsumedBoundaryCannotUpload(bool withCalldata) public {
         target.clearSnapshotParticipants(CHANNEL);
-        target.seedInboundJoin(CHANNEL, keccak256("boundary"), bytes32(0), disputer);
+        _seedJoin(keccak256("boundary"), bytes32(0), disputer);
         target.setInboundBoundary(CHANNEL, keccak256("boundary"));
         vm.expectRevert(abi.encodeWithSelector(ErrorCantParticipateInDispute.selector, CHANNEL, disputer));
         _upload(false, withCalldata);
@@ -232,8 +234,8 @@ contract DisputeWindowAdmissionTest is Test {
 
     function testFuzz_olderNonparticipantCannotUpload(bool withCalldata) public {
         target.clearSnapshotParticipants(CHANNEL);
-        target.seedInboundJoin(CHANNEL, keccak256("old"), bytes32(0), disputer);
-        target.seedInboundJoin(CHANNEL, keccak256("boundary"), keccak256("old"), vm.addr(67890));
+        _seedJoin(keccak256("old"), bytes32(0), disputer);
+        _seedJoin(keccak256("boundary"), keccak256("old"), vm.addr(67890));
         target.setInboundBoundary(CHANNEL, keccak256("boundary"));
         vm.expectRevert(abi.encodeWithSelector(ErrorCantParticipateInDispute.selector, CHANNEL, disputer));
         _upload(false, withCalldata);
@@ -247,23 +249,27 @@ contract DisputeWindowAdmissionTest is Test {
 
     function testFuzz_slashedPendingJoinCannotUpload(bool withCalldata) public {
         target.clearSnapshotParticipants(CHANNEL);
-        target.seedInboundJoin(CHANNEL, keccak256("head"), bytes32(0), disputer);
+        _seedJoin(keccak256("head"), bytes32(0), disputer);
         target.slash(CHANNEL, disputer);
         vm.expectRevert(abi.encodeWithSelector(ErrorCantParticipateInDispute.selector, CHANNEL, disputer));
         _upload(false, withCalldata);
     }
 
-    function testFuzz_anchorBelowConsumedInboundRefused(bool withCalldata) public {
-        target.setSnapshotInboundHeight(CHANNEL, 2);
+    function testFuzz_anchorBelowInboundHeadRefused(bool withCalldata) public {
+        _seedJoin(keccak256("head"), keccak256("consumed"), vm.addr(67890));
         bytes32 beforeState = _state();
-        vm.expectRevert(abi.encodeWithSelector(RaceConditionDisputeInboundNotLatest.selector, 2, 1));
-        _uploadAnchoredAt(false, withCalldata, 1);
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                RaceConditionDisputeInboundNotLatest.selector, keccak256("head"), keccak256("consumed")
+            )
+        );
+        _uploadAnchoredAt(false, withCalldata, keccak256("consumed"));
         assertEq(_state(), beforeState, "refusal changes no admission state");
     }
 
-    function testFuzz_anchorAtConsumedInboundAccepted(bool withCalldata) public {
-        target.setSnapshotInboundHeight(CHANNEL, 2);
-        _uploadAnchoredAt(false, withCalldata, 2);
+    function testFuzz_anchorAtInboundHeadAccepted(bool withCalldata) public {
+        _seedJoin(keccak256("head"), keccak256("consumed"), vm.addr(67890));
+        _uploadAnchoredAt(false, withCalldata, keccak256("head"));
         (uint256 created,, uint256 count,,) = target.readAdmissionState(CHANNEL, FORK, disputer);
         assertEq(created, 100);
         assertEq(count, 1);

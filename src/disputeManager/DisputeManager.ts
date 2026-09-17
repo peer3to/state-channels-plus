@@ -101,6 +101,7 @@ class DisputeManager {
         let txResponse;
         let rethrow: unknown;
         let refreshSlashes = false;
+        let chainInboundHead: Hash | undefined;
         let submittedTimeout: TimeoutStruct | undefined;
         let timeoutRetryDelaySeconds: number | undefined;
         let observedOnChainSlashes: Address[] = [];
@@ -208,6 +209,10 @@ class DisputeManager {
                     RaceConditionDisputeWindowNotOpen: () => {
                         refreshSlashes = true;
                     },
+                    RaceConditionDisputeInboundNotLatest: (customError) => {
+                        chainInboundHead = customError.errorDescription
+                            .args[0] as Hash;
+                    },
                     ErrorCantParticipateInDispute: () => {
                         this.logger.warn(
                             "dispute: signer cannot participate in dispute",
@@ -269,6 +274,27 @@ class DisputeManager {
                 timeoutRetryDelaySeconds * 1000,
                 "timeoutParticipantAfterEarlySubmission"
             );
+        }
+        if (
+            chainInboundHead &&
+            !this.stateManager.isDisposed &&
+            this.stateManager.forkId === forkId
+        ) {
+            // the dispute must name the chain's inbound head -> catch up to it and rebuild
+            const localHead = this.storage.inboundMessages.getLatestBlockHash();
+            const localHeadBlock =
+                localHead &&
+                this.storage.inboundMessages.getMessageBlock(localHead);
+            if (localHeadBlock && localHead !== chainInboundHead) {
+                const run =
+                    await this.eventSyncService.loadSynchronizedInboundRun(
+                        chainInboundHead,
+                        localHead,
+                        Number(localHeadBlock.timestamp),
+                        this.channelId
+                    );
+                if (run) await this.dispute(forkId);
+            }
         }
         if (
             refreshSlashes &&

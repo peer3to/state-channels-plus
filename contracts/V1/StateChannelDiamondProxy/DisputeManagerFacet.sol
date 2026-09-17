@@ -47,12 +47,13 @@ contract DisputeManagerFacet is StateChannelCommon {
             _canParticipateInDisputesNow(dispute.input.channelId, msg.sender),
             ErrorCantParticipateInDispute(dispute.input.channelId, msg.sender)
         );
-        uint256 consumedInboundHeight =
-            stateSnapshots[dispute.input.channelId].snapshotData.latestInboundMessageBlockHeight;
-        // a dispute built before a same-fork advance would be judged against a set it never saw
+        ChannelBalance storage inboundHead = channelBalances[dispute.input.channelId];
         require(
-            dispute.input.lastInboundMessageBlockHeight >= consumedInboundHeight,
-            RaceConditionDisputeInboundNotLatest(consumedInboundHeight, dispute.input.lastInboundMessageBlockHeight)
+            dispute.input.latestInboundMessageBlockHash == inboundHead.latestInboundMessageBlockHash
+                && dispute.input.lastInboundMessageBlockHeight == inboundHead.latestInboundMessageBlockHeight,
+            RaceConditionDisputeInboundNotLatest(
+                inboundHead.latestInboundMessageBlockHash, dispute.input.latestInboundMessageBlockHash
+            )
         );
 
         if (dispute.input.requireExistingDisputeWindow) {

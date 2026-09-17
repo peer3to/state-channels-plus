@@ -461,31 +461,38 @@ contract SameForkSnapshotKillPeriodTest is DiamondHarness {
         diamond.updateStateSnapshotSameFork(CHANNEL, new MilestoneProof[](0), snapshots, new MessageBlock[](0));
     }
 
-    /// a join consumed after an honest dispute commits
-    function test_joinConsumedDuringKillPeriod_honestDisputerNotSlashed() public {
-        address alice = vm.addr(PK_A);
-        address bob = vm.addr(PK_B);
+    /// a dispute blind to a pending join is refused at upload, so it is never judged against a set it didn't see
+    function test_joinPendingAtUpload_disputeBelowInboundHeadRefused() public {
         StateSnapshot memory current = diamond.getStateSnapshot(CHANNEL);
 
         // step 1 - dave's join lands on chain, pending above the snapshot's consumed inbound
         _join(current);
+        ChannelBalance memory head = diamond.getChannelBalance(CHANNEL);
 
-        // step 2 - alice disputes at the snapshot's inbound; {alice, bob} signed the last milestone -> final, no auditing data
-        Dispute memory dispute = _openWindow(CHANNEL, current.forkId, PK_A);
-
-        // step 3 - a snapshot adopting dave is refused on the disputed fork
-        (MilestoneProof[] memory adoptProofs, StateSnapshot[] memory adoptSnapshots) =
-            _makeSameForkSnapshot(CHANNEL, _addresses(alice, bob, vm.addr(PK_D)), _keys(PK_B, PK_A, PK_D));
-        _expectDisputedForkRefusal(CHANNEL, block.timestamp + diamond.getEvidenceTime());
-        diamond.updateStateSnapshotSameFork(CHANNEL, adoptProofs, adoptSnapshots, new MessageBlock[](0));
-
-        // step 4 - a prover claims the milestone is not final and alice owed auditing data
-        _proveNotFinal(dispute, bob);
-
-        assertFalse(diamond.isParticipantSlashedOnChain(CHANNEL, alice), "honest disputer not slashed");
-        assertTrue(
-            diamond.isParticipantSlashedOnChain(CHANNEL, bob), "the not-final proof is judged against the frozen set"
+        // step 2 - alice's dispute names the snapshot's inbound, not the chain head -> refused
+        (, DisputeConfirmation memory stale) = _signedDispute(
+            CHANNEL,
+            current.forkId,
+            PK_A,
+            current.snapshotData.latestInboundMessageBlockHash,
+            current.snapshotData.latestInboundMessageBlockHeight
         );
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                RaceConditionDisputeInboundNotLatest.selector,
+                head.latestInboundMessageBlockHash,
+                current.snapshotData.latestInboundMessageBlockHash
+            )
+        );
+        vm.prank(vm.addr(PK_A));
+        diamond.uploadDispute(stale);
+
+        // step 3 - no window opened -> dave's adoption lands
+        (MilestoneProof[] memory adoptProofs, StateSnapshot[] memory adoptSnapshots) = _makeSameForkSnapshot(
+            CHANNEL, _addresses(vm.addr(PK_A), vm.addr(PK_B), vm.addr(PK_D)), _keys(PK_B, PK_A, PK_D)
+        );
+        diamond.updateStateSnapshotSameFork(CHANNEL, adoptProofs, adoptSnapshots, new MessageBlock[](0));
+        assertEq(diamond.getStateSnapshot(CHANNEL).snapshotData.participants.length, 3, "dave adopted");
     }
 
     /// a leaver's signed exit posted while a dispute can still be killed
@@ -529,24 +536,36 @@ contract SameForkSnapshotKillPeriodTest is DiamondHarness {
         );
     }
 
-    /// `disputerPk` uploads a dispute on `forkId` at the snapshot's inbound, its last milestone signed by alice and bob
+    /// `disputerPk` uploads a dispute on `forkId` at the chain's inbound head, its last milestone signed by alice and bob
     function _openWindow(bytes32 channelId, bytes32 forkId, uint256 disputerPk)
         internal
         returns (Dispute memory dispute)
     {
-        StateSnapshot memory current = diamond.getStateSnapshot(channelId);
+        ChannelBalance memory head = diamond.getChannelBalance(channelId);
+        DisputeConfirmation memory confirmation;
+        (dispute, confirmation) = _signedDispute(
+            channelId, forkId, disputerPk, head.latestInboundMessageBlockHash, head.latestInboundMessageBlockHeight
+        );
+        vm.prank(vm.addr(disputerPk));
+        diamond.uploadDispute(confirmation);
+    }
+
+    function _signedDispute(
+        bytes32 channelId,
+        bytes32 forkId,
+        uint256 disputerPk,
+        bytes32 anchorHash,
+        uint256 anchorHeight
+    ) internal pure returns (Dispute memory dispute, DisputeConfirmation memory confirmation) {
         dispute.input.channelId = channelId;
         dispute.input.forkId = forkId;
         dispute.input.disputer = vm.addr(disputerPk);
-        dispute.input.latestInboundMessageBlockHash = current.snapshotData.latestInboundMessageBlockHash;
-        dispute.input.lastInboundMessageBlockHeight = current.snapshotData.latestInboundMessageBlockHeight;
+        dispute.input.latestInboundMessageBlockHash = anchorHash;
+        dispute.input.lastInboundMessageBlockHeight = anchorHeight;
         dispute.input.stateProof.milestones = new MilestoneProof[](1);
         dispute.input.stateProof.milestones[0] = _milestone(channelId, forkId, _keys(PK_A, PK_B));
-        DisputeConfirmation memory confirmation;
         confirmation.signedDispute =
             SignedDispute({encodedDispute: abi.encode(dispute), signature: _sign(disputerPk, abi.encode(dispute))});
-        vm.prank(vm.addr(disputerPk));
-        diamond.uploadDispute(confirmation);
     }
 
     /// `prover` claims the dispute's last milestone is not final and its disputer owed auditing data

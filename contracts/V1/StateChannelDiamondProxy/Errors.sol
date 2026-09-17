@@ -123,9 +123,11 @@ error RaceConditionPendingInboundNotConsumed(
 error RaceConditionSnapshotUpdateDisputedFork(
     bytes32 channelId, bytes32 forkId, uint256 killPeriodEnd, uint256 currentTimestamp
 );
-error RaceConditionForceInboundJoinForkDisputed();
+error RaceConditionJoinChannelForkDisputed();
 error RaceConditionDisputeWindowNotOpen(bytes32 channelId, bytes32 forkId);
-error RaceConditionDisputeInboundNotLatest(uint256 consumedInboundHeight, uint256 disputeInboundHeight);
+error RaceConditionDisputeInboundNotLatest(
+    bytes32 latestInboundMessageBlockHash, bytes32 disputeInboundMessageBlockHash
+);
 error ErrorDisputeThrottled(address disputer, uint256 throttleExpiry, uint256 currentTimestamp);
 error ErrorDuplicateSelectorRegistration(bytes4 selector);
 error ErrorRouteTargetHasNoCode(bytes4 selector, address target);
