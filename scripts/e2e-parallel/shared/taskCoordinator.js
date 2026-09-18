@@ -1,4 +1,5 @@
 const logging = require("./logging");
+const { STARVATION_RETRY_LIMIT } = require("./constants");
 
 function reduceAttemptOutput(stdout = "", stderr = "") {
     const combined = `${stdout}${stderr}`;
@@ -191,14 +192,23 @@ class TaskCoordinator {
 
         if (
             parsed.starveCount > 0 &&
-            (assignment.task.starvationRetryCount || 0) === 0
+            (assignment.task.starvationRetryCount || 0) < STARVATION_RETRY_LIMIT
         ) {
-            assignment.task.starvationRetryCount = 1;
+            // Speculative copies of one task can starve together. Each
+            // enqueues, and the copy left queued after the other completes
+            // puts the task in two membership sets at once, which fails
+            // finish()'s invariant and takes down the whole run.
+            if (this.queue.some((entry) => entry.task === assignment.task)) {
+                return { accepted: false, reason: "redundant-starvation" };
+            }
+            assignment.task.starvationRetryCount =
+                (assignment.task.starvationRetryCount || 0) + 1;
             this.queue.push({ task: assignment.task, seq: assignment.seq });
             this.nudgeIdleWorkers();
             return {
                 accepted: true,
                 disposition: "retry-starvation",
+                starvationRetryCount: assignment.task.starvationRetryCount,
                 parsed
             };
         }
@@ -207,7 +217,7 @@ class TaskCoordinator {
             repeatedStarvation && attempt.code === 0 ? 1 : attempt.code;
         assignment.task.repeatedStarvation = repeatedStarvation;
         assignment.task.starvationRetrySucceeded =
-            assignment.task.starvationRetryCount === 1 &&
+            (assignment.task.starvationRetryCount || 0) > 0 &&
             !repeatedStarvation &&
             code === 0;
         return this.finalizeOrDefer(assignment, attempt, code, parsed);

@@ -43,6 +43,13 @@ const TARGET_LOAD_PER_CORE = 0.8;
 const MEM_LIMIT_FRACTION = 0.8;
 const PER_TEST_MEM_GB = 2;
 
+// A starved task is rescheduled up to this many times before its exit code
+// stands. One retry was not enough: a retry is re-admitted under the same
+// saturation that starved the first attempt, so a single unlucky pair of
+// placements turned load into a hard failure. Each retry stays visible in the
+// run summary — this raises the budget, it does not hide the starvation.
+const STARVATION_RETRY_LIMIT = 2;
+
 module.exports = {
     DEFAULT_LOG_DIR,
     HARDHAT_CLI,
@@ -55,5 +62,6 @@ module.exports = {
     SCHEDULER_TICK_MS,
     TARGET_LOAD_PER_CORE,
     MEM_LIMIT_FRACTION,
-    PER_TEST_MEM_GB
+    PER_TEST_MEM_GB,
+    STARVATION_RETRY_LIMIT
 };

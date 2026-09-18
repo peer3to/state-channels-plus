@@ -146,7 +146,7 @@ function promoteAttemptLog(logDir, assignment, worker, code, attempt = {}) {
     if (code !== 0) logging.markLogAsError(logDir, assignment.task.logName);
 }
 
-function promoteStarvationAttemptLog(logDir, assignment, worker) {
+function promoteStarvationAttemptLog(logDir, assignment, worker, retryCount) {
     const attemptPath =
         worker?.attemptPaths.get(assignment.attemptId) ||
         logging.getAttemptLogPath(
@@ -156,7 +156,8 @@ function promoteStarvationAttemptLog(logDir, assignment, worker) {
         );
     const starvationPath = logging.getStarvationLogPath(
         logDir,
-        assignment.task.logName
+        assignment.task.logName,
+        retryCount
     );
     if (fs.existsSync(attemptPath)) fs.renameSync(attemptPath, starvationPath);
 }
@@ -768,13 +769,15 @@ async function runDistributed(options) {
                 promoteStarvationAttemptLog(
                     options.logDir,
                     message.header.assignment,
-                    worker
+                    worker,
+                    completion.starvationRetryCount
                 );
                 logging.starvationRetry({
                     seq: message.header.assignment.seq,
                     total: options.tasks.length,
                     label: message.header.result.label,
-                    starveCount: completion.parsed.starveCount
+                    starveCount: completion.parsed.starveCount,
+                    retryCount: completion.starvationRetryCount
                 });
             } else if (completion.disposition === "retry-infrastructure") {
                 logging.infrastructureRetry({

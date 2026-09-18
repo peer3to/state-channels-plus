@@ -156,7 +156,8 @@ async function runScheduler({
                     seq: assignment.seq,
                     total: tasks.length,
                     label: attempt.label,
-                    starveCount: result.parsed.starveCount
+                    starveCount: result.parsed.starveCount,
+                    retryCount: result.starvationRetryCount
                 });
             } else if (result.disposition === "retry-infrastructure") {
                 logging.infrastructureRetry({
