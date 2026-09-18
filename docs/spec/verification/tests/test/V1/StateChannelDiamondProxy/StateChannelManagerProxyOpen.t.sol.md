@@ -28,7 +28,7 @@ participant's key, and submits both signature slots filled with that one signatu
 satisfies the per-slot signature check while naming the same participant twice. The oracle is the
 revert: `open()` must fail with `ErrorDuplicateParticipant` and no channel may be created.
 
-The second case covers the successful-join count guard. It etches the sibling deposit suite's
+The second case covers the successful-join count guard. It etches the shared harness
 `SelectiveDepositConsumerFacet` over the deployed consumer facet, so the real deposit loop rejects
 a zero-amount join, and submits a unanimously signed non-atomic open for three participants whose
 balances are `500`, `0` and `0`. Only one deposit succeeds. The oracle is the full revert payload:

@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: UNLICENSED
 
 import {DiamondHarness} from "../harness/DiamondHarness.sol";
+import {DisputeWindowSeeding} from "../harness/DisputeWindowSeeding.sol";
 import {FraudProofFacet} from "../../../contracts/V1/StateChannelDiamondProxy/FraudProofFacet.sol";
 import {
     RaceConditionDisputeKillPeriodNotExpired,
@@ -17,7 +18,7 @@ import "../../../contracts/V1/types/ProofTypes.sol";
 /// no on-chain snapshot, and a real UtilityFacet so block authenticity resolves.
 /// The dispute window a case needs is seeded directly; `evidenceTime` is the
 /// facet's own config slot, so every period deadline is real arithmetic.
-contract WrongGenesisHarness is FraudProofFacet {
+contract WrongGenesisHarness is FraudProofFacet, DisputeWindowSeeding {
     constructor(uint256 harnessEvidenceTime) {
         evidenceTime = harnessEvidenceTime;
         utilityFacetAddress = address(new UtilityFacet());
@@ -29,9 +30,7 @@ contract WrongGenesisHarness is FraudProofFacet {
         uint256 creationTimestamp,
         uint256 lastEvidenceSubmissionTimestamp
     ) external {
-        DisputeWindow storage disputeWindow = disputeData[channelId].disputeWindowMap[originForkId];
-        disputeWindow.evidence.creationTimestamp = creationTimestamp;
-        disputeWindow.evidence.lastEvidenceSubmissionTimestamp = lastEvidenceSubmissionTimestamp;
+        _seedDisputeWindow(channelId, originForkId, creationTimestamp, lastEvidenceSubmissionTimestamp);
     }
 }
 

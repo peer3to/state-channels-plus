@@ -3,6 +3,7 @@ pragma solidity ^0.8.8;
 import {Test} from "../../../lib/forge-std/src/Test.sol";
 import {JoinChannelFacet} from "../../../contracts/V1/StateChannelDiamondProxy/JoinChannelFacet.sol";
 import {UtilityFacet} from "../../../contracts/V1/StateChannelDiamondProxy/UtilityFacet.sol";
+import {DisputeWindowSeeding} from "../harness/DisputeWindowSeeding.sol";
 import {
     ErrorJoinChannelAtomicFailure,
     ErrorJoinChannelConfirmationNotThresholdSigned,
@@ -15,7 +16,7 @@ import {
 } from "../../../contracts/V1/StateChannelDiamondProxy/Errors.sol";
 import "../../../contracts/V1/types/DataTypes.sol";
 
-contract JoinChannelFacetHarness is JoinChannelFacet {
+contract JoinChannelFacetHarness is JoinChannelFacet, DisputeWindowSeeding {
     /// The failure payload the stub injects. Deliberately unreachable for a
     /// real single-join batch (index 0, the joining participant), so a test can
     /// tell "bubbled unchanged" from "rebuilt by the facet".
@@ -42,15 +43,7 @@ contract JoinChannelFacetHarness is JoinChannelFacet {
     /// on the first dispute, so `_isForkDisputed` reads a real non-zero
     /// evidence creation timestamp rather than a patched predicate.
     function seedDisputedFork(bytes32 channelId, bytes32 forkId) external {
-        DisputeWindow storage disputeWindow = disputeData[channelId].disputeWindowMap[forkId];
-        disputeWindow.forkId = forkId;
-        disputeWindow.evidence.creationTimestamp = block.timestamp;
-        disputeWindow.evidence.lastEvidenceSubmissionTimestamp = block.timestamp;
-        disputeData[channelId].disputedForks.push(forkId);
-    }
-
-    function isForkDisputed(bytes32, bytes32) external pure returns (bool) {
-        return false;
+        _seedDisputeWindow(channelId, forkId, block.timestamp, block.timestamp);
     }
 
     function setDepositShouldFail(bool shouldFail) external {

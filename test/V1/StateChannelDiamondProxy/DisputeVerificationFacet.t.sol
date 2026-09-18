@@ -6,6 +6,7 @@ import {DisputeFraudProofFacet} from "../../../contracts/V1/StateChannelDiamondP
 import {DisputeVerificationFacet} from "../../../contracts/V1/StateChannelDiamondProxy/DisputeVerificationFacet.sol";
 import {StateProofFacet} from "../../../contracts/V1/StateChannelDiamondProxy/StateProofFacet.sol";
 import {UtilityFacet} from "../../../contracts/V1/StateChannelDiamondProxy/UtilityFacet.sol";
+import {DisputeWindowSeeding} from "../harness/DisputeWindowSeeding.sol";
 import {StateChannelCommon} from "../../../contracts/V1/StateChannelDiamondProxy/StateChannelCommon.sol";
 import {
     ErrorDisputeChallengePeriodExpired,
@@ -39,7 +40,7 @@ import {AStateMachine} from "../../../contracts/V1/AStateMachine.sol";
 import {MESSAGE_TYPE_EXIT, MESSAGE_TYPE_JOIN} from "../../../contracts/V1/types/MessageTypeHashes.sol";
 import "../../../contracts/V1/types/DataTypes.sol";
 
-contract DisputeExpiryGuardHarness is DisputeFraudProofFacet, DisputeVerificationFacet {
+contract DisputeExpiryGuardHarness is DisputeFraudProofFacet, DisputeVerificationFacet, DisputeWindowSeeding {
     constructor() {
         evidenceTime = 10;
         disputeVerificationFacetAddress = address(this);
@@ -48,9 +49,12 @@ contract DisputeExpiryGuardHarness is DisputeFraudProofFacet, DisputeVerificatio
     }
 
     function seedDispute(Dispute memory dispute, uint256 lastEvidenceSubmissionTimestamp) external {
-        DisputeWindow storage window = disputeData[dispute.input.channelId].disputeWindowMap[dispute.input.forkId];
-        window.evidence.creationTimestamp = lastEvidenceSubmissionTimestamp;
-        window.evidence.lastEvidenceSubmissionTimestamp = lastEvidenceSubmissionTimestamp;
+        DisputeWindow storage window = _seedDisputeWindow(
+            dispute.input.channelId,
+            dispute.input.forkId,
+            lastEvidenceSubmissionTimestamp,
+            lastEvidenceSubmissionTimestamp
+        );
         window.evidence.disputeCommitments.push(keccak256(abi.encode(dispute)));
     }
 
@@ -72,10 +76,7 @@ contract DisputeExpiryGuardHarness is DisputeFraudProofFacet, DisputeVerificatio
     /// including the window's own fork id, so a reduced-result guard can report
     /// a window fork distinct from the reduced forks it compares.
     function seedDisputeWindow(bytes32 channelId, bytes32 windowForkId, uint256 creationTimestamp) external {
-        DisputeWindow storage window = disputeData[channelId].disputeWindowMap[windowForkId];
-        window.forkId = windowForkId;
-        window.evidence.creationTimestamp = creationTimestamp;
-        window.evidence.lastEvidenceSubmissionTimestamp = creationTimestamp;
+        _seedDisputeWindow(channelId, windowForkId, creationTimestamp, creationTimestamp);
     }
 
     /// Drives the reduced-result commit against an arbitrary window slot, so the
@@ -126,9 +127,7 @@ contract DisputeExpiryGuardHarness is DisputeFraudProofFacet, DisputeVerificatio
         snapshot.participants.push(survivor);
         snapshot.latestInboundMessageBlockHash = inboundHead;
         disputeData[channelId].onChainSlashes.push(OnChainSlash({participant: slashed, timestamp: slashTimestamp}));
-        DisputeWindow storage window = disputeData[channelId].disputeWindowMap[forkId];
-        window.evidence.creationTimestamp = slashTimestamp;
-        window.evidence.lastEvidenceSubmissionTimestamp = slashTimestamp;
+        _seedDisputeWindow(channelId, forkId, slashTimestamp, slashTimestamp);
     }
 
     function pendingParticipants(bytes32 channelId) external view returns (address[] memory) {

@@ -6,7 +6,7 @@ import {
     ErrorAtLeastTwoParticipantsRequired,
     ErrorDuplicateParticipant
 } from "../../../contracts/V1/StateChannelDiamondProxy/Errors.sol";
-import {SelectiveDepositConsumerFacet} from "./StateChannelManagerProxyDeposit.t.sol";
+import {SelectiveDepositConsumerFacet} from "../harness/SelectiveDepositConsumerFacet.sol";
 import "../../../contracts/V1/types/DataTypes.sol";
 
 // test naming: test_<targetFunction>_<property>

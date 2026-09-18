@@ -2,48 +2,13 @@ pragma solidity ^0.8.8;
 
 import {DiamondHarness} from "../harness/DiamondHarness.sol";
 import {StateChannelManagerInterface} from "../../../contracts/V1/StateChannelManagerInterface.sol";
-import {AConsumerFacet} from "../../../contracts/V1/StateChannelDiamondProxy/AConsumerFacet.sol";
+import {SelectiveDepositConsumerFacet} from "../harness/SelectiveDepositConsumerFacet.sol";
 import {
     ErrorJoinChannelAtomicFailure,
     ErrorNoJoinChannelProvided,
     ErrorNoSuccessfulJoinChannel
 } from "../../../contracts/V1/StateChannelDiamondProxy/Errors.sol";
 import "../../../contracts/V1/types/DataTypes.sol";
-
-contract SelectiveDepositConsumerFacet is AConsumerFacet {
-    bytes32 private constant DEPOSIT_COUNT_SLOT = keccak256("state-channels-plus.test.deposit-count");
-
-    function openChannelGenesis(JoinChannel[] memory, bytes memory)
-        external
-        pure
-        override
-        returns (bytes memory encodedGenesisState, address[] memory participants)
-    {
-        participants = new address[](0);
-        return (encodedGenesisState, participants);
-    }
-
-    function deposit(JoinChannel memory joinChannel) external override returns (bool) {
-        if (joinChannel.balance.amount == 0) return false;
-
-        bytes32 slot = DEPOSIT_COUNT_SLOT;
-        assembly {
-            sstore(slot, add(sload(slot), 1))
-        }
-        return true;
-    }
-
-    function withdraw(ExitChannel memory) external pure override returns (bool) {
-        return true;
-    }
-
-    function depositCount() external view returns (uint256 count) {
-        bytes32 slot = DEPOSIT_COUNT_SLOT;
-        assembly {
-            count := sload(slot)
-        }
-    }
-}
 
 // test naming: test_<targetFunction>_<property>
 contract StateChannelManagerProxyDepositTest is DiamondHarness {
