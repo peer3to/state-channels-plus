@@ -286,7 +286,7 @@ describe("distributed isolated environment", function () {
                 args: [
                     "update",
                     "--cpus",
-                    String(profile.cpu),
+                    "0",
                     "--memory",
                     String(profile.memoryBytes),
                     "--memory-swap",

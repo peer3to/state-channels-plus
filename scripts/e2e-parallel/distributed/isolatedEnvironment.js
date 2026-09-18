@@ -388,6 +388,10 @@ class DockerBackend {
     async update(handle, profile) {
         await this.run("docker", [
             "update",
+            // A container retained from before the quota was dropped still
+            // carries its cpu.max; 0 clears it (see create).
+            "--cpus",
+            "0",
             "--memory",
             String(profile.memoryBytes),
             "--memory-swap",
