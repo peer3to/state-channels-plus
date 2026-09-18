@@ -389,9 +389,9 @@ class DockerBackend {
         await this.run("docker", [
             "update",
             // A container retained from before the quota was dropped still
-            // carries its cpu.max; 0 clears it (see create).
-            "--cpus",
-            "0",
+            // carries its cpu.max; -1 removes the CFS quota (see create).
+            "--cpu-quota",
+            "-1",
             "--memory",
             String(profile.memoryBytes),
             "--memory-swap",
@@ -628,9 +628,17 @@ class DockerBackend {
             handle.container
         ]);
         const config = JSON.parse(result.stdout.toString("utf8"));
+        const cpuQuota =
+            config.CpuQuota === -1
+                ? 0
+                : config.NanoCpus > 0
+                  ? config.NanoCpus / 1e9
+                  : config.CpuQuota > 0
+                    ? config.CpuQuota / (config.CpuPeriod || 100000)
+                    : 0;
         return {
-            // must stay 0: the container carries no CPU quota (see create)
-            cpuQuota: config.NanoCpus / 1e9,
+            // must stay 0: the container carries no effective CPU quota
+            cpuQuota,
             memoryBytes: config.Memory,
             memorySwapBytes: config.MemorySwap,
             pidsLimit: config.PidsLimit
@@ -1292,13 +1300,7 @@ class IsolatedEnvironmentManager {
                     createdDiskBytes
                 );
             }
-            if (
-                allocation.profile.cpu !== currentProfile.cpu ||
-                allocation.profile.memoryBytes !== currentProfile.memoryBytes ||
-                allocation.profile.pidsLimit !== currentProfile.pidsLimit
-            ) {
-                await this.backend.update(existing.handle, allocation.profile);
-            }
+            await this.backend.update(existing.handle, allocation.profile);
             existing.allocation = allocation;
             this.writeMetadata(existing, true);
             return existing;
