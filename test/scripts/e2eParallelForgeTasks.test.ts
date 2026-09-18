@@ -1,4 +1,5 @@
 // @spec-test-coverage-ignore: developer test-orchestration tooling; not protocol behavior, no specification or implementation IDs apply
+import { repoRoot } from "@test/utils/repoRoot";
 import { expect } from "chai";
 import { execFileSync, spawnSync } from "child_process";
 import fs from "fs";
@@ -140,7 +141,7 @@ const { runForge } =
         ) => Promise<number>;
     };
 
-const REPO_TEST_DIR = path.resolve(__dirname, "..");
+const REPO_TEST_DIR = path.join(repoRoot(), "test");
 const argv = (...args: string[]) => ["node", "runner", ...args];
 
 const FORGE_TASK = {
@@ -226,7 +227,7 @@ contract InvariantCases {
 }
 `;
 
-const REPO_ROOT = path.resolve(__dirname, "..", "..");
+const REPO_ROOT = repoRoot();
 
 function newestFileMtime(root: string, include: (file: string) => boolean) {
     if (!fs.existsSync(root)) return null;

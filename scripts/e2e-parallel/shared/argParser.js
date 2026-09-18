@@ -24,6 +24,8 @@ Options:
   -p, --allow-logdir-purge, --allowLogdirPurge, --purge
                                   Allow clearing an explicit dir outside logs/
       --keep-infra-logs          Keep infrastructure logs even when all tests pass
+      --source-tests             Run the TypeScript sources under ts-node instead of the compiled dist tree
+      --skip-build               Reuse the existing dist tree instead of rebuilding it first
       --slots <count>            Local warm E2E infrastructure slots (0 disables)
   -w, --workers <count>          Concurrent tests per local or remote worker
       --target-load <number>     Local maximum average load per CPU core
@@ -67,6 +69,8 @@ function parseCliArgs(argv) {
         logDirProvided: false,
         allowLogdirPurge: false,
         keepInfraLogs: false,
+        sourceTests: false,
+        skipBuild: false,
         grep: undefined,
         testPattern: undefined,
         mochaTestPattern: undefined,
@@ -247,6 +251,16 @@ function parseCliArgs(argv) {
 
         if (arg === "--keep-infra-logs") {
             options.keepInfraLogs = true;
+            continue;
+        }
+
+        if (arg === "--source-tests") {
+            options.sourceTests = true;
+            continue;
+        }
+
+        if (arg === "--skip-build") {
+            options.skipBuild = true;
             continue;
         }
 

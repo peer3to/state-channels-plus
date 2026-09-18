@@ -109,6 +109,18 @@ yarn test:parallel --forge-threads 2
 yarn test:parallel --test-pattern 'V1/**' # filter both tiers
 ```
 
+Mocha tests are discovered from their TypeScript sources but run from the
+compiled tree under `dist/` by default: the runner builds it once per run
+(`yarn test:parallel:build`, which the distributed workers also run in their
+prepare step), so no test child or worker thread transpiles anything, while
+`--enable-source-maps` keeps every stack trace on the `.ts` lines. Two flags
+change that:
+
+```shell
+yarn test:parallel --skip-build     # reuse the dist tree from the last build
+yarn test:parallel --source-tests   # run the .ts sources under ts-node instead
+```
+
 Each forge task uses one thread by default. `forge test` otherwise sizes its
 thread pool from the logical core count, which inside a CPU-limited container is
 still the host's count, so unpinned tasks oversubscribe the host. The runner

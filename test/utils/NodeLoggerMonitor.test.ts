@@ -243,6 +243,12 @@ describe("NodeLogger performance monitor", function () {
             // the real source exists once the perf_hooks import has resolved
             for (let i = 0; i < 5; i++)
                 await new Promise<void>((resolve) => setImmediate(resolve));
+            // the timers are faked, so let real time pass: the host counters
+            // are kernel ticks and a zero-length interval carries no share
+            const startedAt = Date.now();
+            while (Date.now() - startedAt < 40) {
+                // busy wait
+            }
             clock.tick(INTERVAL_MS);
             const entry = store
                 .getAllLogs()

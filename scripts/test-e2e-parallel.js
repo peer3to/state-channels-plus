@@ -1,6 +1,7 @@
 /* eslint-disable no-console */
 require("dotenv").config({ quiet: true });
 const os = require("os");
+const { spawnSync } = require("child_process");
 const path = require("path");
 const fs = require("fs");
 
@@ -154,13 +155,29 @@ async function main(options = {}) {
     let forgeDiscovery = { tasks: [], preGrepTaskCount: 0 };
     const { includeMocha, includeForge } = resolveDiscoverySelection(cli);
     const testDir = path.resolve(cli.e2eOnly ? "test/e2e" : "test");
+    // Compiled mode (default): every child and worker thread loads plain
+    // JavaScript, so the per-thread transpile of the SDK graph disappears.
+    // Distributed workers build in their prepare script; the local path
+    // builds here unless told to reuse the tree it has.
+    if (includeMocha && !cli.sourceTests && !cli.skipBuild) {
+        console.log("Building the compiled test tree (dist)...");
+        const build = spawnSync("yarn", ["-s", "test:parallel:build"], {
+            stdio: "inherit",
+            env: process.env
+        });
+        if (build.status !== 0) {
+            console.error("Building the compiled test tree failed");
+            process.exit(build.status ?? 1);
+        }
+    }
     if (includeMocha) {
         try {
             mochaDiscovery = discoverTasks(
                 testDir,
                 cli.grep,
                 undefined,
-                cli.mochaTestPattern ?? cli.testPattern
+                cli.mochaTestPattern ?? cli.testPattern,
+                { compiled: !cli.sourceTests }
             );
         } catch (e) {
             console.error(discoveryFailureMessage("Mocha", cli.grep, e), e);

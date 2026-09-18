@@ -14,7 +14,7 @@ The bootstrap handler consumes WorkerBootstrapMessage with the root argument typ
 
 Worker globals are initialized by the common createRoot import. Worker detection only controls platform globals. Explicit worker entry modules call the common bootstrap; importing a root does not start it.
 
-One generic `createRootWorker` accepts an entry URL for every root. No concrete root names, paths or per-root factory functions live in this platform owner.
+One generic `createRootWorker` accepts an entry URL for every root. No concrete root names, paths or per-root factory functions live in this platform owner. The entry, like the package root modules, is mapped to its existing `.ts`/`.js` twin ([resolveRuntimeModulePath.ts](../../../utils/moduleLoader/node/resolveRuntimeModulePath.ts.md)); a compiled entry starts with no loader hook, a source entry with the transpile-only ts-node register.
 
 Compiled and ts-node entries use the same bootstrap. All roots use the shared memory limit and full worker cleanup. The bootstrap installs the supplied global threadName before domain initialization. Every unexpected root-worker exit, including zero, is fatal for all roots. The common launcher owns connection-close failure ordering. An earlier worker error is delivered first. Failed initial transfer closes a worker still waiting for bootstrap.
 

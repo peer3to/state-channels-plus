@@ -140,7 +140,7 @@ export type HarnessOptions = {
     stateMachineGasLimit?: number;
     disputeExecutionGasLimit?: number;
     autoConnect?: boolean;
-    /** Maximum SDK peers to boot at once. Defaults to all requested peers. */
+    /** Maximum SDK peers to boot at once. Defaults to two; see PeerTestHarness.setup. */
     peerSetupConcurrency?: number;
     configOverrides?: Partial<Config>; // Direct config overrides
     customRpcManifest?: CustomRpcManifest;

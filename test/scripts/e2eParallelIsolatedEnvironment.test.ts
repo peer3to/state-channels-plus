@@ -1,5 +1,6 @@
 // @spec-test-coverage-ignore: developer test-orchestration tooling; not protocol behavior, no specification or implementation IDs apply
 import { TestIsolatedRuntimeBackend } from "../fixtures/distributed/isolatedRuntimeBackend";
+import { repoRoot } from "@test/utils/repoRoot";
 import { expect } from "chai";
 import crypto from "crypto";
 import fs from "fs";
@@ -38,9 +39,7 @@ const profile = {
 
 describe("distributed isolated environment", function () {
     it("packages the worker, workspace receiver, and test-infrastructure entry as trusted glue", function () {
-        const manifest = trustedRunnerManifest(
-            path.resolve(__dirname, "../..")
-        );
+        const manifest = trustedRunnerManifest(repoRoot());
         const paths = manifest.map((entry: { path: string }) => entry.path);
         expect(paths).to.include(
             "scripts/e2e-parallel/distributed/isolatedGuest.js"
