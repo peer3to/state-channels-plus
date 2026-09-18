@@ -5,6 +5,7 @@
 // dist/test/... and dist/scripts/... mirror test/... and scripts/....
 const fs = require("fs");
 const path = require("path");
+const { writeStamp } = require("./e2e-parallel/shared/compiledTree");
 
 const projectRoot = path.resolve(__dirname, "..");
 const dist = path.join(projectRoot, "dist");
@@ -33,6 +34,9 @@ function mirror(sourceDir, keep) {
 const notTypeScript = (file) => !/\.(c|m)?tsx?$/.test(file);
 const copiedTest = mirror(path.join(projectRoot, "test"), notTypeScript);
 const copiedScripts = mirror(path.join(projectRoot, "scripts"), notTypeScript);
+// The runner compares this stamp with the sources to decide whether the
+// compiled tree is current (see scripts/e2e-parallel/shared/compiledTree.js).
+writeStamp(projectRoot);
 console.log(
     `Mirrored ${copiedTest} test asset(s) and ${copiedScripts} runner file(s) into dist`
 );

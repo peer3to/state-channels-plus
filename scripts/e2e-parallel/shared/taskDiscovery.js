@@ -182,7 +182,7 @@ function discoverTasks(
     grep,
     e2eDir = path.resolve("test/e2e"),
     testPattern = DEFAULT_MOCHA_TEST_PATTERN,
-    { compiled = true } = {}
+    { compiled = false } = {}
 ) {
     const files = globSync(path.join(testDir, testPattern), { nodir: true })
         .filter(isMochaTestFile)

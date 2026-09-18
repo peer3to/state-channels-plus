@@ -110,14 +110,19 @@ yarn test:parallel --test-pattern 'V1/**' # filter both tiers
 ```
 
 Mocha tests are discovered from their TypeScript sources but run from the
-compiled tree under `dist/` by default: the runner builds it once per run
-(`yarn test:parallel:build`, which the distributed workers also run in their
-prepare step), so no test child or worker thread transpiles anything, while
-`--enable-source-maps` keeps every stack trace on the `.ts` lines. Two flags
-change that:
+compiled tree under `dist/` by default, so no test child or worker thread
+transpiles anything, while `--enable-source-maps` keeps every stack trace on
+the `.ts` lines. The distributed workers build that tree in their prepare step
+(`yarn test:parallel:build`, a clean build). The local runner keeps it current
+from a stamp the build writes: when only file contents changed it re-emits in
+place without deleting anything, because a runner can itself be a task of an
+outer run that is loading from the same tree; when a source was added, removed
+or renamed it runs the clean build, so no compiled twin of a deleted file can
+linger and run. Outside a project with that build script the runner falls back
+to the sources. Two flags change the default:
 
 ```shell
-yarn test:parallel --skip-build     # reuse the dist tree from the last build
+yarn test:parallel --skip-build     # never refresh, use the dist tree as is
 yarn test:parallel --source-tests   # run the .ts sources under ts-node instead
 ```
 
