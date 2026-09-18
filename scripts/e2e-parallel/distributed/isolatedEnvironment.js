@@ -304,8 +304,12 @@ class DockerBackend {
                 "--security-opt=no-new-privileges:true",
                 "--pids-limit",
                 String(allocation.profile.pidsLimit),
-                "--cpus",
-                String(allocation.profile.cpu),
+                // No CPU quota on purpose: a CFS quota (--cpus) freezes every
+                // thread of the container for the rest of a 100ms period once
+                // the budget is spent, which the test children saw as
+                // second-long event-loop stalls while the host had idle
+                // cores. The container shares all cores with the host under
+                // ordinary fair scheduling; memory and pids stay bounded.
                 "--memory",
                 String(allocation.profile.memoryBytes),
                 "--memory-swap",
@@ -384,8 +388,6 @@ class DockerBackend {
     async update(handle, profile) {
         await this.run("docker", [
             "update",
-            "--cpus",
-            String(profile.cpu),
             "--memory",
             String(profile.memoryBytes),
             "--memory-swap",
@@ -623,7 +625,8 @@ class DockerBackend {
         ]);
         const config = JSON.parse(result.stdout.toString("utf8"));
         return {
-            cpu: config.NanoCpus / 1e9,
+            // must stay 0: the container carries no CPU quota (see create)
+            cpuQuota: config.NanoCpus / 1e9,
             memoryBytes: config.Memory,
             memorySwapBytes: config.MemorySwap,
             pidsLimit: config.PidsLimit

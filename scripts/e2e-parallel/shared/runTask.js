@@ -3,6 +3,14 @@ const { spawn } = require("child_process");
 const fs = require("fs");
 const path = require("path");
 const { killProcessGroup } = require("./processGroup");
+const { threadDump } = require("./threadDump");
+
+// A child that goes quiet for this long without exiting gets its threads
+// dumped into its log once, so a silent hang leaves evidence of what every
+// thread was doing (see threadDump.js). 0 disables.
+const SILENT_CHILD_DUMP_MS = Number(
+    process.env.TEST_SILENT_CHILD_DUMP_MS ?? 45000
+);
 
 // Tracks all spawned test-child processes so teardown can kill any still running.
 const liveTaskChildren = new Set();
@@ -60,6 +68,9 @@ async function runTask(
         let settled = false;
         let killTimer;
         let child;
+        let lastOutputAt = Date.now();
+        let silenceTimer;
+        let silenceDumped = false;
 
         const failOutput = (error) => {
             infrastructureFailure = `${error.code || "OUTPUT"}: ${error.message}`;
@@ -117,6 +128,7 @@ async function runTask(
         };
 
         const onStdout = (data) => {
+            lastOutputAt = Date.now();
             // Optionally mirror to console
             if (streamChildOutput) {
                 process.stdout.write(data);
@@ -126,6 +138,7 @@ async function runTask(
         };
 
         const onStderr = (data) => {
+            lastOutputAt = Date.now();
             // Optionally mirror to console
             if (streamChildOutput) {
                 process.stderr.write(data);
@@ -135,6 +148,33 @@ async function runTask(
         };
         child.stdout.on("data", onStdout);
         child.stderr.on("data", onStderr);
+
+        if (SILENT_CHILD_DUMP_MS > 0) {
+            silenceTimer = setInterval(async () => {
+                if (
+                    silenceDumped ||
+                    settled ||
+                    Date.now() - lastOutputAt < SILENT_CHILD_DUMP_MS
+                )
+                    return;
+                silenceDumped = true;
+                const silentForS = Math.round(
+                    (Date.now() - lastOutputAt) / 1000
+                );
+                let dump;
+                try {
+                    dump = await threadDump(child.pid);
+                } catch (error) {
+                    dump = `thread dump failed: ${error.message}`;
+                }
+                if (settled) return;
+                writeOutput(
+                    "stderr",
+                    `\n##SILENT_CHILD_DUMP## ${label}: no output for ${silentForS}s\n${dump}\n##SILENT_CHILD_DUMP_END##\n`
+                );
+            }, 5000);
+            silenceTimer.unref();
+        }
 
         const finish = async (code, signal) => {
             if (settled) return;
@@ -146,6 +186,7 @@ async function runTask(
             killProcessGroup(child, "SIGKILL");
             liveTaskChildren.delete(child);
             clearTimeout(killTimer);
+            clearInterval(silenceTimer);
             cancellationSignal?.removeEventListener("abort", onAbort);
             await outputSink.close();
             const durationMs = Date.now() - startedAt;

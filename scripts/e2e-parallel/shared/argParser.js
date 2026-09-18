@@ -29,7 +29,7 @@ Options:
       --target-load <number>     Local maximum average load per CPU core
   -i, --interval <ms>            Local scheduler admission interval
       --mem-limit-gb <gb>        Local memory budget for test processes
-      --cpu-limit <count>        Distributed worker CPU request
+      --cpu-limit <count>        Distributed worker CPU request (advisory; no container quota)
       --disk-limit-bytes <bytes> Distributed environment disk request
       --pids-limit <count>       Distributed environment process limit
       --sdk-thread               Run the SDK host in a worker thread

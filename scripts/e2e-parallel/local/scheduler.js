@@ -131,6 +131,7 @@ async function runScheduler({
                 concurrencyCap,
                 acct: needsChain ? account : "-",
                 cpuUtil: resources.cpuUtil,
+                cpuPressure: resources.cpuPressure,
                 targetLoad,
                 occupiedGb: resources.occupiedGb,
                 memBoundGb

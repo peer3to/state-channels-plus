@@ -383,11 +383,15 @@ async function main(options = {}) {
                     sumDurationMs: stats.sumDurationMs,
                     peakCpu: stats.peakCpu,
                     avgCpu: stats.avgCpu,
+                    peakCpuPressure: stats.peakCpuPressure,
+                    avgCpuPressure: stats.avgCpuPressure,
+                    cpuDetail: stats.cpuDetail,
                     peakOccupiedGb: stats.sumPeakOccupiedGb,
                     memoryPeakLabel: "sum of worker peaks",
                     avgPerTestGb: stats.avgPerTestGb,
                     memBoundGb: stats.memBoundGb,
-                    workers: stats.workers
+                    workers: stats.workers,
+                    workerLabel: stats.workerLabel
                 });
                 logging.cleanupNonErrorLogs(
                     logDir,
@@ -442,6 +446,9 @@ async function main(options = {}) {
             sumDurationMs: stats.sumDurationMs,
             peakCpu: stats.peakCpu,
             avgCpu: stats.avgCpu,
+            peakCpuPressure: stats.peakCpuPressure,
+            avgCpuPressure: stats.avgCpuPressure,
+            cpuDetail: stats,
             peakOccupiedGb: stats.peakOccupiedGb,
             avgPerTestGb: stats.avgPerTestGb,
             memBoundGb,
