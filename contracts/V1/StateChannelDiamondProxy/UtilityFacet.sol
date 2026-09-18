@@ -11,6 +11,31 @@ import "./UtilityFacetInterface.sol";
 /// `StateChannelManagerProxy`'s selector routing and therefore read the proxy's
 /// storage - hence the `StateChannelCommon` base.
 contract UtilityFacet is UtilityFacetInterface, StateChannelCommon {
+    /// EIP-191 - the digest every signature over `encodedData` is actually made
+    /// over. Single owner: `verifyThresholdSigned`, `retrieveSignerAddress` and
+    /// `retrieveSignerAddresses` must agree on it or a recovered signer set
+    /// would not match the set the threshold check compared.
+    function _eip191SignedHash(bytes memory encodedData) internal pure returns (bytes32) {
+        return keccak256(abi.encodePacked("\x19Ethereum Signed Message:\n32", keccak256(encodedData)));
+    }
+
+    /// The addresses `signatures` recover to over `encodedData`, in the order
+    /// they were supplied. A signature that fails to recover yields
+    /// `address(0)` in its slot rather than reverting, so a rejection can
+    /// report the whole supplied set.
+    function retrieveSignerAddresses(bytes memory encodedData, bytes[] memory signatures)
+        public
+        pure
+        returns (address[] memory signers)
+    {
+        bytes32 signedHash = _eip191SignedHash(encodedData);
+        signers = new address[](signatures.length);
+        for (uint256 i = 0; i < signatures.length; i++) {
+            (address recovered, ECDSA.RecoverError error,) = ECDSA.tryRecover(signedHash, signatures[i]);
+            signers[i] = error == ECDSA.RecoverError.NoError ? recovered : address(0);
+        }
+    }
+
     /**
      * @param addressesInThreshold - The public EOA addresses of the signers in the threshold
      * @param encodedData - The encoded data, which keccak256 hash was signed
@@ -27,11 +52,10 @@ contract UtilityFacet is UtilityFacetInterface, StateChannelCommon {
         }
 
         uint256 threshold = addressesInThreshold.length;
-        bytes32 _hash = keccak256(encodedData);
         uint256 count = 0;
 
         // EIP-191 - This is what actually gets signed
-        bytes32 signedHash = keccak256(abi.encodePacked("\x19Ethereum Signed Message:\n32", _hash));
+        bytes32 signedHash = _eip191SignedHash(encodedData);
 
         //Every address can be counted once
         uint8[] memory countRemaining = new uint8[](threshold);
@@ -68,9 +92,7 @@ contract UtilityFacet is UtilityFacetInterface, StateChannelCommon {
         override
         returns (address, bool)
     {
-        bytes32 _hash = keccak256(encodedData);
-        // EIP-191
-        bytes32 signedHash = keccak256(abi.encodePacked("\x19Ethereum Signed Message:\n32", _hash));
+        bytes32 signedHash = _eip191SignedHash(encodedData);
         (address recovered, ECDSA.RecoverError error,) = ECDSA.tryRecover(signedHash, signature);
         if (error != ECDSA.RecoverError.NoError) {
             return (recovered, false);
@@ -415,7 +437,8 @@ contract UtilityFacet is UtilityFacetInterface, StateChannelCommon {
     function isReduceChallengePeriodExpired(bytes32 channelId, bytes32 forkId) public view returns (bool) {
         DisputeData storage _disputeData = disputeData[channelId];
         DisputeWindow storage disputeWindow = _disputeData.disputeWindowMap[forkId];
-        return _isReduceChallengePeriodExpired(disputeWindow, _getEvidenceTime());
+        (bool isExpired,) = _isReduceChallengePeriodExpired(disputeWindow, _getEvidenceTime());
+        return isExpired;
     }
 
     function getDisputeWindows(bytes32 channelId, bytes32[] memory forkIds)

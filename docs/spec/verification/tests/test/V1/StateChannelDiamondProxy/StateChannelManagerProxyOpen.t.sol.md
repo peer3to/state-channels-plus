@@ -21,20 +21,28 @@ file was renamed to `.t.sol`, the one repository spelling. Widening `TEST_FILE_R
 because it would preserve two spellings for the same test kind. The tooling pattern remains
 unchanged.
 
-One direct Foundry case on the opening path. `setUp` deploys the full diamond through
-`DiamondHarness` and binds it as `StateChannelManagerInterface`. The case builds an `OpenChannel`
-whose two participant entries are the same address, signs the encoding once with that participant's
-key, and submits both signature slots filled with that one signature — a set that satisfies the
-per-slot signature check while naming the same participant twice. The oracle is the revert:
-`open()` must fail with `ErrorDuplicateParticipant` and no channel may be created.
+Two direct Foundry cases on the opening path. `setUp` deploys the full diamond through
+`DiamondHarness` and binds it as `StateChannelManagerInterface`. The first case builds an
+`OpenChannel` whose two participant entries are the same address, signs the encoding once with that
+participant's key, and submits both signature slots filled with that one signature — a set that
+satisfies the per-slot signature check while naming the same participant twice. The oracle is the
+revert: `open()` must fail with `ErrorDuplicateParticipant` and no channel may be created.
+
+The second case covers the successful-join count guard. It etches the shared harness
+`SelectiveDepositConsumerFacet` over the deployed consumer facet, so the real deposit loop rejects
+a zero-amount join, and submits a unanimously signed non-atomic open for three participants whose
+balances are `500`, `0` and `0`. Only one deposit succeeds. The oracle is the full revert payload:
+`ErrorAtLeastTwoParticipantsRequired(1)` — the count of SUCCESSFUL joins, which cannot be confused
+with the submitted participant count of three — and the channel must stay closed. Non-atomic is
+required; an atomic batch reverts on the first failing deposit and never reaches the guard.
 
 The file was named `StateChannelManagerProxyOpen.test.sol` until this change. Forge ran it either
 way, but specification test discovery matches `*.t.sol`, so the case produced no discoverable
 declaration and its evidence could not be assigned. The rename restores the convention every
 sibling in the directory already follows and makes the case inventoriable; it changes no behaviour.
 
-Only the duplicate-participant gate is exercised here. The other `open()` gates — zero channel id,
-threshold shortfall, deposit composition — are covered by the Hardhat suite
+The duplicate-participant and successful-join-count gates are exercised here. The other `open()`
+gates — zero channel id, threshold shortfall, deposit composition — are covered by the Hardhat suite
 [OpenChannel.test.ts](../DiamondProxy/StateChannelManager/OpenChannel.test.ts.md), and the
 [`DEF-1-92NTAG`](../../../../../audit/open-findings.md#def-1-92ntag) length and zero-address gaps
 remain open there.
@@ -46,6 +54,7 @@ test ID may be assigned to at most one test across the whole tree; static analys
 duplicate assignments, and tests with no assigned ID are listed in the verification-coverage
 report but are kept here.
 
-| Test declaration                                                                                                                                    | Covers                                                                                                                                                                                    |
-| --------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| [`test_open_duplicateParticipants_reverts`](../../../../../../../test/V1/StateChannelDiamondProxy/StateChannelManagerProxyOpen.t.sol#L20) (line 20) | [`UNIT-TEST-MANAGER-PROXY-1-NTYR71.P12`](../../../../../implementation/source/contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol.md#unit-test-manager-proxy-1-ntyr71.p12) |
+| Test declaration                                                                                                                                                                 | Covers                                                                                                                                                                                    |
+| -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| [`test_open_duplicateParticipants_reverts`](../../../../../../../test/V1/StateChannelDiamondProxy/StateChannelManagerProxyOpen.t.sol#L27) (line 27)                              | [`UNIT-TEST-MANAGER-PROXY-1-NTYR71.P12`](../../../../../implementation/source/contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol.md#unit-test-manager-proxy-1-ntyr71.p12) |
+| [`test_open_fewerThanTwoSuccessfulJoins_revertsWithSuccessfulJoinCount`](../../../../../../../test/V1/StateChannelDiamondProxy/StateChannelManagerProxyOpen.t.sol#L45) (line 45) | [`UNIT-TEST-MANAGER-PROXY-1-NTYR71.P13`](../../../../../implementation/source/contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol.md#unit-test-manager-proxy-1-ntyr71.p13) |

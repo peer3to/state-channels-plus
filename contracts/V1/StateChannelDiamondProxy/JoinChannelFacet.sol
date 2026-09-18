@@ -41,14 +41,19 @@ contract JoinChannelFacet is StateChannelCommon {
         require(msg.sender == jc.participant, ErrorJoinChannelInvalidSubmitter(jc.participant, msg.sender));
 
         // Check deadline
-        require(jc.deadlineTimestamp >= block.timestamp, RaceConditionJoinChannelExpired());
+        require(
+            jc.deadlineTimestamp >= block.timestamp,
+            RaceConditionJoinChannelExpired(jc.deadlineTimestamp, block.timestamp)
+        );
         StateSnapshot memory currentSnapshot = _getStateSnapshot(channelId);
         require(
             expectedForkId == currentSnapshot.forkId,
             RaceConditionSnapshotForkMismatch(currentSnapshot.forkId, expectedForkId)
         );
+        bytes32 currentSnapshotHash = keccak256(abi.encode(currentSnapshot));
         require(
-            expectedSnapshotHash == keccak256(abi.encode(currentSnapshot)), RaceConditionJoinChannelSnapshotMismatch()
+            expectedSnapshotHash == currentSnapshotHash,
+            RaceConditionJoinChannelSnapshotMismatch(currentSnapshotHash, expectedSnapshotHash)
         );
 
         address[] memory participantUnion = UtilityFacet(utilityFacetAddress).concatAddressArraysNoDuplicates(
@@ -57,27 +62,43 @@ contract JoinChannelFacet is StateChannelCommon {
         bool isExistingParticipant =
             UtilityFacet(utilityFacetAddress).isAddressInArray(participantUnion, jc.participant);
         if (isTopUp) {
-            require(isExistingParticipant, ErrorTopUpBalanceParticipantNotFound());
+            require(isExistingParticipant, ErrorTopUpBalanceParticipantNotFound(channelId, jc.participant));
             require(
                 !_isParticipantSlashedOnChain(channelId, jc.participant),
                 ErrorTopUpBalanceParticipantSlashed(jc.participant)
             );
         } else {
-            require(!isExistingParticipant, ErrorJoinChannelParticipantAlreadyExists());
-            require(!_isForkDisputed(channelId, expectedForkId), RaceConditionForceInboundJoinForkDisputed());
+            require(!isExistingParticipant, ErrorJoinChannelParticipantAlreadyExists(channelId, jc.participant));
+            require(
+                !_isForkDisputed(channelId, expectedForkId),
+                RaceConditionForceInboundJoinForkDisputed(channelId, expectedForkId)
+            );
         }
 
         //verify original signature
         (address retrievedAddress, bool isValidSignature) =
             UtilityFacet(utilityFacetAddress).retrieveSignerAddress(sjc.encodedJoinChannel, sjc.signature);
-        require(jc.participant == retrievedAddress && isValidSignature, ErrorJoinChannelInvalidSignature());
+        require(
+            jc.participant == retrievedAddress && isValidSignature,
+            ErrorJoinChannelInvalidSignature(jc.participant, retrievedAddress)
+        );
 
         // Check threshold from the current eligibility set
         address[] memory thresholdParticipants = _getOnChainThresholdSet(channelId);
         (bool isValid,) = UtilityFacet(utilityFacetAddress).verifyThresholdSigned(
             thresholdParticipants, sjc.encodedJoinChannel, joinChannelConfirmation.signatures
         );
-        require(isValid, ErrorJoinChannelInvalidSignature());
+        // `if (!isValid) revert` so the signer set is only recovered on the
+        // failure path - `require` would recover on every successful join.
+        if (!isValid) {
+            revert ErrorJoinChannelConfirmationNotThresholdSigned(
+                jc.participant,
+                thresholdParticipants,
+                UtilityFacet(utilityFacetAddress).retrieveSignerAddresses(
+                    sjc.encodedJoinChannel, joinChannelConfirmation.signatures
+                )
+            );
+        }
 
         // Deposit funds
         JoinChannel[] memory jcs = new JoinChannel[](1);

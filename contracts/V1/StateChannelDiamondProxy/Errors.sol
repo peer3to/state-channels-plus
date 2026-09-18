@@ -2,46 +2,62 @@ pragma solidity ^0.8.8;
 
 //Channel Open
 error ErrorInvalidJoinChannel();
-error ErrorAtLeastTwoParticipantsRequired();
-error ErrorDuplicateParticipant();
+error ErrorAtLeastTwoParticipantsRequired(uint256 participantCount);
+error ErrorDuplicateParticipant(address participant);
 
 //Calldata errors
-error ErrorBlockCalldataAlreadyPosted();
-error ErrorBlockCalldataMsgSenderNotBlockAuthor();
+error ErrorBlockCalldataAlreadyPosted(
+    bytes32 forkId, uint256 transactionCnt, address participant, bytes32 existingCommitment
+);
+error ErrorBlockCalldataMsgSenderNotBlockAuthor(address expectedAuthor, address actualSender);
 
 //StateSnapshot errors
-error ErrorStateSnapshotNotValid();
-error ErrorInvalidStateProof();
-error ErrorOutboundMessageBlocksInvalid();
-error ErrorOutboundMessageBalanceMismatch();
-error ErrorInboundMessageBlockAlreadyPersisted();
+error ErrorStateSnapshotNotValid(bytes32 currentForkId, bytes32 targetForkId);
+error ErrorInvalidStateProof(bytes32 forkId, uint256 milestoneProofCount, uint256 milestoneSnapshotCount);
+error ErrorOutboundMessageBlocksInvalid(
+    bytes32 lowerLatestOutboundMessageBlockHash,
+    uint256 lowerLatestOutboundMessageBlockHeight,
+    uint256 outboundMessageBlockCount
+);
+error ErrorOutboundMessageBalanceMismatch(address participant, uint256 expectedAmount, uint256 actualAmount);
+error ErrorInboundMessageBlockAlreadyPersisted(bytes32 channelId, bytes32 blockHash);
 error ErrorSnapshotsNotProvided();
-error ErrorIncorrectSnapshotProvided();
-error ErrorNotGenesisSnapshot();
+/// A genesis snapshot commits to its own snapshotData at height 0, so
+/// `expectedForkId` is `keccak256(snapshotData)` and `actualForkId` what the
+/// submitted snapshot claimed.
+error ErrorNotGenesisSnapshot(bytes32 expectedForkId, bytes32 actualForkId, uint256 blockHeight);
+error ErrorSnapshotGenesisTimestampMismatch(uint256 expectedTimestamp, uint256 actualTimestamp);
+error ErrorSnapshotDataForkMismatch(bytes32 expectedForkId, bytes32 actualForkId);
+error ErrorInvalidStateSnapshotHash(bytes32 expectedStateSnapshotHash, bytes32 actualStateSnapshotHash);
 error ErrorOutboundMessageTypeUnsupported(bytes32 messageType);
 
 //Join channel
 error ErrorInvalidChannelId();
-error ErrorJoinChannelInvalidSignature();
+error ErrorJoinChannelInvalidSignature(address expectedSigner, address actualSigner);
+/// `thresholdParticipants` is the eligibility set the confirmation had to
+/// cover, `signers` the addresses recovered from the supplied signatures - the
+/// two sets being compared, so the caller can see which signer is missing.
+error ErrorJoinChannelConfirmationNotThresholdSigned(
+    address participant, address[] thresholdParticipants, address[] signers
+);
 error ErrorJoinChannelInvalidSubmitter(address expectedParticipant, address actualSubmitter);
-error ErrorJoinChannelParticipantAlreadyExists();
-error ErrorTopUpBalanceParticipantNotFound();
+error ErrorJoinChannelParticipantAlreadyExists(bytes32 channelId, address participant);
+error ErrorTopUpBalanceParticipantNotFound(bytes32 channelId, address participant);
 error ErrorTopUpBalanceParticipantSlashed(address participant);
 error ErrorNoJoinChannelProvided();
 error ErrorNoSuccessfulJoinChannel();
-error ErrorJoinChannelAtomicFailure();
+error ErrorJoinChannelAtomicFailure(uint256 joinChannelIndex, address participant);
 
 //Inbound message
 error ErrorNoInboundMessagesProvided();
 
 //Exit channel
-error ErrorWithdrawalFailed();
-error CantWithdrawMoreThanDeposits();
+error ErrorWithdrawalFailed(uint256 blockIndex, uint256 messageIndex, address participant);
+error CantWithdrawMoreThanDeposits(uint256 totalDepositAmount, uint256 totalWithdrawalAmount);
 
 //Dispute errors
 error ErrorDisputerNotMsgSender(address expectedDisputer, address actualSender);
-error ErrorLinkingPreviousBlock();
-error ErrorDisputeChallengePeriodExpired();
+error ErrorDisputeChallengePeriodExpired(uint256 challengePeriodEnd, uint256 currentTimestamp);
 error ErrorDisputeAlreadyPosted(bytes32 forkId, address disputer);
 error ErrorCantParticipateInDispute(bytes32 channelId, address participant);
 error ErrorAuditingDataHashMismatch(bytes32 expectedAuditingDataHash, bytes32 providedAuditingDataHash);
@@ -51,12 +67,17 @@ error ErrorDisputePostedAuditingDataMismatch(bool expectedPostedAuditingData, bo
 error ErrorNoDisputesProvided();
 
 //Auditing errors
-error ErrorDisputeCommitmentNotAvailable();
-error ErrorDisputeGenesisInvalid();
-error ErrorDisputeStateMachineJoiningFailed();
-error ErrorDisputeStateMachineSlashingFailed();
-error ErrorDisputeStateMachineRemovingFailed();
-error ErrorDisputeStateMachineInboundProcessingFailed();
+/// The submitted dispute set does not match the window's commitment list.
+error ErrorDisputeCommitmentNotAvailable(
+    bytes32 channelId, bytes32 forkId, bytes32[] committedDisputeHashes, bytes32[] submittedDisputeHashes
+);
+/// One specific dispute commitment is absent from the window.
+error ErrorDisputeCommitmentNotFound(bytes32 channelId, bytes32 forkId, bytes32 commitment);
+/// `stateMachineStateHash` is the state the walk was seeded with before the
+/// first message, so a rejected replay can be reproduced from its exact input.
+error ErrorDisputeStateMachineInboundProcessingFailed(
+    uint256 blockIndex, uint256 messageIndex, address participant, bytes32 messageType, bytes32 stateMachineStateHash
+);
 // Why the inbound walk rejected the chain. Plain `uint8` constants rather than
 // an enum on purpose: `scripts/generate-enums.ts` numbers the generated TS
 // enums by discovery order, so adding an enum here would silently renumber
@@ -83,28 +104,17 @@ error ErrorDisputeInboundMessageBlocksInvalid(
 );
 error ErrorInvalidLatestState(bytes32 expectedStateMachineStateHash, bytes32 actualStateMachineStateHash);
 
-//FraudProofs
-error ErrorInvalidFraudProof(address slashedParticipant, address expectedParticipant);
-error ErrorInvalidFraudProofType();
-
-//Double sign
-error ErrorDoubleSignBlocksNotSame();
-error ErrorNotSameChannelId();
-error ErrorInvalidStateSnapshot();
-error ErrorInvalidStateSnapshotHash();
-
 //Race conditions
-error RaceConditionChannelAlreadyOpen();
-error RaceConditionBlockCalldataTimestampTooLate();
+error RaceConditionChannelAlreadyOpen(bytes32 channelId);
+error RaceConditionBlockCalldataTimestampTooLate(uint256 maxTimestamp, uint256 currentTimestamp);
 error RaceConditionSnapshotForkMismatch(bytes32 currentForkId, bytes32 submittedForkId);
-error RaceConditionBlockHeightTooOld();
-error RaceConditionJoinChannelExpired();
-error RaceConditionDisputeEvidencePeriodExpired();
-error RaceConditionDisputeKillPeriodNotExpired();
-error RaceConditionDisputeKillPeriodExpired();
-error RaceConditionDisputeAlreadyReduced();
+error RaceConditionBlockHeightTooOld(uint256 currentBlockHeight, uint256 submittedBlockHeight);
+error RaceConditionJoinChannelExpired(uint256 deadlineTimestamp, uint256 currentTimestamp);
+error RaceConditionDisputeEvidencePeriodExpired(uint256 evidencePeriodEnd, uint256 currentTimestamp);
+error RaceConditionDisputeKillPeriodNotExpired(uint256 killPeriodEnd, uint256 currentTimestamp);
+error RaceConditionDisputeKillPeriodExpired(uint256 killPeriodEnd, uint256 currentTimestamp);
+error RaceConditionDisputeAlreadyReduced(bytes32 forkId, bytes32 existingReducedForkId, bytes32 submittedReducedForkId);
 error RaceConditionReductionExpectationDoesntMatch(bytes32 expectedReducedForkId, bytes32 actualReducedForkId);
-error RaceConditionDisputeAuditingRequired();
 error RaceConditionDisputeTimeoutCalldataPosted(
     bytes32 forkId, uint256 blockHeight, address participant, bytes32 blockCalldataCommitment
 );
@@ -113,14 +123,18 @@ error RaceConditionDisputeTimeoutPreviousBlockProducerPostedCalldataMismatch(
 );
 error RaceConditionDisputeTimeoutNotMinTimestamp(uint256 minTimestamp, uint256 currentTimestamp);
 error RaceConditionDisputeTimeoutWindowCreatedTooEarly(uint256 windowCreationTimestamp, uint256 minTimestamp);
-error RaceConditionUnexpectedBlockCalldataPosted();
-error RaceConditionGenesisTimestampNotAvailable();
-error RaceConditionOnChainSlashes();
-error RaceConditionJoinChannelSnapshotMismatch();
+error RaceConditionUnexpectedBlockCalldataPosted(
+    bytes32 forkId, uint256 blockHeight, address participant, bytes32 blockCalldataCommitment
+);
+error RaceConditionGenesisTimestampNotAvailable(bytes32 channelId, bytes32 originForkId, bytes32 forkId);
+/// `disputeSlashes` is the slash set the dispute listed, `onChainSlashes` the
+/// set recorded on chain - the two compared sets, not their sizes.
+error RaceConditionOnChainSlashes(bytes32 channelId, address[] disputeSlashes, address[] onChainSlashes);
+error RaceConditionJoinChannelSnapshotMismatch(bytes32 currentSnapshotHash, bytes32 submittedSnapshotHash);
 error RaceConditionPendingInboundNotConsumed(
     bytes32 submittedInboundMessageBlockHash, bytes32 onChainInboundMessageBlockHash
 );
-error RaceConditionForceInboundJoinForkDisputed();
+error RaceConditionForceInboundJoinForkDisputed(bytes32 channelId, bytes32 forkId);
 error ErrorDisputeThrottled(address disputer, uint256 throttleExpiry, uint256 currentTimestamp);
 error ErrorDuplicateSelectorRegistration(bytes4 selector);
 error ErrorRouteTargetHasNoCode(bytes4 selector, address target);

@@ -102,17 +102,25 @@ abstract contract DiamondHarness is Test {
         return _makeSignedBlock(pk, channelId, forkId, 0, timestamp, previousBlockHash);
     }
 
-    function _openChannel(bytes32 channelId, uint256[] memory participantPrivateKeys) internal {
+    /// An open-channel request signed by every listed participant. `isAtomic`
+    /// false lets a single deposit fail without reverting the whole batch, so a
+    /// caller can reach the guards that run after a partial open.
+    function _openChannelConfirmation(
+        bytes32 channelId,
+        uint256[] memory participantPrivateKeys,
+        uint256[] memory amounts,
+        bool isAtomic
+    ) internal view returns (OpenChannelConfirmation memory) {
         OpenChannel memory openChannel;
         openChannel.channelId = channelId;
         openChannel.participants = new address[](participantPrivateKeys.length);
         openChannel.balances = new Balance[](participantPrivateKeys.length);
         openChannel.deadlineTimestamp = block.timestamp + 1 days;
-        openChannel.isAtomic = true;
+        openChannel.isAtomic = isAtomic;
 
         for (uint256 i = 0; i < participantPrivateKeys.length; i++) {
             openChannel.participants[i] = vm.addr(participantPrivateKeys[i]);
-            openChannel.balances[i] = Balance({amount: 0, data: ""});
+            openChannel.balances[i] = Balance({amount: amounts[i], data: ""});
         }
 
         bytes memory encodedOpenChannel = abi.encode(openChannel);
@@ -121,7 +129,15 @@ abstract contract DiamondHarness is Test {
             signatures[i] = _sign(participantPrivateKeys[i], encodedOpenChannel);
         }
 
-        deployedDiamond.open(OpenChannelConfirmation({encodedOpenChannel: encodedOpenChannel, signatures: signatures}));
+        return OpenChannelConfirmation({encodedOpenChannel: encodedOpenChannel, signatures: signatures});
+    }
+
+    function _openChannel(bytes32 channelId, uint256[] memory participantPrivateKeys) internal {
+        deployedDiamond.open(
+            _openChannelConfirmation(
+                channelId, participantPrivateKeys, new uint256[](participantPrivateKeys.length), true
+            )
+        );
     }
 
     function _makeFinalCloseSnapshot(bytes32 channelId, address[] memory participants, uint256[] memory pks)
