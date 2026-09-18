@@ -14,6 +14,7 @@ const { liveTaskChildren, runTask } = require("../shared/runTask");
 const { TaskCoordinator } = require("../shared/taskCoordinator");
 const { WorkerScheduler } = require("../shared/workerScheduler");
 const { holdReason } = require("../shared/scheduling");
+const { normalizeTaskRunner } = require("../shared/taskRunners");
 const logging = require("../shared/logging");
 
 function resolveMode(flag, envVar, fallback) {
@@ -116,7 +117,8 @@ async function runScheduler({
         requestTask: async () => coordinator.requestTask("local"),
         onError: (error) => rejectRun?.(error),
         runTask: async (assignment) => {
-            // Forge brings its own EVM: no warm slot, no funded partition.
+            // Forge brings its own EVM and a browser gate starts its own node:
+            // no warm slot, no funded partition.
             const execution = taskResources.acquire(assignment.task);
             const { needsChain, accountPartition: account, slot } = execution;
             logging.admission({
@@ -126,7 +128,7 @@ async function runScheduler({
                     ? `slot ${slot.id}/${slotCount}`
                     : needsChain
                       ? "in-process"
-                      : "forge",
+                      : normalizeTaskRunner(assignment.task.runner),
                 running: scheduler.running,
                 concurrencyCap,
                 acct: needsChain ? account : "-",

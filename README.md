@@ -97,25 +97,27 @@ ordinary tasks, one task per test contract. A contract counts as a test contract
 when it declares a `test`, `invariant`, or `statefulFuzz` function, so harness
 and helper contracts sharing a file are left out.
 
-Without filename overrides, the runner discovers `test/**/*.ts` for Mocha and
-`test/**/*.sol` for Foundry. A repository may contain either tier or both. Each
-tier filters candidates by file type before parsing, including when a shared
-`--test-pattern` is supplied.
+Without filename overrides, the runner discovers `test/**/*.ts` for Mocha,
+`test/**/*.sol` for Foundry and `test/browser/run-*.mjs` for the browser gates.
+A repository may contain any of the tiers. Each tier filters candidates by file
+type before parsing, including when a shared `--test-pattern` is supplied.
 
 ```shell
 yarn test:parallel --forge-only     # only the forge tier
-yarn test:parallel --no-forge       # only the Mocha tier
+yarn test:parallel --no-forge       # Mocha and browser tiers
+yarn test:parallel --browser-only   # only the browser gates
+yarn test:parallel --no-browser     # Mocha and forge tiers
 yarn test:parallel --forge-threads 2
-yarn test:parallel --test-pattern 'V1/**' # filter both tiers
+yarn test:parallel --test-pattern 'V1/**' # filter every tier
 ```
 
 Each forge task uses one thread by default. `forge test` otherwise sizes its
 thread pool from the logical core count, which inside a CPU-limited container is
 still the host's count, so unpinned tasks oversubscribe the host. The runner
 already parallelizes across tasks. Use `--forge-threads` to override the
-default. `--e2e-only` selects the Mocha end-to-end tier and drops the forge tier
-with it. Use `--mocha-test-pattern` or `--forge-test-pattern` when only one
-tier needs a filename filter.
+default. `--e2e-only` selects the Mocha end-to-end tier and drops the forge and
+browser tiers with it. Use `--mocha-test-pattern`, `--forge-test-pattern` or
+`--browser-test-pattern` when only one tier needs a filename filter.
 
 Forge tasks need no Hardhat node, so they take neither a warm slot nor a funded
 account partition. Local runs build the contracts once before scheduling;
@@ -136,6 +138,48 @@ there reaches every worker without any worker-side update.
 ```shell
 yarn hardhat forge-test --match-contract '^UtilityFacetTest$'
 ```
+
+### Browser tests
+
+Each `test/browser/run-*.mjs` gate is one task. A gate boots a Vite server, its
+own Hardhat node and one headless Chromium, then drives every scenario on a
+single page, so splitting a gate per case would relaunch that stack per case.
+Like forge tasks, gates need neither a warm slot nor a funded account partition,
+and they reach the worker through a Hardhat task — `browser-test` in
+`tasks/browserTest.ts`, which runs the gate with Node and passes its exit code
+on.
+
+The gates load `src` through Vite, so the browser build is the tier's typecheck
+of `tsconfig.browser.json` rather than an input. Local runs build it once before
+scheduling rather than once per gate, while distributed runs get it from the
+worker's prepare script.
+
+```shell
+yarn test:parallel --browser-only
+yarn hardhat browser-test --script test/browser/run-p2p-webrtc-e2e.mjs
+```
+
+A gate needs the Chromium that Playwright ships with the version `yarn.lock`
+resolves. Install it locally with `yarn playwright install chromium`; the
+distributed runner image installs it during the image build. The container is the isolation
+boundary; Chromium's own sandbox is a separate setting that an environment
+dropping every capability may not allow, so the image declares
+`SCP_BROWSER_CONTAINED=1` and the gates launch without it there.
+
+An environment hands its worker a fresh `HOME`, and `pnpm install` never
+downloads browsers, so a gate finds Chromium only through
+`PLAYWRIGHT_BROWSERS_PATH`. The runner image sets it; a worker started with
+`--execution-backend unsafe-host` has to export it itself, for example
+`PLAYWRIGHT_BROWSERS_PATH="$HOME/Library/Caches/ms-playwright"` on macOS or
+`"$HOME/.cache/ms-playwright"` on Linux. A gate that cannot find the browser
+says so and names the variable.
+
+A worker runs tasks with the runner from its own checkout, so the browser tier
+reaches it only after **the worker host updates that checkout, restarts
+`yarn test:parallel:server`, and rebuilds its runner image**. The distributed
+protocol version covers the tier vocabulary, so an orchestrator on this branch
+reports `worker protocol mismatch` for a worker that has not updated rather than
+failing once a browser task is already assigned.
 
 ### Distributed parallel tests
 

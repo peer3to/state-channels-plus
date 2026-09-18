@@ -1,3 +1,4 @@
+import { launchChromium } from "./chromiumLaunch.js";
 import {
     startSdkRuntimeServer,
     installSdkRuntimeConfig
@@ -18,6 +19,15 @@ const require = createRequire(import.meta.url);
 // the crash-log smoke's crash is deliberate; every other console error fails
 const BROWSER_WORKER_CRASH_MESSAGE =
     "browser worker answer precompile async crash";
+// Budget for one in-page scenario. The slowest (the inline SDK host disposals)
+// takes ~39s on an idle machine, and a gate scheduled on a farm worker shares
+// its CPU with other tasks: at the old 45s it timed out at 45.04s there. Every
+// wait in this gate is sized from the same contention, including Playwright's
+// own default — module load waits for Vite to transpile all of `src` in the
+// page, the most load-sensitive step here.
+const SMOKE_TIMEOUT_MS = 120_000;
+// Uploads only have to reach the receiver, so they get a quarter of that.
+const UPLOAD_TIMEOUT_MS = SMOKE_TIMEOUT_MS / 4;
 // what the crash-log smoke files under; must match crash-log-smoke.js
 const CRASH_LOG_MAIN_PEER = "0x70997970C51812dc3A010C7d01b50e0d17dc79C8";
 const CRASH_LOG_MAIN_MARKER = "browser main entry";
@@ -167,10 +177,10 @@ try {
         throw new Error("Vite did not expose a browser test server port");
     }
 
-    browser = await chromium.launch({ headless: true });
+    browser = await launchChromium(chromium);
     const page = await browser.newPage();
     await installSdkRuntimeConfig(page, `http://127.0.0.1:${address.port}`);
-    page.setDefaultTimeout(60_000);
+    page.setDefaultTimeout(SMOKE_TIMEOUT_MS);
     const browserErrors = [];
 
     page.on("pageerror", (error) => {
@@ -226,23 +236,28 @@ try {
         throw error;
     }
 
+    // The scenario budget crosses into the page as an argument: an evaluate
+    // callback is serialized and runs in the browser, with no Node scope.
     async function runSmoke(functionName) {
-        return page.evaluate(async (name) => {
-            let timer;
-            try {
-                return await Promise.race([
-                    globalThis[name](),
-                    new Promise((_, reject) => {
-                        timer = setTimeout(
-                            () => reject(new Error(`${name} timed out`)),
-                            45_000
-                        );
-                    })
-                ]);
-            } finally {
-                clearTimeout(timer);
-            }
-        }, functionName);
+        return page.evaluate(
+            async ([name, timeoutMs]) => {
+                let timer;
+                try {
+                    return await Promise.race([
+                        globalThis[name](),
+                        new Promise((_, reject) => {
+                            timer = setTimeout(
+                                () => reject(new Error(`${name} timed out`)),
+                                timeoutMs
+                            );
+                        })
+                    ]);
+                } finally {
+                    clearTimeout(timer);
+                }
+            },
+            [functionName, SMOKE_TIMEOUT_MS]
+        );
     }
 
     await test("browser performance reporting uses long-task metadata", async () => {
@@ -400,27 +415,30 @@ try {
     });
 
     await test("browser crash-log collection uploads every realm", async () => {
-        const crashLog = await page.evaluate(async (endpoint) => {
-            let timer;
-            try {
-                return await Promise.race([
-                    globalThis.runCrashLogBrowserSmoke(endpoint),
-                    new Promise((_, reject) => {
-                        timer = setTimeout(
-                            () =>
-                                reject(
-                                    new Error(
-                                        "Crash log browser smoke timed out"
-                                    )
-                                ),
-                            45_000
-                        );
-                    })
-                ]);
-            } finally {
-                clearTimeout(timer);
-            }
-        }, crashLogServer.uploadEndpoint);
+        const crashLog = await page.evaluate(
+            async ([endpoint, timeoutMs]) => {
+                let timer;
+                try {
+                    return await Promise.race([
+                        globalThis.runCrashLogBrowserSmoke(endpoint),
+                        new Promise((_, reject) => {
+                            timer = setTimeout(
+                                () =>
+                                    reject(
+                                        new Error(
+                                            "Crash log browser smoke timed out"
+                                        )
+                                    ),
+                                timeoutMs
+                            );
+                        })
+                    ]);
+                } finally {
+                    clearTimeout(timer);
+                }
+            },
+            [crashLogServer.uploadEndpoint, SMOKE_TIMEOUT_MS]
+        );
 
         // Full SDK setup owns an SDK store beside the supplied main store;
         // the dedicated VM owns the third store in its worker realm.
@@ -430,7 +448,7 @@ try {
         const chunks = await waitForStoredThreads(
             crashLogServer.logDir,
             ["main", "vm"],
-            15_000
+            UPLOAD_TIMEOUT_MS
         );
         const { decodeChunk } = require("../../scripts/logging/logChunks.js");
         const mainChunks = chunks.filter(
@@ -460,33 +478,36 @@ try {
         );
     });
     await test("browser nested SDK and executor workers gossip crash logs", async () => {
-        const outcome = await page.evaluate(async (endpoint) => {
-            let timer;
-            try {
-                return await Promise.race([
-                    globalThis.runNestedCrashLogBrowserSmoke(endpoint),
-                    new Promise((_, reject) => {
-                        timer = setTimeout(
-                            () =>
-                                reject(
-                                    new Error(
-                                        "Nested browser crash upload timed out"
-                                    )
-                                ),
-                            45_000
-                        );
-                    })
-                ]);
-            } finally {
-                clearTimeout(timer);
-            }
-        }, crashLogServer.uploadEndpoint);
+        const outcome = await page.evaluate(
+            async ([endpoint, timeoutMs]) => {
+                let timer;
+                try {
+                    return await Promise.race([
+                        globalThis.runNestedCrashLogBrowserSmoke(endpoint),
+                        new Promise((_, reject) => {
+                            timer = setTimeout(
+                                () =>
+                                    reject(
+                                        new Error(
+                                            "Nested browser crash upload timed out"
+                                        )
+                                    ),
+                                timeoutMs
+                            );
+                        })
+                    ]);
+                } finally {
+                    clearTimeout(timer);
+                }
+            },
+            [crashLogServer.uploadEndpoint, SMOKE_TIMEOUT_MS]
+        );
         try {
             assert.equal(outcome.ok, true);
             const chunks = await waitForStoredThreads(
                 crashLogServer.logDir,
                 ["main", "sdk", "vm"],
-                15_000,
+                UPLOAD_TIMEOUT_MS,
                 outcome.channelId
             );
             const {
