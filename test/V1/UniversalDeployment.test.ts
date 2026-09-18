@@ -266,7 +266,14 @@ describe("Universal Deployment", () => {
             expect(proxyError?.name).to.equal(
                 "RaceConditionBlockCalldataTimestampTooLate"
             );
-            expect(proxyError?.args).to.have.length(0);
+            // the deadline passed to postBlockCalldata was one second before the
+            // latest block, so the chain reverted with exactly that comparison
+            expect(proxyError?.args.maxTimestamp).to.equal(
+                BigInt(currentBlock!.timestamp - 1)
+            );
+            expect(Number(proxyError?.args.currentTimestamp)).to.be.greaterThan(
+                Number(proxyError?.args.maxTimestamp)
+            );
 
             const [, secondSigner] = await ethers.getSigners();
             const openChannel = createOpenChannelTestObject([

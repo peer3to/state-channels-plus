@@ -29,8 +29,14 @@ export function createRootWorker(
     // Transpile-only (swc via tsconfig's ts-node.swc): each worker re-loads the
     // import graph, and full ts-node type-checks it (seconds + a retained TS
     // program per worker). Types are already checked by `yarn tsc`.
+    // An explicit execArgv replaces the inherited one, so keep the parent's
+    // CPU-profiler flags: a `node --cpu-prof` run then profiles every root
+    // thread, not only the main thread.
     const execArgv = workerPath.endsWith(".ts")
         ? [
+              ...process.execArgv.filter((flag) =>
+                  flag.startsWith("--cpu-prof")
+              ),
               "-r",
               "ts-node/register/transpile-only",
               "-r",

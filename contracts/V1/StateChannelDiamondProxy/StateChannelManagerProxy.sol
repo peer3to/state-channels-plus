@@ -155,7 +155,9 @@ contract StateChannelManagerProxy is StateChannelCommon {
      */
     function postBlockCalldata(SignedBlock memory signedBlock, uint256 maxTimestamp) public {
         //Time is the only race condition we need to take into account
-        require(block.timestamp <= maxTimestamp, RaceConditionBlockCalldataTimestampTooLate());
+        require(
+            block.timestamp <= maxTimestamp, RaceConditionBlockCalldataTimestampTooLate(maxTimestamp, block.timestamp)
+        );
         bytes32 commitment = keccak256(abi.encode(signedBlock, block.timestamp));
         Block memory _block = abi.decode(signedBlock.encodedBlock, (Block));
 
@@ -165,11 +167,15 @@ contract StateChannelManagerProxy is StateChannelCommon {
         uint256 transactionCnt = _block.transaction.header.transactionCnt;
 
         //Don't allow overwriting the blockCalldataCommitment if it already exists
+        bytes32 existingCommitment = blockCalldataCommitments[channelId][msg.sender][forkId][transactionCnt];
         require(
-            blockCalldataCommitments[channelId][msg.sender][forkId][transactionCnt] == bytes32(0),
-            ErrorBlockCalldataAlreadyPosted()
+            existingCommitment == bytes32(0),
+            ErrorBlockCalldataAlreadyPosted(forkId, transactionCnt, msg.sender, existingCommitment)
         );
-        require(msg.sender == _block.transaction.header.participant, ErrorBlockCalldataMsgSenderNotBlockAuthor());
+        require(
+            msg.sender == _block.transaction.header.participant,
+            ErrorBlockCalldataMsgSenderNotBlockAuthor(_block.transaction.header.participant, msg.sender)
+        );
 
         blockCalldataCommitments[channelId][msg.sender][forkId][transactionCnt] = commitment;
 
@@ -184,7 +190,7 @@ contract StateChannelManagerProxy is StateChannelCommon {
         OpenChannel memory openChannelData = abi.decode(openChannelConfirmation.encodedOpenChannel, (OpenChannel));
         require(openChannelData.channelId != bytes32(0), ErrorInvalidJoinChannel());
         (bool isOpen,) = _isChannelOpen(openChannelData.channelId);
-        require(!isOpen, RaceConditionChannelAlreadyOpen());
+        require(!isOpen, RaceConditionChannelAlreadyOpen(openChannelData.channelId));
 
         require(
             openChannelData.participants.length <= _getMaxChannelParticipants(),
@@ -194,7 +200,10 @@ contract StateChannelManagerProxy is StateChannelCommon {
         // reject duplicate participants
         for (uint256 i = 0; i < openChannelData.participants.length; i++) {
             for (uint256 j = i + 1; j < openChannelData.participants.length; j++) {
-                require(openChannelData.participants[i] != openChannelData.participants[j], ErrorDuplicateParticipant());
+                require(
+                    openChannelData.participants[i] != openChannelData.participants[j],
+                    ErrorDuplicateParticipant(openChannelData.participants[i])
+                );
             }
         }
 
@@ -227,7 +236,7 @@ contract StateChannelManagerProxy is StateChannelCommon {
         (MessageBlock memory inboundBlock, Balance memory newTotalDeposits, JoinChannel[] memory processedJoins) =
             StateChannelManagerProxy(address(this)).depositAssetsComposable(joinChannels, openChannelData.isAtomic);
 
-        require(processedJoins.length >= 2, ErrorAtLeastTwoParticipantsRequired());
+        require(processedJoins.length >= 2, ErrorAtLeastTwoParticipantsRequired(processedJoins.length));
         bytes32 inboundHead = keccak256(abi.encode(inboundBlock));
         bytes memory result = _delegatecall(
             consumerFacetAddress,
@@ -286,7 +295,7 @@ contract StateChannelManagerProxy is StateChannelCommon {
             bytes memory result =
                 _delegatecall(consumerFacetAddress, abi.encodeCall(AConsumerFacet.deposit, (joinChannels[i])));
             bool success = abi.decode(result, (bool));
-            if (!success && isAtomic) revert ErrorJoinChannelAtomicFailure();
+            if (!success && isAtomic) revert ErrorJoinChannelAtomicFailure(i, joinChannels[i].participant);
             if (success) {
                 filteredJoinChannels[successfulJoinCount++] = joinChannels[i];
             }

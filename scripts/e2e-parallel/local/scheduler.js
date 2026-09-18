@@ -139,7 +139,15 @@ async function runScheduler({
             try {
                 attempt = await runTaskImpl(
                     process.execPath,
-                    [HARDHAT_CLI, ...assignment.task.args],
+                    [
+                        // Opt-in node flags for a child (e.g. --cpu-prof);
+                        // NODE_OPTIONS refuses the profiler flags.
+                        ...(process.env.TEST_CHILD_NODE_FLAGS
+                            ? process.env.TEST_CHILD_NODE_FLAGS.split(" ")
+                            : []),
+                        HARDHAT_CLI,
+                        ...assignment.task.args
+                    ],
                     execution.env,
                     assignment.task.label,
                     logging.getLogPath(logDir, assignment.task.logName)

@@ -27,7 +27,7 @@ Unrecoverable confirmations are stripped and their actual recorded suppliers are
 
 The disputed-fork hook discards the entry without requeueing. It returns NOT_READY to stop validation for sourceless or unacknowledged entries; acknowledged suppliers retain their blacklist liability. The hook accepts only the entry.
 
-The live strategy owns the subjective-window failure log and refusal. A replay override can accept history without logging a false validation failure. See [BlockValidationStrategy.ts](../../../../../../../src/stateManager/validationStrategy/BlockValidationStrategy.ts#L287).
+Growth on a stored block is rebroadcast only by a participating peer that the block's participant union contains (`MembershipService.isSignerInBlockUnion`); a leaver whose exit is pending persists the growth without relaying it. The live strategy owns the subjective-window failure log and refusal. A replay override can accept history without logging a false validation failure. See [BlockValidationStrategy.ts](../../../../../../../src/stateManager/validationStrategy/BlockValidationStrategy.ts#L287).
 
 1. **Evidence-before-escalation is enforced here:** every DISPUTE verdict stores the proof via the fraud-proof service, then calls `dispute(forkId)` ([`REQ-BLOCK-PIPE-8-N529VH` (Evidence precedes escalation)](../../../../../specification/block-progression/block-processing.md#req-block-pipe-8-n529vh)).
 2. **Acknowledgment-gated tolerance** consumes the dispute-ack records ([`REQ-DACK-3-J4Z33Y` (Knowledge-gated consequences)](../../../../../specification/peer-communication/dispute-acknowledgment.md#req-dack-3-j4z33y)).

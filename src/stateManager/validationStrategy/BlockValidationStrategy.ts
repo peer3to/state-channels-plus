@@ -131,9 +131,15 @@ export default class BlockValidationStrategy extends AValidationStrategy {
         block: Block
     ): Promise<BlockValidationResult> {
         // Pending joiners also receive late confirmations before their join lands.
-        // Persist them, but start relaying only after participant promotion.
+        // Persist them, but start relaying only after participant promotion,
+        // and only for blocks whose participant union contains us: a leaver
+        // whose exit is pending persists later growth without relaying it.
         this.storage.blocks.storeBlock(block);
-        if (this.p2pManager.stateManager.status !== Status.PARTICIPATING)
+        const sm = this.p2pManager.stateManager;
+        if (
+            sm.status !== Status.PARTICIPATING ||
+            !sm.membershipService.isSignerInBlockUnion(block)
+        )
             return BlockValidationResult.SUCCESS;
         this.p2pManager.remoteRpc.stateTransitionService
             .onBlockConfirmation(block.blockConfirmationStruct)
