@@ -42,12 +42,12 @@ getGenesisStateMachineState remains available for existing test callers. This te
 
 ## Inputs, outputs, state, and side effects
 
-| Aspect       | Contents                                                                        |
-| ------------ | ------------------------------------------------------------------------------- |
-| Inputs       | Coordinate queries (fork id, height), hashes, participant addresses.            |
-| Outputs      | Deep copies of stored records or explicit absence (`undefined`) for most reads. |
-| Owned state  | None beyond the module instances it constructs.                                 |
-| Side effects | None — the facade adds no writes of its own.                                    |
+| Aspect       | Contents                                                                                                                          |
+| ------------ | --------------------------------------------------------------------------------------------------------------------------------- |
+| Inputs       | Coordinate queries (fork id, height), hashes, participant addresses.                                                              |
+| Outputs      | Deep copies of stored records or explicit absence (`undefined`) for most reads.                                                   |
+| Owned state  | None beyond the module instances it constructs, including the [blacklist store](./BlacklistStorage.ts.md) mounted as `blacklist`. |
+| Side effects | None — the facade adds no writes of its own.                                                                                      |
 
 ## Linked requirements
 

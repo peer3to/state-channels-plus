@@ -14,9 +14,10 @@ export enum DisconnectTier {
  * - `ALLOW`: close the connection only. The peer keeps its profile and may
  *   reconnect; no fault ban is placed on its Hyperswarm peer info.
  * - `allowRetry(maxRetries)`: close only, but count the close against the peer
- *   for this session. The close that reaches `maxRetries` is applied as
- *   `SUSPEND` instead. There is one counter per peer, shared by every call
- *   site, so a peer cannot spread its retries over different checks.
+ *   for this session. The close that reaches `maxRetries` (default
+ *   `DEFAULT_RETRY_LIMIT`) is applied as `SUSPEND` instead. There is one
+ *   counter per peer, shared by every call site, so a peer cannot spread its
+ *   retries over different checks.
  * - `SUSPEND`: close and bar the identity for the rest of this session. The
  *   peer's Hyperswarm peer info is banned and its reconnects are refused, but
  *   nothing is recorded on its profile and the bar dies with the session.
@@ -30,6 +31,9 @@ export type DisconnectPolicy =
     | { readonly tier: DisconnectTier.SUSPEND }
     | { readonly tier: DisconnectTier.BLACKLIST };
 
+/** How many counted closes a peer gets before the bounded tier suspends it. */
+export const DEFAULT_RETRY_LIMIT = 3;
+
 /**
  * The three constant tiers keep their plain `DisconnectPolicy.ALLOW` spelling;
  * only the bounded tier carries a value, so only it needs a factory.
@@ -38,10 +42,8 @@ export const DisconnectPolicy = {
     ALLOW: { tier: DisconnectTier.ALLOW },
     SUSPEND: { tier: DisconnectTier.SUSPEND },
     BLACKLIST: { tier: DisconnectTier.BLACKLIST },
-    allowRetry: (maxRetries: number): DisconnectPolicy => ({
+    allowRetry: (maxRetries = DEFAULT_RETRY_LIMIT): DisconnectPolicy => ({
         tier: DisconnectTier.ALLOW_RETRY,
         maxRetries
     })
 } as const;
-
-export default DisconnectPolicy;

@@ -75,7 +75,9 @@ describe("HandshakeCompletedGuard", function () {
             result.expectedTimeoutMs,
             result.expectedTimeoutMs
         ]);
-        expect(result.firstSuspended).to.equal(true);
+        // An expired waiter is one strike, not a session bar.
+        expect(result.firstStrikes).to.equal(1);
+        expect(result.firstSuspended).to.equal(false);
         expect(result.firstDisconnected).to.equal(true);
         expect(result.invocations).to.deep.equal(["fresh"]);
     });
@@ -163,9 +165,23 @@ describe("HandshakeCompletedGuard", function () {
 
         expect(result.waitCalls).to.equal(2);
         expect(result.invocations).to.deep.equal(["replacement"]);
-        expect(result.originalSuspended).to.equal(true);
+        expect(result.originalStrikes).to.equal(1);
+        expect(result.originalSuspended).to.equal(false);
         expect(result.originalDisconnected).to.equal(true);
         expect(result.replacementConnected).to.equal(true);
+    });
+
+    it("suspends an identity on the expired waiter that reaches its retry bound", async function () {
+        const result = await fixture
+            .control()
+            .handshakeCompletedGuardProbe.probeRepeatedTimeoutsSuspend()
+            .request();
+
+        // The saturated count is not finite, so only the suspension flag
+        // reports the third expiry.
+        expect(result.strikesAfterEach.slice(0, 2)).to.deep.equal([1, 2]);
+        expect(result.suspendedAtBound).to.equal(true);
+        expect(result.invocations).to.deep.equal([]);
     });
 
     it("allows guarded RPCs on an authenticated transport during replacement grace", async function () {

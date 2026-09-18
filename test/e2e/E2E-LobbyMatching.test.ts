@@ -273,7 +273,7 @@ describe("E2E: lobby matching", function () {
         }
     });
 
-    it("excludes a silent picker from rematching and pairs with another peer on the same topic", async function () {
+    it("suspends a repeatedly silent picker at the retry bound and pairs with another peer on the same topic", async function () {
         const h = TestSession.getHarness();
         await h.setup(3, { autoConnect: false });
         const topic = ethers.id("e2e-lobby-silent-pick-recovery");
@@ -287,15 +287,23 @@ describe("E2E: lobby matching", function () {
 
         try {
             await h.network.joinLobby([lowerIndex, higherIndex], topic);
+            await h.assert.rpc.peerStruckWithoutBlacklist({
+                observer: h.peers[higherIndex],
+                target: h.peers[lowerIndex]
+            });
+
+            // One strike keeps the silent peer selectable, so the selector
+            // keeps picking it until the third silence suspends it for the
+            // session. The third peer joins only after that, so the pairing
+            // below is the suspension's consequence and not a race with it.
             await waitFor(
-                async () =>
-                    (
-                        await h
-                            .control(h.peers[higherIndex])
-                            .query.getLobbyAvailability()
-                            .request()
-                    ).excludedPeerCount === 1,
-                h.event.protocolEventTimeoutMs(),
+                () =>
+                    h
+                        .control(h.peers[higherIndex])
+                        .query.isSuspended(h.peers[lowerIndex].address)
+                        .request(),
+                h.event.protocolEventTimeoutMs({ withFirstBlockGrace: true }) *
+                    2,
                 200
             );
             expect(
@@ -304,7 +312,6 @@ describe("E2E: lobby matching", function () {
                     .query.isBlacklisted(h.peers[lowerIndex].address)
                     .request()
             ).to.equal(false);
-
             await h.network.joinLobby([2], topic);
             const recoveredChannelId =
                 await h.rpc.recoveredPairingChannelIdWait(higherIndex, 2);
@@ -407,7 +414,7 @@ describe("E2E: lobby matching", function () {
         }
     });
 
-    it("excludes both sides after commitment silence and does not rematch them", async function () {
+    it("strikes both sides after commitment silence and lets the same pair rematch", async function () {
         const h = TestSession.getHarness();
         await h.setup(3, { autoConnect: false });
         const topic = ethers.id("e2e-lobby-silent-commit-recovery");
@@ -424,80 +431,57 @@ describe("E2E: lobby matching", function () {
 
         try {
             await h.network.joinLobby([advertiserIndex, selectorIndex], topic);
-            await waitFor(
-                async () =>
-                    (
-                        await h
-                            .control(h.peers[advertiserIndex])
-                            .query.getLobbyAvailability()
-                            .request()
-                    ).excludedPeerCount === 1 &&
-                    (
-                        await h
-                            .control(h.peers[selectorIndex])
-                            .query.getLobbyAvailability()
-                            .request()
-                    ).excludedPeerCount === 1,
-                h.event.protocolEventTimeoutMs(),
-                200
-            );
-            expect(
-                await Promise.all([
-                    h
-                        .control(h.peers[advertiserIndex])
-                        .query.isBlacklisted(h.peers[selectorIndex].address)
-                        .request(),
-                    h
-                        .control(h.peers[selectorIndex])
-                        .query.isBlacklisted(h.peers[advertiserIndex].address)
-                        .request()
-                ])
-            ).to.deep.equal([false, false]);
+            await h.assert.rpc.peerStruckWithoutBlacklist({
+                observer: h.peers[advertiserIndex],
+                target: h.peers[selectorIndex]
+            });
+            await h.assert.rpc.peerStruckWithoutBlacklist({
+                observer: h.peers[selectorIndex],
+                target: h.peers[advertiserIndex]
+            });
+            // The held reply parks every commit, including the rematch's;
+            // releasing it lets the pair's next commitment through.
             await releaseReply();
-            expect(
-                await h
-                    .control(h.peers[selectorIndex])
-                    .query.getNegotiationAttempt()
-                    .request()
-            ).to.equal(null);
-
+            // One strike is below the bound, so both peers keep the topic,
+            // reconnect, and are free to pair again: the next attempt opens.
             await waitFor(
-                async () =>
-                    (
-                        await h
+                async () => {
+                    const channelIds = await Promise.all(
+                        [advertiserIndex, selectorIndex].map((index) =>
+                            h
+                                .control(h.peers[index])
+                                .query.getChannelId()
+                                .request()
+                        )
+                    );
+                    return (
+                        channelIds[0] !== ethers.ZeroHash &&
+                        channelIds[0] === channelIds[1] &&
+                        (await h
                             .control(h.peers[advertiserIndex])
-                            .query.getLobbyAvailability()
-                            .request()
-                    ).matching &&
-                    (
-                        await h
-                            .control(h.peers[selectorIndex])
-                            .query.getLobbyAvailability()
-                            .request()
-                    ).matching,
-                h.event.protocolEventTimeoutMs(),
+                            .query.isChannelOpen(channelIds[0])
+                            .request())
+                    );
+                },
+                h.event.protocolEventTimeoutMs({ withFirstBlockGrace: true }),
                 200
             );
-            // Both peers keep the topic and reconnect, so only the exclusion
-            // stops them from burning another agreement window on each other.
-            await sleep(600);
             expect(
                 await Promise.all(
                     [advertiserIndex, selectorIndex].map((index) =>
                         h
                             .control(h.peers[index])
-                            .query.getNegotiationAttempt()
+                            .query.isBlacklisted(
+                                h.peers[
+                                    index === advertiserIndex
+                                        ? selectorIndex
+                                        : advertiserIndex
+                                ].address
+                            )
                             .request()
                     )
                 )
-            ).to.deep.equal([null, null]);
-            expect(
-                await Promise.all(
-                    [advertiserIndex, selectorIndex].map((index) =>
-                        h.control(h.peers[index]).query.getChannelId().request()
-                    )
-                )
-            ).to.deep.equal([ethers.ZeroHash, ethers.ZeroHash]);
+            ).to.deep.equal([false, false]);
         } finally {
             await releaseReply();
             await h.network.leaveLobby([0, 1, 2], topic);
@@ -529,41 +513,18 @@ describe("E2E: lobby matching", function () {
 
         try {
             await h.network.joinLobby([advertiserIndex, selectorIndex], topic);
-            await waitFor(
-                async () =>
-                    (
-                        await h
-                            .control(h.peers[advertiserIndex])
-                            .query.getLobbyAvailability()
-                            .request()
-                    ).excludedPeerCount === 1,
-                h.event.protocolEventTimeoutMs(),
-                200
-            );
-            await waitFor(
-                async () =>
-                    (
-                        await h
-                            .control(h.peers[selectorIndex])
-                            .query.getLobbyAvailability()
-                            .request()
-                    ).excludedPeerCount === 1,
-                h.event.protocolEventTimeoutMs(),
-                50
-            );
-            expect(
-                await Promise.all([
-                    h
-                        .control(h.peers[advertiserIndex])
-                        .query.isBlacklisted(h.peers[selectorIndex].address)
-                        .request(),
-                    h
-                        .control(h.peers[selectorIndex])
-                        .query.isBlacklisted(h.peers[advertiserIndex].address)
-                        .request()
-                ])
-            ).to.deep.equal([false, false]);
-            expect(await selectorTimeout.heldCount()).to.equal(1);
+            await h.assert.rpc.peerStruckWithoutBlacklist({
+                observer: h.peers[advertiserIndex],
+                target: h.peers[selectorIndex]
+            });
+            await h.assert.rpc.peerStruckWithoutBlacklist({
+                observer: h.peers[selectorIndex],
+                target: h.peers[advertiserIndex],
+                pollMs: 50
+            });
+            // One strike leaves the pair free to match again, so a second
+            // commit timeout may already be held by the time the first is read.
+            expect(await selectorTimeout.heldCount()).to.be.at.least(1);
             await releaseReply();
             expect(
                 await h
@@ -602,50 +563,23 @@ describe("E2E: lobby matching", function () {
 
         try {
             await h.network.joinLobby([advertiserIndex, selectorIndex], topic);
-            await waitFor(
-                async () =>
-                    (
-                        await h
-                            .control(h.peers[selectorIndex])
-                            .query.getLobbyAvailability()
-                            .request()
-                    ).excludedPeerCount === 1,
-                h.event.protocolEventTimeoutMs(),
-                200
-            );
+            await h.assert.rpc.peerStruckWithoutBlacklist({
+                observer: h.peers[selectorIndex],
+                target: h.peers[advertiserIndex]
+            });
             expect(await advertiserExpiry.heldCount()).to.equal(1);
             expect(
-                (
-                    await h
-                        .control(h.peers[advertiserIndex])
-                        .query.getLobbyAvailability()
-                        .request()
-                ).excludedPeerCount
+                await h
+                    .control(h.peers[advertiserIndex])
+                    .query.getStrikes(h.peers[selectorIndex].address)
+                    .request()
             ).to.equal(0);
             await advertiserExpiry.release(true);
-            await waitFor(
-                async () =>
-                    (
-                        await h
-                            .control(h.peers[advertiserIndex])
-                            .query.getLobbyAvailability()
-                            .request()
-                    ).excludedPeerCount === 1,
-                h.event.protocolEventTimeoutMs(),
-                50
-            );
-            expect(
-                await Promise.all([
-                    h
-                        .control(h.peers[advertiserIndex])
-                        .query.isBlacklisted(h.peers[selectorIndex].address)
-                        .request(),
-                    h
-                        .control(h.peers[selectorIndex])
-                        .query.isBlacklisted(h.peers[advertiserIndex].address)
-                        .request()
-                ])
-            ).to.deep.equal([false, false]);
+            await h.assert.rpc.peerStruckWithoutBlacklist({
+                observer: h.peers[advertiserIndex],
+                target: h.peers[selectorIndex],
+                pollMs: 50
+            });
             await releaseReply();
             expect(
                 await h
@@ -1379,10 +1313,7 @@ describe("E2E: lobby matching", function () {
                 [lowerIndex, higherIndex],
                 "exchangeTerms",
                 async () => {
-                    await h.network.joinLobby(
-                        [lowerIndex, higherIndex],
-                        topic
-                    );
+                    await h.network.joinLobby([lowerIndex, higherIndex], topic);
                     await waitFor(
                         async () =>
                             !!(await h
@@ -1394,24 +1325,13 @@ describe("E2E: lobby matching", function () {
                         }),
                         200
                     );
-                    const commitment = await h.execOnHost(
-                        h.peers[higherIndex],
-                        (stateManager) => {
-                            const attempt =
-                                stateManager.p2pManager.localRpc
-                                    .openChannelNegotiationService.state
-                                    .attempt;
-                            if (!attempt) {
-                                throw new Error("Negotiation attempt is gone");
-                            }
-                            return {
-                                attemptNonce: attempt.attemptNonce,
-                                selectorChallenge: attempt.selectorChallenge,
-                                advertiserChallenge:
-                                    attempt.advertiserChallenge
-                            };
-                        }
-                    );
+                    const commitment = await h
+                        .control(h.peers[higherIndex])
+                        .query.getNegotiationAttempt()
+                        .request();
+                    if (!commitment) {
+                        throw new Error("Negotiation attempt is gone");
+                    }
                     await h.byzantine.sendRawNegotiationRpc(
                         lowerIndex,
                         higherIndex,
@@ -1438,18 +1358,213 @@ describe("E2E: lobby matching", function () {
                             .query.isBlacklisted(h.peers[lowerIndex].address)
                             .request()
                     ).to.equal(false);
+                    // A polite abort is neither a verdict nor a strike.
                     expect(
-                        (
-                            await h
-                                .control(h.peers[higherIndex])
-                                .query.getLobbyAvailability()
-                                .request()
-                        ).excludedPeerCount
-                    ).to.equal(1);
+                        await h
+                            .control(h.peers[higherIndex])
+                            .query.getStrikes(h.peers[lowerIndex].address)
+                            .request()
+                    ).to.equal(0);
                 }
             );
         } finally {
             await h.network.leaveLobby([lowerIndex, higherIndex], topic);
+        }
+    });
+
+    it("keeps a signed attempt observing the chain after a remote abort and opens on the observed submission", async function () {
+        const h = TestSession.getHarness();
+        await h.setup(2, { autoConnect: false });
+        const topic = ethers.id("e2e-lobby-signed-abort-observation");
+        const [lowerIndex, higherIndex] = h.network.lobbyRoleIndices();
+        const lower = h.peers[lowerIndex];
+        const higher = h.peers[higherIndex];
+        const higherAttempt = () =>
+            h.control(higher).query.getNegotiationAttempt().request();
+
+        // The higher peer signs the opening and parks its submission, so the
+        // abort lands on an attempt that already carries a local signature.
+        await h.control(higher).stub.stubHoldOpeningSubmission().request();
+        try {
+            await h.network.joinLobby([lowerIndex, higherIndex], topic);
+            await waitFor(
+                async () =>
+                    (await h
+                        .control(higher)
+                        .stub.getHeldOpeningSubmissionCount()
+                        .request()) === 1,
+                h.event.protocolEventTimeoutMs({ withFirstBlockGrace: true }),
+                100
+            );
+            const signed = await higherAttempt();
+            if (!signed) throw new Error("Negotiation attempt is gone");
+            expect(signed.localOpeningSignatureIssued).to.equal(true);
+
+            await h.byzantine.sendRawNegotiationRpc(
+                lowerIndex,
+                higherIndex,
+                "abort",
+                [
+                    signed.attemptNonce,
+                    signed.selectorChallenge,
+                    signed.advertiserChallenge,
+                    "peer left the negotiation"
+                ]
+            );
+            await waitFor(
+                () =>
+                    h
+                        .control(higher)
+                        .query.isTransportClosed(lower.address)
+                        .request(),
+                h.event.protocolEventTimeoutMs(),
+                100
+            );
+            // A polite abort closes the pipe with no strike and no verdict,
+            // and the signed attempt stays to observe the chain.
+            expect(await higherAttempt()).not.to.equal(null);
+            expect(
+                await h
+                    .control(higher)
+                    .query.getStrikes(lower.address)
+                    .request()
+            ).to.equal(0);
+            expect(
+                await h
+                    .control(higher)
+                    .query.isBlacklisted(lower.address)
+                    .request()
+            ).to.equal(false);
+            // The lower peer lost its committed partner mid-negotiation: one
+            // strike, and its own signed attempt keeps observing too.
+            expect(
+                await h
+                    .control(lower)
+                    .query.getStrikes(higher.address)
+                    .request()
+            ).to.equal(1);
+
+            await h.control(higher).stub.releaseOpeningSubmission().request();
+            await waitFor(
+                async () =>
+                    (
+                        await Promise.all(
+                            [lower, higher].map((peer) =>
+                                h
+                                    .control(peer)
+                                    .query.isChannelOpen(signed.channelId)
+                                    .request()
+                            )
+                        )
+                    ).every(Boolean),
+                h.event.protocolEventTimeoutMs({ withFirstBlockGrace: true }) *
+                    2,
+                100
+            );
+        } finally {
+            await h.control(higher).stub.releaseOpeningSubmission().request();
+            await h.network.leaveLobby([lowerIndex, higherIndex], topic);
+        }
+    });
+
+    it("retries a targeted connect on the same runtime after a remote abort", async function () {
+        const h = TestSession.getHarness();
+        await h.setup(2, { autoConnect: false });
+        const channelId = ethers.id("e2e-targeted-retry-after-abort");
+        const [lowerIndex, higherIndex] = h.network.lobbyRoleIndices();
+        const lower = h.peers[lowerIndex];
+        const higher = h.peers[higherIndex];
+        const pair = [lower, higher];
+        const releases = await Promise.all(
+            [lowerIndex, higherIndex].map((index) =>
+                h.rpcStub.holdNegotiationReply(index, "exchangeTerms")
+            )
+        );
+        const connects = pair.map((peer) =>
+            peer.p2pInstance.p2pSigner.connectToChannel(channelId, {
+                autoOpen: true
+            })
+        );
+        let retries: Promise<boolean>[] = [];
+
+        try {
+            await waitFor(
+                async () =>
+                    (
+                        await Promise.all(
+                            pair.map((peer) =>
+                                h
+                                    .control(peer)
+                                    .query.getNegotiationAttempt()
+                                    .request()
+                            )
+                        )
+                    ).every((attempt) => attempt !== null),
+                h.event.protocolEventTimeoutMs({ withFirstBlockGrace: true }),
+                200
+            );
+            const commitment = await h
+                .control(higher)
+                .query.getNegotiationAttempt()
+                .request();
+            if (!commitment) throw new Error("Negotiation attempt is gone");
+            await h.byzantine.sendRawNegotiationRpc(
+                lowerIndex,
+                higherIndex,
+                "abort",
+                [
+                    commitment.attemptNonce,
+                    commitment.selectorChallenge,
+                    commitment.advertiserChallenge,
+                    "peer left the negotiation"
+                ]
+            );
+            // Both targeted calls end without a verdict or a strike on either
+            // side: the aborted peer treats the abort as a lobby exit, the
+            // aborting peer lost its committed partner in a targeted attempt.
+            expect(await Promise.all(connects)).to.deep.equal([false, false]);
+            expect(
+                await Promise.all([
+                    h.control(higher).query.getStrikes(lower.address).request(),
+                    h.control(lower).query.getStrikes(higher.address).request()
+                ])
+            ).to.deep.equal([0, 0]);
+            expect(
+                await Promise.all([
+                    h
+                        .control(higher)
+                        .query.isBlacklisted(lower.address)
+                        .request(),
+                    h
+                        .control(lower)
+                        .query.isBlacklisted(higher.address)
+                        .request()
+                ])
+            ).to.deep.equal([false, false]);
+
+            await Promise.all(releases.map((release) => release()));
+            // The same runtime asks for the same channel again and opens it.
+            retries = pair.map((peer) =>
+                peer.p2pInstance.p2pSigner.connectToChannel(channelId, {
+                    autoOpen: true
+                })
+            );
+            expect(await Promise.all(retries)).to.deep.equal([true, true]);
+            expect(
+                await Promise.all(
+                    pair.map((peer) =>
+                        h.control(peer).query.isChannelOpen(channelId).request()
+                    )
+                )
+            ).to.deep.equal([true, true]);
+        } finally {
+            await Promise.all(releases.map((release) => release()));
+            await Promise.all(
+                pair.map((peer) =>
+                    peer.p2pInstance.p2pSigner.cancelConnectToChannel(channelId)
+                )
+            );
+            await Promise.allSettled([...connects, ...retries]);
         }
     });
 });

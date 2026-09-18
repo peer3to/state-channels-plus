@@ -1,31 +1,46 @@
-import { Address } from "./types/types";
-import { getChecksumAddress } from "./utils";
+import { Address, HpAddress, PeerKey } from "./types/types";
+import { getChecksumAddress, hpAddressKey } from "./utils";
 import { LoggerUtils } from "./utils/LoggerUtils";
 import { runCleanupSync } from "./utils/runCleanup";
 import PeerProfile, { BannablePeerInfo } from "@/PeerProfile";
+import type {
+    BlacklistReason,
+    BlacklistStorage
+} from "@/storage/BlacklistStorage";
+import { isNetworkTransport } from "@/transport/NetworkTransport";
 import NetworkTransport from "@/transport/NetworkTransport";
 import { TransportType } from "@/transport/TransportType";
 
+/** Strike value of a peer barred for the rest of this session. */
+const SUSPENDED = Number.POSITIVE_INFINITY;
+const EVM_ADDRESS_PATTERN = /^0x[0-9a-fA-F]{40}$/;
+
 // ProfileManager alone owns explicit bans, upgrade bans, and fallback release.
 // An explicit blacklist always wins over transport fallback. It also owns the
-// two session-scoped halves of the disconnect ladder: the suspension set and
-// the retry counters. Both live on the manager rather than on a profile, so
-// they die with the session instead of travelling with a recorded verdict.
+// session-scoped half of the disconnect ladder: one strike count per peer key
+// that saturates into a suspension. The strikes live on the manager rather
+// than on a profile, so they die with the session; the blacklist verdict is
+// recorded in storage so it can outlive it.
 class ProfileManager {
     private readonly mapTransportToProfile = new Map<
         NetworkTransport,
         PeerProfile
     >();
     private mapEvmAddressToProfile: Map<Address, PeerProfile> = new Map();
-    private mapHpAddressToProfile: Map<Address, PeerProfile> = new Map<
-        Address,
+    private mapHpAddressToProfile: Map<HpAddress, PeerProfile> = new Map<
+        HpAddress,
         PeerProfile
     >();
-    // Checksummed EVM addresses barred for the rest of this session.
-    private readonly suspendedEvmAddresses = new Set<Address>();
-    // Keys are checksummed EVM addresses; values count the retry-tier
-    // disconnects taken against that peer in this session. Never reset.
-    private readonly mapEvmAddressToRetryCount = new Map<Address, number>();
+    // Keys are normalized peer keys (checksummed EVM address once proven, the
+    // lowercase Hyperswarm key before); values count the retry-tier
+    // disconnects taken against that peer in this session, or SUSPENDED once
+    // the peer is barred for the rest of it. Never reset.
+    private readonly mapPeerKeyToStrikes = new Map<PeerKey, number>();
+    private readonly blacklistStorage: BlacklistStorage;
+
+    constructor(blacklistStorage: BlacklistStorage) {
+        this.blacklistStorage = blacklistStorage;
+    }
 
     /** Close every registered transport, including peers still authenticating. */
     public dispose(): void {
@@ -37,8 +52,7 @@ class ProfileManager {
             () => this.mapTransportToProfile.clear(),
             () => this.mapEvmAddressToProfile.clear(),
             () => this.mapHpAddressToProfile.clear(),
-            () => this.suspendedEvmAddresses.clear(),
-            () => this.mapEvmAddressToRetryCount.clear()
+            () => this.mapPeerKeyToStrikes.clear()
         );
     }
 
@@ -78,24 +92,28 @@ class ProfileManager {
         const normalizedAddress = getChecksumAddress(evmAddress);
         const existingProfile =
             this.mapEvmAddressToProfile.get(normalizedAddress);
-        // The suspension set is checked independently of the profile: a
-        // suspended identity that dials back on a fresh handle has no profile
-        // of its own to carry the bar.
+        // Both exclusions are checked independently of the profile: a
+        // recorded verdict or a suspended identity that dials back on a fresh
+        // handle has no profile of its own to carry the bar.
+        const isBlacklisted = this.isBlacklisted(normalizedAddress);
         const isSuspended = this.isSuspended(normalizedAddress);
-        if (existingProfile?.isBlackListed || isSuspended) {
+        if (isBlacklisted || isSuspended) {
             transport.p2pManager.logger.warn(
                 "Rejecting transport for excluded profile",
                 {
                     ...LoggerUtils.getTransportMetadata(transport),
                     peerAddress: normalizedAddress,
-                    blacklisted: existingProfile?.isBlackListed ?? false,
+                    blacklisted: isBlacklisted,
                     suspended: isSuspended
                 }
             );
             // Re-apply the exclusion to the arriving transport so its own peer
             // info is banned too; a bare close lets the peer redial.
-            if (existingProfile?.isBlackListed) this.blacklistPeer(transport);
-            else this.suspendPeer(transport);
+            if (isBlacklisted) {
+                this.blacklistPeer(transport, "returning blacklisted identity");
+            } else {
+                this.suspendPeer(transport);
+            }
             transport.close(true);
             return undefined;
         }
@@ -212,8 +230,10 @@ class ProfileManager {
     ): PeerProfile | undefined {
         return this.mapEvmAddressToProfile.get(getChecksumAddress(evmAddress));
     }
-    public getProfileByHpAddress(hpAddress: Address): PeerProfile | undefined {
-        return this.mapHpAddressToProfile.get(hpAddress);
+    public getProfileByHpAddress(
+        hpAddress: HpAddress
+    ): PeerProfile | undefined {
+        return this.mapHpAddressToProfile.get(hpAddressKey(hpAddress));
     }
 
     public getTransportByEvmAddress(
@@ -224,77 +244,137 @@ class ProfileManager {
         return transport && !transport.isClosed ? transport : null;
     }
 
+    /**
+     * The single writer of a profile's Hyperswarm identity. The key is known
+     * before any handshake, so a suspended key that dials back is refused
+     * here, before the handshake spends any work on it.
+     */
     public setBannablePeerInfo(
         transport: NetworkTransport,
         peerInfo: BannablePeerInfo
     ): void {
-        this.registerTransport(transport).setHolepunchPeerInfo(peerInfo);
+        const profile = this.registerTransport(transport);
+        profile.setHolepunchPeerInfo(peerInfo);
+        const hpAddress =
+            peerInfo.publicKey === undefined
+                ? undefined
+                : hpAddressKey(peerInfo.publicKey);
+        if (!hpAddress) return;
+        profile.setHpAddress(hpAddress);
+        this.mapHpAddressToProfile.set(hpAddress, profile);
+        if (!this.isSuspended(hpAddress)) return;
+        transport.p2pManager.logger.warn(
+            "Rejecting transport for suspended peer key",
+            { ...LoggerUtils.getTransportMetadata(transport), hpAddress }
+        );
+        peerInfo.ban(true);
+        transport.close(true);
     }
 
-    public blacklistPeer(
-        peer: NetworkTransport | Address
-    ): NetworkTransport | undefined {
-        if (peer instanceof NetworkTransport) {
-            const profile = this.getProfileByTransport(peer);
-            if (profile) this.blacklistProfile(profile);
-            return peer;
-        }
+    /** The identity strikes count against: the EVM address once proven, else the key. */
+    public profileKey(profile: PeerProfile): PeerKey | undefined {
+        const evmAddress = profile.getEvmAddress();
+        if (evmAddress) return getChecksumAddress(evmAddress);
+        return profile.getHpAddress();
+    }
 
-        const profile = this.getProfileByEvmAddress(peer);
-        if (!profile) return undefined;
-        this.blacklistProfile(profile);
-        return profile.getTransport();
+    public isBlacklisted(evmAddress: Address): boolean {
+        return (
+            (this.getProfileByEvmAddress(evmAddress)?.isBlackListed ?? false) ||
+            this.blacklistStorage.has(evmAddress)
+        );
     }
 
     /**
-     * Session-scoped exclusion: bar the identity and ban its Hyperswarm peer
-     * info so the peer is not redialled for the rest of this session. Unlike
-     * the blacklist it records no verdict on the profile and has no release
-     * path.
+     * The profile a fault on `transport` is charged to: the proven identity's
+     * profile when the transport carries one (so a fault reported on a retired
+     * transport still reaches the current profile), else the transport's own.
      */
-    public suspendPeer(
-        peer: NetworkTransport | Address
-    ): NetworkTransport | undefined {
-        if (peer instanceof NetworkTransport) {
+    public getProfileForFault(
+        transport: NetworkTransport
+    ): PeerProfile | undefined {
+        return (
+            (transport.peerAddress
+                ? this.getProfileByEvmAddress(transport.peerAddress)
+                : undefined) ?? this.getProfileByTransport(transport)
+        );
+    }
+
+    public blacklistPeer(
+        peer: NetworkTransport | Address,
+        reason: BlacklistReason = "unspecified"
+    ): void {
+        if (isNetworkTransport(peer)) {
             const profile = this.getProfileByTransport(peer);
-            if (profile) this.suspendProfile(profile);
-            return peer;
+            if (profile) this.blacklistProfile(profile, reason);
+            return;
         }
 
         const profile = this.getProfileByEvmAddress(peer);
         if (!profile) {
-            // An identity with no profile is still barred; there is simply no
-            // peer info to ban yet.
-            this.suspendedEvmAddresses.add(getChecksumAddress(peer));
-            return undefined;
+            // An identity with no profile is still recorded; there is simply
+            // nothing to close or ban yet.
+            this.blacklistStorage.record(peer, reason);
+            return;
         }
-        this.suspendProfile(profile);
-        return profile.getTransport();
+        this.blacklistProfile(profile, reason);
     }
 
-    public isSuspended(evmAddress: Address): boolean {
-        return this.suspendedEvmAddresses.has(getChecksumAddress(evmAddress));
+    /**
+     * Session-scoped exclusion: bar every identity the peer has (its EVM
+     * address and its Hyperswarm key) and ban its peer info so it is not
+     * redialled for the rest of this session. Unlike the blacklist it records
+     * no verdict and has no release path.
+     */
+    public suspendPeer(peer: NetworkTransport | Address): void {
+        if (isNetworkTransport(peer)) {
+            const profile = this.getProfileByTransport(peer);
+            if (profile) this.suspendProfile(profile);
+            return;
+        }
+
+        // An identity with no profile is still barred; there is simply no
+        // peer info to ban yet.
+        this.markSuspended(peer);
+        const profile = this.getProfileByEvmAddress(peer);
+        if (profile) this.suspendProfile(profile);
+    }
+
+    public isSuspended(key: PeerKey): boolean {
+        return (
+            this.mapPeerKeyToStrikes.get(ProfileManager.normalizeKey(key)) ===
+            SUSPENDED
+        );
+    }
+
+    /** Strikes recorded against a key in this session; SUSPENDED once barred. */
+    public getStrikes(key: PeerKey): number {
+        return (
+            this.mapPeerKeyToStrikes.get(ProfileManager.normalizeKey(key)) ?? 0
+        );
     }
 
     /**
      * Count one retry-tier disconnect for this peer and report whether the
      * session bound is now reached. One counter per peer, shared by every call
-     * site, so a peer cannot spread its retries over different checks.
+     * site, so a peer cannot spread its retries over different checks. The
+     * strike that reaches the bound saturates the entry into a suspension.
      */
-    public countRetryDisconnect(
-        evmAddress: Address,
-        maxRetries: number
-    ): boolean {
-        const normalizedAddress = getChecksumAddress(evmAddress);
-        const count =
-            (this.mapEvmAddressToRetryCount.get(normalizedAddress) ?? 0) + 1;
-        this.mapEvmAddressToRetryCount.set(normalizedAddress, count);
-        return count >= maxRetries;
+    public countRetryDisconnect(key: PeerKey, maxRetries: number): boolean {
+        const normalizedKey = ProfileManager.normalizeKey(key);
+        const strikes = (this.mapPeerKeyToStrikes.get(normalizedKey) ?? 0) + 1;
+        const boundReached = strikes >= maxRetries;
+        this.mapPeerKeyToStrikes.set(
+            normalizedKey,
+            boundReached ? SUSPENDED : strikes
+        );
+        return boundReached;
     }
 
     public unblacklistPeer(evmAddress: Address): boolean {
+        const removed = this.blacklistStorage.remove(evmAddress);
         const profile = this.getProfileByEvmAddress(evmAddress);
-        if (!profile) return false;
+        if (!profile) return removed;
 
         profile.unblacklist();
         const hasLiveWebRtc = profile
@@ -314,8 +394,7 @@ class ProfileManager {
         if (
             !profile ||
             !profile.isPreferredTransport(transport) ||
-            profile.isBlackListed ||
-            this.isProfileSuspended(profile)
+            this.isProfileExcluded(profile)
         ) {
             return;
         }
@@ -326,22 +405,49 @@ class ProfileManager {
         profile.getHolepunchPeerInfo()?.ban(false);
     }
 
-    private blacklistProfile(profile: PeerProfile): void {
+    private blacklistProfile(
+        profile: PeerProfile,
+        reason: BlacklistReason
+    ): void {
+        const evmAddress = profile.getEvmAddress();
+        if (evmAddress) {
+            this.blacklistStorage.record(
+                getChecksumAddress(evmAddress),
+                reason
+            );
+        }
         profile.blacklist();
         profile.getHolepunchPeerInfo()?.ban(true);
     }
 
     private suspendProfile(profile: PeerProfile): void {
         const evmAddress = profile.getEvmAddress();
-        if (evmAddress) {
-            this.suspendedEvmAddresses.add(getChecksumAddress(evmAddress));
-        }
+        if (evmAddress) this.markSuspended(evmAddress);
+        const hpAddress = profile.getHpAddress();
+        if (hpAddress) this.markSuspended(hpAddress);
         profile.getHolepunchPeerInfo()?.ban(true);
+    }
+
+    /** The one writer of a suspension, so every key form lands normalized. */
+    private markSuspended(key: PeerKey): void {
+        this.mapPeerKeyToStrikes.set(
+            ProfileManager.normalizeKey(key),
+            SUSPENDED
+        );
     }
 
     private isProfileSuspended(profile: PeerProfile): boolean {
         const evmAddress = profile.getEvmAddress();
-        return evmAddress !== undefined && this.isSuspended(evmAddress);
+        const hpAddress = profile.getHpAddress();
+        return (
+            (evmAddress !== undefined && this.isSuspended(evmAddress)) ||
+            (hpAddress !== undefined && this.isSuspended(hpAddress))
+        );
+    }
+
+    /** Either half of the ladder keeps a ban in place. */
+    private isProfileExcluded(profile: PeerProfile): boolean {
+        return profile.isBlackListed || this.isProfileSuspended(profile);
     }
 
     private applyUpgradeBanPolicy(
@@ -356,8 +462,7 @@ class ProfileManager {
             if (
                 oldTransport.transportType === TransportType.WEBRTC &&
                 newTransport.transportType === TransportType.HOLEPUNCH &&
-                !profile.isBlackListed &&
-                !this.isProfileSuspended(profile)
+                !this.isProfileExcluded(profile)
             ) {
                 profile.getHolepunchPeerInfo()?.ban(false);
             }
@@ -377,6 +482,14 @@ class ProfileManager {
         }
         this.mapTransportToProfile.set(transport, profile);
         profile.attachTransport(transport);
+    }
+
+    /** EVM keys are checksummed; Hyperswarm keys are lowercase hex. */
+    private static normalizeKey(key: PeerKey): PeerKey {
+        const text = String(key);
+        return EVM_ADDRESS_PATTERN.test(text)
+            ? getChecksumAddress(text)
+            : hpAddressKey(text);
     }
 }
 

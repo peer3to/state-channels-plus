@@ -4,6 +4,7 @@ import type { ForkId } from "@/types/types";
 import type { HarnessControlRpc } from "@test/fixtures/customRpc/harnessControl/HarnessControlRpc";
 import { PeerTestHarness } from "@test/fixtures/PeerTestHarness";
 import type { TestPeer } from "@test/harness/core/types";
+import { waitFor } from "@test/utils/waitFor";
 import { expect } from "chai";
 
 export class AssertRPCActions<
@@ -19,25 +20,7 @@ export class AssertRPCActions<
         expectedStatus: Status;
         timeoutMs?: number;
     }): Promise<void> {
-        const {
-            observer,
-            target,
-            expectedStatus,
-            timeoutMs = this.harness.event.protocolEventTimeoutMs()
-        } = options;
-
-        await this.harness.disconnectionBarrier.waitFor(
-            async () =>
-                await this.harness
-                    .control(observer)
-                    .query.isBlacklisted(target.address)
-                    .request(),
-            {
-                timeoutMs,
-                timeoutMessage: `Expected peer ${observer.index} to blacklist peer ${target.index} within ${timeoutMs}ms`
-            }
-        );
-        await this.peerDroppedWithoutStatusChange(options);
+        await this.peerExcludedAndDisconnected(options, "isBlacklisted");
     }
 
     // The observer suspends and disconnects the target (a peer it could not
@@ -48,24 +31,8 @@ export class AssertRPCActions<
         expectedStatus: Status;
         timeoutMs?: number;
     }): Promise<void> {
-        const {
-            observer,
-            target,
-            expectedStatus,
-            timeoutMs = this.harness.event.protocolEventTimeoutMs()
-        } = options;
-
-        await this.harness.disconnectionBarrier.waitFor(
-            async () =>
-                await this.harness
-                    .control(observer)
-                    .query.isSuspended(target.address)
-                    .request(),
-            {
-                timeoutMs,
-                timeoutMessage: `Expected peer ${observer.index} to suspend peer ${target.index} within ${timeoutMs}ms`
-            }
-        );
+        const { observer, target } = options;
+        await this.peerExcludedAndDisconnected(options, "isSuspended");
         expect(
             await this.harness
                 .control(observer)
@@ -73,6 +40,88 @@ export class AssertRPCActions<
                 .request(),
             `peer ${observer.index} blacklisted peer ${target.index} instead of suspending it`
         ).to.equal(false);
+    }
+
+    // The observer closed the target without recording anything against it:
+    // neither the persisted verdict nor the session bar is set.
+    async peerNotExcluded(options: {
+        observer: TestPeer<TCustomRpc>;
+        target: TestPeer<TCustomRpc>;
+    }): Promise<void> {
+        const { observer, target } = options;
+        const query = this.harness.control(observer).query;
+        const [blacklisted, suspended] = await Promise.all([
+            query.isBlacklisted(target.address).request(),
+            query.isSuspended(target.address).request()
+        ]);
+        expect(
+            blacklisted,
+            `peer ${observer.index} blacklisted peer ${target.index}`
+        ).to.equal(false);
+        expect(
+            suspended,
+            `peer ${observer.index} suspended peer ${target.index}`
+        ).to.equal(false);
+    }
+
+    // The observer closed the target with the bounded tier: it recorded
+    // `expectedStrikes` against the target and no verdict.
+    async peerStruckWithoutBlacklist(options: {
+        observer: TestPeer<TCustomRpc>;
+        target: TestPeer<TCustomRpc>;
+        expectedStrikes?: number;
+        timeoutMs?: number;
+        pollMs?: number;
+    }): Promise<void> {
+        const {
+            observer,
+            target,
+            expectedStrikes = 1,
+            timeoutMs = this.harness.event.protocolEventTimeoutMs(),
+            pollMs = 200
+        } = options;
+        const query = this.harness.control(observer).query;
+        await waitFor(
+            async () =>
+                (await query.getStrikes(target.address).request()) ===
+                expectedStrikes,
+            timeoutMs,
+            pollMs
+        );
+        expect(
+            await query.isBlacklisted(target.address).request(),
+            `peer ${observer.index} blacklisted peer ${target.index} instead of striking it`
+        ).to.equal(false);
+    }
+
+    // Shared driver of the two exclusion assertions: wait for the exclusion
+    // the observer records against the target, then check the drop.
+    private async peerExcludedAndDisconnected(
+        options: {
+            observer: TestPeer<TCustomRpc>;
+            target: TestPeer<TCustomRpc>;
+            expectedStatus: Status;
+            timeoutMs?: number;
+        },
+        exclusion: "isBlacklisted" | "isSuspended"
+    ): Promise<void> {
+        const {
+            observer,
+            target,
+            timeoutMs = this.harness.event.protocolEventTimeoutMs()
+        } = options;
+        const verb = exclusion === "isBlacklisted" ? "blacklist" : "suspend";
+        await this.harness.disconnectionBarrier.waitFor(
+            async () =>
+                await this.harness
+                    .control(observer)
+                    .query[exclusion](target.address)
+                    .request(),
+            {
+                timeoutMs,
+                timeoutMessage: `Expected peer ${observer.index} to ${verb} peer ${target.index} within ${timeoutMs}ms`
+            }
+        );
         await this.peerDroppedWithoutStatusChange(options);
     }
 
@@ -84,15 +133,17 @@ export class AssertRPCActions<
         expectedStatus: Status;
     }): Promise<void> {
         const { observer, target, expectedStatus } = options;
+        const query = this.harness.control(observer).query;
+        const [connected, status] = await Promise.all([
+            query.isConnectedTo(target.address).request(),
+            query.getStatus().request()
+        ]);
         expect(
-            await this.harness
-                .control(observer)
-                .query.isConnectedTo(target.address)
-                .request(),
+            connected,
             `peer ${observer.index} stayed connected to dropped peer ${target.index}`
         ).to.equal(false);
         expect(
-            await this.harness.control(observer).query.getStatus().request(),
+            status,
             `peer ${observer.index} status changed while dropping peer ${target.index}`
         ).to.equal(expectedStatus);
     }

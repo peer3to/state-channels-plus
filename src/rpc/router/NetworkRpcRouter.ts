@@ -67,7 +67,11 @@ export class NetworkRpcRouter<
         expected: NetworkTransport
     ): boolean {
         if (NetworkTransport.isSamePeer(transport, expected)) return true;
-        this.p2pManager.disconnectAndBlacklistPeer(transport);
+        this.p2pManager.disconnectConnection(
+            transport,
+            DisconnectPolicy.BLACKLIST,
+            "response from a different peer"
+        );
         return false;
     }
 
@@ -85,7 +89,11 @@ export class NetworkRpcRouter<
                         peerAddress: transport.peerAddress
                     }
                 );
-                this.p2pManager.disconnectAndBlacklistPeer(transport);
+                this.p2pManager.disconnectConnection(
+                    transport,
+                    DisconnectPolicy.BLACKLIST,
+                    "oversized RPC frame"
+                );
                 return;
             }
             const frame = deserializeRpcFrame(serializedRpc);
@@ -100,12 +108,20 @@ export class NetworkRpcRouter<
                 peerAddress: transport.peerAddress
             });
             if (!rpc) {
-                this.p2pManager.disconnectAndBlacklistPeer(transport);
+                this.p2pManager.disconnectConnection(
+                    transport,
+                    DisconnectPolicy.BLACKLIST,
+                    "malformed RPC frame"
+                );
                 return;
             }
             const success = await this.dispatchRpc(rpc, transport);
             if (!success) {
-                this.p2pManager.disconnectAndBlacklistPeer(transport);
+                this.p2pManager.disconnectConnection(
+                    transport,
+                    DisconnectPolicy.BLACKLIST,
+                    "RPC dispatch refused"
+                );
                 return;
             }
         } catch (e) {

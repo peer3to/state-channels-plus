@@ -31,7 +31,11 @@ Local transport loading remains lazy after the transport split. This avoids impo
 2. **The rendezvous key is generic discovery input.** Equal caller keys form connections for either
    existing-channel or lobby discovery. The lobby topic remains session state; it is not copied onto
    the resulting transport or treated as identity proof.
-3. **The channel owns a paired relay socket after discovery.** Leave removes discovery metadata for
+3. **The relay socket carries a peer info like Holepunch.** The announced remote address becomes a
+   [LocalPeerInfo](../../transport/LocalPeerInfo.ts.md) on the transport's profile before the handshake,
+   so strikes and suspension work the same way as on the node backend, and a banned peer is not
+   reconnected.
+4. **The channel owns a paired relay socket after discovery.** Leave removes discovery metadata for
    the owning manager. Full runtime cleanup closes the retained socket.
 
 ## Inputs, outputs, state, and side effects

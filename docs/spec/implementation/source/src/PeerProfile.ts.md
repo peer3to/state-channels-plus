@@ -19,20 +19,23 @@
 
 ## Responsibility and observable boundary
 
-The per-peer record created with each transport: optional identity, blacklist flag, the set of
-live transports, preferred transport, disconnect subscribers, and the Holepunch ban handle that
-survives replacement. Exact-transport authentication remains on `NetworkTransport.peerAddress`.
+The per-peer record created with each transport: optional identity, the Hyperswarm key
+(`hpAddress`) taken from the peer info before any proof, blacklist flag, the set of live transports,
+preferred transport, disconnect subscribers, and the Holepunch ban handle that survives replacement.
+Exact-transport authentication remains on `NetworkTransport.peerAddress`.
 
 ## Key design decisions
 
 Profile logs cover explicit bans, clearing bans, authentication, transport attachment and detachment, and last-transport loss. The profile retains its owner logger after all transports close. See [PeerProfile.ts](../../../../../src/PeerProfile.ts#L45).
 
-1. **The ban handle belongs to the profile from transport creation.** Authentication adds the
-   verified address and identity index without introducing a second handle store; `ProfileManager`
-   remains the only ban-policy owner.
+1. **The ban handle and its key belong to the profile from transport creation.** The peer info's
+   public key is normalized onto the profile as `hpAddress` by `setHpAddress`, so an unauthenticated
+   peer already has one key to count strikes against; authentication adds the verified address and
+   identity index without introducing a second handle store. `ProfileManager` remains the only
+   ban-policy owner.
 2. **Only the recorded verdict is profile state.** The blacklist flag lives here and travels with
-   the profile; a session bar deliberately does not, so nothing it decides can leak into a record
-   that outlives the session ([ProfileManager](./ProfileManager.ts.md) owns the suspension set).
+   the profile; the session strike count deliberately does not, so nothing it decides can leak into a
+   record that outlives the session ([ProfileManager](./ProfileManager.ts.md) owns the strike map).
 3. **Disconnection means loss of the profile, not one pipe.** `onDisconnected` fires once only on
    the transition from at least one live transport to none. Authentication rebinding transfers the
    live transport and subscriptions to the identity profile.

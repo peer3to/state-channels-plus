@@ -7,6 +7,8 @@ type HolepunchSocketEvent = "data" | "close" | "error";
 export class RecordingBannablePeerInfo implements BannablePeerInfo {
     public readonly banCalls: boolean[] = [];
 
+    constructor(public readonly publicKey?: string) {}
+
     public ban(value = true): void {
         this.banCalls.push(value);
     }

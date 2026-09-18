@@ -25,6 +25,9 @@ export type HandshakeResponse = {
 };
 
 class InitHandshakeService extends ANetworkRpcService<InitHandshakeRpcMethods> {
+    /** Name of the scheduled task that fires the acknowledgement timeout. */
+    public static readonly HANDSHAKE_ACK_TIMEOUT_TASK =
+        "InitHandshakeService - handshake ack timeout";
     /**
      * Domain tag scoping a handshake signature to the handshake protocol.
      * The responder signs this string, never the bare 32-byte challenge hash.
@@ -34,16 +37,6 @@ class InitHandshakeService extends ANetworkRpcService<InitHandshakeRpcMethods> {
      * pre-auth signing-oracle (challengeHash = keccak256(encodedBlock)).
      */
     public static readonly HANDSHAKE_DOMAIN = "peer3:init-handshake:v1";
-
-    /**
-     * How many timing failures a peer gets before the handshake stops letting
-     * it back in. Clock skew and latency are environment faults, not
-     * misbehaviour, so the earlier failures only close the connection and the
-     * one that reaches this bound suspends the peer for the session. The
-     * counter is per peer and shared by every timing check, here and in
-     * `InitHandshakeRpcMethods`.
-     */
-    public static readonly TIMING_RETRY_LIMIT = 3;
 
     timeoutManager: TimeoutManager;
 
@@ -134,9 +127,7 @@ class InitHandshakeService extends ANetworkRpcService<InitHandshakeRpcMethods> {
             });
             this.p2pManager.disconnectConnection(
                 transport,
-                DisconnectPolicy.allowRetry(
-                    InitHandshakeService.TIMING_RETRY_LIMIT
-                )
+                DisconnectPolicy.allowRetry()
             );
             return;
         }
@@ -163,7 +154,11 @@ class InitHandshakeService extends ANetworkRpcService<InitHandshakeRpcMethods> {
                         ? `invalid handshake response: ${error.message}`
                         : "invalid handshake response"
             });
-            this.p2pManager.disconnectAndBlacklistPeer(transport);
+            this.p2pManager.disconnectConnection(
+                transport,
+                DisconnectPolicy.BLACKLIST,
+                "invalid handshake response"
+            );
         }
     }
 
@@ -199,9 +194,7 @@ class InitHandshakeService extends ANetworkRpcService<InitHandshakeRpcMethods> {
             });
             this.p2pManager.disconnectConnection(
                 transport,
-                DisconnectPolicy.allowRetry(
-                    InitHandshakeService.TIMING_RETRY_LIMIT
-                )
+                DisconnectPolicy.allowRetry()
             );
             return;
         }
@@ -224,9 +217,7 @@ class InitHandshakeService extends ANetworkRpcService<InitHandshakeRpcMethods> {
             // peer's retry bound instead of recording a verdict.
             this.p2pManager.disconnectConnection(
                 transport,
-                DisconnectPolicy.allowRetry(
-                    InitHandshakeService.TIMING_RETRY_LIMIT
-                )
+                DisconnectPolicy.allowRetry()
             );
             return;
         }
@@ -374,10 +365,11 @@ class InitHandshakeService extends ANetworkRpcService<InitHandshakeRpcMethods> {
         this.timeoutManager.scheduleTask(
             () => {
                 if (this.didReceiveAck(transport)) return;
-                // Handshake negotiation started but never finalized. The proof
-                // leg already passed, so this is not a timing retry: bar the
-                // peer for the session rather than letting it redial into the
-                // same dead negotiation.
+                // Handshake negotiation started but never finalized. Silence
+                // after the proof leg is still not proven misbehaviour, so it
+                // spends the peer's shared retry bound; the strike lands on the
+                // key the profile already carries, and a suspension also bars
+                // the identity the response already proved.
                 const peerAddress =
                     transport.peerAddress ||
                     this.verifiedPeerAddressByTransport.get(transport);
@@ -391,11 +383,13 @@ class InitHandshakeService extends ANetworkRpcService<InitHandshakeRpcMethods> {
 
                 this.p2pManager.disconnectConnection(
                     transport,
-                    DisconnectPolicy.SUSPEND
+                    DisconnectPolicy.allowRetry(),
+                    undefined,
+                    peerAddress
                 );
             },
             this.p2pManager.stateManager.timeConfig.agreementTime * 1000,
-            "InitHandshakeService - handshake ack timeout"
+            InitHandshakeService.HANDSHAKE_ACK_TIMEOUT_TASK
         );
     }
 

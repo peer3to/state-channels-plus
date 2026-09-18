@@ -2,9 +2,10 @@ import { Status } from "@/types";
 import {
     connectLobbyPeers,
     probeLobbyCleanupOrdering,
-    probeLobbyHandoffOrdering,
-    probeLobbyRematchAdmission
-} from "@test/fixtures/LobbyRematchStaging";
+    probeLobbyCleanupOverlap,
+    probeLobbyFailedLeave,
+    probeLobbyHandoffOrdering
+} from "@test/fixtures/LobbyCleanupStaging";
 import { P2PManagerFixture } from "@test/fixtures/P2PManagerFixture";
 import { slotAccountIndex } from "@test/harness/core/slotAccounts";
 import { waitFor } from "@test/utils/waitFor";
@@ -128,7 +129,7 @@ describe("LobbyMatchingService", function () {
         expect(result.discardedPeerMissedOrdinaryBroadcast).to.equal(true);
     });
 
-    it("keeps a reservation through final profile loss, excludes at its bound, and bounds rejected lobby traffic", async function () {
+    it("keeps a reservation through final profile loss, strikes at its bound, and bounds rejected lobby traffic", async function () {
         const result = await fixture
             .control()
             .p2pManagerProbe.probeLobbyRecovery()
@@ -138,9 +139,10 @@ describe("LobbyMatchingService", function () {
         expect(result.reservedAfterFinalLoss).to.equal(true);
         expect(result.matchingAfterFinalLoss).to.equal(true);
         expect(result.disconnectedPeerBlacklisted).to.equal(false);
+        expect(result.disconnectedPeerStrikes).to.equal(0);
         // The reservation bound is one agreement window; the absent selector
-        // is dropped from this lobby session when it fires and the reservation
-        // is released. A burned window is never a fault ban.
+        // takes one strike when it fires and the reservation is released. A
+        // burned window is never a fault ban.
         await waitFor(
             async () =>
                 !(
@@ -159,10 +161,7 @@ describe("LobbyMatchingService", function () {
         expect(afterBound.reserved).to.equal(false);
         expect(afterBound.matching).to.equal(true);
         expect(afterBound.disconnectedPeerBlacklisted).to.equal(false);
-        expect(
-            (await fixture.control().query.getLobbyAvailability().request())
-                .excludedPeerCount
-        ).to.equal(1);
+        expect(afterBound.disconnectedPeerStrikes).to.equal(1);
         expect(result.openAtRejectionLimit).to.equal(true);
         expect(result.notificationReplies).to.equal(0);
         expect(result.abusiveTransportClosed).to.equal(true);
@@ -183,8 +182,7 @@ describe("LobbyMatchingService", function () {
             selectionCleared: true,
             candidateCount: 0,
             transportClosed: true,
-            // A peer that vanished mid-commit is excluded from the session,
-            // not fault-banned.
+            // A peer that vanished mid-commit takes a strike, not a fault ban.
             peerBlacklisted: false
         });
     });
@@ -215,9 +213,10 @@ describe("LobbyMatchingService", function () {
         expect(result.configuredRoleDelayMs).to.equal(37);
         expect(result.roleWhileReservedAfterTimer).to.equal("advertiser");
         expect(result.commitAfterTimerStatus).to.equal("acknowledged");
-        // The reservation bound excludes the absent selector from the lobby
-        // session; it does not blacklist it.
+        // The reservation bound strikes the absent selector; it does not
+        // blacklist it.
         expect(result.reservationExpiryBlacklisted).to.equal(false);
+        expect(result.reservationExpiryStrikes).to.equal(1);
         expect(result.roleTimerScheduleCount).to.equal(1);
         expect(result.availabilityFramesAfterExpiry).to.be.greaterThan(
             result.availabilityFramesBeforeExpiry
@@ -441,6 +440,16 @@ describe("LobbyMatchingService", function () {
         expect(result.observerCandidateCountAfterRetry).to.equal(1);
     });
 
+    it("bootstraps roles again when the same peers meet in a later session", async function () {
+        const result = await fixture
+            .control()
+            .p2pManagerProbe.probeLobbySessionRestart()
+            .request();
+
+        expect(result.firstRoles).to.not.include("none");
+        expect(result.secondRoles).to.not.include("none");
+    });
+
     it("schedules only one advertiser switch while candidates stay exhausted", async function () {
         const result = await fixture
             .control()
@@ -451,33 +460,6 @@ describe("LobbyMatchingService", function () {
         expect(result.scheduledAfterRepeatedAvailability).to.equal(
             result.scheduledAfterExhaustion
         );
-    });
-
-    it("refuses a pick from a peer excluded from rematching", async function () {
-        await connectLobbyPeers(fixture, 2);
-        const result = await probeLobbyRematchAdmission(fixture);
-
-        expect(result.roleBeforeExclusion).to.equal("advertiser");
-        expect(result.pickStatus).to.equal("rejected");
-        expect(result.reservedAfterPick).to.equal(false);
-    });
-
-    it("keeps an excluded peer out of the candidate set", async function () {
-        await connectLobbyPeers(fixture, 2);
-        const result = await probeLobbyRematchAdmission(fixture);
-
-        expect(result.candidateCountAfterExclusion).to.equal(0);
-        expect(result.excludedDuringSession).to.equal(1);
-    });
-
-    it("clears the do-not-rematch set when the lobby session ends", async function () {
-        await connectLobbyPeers(fixture, 2);
-        const result = await probeLobbyRematchAdmission(fixture);
-
-        expect(result.cancelled).to.equal(true);
-        expect(result.matched).to.equal(false);
-        expect(result.excludedDuringSession).to.equal(1);
-        expect(result.excludedAfterSessionEnd).to.equal(0);
     });
 
     it("leaves the lobby topic before closing a non-selected transport", async function () {
@@ -503,20 +485,39 @@ describe("LobbyMatchingService", function () {
         expect(result.topicJoinedAfterCancel).to.equal(false);
     });
 
+    it("starts a new session only after the cancelled session's held cleanup finished", async function () {
+        await connectLobbyPeers(fixture, 3);
+        const result = await probeLobbyCleanupOverlap(fixture);
+
+        expect(result.cancelled).to.equal(true);
+        expect(result.firstMatched).to.equal(false);
+        expect(result.secondStartedBeforeRelease).to.equal(false);
+        expect(result.firstTransportClosedBeforeRelease).to.equal(false);
+        expect(result.firstTransportClosed).to.equal(true);
+        expect(result.secondTransportClosedByFirstCleanup).to.equal(false);
+        expect(result.statusAfterSecondStart).to.equal(Status.DISCOVERING);
+        expect(result.secondCancelled).to.equal(true);
+        expect(result.secondMatched).to.equal(false);
+    });
+
+    it("completes the handoff when the discovery leave fails", async function () {
+        await connectLobbyPeers(fixture, 3);
+        const result = await probeLobbyFailedLeave(fixture);
+
+        expect(result.matchedPeer).to.equal(fixture.address(1));
+        expect(result.leaveAttempts).to.equal(1);
+        expect(result.topicJoinedAfterHandoff).to.equal(false);
+        expect(result.nonSelectedClosed).to.equal(true);
+        expect(result.selectedClosedAfterHandoff).to.equal(false);
+        expect(result.selectedHandedOff).to.equal(true);
+    });
+
     it("keeps the selected transport through the handoff", async function () {
         await connectLobbyPeers(fixture, 3);
         const result = await probeLobbyHandoffOrdering(fixture);
 
         expect(result.selectedClosedAfterHandoff).to.equal(false);
         expect(result.selectedHandedOff).to.equal(true);
-    });
-
-    it("keeps exclusions across a released negotiation handoff", async function () {
-        await connectLobbyPeers(fixture, 3);
-        const result = await probeLobbyHandoffOrdering(fixture);
-
-        expect(result.excludedAfterHandoff).to.equal(1);
-        expect(result.excludedAfterHandoffRelease).to.equal(1);
     });
 
     it("rejects a late pick after commitment without blacklisting its requester", async function () {

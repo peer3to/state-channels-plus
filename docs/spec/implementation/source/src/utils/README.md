@@ -31,6 +31,7 @@ _Pending authoring: shared responsibility, design decisions, assumptions, cross-
 - [channelKey.ts](./channelKey.ts.md)
 - [config.ts](./config.ts.md)
 - [contractAbi.ts](./contractAbi.ts.md)
+- [hpAddressKey.ts](./hpAddressKey.ts.md)
 - [contractSize.ts](./contractSize.ts.md)
 - [discoveryKey.ts](./discoveryKey.ts.md)
 - [errorMessage.ts](./errorMessage.ts.md)
@@ -76,6 +77,7 @@ _Pending authoring: shared responsibility, design decisions, assumptions, cross-
 | [channelKey.ts](../../../../../../src/utils/channelKey.ts) | [channelKey.ts.md](./channelKey.ts.md) |
 | [config.ts](../../../../../../src/utils/config.ts) | [config.ts.md](./config.ts.md) |
 | [contractAbi.ts](../../../../../../src/utils/contractAbi.ts) | [contractAbi.ts.md](./contractAbi.ts.md) |
+| [hpAddressKey.ts](../../../../../../src/utils/hpAddressKey.ts) | [hpAddressKey.ts.md](./hpAddressKey.ts.md) |
 | [contractSize.ts](../../../../../../src/utils/contractSize.ts) | [contractSize.ts.md](./contractSize.ts.md) |
 | [discoveryKey.ts](../../../../../../src/utils/discoveryKey.ts) | [discoveryKey.ts.md](./discoveryKey.ts.md) |
 | [errorMessage.ts](../../../../../../src/utils/errorMessage.ts) | [errorMessage.ts.md](./errorMessage.ts.md) |

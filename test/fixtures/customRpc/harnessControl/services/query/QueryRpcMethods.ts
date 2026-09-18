@@ -115,6 +115,8 @@ export class QueryRpcMethods extends ANetworkRpcMethods<QueryService> {
         peerAddress: string;
         channelId: string;
         attemptNonce: string;
+        selectorChallenge: string;
+        advertiserChallenge: string;
         localOpeningSignatureIssued: boolean;
     } | null {
         const attempt =
@@ -125,6 +127,8 @@ export class QueryRpcMethods extends ANetworkRpcMethods<QueryService> {
             peerAddress: String(attempt.peerAddress),
             channelId: attempt.channelId,
             attemptNonce: attempt.attemptNonce,
+            selectorChallenge: attempt.selectorChallenge,
+            advertiserChallenge: attempt.advertiserChallenge,
             localOpeningSignatureIssued: attempt.localOpeningSignatureIssued
         };
     }
@@ -353,6 +357,11 @@ export class QueryRpcMethods extends ANetworkRpcMethods<QueryService> {
     /** Whether this peer has blacklisted `evmAddress`. */
     public isBlacklisted(evmAddress: Address): boolean {
         return this.p2pManager.isBlacklisted(evmAddress);
+    }
+
+    /** Retry-tier strikes this peer recorded against `key` in this session. */
+    public getStrikes(key: string): number {
+        return this.p2pManager.profileManager.getStrikes(key);
     }
 
     /** Whether this peer has suspended `evmAddress` for this session. */

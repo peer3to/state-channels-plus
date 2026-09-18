@@ -59,11 +59,11 @@ class HandshakeAdmissionPolicy implements DeferredAdmissionPolicy {
                 peerAddress: transport.peerAddress
             }
         );
-        // The waiter expired rather than the peer misbehaving, so bar it for
-        // this session instead of recording a verdict against it.
+        // The waiter expired rather than the peer misbehaving, so this spends
+        // the peer's shared retry bound instead of recording a verdict.
         this.service.p2pManager.disconnectConnection(
             transport,
-            DisconnectPolicy.SUSPEND
+            DisconnectPolicy.allowRetry()
         );
     }
 
@@ -102,7 +102,8 @@ class HandshakeAdmissionPolicy implements DeferredAdmissionPolicy {
         );
         this.service.p2pManager.disconnectConnection(
             transport,
-            DisconnectPolicy.BLACKLIST
+            DisconnectPolicy.BLACKLIST,
+            "guarded RPC from an unauthenticated transport"
         );
     }
 }

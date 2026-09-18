@@ -319,3 +319,94 @@ describe("P2PManager disconnect policy", function () {
         expect(result.barredInFreshSession).to.equal(true);
     });
 });
+
+describe("P2PManager disconnect policy before authentication", function () {
+    let fixture: P2PManagerFixture;
+    const peerKey = `0x${"5a".repeat(32)}`;
+
+    beforeEach(async function () {
+        fixture = new P2PManagerFixture();
+        await fixture.setup();
+    });
+
+    afterEach(async function () {
+        await fixture.cleanup();
+    });
+
+    it("counts retry-tier closes against the Hyperswarm key of a transport that never authenticated", async function () {
+        const result = await fixture
+            .control()
+            .p2pManagerProbe.probeUnauthenticatedRetryTier(peerKey, 3, 2)
+            .request();
+
+        expect(result.strikes).to.equal(2);
+        expect(result.suspended).to.equal(false);
+        expect(result.banCalls).to.deep.equal([]);
+        expect(result.refusedAtRegistration).to.equal(false);
+    });
+
+    it("bans the handle and refuses the same key at registration once the bound is reached", async function () {
+        const result = await fixture
+            .control()
+            .p2pManagerProbe.probeUnauthenticatedRetryTier(peerKey, 3, 3)
+            .request();
+
+        expect(result.suspended).to.equal(true);
+        expect(result.banCalls).to.deep.equal([true]);
+        expect(result.refusedAtRegistration).to.equal(true);
+    });
+
+    it("suspends both the EVM address and the Hyperswarm key of a proven peer", async function () {
+        const result = await fixture
+            .control()
+            .p2pManagerProbe.probeSuspensionBarsBothIdentities(
+                fixture.address(1),
+                peerKey
+            )
+            .request();
+
+        expect(result.addressSuspended).to.equal(true);
+        expect(result.keySuspended).to.equal(true);
+        expect(result.sameKeyRefusedAtRegistration).to.equal(true);
+        expect(result.sameAddressRefusedAtAuthentication).to.equal(true);
+    });
+
+    it("counts retry-tier closes addressed to an identity with no profile and bars it at the bound", async function () {
+        const result = await fixture
+            .control()
+            .p2pManagerProbe.probeAddressStrikeWithoutProfile(
+                fixture.address(1),
+                3
+            )
+            .request();
+
+        expect(result.strikesBelowBound).to.equal(2);
+        expect(result.suspendedAtBound).to.equal(true);
+        expect(result.laterAuthenticationRefused).to.equal(true);
+    });
+});
+
+describe("P2PManager blacklist storage", function () {
+    let fixture: P2PManagerFixture;
+
+    beforeEach(async function () {
+        fixture = new P2PManagerFixture();
+        await fixture.setup();
+    });
+
+    afterEach(async function () {
+        await fixture.cleanup();
+    });
+
+    it("records the verdict with its reason and refuses the identity from a fresh manager sharing the store", async function () {
+        const result = await fixture
+            .control()
+            .p2pManagerProbe.probeBlacklistStorage(fixture.address(1))
+            .request();
+
+        expect(result.recordedReason).to.equal("probe verdict");
+        expect(result.freshManagerRefuses).to.equal(true);
+        expect(result.entryRemovedAfterUnblacklist).to.equal(true);
+        expect(result.freshManagerAdmitsAfterUnblacklist).to.equal(true);
+    });
+});

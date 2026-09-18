@@ -1,3 +1,4 @@
+import { BlacklistStorage } from "./BlacklistStorage";
 import { BlockCalldataStorage } from "./BlockCalldataStorage";
 import { BlockStorage } from "./BlockStorage";
 import { DisputeFraudProofStorage } from "./DisputeFraudProofStorage";
@@ -34,6 +35,7 @@ export class Storage {
     public readonly forceJoin: ForceJoinStorage;
     public readonly blockCalldata: BlockCalldataStorage;
     public readonly eventSync: EventSyncStorage;
+    public readonly blacklist: BlacklistStorage;
 
     constructor() {
         this.blocks = deepCopyProxy(new BlockStorage());
@@ -53,6 +55,7 @@ export class Storage {
         this.forceJoin = deepCopyProxy(new ForceJoinStorage());
         this.blockCalldata = deepCopyProxy(new BlockCalldataStorage());
         this.eventSync = deepCopyProxy(new EventSyncStorage());
+        this.blacklist = deepCopyProxy(new BlacklistStorage());
         return deepCopyProxy(this);
     }
 

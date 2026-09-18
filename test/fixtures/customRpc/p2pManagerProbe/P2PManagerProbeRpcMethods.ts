@@ -21,6 +21,16 @@ import type {
     SuspendPolicyProbe,
     RetryTierProbe,
     ExclusionScopeProbe,
+    UnauthenticatedRetryProbe,
+    HandshakeRequestSkewProbe,
+    HandshakeResponseTimingKind,
+    HandshakeResponseTimingProbe,
+    HandshakeAckTimeoutProbe,
+    DualIdentitySuspensionProbe,
+    BlacklistStorageProbe,
+    AddressStrikeProbe,
+    NegotiationAbortScenario,
+    NegotiationAbortProbe,
     RelayAdmissionProbe,
     UpgradeBanPolicyProbe,
     UnblacklistBanPolicyProbe,
@@ -44,6 +54,7 @@ import type {
     LobbyBootstrapValidationProbe,
     LobbyRoleTimerProbe,
     LobbyRetryEpochProbe,
+    LobbySessionRestartProbe,
     LobbyExhaustionTimerProbe,
     LobbyLatePickProbe
 } from "./P2PManagerProbeService";
@@ -251,6 +262,79 @@ export class P2PManagerProbeRpcMethods extends ANetworkRpcMethods<P2PManagerProb
         return this.service.probeRetryTier(address, maxRetries, closes);
     }
 
+    public probeUnauthenticatedRetryTier(
+        publicKey: string,
+        maxRetries: number,
+        closes: number
+    ): UnauthenticatedRetryProbe {
+        return this.service.probeUnauthenticatedRetryTier(
+            publicKey,
+            maxRetries,
+            closes
+        );
+    }
+
+    public probeSuspensionBarsBothIdentities(
+        address: string,
+        publicKey: string
+    ): DualIdentitySuspensionProbe {
+        return this.service.probeSuspensionBarsBothIdentities(
+            address,
+            publicKey
+        );
+    }
+
+    public probeBlacklistStorage(address: string): BlacklistStorageProbe {
+        return this.service.probeBlacklistStorage(address);
+    }
+
+    public probeAddressStrikeWithoutProfile(
+        address: string,
+        maxRetries: number
+    ): AddressStrikeProbe {
+        return this.service.probeAddressStrikeWithoutProfile(
+            address,
+            maxRetries
+        );
+    }
+
+    public probeHandshakeRequestSkew(
+        publicKey: string,
+        offsetSeconds: number,
+        authenticatedAddress: string | null
+    ): Promise<HandshakeRequestSkewProbe> {
+        return this.service.probeHandshakeRequestSkew(
+            publicKey,
+            offsetSeconds,
+            authenticatedAddress
+        );
+    }
+
+    public probeHandshakeResponseTiming(
+        publicKey: string,
+        kind: HandshakeResponseTimingKind,
+        offsetSeconds: number
+    ): Promise<HandshakeResponseTimingProbe> {
+        return this.service.probeHandshakeResponseTiming(
+            publicKey,
+            kind,
+            offsetSeconds
+        );
+    }
+
+    public probeHandshakeAckTimeout(
+        publicKey: string,
+        rounds: number
+    ): Promise<HandshakeAckTimeoutProbe> {
+        return this.service.probeHandshakeAckTimeout(publicKey, rounds);
+    }
+
+    public probeNegotiationAbort(
+        scenario: NegotiationAbortScenario
+    ): Promise<NegotiationAbortProbe> {
+        return this.service.probeNegotiationAbort(scenario);
+    }
+
     public probeSuspensionScope(address: string): ExclusionScopeProbe {
         return this.service.probeSuspensionScope(address);
     }
@@ -412,6 +496,10 @@ export class P2PManagerProbeRpcMethods extends ANetworkRpcMethods<P2PManagerProb
         scenario: NegotiationFailureScenario
     ): Promise<Partial<NegotiationFailureProbe>> {
         return this.service.probeNegotiationFailure(scenario);
+    }
+
+    public probeLobbySessionRestart(): Promise<LobbySessionRestartProbe> {
+        return this.service.probeLobbySessionRestart();
     }
 
     public probeSignedAttemptObservation(): Promise<SignedAttemptObservationProbe> {
