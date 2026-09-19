@@ -71,6 +71,38 @@ Status: open verification gap. A removed peer can still appear in a held chain s
 
 Required evidence: [`REQ-SYNC-1-T2589H.T1.P16`](../specification/peer-communication/synchronization.md#req-sync-1-t2589h.t1.p16) must exercise the removed responder, then prove recovery to the surviving participants' state without a missing-snapshot abort. No test currently owns this permutation; do not infer coverage from the honest-responder case.
 
+<a id="find-dispute-2-3hv3tz"></a>
+
+## FIND-DISPUTE-2-3HV3TZ — The third lost-race containment site has no test
+
+**Status:** open verification gap. The containment itself is implemented for all three sites; only
+the evidence-improvement site is unevidenced.
+
+[`EventHandler.disputeToleratingLostRace`](../implementation/source/src/eventHandlers/EventHandler.ts.md)
+is called from three places: `onChainSlashed`, `onDisputeKilled`, and the evidence-improvement
+branch of `onDisputeCommitted`. The first two are covered by
+[test/unit/EventHandler.test.ts](../verification/tests/test/unit/EventHandler.test.ts.md). The third
+has no declaration of its own, so
+[`REQ-DISPUTE-PIPE-6-6FZB9M.T1.P9`](../specification/disputes/dispute-processing.md#req-dispute-pipe-6-6fzb9m.t1.p9)
+and [`UNIT-TEST-EVENT-HANDLER-1-RZ2C7W.P14`](../implementation/source/src/eventHandlers/EventHandler.ts.md#unit-test-event-handler-1-rz2c7w.p14)
+stay unassigned. Demonstrated, not suspected: a mutant that bypasses the helper at that one site —
+restoring the bare `disputeManager.dispute(forkId)` there while both other sites keep the helper —
+survives the suite.
+
+Reaching the branch needs staging the current unit setup does not produce: an audited-valid dispute
+committed by another peer for which this observer can construct _more_ evidence, so
+`canConstructMoreEvidence` returns true and the upload is attempted, with that upload refused as
+past the evidence deadline.
+[test/stateManager/DisputeCommitReductionSchedule.test.ts](../verification/tests/test/stateManager/DisputeCommitReductionSchedule.test.ts.md)
+already stages an outcome-changing comparison on this branch and is the nearest starting point; its
+upload is a no-op rather than a refusal, so it proves the scheduling clause, not the containment.
+
+**Required evidence:** one declaration that reaches the evidence-improvement upload with the
+observer's submission refused by `RaceConditionDisputeEvidencePeriodExpired`, and asserts that
+`onDisputeCommitted` resolves, that exactly one upload was attempted, and that the reduction is
+still scheduled from the observed commitment. Do not infer coverage from the kill and slash cases:
+they are separate call sites and the mutant above distinguishes them.
+
 <a id="find-log-1-659qd2"></a>
 
 ## FIND-LOG-1-659QD2 — Folded collection summary has unsupported coverage credit

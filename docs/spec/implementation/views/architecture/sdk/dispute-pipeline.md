@@ -85,10 +85,20 @@ which is mutexed and idempotent per fork (`didIDispute` flag):
 | Participant timeout                                                                                             | [`StateManager.tryTimeoutParticipant`](../../../../../../src/stateManager/StateManager.ts#L478) (§3.2) | `TimeoutStruct` stored in [`TimeoutStorage`](../../../../../../src/storage/TimeoutStorage.ts#L5)                                                          |
 | Voluntary self-removal (exit without N/N signatures)                                                            | `startMaybeExitOnChain` slow path                                                                      | `selfRemoval = true` via [`ForceExitStorage`](../../../../../../src/storage/ForceExitStorage.ts#L1)                                                       |
 | Forced inbound inclusion (join ignored for N+1 blocks)                                                          | `maybeInitiateForceJoinDispute`                                                                        | `latestInboundMessageBlockHash/Height` newer than the fork's applied tip                                                                                  |
-| On-chain slash observed on an undisputed fork                                                                   | `EventHandler.onChainSlashed`                                                                          | `onChainSlashes`                                                                                                                                          |
-| Dispute killed, window empty                                                                                    | `EventHandler.onDisputeKilled`                                                                         | replacement evidence (first upload wins; `RaceConditionDisputeEvidencePeriodExpired` tolerated)                                                           |
+| On-chain slash observed on an undisputed fork                                                                   | [`EventHandler.onChainSlashed`](../../../../../../src/eventHandlers/EventHandler.ts#L733)              | `onChainSlashes` (via `disputeToleratingLostRace`)                                                                                                        |
+| Dispute killed, window empty                                                                                    | [`EventHandler.onDisputeKilled`](../../../../../../src/eventHandlers/EventHandler.ts#L887)             | replacement evidence (via `disputeToleratingLostRace`)                                                                                                    |
 | Reduction found an empty window                                                                                 | `ReductionExecutor.tryReduceLocked`                                                                    | own view of the fork                                                                                                                                      |
-| Auditor holds more evidence than a valid observed dispute                                                       | `EventHandler.canConstructMoreEvidence`                                                                | merged evidence                                                                                                                                           |
+| Auditor holds more evidence than a valid observed dispute                                                       | [`EventHandler.canConstructMoreEvidence`](../../../../../../src/eventHandlers/EventHandler.ts#L675)    | merged evidence (via `disputeToleratingLostRace`)                                                                                                         |
+
+The three triggers the `EventHandler` owns share one private helper,
+[`disputeToleratingLostRace(forkId, channelId, handler)`](../../../../../../src/eventHandlers/EventHandler.ts#L945):
+every honest peer observes the same on-chain trigger and uploads, so all but the
+first get the contract's `RaceConditionDisputeEvidencePeriodExpired`, which
+`DisputeManager.dispute` deliberately rethrows (§4). The helper decodes the custom
+error, logs the lost race under the asking handler's name and returns; any other
+error is rethrown unchanged, so a real fault still reaches the caller. Without it
+a lost race left the handler's promise rejected with nobody awaiting it
+([`REQ-DISPUTE-PIPE-6-6FZB9M` (Minimal intervention and convergence)](../../../../specification/disputes/dispute-processing.md#req-dispute-pipe-6-6fzb9m)).
 
 ### 3.2 Timeout detection detail
 
@@ -165,8 +175,9 @@ without: the plain upload (gas limit 2.5M). Race reverts are classified:
 `ErrorCantParticipateInDispute` (we are slashed — warn),
 `RaceConditionDisputeTimeoutWindowCreatedTooEarly` (no-op),
 `RaceConditionDisputeEvidencePeriodExpired` (rethrown — evidence window
-closed). On failure the `didIDispute` flag is rolled back so a later attempt
-can retry.
+closed; the three observation-driven callers in `EventHandler` contain that
+rethrow in `disputeToleratingLostRace`, §3.1). On failure the `didIDispute` flag
+is rolled back so a later attempt can retry.
 
 ## 5. Audit: validity and authorization checks
 
@@ -221,7 +232,7 @@ is an internal error (throws).
 
 ## 6. Audit outcome handling
 
-In [`EventHandler.handleDisputeCommitted`](../../../../../../src/eventHandlers/EventHandler.ts#L299):
+In [`EventHandler.handleDisputeCommitted`](../../../../../../src/eventHandlers/EventHandler.ts#L359):
 
 - **Final dispute** (`isFinal`, i.e. the contract marked the window decided):
   no audit — persist the confirmation, derive auditing data locally if not
@@ -251,17 +262,21 @@ In [`EventHandler.handleDisputeCommitted`](../../../../../../src/eventHandlers/E
   `canConstructMoreEvidence`: construct our own dispute and compare
   `reduce([theirs])` with `reduce([ours, theirs])` on the `LocalDiamond`; a
   difference means our evidence changes the outcome → upload our dispute
-  (evidence accumulation). Otherwise schedule reduction at `killPeriodEnd`.
+  through `disputeToleratingLostRace` (evidence accumulation; the peers that
+  lose that race carry on and still schedule). The reduction is scheduled at
+  `killPeriodEnd` either way.
 
-**`DisputeKilled` event** ([`onDisputeKilled`](../../../../../../src/eventHandlers/EventHandler.ts#L879)):
+**`DisputeKilled` event** ([`onDisputeKilled`](../../../../../../src/eventHandlers/EventHandler.ts#L887)):
 record the killed disputer in the local slash mirror
 (`onOnChainSlashAdded` — the kill _is_ the slash), mirror `onDisputeKilled`,
 disconnect/blacklist the disputer, and if the window is now empty and the fork
-is current, upload replacement evidence (first honest peer wins).
+is current, upload replacement evidence through `disputeToleratingLostRace`
+(first honest peer wins; the losers' handling still resolves).
 
-**`ChainSlashed` event**: mirror the slash, blacklist the peer, and open a
-dispute on the current fork if it is not yet disputed and the slashed address
-is still a participant.
+**`ChainSlashed` event** ([`onChainSlashed`](../../../../../../src/eventHandlers/EventHandler.ts#L733)):
+mirror the slash, blacklist the peer, and open a dispute on the current fork —
+again through `disputeToleratingLostRace` — if it is not yet disputed and the
+slashed address is still a participant.
 
 ## 7. Reduction and successor-fork creation
 
