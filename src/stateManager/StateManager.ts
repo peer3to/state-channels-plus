@@ -88,6 +88,9 @@ class StateManager<
     // Bumped when the runtime gives up a channel. Async work started for one
     // channel captures it and stands down if it changed before the work lands.
     private _channelGeneration = 0;
+    // True from the generation bump until the reset finishes. The peers of the
+    // channel being left are on their way out, so nothing earns a verdict.
+    private _isResettingChannel = false;
     timeoutManager: TimeoutManager;
     logger: Logger;
     readonly eventSyncService: EventSyncService;
@@ -316,6 +319,7 @@ class StateManager<
         // First, before any await: work for the old channel that resumes during
         // or after the reset must see it has been left.
         this._channelGeneration += 1;
+        this._isResettingChannel = true;
         // Retire the fork before any await too. A log handler for the old
         // channel still running during the drain must find it inactive, or it
         // could start a reduction whose timer the task drain below cancels,
@@ -323,6 +327,16 @@ class StateManager<
         // reset, so nothing re-creates what it settles.
         this.latestForkId = NULL;
 
+        try {
+            await this.releaseChannel();
+        } finally {
+            this._isResettingChannel = false;
+        }
+        this.logger.info("Channel reset complete");
+    }
+
+    /** The reset's steps; `resetChannel` owns the flags around them. */
+    private async releaseChannel(): Promise<void> {
         this.blockQueueManager.reset();
         this.reductionManager.reset();
         // Detaches the provider filter and unbinds the id from the dispute
@@ -355,7 +369,6 @@ class StateManager<
         // After the status change: re-armed any earlier, the latch would take
         // the reset's own OPENED -> NOT_OPENED as the next channel's outcome.
         this.p2pManager.rearmInitialSync();
-        this.logger.info("Channel reset complete");
     }
 
     //Mark resources for garbage collection
@@ -498,6 +511,15 @@ class StateManager<
 
     public get channelGeneration(): number {
         return this._channelGeneration;
+    }
+
+    public get isResettingChannel(): boolean {
+        return this._isResettingChannel;
+    }
+
+    /** Whether work that captured `generation` still belongs to this channel. */
+    public isStaleChannelWork(generation: number): boolean {
+        return this._channelGeneration !== generation;
     }
 
     public async setChannelId(channelId: ChannelId): Promise<void> {

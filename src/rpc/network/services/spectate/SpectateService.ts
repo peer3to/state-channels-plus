@@ -229,6 +229,10 @@ class SpectateService extends ANetworkRpcService<SpectateServiceRpcMethods> {
             const stateManager = this.p2pManager.stateManager;
             const diamondStateMachine = stateManager.diamondStateMachine;
 
+            // Nothing below may touch the runtime once it has left this
+            // channel: the first step already writes to the local EVM.
+            if (stateManager.isStaleChannelWork(generation)) return false;
+
             // 1) Fetch the onChainSnapshot and persist/update the local EVM with it
             const onChainSnapshot =
                 await this.fetchAndPersistOnChainSnapshot(channelId);
@@ -535,6 +539,9 @@ class SpectateService extends ANetworkRpcService<SpectateServiceRpcMethods> {
                 })
             );
             for (const bc of blockConfirmations) {
+                // Re-checked per block: each ingest awaits the state mutex,
+                // which a reset can take in between.
+                if (stateManager.isStaleChannelWork(generation)) return false;
                 try {
                     const isOk =
                         await stateManager.blockIngestService.onBlockConfirmationStruct(

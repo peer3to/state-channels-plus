@@ -234,10 +234,12 @@ class LocalP2pSigner<TCustomRpc extends MainRpcService = MainRpcService>
         if (isCommittedParticipantStatus(stateManager.status)) {
             if (openedGenesis) return true;
             if (!options.balance) return true;
+            const topUpGeneration = stateManager.channelGeneration;
             const prepared =
                 await this.p2pManager.localRpc.joinChannelService.prepareJoinChannelConfirmation(
                     options.balance
                 );
+            if (stateManager.isStaleChannelWork(topUpGeneration)) return false;
             return stateManager.membershipService.topUpBalance(
                 prepared.confirmation,
                 prepared.expectedSnapshotHash,
@@ -245,10 +247,14 @@ class LocalP2pSigner<TCustomRpc extends MainRpcService = MainRpcService>
             );
         }
         if (stateManager.status !== Status.SYNCED) return false;
+        const generation = stateManager.channelGeneration;
         const prepared =
             await this.p2pManager.localRpc.joinChannelService.prepareJoinChannelConfirmation(
                 options.balance ?? this.defaultBalance()
             );
+        // Collecting signatures takes a round trip, and a leave can settle in
+        // it. Joining now would put the departed signer back on chain.
+        if (stateManager.isStaleChannelWork(generation)) return false;
         return stateManager.membershipService.joinChannel(
             prepared.confirmation,
             prepared.expectedSnapshotHash,

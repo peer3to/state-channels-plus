@@ -294,6 +294,142 @@ describe("StateManager.resetChannel", function () {
         expect(writes).to.equal(0);
     });
 
+    it("does not join the channel it is leaving when the signatures arrive late", async function () {
+        const { h, channelId, targeted } =
+            await TargetedChannelJoinFixture.unopened("reset-late-join", 3);
+        await targeted.openWithPeers(channelId, [0, 1]);
+        const joiner = h.getPeer(2);
+        // A synced observer is the state a join starts from.
+        expect(await targeted.connect(joiner, channelId)).to.equal(true);
+
+        const result = await h.execOnHost(
+            joiner,
+            async (sm, args) => {
+                const join = sm.p2pManager.localRpc.joinChannelService;
+                const prepare = join.prepareJoinChannelConfirmation.bind(join);
+                // Single-use hold: the signature round trip is where a leave
+                // can settle underneath an in-flight connectToChannel.
+                let release: () => void = () => undefined;
+                const held = new Promise<void>((resolve) => {
+                    release = resolve;
+                });
+                let hold: () => void = () => undefined;
+                const holding = new Promise<void>((resolve) => {
+                    hold = resolve;
+                });
+                join.prepareJoinChannelConfirmation = async (...callArgs) => {
+                    const prepared = await prepare(...callArgs);
+                    // Signal the hold rather than sleep: the reset has to land
+                    // after the last of the join's own round trips, or the join
+                    // fails on a cut transport instead of on the fence.
+                    hold();
+                    await held;
+                    return prepared;
+                };
+                const membership = sm.membershipService;
+                const joinChannel = membership.joinChannel.bind(membership);
+                let joinCalls = 0;
+                membership.joinChannel = (...callArgs) => {
+                    joinCalls += 1;
+                    return joinChannel(...callArgs);
+                };
+                try {
+                    const connect = sm.p2pManager.p2pSigner.connectToChannel(
+                        args.channelId,
+                        { shouldJoin: true }
+                    );
+                    await holding;
+                    await sm.resetChannel();
+                    release();
+                    return { connected: await connect, joinCalls };
+                } finally {
+                    join.prepareJoinChannelConfirmation = prepare;
+                    membership.joinChannel = joinChannel;
+                }
+            },
+            { channelId }
+        );
+
+        expect(result).to.deep.equal({ connected: false, joinCalls: 0 });
+    });
+
+    it("does not penalise a peer for an acknowledgement that outlived its channel", async function () {
+        const h = TestSession.getHarness();
+        await h.lifecycle.start(3, 0);
+        const result = await h.execOnHost(
+            h.getPeer(2),
+            async (sm, args) => {
+                const forkAck = sm.p2pManager.localRpc.isForkDisputedService;
+                const p2p = sm.p2pManager;
+                const ban =
+                    p2p.disconnectAndBlacklistPeerByEvmAddress.bind(p2p);
+                let bans = 0;
+                p2p.disconnectAndBlacklistPeerByEvmAddress = (address) => {
+                    bans += 1;
+                    return ban(address);
+                };
+                try {
+                    // No peer answers a fork nobody disputed, so every request
+                    // fails: without the fence each failure bans its peer.
+                    forkAck.requestDisputeAcknowledgment(
+                        sm.channelId,
+                        args.forkId
+                    );
+                    await sm.resetChannel();
+                    await new Promise((resolve) => setTimeout(resolve, 2000));
+                    return {
+                        bans,
+                        blacklisted: p2p.isBlacklisted(args.peer)
+                    };
+                } finally {
+                    p2p.disconnectAndBlacklistPeerByEvmAddress = ban;
+                }
+            },
+            { forkId: ethers.id("ack-fork"), peer: h.getPeer(0).address }
+        );
+
+        expect(result).to.deep.equal({ bans: 0, blacklisted: false });
+    });
+
+    it("records no verdict while the channel is being released", async function () {
+        const h = TestSession.getHarness();
+        await h.lifecycle.start(3, 0);
+        const result = await h.execOnHost(
+            h.getPeer(2),
+            async (sm, args) => {
+                const drain = sm.stateChannelEventListener.drain.bind(
+                    sm.stateChannelEventListener
+                );
+                // Park the reset mid-flight and try to earn a verdict there.
+                let release: () => void = () => undefined;
+                const held = new Promise<void>((resolve) => {
+                    release = resolve;
+                });
+                sm.stateChannelEventListener.drain = async () => {
+                    await held;
+                    return drain();
+                };
+                const reset = sm.resetChannel();
+                await new Promise((resolve) => setTimeout(resolve, 50));
+                sm.p2pManager.disconnectAndBlacklistPeerByEvmAddress(args.peer);
+                const duringReset = sm.p2pManager.isBlacklisted(args.peer);
+                release();
+                await reset;
+                sm.stateChannelEventListener.drain = drain;
+                return {
+                    duringReset,
+                    afterReset: sm.p2pManager.isBlacklisted(args.peer)
+                };
+            },
+            { peer: h.getPeer(0).address }
+        );
+
+        expect(result).to.deep.equal({
+            duringReset: false,
+            afterReset: false
+        });
+    });
+
     it("rejects a channel reset on a disposed runtime", async function () {
         const h = TestSession.getHarness();
         // Unopened runtimes are enough for a guard check; two is the harness minimum.

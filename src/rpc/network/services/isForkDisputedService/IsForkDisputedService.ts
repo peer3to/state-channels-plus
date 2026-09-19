@@ -69,6 +69,12 @@ class IsForkDisputedService extends ANetworkRpcService<IsForkDisputedRpcMethods>
         const snapshotAddresses = [...this.p2pManager.getConnectedPeers()];
         const timeoutMs =
             2 * this.p2pManager.stateManager.timeConfig.agreementTime * 1000;
+        // These requests outlive their channel: a leave settles while they are
+        // in flight, the reset cuts the transports, and every one of them
+        // rejects. Neither the answer nor the failure means anything then.
+        const generation = this.p2pManager.stateManager.channelGeneration;
+        const isStale = () =>
+            this.p2pManager.stateManager.isStaleChannelWork(generation);
 
         void Promise.all(
             snapshotAddresses.map(async (peerAddress) => {
@@ -77,6 +83,7 @@ class IsForkDisputedService extends ANetworkRpcService<IsForkDisputedRpcMethods>
                         await this.remoteRpc.isForkDisputedService
                             .onDisputeAcknowledgmentRequest(channelId, forkId)
                             .request(peerAddress, { timeoutMs });
+                    if (isStale()) return;
                     if (!acknowledged) {
                         this.logger.debug(
                             `Peer did not acknowledge disputed fork ${forkId}, disconnecting`,
@@ -95,6 +102,7 @@ class IsForkDisputedService extends ANetworkRpcService<IsForkDisputedRpcMethods>
                         peerAddress
                     );
                 } catch (error) {
+                    if (isStale()) return;
                     this.logger.debug(
                         `Dispute acknowledgment request failed for fork ${forkId}, disconnecting`,
                         {

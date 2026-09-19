@@ -144,12 +144,23 @@ describe("E2E: Channel reuse", function () {
                 const cut = p2p.disconnectConnection.bind(p2p);
                 const ban =
                     p2p.disconnectAndBlacklistPeerByEvmAddress.bind(p2p);
+                const spectate = sm.p2pManager.localRpc.spectateService;
+                const persistSnapshot =
+                    spectate.fetchAndPersistOnChainSnapshot.bind(spectate);
                 const probe = {
                     cuts: 0,
+                    // The stale sync's first write, before any of its stores.
+                    snapshotWrites: 0,
                     restore: () => {
                         p2p.disconnectConnection = cut;
                         p2p.disconnectAndBlacklistPeerByEvmAddress = ban;
+                        spectate.fetchAndPersistOnChainSnapshot =
+                            persistSnapshot;
                     }
+                };
+                spectate.fetchAndPersistOnChainSnapshot = (...callArgs) => {
+                    probe.snapshotWrites += 1;
+                    return persistSnapshot(...callArgs);
                 };
                 Reflect.set(sm, "resetPenaltyProbe", probe);
                 const isResponder = (address: unknown) =>
@@ -179,7 +190,9 @@ describe("E2E: Channel reuse", function () {
                 responderBlacklisted: sm.p2pManager.isBlacklisted(
                     args.responder
                 ),
-                responderCuts: Reflect.get(sm, "resetPenaltyProbe").cuts
+                responderCuts: Reflect.get(sm, "resetPenaltyProbe").cuts,
+                snapshotWrites: Reflect.get(sm, "resetPenaltyProbe")
+                    .snapshotWrites
             }),
             {
                 forkId: String(
@@ -199,7 +212,8 @@ describe("E2E: Channel reuse", function () {
             status: Status.OPENED,
             persisted: false,
             responderBlacklisted: false,
-            responderCuts: 0
+            responderCuts: 0,
+            snapshotWrites: 0
         });
         await syncs.restore();
     });

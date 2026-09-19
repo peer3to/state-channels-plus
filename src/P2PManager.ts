@@ -450,6 +450,17 @@ class P2PManager<TCustomRpc extends MainRpcService = MainRpcService> {
     }
 
     public disconnectAndBlacklistPeer(transport: NetworkTransport) {
+        if (this.stateManager.isResettingChannel) {
+            // The channel is being given up and every peer is going with it;
+            // a verdict recorded now would belong to no channel and, because
+            // verdicts outlive the reset, would follow the peer into the next.
+            this.logger.warn(
+                "Disconnecting peer without a verdict: the channel is being released",
+                LoggerUtils.getTransportMetadata(transport)
+            );
+            this.disconnectConnection(transport);
+            return;
+        }
         this.logger.warn(
             "Disconnecting and blacklisting peer transport",
             LoggerUtils.getTransportMetadata(transport)
@@ -464,6 +475,16 @@ class P2PManager<TCustomRpc extends MainRpcService = MainRpcService> {
     }
 
     public disconnectAndBlacklistPeerByEvmAddress(evmAddress: Address) {
+        if (this.stateManager.isResettingChannel) {
+            this.logger.warn(
+                "Disconnecting peer without a verdict: the channel is being released",
+                { peerAddress: evmAddress }
+            );
+            const live =
+                this.profileManager.getTransportByEvmAddress(evmAddress);
+            if (live) this.disconnectConnection(live);
+            return;
+        }
         this.logger.warn("Disconnecting and blacklisting peer address", {
             peerAddress: evmAddress
         });
