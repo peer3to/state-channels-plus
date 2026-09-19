@@ -208,6 +208,17 @@ satisfy the channel-balance invariant checked against chain-anchored deposits an
 replay through the same validation pipeline as live blocks, under the spectating context's
 consequence rules.
 
+An authenticated source still absent after chain refresh triggers ordinary sync under
+[`REQ-GOSSIP-4-J5Z4DF` (Eligible transport contribution)](block-gossip.md#req-gossip-4-j5z4df). Intake awaits the existing channel,
+fork and minimum-height request, then rechecks cached sender eligibility regardless of the sync result. A sender that remains ineligible is blacklisted before intake returns. It creates no candidate record and does not resume
+processing the triggering gossip copy. The sync owner retains verification, state application,
+in-flight collision and peer-failure behavior. Existing queued-source expiry probes retain their
+separate lineage and successor-fork policy.
+
+Post-authentication engagement ([`REQ-AUTH-5-BQG9AG`](synchronization.md#req-auth-5-bqg9ag)) is identity/lifecycle policy. A connected
+nonparticipant may request and serve sync while remaining unable to contribute unsolicited block gossip.
+Dispute standing is a third, chain-defined predicate.
+
 ## Assumptions and constraints
 
 - Requires an authenticated session ([authentication](./handshake.md)) and an honest requester-side

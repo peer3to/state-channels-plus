@@ -1,4 +1,5 @@
 import { hash as randomHash, randomAddress } from "../factory";
+import { BlockOrigin } from "@/storage/QueueStorage";
 import type { BlockHeight, ForkId } from "@/types/types";
 import { Codec, Type } from "@/utils";
 import { MathTestSession as TestSession } from "@test/harness";
@@ -407,7 +408,10 @@ describe("Unit: AgreementManager", function () {
                     ),
                     signatures: []
                 },
-                ingestOptions: { senderAddress: joinerAddress },
+                ingestOptions: {
+                    origin: BlockOrigin.NETWORK,
+                    senderAddress: joinerAddress
+                },
                 keepConnection: true
             });
 
@@ -763,7 +767,10 @@ describe("Unit: AgreementManager", function () {
                     ),
                     signatures: [aSig]
                 },
-                ingestOptions: { senderAddress: h.getPeer(0).address },
+                ingestOptions: {
+                    origin: BlockOrigin.NETWORK,
+                    senderAddress: h.getPeer(0).address
+                },
                 keepConnection: true,
                 waitForProcessed: false
             });

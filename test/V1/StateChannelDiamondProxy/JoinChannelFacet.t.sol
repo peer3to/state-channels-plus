@@ -29,6 +29,11 @@ contract JoinChannelFacetHarness is JoinChannelFacet, DisputeWindowSeeding {
 
     constructor() {
         utilityFacetAddress = address(new UtilityFacet());
+        // The facet reads the participant maximum from proxy storage now that
+        // it is configuration rather than a constant. This harness stands in
+        // for a constructed proxy, so it has to set what the proxy would:
+        // left at zero, every join is rejected as "too many participants".
+        maxChannelParticipants = 32;
     }
 
     function seedChannel(bytes32 channelId, bytes32 forkId, address[] memory participants, address slashedParticipant)

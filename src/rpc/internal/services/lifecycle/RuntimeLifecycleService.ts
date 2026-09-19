@@ -133,6 +133,13 @@ export class RuntimeLifecycleService extends AInternalRpcService<RuntimeLifecycl
         return this.router.rpcRoot.dispose();
     }
 
+    // Overrides AInternalRpcService.awaitedByDisposalDrain: a parent-requested
+    // disposal runs as one of this service's handlers and replies only after
+    // the disposal that drains the others, so waiting on it would wait on itself.
+    public override get awaitedByDisposalDrain(): boolean {
+        return false;
+    }
+
     /** Final shutdown waits for acknowledgement; parent-requested cleanup first replies. */
     public completeDisposal(parentRequested = false): Promise<void> {
         if (this.disposalReplySender) return Promise.resolve();

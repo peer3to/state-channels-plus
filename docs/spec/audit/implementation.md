@@ -230,3 +230,116 @@ Ordered cleanup now uses [runCleanup](../implementation/source/src/utils/runClea
 ## Review 17 parent-loss disposition
 
 The engineer chose to close RY1 at the parent owner. [Root creation](../implementation/source/src/rpc/internal/createRoot.ts.md) marks expected worker shutdown before closing the owned port. A real SDK-worker regression holds client disposal until after the child exits, and observes the fatal adapter callback as well as the public error surface. Unexpected worker exits remain errors. Full and browser gates are rerun after this change and the shared cleanup extraction.
+
+## Per-entry queue retention bound — 2026-09-08
+
+Queue retention uses independent source allowances ([`REQ-QSTORE-2-VYWJAQ` (Independent source allowances)](../specification/storage/queue.md#req-qstore-2-vywjaq)): at most N admitted
+identities and N supplied values per source, including the author. The contribution map travels with the dequeued entry into ordinary validation. Later copies form an independent entry; restore merges source contributions under the limits. No queue-side recovery budget
+or shared signature pool remains. Storage bounds the number of supplied values; ValidationService handles invalid values through each strategy. No queue-side encoding filter or fixed-byte bound remains. The wire intake and stored shortcut both gate
+transport eligibility before retention.
+
+The two caches accept chain current/pending membership or verified current-fork off-chain membership,
+with known slash precedence. Positive hits avoid chain/VM reads. An absent source after refresh
+triggers ordinary sync. Intake awaits it and returns; no candidate registry, retry-window limits,
+admission cancellation or post-sync block insertion remains. SpectateService is unchanged.
+
+Real network scenarios now cover independent supplier slots, alternate valid signatures, stored merges,
+pre-dequeue accumulation, independent stored copies, unknown-source sync success/failure, pending joins and slashes. Exact evidence belongs in
+the verification reports. Runtime-mode and canonical regression evidence, including environment
+limits for browser execution, is recorded in the implementation handoff. Browser execution is not
+inferred from TypeScript or distributed success.
+
+[`FIND-QSTORE-3-1HF4V6`](open-findings.md#find-qstore-3-1hf4v6) is resolved for shared-slot monopolization. [`FIND-SETTLE-1-G2CPV6`](open-findings.md#find-settle-1-g2cpv6) remains open
+for generic authoritative roster writes. Positive cache staleness, first-N source churn, aggregate
+hash/connection/rate limits, and repeated work across later lifetimes remain explicit limits. The
+reference math insertion bounds its producer and preserves balances; it does not grant chain dispute
+standing before confirmed adoption. Pending joiners persist late confirmations silently until promotion,
+matching the fresh-block relay guard and avoiding premature admission sync during join submission.
+
+Both TypeScript builds, import checks, compilation and focused Docker tests pass for the source-map correction. The implementation handoff records the final canonical run and isolated guard checks; earlier ownership and byte-filter results do not verify this correction. Specification generation and ID links pass; strict completeness remains blocked by existing repository gaps and pending engineer approvals. Browser constructor wiring and its separate runtime evidence are recorded in that handoff.
+
+The simplification review fixes narrow bytes32 inputs through an assertion signature and remove the remaining queue-key forwarding method. The separate import-order change preserves all non-import executable statements, all imported bindings, and side-effect import boundaries. Runtime initialization order is checked by the distributed and browser gates; TypeScript suppression comments remain attached to their original imports.
+
+Post-handshake connection ownership is now centralized in `P2PManager`. Local channel status is
+the only admission input: every completed live transport is promoted, while `OPENED` alone performs
+the participant read and sync. Join and spectate RPC paths provide no alternate promotion or
+peer-supplied membership hint. Participant-read failure, close, disposal, and replacement races are
+contained without undoing valid authentication or creating a late connection.
+
+Every transport creates an addressless `PeerProfile` immediately, and the Holepunch ban handle is
+stored there before authentication. `ProfileManager` authenticates and indexes that same profile and
+owns all ban/unban policy. Generic transports expose no SDK ban handle. Fallback release checks the
+profile's full live transport set, so a non-preferred WebRTC transport in upgrade grace keeps Holepunch
+banned and explicit blacklist state wins.
+Authentication is also a final admission gate: a late Holepunch connection cannot replace healthy
+WebRTC or reattach an excluded identity, while a fallback after current-WebRTC close can become
+current and carry traffic.
+Relay retry state has one owned timer, which success cancels before resetting the pool. Holepunch
+topic join/leave retains its byte-exact `Buffer` contract.
+
+Join admission now keeps recorded membership separate from countersign eligibility: snapshot and
+pending participants remain members, on-chain-slashed members lose veto power, and slashed members
+cannot top up. The public paths preserve exact fork/snapshot pins and deadline semantics and invoke
+the manager's atomic composable-deposit path; the manager, not the facet, owns the inbound JOIN
+append and cumulative-total update.
+
+Off-chain join authorization uses the same slash-excluding threshold set on collector and
+responder paths. The collector now rejects a deadline with no positive collection window before
+it signs or sends requests; positive windows cap every request at the earlier of the agreement
+timeout and the join deadline. The responder keeps the inclusive deadline boundary used by
+on-chain submission.
+
+Snapshot submission now has explicit component obligations for admissible submission, unresolved
+reduction stand-down, unconsumed-inbound preparation refusal, and no on-chain mutation after that
+refusal. Forced-inclusion verification follows the pending JOIN through reduction into the
+successor participant set and through one complete leader-election cycle where the joiner authors
+an accepted block.
+
+The runtime lifecycle waits for the application root's readiness hook before admission and preserves readiness failures while disposing partial resources. Each isolated context starts monitoring after its own ready work and uses the same configured fatal-delay threshold. The test harness starts its main-thread monitor after initial peer setup.
+
+Runtime extension boundaries no longer depend on constructor identity for RPC services, transports, or ethers Result values. They validate the complete public shape consumed by the caller, so compatible SDK and ethers copies can coexist in one production bundle without breaking proxy resolution, dispatch overloads, or result normalization. The linked source reports and runtime design views record these boundaries; engineer review remains pending.
+
+Inbound RPC endpoint authorization is separate from those structural checks. The dispatcher walks the
+application methods hierarchy only up to `ARpcMethods.prototype`, accepts function-valued data properties,
+rejects base members and accessors, and invokes the captured function on both delivery paths. This resolves
+[`DEF-7-PK564B`](open-findings.md#def-7-pk564b) without breaking inherited application endpoint families.
+
+RPC wire parsing, ingress ordering, guards, and every implemented request-settlement path now have
+exact component obligations and evidence. Request settlement remains partial because there is no
+cancellation API. Resource control remains partial: the frame-size bound exists, but pending-call,
+per-peer, and aggregate work limits do not. Protocol compatibility remains missing because neither
+the envelope nor handshake negotiates a version. [`DEF-8-HWJ10N`](open-findings.md#def-8-hwj10n)
+is resolved: handler and guard response sends use one guarded attempt, then disconnect on failure
+without a second send or unhandled rejection.
+
+The authenticated-RPC guard records admission per exact transport. A replaced but open authenticated
+pipe remains valid during upgrade grace overlap. Queued work releases only when its own transport
+authenticates; closure, timeout, and disposal clear it, and stale failure cannot punish a replacement.
+A frame dispatched after local transport close is dropped instead of treating retirement as peer malice.
+
+The runtime event bridge also preserves application-defined hook names and cloneable payloads without adding
+those names to the SDK hook declaration. The EventBus source report and real worker-to-client test now own
+that extension contract.
+
+The canonical codec now exposes typed decode overloads for every mapped protocol and proof schema,
+including the previously omitted inbound-hash dispute proof. Its source report covers the full enum,
+EVM-result, Result-normalization, cache, and failure surface.
+
+The ethers Result proxy now keeps callback-wrapper identity after one listener removal, so repeated
+registrations can also be removed repeatedly through the original callback. Its source report now
+records the complete method, listener, event-log, query, and passthrough boundary instead of only
+the structural Result predicate.
+
+Other specification-mirrored implementation subjects, exhaustive source inventories, conformance decisions, and unit variants remain visible in generated coverage.
+
+Balance validation, byte/key conversion, same-block copy merge, frame classification and log reporting have single owners. Extraction retains input/error order, raw commitment comparisons, timestamp-defined checks, response precedence and platform timer lifetime. Existing strategy instanceof checks remain. The deleted connectivity utility had no reachable consumer; each of its five data-type IDs retains other source contributors.
+
+Proof replay builds standalone processing input. Queue cleanup cannot cancel it through a storage handle. The replay/cleanup regression continues to exercise snapshot persistence and fork reduction.
+
+### Optimistic membership mirror correction
+
+The engineer removed membership generations, pending-read invalidation and automatic read retries. Cached positives remain optimistic; concurrent misses now share one in-flight refresh, cleared on completion or failure. Intake rechecks cached eligibility after ordinary sync and blacklists a sender that remains ineligible, including the accepted in-flight collision case. Observed slashes still override cached membership, and channel selection clears the three plain sets. There is no metadata wrapper or channel/fork check in membership lookups. A read already in flight can complete after a newer push; no latest-generation guarantee is claimed. Queue processing and ordinary sync remain unchanged. [MembershipService](../implementation/source/src/stateManager/membership/MembershipService.ts.md) and its [exact tests](../verification/tests/test/unit/MembershipService.test.ts.md) describe the current behavior. Earlier invalidation permutations remain withdrawn; the current shared-refresh case asserts one read for concurrent misses.
+
+Eligibility now has three enum values. A failed refresh leaves the sets unchanged; an absent sender follows ordinary sync. The earlier unavailable-result path and its separate no-sync guarantee are withdrawn by the engineer. The ordinary sync service retains its existing peer-failure behavior.
+
+Membership events now push into the fast sets without membership reads. A miss pulls pinned snapshot/inbound/slash data and reuses event handlers to update LocalDiamond and the fast mirror. Positive-hit staleness before unseen events remains the accepted optimistic-cache policy. Focused tests verify delivered and missed JOINs, snapshot preservation of pending JOINs, slash publication, post-sync supplier exclusion, cache cleanup and failed chain-inspection rollback. Equivalent source-address casing uses one queue allowance. The full distributed gate passes all 2,539 tests; seven automatic starvation retries recovered.

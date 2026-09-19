@@ -50,7 +50,7 @@ post-handshake sync against a participant peer
 ([`InitHandshakeService`](../../../../../../../src/rpc/network/services/initHandshake/InitHandshakeService.ts#L28),
 when the local node is in `OPENED` status and the peer is a dispute-eligible participant), and the
 block queue's `requestSync` when a queued block cannot be linked
-([`BlockQueueManager`](../../../../../../../src/stateManager/BlockQueueManager.ts#L31)), which pins the
+([`BlockQueueManager`](../../../../../../../src/stateManager/ingest/BlockQueueManager.ts#L31)), which pins the
 block's `forkId` and `height`.
 
 **Observable contract.** A successful `sync` teleports local state to the peer's latest provable
@@ -387,3 +387,7 @@ _Non-normative._
 | [`REQ-SPC-2-45C3CT`](spectate.md#req-spc-2-45c3ct) | Request-path failures MUST distinguish availability/transport failure from Byzantine evidence before permanent exclusion.                                                             | Missing               | none — [`DEF-5-E8TP9N`](../../../../../audit/open-findings.md#def-5-e8tp9n) (over-broad blacklist)                                                                                                                                                                                          | Engineer audit pending; any divergence named in the evidence remains open. |
 | [`REQ-SPC-3-AZBKR1`](spectate.md#req-spc-3-azbkr1) | An honest can't-prove-yet request MUST NOT permanently blacklist the requester.                                                                                                       | Missing               | none — current code blacklists (§4.2)                                                                                                                                                                                                                                                       | Engineer audit pending; any divergence named in the evidence remains open. |
 | [`REQ-SPC-4-G5XXB2`](spectate.md#req-spc-4-g5xxb2) | Proof-serving MUST be resource-bounded per peer.                                                                                                                                      | Missing               | none — one-in-flight only; no rate limit                                                                                                                                                                                                                                                    | Engineer audit pending; any divergence named in the evidence remains open. |
+
+## Source admission and membership updates
+
+Admission uses the existing sync(peer, channel, fork, minimumHeight, timeout) call. Its boolean, busy, verification, persistence and peer-failure semantics are unchanged. BlockQueueManager awaits sync and ends intake without queueing or merging the triggering copy. Sync owns verification, state application and peer failure handling. Spectators still request/serve sync while unsolicited relaying is disabled. See [SpectateService.ts](../../../../source/src/rpc/network/services/spectate/SpectateService.ts.md).

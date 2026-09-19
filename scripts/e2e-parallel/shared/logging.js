@@ -333,13 +333,14 @@ function admission({
     concurrencyCap,
     acct,
     cpuUtil,
+    cpuPressure,
     targetLoad,
     occupiedGb,
     memBoundGb,
     worker,
     buffered
 }) {
-    const cpuStr = `${(cpuUtil * 100).toFixed(0)}%<${(targetLoad * 100).toFixed(0)}%`;
+    const cpuStr = `${(cpuUtil * 100).toFixed(0)}%<${(targetLoad * 100).toFixed(0)}%${Number.isFinite(cpuPressure) ? ` psi ${(cpuPressure * 100).toFixed(0)}%` : ""}`;
     const memStr = `${occupiedGb.toFixed(1)}/${memBoundGb.toFixed(1)}GB`;
     console.log(
         colorize(
@@ -360,22 +361,32 @@ function hold({ seq, total, reason, buffered }) {
 }
 
 // Light yellow: a starved task gets its single clean retry.
-function starvationRetry({ seq, total, label, starveCount }) {
+function starvationRetry({ seq, total, label, starveCount, worker }) {
     console.log(
         colorize(
             "lightYellow",
-            `[${seq}/${total}] STARVED x${starveCount} — rescheduling once [${label}]`
+            `[${seq}/${total}]${worker ? ` ${worker} ·` : ""} STARVED x${starveCount} — rescheduling once [${label}]`
         )
     );
 }
 
-function infrastructureRetry({ seq, total, label, reason }) {
+function infrastructureRetry({ seq, total, label, reason, worker }) {
     console.log(
         colorize(
             "lightYellow",
-            `[${seq}/${total}] INFRASTRUCTURE FAILURE — rescheduling once [${label}] · ${reason}`
+            `[${seq}/${total}]${worker ? ` ${worker} ·` : ""} INFRASTRUCTURE FAILURE — rescheduling once [${label}] · ${reason}`
         )
     );
+}
+
+// " (on server-3, server-7)" for a task's starved attempts; empty for a
+// purely local run, where the only worker is the local machine.
+function formatStarvedOn(task, workerLabel) {
+    const names = (task.starvedOn || []).map((id) =>
+        workerLabel ? workerLabel(id) : id
+    );
+    if (!names.length || names.every((name) => name === "local")) return "";
+    return ` (on ${names.join(", ")})`;
 }
 
 function appendRunnerFailureMarker(logPath, failureReason) {
@@ -467,6 +478,42 @@ function summaryCounts(total, failed, completed = total) {
     };
 }
 
+// Kernel CPU pressure (Linux PSI "some"): share of wall time in which a
+// runnable task waited for a CPU. Empty where the host does not expose it.
+function formatCpuPressure(avg, peak) {
+    if (!Number.isFinite(avg) || !Number.isFinite(peak)) return "";
+    return ` · psi avg ${(avg * 100).toFixed(0)}% / peak ${(peak * 100).toFixed(0)}%`;
+}
+
+// The rest of the accurate CPU picture: which accounting source the figures
+// came from, what this cgroup itself consumed when the headline figure is
+// the whole machine, steal, and quota throttling (must read 0 once the
+// container has no quota).
+function formatCpuDetail(stats) {
+    if (!stats) return "";
+    const parts = [];
+    if (stats.cpuSource)
+        parts.push(`source ${stats.cpuSource}/${stats.cpuCores} cores`);
+    if (Number.isFinite(stats.avgContainerCpu))
+        parts.push(
+            `container avg ${(stats.avgContainerCpu * 100).toFixed(0)}% / peak ${(stats.peakContainerCpu * 100).toFixed(0)}%`
+        );
+    if (Number.isFinite(stats.peakHostSteal) && stats.peakHostSteal > 0)
+        parts.push(`steal peak ${(stats.peakHostSteal * 100).toFixed(1)}%`);
+    if (
+        Number.isFinite(stats.peakCpuPressureFull) &&
+        stats.peakCpuPressureFull > 0
+    )
+        parts.push(
+            `psi-full peak ${(stats.peakCpuPressureFull * 100).toFixed(0)}%`
+        );
+    if (Number.isFinite(stats.throttledMs))
+        parts.push(
+            `throttled ${formatDurationMs(stats.throttledMs)} (${stats.nrThrottled} periods)`
+        );
+    return parts.length ? ` · ${parts.join(" · ")}` : "";
+}
+
 function summary({
     tasks,
     failed,
@@ -475,13 +522,17 @@ function summary({
     sumDurationMs,
     peakCpu,
     avgCpu,
+    peakCpuPressure,
+    avgCpuPressure,
+    cpuDetail,
     peakOccupiedGb,
     memoryPeakLabel = "peak owned",
     avgPerTestGb,
     memBoundGb,
     targetLoad,
     gasPeak = new Map(),
-    workers = []
+    workers = [],
+    workerLabel
 }) {
     const counts = summaryCounts(tasks.length, failed.length, completed);
     const totalFailing = counts.failing;
@@ -538,7 +589,9 @@ function summary({
             )
         );
         for (const task of starvation.recovered) {
-            console.log(`    - ${task.label}: starved x${task.starveCount}`);
+            console.log(
+                `    - ${task.label}: starved x${task.starveCount}${formatStarvedOn(task, workerLabel)}`
+            );
         }
     }
     if (starvation.repeated.length > 0) {
@@ -553,7 +606,9 @@ function summary({
             )
         );
         for (const t of starvation.repeated) {
-            console.log(`    - ${t.label}: starved x${t.starveCount}`);
+            console.log(
+                `    - ${t.label}: starved x${t.starveCount}${formatStarvedOn(t, workerLabel)}`
+            );
         }
     }
     console.log(
@@ -566,7 +621,7 @@ function summary({
         `  mem: ${memoryPeakLabel} ${peakOccupiedGb.toFixed(1)}GB, avg/process ${avgPerTestGb.toFixed(2)}GB (bound ${memBoundGb.toFixed(1)}GB)`
     );
     console.log(
-        `  cpu: avg ${(avgCpu * 100).toFixed(0)}% · peak ${(peakCpu * 100).toFixed(0)}%${targetLoad === undefined ? "" : ` (target ${(targetLoad * 100).toFixed(0)}%)`}`
+        `  cpu: avg ${(avgCpu * 100).toFixed(0)}% · peak ${(peakCpu * 100).toFixed(0)}%${targetLoad === undefined ? "" : ` (target ${(targetLoad * 100).toFixed(0)}%)`}${formatCpuPressure(avgCpuPressure, peakCpuPressure)}${formatCpuDetail(cpuDetail)}`
     );
     for (const worker of workers) console.log(`  worker: ${worker}`);
     const elPeak = tasks.reduce(
@@ -662,6 +717,8 @@ function markLogAsError(logDir, logName) {
 }
 
 module.exports = {
+    formatCpuDetail,
+    formatCpuPressure,
     formatDurationMs,
     colorize,
     countOomEvents,

@@ -19,7 +19,7 @@
 
 ## Responsibility and observable boundary
 
-Node dynamic module loading from manifest specifiers (paths, file URLs, package specifiers).
+Node dynamic module loading from manifest specifiers (paths, file URLs, package specifiers). A specifier that names a file absent in the running tree is first mapped to its existing `.ts`/`.js` twin by [resolveRuntimeModulePath.ts](./resolveRuntimeModulePath.ts.md), so a manifest written for the source tree loads from the compiled tree and vice versa.
 
 ## Key design decisions
 

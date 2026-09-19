@@ -69,6 +69,12 @@ contract JoinChannelFacet is StateChannelCommon {
             );
         } else {
             require(!isExistingParticipant, ErrorJoinChannelParticipantAlreadyExists(channelId, jc.participant));
+            // A join adds one to the union, so the bound is checked against the
+            // result rather than the current size.
+            require(
+                participantUnion.length + 1 <= _getMaxChannelParticipants(),
+                ErrorTooManyParticipants(participantUnion.length + 1, _getMaxChannelParticipants())
+            );
             require(
                 !_isForkDisputed(channelId, expectedForkId),
                 RaceConditionForceInboundJoinForkDisputed(channelId, expectedForkId)

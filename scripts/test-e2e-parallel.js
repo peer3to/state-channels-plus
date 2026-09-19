@@ -1,6 +1,7 @@
 /* eslint-disable no-console */
 require("dotenv").config({ quiet: true });
 const os = require("os");
+const { spawnSync } = require("child_process");
 const path = require("path");
 const fs = require("fs");
 
@@ -18,7 +19,58 @@ const {
     parseCliArgs,
     resolveDiscoverySelection
 } = require("./e2e-parallel/shared/argParser");
+const { compiledTreeState } = require("./e2e-parallel/shared/compiledTree");
 const { discoverTasks } = require("./e2e-parallel/shared/taskDiscovery");
+
+const COMPILED_TEST_BUILD_SCRIPT = "test:parallel:build";
+
+function compiledTestTreeAvailable() {
+    try {
+        const manifest = JSON.parse(
+            fs.readFileSync(path.resolve("package.json"), "utf8")
+        );
+        return (
+            !!manifest.scripts?.[COMPILED_TEST_BUILD_SCRIPT] &&
+            fs.existsSync(path.resolve("tsconfig.json"))
+        );
+    } catch {
+        return false;
+    }
+}
+
+// Bring the compiled tree up to date with the sources. Changed contents are
+// emitted in place; an added, removed or renamed source, or a missing stamp,
+// means a clean build so no twin of a deleted file can linger. Returns an
+// error message on failure, undefined otherwise.
+function refreshCompiledTestTree() {
+    const state = compiledTreeState();
+    if (state === "current") return undefined;
+    const steps =
+        state === "rebuild"
+            ? [["yarn", ["-s", COMPILED_TEST_BUILD_SCRIPT]]]
+            : [
+                  ["yarn", ["-s", "tsc"]],
+                  ["yarn", ["-s", "tsc-alias", "-p", "tsconfig.json"]],
+                  [
+                      process.execPath,
+                      [path.join(__dirname, "copy-test-runtime-utils.js")]
+                  ]
+              ];
+    console.log(
+        state === "rebuild"
+            ? "Building the compiled test tree (dist): the source file set changed since the last build..."
+            : "Refreshing the compiled test tree (dist): sources changed since the last build..."
+    );
+    for (const [command, args] of steps) {
+        const result = spawnSync(command, args, {
+            stdio: "inherit",
+            env: process.env
+        });
+        if (result.status !== 0)
+            return `Building the compiled test tree failed (${command} ${args.join(" ")})`;
+    }
+    return undefined;
+}
 const {
     discoverForgeTasks
 } = require("./e2e-parallel/shared/forgeTaskDiscovery");
@@ -154,13 +206,36 @@ async function main(options = {}) {
     let forgeDiscovery = { tasks: [], preGrepTaskCount: 0 };
     const { includeMocha, includeForge } = resolveDiscoverySelection(cli);
     const testDir = path.resolve(cli.e2eOnly ? "test/e2e" : "test");
+    // Compiled mode (default): every child and worker thread loads plain
+    // JavaScript, so the per-thread transpile of the SDK graph disappears.
+    // It needs this project's build; a runner invoked elsewhere (the runner
+    // tests spawn it against temporary repositories) runs the sources.
+    const compiledAvailable =
+        includeMocha && !cli.sourceTests && compiledTestTreeAvailable();
+    if (includeMocha && !cli.sourceTests && !compiledAvailable) {
+        console.error(
+            "Compiled test mode needs this project's test:parallel:build script; running the TypeScript sources under ts-node."
+        );
+    }
+    // Distributed workers build in their prepare script; the local path
+    // refreshes the tree here when a source is newer than the last build. The
+    // refresh emits in place and never deletes dist: this runner may itself be
+    // a task of an outer run whose siblings are loading from that tree.
+    if (compiledAvailable && !cli.skipBuild && !cli.dryRun) {
+        const failure = refreshCompiledTestTree();
+        if (failure) {
+            console.error(failure);
+            process.exit(1);
+        }
+    }
     if (includeMocha) {
         try {
             mochaDiscovery = discoverTasks(
                 testDir,
                 cli.grep,
                 undefined,
-                cli.mochaTestPattern ?? cli.testPattern
+                cli.mochaTestPattern ?? cli.testPattern,
+                { compiled: compiledAvailable }
             );
         } catch (e) {
             console.error(discoveryFailureMessage("Mocha", cli.grep, e), e);
@@ -383,11 +458,15 @@ async function main(options = {}) {
                     sumDurationMs: stats.sumDurationMs,
                     peakCpu: stats.peakCpu,
                     avgCpu: stats.avgCpu,
+                    peakCpuPressure: stats.peakCpuPressure,
+                    avgCpuPressure: stats.avgCpuPressure,
+                    cpuDetail: stats.cpuDetail,
                     peakOccupiedGb: stats.sumPeakOccupiedGb,
                     memoryPeakLabel: "sum of worker peaks",
                     avgPerTestGb: stats.avgPerTestGb,
                     memBoundGb: stats.memBoundGb,
-                    workers: stats.workers
+                    workers: stats.workers,
+                    workerLabel: stats.workerLabel
                 });
                 logging.cleanupNonErrorLogs(
                     logDir,
@@ -442,6 +521,9 @@ async function main(options = {}) {
             sumDurationMs: stats.sumDurationMs,
             peakCpu: stats.peakCpu,
             avgCpu: stats.avgCpu,
+            peakCpuPressure: stats.peakCpuPressure,
+            avgCpuPressure: stats.avgCpuPressure,
+            cpuDetail: stats,
             peakOccupiedGb: stats.peakOccupiedGb,
             avgPerTestGb: stats.avgPerTestGb,
             memBoundGb,

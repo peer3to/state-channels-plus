@@ -14,6 +14,13 @@
 
 These are project rules to follow (and persist any future "remember this" instructions here).
 
+### Design authority
+
+- Follow the human engineer's plan and the specification. The human engineer owns design decisions; agents implement them. No AI agent may make these design decisions.
+- Do not add architecture, processing changes, or abstractions beyond that design.
+- If the plan or specification leaves a design choice unclear, ask the human engineer before implementing that choice.
+- The human engineer's later clarification overrides an earlier plan. Update the affected plan and documentation to match it.
+
 ### PR reviews (AI agents)
 
 When reviewing a PR, verifying adherence to **all** guidelines in this file
@@ -165,14 +172,15 @@ Applies to `src/stateManager/validationStrategy/*` and their call sites
   `throw` ("should not be relevant/called") is a valid implementation when the
   deviation is impossible for that pipeline.
 - **The pipeline's unit of work is the `QueuedBlockEntry`, never a bare
-  block + ad-hoc sender parameter.** Entries are CRDTs: copies merge
-  (signatures + signature -> source attribution) in `QueueStorage` until
-  scheduled, then the dequeued entry executes atomically and converges
-  through storage. Strategies resolve offenders from `entry.signatureSources`
-  / `entry.sourcePeers` and re-queue via `restoreEntry` so attribution
-  survives the not-ready cycle. Struct-only callers (dispute replay, spectate
-  sync) enter via `onBlockConfirmationStruct`, which wraps into a sourceless
-  entry.
+  block + ad-hoc sender parameter.** Entries merge signatures and
+  `sourcesToSignatures` in QueueStorage until dequeued. Each source has its own
+  maximum-participant-count signature allowance; drop excess contributions.
+  Dequeue removes the entry and normal processing uses its source map to resolve
+  offenders through `getSourcePeers` / `getSignatureSuppliers`. Re-queue through
+  `restoreEntry` so attribution survives a not-ready cycle. Keep the existing
+  processing flow; do not add retained processing records or work handles.
+  Struct-only callers (dispute replay, spectate sync) enter via
+  `onBlockConfirmationStruct`, which wraps into a sourceless entry.
 
 ### Class layout
 

@@ -22,13 +22,19 @@ import { ethers, ContractFactory } from "ethers";
  * drives the RTCPeerConnection on this worker's behalf (worker -> main).
  */
 
-async function deployLocalStateMachine(stateMachineSigner) {
+async function deployLocalStateMachine(
+    stateMachineSigner,
+    maxChannelParticipants
+) {
     const stateMachineFactory = new ContractFactory(
         MathStateMachineArtifact.abi,
         MathStateMachineArtifact.bytecode,
         stateMachineSigner
     );
-    const deployTx = await stateMachineFactory.getDeployTransaction(5_000_000);
+    const deployTx = await stateMachineFactory.getDeployTransaction(
+        5_000_000,
+        maxChannelParticipants
+    );
     const sent = await stateMachineSigner.sendTransaction(deployTx);
     const receipt = await sent.wait();
     if (!receipt?.contractAddress) {
@@ -56,6 +62,9 @@ self.onmessage = async (event) => {
             throw new Error("Expected a real browser worker scope");
         const provider = new ethers.JsonRpcProvider(providerUrl);
         const runtimeSigner = new ethers.Wallet(signerSecret, provider);
+        const manager = connectStateChannelManager(scmAddress, runtimeSigner);
+        const maxChannelParticipants =
+            await manager.getMaxChannelParticipants();
         const stateMachineContractInstance = MathStateMachine__factory.connect(
             ethers.ZeroAddress,
             runtimeSigner
@@ -64,7 +73,7 @@ self.onmessage = async (event) => {
         const p2pInstance = await EvmStateMachine.p2pSetup(
             connectStateChannelManager(scmAddress, runtimeSigner),
             stateMachineContractInstance,
-            deployLocalStateMachine,
+            (signer) => deployLocalStateMachine(signer, maxChannelParticipants),
             {
                 peerId,
                 signerSecret,

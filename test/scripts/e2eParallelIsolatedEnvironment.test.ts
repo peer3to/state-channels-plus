@@ -1,5 +1,6 @@
 // @spec-test-coverage-ignore: developer test-orchestration tooling; not protocol behavior, no specification or implementation IDs apply
 import { TestIsolatedRuntimeBackend } from "../fixtures/distributed/isolatedRuntimeBackend";
+import { repoRoot } from "@test/utils/repoRoot";
 import { expect } from "chai";
 import crypto from "crypto";
 import fs from "fs";
@@ -38,9 +39,7 @@ const profile = {
 
 describe("distributed isolated environment", function () {
     it("packages the worker, workspace receiver, and test-infrastructure entry as trusted glue", function () {
-        const manifest = trustedRunnerManifest(
-            path.resolve(__dirname, "../..")
-        );
+        const manifest = trustedRunnerManifest(repoRoot());
         const paths = manifest.map((entry: { path: string }) => entry.path);
         expect(paths).to.include(
             "scripts/e2e-parallel/distributed/isolatedGuest.js"
@@ -264,6 +263,39 @@ describe("distributed isolated environment", function () {
         }
     });
 
+    it("normalizes retained runtime limits when the requested profile is unchanged", async function () {
+        const root = fs.mkdtempSync(
+            path.join(os.tmpdir(), "isolated-profile-normalize-")
+        );
+        const backend = new TestIsolatedRuntimeBackend();
+        try {
+            const manager = await IsolatedEnvironmentManager.create({
+                workRoot: root,
+                backend,
+                backendName: "test"
+            });
+            const allocation = {
+                environmentKey: "6".repeat(64),
+                orchestratorPublicKey: "7".repeat(64),
+                profile
+            };
+            const environment = await manager.allocate(allocation);
+            const reused = await manager.allocate(allocation);
+
+            expect(reused).to.equal(environment);
+            expect(
+                backend.calls.filter((entry) => entry.operation === "update")
+            ).to.deep.equal([
+                {
+                    operation: "update",
+                    value: { handle: environment.handle, profile }
+                }
+            ]);
+        } finally {
+            fs.rmSync(root, { recursive: true, force: true });
+        }
+    });
+
     it("maps a retained Docker profile update to cgroup limit flags", async function () {
         const calls: Array<{
             args: string[];
@@ -285,8 +317,8 @@ describe("distributed isolated environment", function () {
             {
                 args: [
                     "update",
-                    "--cpus",
-                    String(profile.cpu),
+                    "--cpu-quota",
+                    "-1",
                     "--memory",
                     String(profile.memoryBytes),
                     "--memory-swap",
@@ -298,6 +330,34 @@ describe("distributed isolated environment", function () {
                 options: { timeoutMs: DOCKER_OPERATION_TIMEOUT_MS }
             }
         ]);
+    });
+
+    it("reports a cleared retained Docker quota as unlimited", async function () {
+        const backend = new DockerBackend({
+            image: `runner@sha256:${"f".repeat(64)}`,
+            run: async () => ({
+                stdout: Buffer.from(
+                    JSON.stringify({
+                        NanoCpus: 7e9,
+                        CpuQuota: -1,
+                        CpuPeriod: 0,
+                        Memory: profile.memoryBytes,
+                        MemorySwap: profile.memoryBytes,
+                        PidsLimit: profile.pidsLimit
+                    })
+                ),
+                stderr: Buffer.alloc(0)
+            })
+        });
+
+        expect(
+            await backend.operatorConfiguredLimits({ container: "retained" })
+        ).to.deep.equal({
+            cpuQuota: 0,
+            memoryBytes: profile.memoryBytes,
+            memorySwapBytes: profile.memoryBytes,
+            pidsLimit: profile.pidsLimit
+        });
     });
 
     it("bounds Docker startup commands", async function () {

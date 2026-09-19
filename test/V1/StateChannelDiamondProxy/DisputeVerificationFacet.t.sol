@@ -331,7 +331,7 @@ contract DisputeVerificationFacetTest is DiamondHarness {
         MathState memory initial;
         initial.participants = _participantsWithZeroSentinel();
         initial.balances = _participantBalances(initial.participants.length);
-        MathStateMachine machine = new MathStateMachine(10_000_000);
+        MathStateMachine machine = new MathStateMachine(10_000_000, MAX_CHANNEL_PARTICIPANTS);
         machine.setState(abi.encode(initial));
         address target = absent ? address(0xBAD) : initial.participants[0];
         (bool changed, ExitChannel memory returnedExit) =

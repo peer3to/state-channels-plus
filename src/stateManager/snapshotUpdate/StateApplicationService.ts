@@ -36,29 +36,35 @@ export default class StateApplicationService {
     ): Promise<void> {
         const sm = this.stateManager;
         const normalizedGenesisTimestamp = Number(stateSnapshot.timestamp);
-
+        const previousEncodedState = await sm.diamondStateMachine.getState();
+        // Update local EVM/state machine
+        await sm.diamondStateMachine.setState(encodedState);
+        let participants: Address[];
+        let listedOnChain: boolean;
+        let nextToWrite: Address;
+        try {
+            participants = await sm.diamondStateMachine.getParticipants();
+            listedOnChain = await this.isSignerListedOnChain(participants);
+            nextToWrite = await sm.diamondStateMachine.getNextToWrite();
+        } catch (error) {
+            await sm.diamondStateMachine.setState(previousEncodedState);
+            throw error;
+        }
         this.persistLatestState(
             stateSnapshot,
             encodedState,
             outboundMessageBlock
         );
-
-        // Update local EVM/state machine
-        await sm.diamondStateMachine.setState(encodedState);
-
         // Update the forkId to the new fork
         const forkId = stateSnapshot.forkId;
         const previousForkId = sm.forkId;
         sm.forkId = forkId;
+        sm.membershipService.publishOffChainEligibility(
+            stateSnapshot.snapshotData.participants
+        );
         if (previousForkId !== forkId)
             sm.reductionManager.settleForkLeft(previousForkId);
-
-        const participants = await sm.diamondStateMachine.getParticipants();
-        const listedOnChain = await this.isSignerListedOnChain(participants);
         this.applyParticipationStatus(participants, listedOnChain);
-
-        const nextToWrite = await sm.diamondStateMachine.getNextToWrite();
-
         this.scheduleFollowUps(forkId, nextToWrite, normalizedGenesisTimestamp);
         await sm.leaveChannelService.onSettledStateObserved();
     }
@@ -115,6 +121,9 @@ export default class StateApplicationService {
             outboundMessageBlock
         );
         sm.forkId = forkId;
+        sm.membershipService.publishOffChainEligibility(
+            genesisSnapshot.snapshotData.participants
+        );
         this.applyParticipationStatus(participants, listedOnChain);
         this.scheduleFollowUps(forkId, nextToWrite, normalizedGenesisTimestamp);
 

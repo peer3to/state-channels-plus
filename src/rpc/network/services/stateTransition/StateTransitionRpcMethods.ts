@@ -1,5 +1,6 @@
 import StateTransitionService from "./StateTransitionService";
 import ANetworkRpcMethods from "@/rpc/network/ANetworkRpcMethods";
+import { BlockOrigin } from "@/storage/QueueStorage";
 import { NetworkTransport } from "@/transport";
 import { BlockConfirmationStruct } from "@typechain-types/contracts/V1/types/DataTypes";
 
@@ -22,6 +23,7 @@ class StateTransitionRpcMethods extends ANetworkRpcMethods<StateTransitionServic
             await this.p2pManager.stateManager.blockQueueManager.ingestBlockConfirmation(
                 blockConfirmation,
                 {
+                    origin: BlockOrigin.NETWORK,
                     senderAddress: peerAddress
                 }
             );

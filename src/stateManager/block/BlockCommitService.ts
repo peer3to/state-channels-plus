@@ -83,6 +83,14 @@ export default class BlockCommitService {
         sm.storage.blocks.storeBlock(block, {
             justPersist: options?.strategy instanceof DisputeValidationStrategy
         });
+        if (!(options?.strategy instanceof DisputeValidationStrategy)) {
+            sm.membershipService.publishOffChainEligibility(
+                sm.storage.getParticipantsUnion(
+                    block.coordinates,
+                    block.stateSnapshotHash
+                )
+            );
+        }
         // The block is canonical from here: a failure in the remaining side
         // effects must not roll the VM back behind stored state.
         options?.onBlockCommitted?.();
@@ -114,9 +122,14 @@ export default class BlockCommitService {
 
         // step 7 - gossip after local persistence, so echoed confirmations are
         // recognized as duplicates/signature updates instead of being replayed.
+        // Relay only blocks whose participant union contains us: a leaver is
+        // still PARTICIPATING until its exit snapshot lands, and a relay of a
+        // later block would reach peers that already applied that exit as a
+        // copy from a source they no longer admit.
         if (
             sm.status === Status.PARTICIPATING &&
-            !(options?.strategy instanceof DisputeValidationStrategy)
+            !(options?.strategy instanceof DisputeValidationStrategy) &&
+            sm.membershipService.isSignerInBlockUnion(block)
         ) {
             sm.p2pManager.remoteRpc.stateTransitionService
                 .onBlockConfirmation(block.blockConfirmationStruct)
@@ -186,13 +199,7 @@ export default class BlockCommitService {
         // Sign only blocks whose previous/resulting participant union contains
         // us (e.g. never after leaving the channel). The resulting snapshot is
         // persisted before signing, so a missing union means "don't sign".
-        const signerUnion = new Set(
-            sm.storage.getParticipantsUnion(
-                block.coordinates,
-                block.stateSnapshotHash
-            )
-        );
-        if (!signerUnion.has(sm.signerAddress)) {
+        if (!sm.membershipService.isSignerInBlockUnion(block)) {
             return false;
         }
         // Check if the block is posted on-chain and I am the next to write
