@@ -25,3 +25,10 @@ _Pending authoring: shared responsibility, design decisions, assumptions, cross-
 - [TimeoutStorage.ts](./TimeoutStorage.ts.md)
 - [index.ts](./index.ts.md)
 - [keys.ts](./keys.ts.md)
+
+## Queue admission contributions
+
+| Source report | Contribution | Requirements |
+| --- | --- | --- |
+| [QueueStorage.ts](QueueStorage.ts.md) | One canonical source-to-signatures map records spent contributions. | [`REQ-QSTORE-2-VYWJAQ`](../../../../specification/storage/queue.md#req-qstore-2-vywjaq) |
+| [Storage.ts](Storage.ts.md) | The storage facade passes the deployed N to QueueStorage and keeps deep-copy boundaries. | [`REQ-GOSSIP-4-J5Z4DF`](../../../../specification/peer-communication/block-gossip.md#req-gossip-4-j5z4df) |

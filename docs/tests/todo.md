@@ -90,16 +90,6 @@ bogus-fork blocks. While the kill period is unexpired, assert one chain read and
 advancing past expiry, ingest another burst and assert one coalesced recovery. Same idea can pin the B6
 kill-period cache (N kicks → 1 chain read).
 
-## Follow-up: CRDT attribution ordering (not shipped)
-
-The structural cap in `QueueStorage` (`MAX_ENTRY_SOURCES`) bounds memory and never invalidates a valid
-block, but it is **first-retained**: after a junk-first flood fills `signatureSources` / `sourcePeers`,
-a _later_ supplier of a stray/invalid confirmation signature can be absent from the maps, so
-`disconnectPeersForSignatures` has nobody to cut — an attribution-evasion vector (not a correctness
-bug; the block still processes). Fix options: (a) participant-aware selection (prefer known
-participant-union signatures once the set is known); or (b) a bounded per-supplier overflow bucket kept
-purely for attribution/punishment. Deferred alongside the future rate-limiter.
-
 ## Accepted AGENTS exception (user-approved)
 
 The three e2e scenarios above are peer-observable `src/` behavior; AGENTS asks for same-pass e2e. They

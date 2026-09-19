@@ -3,6 +3,7 @@ import { assertRuntimeTwoPeerTransition } from "./RuntimePlacementWorkflowFixtur
 // @spec-test-coverage-ignore: Runtime transport fixture exercised by owning E2E declarations.
 import MathConsumerFacetArtifact from "../../artifacts/contracts/V1/examples/MathStateMachine/MathConsumerFacet.sol/MathConsumerFacet.json";
 import MathStateMachineArtifact from "../../artifacts/contracts/V1/examples/MathStateMachine/MathStateMachine.sol/MathStateMachine.json";
+import { DEFAULT_MAX_CHANNEL_PARTICIPANTS } from "../../scripts/V1/deploy";
 import { deployFullStack } from "../../scripts/V1/deploy";
 import { EvmStateMachine } from "@/evm";
 import {
@@ -84,7 +85,7 @@ export async function prepareRuntimeSetup(options: {
     const scmDeployment = await deployFullStack(deployerSigner, {
         stateMachineArtifact: MathStateMachineArtifact as any,
         consumerFacetArtifact: MathConsumerFacetArtifact as any,
-        stateMachineArgs: [5_000_000],
+        stateMachineArgs: [5_000_000, DEFAULT_MAX_CHANNEL_PARTICIPANTS],
         consumerFacetArgs: [],
         timeConfig: {
             p2pTime: 1,
@@ -107,7 +108,10 @@ export async function prepareRuntimeSetup(options: {
             stateMachineSigner
         );
         const tx = await stateMachineSigner.sendTransaction(
-            await stateMachineFactory.getDeployTransaction(5_000_000)
+            await stateMachineFactory.getDeployTransaction(
+                5_000_000,
+                DEFAULT_MAX_CHANNEL_PARTICIPANTS
+            )
         );
         const receipt = await tx.wait();
         if (!receipt?.contractAddress) {

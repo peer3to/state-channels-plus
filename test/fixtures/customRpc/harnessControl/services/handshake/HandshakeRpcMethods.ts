@@ -2,6 +2,7 @@
 import type { HandshakeService } from "./HandshakeService";
 import Block from "@/models/Block";
 import ANetworkRpcMethods from "@/rpc/network/ANetworkRpcMethods";
+import { BlockOrigin } from "@/storage/QueueStorage";
 import type NetworkTransport from "@/transport/NetworkTransport";
 import type { TransportType } from "@/transport/TransportType";
 import type { Address, ChannelId, ForkId, Hash } from "@/types/types";
@@ -156,11 +157,14 @@ export class HandshakeRpcMethods extends ANetworkRpcMethods<HandshakeService> {
             Codec.decode(encodedBlockConfirmation, Type.BlockConfirmation)
         );
         const entry = this.service.sm.storage.queues.createEntry(block, {
+            origin: BlockOrigin.NETWORK,
             senderAddress: String(buildingAddress)
         });
+
         await this.service.sm.blockValidationStrategy.blockForkIsDisputed(
             entry
         );
+
         return true;
     }
 }

@@ -249,6 +249,10 @@ contract StateChannelCommon is StateChannelManagerStorage, StateChannelManagerEv
         return evidenceTime;
     }
 
+    function _getMaxChannelParticipants() internal view virtual returns (uint256) {
+        return maxChannelParticipants;
+    }
+
     function _getGasLimit() internal view virtual returns (uint256) {
         return gasLimit;
     }
@@ -262,7 +266,7 @@ contract StateChannelCommon is StateChannelManagerStorage, StateChannelManagerEv
     {
         MessageBlock storage storedBlock = inboundMessageBlockMap[channelId][blockHash];
         if (storedBlock.timestamp != 0 || storedBlock.messages.length != 0) {
-            revert ErrorInboundMessageBlockAlreadyPersisted();
+            revert ErrorInboundMessageBlockAlreadyPersisted(channelId, blockHash);
         }
         storedBlock.previousBlockHash = messageBlock.previousBlockHash;
         storedBlock.blockHeight = messageBlock.blockHeight;
@@ -540,7 +544,17 @@ contract StateChannelCommon is StateChannelManagerStorage, StateChannelManagerEv
         for (uint256 i = 0; i < inboundMessageBlocks.length; i++) {
             for (uint256 j = 0; j < inboundMessageBlocks[i].messages.length; j++) {
                 bool success = stateMachineImplementation.processInboundMessage(inboundMessageBlocks[i].messages[j]);
-                require(success, ErrorDisputeStateMachineInboundProcessingFailed());
+                // `if (!success) revert` so the seed-state hash is only hashed
+                // on the failure path - `require` would compute it every message.
+                if (!success) {
+                    revert ErrorDisputeStateMachineInboundProcessingFailed(
+                        i,
+                        j,
+                        inboundMessageBlocks[i].messages[j].participant,
+                        inboundMessageBlocks[i].messages[j].messageType,
+                        keccak256(encodedStateMachineState)
+                    );
+                }
                 newTotalDeposits =
                     stateMachineImplementation.addBalance(newTotalDeposits, inboundMessageBlocks[i].messages[j].balance);
             }
@@ -553,7 +567,9 @@ contract StateChannelCommon is StateChannelManagerStorage, StateChannelManagerEv
             ExitChannel memory exitChannel = abi.decode(message.data, (ExitChannel));
             require(
                 stateMachineImplementation.areBalancesEqual(message.balance, exitChannel.balance),
-                ErrorOutboundMessageBalanceMismatch()
+                ErrorOutboundMessageBalanceMismatch(
+                    message.participant, exitChannel.balance.amount, message.balance.amount
+                )
             );
             bool success = StateChannelManagerInterface(address(this)).withdrawAssetsComposable(exitChannel);
             return success;
@@ -564,28 +580,12 @@ contract StateChannelCommon is StateChannelManagerStorage, StateChannelManagerEv
     function _processCustomOutboundMessage(Message memory message) internal virtual returns (bool) {
         revert ErrorOutboundMessageTypeUnsupported(message.messageType);
     }
-    // !!!!!!!!!
-    /// @dev Callable only by diamond facets - applies the join to the given state of the state machine and returns the modified state
 
-    function _applyJoinChannelToStateMachine(bytes memory encodedState, JoinChannel[] memory joinChannels)
-        internal
-        virtual
-        returns (bytes memory encodedModifiedState)
-    {
-        stateMachineImplementation.setState(encodedState);
-        for (uint256 i = 0; i < joinChannels.length; i++) {
-            bool success = stateMachineImplementation.joinChannel(joinChannels[i]);
-            require(success, ErrorDisputeStateMachineJoiningFailed());
-        }
-        return (stateMachineImplementation.getState());
-    }
-
-    // !!!!!!!
     function isDisputeCommitted(Dispute memory dispute) internal view returns (bool) {
         bytes32 channelId = dispute.input.channelId;
         DisputeData storage disputeData = disputeData[channelId];
         DisputeWindow storage disputeWindow = disputeData.disputeWindowMap[_getDisputeFork(dispute)];
-        bytes32 commitment = keccak256(abi.encode(dispute));
+        bytes32 commitment = _disputeCommitmentHash(dispute);
 
         for (uint256 i = 0; i < disputeWindow.evidence.disputeCommitments.length; i++) {
             if (disputeWindow.evidence.disputeCommitments[i] == commitment) {
@@ -640,9 +640,19 @@ contract StateChannelCommon is StateChannelManagerStorage, StateChannelManagerEv
         bytes32 reducedForkId,
         uint256 reductionTimestamp
     ) internal {
-        (bool isExpired,) = _isKillPeriodExpired(disputeWindow, _getEvidenceTime());
-        require(isExpired, RaceConditionDisputeKillPeriodNotExpired());
-        require(disputeWindow.reducedResult.forkId == bytes32(0), RaceConditionDisputeAlreadyReduced());
+        // A window that was never created has a zero kill-period deadline; report the
+        // missing window rather than a deadline that reads as long past.
+        // `if (!...) revert` because `disputeWindow.forkId` is a storage read the
+        // condition itself does not perform (P4).
+        if (!_isDisputeWidnowCreated(disputeWindow)) {
+            revert RaceConditionDisputeWindowNotOpen(channelId, disputeWindow.forkId);
+        }
+        (bool isExpired, uint256 killPeriodEnd) = _isKillPeriodExpired(disputeWindow, _getEvidenceTime());
+        require(isExpired, RaceConditionDisputeKillPeriodNotExpired(killPeriodEnd, block.timestamp));
+        require(
+            disputeWindow.reducedResult.forkId == bytes32(0),
+            RaceConditionDisputeAlreadyReduced(disputeWindow.forkId, disputeWindow.reducedResult.forkId, reducedForkId)
+        );
         disputeWindow.reducedResult.forkId = reducedForkId;
         disputeWindow.reducedResult.timestamp = reductionTimestamp;
         disputeWindow.reducedResult.reducer = msg.sender; //calling function should check that msg.sender is part of channel 'can participate'

@@ -4,6 +4,8 @@ import { FraudProofType, toSolidityFraudProofType } from "@/types/sol-enums";
 import type { Address } from "@/types/types";
 import { Codec, Type } from "@/utils";
 import * as factory from "@test/factory";
+import { normalizeRealConfirmations } from "@test/fixtures/ConfirmationNormalizationFixture";
+import { probeWrongLeaderInsertion } from "@test/fixtures/MathInsertionFixture";
 import {
     assertSpectatingFraud,
     assertObserverHook
@@ -46,6 +48,129 @@ const HEIGHT_ZERO_POST_WINDOW =
     TIMESTAMP_TIME_CONFIG.evidenceTime;
 
 describe("Unit: ValidationService", function () {
+    it("a linked insertion from the wrong leader reaches the SDK deviation without changing state or eligibility", async () => {
+        const result = await probeWrongLeaderInsertion(
+            TestSession.getHarness()
+        );
+        expect(result.validation.resultName).to.equal("DISPUTE");
+        expect(result.validation.firedHooks).to.include(
+            "invalidStateTransitionDetected"
+        );
+        expect(result.validation.fraudProofType).to.equal(
+            solProofType(FraudProofType.BlockInvalidStateTransition)
+        );
+        expect(result.after).to.deep.equal(result.before);
+    });
+
+    it("live normalization without source attribution strips bad confirmations without blaming the author", async () => {
+        const result = await normalizeRealConfirmations({
+            strategy: "live",
+            internal: true
+        });
+        expect(result.result).to.equal("SUCCESS");
+        expect(result.signatures).not.to.include(result.malformed);
+        expect(result.signatures).to.include.members(result.good);
+        expect(result.sources).to.deep.equal([]);
+        expect(result.authorBlacklisted).to.equal(false);
+    });
+
+    it("a malformed-only copy retains its author envelope and charges the rejected confirmation", async () => {
+        const result = await normalizeRealConfirmations({
+            strategy: "live",
+            malformedOnly: true
+        });
+        expect(result.result).to.equal("SUCCESS");
+        expect(result.signatures).to.deep.equal([]);
+        expect(
+            result.sources.find((source) => source.source === result.badSource)!
+                .charged
+        ).to.equal(2);
+        expect(
+            result.sources
+                .filter((source) => source.blacklisted)
+                .map((source) => source.source)
+        ).to.deep.equal([result.badSource]);
+    });
+
+    it("normalization strips an unrecoverable confirmation and punishes only its supplier", async () => {
+        const result = await normalizeRealConfirmations({ strategy: "live" });
+        expect(result.result).to.equal("SUCCESS");
+        expect(result.signatures).not.to.include(result.malformed);
+        expect(result.signatures).to.include.members(result.good);
+        expect(
+            result.sources
+                .filter((source) => source.blacklisted)
+                .map((source) => source.source)
+        ).to.deep.equal([result.badSource]);
+    });
+
+    it("spectating normalization preserves valid confirmations after a malformed first value", async () => {
+        const result = await normalizeRealConfirmations({
+            strategy: "spectating",
+            invalidV: true
+        });
+        expect(result.result).to.equal("SUCCESS");
+        expect(result.signatures).not.to.include(result.malformed);
+        expect(result.signatures).to.include.members(result.good);
+        expect(
+            result.sources
+                .filter((source) => source.blacklisted)
+                .map((source) => source.source)
+        ).to.deep.equal([result.badSource]);
+    });
+
+    it("shared malformed confirmation punishes both actual suppliers", async () => {
+        const result = await normalizeRealConfirmations({
+            strategy: "live",
+            sharedBad: true
+        });
+        expect(result.result).to.equal("SUCCESS");
+        expect(
+            result.sources
+                .filter((source) => source.blacklisted)
+                .map((source) => source.source)
+        ).to.have.members([result.badSource, result.otherSource]);
+        expect(result.signatures).not.to.include(result.malformed);
+    });
+
+    it("duplicate malformed bytes use one charged slot and are removed once", async () => {
+        const result = await normalizeRealConfirmations({
+            strategy: "live",
+            duplicateBad: true,
+            malformedOnly: true
+        });
+        expect(result.result).to.equal("SUCCESS");
+        expect(result.signatures).to.deep.equal([]);
+        expect(
+            result.sources.find((source) => source.source === result.badSource)!
+                .charged
+        ).to.equal(2);
+    });
+
+    it("sourceless replay strips irrelevant malformed confirmations without transport punishment", async () => {
+        const result = await normalizeRealConfirmations({
+            strategy: "dispute",
+            internal: true
+        });
+        expect(result.result).to.equal("SUCCESS");
+        expect(result.signatures).not.to.include(result.malformed);
+        expect(result.signatures).to.include.members(result.good);
+        expect(result.sources).to.deep.equal([]);
+        expect(result.authorBlacklisted).to.equal(false);
+    });
+
+    it("calldata strategy rejects the impossible confirmation-bearing shape", async () => {
+        const result = await normalizeRealConfirmations({
+            strategy: "calldata",
+            internal: true
+        });
+        expect(result.result).to.include(
+            "throw: Calldata confirmations contain no confirmation signatures"
+        );
+        expect(result.sources).to.deep.equal([]);
+        expect(result.authorBlacklisted).to.equal(false);
+    });
+
     it("observer proof replay aborts on a real double sign without requesting a dispute", async function () {
         await assertSpectatingFraud("observer", true);
     });

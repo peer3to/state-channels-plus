@@ -8,9 +8,18 @@ import {
     TransactionStruct
 } from "@typechain-types/contracts/V1/types/DataTypes";
 import { DisputeStruct } from "@typechain-types/contracts/V1/types/DisputeTypes";
-import { Signer, keccak256, getBytes } from "ethers";
+import { Signer, keccak256, getBytes, hexlify, isHexString } from "ethers";
 
 export class SignatureUtils {
+    /** Normalize byte representation without repairing malformed signatures. */
+    public static normalizeSignature(signature: Signature | Bytes): Signature {
+        if (signature instanceof Uint8Array) return hexlify(signature);
+        if (typeof signature === "string" && isHexString(signature, true)) {
+            return signature.toLowerCase();
+        }
+        return signature;
+    }
+
     public static signMsg(msg: Bytes, signer: Signer): Promise<Signature> {
         return signer.signMessage(getBytes(keccak256(msg)));
     }

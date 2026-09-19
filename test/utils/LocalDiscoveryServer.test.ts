@@ -37,7 +37,7 @@ describe("LocalDiscoveryServer topic lifecycle", function () {
         }
     });
 
-    it("redials an eligible disconnected peer while the topic remains observed and stops after leave", async function () {
+    it("redials an eligible disconnected peer no sooner than a second later while the topic remains observed and stops after leave", async function () {
         const h = TestSession.getHarness();
         await h.setup(2, { autoConnect: false });
         const topic = ethers.id("local-discovery-redial-until-leave");
@@ -58,6 +58,7 @@ describe("LocalDiscoveryServer topic lifecycle", function () {
             .request();
         expect(firstToken).to.be.a("number");
 
+        const closedAt = Date.now();
         expect(
             await h
                 .control(primary)
@@ -85,6 +86,9 @@ describe("LocalDiscoveryServer topic lifecycle", function () {
             200
         );
         expect(replacementToken).to.not.equal(firstToken);
+        // the redial waits at least a second after the close, so the
+        // replacement cannot exist earlier than that
+        expect(Date.now() - closedAt).to.be.at.least(1000);
 
         await Promise.all(
             h.peers.map((peer) =>
@@ -107,6 +111,68 @@ describe("LocalDiscoveryServer topic lifecycle", function () {
         expect(
             await h.control(primary).query.getOpenConnectionCount().request()
         ).to.equal(0);
+    });
+
+    it("holds an inbound reconnect inside the cooldown after the previous transport closed and admits it once the cooldown has passed, without blacklisting", async function () {
+        const h = TestSession.getHarness();
+        await h.setup(2, { autoConnect: false });
+        const topic = ethers.id("local-discovery-reconnect-cooldown");
+        const dialerIndex = h.network.lobbyRoleIndices()[0];
+        const dialer = h.peers[dialerIndex];
+        const acceptor = h.peers[1 - dialerIndex];
+
+        await Promise.all(
+            h.peers.map((peer) =>
+                h.control(peer).network.joinSelectedKey(topic).request()
+            )
+        );
+        await h.network.waitForP2PConnections();
+        const acceptorToken = () =>
+            h
+                .control(acceptor)
+                .network.getTransportToken(dialer.address)
+                .request();
+        const firstToken = await acceptorToken();
+        expect(firstToken).to.be.a("number");
+
+        // the acceptor closes, so its peer server starts the dialer's cooldown now
+        const closedAt = Date.now();
+        expect(
+            await h
+                .control(acceptor)
+                .network.closePeerTransportByAddress(dialer.address)
+                .request()
+        ).to.equal(true);
+        // a fresh topic observation dials at once, ahead of the redial floor
+        await h.control(dialer).network.leaveSelectedKey(topic).request();
+        await h.control(dialer).network.joinSelectedKey(topic).request();
+
+        // inside the cooldown the acceptor holds the socket and admits nothing
+        while (Date.now() < closedAt + 850) {
+            expect(await acceptorToken()).to.equal(null);
+            await sleep(100);
+        }
+        let replacementToken: number | null = null;
+        await waitFor(
+            async () => {
+                replacementToken = await acceptorToken();
+                return (
+                    replacementToken !== null && replacementToken !== firstToken
+                );
+            },
+            h.event.protocolEventTimeoutMs(),
+            100
+        );
+        expect(Date.now() - closedAt).to.be.at.least(1000);
+        for (const [from, to] of [
+            [acceptor, dialer],
+            [dialer, acceptor]
+        ]) {
+            expect(
+                await h.control(from).query.isBlacklisted(to.address).request(),
+                "the held reconnect must not blacklist either side"
+            ).to.equal(false);
+        }
     });
 
     it("does not redial a peer blacklisted before its transport closes", async function () {

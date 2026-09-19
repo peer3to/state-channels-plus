@@ -92,3 +92,9 @@ _Pending authoring: shared responsibility, design decisions, assumptions, cross-
 | [scheduler.ts](../../../../../../src/utils/scheduler.ts) | [scheduler.ts.md](./scheduler.ts.md) |
 | [set.ts](../../../../../../src/utils/set.ts) | [set.ts.md](./set.ts.md) |
 | [stateChannelManager.ts](../../../../../../src/utils/stateChannelManager.ts) | [stateChannelManager.ts.md](./stateChannelManager.ts.md) |
+
+## Queue admission contributions
+
+| Source report | Contribution | Requirements |
+| --- | --- | --- |
+| [SignatureUtils.ts](SignatureUtils.ts.md) | normalizeSignature converts valid byte representations to lowercase hex without signer recovery. | [`REQ-QSTORE-2-VYWJAQ`](../../../../specification/storage/queue.md#req-qstore-2-vywjaq) |

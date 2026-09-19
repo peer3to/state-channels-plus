@@ -296,11 +296,7 @@ describe("StateChannelManagerProxy", function () {
                 );
             await expect(resultPromise)
                 .to.be.revertedWithCustomError(
-                    {
-                        interface: new ethers.Interface([
-                            "error ECDSAInvalidSignatureLength(uint256 length)"
-                        ])
-                    },
+                    mathChannelManager,
                     "ECDSAInvalidSignatureLength"
                 )
                 .withArgs(66);
@@ -463,11 +459,7 @@ describe("StateChannelManagerProxy", function () {
                 )
             )
                 .to.be.revertedWithCustomError(
-                    {
-                        interface: new ethers.Interface([
-                            "error ErrorJoinChannelInvalidSubmitter(address expectedParticipant, address actualSubmitter)"
-                        ])
-                    },
+                    mathChannelManager,
                     "ErrorJoinChannelInvalidSubmitter"
                 )
                 .withArgs(firstSigner.address, secondSigner.address);
@@ -585,11 +577,7 @@ describe("StateChannelManagerProxy", function () {
                     expectedForkId
                 )
             ).to.be.revertedWithCustomError(
-                {
-                    interface: new ethers.Interface([
-                        "error ErrorInvalidChannelId()"
-                    ])
-                },
+                mathChannelManager,
                 "ErrorInvalidChannelId"
             );
         });
@@ -624,14 +612,12 @@ describe("StateChannelManagerProxy", function () {
                     ).then((s) => s.signature as Bytes)
                 ]
             });
-            await expect(res).to.be.revertedWithCustomError(
-                {
-                    interface: new ethers.Interface([
-                        "error RaceConditionChannelAlreadyOpen()"
-                    ])
-                },
-                "RaceConditionChannelAlreadyOpen"
-            );
+            await expect(res)
+                .to.be.revertedWithCustomError(
+                    mathChannelManager,
+                    "RaceConditionChannelAlreadyOpen"
+                )
+                .withArgs(openChannel.channelId);
         });
 
         it("2 participants channelId cannot be 0x0 - fail", async function () {
@@ -660,11 +646,7 @@ describe("StateChannelManagerProxy", function () {
                 ]
             });
             await expect(res).to.be.revertedWithCustomError(
-                {
-                    interface: new ethers.Interface([
-                        "error ErrorInvalidJoinChannel()"
-                    ])
-                },
+                mathChannelManager,
                 "ErrorInvalidJoinChannel"
             );
         });
@@ -747,14 +729,19 @@ describe("StateChannelManagerProxy", function () {
                 expectedSnapshotHash,
                 expectedForkId
             );
-            await expect(res).to.be.revertedWithCustomError(
-                {
-                    interface: new ethers.Interface([
-                        "error RaceConditionJoinChannelExpired()"
-                    ])
-                },
-                "RaceConditionJoinChannelExpired"
-            );
+            await expect(res)
+                .to.be.revertedWithCustomError(
+                    mathChannelManager,
+                    "RaceConditionJoinChannelExpired"
+                )
+                .withArgs(
+                    BigInt(invalidJoinChannel.deadlineTimestamp),
+                    // the deadline is 5 minutes in the past, so the chain's own
+                    // clock has to be past it - that is why the call reverted
+                    (currentTimestamp: bigint) =>
+                        currentTimestamp >
+                        BigInt(invalidJoinChannel.deadlineTimestamp)
+                );
         });
     });
 });

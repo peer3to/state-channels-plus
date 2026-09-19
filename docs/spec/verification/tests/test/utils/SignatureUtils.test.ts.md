@@ -1,12 +1,7 @@
-# test/utils/SignatureUtils.test.ts — Test Report
+# SignatureUtils.test.ts — Test Report
 
-> **Test file:** [test/utils/SignatureUtils.test.ts](../../../../../../test/utils/SignatureUtils.test.ts) > **Status:** Authored — engineer verification pending.
+> **Test file:** [test/utils/SignatureUtils.test.ts](../../../../../../test/utils/SignatureUtils.test.ts) > **Status:** Authored; engineer verification pending.
 > **Exercises:** [SignatureUtils.ts](../../../../implementation/source/src/utils/SignatureUtils.ts.md)
-
-## Contents
-
-- [Overview](#overview)
-- [Tests and covered test IDs](#tests-and-covered-test-ids)
 
 ## Overview
 
@@ -24,12 +19,10 @@ comes from `Block.sign` rather than `SignatureUtils.signBlock`, so even the bloc
 
 ## Tests and covered test IDs
 
-A row lists only test IDs this test covers **in full** — partial credit is never recorded. Each
-test ID may be assigned to at most one test across the whole tree; static analysis reports
-duplicate assignments, and tests with no assigned ID are listed in the verification-coverage
-report but are kept here.
-
-| Test declaration                                                                                                                                                                    | Covers |
-| ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------ |
-| [`SignatureUtils.getSignerAddress > recovers the signer of a message`](../../../../../../test/utils/SignatureUtils.test.ts#L17) (line 17)                                           | —      |
-| [`SignatureUtils.getSignerAddress > agrees with Block.signatureToAddress for a block (same recovery key space)`](../../../../../../test/utils/SignatureUtils.test.ts#L25) (line 25) | —      |
+| Test declaration                                                                                                                                                                    | Covers                                                                                                                                              |
+| ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------- |
+| [`SignatureUtils.getSignerAddress > recovers the signer of a message`](../../../../../../test/utils/SignatureUtils.test.ts#L17) (line 17)                                           | —                                                                                                                                                   |
+| [`SignatureUtils.getSignerAddress > agrees with Block.signatureToAddress for a block (same recovery key space)`](../../../../../../test/utils/SignatureUtils.test.ts#L25) (line 25) | —                                                                                                                                                   |
+| [`SignatureUtils byte normalization > normalizes equivalent hex and bytes without changing recovery`](../../../../../../test/utils/SignatureUtils.test.ts#L40) (line 40)            | [`UNIT-TEST-SIGNATURE-UTILS-1-9ZHM58.P8`](../../../../implementation/source/src/utils/SignatureUtils.ts.md#unit-test-signature-utils-1-9zhm58.p8)   |
+| [`SignatureUtils byte normalization > does not repair malformed hex or reinterpret a recovery byte`](../../../../../../test/utils/SignatureUtils.test.ts#L59) (line 59)             | [`UNIT-TEST-SIGNATURE-UTILS-1-9ZHM58.P9`](../../../../implementation/source/src/utils/SignatureUtils.ts.md#unit-test-signature-utils-1-9zhm58.p9)   |
+| [`SignatureUtils byte normalization > keeps compact signature bytes compact`](../../../../../../test/utils/SignatureUtils.test.ts#L70) (line 70)                                    | [`UNIT-TEST-SIGNATURE-UTILS-1-9ZHM58.P10`](../../../../implementation/source/src/utils/SignatureUtils.ts.md#unit-test-signature-utils-1-9zhm58.p10) |

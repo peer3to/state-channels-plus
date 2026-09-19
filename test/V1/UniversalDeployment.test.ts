@@ -1,6 +1,7 @@
 import MathConsumerFacetArtifact from "../../artifacts/contracts/V1/examples/MathStateMachine/MathConsumerFacet.sol/MathConsumerFacet.json";
 import MathStateMachineArtifact from "../../artifacts/contracts/V1/examples/MathStateMachine/MathStateMachine.sol/MathStateMachine.json";
 import LocalDiamondArtifact from "../../artifacts/contracts/V1/StateChannelDiamondProxy/LocalDiamond.sol/LocalDiamond.json";
+import { DEFAULT_MAX_CHANNEL_PARTICIPANTS } from "../../scripts/V1/deploy";
 import {
     deploy,
     deployLocalDiamond,
@@ -37,7 +38,10 @@ describe("Universal Deployment", () => {
             signer
         );
         const response = await signer.sendTransaction(
-            await factory.getDeployTransaction(5000000)
+            await factory.getDeployTransaction(
+                5000000,
+                DEFAULT_MAX_CHANNEL_PARTICIPANTS
+            )
         );
         const receipt = await response.wait();
         if (!receipt?.contractAddress) {
@@ -200,7 +204,7 @@ describe("Universal Deployment", () => {
                 MathStateMachineArtifact,
                 deployer,
                 {
-                    args: [5000000]
+                    args: [5000000, DEFAULT_MAX_CHANNEL_PARTICIPANTS]
                 }
             );
             mathStateMachineAddress = mathAddress;
@@ -262,7 +266,14 @@ describe("Universal Deployment", () => {
             expect(proxyError?.name).to.equal(
                 "RaceConditionBlockCalldataTimestampTooLate"
             );
-            expect(proxyError?.args).to.have.length(0);
+            // the deadline passed to postBlockCalldata was one second before the
+            // latest block, so the chain reverted with exactly that comparison
+            expect(proxyError?.args.maxTimestamp).to.equal(
+                BigInt(currentBlock!.timestamp - 1)
+            );
+            expect(Number(proxyError?.args.currentTimestamp)).to.be.greaterThan(
+                Number(proxyError?.args.maxTimestamp)
+            );
 
             const [, secondSigner] = await ethers.getSigners();
             const openChannel = createOpenChannelTestObject([

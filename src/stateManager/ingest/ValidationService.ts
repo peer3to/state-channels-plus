@@ -14,7 +14,13 @@ import {
     firstBlockGrace,
     timeoutWaitTime
 } from "@/types";
-import { Address, ChannelId, ForkId, Timestamp } from "@/types/types";
+import {
+    Address,
+    ChannelId,
+    ForkId,
+    Timestamp,
+    Signature
+} from "@/types/types";
 import { Codec, hash, Logger, Type } from "@/utils";
 import { LoggerUtils } from "@/utils/LoggerUtils";
 import { StateChannelManagerInterface } from "@typechain-types";
@@ -56,6 +62,23 @@ export default class ValidationService {
         return this.diamondStateMachine.localDiamondContract.isBlockAuthentic(
             blockConfirmation.signedBlock
         );
+    }
+
+    public async normalizeConfirmationSignatures(
+        entry: QueuedBlockEntry,
+        strategy: AValidationStrategy
+    ): Promise<BlockValidationResult> {
+        const malformed = new Set<Signature>();
+        for (const signature of entry.block.confirmationSignatures) {
+            try {
+                entry.block.signatureToAddress(signature);
+            } catch {
+                malformed.add(signature);
+            }
+        }
+        return malformed.size
+            ? strategy.malformedConfirmationSignatures(entry, malformed)
+            : BlockValidationResult.SUCCESS;
     }
 
     public async validateBlockConfirmation(

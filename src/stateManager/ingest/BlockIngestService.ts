@@ -2,7 +2,7 @@ import type StateManager from "../StateManager";
 import type AValidationStrategy from "../validationStrategy/AValidationStrategy";
 import DisputeValidationStrategy from "../validationStrategy/DisputeValidationStrategy";
 import { Block } from "@/models";
-import type { QueuedBlockEntry } from "@/storage/QueueStorage";
+import { BlockOrigin, type QueuedBlockEntry } from "@/storage/QueueStorage";
 import { BlockValidationResult } from "@/types";
 import { Address, Bytes } from "@/types/types";
 import { difference, Logger } from "@/utils";
@@ -41,7 +41,8 @@ export default class BlockIngestService {
     ): Promise<boolean> {
         return this.onBlockConfirmation(
             this.stateManager.storage.queues.createEntry(
-                Block.fromBlockConfirmation(blockConfirmation)
+                Block.fromBlockConfirmation(blockConfirmation),
+                { origin: BlockOrigin.PROOF }
             ),
             options
         );
@@ -125,6 +126,17 @@ export default class BlockIngestService {
                     { blockHash: block.hash }
                 );
                 return keepConnection;
+            }
+
+            validationResult =
+                await sm.validationService.normalizeConfirmationSignatures(
+                    entry,
+                    strategy
+                );
+            if (validationResult !== BlockValidationResult.SUCCESS) {
+                return strategy.interpretFinalValidationResult(
+                    validationResult
+                );
             }
 
             validationResult =
@@ -250,10 +262,12 @@ export default class BlockIngestService {
             }
 
             // Union on the participant set -> check signers
-            const allowedSigners = new Set<Address>([
-                ...previousStateSnapshot.snapshotData.participants,
-                ...stateSnapshot.snapshotData.participants
-            ]);
+            const allowedSigners = new Set<Address>(
+                sm.storage.getParticipantsUnionFromSnapshots(
+                    previousStateSnapshot,
+                    stateSnapshot
+                )
+            );
             const unexpectedSigners = difference(
                 block.allSignerAddresses,
                 allowedSigners

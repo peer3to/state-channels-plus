@@ -59,6 +59,14 @@ jobs:
             - name: Check import order
               run: yarn lint:imports
 
+            - name: Install Foundry
+              uses: foundry-rs/foundry-toolchain@v1
+              with:
+                  version: v1.2.3
+
+            - name: Check Solidity formatting
+              run: forge fmt --check
+
             - name: Check distributed pool secrets are present
               env:
                   SCP_TEST_POOL_SECRET: ${{ secrets.SCP_TEST_POOL_SECRET }}
@@ -72,6 +80,9 @@ jobs:
                     echo "::error::SCP_TEST_ORCHESTRATOR_SEED must be a 64-character lowercase hex repository secret"
                     exit 1
                   fi
+
+            - name: Compile contracts and generated artifacts
+              run: yarn compile
 
             - name: Run full test suite on the distributed pool
               env:

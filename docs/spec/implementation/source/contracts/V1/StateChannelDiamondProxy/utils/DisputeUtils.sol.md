@@ -20,11 +20,27 @@
 ## Responsibility and observable boundary
 
 Free functions for dispute/window accessors, period predicates, `_hasDisputeReason`, header
-mismatch, and the positional committed-set matching `areDisputesCommitted`.
+mismatch, the dispute-commitment hash owner `_disputeCommitmentHash`/`_disputeCommitmentHashes`,
+and the positional committed-set matching `areDisputesCommitted`.
 
 ## Key design decisions
 
 1. **Positional set matching** is where the post-kill order sensitivity ([`OQ-4-JGDCNX` (Dispute-reduction order-independence)](../../../../../../verification/open-questions.md#oq-4-jgdcnx) input) is anchored.
+2. **Every period predicate returns its deadline alongside the verdict:**
+   `_isEvidencePeriodExpired`, `_isKillPeriodExpired` and `_isReduceChallengePeriodExpired` all
+   return `(bool, uint256 periodEnd)`. The caller that reverts on the verdict needs the deadline
+   it compared `block.timestamp` against, and recomputing it at the call site would duplicate the
+   `+ evidenceTime` arithmetic in every guard. Callers that only need the verdict discard the
+   second value.
+3. **One owner for the dispute-commitment preimage.**
+   [`_disputeCommitmentHash`](../../../../../../../../contracts/V1/StateChannelDiamondProxy/utils/DisputeUtils.sol#L121)
+   is the single definition of `keccak256(abi.encode(dispute))`; everything that pushes a
+   commitment, searches the window for one, or reports one in a revert calls it, and
+   [`_disputeCommitmentHashes`](../../../../../../../../contracts/V1/StateChannelDiamondProxy/utils/DisputeUtils.sol#L125)
+   maps it over a submitted set. `areDisputesCommitted` compares with the same function, so the
+   hashes a commitment-mismatch revert reports are by construction the hashes the comparison
+   tested — a second inline copy of the preimage could drift from the committed one and make the
+   payload describe a comparison that never happened.
 
 ## Inputs, outputs, state, and side effects
 
@@ -70,7 +86,7 @@ Gap column. Audit state is file-level (Status header), never a row status.
 
 | Requirement / invariant                                                                                                 | Implementation status | Evidence                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   | Gap / divergence |
 | ----------------------------------------------------------------------------------------------------------------------- | --------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------- |
-| [`REQ-DISPUTE-PIPE-9-TDWQPV`](../../../../../../specification/disputes/dispute-processing.md#req-dispute-pipe-9-tdwqpv) | Covered               | **Here:** [source](../../../../../../../../contracts/V1/StateChannelDiamondProxy/utils/DisputeUtils.sol#L147) accepts the committed true flag as an additional reason without consulting surviving commitments; false contributes no reason. **Other files:** [DisputeManager.ts](../../../../src/disputeManager/DisputeManager.ts.md) (dispute admission, rollback and construction), [EventSyncService.ts](../../../../src/stateManager/eventSync/EventSyncService.ts.md) (authoritative timestamped slash recovery), [DisputeManagerFacet.sol](../DisputeManagerFacet.sol.md) (conditional admission before mutation), [DisputeValidationService.ts](../../../../src/stateManager/dispute/DisputeValidationService.ts.md) (all remaining audit checks). | —                |
+| [`REQ-DISPUTE-PIPE-9-TDWQPV`](../../../../../../specification/disputes/dispute-processing.md#req-dispute-pipe-9-tdwqpv) | Covered               | **Here:** [source](../../../../../../../../contracts/V1/StateChannelDiamondProxy/utils/DisputeUtils.sol#L151) accepts the committed true flag as an additional reason without consulting surviving commitments; false contributes no reason. **Other files:** [DisputeManager.ts](../../../../src/disputeManager/DisputeManager.ts.md) (dispute admission, rollback and construction), [EventSyncService.ts](../../../../src/stateManager/eventSync/EventSyncService.ts.md) (authoritative timestamped slash recovery), [DisputeManagerFacet.sol](../DisputeManagerFacet.sol.md) (conditional admission before mutation), [DisputeValidationService.ts](../../../../src/stateManager/dispute/DisputeValidationService.ts.md) (all remaining audit checks). | —                |
 
 ## Component test obligations
 

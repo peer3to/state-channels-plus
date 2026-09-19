@@ -42,13 +42,19 @@ export default abstract class AValidationStrategy {
         entry: QueuedBlockEntry
     ): Promise<BlockValidationResult>;
 
+    /** Unrecoverable confirmation values; each pipeline owns their consequence. */
+    public abstract malformedConfirmationSignatures(
+        entry: QueuedBlockEntry,
+        signatures: Set<Signature>
+    ): Promise<BlockValidationResult>;
+
     /**
      * Signatures on the block recover to addresses outside the block's
      * previous/resulting participant union. The strategy owns the side effects
      * (filtering, disconnecting the byzantine senders, fraud proofs); SUCCESS
      * means the block should continue through the pipeline with the stray
      * signatures removed. The suppliers of the stray signatures resolve from
-     * the entry's signature -> source map. Signers are derivable O(1) via
+     * the entry's per-source contribution map. Signers are derivable O(1) via
      * `entry.block.signatureToAddress` (cached).
      */
     public abstract notAllSingersAreParticipants(

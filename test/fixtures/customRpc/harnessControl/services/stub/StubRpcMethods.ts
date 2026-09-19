@@ -48,12 +48,57 @@ export class StubRpcMethods extends ANetworkRpcMethods<StubService> {
         super(transport, service);
     }
 
+    public observeDisputeParticipation(): boolean {
+        this.service.observeDisputeParticipation();
+        return true;
+    }
+    public getDisputeParticipationObservation() {
+        return this.service.getDisputeParticipationObservation();
+    }
+    public restoreDisputeParticipationObservation(): boolean {
+        this.service.restoreDisputeParticipationObservation();
+        return true;
+    }
+
+    public observeAdmission(
+        options?: Parameters<StubService["observeAdmission"]>[0]
+    ): boolean {
+        this.service.observeAdmission(options);
+        return true;
+    }
+    public getAdmissionObservation() {
+        return this.service.getAdmissionObservation();
+    }
+    public releaseAdmissionMembership(): boolean {
+        this.service.releaseAdmissionMembership();
+        return true;
+    }
+    public releaseAdmissionGossip(): boolean {
+        this.service.releaseAdmissionGossip();
+        return true;
+    }
+    public restoreAdmissionObservation(): boolean {
+        this.service.restoreAdmissionObservation();
+        return true;
+    }
+
     public scheduleProbe(taskName: string): Promise<boolean> {
         return this.service.scheduleProbe(taskName);
     }
 
     public holdBlockWork(point: BlockWorkHoldPoint): boolean {
-        if (!["authoring", "commit", "signature"].includes(point))
+        if (
+            ![
+                "queueDequeue",
+                "authoring",
+                "commit",
+                "signature",
+                "confirmationValidation",
+                "proofConfirmationValidation",
+                "storedMerge",
+                "stateApplicationInspection"
+            ].includes(point)
+        )
             throw new Error("Invalid block-work hold point");
         this.service.installBlockWorkHold(point);
         return true;
@@ -1646,6 +1691,12 @@ export class StubRpcMethods extends ANetworkRpcMethods<StubService> {
         return this.service.waitForHeldAuditingDataRebuild();
     }
 
+    /** Hold the discovery join for `holdMs` so an abort can land inside it. */
+    public stubHoldDiscoveryJoin(holdMs: number): boolean {
+        this.service.installDiscoveryJoinHold(holdMs);
+        return true;
+    }
+
     public async joinAndLeavePendingLocalDiscovery(
         topic: string
     ): Promise<boolean> {
@@ -2672,8 +2723,8 @@ export class StubRpcMethods extends ANetworkRpcMethods<StubService> {
         return this.service.getHeldSpectateResponseCount();
     }
 
-    public holdPostMatchTargetRefresh(): boolean {
-        this.service.holdPostMatchTargetRefresh();
+    public holdPostMatchTargetRefresh(autoReleaseMs?: number): boolean {
+        this.service.holdPostMatchTargetRefresh(autoReleaseMs);
         return true;
     }
 

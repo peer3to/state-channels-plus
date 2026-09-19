@@ -30,7 +30,7 @@ export interface SyncRequest {
 class SpectateService extends ANetworkRpcService<SpectateServiceRpcMethods> {
     private readonly inFlightByPeerAddress: Map<
         ChecksumAddress,
-        Promise<boolean>
+        { request: SyncRequest; result: Promise<boolean> }
     > = new Map();
 
     constructor(p2pManager: P2PManager) {
@@ -68,12 +68,19 @@ class SpectateService extends ANetworkRpcService<SpectateServiceRpcMethods> {
         });
         const normalizedPeerAddress = getChecksumAddress(peerAddress);
 
-        if (this.inFlightByPeerAddress.has(normalizedPeerAddress)) {
-            this.logger.debug(
-                "spectateSync - sync already in-flight; ignoring",
-                { peerAddress: normalizedPeerAddress }
-            );
-            return false;
+        let inFlight = this.inFlightByPeerAddress.get(normalizedPeerAddress);
+        while (inFlight) {
+            const request = inFlight.request;
+            const coversRequest =
+                request.channelId === channelId &&
+                request.forkId === forkId &&
+                (request.blockHeight === blockHeight ||
+                    (request.blockHeight !== undefined &&
+                        blockHeight !== undefined &&
+                        request.blockHeight >= blockHeight));
+            const synced = await inFlight.result;
+            if (!synced || coversRequest) return synced;
+            inFlight = this.inFlightByPeerAddress.get(normalizedPeerAddress);
         }
 
         const attempt = this.runSync(
@@ -81,41 +88,15 @@ class SpectateService extends ANetworkRpcService<SpectateServiceRpcMethods> {
             syncRequest,
             timeoutMs
         );
-        this.inFlightByPeerAddress.set(normalizedPeerAddress, attempt);
+        this.inFlightByPeerAddress.set(normalizedPeerAddress, {
+            request: syncRequest,
+            result: attempt
+        });
         try {
             return await attempt;
         } finally {
             this.inFlightByPeerAddress.delete(normalizedPeerAddress);
         }
-    }
-
-    /**
-     * Run one sync toward the peer after any sync already in flight toward it
-     * has settled. `sync` answers an in-flight collision with `false` without
-     * cutting the peer; a caller that must know the peer was cut on `false`
-     * (the block queue's expiry probe) waits here instead of taking that
-     * answer, because the in-flight request need not cover its block.
-     */
-    public async syncAfterInFlight(
-        peerAddress: Address,
-        channelId: ChannelId,
-        forkId?: ForkId,
-        blockHeight?: number,
-        timeoutMs?: number
-    ): Promise<boolean> {
-        const normalizedPeerAddress = getChecksumAddress(peerAddress);
-        let inFlight = this.inFlightByPeerAddress.get(normalizedPeerAddress);
-        while (inFlight) {
-            await inFlight.catch(() => false);
-            inFlight = this.inFlightByPeerAddress.get(normalizedPeerAddress);
-        }
-        return await this.sync(
-            peerAddress,
-            channelId,
-            forkId,
-            blockHeight,
-            timeoutMs
-        );
     }
 
     private async runSync(

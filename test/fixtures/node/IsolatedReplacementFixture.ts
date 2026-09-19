@@ -71,14 +71,25 @@ export async function assertIsolatedReplacementDetection(): Promise<void> {
                 nonce: original.nonce,
                 gasPrice: gasPrice * 2n
             });
-            await provider.send("hardhat_mine", ["0x1"]);
 
-            let replacementError: unknown;
-            try {
-                await restored.wait();
-            } catch (error) {
-                replacementError = error;
+            // ethers detects a replacement only from a block event that
+            // arrives after `wait()` has subscribed, and its block poller
+            // bootstraps at whatever block it reads first, with the block
+            // number cached for 250ms. Mining before the subscription raced:
+            // on a loaded host the poller bootstrapped at the mined block and
+            // `wait()` never settled. Subscribe first, make sure the poller
+            // has read the pre-mine block, then mine.
+            provider.pollingInterval = 100;
+            const waited = restored.wait().then(
+                () => undefined,
+                (error: unknown) => error
+            );
+            while ((await provider.listenerCount("block")) === 0) {
+                await new Promise((resolve) => setTimeout(resolve, 10));
             }
+            await provider.getBlockNumber();
+            await provider.send("hardhat_mine", ["0x1"]);
+            const replacementError = await waited;
             expect(replacementError).to.be.instanceOf(Error);
             expect(
                 (replacementError as Error & { code?: string }).code

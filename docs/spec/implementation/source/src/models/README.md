@@ -11,3 +11,9 @@ _Pending authoring: shared responsibility, design decisions, assumptions, cross-
 - [StateProof.ts](./StateProof.ts.md)
 - [StateSnapshot.ts](./StateSnapshot.ts.md)
 - [index.ts](./index.ts.md)
+
+## Queue admission contributions
+
+| Source report | Contribution | Requirements |
+| --- | --- | --- |
+| [Block.ts](Block.ts.md) | Constructors, author signing, expansion and removal share SignatureUtils byte normalization. | [`REQ-QSTORE-2-VYWJAQ`](../../../../specification/storage/queue.md#req-qstore-2-vywjaq) |

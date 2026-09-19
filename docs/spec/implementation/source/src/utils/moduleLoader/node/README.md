@@ -8,3 +8,4 @@ _Pending authoring: shared responsibility, design decisions, assumptions, cross-
 ## Contents
 
 - [importModuleFromManifest.ts](./importModuleFromManifest.ts.md)
+- [resolveRuntimeModulePath.ts](./resolveRuntimeModulePath.ts.md)

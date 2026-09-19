@@ -1,4 +1,5 @@
 import Clock from "@/Clock";
+import { BlockOrigin } from "@/storage/QueueStorage";
 import { FraudProofType } from "@/types/sol-enums";
 import { Codec, Type } from "@/utils";
 import type { BlockBundle } from "@test/fixtures/customRpc/harnessControl/services/query/QueryRpcMethods";
@@ -14,9 +15,12 @@ import { ethers } from "ethers";
 describe("E2E: Block Fraud Proofs", function () {
     it("queued future block accepts later calldata event and executes after predecessor", async function () {
         const h = TestSession.getHarness();
+        // A queued future block lives for agreementTime. The calldata post
+        // below is an on-chain round trip on a chain mining once a second, so
+        // the window must outlast it or the entry times out first.
         const timeConfig = {
             p2pTime: 3,
-            agreementTime: 2,
+            agreementTime: 5,
             chainFallbackTime: 30,
             evidenceTime: 8
         };
@@ -68,6 +72,10 @@ describe("E2E: Block Fraud Proofs", function () {
 
         await h.transition.ingestBlockConfirmationWait({
             peerIndex: observerIndex,
+            ingestOptions: {
+                origin: BlockOrigin.NETWORK,
+                senderAddress: source.address
+            },
             blockConfirmation: Codec.decode(
                 block2!.encodedBlockConfirmation,
                 Type.BlockConfirmation
@@ -114,6 +122,15 @@ describe("E2E: Block Fraud Proofs", function () {
                 .request()
         ).to.be.null;
 
+        const entry = await h
+            .control(observer)
+            .query.getQueuedRetention(block2!.hash)
+            .request();
+        expect(entry?.perSource.map((source) => source.source)).to.deep.equal([
+            source.address
+        ]);
+        expect(entry?.onChainTimestamp).to.equal(block2OnChainTimestamp);
+
         await sleep((timeConfig.agreementTime + 1) * 1000);
 
         // The future calldata copy was evicted at the queue timeout — the
@@ -145,7 +162,10 @@ describe("E2E: Block Fraud Proofs", function () {
                 block2!.encodedBlockConfirmation,
                 Type.BlockConfirmation
             ),
-            ingestOptions: { onChainTimestamp: block2OnChainTimestamp },
+            ingestOptions: {
+                origin: BlockOrigin.CALLDATA,
+                onChainTimestamp: block2OnChainTimestamp
+            },
             keepConnection: true,
             waitForProcessed: false
         });
@@ -188,13 +208,14 @@ describe("E2E: Block Fraud Proofs", function () {
             (sm, args) => {
                 const latest = sm.storage.blocks.getLatestBlock(args.forkId);
                 if (!latest) throw new Error("no latest block to queue");
-                sm.storage.queues.queueBlock(latest);
+                sm.storage.queues.queueBlock(latest, { origin: args.origin });
             },
-            { forkId: forkId! }
+            { origin: BlockOrigin.PROOF as const, forkId: forkId! }
         );
 
         await h.transition.ingestBlockConfirmationWait({
             peerIndex: observer.index,
+            ingestOptions: { origin: BlockOrigin.PROOF },
             blockConfirmation: Codec.decode(
                 block!.encodedBlockConfirmation,
                 Type.BlockConfirmation
@@ -238,7 +259,10 @@ describe("E2E: Block Fraud Proofs", function () {
                 ),
                 signatures: []
             },
-            ingestOptions: { onChainTimestamp: expectedTimestamp },
+            ingestOptions: {
+                origin: BlockOrigin.CALLDATA,
+                onChainTimestamp: expectedTimestamp
+            },
             keepConnection: true,
             processedKeepConnection: true
         });
@@ -306,7 +330,10 @@ describe("E2E: Block Fraud Proofs", function () {
                 ),
                 signatures: [...block!.confirmationSignatures, badSignature]
             },
-            ingestOptions: { senderAddress: h.getPeer(1).address },
+            ingestOptions: {
+                origin: BlockOrigin.NETWORK,
+                senderAddress: h.getPeer(1).address
+            },
             keepConnection: true,
             // The merge is a scheduled task and setup echoes of this block
             // fire matching processed events, so waiting on the event races —
@@ -394,7 +421,10 @@ describe("E2E: Block Fraud Proofs", function () {
                 ),
                 signatures: [...block!.confirmationSignatures, badSignature]
             },
-            ingestOptions: { senderAddress: h.getPeer(1).address },
+            ingestOptions: {
+                origin: BlockOrigin.NETWORK,
+                senderAddress: h.getPeer(1).address
+            },
             keepConnection: true,
             // The block applies; the byzantine signature suppliers are
             // disconnected+blacklisted by the strategy directly.

@@ -394,3 +394,36 @@ The user superseded review 4's application-heavy client root. Application setup 
 The engineer replaced acknowledged global flushes with best-effort generation gossip. [LoggerService](../implementation/source/src/rpc/internal/services/logger/LoggerService.ts.md) owns its attached store map and one scalar index; [Logger](../implementation/source/src/utils/logging/Logger.ts.md) owns local uploading and one optional service reference in sharedResources. Common roots create logging before startup. Equal/older generations are suppressed even after the window; invalid indexes are rejected. Remote delivery is not claimed by a local promise. Late entries can wait for another generation under the accepted timing assumption. Existing HTTP retries and secret-field encoding remain with the uploader.
 
 The obsolete folded-summary finding no longer describes the current contract. Source and test changes require engineer re-verification; no approval register was changed.
+
+## Per-source queued contributions and promotion window
+
+[`REQ-QSTORE-2-VYWJAQ` (Independent source allowances)](../specification/storage/queue.md#req-qstore-2-vywjaq) bounds one queued network entry by N sources and N supplied values per
+source. Invalid values and alternate valid signatures consume only their supplier's allowance;
+validation uses the carried source map to attribute those values. Dequeue ends queue retention; new copies may start independent entries. The signature count bound is not a fixed-byte memory bound. Source slots are not recycled while an entry remains queued. This
+resolves shared-slot monopolization ([`FIND-QSTORE-3-1HF4V6`](open-findings.md#find-qstore-3-1hf4v6)) while leaving aggregate hashes, channels,
+connections, network rate and repeated later lifetimes outside the bound.
+
+Unknown sources use the existing awaited sync request. Intake then returns without retaining or
+re-admitting the triggering copy. The removed candidate registry and agreement-window start limits
+provide no resource bound in this design. Ordinary sync keeps its busy and peer-failure behavior.
+Positive eligibility hits can remain stale before a slash event arrives; observed slashes override
+both caches and late refresh results.
+
+Math insertion is a bounded balance-preserving producer, not universal roster enforcement. Generic
+consumer genesis, snapshot adoption and historical unions retain [`FIND-SETTLE-1-G2CPV6`](open-findings.md#find-settle-1-g2cpv6). A locally promoted
+peer may sign, gossip and help finalize before chain membership grants dispute standing. Local finality,
+snapshot submission and confirmed adoption are distinct. Prompt post-finality publication remains future
+implementation work ([`OQ-IMPL-PROMOTION-PUBLICATION-1-T74062` (Future publication after off-chain promotion)](../implementation/open-questions.md#oq-impl-promotion-publication-1-t74062)). Current spectators and pending joiners do not
+relay unsolicited blocks; future spectator accountability remains [`OQ-SPEC-SPECTATOR-RELAY-1-V6F216` (Future spectator relaying)](../specification/open-questions.md#oq-spec-spectator-relay-1-v6f216).
+
+Verification uses real malformed/alternate signatures, transport identities, held responses and actual
+membership transactions. Browser gates remain a separately required environment check; an unavailable
+browser dependency cannot be credited as passing execution. Engineer approval registers are unchanged.
+
+### Optimistic membership mirror correction
+
+The engineer removed membership generations, pending-read invalidation and automatic read retries. Cached positives remain optimistic; concurrent misses share one in-flight chain refresh and decide from the resulting mirror. The promise clears on success or failure, permitting a later read. After ordinary ingress sync, a sender that is still ineligible is blacklisted. A busy sync can return before another request makes the sender eligible; the engineer accepted this limitation pending the sync-owner follow-up. Observed slashes still override cached membership, and channel selection clears the three plain sets. There is no metadata wrapper or channel/fork check in membership lookups. A read already in flight can complete after a newer push; no latest-generation guarantee is claimed. Queue processing and ordinary sync remain unchanged. [MembershipService](../implementation/source/src/stateManager/membership/MembershipService.ts.md) and its [exact tests](../verification/tests/test/unit/MembershipService.test.ts.md) describe the current behavior. Earlier invalidation permutations remain withdrawn; the current shared-refresh case asserts one read for concurrent misses.
+
+Eligibility now has three enum values. A failed refresh leaves the sets unchanged; an absent sender follows ordinary sync. The earlier unavailable-result path and its separate no-sync guarantee are withdrawn by the engineer. The ordinary sync service retains its existing peer-failure behavior.
+
+Membership events now push into the fast sets without membership reads. A miss pulls pinned snapshot/inbound/slash data and reuses event handlers to update LocalDiamond and the fast mirror. Positive-hit staleness before unseen events remains the accepted optimistic-cache policy. Focused tests verify delivered and missed JOINs, snapshot preservation of pending JOINs, slash publication, post-sync supplier exclusion, cache cleanup and failed chain-inspection rollback. Equivalent source-address casing uses one queue allowance. The full distributed gate passes all 2,539 tests; seven automatic starvation retries recovered.

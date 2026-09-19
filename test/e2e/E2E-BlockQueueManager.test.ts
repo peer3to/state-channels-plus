@@ -1,7 +1,19 @@
+import { BlockOrigin } from "@/storage/QueueStorage";
 import { BlockValidationResult, Status } from "@/types";
 import type { Address } from "@/types/types";
 import { Codec, Type } from "@/utils";
 import * as factory from "@test/factory";
+import {
+    assertStoredCopyQuota,
+    assertPendingJoinAdmission,
+    assertIndependentNetworkAllowances,
+    assertStoredMalformedNetworkCopy,
+    assertOutsiderProofDoesNotAdmitCopy
+} from "@test/fixtures/QueueNetworkRetentionFixture";
+import {
+    assertSlashAdmission,
+    assertSlashPreservesHonestWork
+} from "@test/fixtures/QueueSlashFixture";
 import {
     MathTestSession as TestSession,
     MIN_TEST_TIME_CONFIG
@@ -17,6 +29,54 @@ import { ethers } from "ethers";
  */
 
 describe("E2E: BlockQueueManager", function () {
+    it("known slashes reject network contributions even when slash log recovery fails", async () => {
+        await assertSlashAdmission("failed-recovery");
+    });
+
+    it("a sender absent after membership refresh failure uses ordinary network sync", async () => {
+        await assertOutsiderProofDoesNotAdmitCopy("success", true);
+    });
+    it("an existing sync handles an unknown-source copy without another wire request", async () => {
+        await assertOutsiderProofDoesNotAdmitCopy("busy");
+    });
+    it("failed ingress sync blacklists its sender without queueing the triggering block", async () => {
+        await assertOutsiderProofDoesNotAdmitCopy("failure");
+    });
+    it("a real slash rejects the next supplier copy without changing held honest work", async () => {
+        await assertSlashPreservesHonestWork();
+    });
+
+    it("stored network copies are bounded before each ordinary merge", async () => {
+        await assertStoredCopyQuota(true);
+    });
+
+    it("one supplier's valid signature variants cannot spend another participant's allowance", async () => {
+        await assertIndependentNetworkAllowances(true);
+    });
+
+    it("observed slash removes cached eligibility before the next stored network copy", async () => {
+        await assertSlashAdmission("observed");
+    });
+    it("an authoritative slash refresh discards a cache-miss copy without sync", async () => {
+        await assertSlashAdmission("refresh");
+    });
+
+    it("a pending join cache miss refreshes from chain before stored-copy admission without sync", async () => {
+        await assertPendingJoinAdmission(true);
+    });
+    it("a delivered pending join event admits the first network copy without another read", async () => {
+        await assertPendingJoinAdmission(false);
+    });
+
+    it("successful ingress sync ends the request without queueing the triggering copy", async () => {
+        await assertOutsiderProofDoesNotAdmitCopy();
+    });
+    it("independent source allowances preserve honest signatures for ordinary processing", async () => {
+        await assertIndependentNetworkAllowances();
+    });
+    it("stored block survives malformed confirmations from one eligible network supplier", async () => {
+        await assertStoredMalformedNetworkCopy();
+    });
     it("ingest rejects a block confirmation with a forged author signature", async function () {
         const h = TestSession.getHarness();
         await h.lifecycle.start(3, 1);
@@ -44,6 +104,10 @@ describe("E2E: BlockQueueManager", function () {
 
         await h.transition.ingestBlockConfirmationWait({
             peerIndex: observer.index,
+            ingestOptions: {
+                origin: BlockOrigin.NETWORK,
+                senderAddress: h.getPeer(1).address
+            },
             blockConfirmation: {
                 signedBlock: {
                     encodedBlock: signedBlock.encodedBlock,
@@ -94,10 +158,11 @@ describe("E2E: BlockQueueManager", function () {
             signatures: []
         };
 
-        // Without a known sender the block is just ignored.
+        // Explicit internal proof input has no transport to punish.
         await h.transition.ingestBlockConfirmationWait({
             peerIndex: observer.index,
             blockConfirmation,
+            ingestOptions: { origin: BlockOrigin.PROOF },
             keepConnection: true,
             waitForProcessed: false
         });
@@ -143,7 +208,7 @@ describe("E2E: BlockQueueManager", function () {
                 .request()
         ).to.be.null;
     });
-    it("ingest cuts both the relayer and the author of an outsider-authored block", async function () {
+    it("ingest cuts both an eligible relayer and the author of an outsider-authored block", async function () {
         const h = TestSession.getHarness();
         // short windows so the two spectators converge on the victim inside the
         // connection barrier below
@@ -158,18 +223,14 @@ describe("E2E: BlockQueueManager", function () {
             "victim is an active participant"
         ).to.equal(Status.PARTICIPATING);
 
-        // two connected non-participants: one authors, the other relays; the
-        // participants keep authoring through both spawns
+        // An eligible participant forwards a connected outsider's signed block.
+        // Keep authoring while the outsider synchronizes.
         const { peer: author } = await h.join.addSpectatorAuthoring({
             authoringPeerIndices: [0, 1, 2],
             minimumBlocks: 0,
             maximumBlocks: 20
         });
-        const { peer: relayer } = await h.join.addSpectatorAuthoring({
-            authoringPeerIndices: [0, 1, 2],
-            minimumBlocks: 0,
-            maximumBlocks: 20
-        });
+        const relayer = h.getPeer(1);
         await h.connectionBarrier.waitFor(
             async () =>
                 (await h
@@ -259,7 +320,10 @@ describe("E2E: BlockQueueManager", function () {
                         block1!.encodedBlockConfirmation,
                         Type.BlockConfirmation
                     ),
-                    ingestOptions: { senderAddress: supplier.address },
+                    ingestOptions: {
+                        origin: BlockOrigin.NETWORK,
+                        senderAddress: supplier.address
+                    },
                     keepConnection: true,
                     waitForProcessed: false
                 });
@@ -328,7 +392,10 @@ describe("E2E: BlockQueueManager", function () {
                         junk.encodedBlockConfirmation,
                         Type.BlockConfirmation
                     ),
-                    ingestOptions: { senderAddress: supplier.address },
+                    ingestOptions: {
+                        origin: BlockOrigin.NETWORK,
+                        senderAddress: supplier.address
+                    },
                     keepConnection: true,
                     waitForProcessed: false
                 });
@@ -418,7 +485,10 @@ describe("E2E: BlockQueueManager", function () {
                         junk.encodedBlockConfirmation,
                         Type.BlockConfirmation
                     ),
-                    ingestOptions: { senderAddress: supplier.address },
+                    ingestOptions: {
+                        origin: BlockOrigin.NETWORK,
+                        senderAddress: supplier.address
+                    },
                     keepConnection: true,
                     waitForProcessed: false
                 });
@@ -497,7 +567,10 @@ describe("E2E: BlockQueueManager", function () {
                         junk.encodedBlockConfirmation,
                         Type.BlockConfirmation
                     ),
-                    ingestOptions: { senderAddress: supplier.address },
+                    ingestOptions: {
+                        origin: BlockOrigin.NETWORK,
+                        senderAddress: supplier.address
+                    },
                     keepConnection: true,
                     waitForProcessed: false
                 });
@@ -588,7 +661,10 @@ describe("E2E: BlockQueueManager", function () {
                 ),
                 signatures: [...block1!.confirmationSignatures, badSignature]
             },
-            ingestOptions: { senderAddress: h.getPeer(1).address },
+            ingestOptions: {
+                origin: BlockOrigin.NETWORK,
+                senderAddress: h.getPeer(1).address
+            },
             keepConnection: true,
             waitForProcessed: false
         });
@@ -719,6 +795,7 @@ describe("E2E: BlockQueueManager", function () {
                     Type.BlockConfirmation
                 ),
                 ingestOptions: {
+                    origin: BlockOrigin.NETWORK,
                     senderAddress: writerPeer!.address
                 },
                 keepConnection: true,
@@ -804,7 +881,10 @@ describe("E2E: BlockQueueManager", function () {
             await h.transition.ingestBlockConfirmationWait({
                 peerIndex: observer.index,
                 blockConfirmation,
-                ingestOptions: { senderAddress: author.address },
+                ingestOptions: {
+                    origin: BlockOrigin.NETWORK,
+                    senderAddress: author.address
+                },
                 keepConnection: true,
                 waitForProcessed: false
             });
@@ -892,7 +972,10 @@ describe("E2E: BlockQueueManager", function () {
                                 future.encodedBlockConfirmation,
                                 Type.BlockConfirmation
                             ),
-                            ingestOptions: { senderAddress: supplier.address },
+                            ingestOptions: {
+                                origin: BlockOrigin.NETWORK,
+                                senderAddress: supplier.address
+                            },
                             keepConnection: true,
                             waitForProcessed: false
                         });
@@ -1008,7 +1091,10 @@ describe("E2E: BlockQueueManager", function () {
             await h.transition.ingestBlockConfirmationWait({
                 peerIndex: observer.index,
                 blockConfirmation,
-                ingestOptions: { senderAddress: supplier.address },
+                ingestOptions: {
+                    origin: BlockOrigin.NETWORK,
+                    senderAddress: supplier.address
+                },
                 keepConnection: true,
                 waitForProcessed: false
             });
@@ -1060,7 +1146,10 @@ describe("E2E: BlockQueueManager", function () {
             await h.transition.ingestBlockConfirmationWait({
                 peerIndex: observer.index,
                 blockConfirmation,
-                ingestOptions: { senderAddress: supplier.address },
+                ingestOptions: {
+                    origin: BlockOrigin.NETWORK,
+                    senderAddress: supplier.address
+                },
                 keepConnection: true,
                 waitForProcessed: false
             });
@@ -1120,7 +1209,10 @@ describe("E2E: BlockQueueManager", function () {
             await h.transition.ingestBlockConfirmationWait({
                 peerIndex: targetPeerIndex,
                 blockConfirmation,
-                ingestOptions: { senderAddress: author.address },
+                ingestOptions: {
+                    origin: BlockOrigin.NETWORK,
+                    senderAddress: author.address
+                },
                 keepConnection: true,
                 waitForProcessed: false
             });
@@ -1255,7 +1347,10 @@ describe("E2E: BlockQueueManager", function () {
                     firstBlock!.encodedBlockConfirmation,
                     Type.BlockConfirmation
                 ),
-                ingestOptions: { senderAddress: writerPeer!.address },
+                ingestOptions: {
+                    origin: BlockOrigin.NETWORK,
+                    senderAddress: writerPeer!.address
+                },
                 keepConnection: true,
                 waitForProcessed: false
             });
@@ -1359,7 +1454,10 @@ describe("E2E: BlockQueueManager", function () {
                 await h.transition.ingestBlockConfirmationWait({
                     peerIndex: observer.index,
                     blockConfirmation,
-                    ingestOptions: { senderAddress: supplier.address },
+                    ingestOptions: {
+                        origin: BlockOrigin.NETWORK,
+                        senderAddress: supplier.address
+                    },
                     keepConnection: true,
                     waitForProcessed: false
                 });
@@ -1463,51 +1561,59 @@ describe("E2E: BlockQueueManager", function () {
                 });
 
                 const observer = h.getPeer(0);
-                const r = await h.execOnHost(observer, async (sm) => {
-                    const strategy = sm.getActiveValidationStrategy() as any;
-                    const disputeManager = strategy.disputeManager as any;
-                    const fraudProofService = strategy.fraudProofService as any;
-                    const block = sm.storage.blocks.getBlock(sm.forkId, 0)!;
-                    const entry = sm.storage.queues.createEntry(block);
+                const r = await h.execOnHost(
+                    observer,
+                    async (sm, args) => {
+                        const strategy =
+                            sm.getActiveValidationStrategy() as any;
+                        const disputeManager = strategy.disputeManager as any;
+                        const fraudProofService =
+                            strategy.fraudProofService as any;
+                        const block = sm.storage.blocks.getBlock(sm.forkId, 0)!;
+                        const entry = sm.storage.queues.createEntry(block, {
+                            origin: args.origin
+                        });
 
-                    let proofHash: unknown;
-                    const disputed: unknown[] = [];
-                    const originalProof =
-                        fraudProofService.createWrongGenesisProof.bind(
-                            fraudProofService
-                        );
-                    const originalDispute =
-                        disputeManager.dispute.bind(disputeManager);
-                    fraudProofService.createWrongGenesisProof = (
-                        ...a: unknown[]
-                    ) => {
-                        proofHash = originalProof(...a);
-                        return proofHash;
-                    };
-                    // Record-only: an on-chain dispute against an honest
-                    // block would derail the session; the proof stays real.
-                    disputeManager.dispute = async (forkId: unknown) => {
-                        disputed.push(String(forkId));
-                    };
-                    try {
-                        const result =
-                            await strategy.wrongGenesisDetected(entry);
-                        return {
-                            result,
-                            disputed,
-                            forkId: String(sm.forkId),
-                            proofStored: proofHash
-                                ? !!sm.storage.fraudProofs.getFraudProofByHash(
-                                      proofHash as any
-                                  )
-                                : false
+                        let proofHash: unknown;
+                        const disputed: unknown[] = [];
+                        const originalProof =
+                            fraudProofService.createWrongGenesisProof.bind(
+                                fraudProofService
+                            );
+                        const originalDispute =
+                            disputeManager.dispute.bind(disputeManager);
+                        fraudProofService.createWrongGenesisProof = (
+                            ...a: unknown[]
+                        ) => {
+                            proofHash = originalProof(...a);
+                            return proofHash;
                         };
-                    } finally {
-                        fraudProofService.createWrongGenesisProof =
-                            originalProof;
-                        disputeManager.dispute = originalDispute;
-                    }
-                });
+                        // Record-only: an on-chain dispute against an honest
+                        // block would derail the session; the proof stays real.
+                        disputeManager.dispute = async (forkId: unknown) => {
+                            disputed.push(String(forkId));
+                        };
+                        try {
+                            const result =
+                                await strategy.wrongGenesisDetected(entry);
+                            return {
+                                result,
+                                disputed,
+                                forkId: String(sm.forkId),
+                                proofStored: proofHash
+                                    ? !!sm.storage.fraudProofs.getFraudProofByHash(
+                                          proofHash as any
+                                      )
+                                    : false
+                            };
+                        } finally {
+                            fraudProofService.createWrongGenesisProof =
+                                originalProof;
+                            disputeManager.dispute = originalDispute;
+                        }
+                    },
+                    { origin: BlockOrigin.PROOF as const }
+                );
 
                 expect(r.result).to.equal(BlockValidationResult.DISPUTE);
                 expect(r.disputed).to.deep.equal([r.forkId]);
@@ -1544,7 +1650,10 @@ describe("E2E: BlockQueueManager", function () {
                 await h.transition.ingestBlockConfirmationWait({
                     peerIndex: observer.index,
                     blockConfirmation,
-                    ingestOptions: { senderAddress: supplier.address },
+                    ingestOptions: {
+                        origin: BlockOrigin.NETWORK,
+                        senderAddress: supplier.address
+                    },
                     keepConnection: true,
                     waitForProcessed: false
                 });
@@ -1599,7 +1708,9 @@ describe("E2E: BlockQueueManager", function () {
                             // The dequeue owns the entry - drop the real
                             // eviction timer the ingest scheduled.
                             manager.cancelQueueTimeout(hash);
+
                             await manager.executeQueuedEntry(entry);
+
                             const restored =
                                 !!sm.storage.queues.getQueuedEntry(hash);
                             const stored =
@@ -1697,17 +1808,10 @@ describe("E2E: BlockQueueManager", function () {
                         }
                         return originalCancel(handle);
                     };
-                    // Storage is behind a deep-copy proxy: a fetched entry is
-                    // a copy, so aging goes through remove -> mutate -> restore.
-                    const ageEntryBy = (hash: unknown, seconds: number) => {
-                        const entry = sm.storage.queues.removeBlock(
-                            hash as any
-                        )!;
-                        entry.firstSeenAt -= seconds;
-                        sm.storage.queues.restoreEntry(entry);
-                    };
                     try {
-                        const hash = sm.storage.queues.queueBlock(block);
+                        const hash = sm.storage.queues.queueBlock(block, {
+                            origin: args.origin
+                        })!;
 
                         const fresh = manager.scheduleQueueTimeout(hash);
                         const freshDelayMs =
@@ -1715,14 +1819,20 @@ describe("E2E: BlockQueueManager", function () {
 
                         // Duplicate copies merge into the entry - age it
                         // precisely instead of sleeping.
-                        ageEntryBy(hash, 4);
-                        const aged = manager.scheduleQueueTimeout(hash);
+                        const aged =
+                            sm.p2pManager.localRpc.stub.withQueueClockOffset(
+                                4,
+                                () => manager.scheduleQueueTimeout(hash)
+                            );
                         const agedDelayMs =
                             scheduled[scheduled.length - 1]?.delayMs;
                         const cancelledAfterAging = cancelled.length;
 
-                        ageEntryBy(hash, agreementTime); // past the deadline
-                        const atDeadline = manager.scheduleQueueTimeout(hash);
+                        const atDeadline =
+                            sm.p2pManager.localRpc.stub.withQueueClockOffset(
+                                agreementTime + 4,
+                                () => manager.scheduleQueueTimeout(hash)
+                            );
                         const cancelledAfterDeadlineAttempt = cancelled.length;
                         const scheduledCount = scheduled.length;
 
@@ -1744,7 +1854,7 @@ describe("E2E: BlockQueueManager", function () {
                         timeoutManager.cancelTask = originalCancel;
                     }
                 },
-                { forkId }
+                { origin: BlockOrigin.PROOF as const, forkId }
             );
 
             const windowMs = r.agreementTime * 1000;

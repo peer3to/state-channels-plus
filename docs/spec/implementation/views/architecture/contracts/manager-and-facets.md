@@ -452,23 +452,23 @@ SDK's chain listener consumes these. All verified:
 families:
 
 - **Validation errors (`Error*`)** — the submitted argument is invalid regardless of timing: bad
-  or missing signatures (`ErrorJoinChannelInvalidSignature`), malformed channel/join data
+  or missing signatures (`ErrorJoinChannelInvalidSignature`,
+  `ErrorJoinChannelConfirmationNotThresholdSigned`), malformed channel/join data
   (`ErrorInvalidChannelId`, `ErrorInvalidJoinChannel`, `ErrorDuplicateParticipant`,
   `ErrorAtLeastTwoParticipantsRequired`), snapshot/proof failures (`ErrorInvalidStateProof`,
-  `ErrorInvalidStateSnapshot`, `ErrorInvalidLatestState`,
+  `ErrorNotGenesisSnapshot`, `ErrorSnapshotGenesisTimestampMismatch`,
+  `ErrorSnapshotDataForkMismatch`, `ErrorInvalidStateSnapshotHash`, `ErrorInvalidLatestState`,
   `ErrorDisputeInboundMessageBlocksInvalid` — which carries the compared hashes, break index, and
   an `INBOUND_FAILURE_*` reason code), value-conservation (`CantWithdrawMoreThanDeposits`,
-  `ErrorWithdrawalFailed`, `ErrorOutboundMessageBalanceMismatch`), fraud-proof rejections
-  (`ErrorInvalidFraudProof`, `ErrorInvalidFraudProofType`, `ErrorDoubleSignBlocksNotSame`), and
-  state-machine hook failures during re-execution (`ErrorDisputeStateMachineJoiningFailed`,
-  `…SlashingFailed`, `…RemovingFailed`, `…InboundProcessingFailed`).
+  `ErrorWithdrawalFailed`, `ErrorOutboundMessageBalanceMismatch`), and a state-machine hook
+  failure during re-execution (`ErrorDisputeStateMachineInboundProcessingFailed`).
 - **Race-condition guards (`RaceCondition*`)** — a state- or time-dependent precondition failed
   because of ordering between competing on-chain actions: `RaceConditionChannelAlreadyOpen`,
   `RaceConditionBlockCalldataTimestampTooLate`, `RaceConditionSnapshotForkMismatch`,
   `RaceConditionJoinChannelExpired` / `…JoinChannelSnapshotMismatch` /
   `…ForceInboundJoinForkDisputed` / `…PendingInboundNotConsumed`, the dispute-window family
   (`…DisputeEvidencePeriodExpired`, `…DisputeKillPeriodNotExpired`, `…DisputeKillPeriodExpired`,
-  `…DisputeAlreadyReduced`, `…ReductionExpectationDoesntMatch`, `…DisputeAuditingRequired`), the
+  `…DisputeAlreadyReduced`, `…ReductionExpectationDoesntMatch`), the
   timeout family (`…DisputeTimeoutCalldataPosted`,
   `…DisputeTimeoutPreviousBlockProducerPostedCalldataMismatch`, `…DisputeTimeoutNotMinTimestamp`,
   `…DisputeTimeoutWindowCreatedTooEarly`, `…UnexpectedBlockCalldataPosted`),

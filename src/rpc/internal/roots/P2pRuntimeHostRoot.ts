@@ -126,6 +126,9 @@ export class P2pRuntimeHostRoot extends AInternalRpcRoot<P2pRuntimeClientRoot> {
     private connectedScmContract!: StateChannelManagerInterface;
     private timeConfig!: TimeConfig;
     private disputeExecutionGasLimit!: number;
+    // The deployed contract's participant maximum. The queue's retention bound
+    // is sized from it, so the chain stays authoritative for both.
+    private maxChannelParticipants!: number;
     private signerAddress!: string;
     private readonly context: HostContext;
 
@@ -224,6 +227,17 @@ export class P2pRuntimeHostRoot extends AInternalRpcRoot<P2pRuntimeClientRoot> {
         this.disputeExecutionGasLimit = Number(
             await connectedScmContract.getGasLimit()
         );
+        this.maxChannelParticipants = Number(
+            await connectedScmContract.getMaxChannelParticipants()
+        );
+        if (
+            !Number.isSafeInteger(this.maxChannelParticipants) ||
+            this.maxChannelParticipants < 1
+        ) {
+            throw new Error(
+                "Deployed maximum participant count is not a positive safe integer"
+            );
+        }
         await LoggerUtils.logTimestamp(logger, "info", timeConfig);
 
         this.connectedScmContract = connectedScmContract;
@@ -318,7 +332,7 @@ export class P2pRuntimeHostRoot extends AInternalRpcRoot<P2pRuntimeClientRoot> {
                 disputeExecutionGasLimit
             );
 
-        const storage = new Storage();
+        const storage = new Storage(this.maxChannelParticipants);
 
         const stateManager = new StateManager<MainRpcService, unknown>(
             // Managed signer: becomes StateManager.signer → DisputeManager.signer,

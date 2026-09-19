@@ -5,6 +5,7 @@ export class DetachedPromises {
         id: number;
         promise: Promise<any>;
         collectedAtStack?: string;
+        adopted?: boolean;
     }> = [];
     private static collectUntilTimestamp?: number;
 
@@ -34,6 +35,29 @@ export class DetachedPromises {
     ): void {
         DetachedPromises.collect(promise);
         void promise.catch(onError);
+    }
+
+    /**
+     * Hand the future rejection of every pending promise to `onRejection` and
+     * keep each one tracked as work that settles. A disposing root calls this
+     * so a failure of work still in flight at its disposal is that disposal's
+     * outcome rather than an unhandled rejection or a drain failure. Work
+     * adopted by an earlier call is skipped. Returns the collection origins
+     * of the newly adopted work.
+     */
+    public static adoptPending(
+        onRejection: (error: unknown, collectedAtStack?: string) => void
+    ): Array<string | undefined> {
+        return DetachedPromises.pending
+            .filter((entry) => !entry.adopted)
+            .map((entry) => {
+                const { collectedAtStack } = entry;
+                entry.adopted = true;
+                entry.promise = entry.promise.catch((error) =>
+                    onRejection(error, collectedAtStack)
+                );
+                return collectedAtStack;
+            });
     }
 
     public static size(): number {

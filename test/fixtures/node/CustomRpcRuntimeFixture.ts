@@ -1,6 +1,7 @@
 // @spec-test-coverage-ignore: fixture support; executable evidence belongs to its calling test declarations.
 import MathConsumerFacetArtifact from "../../../artifacts/contracts/V1/examples/MathStateMachine/MathConsumerFacet.sol/MathConsumerFacet.json";
 import MathStateMachineArtifact from "../../../artifacts/contracts/V1/examples/MathStateMachine/MathStateMachine.sol/MathStateMachine.json";
+import { DEFAULT_MAX_CHANNEL_PARTICIPANTS } from "../../../scripts/V1/deploy";
 import { deployFullStack } from "../../../scripts/V1/deploy";
 import { EvmStateMachine } from "@/evm";
 import type P2pInstance from "@/evm/P2pInstance";
@@ -79,7 +80,10 @@ async function deployLocalStateMachine(signer: Signer): Promise<string> {
         signer
     );
     const tx = await signer.sendTransaction(
-        await factory.getDeployTransaction(5_000_000)
+        await factory.getDeployTransaction(
+            5_000_000,
+            DEFAULT_MAX_CHANNEL_PARTICIPANTS
+        )
     );
     const receipt = await tx.wait();
     if (!receipt?.contractAddress) {
@@ -124,7 +128,7 @@ export async function assertCustomRpcRuntimeFlow(
         const scmDeployment = await deployFullStack(deployerSigner, {
             stateMachineArtifact: MathStateMachineArtifact,
             consumerFacetArtifact: MathConsumerFacetArtifact,
-            stateMachineArgs: [5_000_000],
+            stateMachineArgs: [5_000_000, DEFAULT_MAX_CHANNEL_PARTICIPANTS],
             consumerFacetArgs: [],
             timeConfig: TEST_TIME_CONFIG,
             disputeExecutionGasLimit: 1_000_000

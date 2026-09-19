@@ -46,7 +46,8 @@ contract LocalDiamond is StateChannelManagerProxy {
         uint256 _agreementTime,
         uint256 _chainFallbackTime,
         uint256 _evidenceTime,
-        uint256 _disputeExecutionGasLimit
+        uint256 _disputeExecutionGasLimit,
+        uint256 _maxChannelParticipants
     )
         StateChannelManagerProxy(
             _stateMachineImplementation,
@@ -63,7 +64,8 @@ contract LocalDiamond is StateChannelManagerProxy {
             _agreementTime,
             _chainFallbackTime,
             _evidenceTime,
-            _disputeExecutionGasLimit
+            _disputeExecutionGasLimit,
+            _maxChannelParticipants
         )
     {}
 
@@ -149,7 +151,7 @@ contract LocalDiamond is StateChannelManagerProxy {
         // Update dispute data based on the dispute commitment
         bytes32 forkId = dispute.input.forkId;
         DisputeWindow storage disputeWindow = disputeData[channelId].disputeWindowMap[forkId];
-        bytes32 commitment = keccak256(abi.encode(dispute));
+        bytes32 commitment = _disputeCommitmentHash(dispute);
 
         bytes32[] storage commitments = disputeWindow.evidence.disputeCommitments;
         for (uint256 i = 0; i < commitments.length; i++) {

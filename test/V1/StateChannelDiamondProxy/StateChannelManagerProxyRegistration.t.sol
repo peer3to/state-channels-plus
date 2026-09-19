@@ -30,6 +30,7 @@ contract DuplicateRouteRegistrationHarness is StateChannelManagerProxy {
             0,
             0,
             0,
+            0,
             0
         )
     {
@@ -70,6 +71,7 @@ contract StateChannelManagerProxyRegistrationTest is Test {
             0,
             0,
             0,
+            0,
             0
         );
     }
@@ -87,6 +89,7 @@ contract StateChannelManagerProxyRegistrationTest is Test {
             address(utilityFacet),
             address(utilityFacet),
             address(10),
+            0,
             0,
             0,
             0,

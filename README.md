@@ -33,10 +33,11 @@ For usage in other projects, install from npm:
 yarn add @peer3/state-channels-plus
 ```
 
-For usage in this repository, install Foundry `v1.2.3`, initialize the pinned
-Solidity dependencies, install local dependencies, and build the SDK:
+For usage in this repository, install the Foundry version in `.forge-version`,
+initialize the pinned Solidity dependencies, install local dependencies, and
+build the SDK:
 ```shell
-foundryup --install v1.2.3
+foundryup --install "$(cat .forge-version)"
 git submodule update --init --recursive
 yarn && yarn build
 ```
@@ -106,6 +107,23 @@ yarn test:parallel --forge-only     # only the forge tier
 yarn test:parallel --no-forge       # only the Mocha tier
 yarn test:parallel --forge-threads 2
 yarn test:parallel --test-pattern 'V1/**' # filter both tiers
+```
+
+Mocha tests are discovered from their TypeScript sources but run from the
+compiled tree under `dist/` by default, so no test child or worker thread
+transpiles anything, while `--enable-source-maps` keeps every stack trace on
+the `.ts` lines. The distributed workers build that tree in their prepare step
+(`yarn test:parallel:build`, a clean build). The local runner keeps it current
+from a stamp the build writes: when only file contents changed it re-emits in
+place without deleting anything, because a runner can itself be a task of an
+outer run that is loading from the same tree; when a source was added, removed
+or renamed it runs the clean build, so no compiled twin of a deleted file can
+linger and run. Outside a project with that build script the runner falls back
+to the sources. Two flags change the default:
+
+```shell
+yarn test:parallel --skip-build     # never refresh, use the dist tree as is
+yarn test:parallel --source-tests   # run the .ts sources under ts-node instead
 ```
 
 Each forge task uses one thread by default. `forge test` otherwise sizes its

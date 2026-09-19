@@ -25,6 +25,8 @@ Core aliases (Address, Hash, ChannelId, ForkId, BlockHeight…) shared across th
 
 `HpAddress` names a lowercase Hyperswarm public key and `PeerKey` is the union of `Address` and `HpAddress`: the key a peer is counted by before and after identity proof ([ProfileManager](../ProfileManager.ts.md)). ChecksumAddress names normalized address keys. It is a string alias; normalization is performed by getChecksumAddress, not by a runtime type check. See [types.ts](../../../../../../src/types/types.ts#L10).
 
+Address and Signature are the source map key and value types; ChecksumAddress names normalized eligibility-cache identities. These aliases do not perform runtime validation. QueueStorage only enforces contribution counts. See [Address](../../../../../../src/types/types.ts#L9).
+
 _None — the file is declarative/mechanical; behavior-shaping decisions live with its consumers._
 
 ## Inputs, outputs, state, and side effects
@@ -41,9 +43,9 @@ _None — the file is declarative/mechanical; behavior-shaping decisions live wi
 A file may contribute to several requirements; this report describes the contribution and never
 claims complete conformance for a requirement that depends on other files.
 
-| Source file                                      | Specification IDs                                                                               |
-| ------------------------------------------------ | ----------------------------------------------------------------------------------------------- |
-| [types.ts](../../../../../../src/types/types.ts) | [`REQ-DATA-1-1KNRQS`](../../../../specification/protocol-model/data-types.md#req-data-1-1knrqs) |
+| Source file                                      | Specification IDs                                                                                                                                                                        |
+| ------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| [types.ts](../../../../../../src/types/types.ts) | [`REQ-DATA-1-1KNRQS`](../../../../specification/protocol-model/data-types.md#req-data-1-1knrqs), [`REQ-QSTORE-2-VYWJAQ`](../../../../specification/storage/queue.md#req-qstore-2-vywjaq) |
 
 ## Assumptions, dependencies, trust boundaries, and limits
 
@@ -67,8 +69,9 @@ Status enum: `Covered` | `Partial` | `Contradicts` | `Missing`. Evidence cells a
 **Here:** / **Other files:** so each row is auditable from its links alone; genuine gaps go in the
 Gap column. Audit state is file-level (Status header), never a row status.
 
-| Requirement / invariant | Implementation status | Evidence | Gap / divergence |
-| ----------------------- | --------------------- | -------- | ---------------- |
+| Requirement / invariant                                                                 | Implementation status | Evidence                                                                                                                                                                                                                        | Gap / divergence                                                                                     |
+| --------------------------------------------------------------------------------------- | --------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------- |
+| [`REQ-QSTORE-2-VYWJAQ`](../../../../specification/storage/queue.md#req-qstore-2-vywjaq) | Covered               | **Here:** [Address](../../../../../../src/types/types.ts#L9) implements the contribution described above. **Other files:** [SignatureUtils.ts](../utils/SignatureUtils.ts.md), [QueueStorage.ts](../storage/QueueStorage.ts.md) | Limited to this file's contribution; cache freshness and aggregate queue limits remain as specified. |
 
 ## Component test obligations
 

@@ -376,6 +376,35 @@ export class QueryRpcMethods extends ANetworkRpcMethods<QueryService> {
         );
     }
 
+    public getSourceEligibility(source: Address) {
+        return this.service.sm.membershipService.getCachedSourceEligibility(
+            source
+        );
+    }
+
+    /** Plain projection of the queued entry's source contributions. */
+    public getQueuedRetention(blockHash: Hash) {
+        const queues = this.service.storage.queues;
+        const entry = queues.getQueuedEntry(blockHash);
+        if (!entry) return null;
+        return {
+            origin: entry.origin,
+            firstSeenAt: entry.firstSeenAt,
+            onChainTimestamp: entry.block.onChainTimestamp ?? null,
+            confirmationSignatures: entry.block.confirmationSignatures.size,
+            retainedSignatures: new Set(
+                [...entry.sourcesToSignatures.values()].flatMap((values) => [
+                    ...values
+                ])
+            ).size,
+            sourceCount: entry.sourcesToSignatures.size,
+            perSource: [...entry.sourcesToSignatures].map(
+                ([source, values]) => ({ source, count: values.size })
+            ),
+            maxChannelParticipants: queues.maxChannelParticipants
+        };
+    }
+
     /**
      * Decode the top block of a dispute state proof on-chain: whether it has a
      * block and that block's height (`transactionCnt`).

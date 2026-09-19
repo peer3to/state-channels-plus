@@ -2,22 +2,34 @@ import { DisconnectPolicy } from "@/DisconnectPolicy";
 import type P2PManager from "@/P2PManager";
 import { LocalTransport } from "@/transport";
 import LocalPeerInfo from "@/transport/LocalPeerInfo";
-import type { Address } from "@/types/types";
+import type { Address, ChecksumAddress } from "@/types/types";
 import { createLogger, type Logger } from "@/utils";
 import { addressesEqual, getChecksumAddress } from "@/utils/address";
 import { config } from "@/utils/config";
+import { ethers } from "ethers";
 import WebSocket, { WebSocketServer, AddressInfo } from "ws";
 
 const MAX_PORT_RETRIES = 20;
 const LOCAL_WS_HOST = "127.0.0.1";
-const LOCAL_TRANSPORT_CLIENT_READY_MESSAGE =
-    "peer3:local-transport-client-ready:v1";
+// The dialer's own address follows the prefix; the acceptor keys its
+// reconnect cooldown by it.
+const LOCAL_TRANSPORT_CLIENT_READY_PREFIX =
+    "peer3:local-transport-client-ready:v2:";
 const LOCAL_TRANSPORT_SERVER_READY_MESSAGE =
     "peer3:local-transport-server-ready:v1";
 const WS_CONNECT_TIMEOUT_MS = 750;
 const LOCAL_TRANSPORT_READY_TIMEOUT_MS = 2000;
 const REGISTRY_CONNECT_MAX_RETRIES = 10;
 const MAX_PEER_RETRY_BACKOFF_STEP = 5;
+// A closed peer socket used to be redialed after 100ms, so one peer could dial
+// five times inside the first second while its counterpart was still starting
+// up; that burst competes for the CPU the starting peer needs. A real network
+// adds reconnect latency of its own (routing, hole punching), so this local
+// emulation adds it here and the SDK never sees it: the dialer waits this long
+// before its first redial, and the accepting peer server holds an inbound
+// reconnect from a peer whose previous accepted socket closed less than this
+// long ago until the cooldown has passed.
+const PEER_RECONNECT_COOLDOWN_MS = 1000;
 
 type DiscoveryMode = "registry" | "peer";
 
@@ -39,6 +51,8 @@ type DiscoverySession = {
     connectionKeys: Set<PeerConnectionKey>;
     pendingDials: Set<WebSocket>;
     retryTimers: Set<ReturnType<typeof setTimeout>>;
+    // When the last accepted socket from each dialer (checksum address) closed.
+    inboundClosedAt: Map<ChecksumAddress, number>;
 };
 
 /**
@@ -145,6 +159,28 @@ export class LocalDiscoveryServer {
         rendezvousKey: RendezvousKey
     ): DiscoverySession | undefined {
         return this.discoverySessions.get(p2pManager)?.get(rendezvousKey);
+    }
+
+    private static parseClientReadyFrame(
+        message: Buffer
+    ): ChecksumAddress | undefined {
+        const frame = message.toString();
+        if (!frame.startsWith(LOCAL_TRANSPORT_CLIENT_READY_PREFIX)) {
+            return undefined;
+        }
+        const address = frame.slice(LOCAL_TRANSPORT_CLIENT_READY_PREFIX.length);
+        return ethers.isAddress(address)
+            ? getChecksumAddress(address)
+            : undefined;
+    }
+
+    private static inboundReconnectHoldMs(
+        session: DiscoverySession,
+        dialerAddress: ChecksumAddress
+    ): number {
+        const closedAt = session.inboundClosedAt.get(dialerAddress);
+        if (closedAt === undefined) return 0;
+        return PEER_RECONNECT_COOLDOWN_MS - (Date.now() - closedAt);
     }
 
     private static getExternalRegistryUrl(): string | undefined {
@@ -681,38 +717,75 @@ export class LocalDiscoveryServer {
                     // ready frame while the session tears down; starting a
                     // handshake then runs against disposed runtimes (Clock,
                     // state managers).
-                    // The ready frame carries the dialer's address so the
-                    // acceptor can key the peer's standing before the
-                    // handshake, as Hyperswarm's peer info does.
-                    const [ready, dialerAddress] = message
-                        .toString()
-                        .split(" ");
+                    const dialerAddress = this.parseClientReadyFrame(message);
+                    const session = this.getDiscoverySession(
+                        p2pManager,
+                        rendezvousKey
+                    );
                     if (
                         this._cleanupRequested ||
                         p2pManager.isDisposed ||
-                        ready !== LOCAL_TRANSPORT_CLIENT_READY_MESSAGE ||
+                        !session ||
+                        session.server !== server ||
                         !dialerAddress ||
                         LocalPeerInfo.isBanned(p2pManager, dialerAddress)
                     ) {
                         ws.close();
                         return;
                     }
-
-                    // Acknowledge the raw socket before either endpoint sends
-                    // handshake RPCs. WebSocket ordering then guarantees both
-                    // LocalTransport listeners are installed first.
-                    ws.send(LOCAL_TRANSPORT_SERVER_READY_MESSAGE);
-                    const lt = new LocalTransport(ws, p2pManager.rpcRouter);
-                    p2pManager.profileManager.setBannablePeerInfo(
-                        lt,
-                        new LocalPeerInfo(p2pManager, dialerAddress)
+                    const admit = () => {
+                        if (
+                            this._cleanupRequested ||
+                            p2pManager.isDisposed ||
+                            ws.readyState !== WebSocket.OPEN ||
+                            LocalPeerInfo.isBanned(p2pManager, dialerAddress)
+                        ) {
+                            ws.close();
+                            return;
+                        }
+                        // Acknowledge the raw socket before either endpoint
+                        // sends handshake RPCs. WebSocket ordering then
+                        // guarantees both LocalTransport listeners are
+                        // installed first.
+                        ws.send(LOCAL_TRANSPORT_SERVER_READY_MESSAGE);
+                        const lt = new LocalTransport(ws, p2pManager.rpcRouter);
+                        p2pManager.profileManager.setBannablePeerInfo(
+                            lt,
+                            new LocalPeerInfo(p2pManager, dialerAddress)
+                        );
+                        if (lt.isClosed) return;
+                        ws.once("close", () =>
+                            session.inboundClosedAt.set(
+                                dialerAddress,
+                                Date.now()
+                            )
+                        );
+                        p2pManager.localRpc.initHandshakeService.initHandshake(
+                            lt
+                        );
+                        this.logger.debug("Inbound peer connection accepted", {
+                            ...peerLog,
+                            myPeerPort: port,
+                            peerAddress: dialerAddress
+                        });
+                    };
+                    // The network, not the SDK, spaces reconnects: hold the
+                    // socket until the dialer's cooldown has passed.
+                    const holdMs = this.inboundReconnectHoldMs(
+                        session,
+                        dialerAddress
                     );
-                    if (lt.isClosed) return;
-                    p2pManager.localRpc.initHandshakeService.initHandshake(lt);
-                    this.logger.debug("Inbound peer connection accepted", {
+                    if (holdMs <= 0) {
+                        admit();
+                        return;
+                    }
+                    this.logger.debug("Holding an inbound reconnect", {
                         ...peerLog,
-                        myPeerPort: port
+                        myPeerPort: port,
+                        peerAddress: dialerAddress,
+                        holdMs
                     });
+                    this.scheduleSessionTimer(session, admit, holdMs);
                 });
             },
             onError: (err: Error) => {
@@ -740,7 +813,8 @@ export class LocalDiscoveryServer {
             activeDials: new Set(),
             connectionKeys: new Set(),
             pendingDials: new Set(),
-            retryTimers: new Set()
+            retryTimers: new Set(),
+            inboundClosedAt: new Map()
         };
         sessions.set(rendezvousKey, session);
         this.discoverySessions.set(p2pManager, sessions);
@@ -1171,7 +1245,10 @@ export class LocalDiscoveryServer {
                         myPeerPort
                     ),
                 Math.min(
-                    100 * 2 ** (attempt - 1),
+                    Math.max(
+                        PEER_RECONNECT_COOLDOWN_MS,
+                        100 * 2 ** (attempt - 1)
+                    ),
                     100 * 2 ** (MAX_PEER_RETRY_BACKOFF_STEP - 1)
                 )
             );
@@ -1190,9 +1267,7 @@ export class LocalDiscoveryServer {
                     ws.close();
                     return;
                 }
-                ws.send(
-                    `${LOCAL_TRANSPORT_CLIENT_READY_MESSAGE} ${myPeerAddress}`
-                );
+                ws.send(LOCAL_TRANSPORT_CLIENT_READY_PREFIX + myPeerAddress);
                 // This frame only confirms local socket-listener setup. Keep
                 // its retry bound independent of the protocol agreement time.
                 transportReadyTimeout = setTimeout(() => {

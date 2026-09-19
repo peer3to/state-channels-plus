@@ -424,7 +424,7 @@ export class TransitionActions<
     async ingestBlockConfirmationWait(options: {
         peerIndex: number;
         blockConfirmation: BlockConfirmationStruct;
-        ingestOptions?: IngestBlockConfirmationOptions;
+        ingestOptions: IngestBlockConfirmationOptions;
         keepConnection?: boolean;
         waitForProcessed?: boolean;
         processedKeepConnection?: boolean;

@@ -45,8 +45,10 @@ export default class Block {
         this.block = block;
         this._onChainTimestamp = onChainTimestamp;
         this._encodedBlock = encodedBlock;
-        this._originalSignature = originalSignature;
-        this._confirmationSignatures = confirmationSignatures;
+        this._originalSignature =
+            SignatureUtils.normalizeSignature(originalSignature);
+        this._confirmationSignatures = new Set();
+        this.expandSignatures(confirmationSignatures);
     }
 
     static fromBlockConfirmation(
@@ -233,12 +235,16 @@ export default class Block {
     }
 
     async signAsAuthor(signer: Signer): Promise<Block> {
-        this._originalSignature = await this.sign(signer);
+        this._originalSignature = SignatureUtils.normalizeSignature(
+            await this.sign(signer)
+        );
         return this;
     }
     expandSignatures(newSignatures: Signature[] | Set<Signature>): Block {
         for (const signature of newSignatures) {
-            this._confirmationSignatures.add(signature);
+            this._confirmationSignatures.add(
+                SignatureUtils.normalizeSignature(signature)
+            );
         }
         return this;
     }
@@ -253,7 +259,9 @@ export default class Block {
     /** Drop confirmation signatures (the author's original signature is kept). */
     removeConfirmationSignatures(signatures: Set<Signature>): Block {
         for (const signature of signatures) {
-            this._confirmationSignatures.delete(signature);
+            this._confirmationSignatures.delete(
+                SignatureUtils.normalizeSignature(signature)
+            );
         }
         return this;
     }

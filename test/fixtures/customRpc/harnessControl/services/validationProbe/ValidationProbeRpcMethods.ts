@@ -23,6 +23,29 @@ export class ValidationProbeRpcMethods extends ANetworkRpcMethods<ValidationProb
         super(transport, service);
     }
 
+    public commitPreparedSnapshot(
+        encodedBlockConfirmation: string,
+        encodedSnapshot: string,
+        encodedState: string
+    ) {
+        return this.service.commitPreparedSnapshot(
+            encodedBlockConfirmation,
+            encodedSnapshot,
+            encodedState
+        );
+    }
+
+    public probeReplayCommitCache(source: Address) {
+        return this.service.probeReplayCommitCache(source);
+    }
+
+    public normalizeConfirmationCopies(
+        copies: { encodedBlockConfirmation: string; source?: Address }[],
+        strategy: "live" | "spectating" | "dispute" | "calldata"
+    ) {
+        return this.service.normalizeConfirmationCopies(copies, strategy);
+    }
+
     public async probeDisputeReductionChallenge(
         reducedForkId: ForkId
     ): Promise<ReductionChallengeProbe> {

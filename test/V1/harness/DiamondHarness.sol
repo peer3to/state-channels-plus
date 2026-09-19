@@ -28,11 +28,12 @@ abstract contract DiamondHarness is Test {
     // non-zero so tests check against a known value, not the contract default
     uint256 internal constant P2P_TIME = 100;
     uint256 internal constant SM_GAS_LIMIT = 3_000_000;
+    uint256 internal constant MAX_CHANNEL_PARTICIPANTS = 32;
 
     /// @dev Returns the diamond typed as its full external surface: the proxy
     /// implements only a few selectors itself and routes the rest to facets.
     function deployDiamond() internal returns (StateChannelManagerInterface diamond) {
-        stateMachine = new MathStateMachine(SM_GAS_LIMIT);
+        stateMachine = new MathStateMachine(SM_GAS_LIMIT, MAX_CHANNEL_PARTICIPANTS);
         DisputeManagerFacet disputeManager = new DisputeManagerFacet();
         DisputeVerificationFacet disputeVerification = new DisputeVerificationFacet();
         fraudProofFacet = new FraudProofFacet();
@@ -60,7 +61,8 @@ abstract contract DiamondHarness is Test {
                     0, // agreementTime  -> contract default
                     0, // chainFallbackTime -> default
                     0, // evidenceTime -> default
-                    0 // disputeExecutionGasLimit -> default
+                    0, // disputeExecutionGasLimit -> default
+                    MAX_CHANNEL_PARTICIPANTS
                 )
             )
         );
@@ -102,17 +104,25 @@ abstract contract DiamondHarness is Test {
         return _makeSignedBlock(pk, channelId, forkId, 0, timestamp, previousBlockHash);
     }
 
-    function _openChannel(bytes32 channelId, uint256[] memory participantPrivateKeys) internal {
+    /// An open-channel request signed by every listed participant. `isAtomic`
+    /// false lets a single deposit fail without reverting the whole batch, so a
+    /// caller can reach the guards that run after a partial open.
+    function _openChannelConfirmation(
+        bytes32 channelId,
+        uint256[] memory participantPrivateKeys,
+        uint256[] memory amounts,
+        bool isAtomic
+    ) internal view returns (OpenChannelConfirmation memory) {
         OpenChannel memory openChannel;
         openChannel.channelId = channelId;
         openChannel.participants = new address[](participantPrivateKeys.length);
         openChannel.balances = new Balance[](participantPrivateKeys.length);
         openChannel.deadlineTimestamp = block.timestamp + 1 days;
-        openChannel.isAtomic = true;
+        openChannel.isAtomic = isAtomic;
 
         for (uint256 i = 0; i < participantPrivateKeys.length; i++) {
             openChannel.participants[i] = vm.addr(participantPrivateKeys[i]);
-            openChannel.balances[i] = Balance({amount: 0, data: ""});
+            openChannel.balances[i] = Balance({amount: amounts[i], data: ""});
         }
 
         bytes memory encodedOpenChannel = abi.encode(openChannel);
@@ -121,7 +131,15 @@ abstract contract DiamondHarness is Test {
             signatures[i] = _sign(participantPrivateKeys[i], encodedOpenChannel);
         }
 
-        deployedDiamond.open(OpenChannelConfirmation({encodedOpenChannel: encodedOpenChannel, signatures: signatures}));
+        return OpenChannelConfirmation({encodedOpenChannel: encodedOpenChannel, signatures: signatures});
+    }
+
+    function _openChannel(bytes32 channelId, uint256[] memory participantPrivateKeys) internal {
+        deployedDiamond.open(
+            _openChannelConfirmation(
+                channelId, participantPrivateKeys, new uint256[](participantPrivateKeys.length), true
+            )
+        );
     }
 
     function _makeFinalCloseSnapshot(bytes32 channelId, address[] memory participants, uint256[] memory pks)

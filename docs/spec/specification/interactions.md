@@ -130,12 +130,21 @@ through the storage system ([storage/README.md](./storage/README.md)). Data: eac
 records and keys. Validity: storage returns exactly what its producer committed — no fabrication,
 substitution, reinterpretation, or gap-bridging — and grants no validity: read-back data re-enters
 the owning system's validation ([`REQ-STOR-3-4RJGER` (Restart recovery without trust)](storage/durability.md#req-stor-3-4rjger)). Ordering: single operations are atomic; merge
-operations are monotone, idempotent, and arrival-order independent; multi-module consistency at an
+operations are monotone, idempotent, and arrival-order independent within whatever retention bound the
+owning module declares; multi-module consistency at an
 operation boundary is the calling system's commit obligation ([`REQ-STOR-2-TARP8S` (Commit-aligned durability)](storage/durability.md#req-stor-2-tarp8s)). Trust boundary:
 storage is inside the node, but what flows into it originates from untrusted sources — attribution
 and evidence MUST survive storage exactly so they remain usable as evidence. Failure: an absent
 record reads as nothing rather than a default that masquerades as protocol state; a failed
 multi-module write leaves the operation retryable per [`REQ-STOR-2-TARP8S` (Commit-aligned durability)](storage/durability.md#req-stor-2-tarp8s).
+
+At peer block ingress, the authenticated transport owns its admitted signature contribution. Source
+eligibility is checked before both queue insertion and stored-block merging ([`REQ-GOSSIP-4-J5Z4DF` (Eligible transport contribution)](peer-communication/block-gossip.md#req-gossip-4-j5z4df)).
+Verified state application and block commit publish the current off-chain membership cache atomically;
+chain observation supplies current/pending membership and slash precedence. The retained queue owns
+per-source allowances through all processing snapshots ([`REQ-QSTORE-2-VYWJAQ` (Independent source allowances)](storage/queue.md#req-qstore-2-vywjaq)). Explicit chain and proof
+origins keep objective evidence separate and avoid recursive source-admission sync. Participating peers
+relay accepted growth; spectators and pending joiners retain it without relaying ([`REQ-GOSSIP-3-HQZNQX` (Re-broadcast on growth)](peer-communication/block-gossip.md#req-gossip-3-hqznqx)).
 
 ## Assumptions and constraints
 

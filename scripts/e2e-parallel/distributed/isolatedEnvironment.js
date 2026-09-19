@@ -304,8 +304,12 @@ class DockerBackend {
                 "--security-opt=no-new-privileges:true",
                 "--pids-limit",
                 String(allocation.profile.pidsLimit),
-                "--cpus",
-                String(allocation.profile.cpu),
+                // No CPU quota on purpose: a CFS quota (--cpus) freezes every
+                // thread of the container for the rest of a 100ms period once
+                // the budget is spent, which the test children saw as
+                // second-long event-loop stalls while the host had idle
+                // cores. The container shares all cores with the host under
+                // ordinary fair scheduling; memory and pids stay bounded.
                 "--memory",
                 String(allocation.profile.memoryBytes),
                 "--memory-swap",
@@ -384,8 +388,10 @@ class DockerBackend {
     async update(handle, profile) {
         await this.run("docker", [
             "update",
-            "--cpus",
-            String(profile.cpu),
+            // A container retained from before the quota was dropped still
+            // carries its cpu.max; -1 removes the CFS quota (see create).
+            "--cpu-quota",
+            "-1",
             "--memory",
             String(profile.memoryBytes),
             "--memory-swap",
@@ -622,8 +628,17 @@ class DockerBackend {
             handle.container
         ]);
         const config = JSON.parse(result.stdout.toString("utf8"));
+        const cpuQuota =
+            config.CpuQuota === -1
+                ? 0
+                : config.NanoCpus > 0
+                  ? config.NanoCpus / 1e9
+                  : config.CpuQuota > 0
+                    ? config.CpuQuota / (config.CpuPeriod || 100000)
+                    : 0;
         return {
-            cpu: config.NanoCpus / 1e9,
+            // must stay 0: the container carries no effective CPU quota
+            cpuQuota,
             memoryBytes: config.Memory,
             memorySwapBytes: config.MemorySwap,
             pidsLimit: config.PidsLimit
@@ -1285,13 +1300,7 @@ class IsolatedEnvironmentManager {
                     createdDiskBytes
                 );
             }
-            if (
-                allocation.profile.cpu !== currentProfile.cpu ||
-                allocation.profile.memoryBytes !== currentProfile.memoryBytes ||
-                allocation.profile.pidsLimit !== currentProfile.pidsLimit
-            ) {
-                await this.backend.update(existing.handle, allocation.profile);
-            }
+            await this.backend.update(existing.handle, allocation.profile);
             existing.allocation = allocation;
             this.writeMetadata(existing, true);
             return existing;

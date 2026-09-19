@@ -208,7 +208,7 @@ effects, or resource ownership. Every endpoint declares its replay class
 ([Replay classification](#replay-classification)).
 
 **<a id="req-rpc-5-cv1r1y"></a>`REQ-RPC-5-CV1R1Y` — Resource bounds.** Payload size, outstanding requests, expensive proof/signaling work, and
-per-peer rate MUST be bounded, with overload isolated from unrelated peers and services.
+per-peer rate MUST be bounded, with overload isolated from unrelated peers and services. Unknown-source block intake delegates directly to ordinary sync and creates no separate admission registry or rate window ([`REQ-GOSSIP-4-J5Z4DF` (Eligible transport contribution)](block-gossip.md#req-gossip-4-j5z4df)). Per-entry source limits do not establish a global connection, request-rate, byte-rate, hash-count or channel-count policy.
 
 **<a id="req-rpc-6-e60s4j"></a>`REQ-RPC-6-E60S4J` — Ordered ingress verification.** Inbound frames MUST pass the fixed dispatch order of
 [Ingress dispatch algorithm](#ingress-dispatch-algorithm): size bound before parsing, response

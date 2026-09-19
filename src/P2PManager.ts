@@ -277,21 +277,38 @@ class P2PManager<TCustomRpc extends MainRpcService = MainRpcService> {
         // TODO: Give Holepunch and LocalDiscoveryServer the same lifecycle API
         // and inject the selected backend so P2PManager does not know which
         // discovery implementation it is using.
-        if (config.DEBUG_LOCAL_TRANSPORT) {
-            if (isNodeRuntime() || config.LOCAL_DISCOVERY_REGISTRY_URL) {
-                await LocalDiscoveryServer.tryStart();
-                await LocalDiscoveryServer.connectToPeers(
-                    this.self,
-                    normalizedKey,
-                    this.stateManager.signerAddress.toString()
-                );
+        const join = (async () => {
+            if (config.DEBUG_LOCAL_TRANSPORT) {
+                if (isNodeRuntime() || config.LOCAL_DISCOVERY_REGISTRY_URL) {
+                    await LocalDiscoveryServer.tryStart();
+                    await LocalDiscoveryServer.connectToPeers(
+                        this.self,
+                        normalizedKey,
+                        this.stateManager.signerAddress.toString()
+                    );
+                }
+            } else {
+                const topic = Buffer.from(normalizedKey.slice(2), "hex");
+                await this.holepunch.join(topic);
             }
-        } else {
-            const topic = Buffer.from(normalizedKey.slice(2), "hex");
-            await this.holepunch.join(topic);
-        }
+        })();
 
-        if (!initialSync) return;
+        if (!initialSync) {
+            await join;
+            return;
+        }
+        // An abort during the join answers the pending connect now rather
+        // than when the join returns: the disposal the abort starts closes
+        // the port, and a reply that only leaves after that never arrives.
+        // The wait settles on abort and on disposal, so racing it is enough;
+        // the join finishes in the background under that disposal. Any other
+        // settlement keeps waiting for the join as before.
+        await Promise.race([join, initialSync]);
+        if (this.stateManager.isDisposed) {
+            this.settleInitialSync(false);
+            return;
+        }
+        await join;
         // The status may have left OPENED during the discovery join (chain
         // genesis, abort). Nothing later would settle the wait, so settle now.
         if (this.stateManager.isDisposed) {

@@ -3,9 +3,13 @@ pragma solidity ^0.8.8;
 import {Test} from "forge-std/Test.sol";
 import {UtilityFacet} from "../../../contracts/V1/StateChannelDiamondProxy/UtilityFacet.sol";
 
-// stateless property fuzz of the pure array helpers of UtilityFacet.sol
+// stateless property fuzz of the pure array helpers of UtilityFacet.sol, plus
+// direct cases for the signer-set report the join rejection payload is built from
 contract UtilityFacetTest is Test {
     UtilityFacet internal util;
+
+    uint256 internal constant FIRST_SIGNER_PK = 0xA11CE;
+    uint256 internal constant THIRD_SIGNER_PK = 0xB0B;
 
     function setUp() public {
         util = new UtilityFacet();
@@ -86,5 +90,36 @@ contract UtilityFacetTest is Test {
     // equality is symmetric
     function testFuzz_areAddressArraysEqual_symmetric(address[] memory a, address[] memory b) public view {
         assertEq(util.areAddressArraysEqual(a, b), util.areAddressArraysEqual(b, a), "equality not symmetric");
+    }
+
+    // one address per signature, in submission order; a signature that cannot be
+    // recovered fills its own slot with address(0) instead of reverting the call,
+    // so a rejection payload can still report the whole supplied set
+    function test_retrieveSignerAddresses_unrecoverableSignatureYieldsZeroInItsSlot() public view {
+        bytes memory encodedData = abi.encode(keccak256("signed payload"));
+        bytes[] memory signatures = new bytes[](3);
+        signatures[0] = _sign(FIRST_SIGNER_PK, encodedData);
+        // 64 bytes: the wrong length for an r, s, v signature, so recovery fails
+        signatures[1] = new bytes(64);
+        signatures[2] = _sign(THIRD_SIGNER_PK, encodedData);
+
+        address[] memory signers = util.retrieveSignerAddresses(encodedData, signatures);
+
+        assertEq(signers.length, 3, "one slot per signature");
+        assertEq(signers[0], vm.addr(FIRST_SIGNER_PK), "first signer not recovered");
+        assertEq(signers[1], address(0), "unrecoverable signature must map to address(0)");
+        assertEq(signers[2], vm.addr(THIRD_SIGNER_PK), "third signer not recovered");
+    }
+
+    // no signatures, no signers: an empty set, not a revert
+    function test_retrieveSignerAddresses_noSignaturesYieldsEmptySet() public view {
+        address[] memory signers = util.retrieveSignerAddresses(abi.encode(keccak256("signed payload")), new bytes[](0));
+        assertEq(signers.length, 0, "empty signature list must yield an empty signer set");
+    }
+
+    function _sign(uint256 privateKey, bytes memory encodedData) internal pure returns (bytes memory) {
+        bytes32 digest = keccak256(abi.encodePacked("\x19Ethereum Signed Message:\n32", keccak256(encodedData)));
+        (uint8 v, bytes32 r, bytes32 s) = vm.sign(privateKey, digest);
+        return abi.encodePacked(r, s, v);
     }
 }
