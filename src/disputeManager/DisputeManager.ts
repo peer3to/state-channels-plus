@@ -54,6 +54,13 @@ export class PartialAuditingDataError extends Error {}
 // Right-sized from 5M: the dispute upload measures ~0.5M in e2e; 2.5M keeps
 // generous headroom for larger disputes while freeing block gas under concurrency.
 const DEFAULT_GAS_LIMIT = 2_500_000;
+/** What observed the on-chain trigger that asks for replacement evidence. */
+type DisputeUploadTrigger =
+    | "onDisputeCommitted"
+    | "onChainSlashed"
+    | "onDisputeKilled"
+    | "reduceEmptyExpiredWindow";
+
 class DisputeManager {
     signer: ethers.Signer;
     signerAddress: Address;
@@ -95,6 +102,36 @@ class DisputeManager {
             this.logger.child({ component: "DisputeManager:Mutex" })
         );
         return this.self;
+    }
+
+    /**
+     * Upload evidence for a fork, tolerating the race every honest peer runs
+     * into. They all observe the same on-chain trigger and try; only the
+     * first upload wins, and the refusal `dispute` rethrows for the closed
+     * evidence period is the loser's expected outcome, not a failure. Every
+     * other failure propagates. `caller` names what observed the trigger.
+     */
+    public async disputeToleratingLostRace(
+        forkId: ForkId,
+        caller: DisputeUploadTrigger
+    ): Promise<void> {
+        try {
+            await this.dispute(forkId);
+        } catch (error) {
+            const handled = await tryHandleEvmError(error, {
+                forkId,
+                logger: this.logger,
+                handlers: {
+                    RaceConditionDisputeEvidencePeriodExpired: () => {
+                        this.logger.info(
+                            "Another participant supplied replacement evidence",
+                            { forkId, channelId: this.channelId, caller }
+                        );
+                    }
+                }
+            });
+            if (!handled) throw error;
+        }
     }
 
     public async dispute(forkId: ForkId): Promise<void> {

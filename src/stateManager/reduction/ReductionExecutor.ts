@@ -198,7 +198,13 @@ export default class ReductionExecutor {
             this.logger.warn(
                 `No disputes found while reducing disputed fork ${forkId}; initiating local dispute`
             );
-            await this.stateManager.disputeManager.dispute(forkId);
+            // One peer re-seeds the emptied window; the others are told the
+            // evidence period closed and are re-driven by its DisputeCommitted
+            // event, so losing here is not a reduction failure.
+            await this.stateManager.disputeManager.disputeToleratingLostRace(
+                forkId,
+                "reduceEmptyExpiredWindow"
+            );
             return;
         }
 
