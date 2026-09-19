@@ -265,8 +265,10 @@ per-component contracts in [components.md](./components.md).
   `OPENED`, and disposes the owning root and its children. Final cleanup closes the runtime port; late queries reject in both placements.
 - **Non-terminal release.** A settled `leaveChannel` runs `StateManager.resetChannel()` instead of a
   disposal chain: the channel's producers, chain feed, peers, timers, and stores are released in that order
-  and the runtime returns to `NOT_OPENED` with a zero channel id. Disposal and abort stay terminal, and a
-  reset is refused after disposal.
+  and the runtime returns to `NOT_OPENED` with a zero channel id. The reset advances a channel generation
+  and retires the old fork before its first await, and re-arms the initial-sync latch after its status change, so a sync still in flight
+  for the channel left neither persists nor settles the next channel's initial sync. Disposal and abort stay
+  terminal, and a reset is refused after disposal.
 
 ## 8. Verification
 

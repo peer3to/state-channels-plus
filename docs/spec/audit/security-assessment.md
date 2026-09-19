@@ -367,6 +367,17 @@ Residual exposure, all accepted here as recorded rather than resolved:
   is indeterminate after a failed departure, so the runtime keeps refusing other channel work rather than
   starting it against a half-left channel. It has no exact evidence yet
   ([`FIND-LEAVE-REUSE-1-GSK8BB`](open-findings.md#find-leave-reuse-1-gsk8bb)).
+- **Work from the channel left can outlive the reset.** A runtime that owes no departure resets at once,
+  possibly while its initial sync for the old channel is still in flight. The reset advances a channel
+  generation first, the sync persistence checks it under the same mutex the reset clears storage under, and
+  the initial-sync latch ignores a result from an older generation and is re-armed only after the reset's
+  status change, so a late sync neither installs old state nor decides the next channel's initial sync
+  ([`REQ-LIF-10-QR8NQ9.T1.P17`](../specification/settlement/lifecycle.md#req-lif-10-qr8nq9.t1.p17)). The old
+  fork is retired before the first await, so a chain-log handler still running during the drain cannot
+  start a reduction the drain would then strand
+  ([`REQ-LIF-10-QR8NQ9.T1.P18`](../specification/settlement/lifecycle.md#req-lif-10-qr8nq9.t1.p18)). A stale
+  sync is not held against its responder; that side, and a sync resuming inside the reset itself, have no
+  exact evidence yet ([`FIND-LEAVE-REUSE-2-1NVKS3`](open-findings.md#find-leave-reuse-2-1nvks3)).
 - **Reset is refused after shutdown,** keeping `dispose()` and `abort()` terminal; the non-terminal path
   cannot resurrect a runtime that has already released its signer and provider.
 

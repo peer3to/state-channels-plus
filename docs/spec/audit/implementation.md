@@ -258,3 +258,19 @@ The sub-stores implement no reset step of their own (`ForceJoinStorage.clear()` 
 step, not part of the reset), so they carry no unit-test family for it; the obligation is owned by
 [`UNIT-TEST-STORAGE-FACADE-3-9N4C6W`](../implementation/source/src/storage/Storage.ts.md#unit-test-storage-facade-3-9n4c6w),
 whose permutations name each module individually and read it back through the aggregate.
+
+The reset also guards against work it cannot stop. Before its first await it advances a channel generation
+and retires the old fork, and only after the mutex section that sets `NOT_OPENED` does it re-arm the
+initial-sync latch. Each step answers a failure observed on the distributed farm. A leave from a runtime that
+owes no departure resets at once, even while the old channel's initial sync is still waiting on its peer:
+that late sync settled the re-armed latch, so the next `connectToChannel` returned `false` without syncing,
+and its payload could persist into the reset runtime. Re-arming the latch inside `P2PManager.resetChannel()`
+let the reset's own `OPENED` → `NOT_OPENED` transition settle the next channel's wait as failed. And an
+old-channel chain-log handler still running during the drain could start a reduction on the still-current
+fork whose timer the task drain then cancelled, which showed up as a drain timeout plus a hung detached
+promise. The generation has one writer ([StateManager](../implementation/source/src/stateManager/StateManager.ts.md)) and two
+readers: [SpectateService](../implementation/source/src/rpc/network/services/spectate/SpectateService.ts.md) checks it under the
+same mutex the reset clears storage under, so a payload lands either before that clear or not at all, and
+[P2PManager](../implementation/source/src/P2PManager.ts.md) checks it before settling the latch. Replayed blocks need no fence of
+their own because `ValidationService` refuses a block for a different channel id. A stale sync returns
+`false` without cutting its responder, since the peer answered a request that was valid when it was made.

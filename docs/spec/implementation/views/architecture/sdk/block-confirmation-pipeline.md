@@ -43,7 +43,7 @@ after its queue window and re-fetched by sync if needed.
 Every path converges on
 [`BlockQueueManager.ingestBlockConfirmation`](../../../../../../src/stateManager/BlockQueueManager.ts#L56)
 or on the validation entry
-[`StateManager.onBlockConfirmation`](../../../../../../src/stateManager/StateManager.ts#L478)
+[`StateManager.onBlockConfirmation`](../../../../../../src/stateManager/StateManager.ts#L492)
 directly:
 
 1. **Peer RPC gossip.**
@@ -65,11 +65,11 @@ directly:
    `EventSyncService.tryRecoverBlockCalldataAndScheduleValidation` (timeout
    checks and time validation query the chain for missed calldata).
 3. **Local authoring.**
-   [`StateManager.playTransaction`](../../../../../../src/stateManager/StateManager.ts#L478)
+   [`StateManager.playTransaction`](../../../../../../src/stateManager/StateManager.ts#L492)
    executes the author's own transaction under the mutex and enters the success
    path (§7) directly — no queue, no validation strategy.
 4. **Replay adapters.** Dispute state-proof replay and spectate sync call
-   [`StateManager.onBlockConfirmationStruct`](../../../../../../src/stateManager/StateManager.ts#L478),
+   [`StateManager.onBlockConfirmationStruct`](../../../../../../src/stateManager/StateManager.ts#L492),
    which wraps the confirmation into a **sourceless** entry (no transport to
    punish) and may inject an explicit strategy
    ([`DisputeValidationStrategy`](../../../../../../src/stateManager/validationStrategy/DisputeValidationStrategy.ts#L20)).
@@ -115,9 +115,9 @@ pipeline splits into two regimes:
   single-threaded runtime), bounded per-entry resources, and deterministic merge rules.
 - **Inside the mutex — total-order state mutation.** The mutex is reserved for operations that
   can mutate the live state machine. Verified acquisition sites:
-  [`onBlockConfirmation`](../../../../../../src/stateManager/StateManager.ts#L478) (apply the next eligible
-  block), [`playTransaction`](../../../../../../src/stateManager/StateManager.ts#L478) (local authoring),
-  and [`setLatestState`](../../../../../../src/stateManager/StateManager.ts#L478) (fork transition).
+  [`onBlockConfirmation`](../../../../../../src/stateManager/StateManager.ts#L492) (apply the next eligible
+  block), [`playTransaction`](../../../../../../src/stateManager/StateManager.ts#L492) (local authoring),
+  and [`setLatestState`](../../../../../../src/stateManager/StateManager.ts#L492) (fork transition).
   Dequeue-and-execute is a total-order operation by `(forkId, height)`: only the lowest eligible
   height on the current fork is scheduled, and at most one block is in state-machine execution
   at a time ([`REQ-BCP-4-MS5VVZ`](block-confirmation-pipeline.md#req-bcp-4-ms5vvz), enforced by the mutex plus the ordering stage §5).
@@ -161,7 +161,7 @@ possibly per-peer — deliberately not per-service limits) is not implemented ye
 before production — tracked in [`OQ-6-4JPNE5` (P2P gossip rate limiting)](../../../../specification/open-questions.md#oq-6-4jpne5).
 
 Current: the implementation matches the mutex boundary — signature merging into stored blocks
-([`tryMergeStoredBlockConfirmation`](../../../../../../src/stateManager/StateManager.ts#L478)) and all
+([`tryMergeStoredBlockConfirmation`](../../../../../../src/stateManager/StateManager.ts#L492)) and all
 ingest/queue work run without the mutex; per-entry caps exist; the RPC rate limit does not.
 
 ## 4. Stage: intake, authentication, deduplication, queueing
@@ -210,7 +210,7 @@ in order:
 
 ### 4.1 Stored-block merge (duplicate confirmations)
 
-[`StateManager.tryMergeStoredBlockConfirmation`](../../../../../../src/stateManager/StateManager.ts#L478):
+[`StateManager.tryMergeStoredBlockConfirmation`](../../../../../../src/stateManager/StateManager.ts#L492):
 compute `newSignatures = incoming − existing`; empty → `DUPLICATE`. Otherwise
 recover each new signer and require it to be inside the block's **participant
 union** (previous snapshot ∪ resulting snapshot, from storage). Strays go to
@@ -231,7 +231,7 @@ entry) and then decides:
 - fork disputed → clear fork, drop;
 - block became stored → stored-merge path;
 - **known stale fork** (disputed, or we hold its genesis snapshot or any block
-  — [`isKnownStaleFork`](../../../../../../src/stateManager/StateManager.ts#L478)) → drop
+  — [`isKnownStaleFork`](../../../../../../src/stateManager/StateManager.ts#L492)) → drop
   silently (we are ahead; probing would blacklist honest stragglers);
 - **unknown fork** → request spectate sync once from each source peer and the
   author (`spectateService.sync`); a failed sync punishes them. This is the
@@ -267,7 +267,7 @@ restores it to the queue).
 
 ## 6. Stage: serialized validation
 
-[`StateManager.onBlockConfirmation`](../../../../../../src/stateManager/StateManager.ts#L478)
+[`StateManager.onBlockConfirmation`](../../../../../../src/stateManager/StateManager.ts#L492)
 takes the `StateManager` mutex ([`INV-BCP-1-H2H41X`](block-confirmation-pipeline.md#inv-bcp-1-h2h41x)) and selects the strategy: an
 explicit override (dispute replay, calldata) or by status —
 committed status (`PENDING_PARTICIPANT`, `PARTICIPATING`) → `BlockValidationStrategy`, otherwise →
@@ -353,7 +353,7 @@ Still under the mutex, after `SUCCESS` from §6 (identical logic runs in
 5. **Inbound application.** Each carried inbound message runs through
    `processInboundMessage`; `totalDeposits` accumulates via the state machine's
    balance algebra. Failure throws (restores VM).
-6. **Snapshot construction.** [`createStateSnapshot`](../../../../../../src/stateManager/StateManager.ts#L478)
+6. **Snapshot construction.** [`createStateSnapshot`](../../../../../../src/stateManager/StateManager.ts#L492)
    derives the committed `SnapshotData` from the previous snapshot: state hash
    = `keccak(stateAfterInbound)`, participants = post-transition set, inbound
    tip/height and `totalDeposits` advanced by the carried inbound blocks,
@@ -372,7 +372,7 @@ Still under the mutex, after `SUCCESS` from §6 (identical logic runs in
 
 ## 8. Stage: success — persistence, signing, agreement, side effects
 
-[`StateManager.success`](../../../../../../src/stateManager/StateManager.ts#L478), in code
+[`StateManager.success`](../../../../../../src/stateManager/StateManager.ts#L492), in code
 order:
 
 1. **Status promotion.** `SYNCED`/`PENDING_PARTICIPANT` → `PARTICIPATING` when
@@ -384,7 +384,7 @@ order:
 2. **Persist snapshot + state first** — `shouldSignBlock` reads the resulting
    participants from storage.
 3. **Sign if appropriate** (never under `DisputeValidationStrategy`):
-   [`shouldSignBlock`](../../../../../../src/stateManager/StateManager.ts#L478) requires:
+   [`shouldSignBlock`](../../../../../../src/stateManager/StateManager.ts#L492) requires:
    author not blacklisted; status `PARTICIPATING`; we are in the block's
    participant union; and NOT (block posted on-chain AND we are next to write)
    — signing a calldata-posted block when we are next would forfeit the extra
@@ -406,7 +406,7 @@ order:
 7. `successCallback()` publishes contract events on the bus; `onTurn` fires for
    the next author.
 8. **Data availability.** The block **author** schedules
-   [`maybePostBlockOnChain`](../../../../../../src/stateManager/StateManager.ts#L478)
+   [`maybePostBlockOnChain`](../../../../../../src/stateManager/StateManager.ts#L492)
    after `agreementTime`: if the stored copy still lacks a full signature set,
    post `postBlockCalldata(signedBlock, maxTimestamp)` with
    `maxTimestamp = previousRelevantTimestamp + p2pTime + agreementTime + chainFallbackTime + grace`;
@@ -544,5 +544,5 @@ _Non-normative._
 | [`INV-BCP-7-ZDZ5WB`](block-confirmation-pipeline.md#inv-bcp-7-zdz5wb) | Subjective lateness never produces a proof or slash.                                                                                                                                                                                                                                                           | Covered               | [src/stateManager/ValidationService.ts](../../../../../../src/stateManager/ValidationService.ts#L15) (`NOT_ENOUGH_TIME` path)                                                                                                                                                  | None.            |
 | [`REQ-BCP-1-X3J4KY`](block-confirmation-pipeline.md#req-bcp-1-x3j4ky) | Both input paths (peer RPC and chain calldata) converge on one ingest with source attribution / on-chain timestamp respectively.                                                                                                                                                                               | Covered               | [src/rpc/network/services/stateTransition](../../../../../../src/rpc/network/services/stateTransition), [src/eventHandlers/EventHandler.ts](../../../../../../src/eventHandlers/EventHandler.ts#L1) (`onBlockCalldataPosted`)                                                  | None.            |
 | [`REQ-BCP-2-1K3HN9`](block-confirmation-pipeline.md#req-bcp-2-1k3hn9) | Objective timestamp rule is evaluated by the canonical Solidity predicate over the exact proof struct.                                                                                                                                                                                                         | Covered               | [src/stateManager/ValidationService.ts](../../../../../../src/stateManager/ValidationService.ts#L15) (`hasInvalidTimestamp.staticCall`)                                                                                                                                        | None.            |
-| [`REQ-BCP-3-1GCEH9`](block-confirmation-pipeline.md#req-bcp-3-1gceh9) | Non-state-mutating intake and merge (older/future/duplicate blocks, late signatures) never require the state-transition mutex; merge rules are deterministic, idempotent, and resource-capped per entry.                                                                                                       | Covered               | [BlockQueueManager](../../../../../../src/stateManager/BlockQueueManager.ts#L31) (scheduled tasks), [QueueStorage](../../../../../../src/storage/QueueStorage.ts#L27), [StateManager.tryMergeStoredBlockConfirmation](../../../../../../src/stateManager/StateManager.ts#L478) | None.            |
-| [`REQ-BCP-4-MS5VVZ`](block-confirmation-pipeline.md#req-bcp-4-ms5vvz) | State application is total-order by `(forkId, height)` — at most one block in execution; same-coordinate competing bodies coexist in the queue, the first validated body wins locally (decided 2026-08-10), and the conflict is surfaced via validation/fraud-proof/drop paths, never hidden by arrival order. | Covered               | mutex sites in [StateManager](../../../../../../src/stateManager/StateManager.ts#L94) (`onBlockConfirmation`, `playTransaction`, `setLatestState`); ordering in [BlockQueueManager.tryExecuteFromQueue](../../../../../../src/stateManager/BlockQueueManager.ts#L244)          | None.            |
+| [`REQ-BCP-3-1GCEH9`](block-confirmation-pipeline.md#req-bcp-3-1gceh9) | Non-state-mutating intake and merge (older/future/duplicate blocks, late signatures) never require the state-transition mutex; merge rules are deterministic, idempotent, and resource-capped per entry.                                                                                                       | Covered               | [BlockQueueManager](../../../../../../src/stateManager/BlockQueueManager.ts#L31) (scheduled tasks), [QueueStorage](../../../../../../src/storage/QueueStorage.ts#L27), [StateManager.tryMergeStoredBlockConfirmation](../../../../../../src/stateManager/StateManager.ts#L492) | None.            |
+| [`REQ-BCP-4-MS5VVZ`](block-confirmation-pipeline.md#req-bcp-4-ms5vvz) | State application is total-order by `(forkId, height)` — at most one block in execution; same-coordinate competing bodies coexist in the queue, the first validated body wins locally (decided 2026-08-10), and the conflict is surfaced via validation/fraud-proof/drop paths, never hidden by arrival order. | Covered               | mutex sites in [StateManager](../../../../../../src/stateManager/StateManager.ts#L97) (`onBlockConfirmation`, `playTransaction`, `setLatestState`); ordering in [BlockQueueManager.tryExecuteFromQueue](../../../../../../src/stateManager/BlockQueueManager.ts#L244)          | None.            |

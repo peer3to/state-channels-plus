@@ -300,8 +300,16 @@ the worker before the request protocol begins
 
 `p2pSigner.leaveChannel()` crosses the port with no timeout and resolves only after the host has observed
 settled removal **and** run `StateManager.resetChannel()`. The reset is ordered like a disposal but stops
-short of it: producers, then chain-feed detach and a bounded drain, then peers and the custom RPC root's
-channel state, then scheduled tasks, then storage. The port, worker, signer, provider, and root all survive,
+short of it: before any await it advances the runtime's channel generation and retires the old fork, so a
+chain-log handler for the old channel that is still running during the drain finds the fork inactive and
+cannot start a reduction whose timer the task drain would cancel; then producers, then
+chain-feed detach and a bounded drain, then peers and the custom RPC root's channel state, then scheduled
+tasks, then storage and the `NOT_OPENED` status under the block-work mutex; and last it re-arms the
+initial-sync latch. A leave from a runtime that owes no departure resets at once, even while the old
+channel's initial sync is still waiting on its peer. That sync captured the generation before its request,
+so when it lands it persists nothing (the check runs under the same mutex the reset clears storage under)
+and settles no initial-sync wait; re-arming the latch only after the status change keeps the reset's own
+`OPENED` → `NOT_OPENED` transition from settling the next channel's wait. The port, worker, signer, provider, and root all survive,
 so the client may immediately select another channel on the same `P2pInstance`. The leader flag is not part of
 the reset on either side of the port: it is application-owned with a single writer, so the application that
 set it clears it. `P2pInstance.leaveChannel()` memoizes the host request while it is pending, so concurrent

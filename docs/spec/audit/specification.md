@@ -83,3 +83,13 @@ SDK-architecture permutations cover the reset ordering and its refusal after shu
 [`OQ-SPEC-LEAVE-1-9Q4BV3` (Scope of peer exclusion across a channel change)](../specification/open-questions.md#oq-spec-leave-1-9q4bv3) records the one
 protocol decision the change surfaces and does not answer: the scope of a peer exclusion across a channel
 change.
+
+A follow-up amendment to [`REQ-LIF-10-QR8NQ9` (Runtime departure and channel reuse)](../specification/settlement/lifecycle.md#req-lif-10-qr8nq9)
+states two obligations the reuse depends on but the first text left implicit: work begun for a channel the
+runtime has since left neither changes the runtime's state nor completes the next channel's initial
+synchronization, and the fork being left stops being active as soon as the return to the pre-channel state
+begins. Both are written without naming a component. They append
+[`REQ-LIF-10-QR8NQ9.T1.P17`](../specification/settlement/lifecycle.md#req-lif-10-qr8nq9.t1.p17) and
+[`REQ-LIF-10-QR8NQ9.T1.P18`](../specification/settlement/lifecycle.md#req-lif-10-qr8nq9.t1.p18) after the
+highest existing number; nothing was renumbered. The lifecycle security considerations gained the matching
+cross-channel hazard, including that late work is not held against the peer that answered it.

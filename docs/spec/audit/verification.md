@@ -298,3 +298,21 @@ What remains unassigned is the honest gap, tracked as
 [`FIND-LEAVE-REUSE-1-GSK8BB`](open-findings.md#find-leave-reuse-1-gsk8bb): both sides of a rejected leave
 keeping the runtime bound, and the component-level naming of the leave-memo release (which the two-cycle e2e
 case exercises but does not name).
+
+The follow-up fence for work that outlives its channel adds two declarations.
+[E2E-ChannelReuse.test.ts](../verification/tests/test/e2e/E2E-ChannelReuse.test.ts.md) gained a fourth case
+that holds the observer's spectate sync at its application step, leaves, releases it, waits for it to settle
+through a counting stub rather than a sleep, and then asserts the clean pre-channel projection and a
+successful reconnect to the same channel. It takes
+[`REQ-LIF-10-QR8NQ9.T1.P17`](../specification/settlement/lifecycle.md#req-lif-10-qr8nq9.t1.p17) and one
+permutation in each of the three files involved; the reconnect is the discriminating oracle, and removing the
+P2P generation check, removing the persistence check, or re-arming the latch before the status change each
+turns the case red.
+[StateManagerChannelReset.test.ts](../verification/tests/test/stateManager/StateManagerChannelReset.test.ts.md)
+gained a fifth case that calls the reset on the host and, in the same turn, checks the old fork is inactive
+and a reduction for it starts nothing; it takes
+[`REQ-LIF-10-QR8NQ9.T1.P18`](../specification/settlement/lifecycle.md#req-lif-10-qr8nq9.t1.p18) and fails when
+the retirement is moved back to the end of the reset. Every declaration's line link in both reports was
+re-resolved against the current file. Two sibling permutations stay unassigned because neither case observes
+them — the stale sync not penalising its responder, and a sync resuming inside the reset itself — tracked as
+[`FIND-LEAVE-REUSE-2-1NVKS3`](open-findings.md#find-leave-reuse-2-1nvks3).

@@ -95,6 +95,28 @@ memo, but no test names it at the component level, so the permutation stays unas
 Proposed direction: add a component-level case for the memo release. Until then that permutation keeps
 `none — gap` evidence.
 
+<a id="find-leave-reuse-2-1nvks3"></a>
+
+### FIND-LEAVE-REUSE-2-1NVKS3 — Stale-sync fence: the no-penalty side and the mid-reset interleaving have no evidence
+
+Status: open verification gap. A leave from a runtime that owes no departure resets at once, and a sync
+still in flight for the channel left is fenced by a channel generation. The e2e case in
+[E2E-ChannelReuse](../verification/tests/test/e2e/E2E-ChannelReuse.test.ts.md) proves the stale sync neither
+installs its state nor settles the next channel's initial sync, and that the latch is re-armed only after the
+reset's status change. Two sibling permutations stay unassigned:
+
+- [`UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P27`](../implementation/source/src/rpc/network/services/spectate/SpectateService.ts.md#unit-test-spectate-service-1-sjbyct.p27)
+  — the stale response must not reject, disconnect, or blacklist the peer that answered it. The e2e case
+  reconnects through whichever participant answers, so a wrongly penalised responder would not fail it.
+- [`UNIT-TEST-STATE-MANAGER-RESET-1-9QG1AG.P7`](../implementation/source/src/stateManager/StateManager.ts.md#unit-test-state-manager-reset-1-9qg1ag.p7)
+  — a sync from the channel left that resumes while the reset is still running must already see the channel
+  as left. The e2e hold is released only after the leave has returned, so the generation could be advanced
+  late in the reset without failing it.
+
+Proposed direction: extend the held-sync case to read the answering peer's standing afterwards, and add a
+case that releases the held application while the reset is parked (for example behind the chain-feed drain).
+Until then both permutations keep `none — gap` evidence.
+
 <a id="find-log-1-659qd2"></a>
 
 ## FIND-LOG-1-659QD2 — Folded collection summary has unsupported coverage credit
