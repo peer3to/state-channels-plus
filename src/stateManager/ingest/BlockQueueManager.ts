@@ -166,6 +166,17 @@ export default class BlockQueueManager {
         this.recoverySuppressedUntil.clear();
     }
 
+    /**
+     * Channel reset: cancel every queued-block timer and drop the fork-recovery
+     * gates. The queued entries themselves live in storage, cleared with it.
+     */
+    public reset(): void {
+        for (const blockHash of [...this.timeoutHandles.keys()]) {
+            this.cancelQueueTimeout(blockHash);
+        }
+        this.onForkTransition();
+    }
+
     public async tryExecuteFromQueue(forkId?: ForkId): Promise<void> {
         const activeForkId = forkId ?? this.stateManager.forkId;
         // A scheduled forkId is not authority - a fork transition may have

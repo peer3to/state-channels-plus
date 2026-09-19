@@ -6,6 +6,7 @@ import { isCommittedParticipantStatus } from "@/types/flags";
 import type { Address, ForkId } from "@/types/types";
 import { addressesEqual, DetachedPromises, Logger } from "@/utils";
 import { config } from "@/utils/config";
+import { errorMessage } from "@/utils/errorMessage";
 
 type LeavePhase =
     | "starting"
@@ -18,6 +19,9 @@ type LeaveOperation = {
     promise: Promise<void>;
     resolve: () => void;
     reject: (error: Error) => void;
+    // Handed to callers: settled departure plus the channel reset that hands
+    // the runtime back. Repeated calls share it.
+    completion: Promise<void>;
     participantCount: number;
     ingestedBlockCount: number;
     forkId: ForkId;
@@ -34,7 +38,7 @@ export type LeaveChannelState = {
     leaveTurnEmitted: boolean;
 };
 
-/** Owns the terminal leave operation for one runtime. */
+/** Owns the channel leave operation for one runtime. */
 export default class LeaveChannelService {
     private readonly logger: Logger;
     private operation?: LeaveOperation;
@@ -65,12 +69,12 @@ export default class LeaveChannelService {
     public assertOperationAllowed(operation: string): void {
         if (!this.operation) return;
         throw new Error(
-            `${operation} is unavailable while terminal channel leave is pending`
+            `${operation} is unavailable while a channel leave is pending`
         );
     }
 
     public leaveChannel(): Promise<void> {
-        if (this.operation) return this.operation.promise;
+        if (this.operation) return this.operation.completion;
 
         let resolve!: () => void;
         let reject!: (error: Error) => void;
@@ -78,7 +82,7 @@ export default class LeaveChannelService {
             resolve = resolvePromise;
             reject = rejectPromise;
         });
-        const operation: LeaveOperation = {
+        const operation = {
             promise,
             resolve,
             reject,
@@ -87,18 +91,46 @@ export default class LeaveChannelService {
             forkId: this.stateManager.forkId,
             phase: "starting",
             leaveTurnEmitted: false
-        };
+        } as LeaveOperation;
+        operation.completion = this.settleAndReset(operation);
         this.operation = operation;
 
         if (!isCommittedParticipantStatus(this.stateManager.status)) {
             operation.resolve();
-            return operation.promise;
+            return operation.completion;
         }
 
         void this.startCommittedLeave(operation).catch((error) =>
             this.fail(operation, error)
         );
-        return operation.promise;
+        return operation.completion;
+    }
+
+    /**
+     * Wait for settled departure, then hand the runtime back its pre-channel
+     * state so the application can select another channel on the same instance.
+     * A rejected departure keeps the operation: membership is then
+     * indeterminate, so repeated calls must see the same failure and channel
+     * work must stay blocked rather than start on a half-left channel. A reset
+     * that fails after a settled departure shuts the runtime down instead, as a
+     * leave did before runtimes were reusable: a half-reset runtime must not
+     * serve another channel.
+     */
+    private async settleAndReset(operation: LeaveOperation): Promise<void> {
+        await operation.promise;
+        try {
+            await this.stateManager.resetChannel();
+        } catch (error) {
+            this.logger.error(
+                "Channel reset failed; shutting the runtime down",
+                {
+                    error: errorMessage(error)
+                }
+            );
+            this.stateManager.abort();
+            throw error;
+        }
+        this.operation = undefined;
     }
 
     public takeLeaveTurn(nextToWrite: Address): boolean {
@@ -233,7 +265,7 @@ export default class LeaveChannelService {
                     (error) => this.fail(operation, error)
                 ),
             config.LEAVE_CHANNEL_WATCHDOG_MS,
-            "terminal channel leave watchdog"
+            "channel leave watchdog"
         );
     }
 

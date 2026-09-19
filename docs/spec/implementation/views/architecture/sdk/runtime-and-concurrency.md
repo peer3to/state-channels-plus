@@ -296,7 +296,54 @@ the worker before the request protocol begins
   same way an inline host's would.
 - **Dead client port** triggers host self-disposal via `port.onClose`.
 
-### 3.5 Disposal
+### 3.5 Channel reset (non-terminal)
+
+`p2pSigner.leaveChannel()` crosses the port with no timeout and resolves only after the host has observed
+settled removal **and** run `StateManager.resetChannel()`. The reset is ordered like a disposal but stops
+short of it: before any await it advances the runtime's channel generation and retires the old fork, so a
+chain-log handler for the old channel that is still running during the drain finds the fork inactive and
+cannot start a reduction whose timer the task drain would cancel; then producers, then
+chain-feed detach and a bounded drain, then peers and the custom RPC root's channel state, then scheduled
+tasks, then storage and the `NOT_OPENED` status under the block-work mutex; and last it re-arms the
+initial-sync latch. A leave from a runtime that owes no departure resets at once, even while the old
+channel's initial sync is still waiting on its peer. That sync captured the generation before its request,
+so when it lands it writes nothing — the check runs at the top of the apply, above the payload decode,
+again under the same mutex the reset clears storage under, once per replayed block because each ingest
+awaits that mutex, and inside each of the two chain-reading helpers between their read and their write —
+and settles no initial-sync wait; re-arming the latch only after the status change keeps the reset's own
+`OPENED` → `NOT_OPENED` transition from settling the next channel's wait. The helper-level checks are what
+survive a reconnect to the _same_ channel: the restored channel id satisfies every id-keyed check the write
+passes through, so only the generation still tells the old sync's snapshot from the new channel's. The same captured generation keeps
+its outcome off the peer that served it and keeps a reduction submit parked on its gas-limit read from
+writing to the chain. Other operations capture it for the same reason. The chain status read is fenced
+inside `refreshOpenedStatusFromChain` rather than at its nine call sites, because a read resuming after the
+leave would cache the old snapshot under the next channel's id and flip the returned runtime to `OPENED`. A
+`connectToChannel` captures one generation at entry and re-reads it before joining channel discovery — a
+resumed call would otherwise subscribe the reused runtime to the topic of the channel it left and overwrite
+the key its next reset has to release — and again before each membership submission: it
+spends a signature round trip collecting its confirmation, and if the leave settles inside that
+round trip it returns `false` instead of submitting, because the submission would put the departed signer
+back into the channel it just left. A dispute-acknowledgement round re-reads it on both of its
+consequence branches, so the reset cutting every transport cannot turn each in-flight request into an
+exclusion, and the responder endpoint captures one before its own dispute reads and throws afterwards, so a
+request that outlived the channel it asks about is neither answered nor recorded nor held against its
+asker. The authored block's calldata timer is the one that needs no generation: it re-reads `isActiveFork`,
+which the reset falsifies before its first await, so a timer still armed through the release sends no
+transaction for the channel left. Alongside the generation the reset raises a release-in-progress flag and lowers it in a `finally`
+around the release body (which is why that body is its own private method): while the flag is up the
+P2P manager records no verdict at all and only disconnects, since the peers being dropped are the peers of
+the channel being given up and a verdict now outlives the reset. The scheduled-task step is not silent either: each pending task may carry a cancel
+handler, and cancelling the tasks runs them, so a wait whose only completion was a cancelled timer rejects
+rather than outliving the channel. Both steps that wait for work already in flight can fail rather than merely finish: the chain-feed drain
+and the scheduled-task drain each report whether they finished, and either reporting unfinished work makes
+the reset throw — the leave service then aborts the runtime and
+rethrows, so the port call rejects and the client gets a retired runtime instead of a half-returned one. The port, worker, signer, provider, and root all survive,
+so the client may immediately select another channel on the same `P2pInstance`. The leader flag is not part of
+the reset on either side of the port: it is application-owned with a single writer, so the application that
+set it clears it. `P2pInstance.leaveChannel()` memoizes the host request while it is pending, so concurrent
+calls share one request and the same promise.
+
+### 3.6 Disposal
 
 - **Graceful:** `P2pInstance.dispose()` → `client.dispose()` sends a `dispose`
   request with **no timeout** (`timeoutMs: null`), lets the host tear down its
@@ -317,7 +364,7 @@ the worker before the request protocol begins
   leaking teardown rather than converted into a process abort.
 - **`StateManager.abort()`** disposes its owning root and descendants, then closes the control connection. Late queries reject in both placements; another SDK root remains independent.
 
-### 3.6 Serialization limits
+### 3.7 Serialization limits
 
 Messages cross by **structured clone** (`postMessage`), with two protocol-level
 encodings layered on top for values structured clone handles poorly or that must
@@ -353,7 +400,7 @@ be canonical:
   Main-thread indexed contract filters still have the existing limitation because
   the forwarded event has name and arguments rather than original topics.
 
-### 3.7 Trust of the boundary itself
+### 3.8 Trust of the boundary itself
 
 The client↔host and host↔executor ports connect SDK-owned endpoints. Their
 runtime domain services use common descriptor-safe dispatch without peer guards.
@@ -385,7 +432,7 @@ the way down.
 The `Node` adapter (`onClose` on a real `close` event) and the `browser` adapter
 (`onClose` best-effort, since `close` is not universally supported) differ only
 in `onClose` reliability, which is why the client keeps the request timeout as a
-backstop (§3.5, §5).
+backstop (§3.6, §5).
 
 ## 5. Concurrency model
 
@@ -545,7 +592,7 @@ _Non-normative._
   performance target and device envelope the gaps in §6 flag.
 - **A written cross-kind ordering guarantee** for responses vs. bus events over
   the port (§3.2), and an explicit contract for bus-event arg serialization loss
-  and indexed-filter matching (§3.6).
+  and indexed-filter matching (§3.7).
 - **A trusted-transport guard for the harness-control root** and exclusion of the
   fixture tree from the published build (§11.4), so a privileged test surface
   cannot be dispatched from a network transport or shipped to consumers by

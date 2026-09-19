@@ -85,6 +85,12 @@ class StateManager<
     spectatingValidationStrategy: SpectatingValidationStrategy;
     eventHandler: EventHandler;
     private _status: Status = Status.NOT_OPENED;
+    // Bumped when the runtime gives up a channel. Async work started for one
+    // channel captures it and stands down if it changed before the work lands.
+    private _channelGeneration = 0;
+    // True from the generation bump until the reset finishes. The peers of the
+    // channel being left are on their way out, so nothing earns a verdict.
+    private _isResettingChannel = false;
     timeoutManager: TimeoutManager;
     logger: Logger;
     readonly eventSyncService: EventSyncService;
@@ -296,6 +302,82 @@ class StateManager<
         return !this.isDisposed && this.forkId === forkId;
     }
 
+    /**
+     * Give up the current channel and return the runtime to its pre-channel
+     * state so the application can select another channel on the same instance.
+     * Shutdown stays with `dispose()`.
+     *
+     * The order matters. Producers stop first, then the chain feed is detached
+     * and drained, then peers go, and only then is storage cleared: a queued
+     * block still executing would otherwise read a half-cleared store.
+     */
+    public async resetChannel(): Promise<void> {
+        if (this.isDisposed) {
+            throw new Error("Cannot reset the channel of a disposed runtime");
+        }
+        this.logger.info("Resetting channel", { channelId: this.channelId });
+        // First, before any await: work for the old channel that resumes during
+        // or after the reset must see it has been left.
+        this._channelGeneration += 1;
+        this._isResettingChannel = true;
+        // Retire the fork before any await too. A log handler for the old
+        // channel still running during the drain must find it inactive, or it
+        // could start a reduction whose timer the task drain below cancels,
+        // leaving that handler waiting forever. Done before the reduction
+        // reset, so nothing re-creates what it settles.
+        this.latestForkId = NULL;
+
+        try {
+            await this.releaseChannel();
+        } finally {
+            this._isResettingChannel = false;
+        }
+        this.logger.info("Channel reset complete");
+    }
+
+    /** The reset's steps; `resetChannel` owns the flags around them. */
+    private async releaseChannel(): Promise<void> {
+        this.blockQueueManager.reset();
+        this.reductionManager.reset();
+        // Detaches the provider filter and unbinds the id from the dispute
+        // manager and the event sync service.
+        await this.clearChannelId();
+        // A handler still running past the bound would resume against the next
+        // channel, so a reset that cannot drain must not hand the runtime on.
+        if (!(await this.stateChannelEventListener.drain())) {
+            throw new Error(
+                "Chain-log work for the channel left did not finish; the runtime cannot be reused"
+            );
+        }
+        this.eventSyncService.reset();
+        this.eventHandler.reset();
+        await this.p2pManager.resetChannel();
+        // Producers are stopped and the feed is detached, so a task draining
+        // here cannot schedule new channel work.
+        if (!(await this.timeoutManager.cancelAllTasks())) {
+            // Same policy as the chain-log drain above: a task still running
+            // for the channel left can write into the next one, so the
+            // runtime does not get reused.
+            throw new Error(
+                "Scheduled task work for the channel left did not finish; the runtime cannot be reused"
+            );
+        }
+
+        // Under the mutex: an ingest or block production that was already in
+        // flight when the peers went must finish before the stores go, or its
+        // writes would survive into the next channel.
+        await this.withMutex(
+            () => {
+                this.storage.clear();
+                this.setStatus(Status.NOT_OPENED);
+            },
+            { taskName: "resetChannel" }
+        );
+        // After the status change: re-armed any earlier, the latch would take
+        // the reset's own OPENED -> NOT_OPENED as the next channel's outcome.
+        this.p2pManager.rearmInitialSync();
+    }
+
     //Mark resources for garbage collection
     public dispose(): Promise<void> {
         return (this.disposalPromise ??= (async () => {
@@ -388,17 +470,24 @@ class StateManager<
             return this.status;
         }
 
+        // The chain read outlives a leave, and both writes below would land on
+        // whatever channel the runtime holds when it resumes: the old
+        // snapshot under the new channel's ID, and OPENED on a runtime the
+        // reset just returned to NOT_OPENED. Fenced here rather than at the
+        // nine call sites that await this.
+        const channelId = this.channelId;
+        const generation = this._channelGeneration;
         try {
             const [isOpen, snapshotStruct] =
-                await this.stateChannelManagerContract.isChannelOpen(
-                    this.channelId
-                );
+                await this.stateChannelManagerContract.isChannelOpen(channelId);
+
+            if (this.isStaleChannelWork(generation)) return this.status;
 
             if (isOpen) {
                 // Best-effort cache: store the latest on-chain snapshot in LocalDiamond
                 try {
                     await this.diamondStateMachine.localDiamondContract.onStateSnapshotUpdated(
-                        this.channelId,
+                        channelId,
                         snapshotStruct,
                         0,
                         0
@@ -432,6 +521,19 @@ class StateManager<
     }
     public get channelId(): ChannelId {
         return this._channelId;
+    }
+
+    public get channelGeneration(): number {
+        return this._channelGeneration;
+    }
+
+    public get isResettingChannel(): boolean {
+        return this._isResettingChannel;
+    }
+
+    /** Whether work that captured `generation` still belongs to this channel. */
+    public isStaleChannelWork(generation: number): boolean {
+        return this._channelGeneration !== generation;
     }
 
     public async setChannelId(channelId: ChannelId): Promise<void> {

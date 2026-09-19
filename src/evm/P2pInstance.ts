@@ -37,7 +37,7 @@ export default class P2pInstance<
 
     private readonly p2pRuntimeClientRoot: P2pRuntimeClientRoot;
     private disposal?: Promise<void>;
-    private terminalLeavePromise?: Promise<void>;
+    private leavePromise?: Promise<void>;
 
     /**
      * Main-thread end of the WebRTC bridge `MessagePort`. Present only when the
@@ -107,16 +107,19 @@ export default class P2pInstance<
         }
     }
 
+    /**
+     * Leave the current channel and keep the runtime. The promise settles once
+     * departure is observed and the runtime has been reset to its pre-channel
+     * state, so the same instance can then select another channel. Shutdown is
+     * a separate, explicit `dispose()`.
+     */
     public leaveChannel(): Promise<void> {
-        if (!this.terminalLeavePromise) {
-            this.terminalLeavePromise = this.leaveAndDispose();
-        }
-        return this.terminalLeavePromise;
-    }
-
-    private async leaveAndDispose(): Promise<void> {
-        await this.p2pSigner.leaveChannel();
-        await this.dispose();
+        // Shared while pending so repeated calls make one host request; the
+        // host's own memo decides what a call after a failure sees.
+        this.leavePromise ??= this.p2pSigner.leaveChannel().finally(() => {
+            this.leavePromise = undefined;
+        });
+        return this.leavePromise;
     }
 
     /**

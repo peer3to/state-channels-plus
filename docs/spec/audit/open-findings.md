@@ -71,6 +71,72 @@ Status: open verification gap. A removed peer can still appear in a held chain s
 
 Required evidence: [`REQ-SYNC-1-T2589H.T1.P16`](../specification/peer-communication/synchronization.md#req-sync-1-t2589h.t1.p16) must exercise the removed responder, then prove recovery to the surviving participants' state without a missing-snapshot abort. No test currently owns this permutation; do not infer coverage from the honest-responder case.
 
+<a id="find-leave-reuse-1-gsk8bb"></a>
+
+### FIND-LEAVE-REUSE-1-GSK8BB — Non-terminal leave: the success-side memo release has no component-level declaration
+
+**Status:** Resolved (2026-09-19). The rejected side is asserted by the fallback-rejection cases in
+[DiscoveryRuntimePort](../verification/tests/test/evm/DiscoveryRuntimePort.test.ts.md). The success side is now
+named at the component level by
+[StateManagerChannelReset](../verification/tests/test/stateManager/StateManagerChannelReset.test.ts.md):
+two consecutive leaves on an unbound runtime return different promises and `isLeaving` stays false between and
+after them
+([`UNIT-TEST-LEAVE-CHANNEL-SERVICE-1-CX6QH9.P23`](../implementation/source/src/stateManager/membership/LeaveChannelService.ts.md#unit-test-leave-channel-service-1-cx6qh9.p23)).
+Removing the operation release from the reset turns that case red.
+
+<a id="find-leave-reuse-2-1nvks3"></a>
+
+### FIND-LEAVE-REUSE-2-1NVKS3 — Stale-sync fence: the no-penalty side and the mid-reset interleaving have no evidence
+
+**Status:** Resolved (2026-09-19). A case in
+[E2E-ChannelReuse](../verification/tests/test/e2e/E2E-ChannelReuse.test.ts.md) holds the observer's sync at its
+application step, parks the reset at its chain-feed drain, releases the sync into the running reset, and reads
+mid-reset that the status is still `OPENED`, nothing was persisted for the old fork, and the responder is not
+blacklisted
+([`UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P27`](../implementation/source/src/rpc/network/services/spectate/SpectateService.ts.md#unit-test-spectate-service-1-sjbyct.p27),
+[`UNIT-TEST-STATE-MANAGER-RESET-1-9QG1AG.P7`](../implementation/source/src/stateManager/StateManager.ts.md#unit-test-state-manager-reset-1-9qg1ag.p7)).
+A stale branch that rejects its responder, or a generation advanced after the drain, turns it red.
+
+<a id="find-leave-reuse-3-hcfnej"></a>
+
+### FIND-LEAVE-REUSE-3-HCFNEJ — Leave fence: two second-line branches have no declaration
+
+**Status:** Open verification gap. The fence against work begun for a channel the runtime has left is
+implemented on every branch, but two of those branches have no test declaration, and each could regress
+without the covered sibling noticing.
+
+- [`UNIT-TEST-IS-FORK-DISPUTED-SERVICE-1-8DQFCE.P10`](../implementation/source/src/rpc/network/services/isForkDisputedService/IsForkDisputedService.ts.md#unit-test-is-fork-disputed-service-1-8dqfce.p10)
+  — the unacknowledged-answer branch. The covered case
+  ([`.P9`](../implementation/source/src/rpc/network/services/isForkDisputedService/IsForkDisputedService.ts.md#unit-test-is-fork-disputed-service-1-8dqfce.p9))
+  resets while the requests are in flight, so the release cuts the transports and every request takes the
+  failure branch. A peer that answers `false` after the runtime left takes the other branch, which carries its
+  own `isStale()` read; a mutant dropping only that read survives the suite.
+- [`UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P31`](../implementation/source/src/rpc/network/services/spectate/SpectateService.ts.md#unit-test-spectate-service-1-sjbyct.p31)
+  — the per-block re-check in the sync replay loop. The covered cases make the response stale before it
+  reaches the loop, so the loop never runs; the branch that matters is a generation that moves _between_ two
+  suffix ingests, each of which awaits the state mutex the reset takes.
+
+Required evidence: one declaration per permutation, each with an oracle that distinguishes its branch from
+the covered sibling — an answering peer for the first, a generation advanced mid-replay with a count of
+ingested confirmations for the second. Do not credit either from the sibling case or from
+`ValidationService`'s channel-id rejection, which is a different consequence on a different condition.
+
+Rechecked against the third review round (2026-09-19): both branches are still uncovered, and two of that
+round's new declarations are close enough to be worth ruling out explicitly.
+
+- "answers no acknowledgement request that outlived the channel it was asked about" evidences the
+  **responder** endpoint
+  ([`UNIT-TEST-IS-FORK-DISPUTED-METHODS-1-JZBH4B.P5`](../implementation/source/src/rpc/network/services/isForkDisputedService/IsForkDisputedRpcMethods.ts.md#unit-test-is-fork-disputed-methods-1-jzbh4b.p5)),
+  a different `isStale` read in a different file. It does not reach the requester's answer branch: the
+  responder's throw arrives at a requester as a **failure**, which is the branch the covered sibling
+  already owns. The branch still wanting a declaration is a peer that answers `false` after the local
+  runtime released the channel.
+- "does not persist a sync's on-chain snapshot after the channel was left and rejoined" evidences the fence
+  inside `fetchAndPersistOnChainSnapshot`
+  ([`UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P32`](../implementation/source/src/rpc/network/services/spectate/SpectateService.ts.md#unit-test-spectate-service-1-sjbyct.p32)),
+  which is step 1 of the apply and upstream of the replay loop; the case never reaches the loop, so the
+  per-block re-check is untouched by it.
+
 <a id="find-log-1-659qd2"></a>
 
 ## FIND-LOG-1-659QD2 — Folded collection summary has unsupported coverage credit

@@ -168,12 +168,15 @@ class LocalP2pSigner<TCustomRpc extends MainRpcService = MainRpcService>
         stateManager.leaveChannelService.assertOperationAllowed(
             "connectToChannel"
         );
+        // A leave can settle under any of the awaits below and the next
+        // channel can already be selected by the time one resumes.
+        const connectGeneration = stateManager.channelGeneration;
         let openedGenesis = false;
 
         if (String(stateManager.channelId) !== normalizedChannelId) {
             if (String(stateManager.channelId) !== ethers.ZeroHash) {
                 throw new Error(
-                    `This P2P runtime already owns channel ${stateManager.channelId}; leave it and create a new runtime before selecting ${normalizedChannelId}`
+                    `This P2P runtime already owns channel ${stateManager.channelId}; leave it before selecting ${normalizedChannelId}`
                 );
             }
             await stateManager.setChannelId(normalizedChannelId);
@@ -221,8 +224,11 @@ class LocalP2pSigner<TCustomRpc extends MainRpcService = MainRpcService>
         }
 
         await stateManager.refreshOpenedStatusFromChain();
+        if (stateManager.isStaleChannelWork(connectGeneration)) return false;
         if (stateManager.status === Status.NOT_OPENED) return false;
-        await this.p2pManager.joinDiscoveryKey(
+        // Joining here would subscribe the reused runtime to the topic of the
+        // channel it left, and overwrite the key its next reset must leave.
+        await this.p2pManager.joinChannelDiscovery(
             channelIdToDiscoveryKey(normalizedChannelId)
         );
         if (!options.shouldJoin) {
@@ -238,6 +244,8 @@ class LocalP2pSigner<TCustomRpc extends MainRpcService = MainRpcService>
                 await this.p2pManager.localRpc.joinChannelService.prepareJoinChannelConfirmation(
                     options.balance
                 );
+            if (stateManager.isStaleChannelWork(connectGeneration))
+                return false;
             return stateManager.membershipService.topUpBalance(
                 prepared.confirmation,
                 prepared.expectedSnapshotHash,
@@ -249,6 +257,9 @@ class LocalP2pSigner<TCustomRpc extends MainRpcService = MainRpcService>
             await this.p2pManager.localRpc.joinChannelService.prepareJoinChannelConfirmation(
                 options.balance ?? this.defaultBalance()
             );
+        // Collecting signatures takes a round trip, and a leave can settle in
+        // it. Joining now would put the departed signer back on chain.
+        if (stateManager.isStaleChannelWork(connectGeneration)) return false;
         return stateManager.membershipService.joinChannel(
             prepared.confirmation,
             prepared.expectedSnapshotHash,
@@ -263,8 +274,8 @@ class LocalP2pSigner<TCustomRpc extends MainRpcService = MainRpcService>
     }
 
     /**
-     * Internal route for `P2pInstance.leaveChannel`.
-     * Direct callers wait for settled removal but do not dispose the runtime.
+     * Internal route for `P2pInstance.leaveChannel`. Resolves once removal is
+     * settled and the runtime has been reset to its pre-channel state.
      */
     public leaveChannel(): Promise<void> {
         return this.p2pManager.stateManager.leaveChannelService.leaveChannel();

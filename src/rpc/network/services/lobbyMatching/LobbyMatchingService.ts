@@ -228,6 +228,15 @@ export default class LobbyMatchingService extends ANetworkRpcService<LobbyMatchi
         await this.cleanup();
     }
 
+    /**
+     * Channel reset: same teardown as dispose, but the status transition stays
+     * with the reset's owner, which restores NOT_OPENED once the stores are
+     * empty rather than in the middle of the sequence.
+     */
+    public async reset(): Promise<void> {
+        await this.cleanup({ keepStatus: true });
+    }
+
     /** Disconnects every transport owned by matching or its selected handoff. */
     public disconnectLobbyTransports(): number {
         const count =
@@ -715,7 +724,10 @@ export default class LobbyMatchingService extends ANetworkRpcService<LobbyMatchi
     }
 
     private async cleanup(
-        options: { preserveHandedOffTransports?: boolean } = {}
+        options: {
+            preserveHandedOffTransports?: boolean;
+            keepStatus?: boolean;
+        } = {}
     ): Promise<void> {
         const topic = this.activeTopic;
         const resolve = this.matchResolve;
@@ -736,6 +748,7 @@ export default class LobbyMatchingService extends ANetworkRpcService<LobbyMatchi
             await this.p2pManager.leaveDiscoveryKey(topic);
         }
         if (
+            !options.keepStatus &&
             String(this.p2pManager.stateManager.channelId) === ZeroHash &&
             !this.p2pManager.stateManager.isDisposed
         ) {

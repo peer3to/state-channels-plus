@@ -99,14 +99,32 @@ export default class EventSyncService {
         this.channelId = channelId;
     }
 
-    async waitForScheduled(timeoutMs: number): Promise<void> {
+    /**
+     * Channel reset: drop every dedupe and watermark record. Callers drain
+     * scheduled work with `waitForScheduled` before resetting, so nothing here
+     * is still awaited when the maps go.
+     */
+    reset(): void {
+        this.pendingOnChainBlockValidations.clear();
+        this.processedOnChainBlockValidationKeys.clear();
+        this.eventPromises.clear();
+        this.eventBlockNumbers.clear();
+        this.blockStates.clear();
+    }
+
+    /** Resolves true once all scheduled work settled, false on the bound. */
+    async waitForScheduled(timeoutMs: number): Promise<boolean> {
         const pending = Promise.allSettled([...this.eventPromises.values()]);
         let timeout: ReturnType<typeof setTimeout> | undefined;
-        const timedOut = new Promise<void>((resolve) => {
-            timeout = setTimeout(resolve, timeoutMs);
+        const timedOut = new Promise<boolean>((resolve) => {
+            timeout = setTimeout(() => resolve(false), timeoutMs);
         });
-        await Promise.race([pending.then(() => undefined), timedOut]);
+        const drained = await Promise.race([
+            pending.then(() => true),
+            timedOut
+        ]);
         if (timeout) clearTimeout(timeout);
+        return drained;
     }
 
     getSubscriptionFilter(channelId: ChannelId): Filter {

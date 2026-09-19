@@ -1063,6 +1063,43 @@ export class RpcStubActions<
     }
 
     /**
+     * Forward a peer's spectate syncs and count the ones that have settled, so
+     * a test can wait for an in-flight sync to finish instead of sleeping.
+     */
+    async countSettledSpectateSyncs(peerIndex: number): Promise<{
+        settled: () => Promise<number>;
+        restore: () => Promise<void>;
+    }> {
+        const ctl = () => this.peerStub(peerIndex);
+        await ctl().stubRecordSpectateSync(true).request();
+        return {
+            settled: async () =>
+                await ctl().getSpectateSyncSettledCount().request(),
+            restore: async () => {
+                await ctl().restoreSpectateSync().request();
+            }
+        };
+    }
+
+    /**
+     * Park a peer's channel reset at its chain-feed drain: the channel and fork
+     * are already retired, peers and storage not yet touched.
+     */
+    async holdEventDrain(peerIndex: number): Promise<{
+        entered: () => Promise<number>;
+        release: () => Promise<void>;
+    }> {
+        const ctl = () => this.peerStub(peerIndex);
+        await ctl().stubHoldEventDrain().request();
+        return {
+            entered: async () => await ctl().getHeldEventDrainCount().request(),
+            release: async () => {
+                await ctl().restoreHoldEventDrain().request();
+            }
+        };
+    }
+
+    /**
      * Hold a peer's own sync at its application step, keeping it in flight
      * toward its responder. Returns the entered count and a release.
      */

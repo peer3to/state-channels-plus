@@ -9,13 +9,16 @@ export const setup = async () => {
     return { h, signer: h.peers[0].p2pInstance.p2pSigner };
 };
 
+/** The runtime owns no channel: the state a fresh runtime starts in and a reset returns to. */
 export const assertClean = async (
-    h: ReturnType<typeof TestSession.getHarness>
+    h: ReturnType<typeof TestSession.getHarness>,
+    peer = h.peers[0]
 ) => {
-    expect(await h.control(h.peers[0]).query.getChannelId().request()).to.equal(
-        ethers.ZeroHash
-    );
-    expect(await h.control(h.peers[0]).query.getStatus().request()).to.equal(
-        Status.NOT_OPENED
-    );
+    expect({
+        channelId: await h.control(peer).query.getChannelId().request(),
+        status: await h.control(peer).query.getStatus().request()
+    }).to.deep.equal({
+        channelId: ethers.ZeroHash,
+        status: Status.NOT_OPENED
+    });
 };

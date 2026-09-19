@@ -55,6 +55,8 @@ claims complete conformance for a requirement that depends on other files.
 
 - Root-level surface definition backing service authorization ([`REQ-RPC-3-ZM9WR5` (Service authorization)](../../../../../specification/peer-communication/rpc.md#req-rpc-3-zm9wr5)).
 
+- `resetChannel()` is the channel-scoped counterpart of the existing `dispose` hook for custom RPC roots ([#L59](../../../../../../../src/rpc/network/MainRpcService.ts#L59)): the base resets negotiation, lobby matching, fork acknowledgements, and spectate dedupe, and an override must call `super.resetChannel()` so a custom root cannot silently keep the previous channel's state. Contributes to [`REQ-SDK-ARCH-2-QBZAT8` (Ordered lifecycle)](../../../../../specification/runtime/sdk.md#req-sdk-arch-2-qbzat8).
+
 ## Specification contradictions
 
 None demonstrated.

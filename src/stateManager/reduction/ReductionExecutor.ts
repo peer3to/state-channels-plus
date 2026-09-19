@@ -388,14 +388,19 @@ export default class ReductionExecutor {
             forkId,
             channelId: this.stateManager.channelId
         });
+        const generation = this.stateManager.channelGeneration;
         let txResponse: TransactionResponse | undefined;
         const transaction = this.stateManager.stateChannelManagerContract
             .getGasLimit()
             .then((gasLimit) => {
-                // Disposal can land while the gas limit resolves; the chain
-                // write is the last reduction-owned effect and is re-checked
-                // right before it happens.
-                if (this.stateManager.isDisposed) return undefined;
+                // Disposal or a channel reset can land while the gas limit
+                // resolves; the chain write is the last reduction-owned effect
+                // and is re-checked right before it happens.
+                if (
+                    this.stateManager.isDisposed ||
+                    this.stateManager.isStaleChannelWork(generation)
+                )
+                    return undefined;
                 return this.stateManager.stateChannelManagerContract.multicall(
                     submission.calldata,
                     { gasLimit }

@@ -42,7 +42,7 @@ Position in the end-to-end flow (owned by the protocol doc; here for orientation
 sync (§3) → **collect signatures (this service)** → on-chain `joinChannel` submit + deposit →
 off-chain inbound inclusion → forced inclusion via dispute if ignored. This service owns exactly
 the "collect signatures" hop. The on-chain submission, deposit, inclusion, and force-join dispute
-live in [`StateManager`](../../../../../../../src/stateManager/StateManager.ts#L94) and the contracts, not
+live in [`StateManager`](../../../../../../../src/stateManager/StateManager.ts#L100) and the contracts, not
 here.
 
 **Observable contract.** `collectJoinChannelConfirmation(joinChannel)` returns a
@@ -239,7 +239,7 @@ decision pending.)
 the snapshot advances. Two simultaneous joiners each collect against the current snapshot; whichever
 submits first advances the chain, and the other's pinned snapshot goes stale → its on-chain submit
 reverts `RaceCondition*` and `StateManager.joinChannel` aborts
-([`StateManager`](../../../../../../../src/stateManager/StateManager.ts#L94), lines ~512-528; SDK TODO:
+([`StateManager`](../../../../../../../src/stateManager/StateManager.ts#L100), lines ~512-528; SDK TODO:
 "support concurrent joins by collecting safe extra signatures before submission"). At the RPC layer,
 a responder signing two concurrent requests is not itself a fault — it signs both; the contention is
 resolved on-chain. Consequence: concurrent admissions are serialized by chain races, not
@@ -270,6 +270,13 @@ limiter ([`OQ-6-4JPNE5` (P2P gossip rate limiting)](../../../../../specification
   at sign. There is no bound tying the deadline to protocol windows. A far-future deadline keeps a
   collected authorization valid for a long time. Accepted residual today. **Open question ([`OQ-10-04YNC4` (Spectate/join failure-point details)](../../../../../specification/open-questions.md#oq-10-04ync4)):**
   required deadline bounds. (Divergence class: decision pending.)
+- **Authorization collected for a channel the runtime has left.** The collection hop is a network round
+  trip over the peer set, so a leave can settle inside it and leave a fully valid confirmation in the
+  caller's hand. `LocalP2pSigner.connectToChannel` captures the runtime's channel generation before
+  `prepareJoinChannelConfirmation` on both the first-join and the top-up path and returns `false` instead of
+  submitting when it moved. The confirmation itself stays valid — nothing about it is wrong — but submitting
+  it would put a departed signer back into the channel it just left, which is the one effect of late work
+  that no local cleanup can undo ([`REQ-LIF-10-QR8NQ9` (Runtime departure and channel reuse)](../../../../../specification/settlement/lifecycle.md#req-lif-10-qr8nq9)).
 - **Top-up path.** `topUpBalance` reuses the same confirmation shape and the same
   `signJoinRequest` responder (the RPC endpoint does not distinguish join vs. top-up — the
   `isTopUp` branch is contract-side). A signature collected "for a join" is equally valid for a

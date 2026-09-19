@@ -307,10 +307,10 @@ reader bytecode. These maintained assessments remain pending engineer review; no
 
 ## Accepted PR 472 fixes after the SDK refactor
 
-The terminal-leave watchdog now routes a failed dispute start to the pending leave promise. Both the
+The leave watchdog now routes a failed dispute start to the pending leave promise. Both the
 missing-marker and expired-evidence outcomes have explicit runtime-port declarations. The configured
 production bound remains 15 seconds: it may pre-empt an otherwise healthy turn and incur a dispute.
-This is the recorded owner policy under [terminal channel leave](../specification/peer-communication/targeted-channel-join.md#req-tjoin-7-nngtay).
+This is the recorded owner policy under [channel leave and runtime reuse](../specification/peer-communication/targeted-channel-join.md#req-tjoin-7-nngtay).
 
 Current dispute upload eligibility now uses the snapshot participant set plus the unconsumed inbound
 JOIN interval, with the snapshot boundary excluded, the latest head included, and on-chain slashes
@@ -330,9 +330,155 @@ Verification mappings name individual browser declarations and the new component
 cases. Maintained documents remain pending engineer review; this update grants no approval and does
 not resolve the assessment's five review-body findings that were explicitly left for discussion.
 
+## Non-terminal channel leave and runtime reuse
+
+A settled leave now returns the runtime to its pre-channel state instead of disposing it
+([`REQ-LIF-10-QR8NQ9` (Runtime departure and channel reuse)](../specification/settlement/lifecycle.md#req-lif-10-qr8nq9),
+[`REQ-TJOIN-7-NNGTAY` (Channel leave and runtime reuse)](../specification/peer-communication/targeted-channel-join.md#req-tjoin-7-nngtay)).
+Departure itself is unchanged: the same fully signed snapshot update or self-removal dispute fallback, the
+same settled-removal and local `SYNCED` conditions. What changed is only what happens after the departure is
+observed, so no on-chain safety property moves with this change.
+
+The protected asset the reuse touches is the isolation between two channels served by one runtime. The
+release itself is complete by construction rather than by inspection: every channel-scoped store is rebuilt
+through one facade call, peers and profiles go through one manager reset, and the selected channel id, fork
+id, and status all return to their pre-channel values (the leader flag is application-owned and stays with its single
+writer). The ordering is the safety argument —
+producers stop, the chain feed is detached and drained, peers and timers go, and only then is storage
+cleared — so nothing in flight can read a half-released runtime or, worse, write a record from the old
+channel into a store the next channel will read. The isolation is asserted end to end as well: after a reuse
+the runtime tracks only its new channel while the peers of the channel it left neither list it nor move
+([`REQ-LIF-10-QR8NQ9.T1.P15`](../specification/settlement/lifecycle.md#req-lif-10-qr8nq9.t1.p15)).
+
+What is _not_ complete by construction is the other half: the operations that were already running when the
+release began. Each of those is a separate call site that has to stand down on its own, so the isolation
+there is only as good as the enumeration of those sites — which two review rounds have each extended. The
+residual entries below are written per route for that reason, and the class should be assumed open until a
+round finds nothing.
+
+Residual exposure, all accepted here as recorded rather than resolved:
+
+- **Exclusions survive the change of channel, by decision.** The scope question is resolved (engineer
+  decision, 2026-09-19, PR #494): an exclusion is identity-scoped for the runtime's lifetime, because it
+  already rests on proof of an attributable fault by that identity
+  ([`REQ-AUTH-4-JWCF71` (Penalty requires proof)](../specification/peer-communication/handshake.md#req-auth-4-jwcf71)).
+  `ProfileManager.releaseChannelPeers()` keeps exactly the blacklisted profiles and forgets every other peer,
+  so a proven cheater no longer regains a clean slate when its victim moves to another channel — the
+  attacker-triggerable clearing path is closed. The residual exposure is now the mirror image and is accepted:
+  an identity proven faulty in one channel is refused in the next channel the same runtime serves, even where
+  that channel's participants saw nothing wrong with it, and there is no expiry or reevaluation rule short of
+  a restart. Two parts stay open and are named rather than absorbed: durability across a restart
+  ([`OQ-34-FY08V2` (RPC boundary decisions)](../specification/open-questions.md#oq-34-fy08v2)) and any reevaluation rule
+  ([`OQ-45-ACZCDE` (Subjective post-authentication engagement policy)](../specification/open-questions.md#oq-45-aczcde)). Evidence:
+  [`REQ-AUTH-4-JWCF71.T1.P4`](../specification/peer-communication/handshake.md#req-auth-4-jwcf71.t1.p4).
+- **The chain-feed drain is bounded, and an unmet bound now stops the reset.** Scheduled chain-log work is
+  awaited under a fixed 30-second bound. The wait reports whether it actually drained, and a reset that did
+  not throws rather than continuing, because a handler outliving the bound would resume against the next
+  channel. The leave service turns that throw into `abort()` and rethrows, so the leave rejects and the
+  runtime is retired: availability of the instance is traded for the guarantee that no channel is served by a
+  half-returned runtime, which is the same trade every leave made before runtimes were reusable. The
+  running-task drain keeps its own bound and still logs and continues, but by that point producers are
+  stopped, the feed is detached, and the fork is retired, so a late task can neither schedule channel work nor
+  start fork-scoped work. Evidence:
+  [`REQ-LIF-10-QR8NQ9.T1.P19`](../specification/settlement/lifecycle.md#req-lif-10-qr8nq9.t1.p19),
+  [`REQ-SDK-ARCH-2-QBZAT8.T1.P8`](../specification/runtime/sdk.md#req-sdk-arch-2-qbzat8.t1.p8).
+- **Releasing the channel's timers no longer strands the operations that depended on them.** A bounded wait
+  whose success path is an event that cannot arrive for a channel the runtime has left used to be cancelled
+  into a permanently pending promise — an availability fault, not a safety one, but one the application could
+  not observe or recover from. Each pending task may now carry a cancel handler that the wholesale cancel
+  runs, so the operation fails with its own error; the handlers are isolated from each other, so one throwing
+  owner cannot strand the rest. An owner's explicit `cancelTask` deliberately does not run it, which keeps the
+  waiter settled exactly once. Evidence:
+  [`REQ-SDK-ARCH-2-QBZAT8.T1.P9`](../specification/runtime/sdk.md#req-sdk-arch-2-qbzat8.t1.p9).
+- **A rejected leave leaves the runtime bound to its channel.** This is the safe direction: local membership
+  is indeterminate after a failed departure, so the runtime keeps refusing other channel work rather than
+  starting it against a half-left channel. Both sides are evidenced: a rejected leave keeps the operation and
+  the binding, and a settled one releases the operation so the runtime can leave again
+  ([`FIND-LEAVE-REUSE-1-GSK8BB`](open-findings.md#find-leave-reuse-1-gsk8bb), resolved).
+- **Work from the channel left can outlive the reset.** A runtime that owes no departure resets at once,
+  possibly while its initial sync for the old channel is still in flight. The reset advances a channel
+  generation first, the sync persistence checks it under the same mutex the reset clears storage under, and
+  the initial-sync latch ignores a result from an older generation and is re-armed only after the reset's
+  status change, so a late sync neither installs old state nor decides the next channel's initial sync
+  ([`REQ-LIF-10-QR8NQ9.T1.P17`](../specification/settlement/lifecycle.md#req-lif-10-qr8nq9.t1.p17)). The old
+  fork is retired before the first await, so a chain-log handler still running during the drain cannot
+  start a reduction the drain would then strand
+  ([`REQ-LIF-10-QR8NQ9.T1.P18`](../specification/settlement/lifecycle.md#req-lif-10-qr8nq9.t1.p18)). A stale
+  sync is not held against its responder, and a sync resuming inside the reset itself already sees the
+  channel as left; both are evidenced
+  ([`FIND-LEAVE-REUSE-2-1NVKS3`](open-findings.md#find-leave-reuse-2-1nvks3), resolved). The no-penalty
+  guarantee reaches every exit of the sync rather than only its persistence step: each rejection and the
+  request-failure path carry the captured generation, so a verification, decode, or transport failure observed
+  for a channel already left leaves the responder connected and unexcluded. The same generation stops a
+  reduction submit parked on its gas-limit read from writing to the chain after the reset. The observable
+  oracle is a count of cuts and bans aimed at the responder, taken mid-reset with a probe, because discovery
+  is still live there and a disconnected peer would simply reconnect
+  ([`REQ-LIF-10-QR8NQ9.T1.P20`](../specification/settlement/lifecycle.md#req-lif-10-qr8nq9.t1.p20)).
+- **The fence was placed per operation, not per effect, and a second review round corrected that.** The
+  previous paragraph's claim that the no-penalty half "reaches every exit" was true of the synchronization and
+  read as if it were true of the fence as a whole; it was not. Three further routes were open. A
+  synchronization checked the fence at its persistence step but wrote the on-chain snapshot into the local EVM
+  one step earlier, before any of the payload had been verified, and re-entered the state mutex once per
+  replayed block without re-checking. A `connectToChannel` with `shouldJoin` spends a signature round trip
+  collecting its confirmation, and a leave settling inside that round trip left a valid authorization that was
+  then submitted — the only route in this class whose effect is on chain and irreversible locally, since it
+  puts the departed signer back into the channel it just left. And a dispute-acknowledgement round's detached
+  requests all reject when the release cuts the transports, so one reset turned every in-flight
+  acknowledgement into an exclusion of a peer that did nothing wrong. Each is now checked immediately before
+  the effect it can still produce. Evidence:
+  [`REQ-LIF-10-QR8NQ9.T1.P21`](../specification/settlement/lifecycle.md#req-lif-10-qr8nq9.t1.p21),
+  [`REQ-LIF-10-QR8NQ9.T1.P22`](../specification/settlement/lifecycle.md#req-lif-10-qr8nq9.t1.p22),
+  [`REQ-LIF-10-QR8NQ9.T1.P24`](../specification/settlement/lifecycle.md#req-lif-10-qr8nq9.t1.p24). Two second-line
+  branches remain unevidenced and are tracked, not claimed
+  ([`FIND-LEAVE-REUSE-3-HCFNEJ` (Leave fence: two second-line branches have no declaration)](open-findings.md#find-leave-reuse-3-hcfnej)).
+- **A third round found the effects that are neither a payload write nor a penalty.** The previous two
+  paragraphs read the fence as covering "state the runtime installs" and "verdicts it records"; five routes
+  were outside both. A chain status read resumed after the leave and cached its snapshot in the local EVM
+  **under whatever channel id the runtime then held**, which is the sharpest of them: the cache is keyed by
+  channel id, so the old channel's snapshot passed every id-keyed check on the way in and the reused runtime
+  additionally read `OPENED` on a channel it had not opened. A resumed selection joined the peer discovery of
+  the channel it left, placing the returned runtime in a rendezvous it has no part in and overwriting the
+  discovery key its next return has to release — neither undone by the call then answering `false`. A
+  synchronization's two chain-reading helpers wrote after their own reads, which the caller's fence is
+  upstream of; the exposure there is specific and worth stating, because it only appears when the runtime
+  **reconnects to the same channel**: the restored id satisfies the event handler's id check, so nothing but
+  the generation separates the earlier membership's snapshot from the new one's. The acknowledgement
+  responder answered and judged its asker for a channel it no longer served, refilling records the release
+  had just cleared. And an authored block's calldata timer, still armed because the task drain is the
+  second-to-last release step, sent a transaction for the channel left. Each is now checked immediately
+  before the effect it can still produce. Evidence:
+  [`REQ-LIF-10-QR8NQ9.T1.P25`](../specification/settlement/lifecycle.md#req-lif-10-qr8nq9.t1.p25),
+  [`REQ-LIF-10-QR8NQ9.T1.P26`](../specification/settlement/lifecycle.md#req-lif-10-qr8nq9.t1.p26),
+  [`REQ-LIF-10-QR8NQ9.T1.P27`](../specification/settlement/lifecycle.md#req-lif-10-qr8nq9.t1.p27),
+  [`REQ-LIF-10-QR8NQ9.T1.P28`](../specification/settlement/lifecycle.md#req-lif-10-qr8nq9.t1.p28),
+  [`REQ-LIF-10-QR8NQ9.T1.P29`](../specification/settlement/lifecycle.md#req-lif-10-qr8nq9.t1.p29).
+- **A release step that only logged its own failure is a hole in the shutdown guarantee.** The chain-feed
+  drain had been made checked; the scheduled-task drain had not, so a task that outlived its bound was logged
+  and the runtime was handed on as reusable anyway — the exact outcome the checked drain exists to prevent,
+  reachable through the other of the two steps. `cancelAllTasks` now reports its outcome and the release
+  throws on it. The residual exposure is the accepted one and is unchanged: the runtime is retired instead,
+  so the application loses an instance it could have reused. The task is left registered rather than cleared,
+  so the disposal that follows can still wait for it rather than racing it. Evidence:
+  [`REQ-LIF-10-QR8NQ9.T1.P30`](../specification/settlement/lifecycle.md#req-lif-10-qr8nq9.t1.p30),
+  [`REQ-SDK-ARCH-2-QBZAT8.T1.P10`](../specification/runtime/sdk.md#req-sdk-arch-2-qbzat8.t1.p10).
+- **No exclusion is recorded while the release itself is running.** This is the exclusion decision's own
+  consequence rather than a new policy. Because a verdict is identity-scoped and now outlives the reset, one
+  earned during the release would follow the identity into the next channel — and every peer dropped during
+  the release is dropped _because_ the channel is being given up, so nothing observed there is evidence about
+  the identity. A generation comparison cannot express this window: by then the generation has already moved,
+  and what has to be suppressed is the verdict rather than a write. The reset therefore raises a
+  release-in-progress flag beside the generation bump and lowers it in a `finally`, and both blacklist entry
+  points disconnect without recording while it is up. The residual exposure is the mirror image and is
+  accepted: a peer that genuinely misbehaves during those milliseconds is disconnected and not excluded, and
+  it is admissible in the next channel — an attacker cannot aim at that window, since only the leaving runtime
+  knows when it is open, and any repeat of the fault in the next channel is excluded normally. Evidence:
+  [`REQ-LIF-10-QR8NQ9.T1.P23`](../specification/settlement/lifecycle.md#req-lif-10-qr8nq9.t1.p23).
+- **Reset is refused after shutdown,** keeping `dispose()` and `abort()` terminal; the non-terminal path
+  cannot resurrect a runtime that has already released its signer and provider.
+
 ## Review 472 follow-up decisions
 
-Explicit runtime disposal is local shutdown and does not await a pending dispute upload. Graceful leave is the supported route when the caller needs completed removal; the terminal-leave requirement records this distinction.
+Explicit runtime disposal is local shutdown and does not await a pending dispute upload. Graceful leave is the supported route when the caller needs completed removal, and it now also keeps the runtime; the channel-leave requirement records this distinction.
 
 Dispute upload, reduction admission, and fraud-proof target eligibility share the bounded current snapshot/inbound set. Once a participant leaves that chain set, an old join does not keep it slashable. If the chain snapshot still lists a locally departed participant, a valid fraud proof still writes the chain slash record. Later slash/removal application to a state without that participant is an idempotent no-op under [`REQ-SM-10-JD8TSF`](../specification/protocol-model/state-machines.md#req-sm-10-jd8tsf). The stale-snapshot workflow checks repeated application and unchanged withdrawal totals.
 

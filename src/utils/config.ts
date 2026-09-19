@@ -26,7 +26,7 @@ export type Config = {
     // Max entries in the per-thread signer-recovery cache (message+signature ->
     // address). Bounds memory; evicts oldest past this.
     SIGNER_RECOVERY_CACHE_MAX: number;
-    // Local liveness deadline before terminal leave starts self-removal.
+    // Local liveness deadline before a channel leave starts self-removal.
     LEAVE_CHANNEL_WATCHDOG_MS: number;
     // Crash log collection
     CRASH_LOG_UPLOAD_ENDPOINT: string;

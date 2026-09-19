@@ -322,6 +322,43 @@ export class StubRpcMethods extends ANetworkRpcMethods<StubService> {
         return true;
     }
 
+    /**
+     * Park this peer's chain-feed drain, so a channel reset stops right after
+     * it retired the channel and before it drops peers or clears storage.
+     */
+    public stubHoldEventDrain(): boolean {
+        this.restoreHoldEventDrain();
+        const listener = this.service.sm.stateChannelEventListener;
+        const original = listener.drain;
+        this.service.stubOriginals.set("eventDrain", original);
+        const gate = this.service.createGate();
+        this.service.eventDrainGate = gate;
+        Reflect.set(listener, "drain", async (...parameters: unknown[]) => {
+            gate.entered += 1;
+            await gate.gate;
+            return Reflect.apply(original, listener, parameters);
+        });
+        return true;
+    }
+
+    public getHeldEventDrainCount(): number {
+        return this.service.eventDrainGate?.entered ?? 0;
+    }
+
+    public restoreHoldEventDrain(): boolean {
+        const original = this.service.stubOriginals.get("eventDrain");
+        this.service.eventDrainGate?.release();
+        this.service.eventDrainGate = undefined;
+        if (original === undefined) return false;
+        Reflect.set(
+            this.service.sm.stateChannelEventListener,
+            "drain",
+            original
+        );
+        this.service.stubOriginals.delete("eventDrain");
+        return true;
+    }
+
     public restoreDropNetworkConfirmations(): boolean {
         const original = this.service.stubOriginals.get("networkConfirmations");
         if (original === undefined) return false;
@@ -2457,16 +2494,24 @@ export class StubRpcMethods extends ANetworkRpcMethods<StubService> {
             );
         }
         this.service.spectateSyncCallCount = 0;
+        this.service.spectateSyncSettledCount = 0;
         this.service.spectateSyncTargets.length = 0;
         const original = this.service.stubOriginals.get(
             "spectateSync"
         ) as typeof spectate.sync;
         spectate.sync = ((...args: Parameters<typeof spectate.sync>) => {
             this.service.recordSpectateSyncCall(String(args[0]));
-            if (forward) return original(...args);
-            return Promise.resolve(true);
+            if (!forward) return Promise.resolve(true);
+            return original(...args).finally(() => {
+                this.service.spectateSyncSettledCount += 1;
+            });
         }) as typeof spectate.sync;
         return true;
+    }
+
+    /** Forwarded syncs that have settled, whatever their outcome. */
+    public getSpectateSyncSettledCount(): number {
+        return this.service.spectateSyncSettledCount;
     }
 
     public restoreSpectateSync(): boolean {

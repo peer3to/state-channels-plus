@@ -26,6 +26,12 @@ import { LoggerUtils } from "@/utils/LoggerUtils";
 import { Buffer } from "buffer";
 import { ethers } from "ethers";
 
+// The channel is being given up and every peer is going with it; a verdict
+// recorded now would belong to no channel and, because verdicts outlive the
+// reset, would follow the peer into the next.
+const NO_VERDICT_WHILE_RELEASING =
+    "Disconnecting peer without a verdict: the channel is being released";
+
 class P2PManager<TCustomRpc extends MainRpcService = MainRpcService> {
     public readonly rpcRouter: NetworkRpcRouter<this>;
     stateManager: StateManager<TCustomRpc>;
@@ -43,6 +49,8 @@ class P2PManager<TCustomRpc extends MainRpcService = MainRpcService> {
     preferredTransport: TransportType = TransportType.HOLEPUNCH;
 
     private disposalPromise?: Promise<void>;
+    // The channel topic this runtime joined, left again by the channel reset.
+    private channelDiscoveryKey?: string;
     private readonly unsubscribeHandshakeCompleted: () => void;
     // Settle the initial-sync wait when the runtime leaves OPENED for any
     // reason other than the sync request itself: chain genesis moves the
@@ -145,6 +153,53 @@ class P2PManager<TCustomRpc extends MainRpcService = MainRpcService> {
         return this.disposalPromise !== undefined;
     }
 
+    /**
+     * Channel reset: leave the channel's discovery topic, drop every peer, and
+     * forget every profile except blacklisted ones. The swarm and the custom
+     * RPC root survive. The initial-sync latch is re-armed separately, once
+     * the reset's status change is done.
+     */
+    public async resetChannel(): Promise<void> {
+        await runCleanup(
+            () => this.leaveChannelDiscovery(),
+            () => this.localRpc.resetChannel(),
+            // disconnectAll rejects each transport's pending RPCs; the profile
+            // release then reaches transports registered but never opened
+            // (lobby, handoff).
+            () => this.disconnectAll(),
+            () => this.profileManager.releaseChannelPeers()
+        );
+    }
+
+    /** Join the selected channel's topic and remember it for the reset. */
+    public async joinChannelDiscovery(discoveryKey: string): Promise<void> {
+        this.channelDiscoveryKey = ethers.hexlify(discoveryKey);
+        await this.joinDiscoveryKey(discoveryKey);
+    }
+
+    public async leaveChannelDiscovery(): Promise<void> {
+        const discoveryKey = this.channelDiscoveryKey;
+        if (!discoveryKey) return;
+        this.channelDiscoveryKey = undefined;
+        await this.leaveDiscoveryKey(discoveryKey);
+    }
+
+    /**
+     * Re-arm the initial-sync latch so the next channel waits for its own
+     * first sync. The latch settles on any status change out of OPENED, so
+     * this must run after the reset has set its own status.
+     */
+    public rearmInitialSync(): void {
+        // A wait created for the old channel must not hang: settle it as failed
+        // before the latch is re-armed for the next one.
+        this.settleInitialSync(false);
+        this.initialSyncStarted = false;
+        this.initialSyncSettled = false;
+        this.initialSyncOutcome = false;
+        this.initialSyncPromise = undefined;
+        this.resolveInitialSync = undefined;
+    }
+
     private async onHandshakeCompleted(peerAddress: Address): Promise<void> {
         const stateManager = this.stateManager;
         if (stateManager.isDisposed) return;
@@ -217,6 +272,7 @@ class P2PManager<TCustomRpc extends MainRpcService = MainRpcService> {
         this.initialSyncStarted = true;
         this.cancelInitialSyncDeadline();
         const stateManager = this.stateManager;
+        const generation = stateManager.channelGeneration;
         const success = await this.localRpc.spectateService.sync(
             peerAddress,
             stateManager.channelId,
@@ -224,6 +280,10 @@ class P2PManager<TCustomRpc extends MainRpcService = MainRpcService> {
             undefined,
             stateManager.timeConfig.agreementTime * 2 * 1000
         );
+        // The runtime left that channel while the sync ran. Its result belongs
+        // to no current wait, and settling now would mark the next channel's
+        // re-armed initial sync as already done.
+        if (stateManager.isStaleChannelWork(generation)) return;
         // A result that lands after the chain already supplied the state is
         // stale: the wait settled through the status hook and a late false
         // must not abort an already synced runtime.
@@ -396,24 +456,35 @@ class P2PManager<TCustomRpc extends MainRpcService = MainRpcService> {
     }
 
     public disconnectAndBlacklistPeer(transport: NetworkTransport) {
+        const releasing = this.stateManager.isResettingChannel;
         this.logger.warn(
-            "Disconnecting and blacklisting peer transport",
+            releasing
+                ? NO_VERDICT_WHILE_RELEASING
+                : "Disconnecting and blacklisting peer transport",
             LoggerUtils.getTransportMetadata(transport)
         );
-        const transportToDisconnect = transport.peerAddress
-            ? this.profileManager.blacklistPeer(transport.peerAddress)
-            : this.profileManager.blacklistPeer(transport);
-        if (transportToDisconnect && transportToDisconnect !== transport) {
-            this.disconnectConnection(transportToDisconnect);
+        if (!releasing) {
+            const transportToDisconnect = transport.peerAddress
+                ? this.profileManager.blacklistPeer(transport.peerAddress)
+                : this.profileManager.blacklistPeer(transport);
+            if (transportToDisconnect && transportToDisconnect !== transport) {
+                this.disconnectConnection(transportToDisconnect);
+            }
         }
         this.disconnectConnection(transport);
     }
 
     public disconnectAndBlacklistPeerByEvmAddress(evmAddress: Address) {
-        this.logger.warn("Disconnecting and blacklisting peer address", {
-            peerAddress: evmAddress
-        });
-        const transport = this.profileManager.blacklistPeer(evmAddress);
+        const releasing = this.stateManager.isResettingChannel;
+        this.logger.warn(
+            releasing
+                ? NO_VERDICT_WHILE_RELEASING
+                : "Disconnecting and blacklisting peer address",
+            { peerAddress: evmAddress }
+        );
+        const transport = releasing
+            ? this.profileManager.getTransportByEvmAddress(evmAddress)
+            : this.profileManager.blacklistPeer(evmAddress);
         if (transport) this.disconnectConnection(transport);
     }
 

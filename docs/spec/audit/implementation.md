@@ -230,3 +230,155 @@ Ordered cleanup now uses [runCleanup](../implementation/source/src/utils/runClea
 ## Review 17 parent-loss disposition
 
 The engineer chose to close RY1 at the parent owner. [Root creation](../implementation/source/src/rpc/internal/createRoot.ts.md) marks expected worker shutdown before closing the owned port. A real SDK-worker regression holds client disposal until after the child exits, and observes the fatal adapter callback as well as the public error surface. Unexpected worker exits remain errors. Full and browser gates are rerun after this change and the shared cleanup extraction.
+
+## Channel reset ownership
+
+`StateManager.resetChannel()` is the single owner of the non-terminal release; every other component
+contributes one `reset()`/`clear()` that it calls, and none of them decides on its own when to run. That
+keeps the ordering — producers, feed detach and drain, peers and RPC root, timers, storage — in one place
+where it can be read and reviewed, instead of spread across the leave path. `Storage.clear()` rebuilds the
+fifteen sub-stores through the same `initStores()` the constructor runs: consumers hold the aggregate, never a
+sub-store, and read each one through the proxy on every access, so fresh instances are visible everywhere at
+once and no sub-store has to enumerate its own fields. `TimeoutManager.dispose()` was reduced to the terminal
+flag plus the new `cancelAllTasks()`, `ReductionManager.dispose()`/`reset()` share `settlePendingCompletions()`
+and both call `ReductionExecutor.dispose()`, and `ProfileManager` now owns one `releaseChannelPeers()` beside
+its `dispose()` — the same transport teardown, differing only in that the release keeps the blacklisted
+profiles — so none of these lifecycles can drift from the other. `TimeoutManager.scheduleTask` gained an
+optional cancel handler that only the wholesale paths run, which is what lets a waiter whose single
+completion was a cancelled timer fail instead of hang; the firing path and the owner's own `cancelTask` both
+delete the handler without running it, so "cancelled" never doubles as "completed". The leave service keeps one memo:
+the operation carries the completion promise callers receive, and `P2pInstance.leaveChannel()` memoizes the
+host request only while it is pending. The leader flag is left alone by the reset on both sides of the port;
+it is application-owned with a single writer.
+
+Two conformance rows describe deliberately partial contributions and say so in their gap column.
+[StateManager](../implementation/source/src/stateManager/StateManager.ts.md) covers only the release-and-reuse
+half of [`REQ-LIF-10-QR8NQ9` (Runtime departure and channel reuse)](../specification/settlement/lifecycle.md#req-lif-10-qr8nq9); settlement stays
+with the snapshot and dispute owners. [P2PManager](../implementation/source/src/P2PManager.ts.md) covers only
+the peer/transport half of the ordered release in
+[`REQ-SDK-ARCH-2-QBZAT8` (Ordered lifecycle)](../specification/runtime/sdk.md#req-sdk-arch-2-qbzat8).
+
+The sub-stores implement no reset step of their own (`ForceJoinStorage.clear()` is an in-channel lifecycle
+step, not part of the reset), so they carry no unit-test family for it; the obligation is owned by
+[`UNIT-TEST-STORAGE-FACADE-3-9N4C6W`](../implementation/source/src/storage/Storage.ts.md#unit-test-storage-facade-3-9n4c6w),
+whose permutations name each module individually and read it back through the aggregate.
+
+The reset also guards against work it cannot stop. Before its first await it advances a channel generation
+and retires the old fork, and only after the mutex section that sets `NOT_OPENED` does it re-arm the
+initial-sync latch. Each step answers a failure observed on the distributed farm. A leave from a runtime that
+owes no departure resets at once, even while the old channel's initial sync is still waiting on its peer:
+that late sync settled the re-armed latch, so the next `connectToChannel` returned `false` without syncing,
+and its payload could persist into the reset runtime. Re-arming the latch inside `P2PManager.resetChannel()`
+let the reset's own `OPENED` → `NOT_OPENED` transition settle the next channel's wait as failed. And an
+old-channel chain-log handler still running during the drain could start a reduction on the still-current
+fork whose timer the task drain then cancelled, which showed up as a drain timeout plus a hung detached
+promise. The generation has one writer ([StateManager](../implementation/source/src/stateManager/StateManager.ts.md)) and two
+readers: [SpectateService](../implementation/source/src/rpc/network/services/spectate/SpectateService.ts.md) checks it under the
+same mutex the reset clears storage under, so a payload lands either before that clear or not at all, and
+[P2PManager](../implementation/source/src/P2PManager.ts.md) checks it before settling the latch. Replayed blocks need no fence of
+their own because `ValidationService` refuses a block for a different channel id. A stale sync returns
+`false` without cutting its responder, since the peer answered a request that was valid when it was made. That
+now holds on every exit of the sync, not only the persistence one: `rejectSync` takes the captured generation
+and drops the disconnect-and-blacklist when it has moved, and the request-failure path in `runSync` — which
+used to blacklist unconditionally — passes it too. The in-flight dedupe entry is deleted only while it still
+belongs to the finishing attempt, because `reset()` can clear that map mid-flight and the next channel may
+already have registered its own sync to the same peer. `ReductionExecutor.submitDetached` reads the
+generation as well, beside its existing disposal check and at the same point — immediately before the
+`multicall` — so a submit parked on its gas-limit read when the reset lands abandons the write instead of
+sending it into the next channel.
+
+The second review round found that the fence was placed at the last point of each operation rather than at
+every point where it leaves a trace, and the corrections follow one rule: the check belongs immediately
+before each effect the operation can still produce. In
+[SpectateService](../implementation/source/src/rpc/network/services/spectate/SpectateService.ts.md) it now
+runs before `fetchAndPersistOnChainSnapshot`, which is the method's first write and happens before any of
+the payload is verified, and once per block in the replay loop, because every ingest awaits the state mutex
+and a reset can take it between two blocks. In
+[LocalP2pSigner](../implementation/source/src/evm/signer/LocalP2pSigner.ts.md) both join paths capture the
+generation before `prepareJoinChannelConfirmation` and re-read it before `joinChannel`/`topUpBalance`: the
+collected authorization is still perfectly valid, which is exactly the problem, because submitting it would
+put the departed signer back into the channel it just left — the one late effect no local cleanup can undo.
+In [IsForkDisputedService](../implementation/source/src/rpc/network/services/isForkDisputedService/IsForkDisputedService.ts.md)
+the detached per-peer requests capture it and both consequence branches consult it, since the reset cuts
+every transport and would otherwise convert its own teardown into an exclusion of every peer in the round.
+[StateManager](../implementation/source/src/stateManager/StateManager.ts.md) gained the predicate those
+readers share, `isStaleChannelWork(generation)`, so no call site restates the comparison.
+
+One correction is deliberately not a generation check. A verdict recorded _while the release is running_
+cannot be caught by comparing generations — the generation has already moved, and what has to be suppressed
+is the verdict rather than a write — so the reset raises `_isResettingChannel` beside the generation bump and
+lowers it in a `finally`, which is why the ordered release body moved into the private `releaseChannel()`:
+the flag has to fall on the throwing path too, and a `try` around the whole inline sequence would have buried
+the sequence that the ordering argument rests on. Both of
+[P2PManager](../implementation/source/src/P2PManager.ts.md)'s blacklist entry points read it and only
+disconnect while it is up. The justification is the engineer's own decision: since 2026-09-19 an exclusion is
+identity-scoped and survives the reset, so a verdict earned against a peer that is being dropped _because_
+the channel is being given up would follow that identity into the next channel while belonging to no channel
+this runtime served.
+
+Two reset steps can now fail rather than merely finish, and the ownership of that failure is deliberate.
+`StateManager.resetChannel()` checks the chain-feed drain and throws when it reports unfinished work, because
+a handler outliving the bound would resume against the next channel; it does not itself dispose, since reset
+is not a terminal operation and the runtime's fate belongs to the caller. `LeaveChannelService.settleAndReset`
+is that caller: it logs, calls `stateManager.abort()`, and rethrows, so the leave rejects and the instance is
+retired. Keeping the leave operation would be wrong here — the departure already settled, so there is nothing
+to retry — which is why this route differs from a rejected departure, where the operation and the channel
+binding are deliberately kept. The result is the pre-reuse behaviour as the failure mode: a leave that cannot
+finish leaves a shut-down runtime, exactly as every leave did before runtimes were reusable.
+
+`ProfileManager.releaseChannelPeers()` is the one place the peer half of the reset diverges from disposal,
+and it exists because of an engineer decision rather than a mechanism: exclusion is identity-scoped for the
+runtime's lifetime (2026-09-19, PR #494), so the release closes every transport and forgets every profile
+except the blacklisted ones. The excluded peer's transports still close; only the verdict survives. Nothing
+here makes the verdict durable — the indexes are in memory, so a restart still clears them.
+
+A third review round found five more resume points of the same class, and the placements say something the
+first two rounds' rule did not. "The check belongs immediately before each effect the operation can still
+produce" is right, but it does not say **where** that check should live when one operation has many callers.
+[`StateManager.refreshOpenedStatusFromChain`](../implementation/source/src/stateManager/StateManager.ts.md)
+is awaited from nine call sites and makes two writes of its own after its chain read — it caches the
+returned snapshot in the local diamond and it may set `OPENED` — so the fence went inside the helper, with
+the channel id captured beside the generation. Fencing the call sites instead would have been nine chances
+to miss one, and the failure is not benign: the cache write is keyed by channel id, so the old snapshot
+would have been installed under the **new** channel's id and passed the event handler's own id check, and
+the reused runtime would have read `OPENED` on a channel it had not opened.
+[`LocalP2pSigner.connectToChannel`](../implementation/source/src/evm/signer/LocalP2pSigner.ts.md) shows the
+opposite consolidation: it had two generations, each captured just before the round trip it guarded, and now
+captures one at entry and re-reads it at three points. The new one is before `joinChannelDiscovery`, because
+a resumed connect would subscribe the reused runtime to the topic of the channel it left and overwrite the
+discovery key its next reset has to release — an effect the call's later `false` does not undo, and one the
+status check just above it does not catch, since a next channel that is already open clears that exit.
+[`SpectateService`](../implementation/source/src/rpc/network/services/spectate/SpectateService.ts.md) pushed
+the fence one level down, into `fetchAndPersistOnChainSnapshot` and
+`fetchAndPersistOnChainDisputeWindows`, which both take the generation as a **required** parameter now. The
+caller's fence is upstream of their chain reads, which are the awaits a leave settles under, and their
+writes are keyed by the channel id the sync was requested for — so a runtime that reconnects to that same
+channel restores the id every id-keyed check consults and only the generation still separates the old sync's
+snapshot from the new channel's. A defaulted parameter would have silently re-read the current generation
+and fenced nothing, which is why it is required.
+[`IsForkDisputedRpcMethods`](../implementation/source/src/rpc/network/services/isForkDisputedService/IsForkDisputedRpcMethods.ts.md)
+is the first fence on the **responder** side: the endpoint's dispute reads outlive the channel too, and both
+effects that follow them — recording the acknowledgement, and blacklisting an asker whose fork is not
+disputed — belong to no channel then. It throws rather than returning `false`, because `false` is the
+truthful answer "not disputed" and the responder has no answer to give; the requester's own fence then
+discards the failure without penalising anyone. And
+[`BlockCommitService`](../implementation/source/src/stateManager/block/BlockCommitService.ts.md) needed no
+generation at all: the step-11 calldata timer re-reads `isActiveFork(block.forkId)`, the guard the
+participant timeout check already uses, and the reset retires the fork before its first await, so the guard
+is false for the whole release. Timers surviving most of a release is the general hazard here — the task
+drain is the second-to-last step — and this one would have sent a transaction for the channel left.
+
+The same round made the second reset step that waits for in-flight work report its outcome.
+[`TimeoutManager.cancelAllTasks`](../implementation/source/src/utils/TimeoutManager.ts.md) returns whether
+its drain finished instead of logging a timeout and continuing, and
+[`StateManager.releaseChannel`](../implementation/source/src/stateManager/StateManager.ts.md) throws on a
+`false` — the policy the chain-log drain already had. A task that outlived the bound is deliberately left
+registered rather than cleared, so the disposal that follows the failed release can still wait for it. Four
+hand-written `channelGeneration !== generation` comparisons in
+[`P2PManager`](../implementation/source/src/P2PManager.ts.md),
+[`ReductionExecutor`](../implementation/source/src/stateManager/reduction/ReductionExecutor.ts.md) and
+`SpectateService` now call the shared `isStaleChannelWork` predicate, which the round-two report had already
+claimed was universal; both release guards in `P2PManager` were collapsed onto one message constant with a
+single log call and a single disconnect each, the spectate entry fence moved above the payload decode (a
+stale response's decode produces nothing but a discarded value), and a `console.error` in `TimeoutManager`
+became a logger call so a failing scheduled task reaches the collected log pipeline.

@@ -103,6 +103,7 @@ export type StubKey =
     | "ingestConfirmations"
     | "networkConfirmations"
     | "spectateSyncApplication"
+    | "eventDrain"
     | "onChainSlashesQuery"
     | "localDiamondInboundMessages"
     | "eventLogs"
@@ -400,6 +401,8 @@ export class StubService extends ANetworkRpcService<
     readonly controlIngestContext = new AsyncLocalStorage<true>();
     /** Gate holding this peer's own sync at its application step. */
     spectateSyncApplicationGate?: StubGate;
+    /** Parks the channel reset at its chain-feed drain while set. */
+    eventDrainGate?: StubGate;
     reductionApplicationGate?: StubGate;
     /** Calls that reached the control; survives the restore that an abort triggers. */
     reductionApplicationEntered = 0;
@@ -436,6 +439,8 @@ export class StubService extends ANetworkRpcService<
     spectateSyncCallCount = 0;
     /** Addresses `spectateService.sync` was asked to sync from, newest last. */
     readonly spectateSyncTargets: string[] = [];
+    /** Incremented when a forwarded `spectateService.sync` settles. */
+    spectateSyncSettledCount = 0;
     /** Resolvers waiting for a given number of `spectateService.sync` calls. */
     private readonly spectateSyncWaiters: {
         target: number;
@@ -487,7 +492,7 @@ export class StubService extends ANetworkRpcService<
         this.leaveWatchdogObservation = observation;
         let held: ReturnType<typeof setTimeout> | undefined;
         timers.scheduleTask = (task, delayMs, name) => {
-            if (name !== "terminal channel leave watchdog")
+            if (name !== "channel leave watchdog")
                 return schedule(task, delayMs, name);
             observation.delayMs = delayMs;
             observation.scheduled += 1;
