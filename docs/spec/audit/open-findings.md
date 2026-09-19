@@ -75,47 +75,27 @@ Required evidence: [`REQ-SYNC-1-T2589H.T1.P16`](../specification/peer-communicat
 
 ### FIND-LEAVE-REUSE-1-GSK8BB — Non-terminal leave: the success-side memo release has no component-level declaration
 
-Status: open verification gap, narrowed. The rejected-leave half is closed: the four fallback-rejection
-cases in [DiscoveryRuntimePort](../verification/tests/test/evm/DiscoveryRuntimePort.test.ts.md) now assert,
-after the rejection, that a repeated leave reports the same failure, that another target is still refused,
-and that the selected channel ID is unchanged
-([`REQ-LIF-10-QR8NQ9.T1.P13`](../specification/settlement/lifecycle.md#req-lif-10-qr8nq9.t1.p13),
-[`REQ-TJOIN-7-NNGTAY.T1.P12`](../specification/peer-communication/targeted-channel-join.md#req-tjoin-7-nngtay.t1.p12),
-[`UNIT-TEST-LEAVE-CHANNEL-SERVICE-1-CX6QH9.P24`](../implementation/source/src/stateManager/membership/LeaveChannelService.ts.md#unit-test-leave-channel-service-1-cx6qh9.p24)).
-A mutant that clears the leave operation on rejection fails those cases. The stale declaration name in
-[E2E-ParticipantLifecycle](../verification/tests/test/e2e/E2E-ParticipantLifecycle.test.ts.md) is corrected.
-
-What remains: the success side of the same branch — the memo release that lets a runtime leave its _next_
-channel
-([`UNIT-TEST-LEAVE-CHANNEL-SERVICE-1-CX6QH9.P23`](../implementation/source/src/stateManager/membership/LeaveChannelService.ts.md#unit-test-leave-channel-service-1-cx6qh9.p23))
-— is exercised by the two-cycle case in
-[E2E-ChannelReuse](../verification/tests/test/e2e/E2E-ChannelReuse.test.ts.md), which would fail on a leaked
-memo, but no test names it at the component level, so the permutation stays unassigned.
-
-Proposed direction: add a component-level case for the memo release. Until then that permutation keeps
-`none — gap` evidence.
+**Status:** Resolved (2026-09-19). The rejected side is asserted by the fallback-rejection cases in
+[DiscoveryRuntimePort](../verification/tests/test/evm/DiscoveryRuntimePort.test.ts.md). The success side is now
+named at the component level by
+[StateManagerChannelReset](../verification/tests/test/stateManager/StateManagerChannelReset.test.ts.md):
+two consecutive leaves on an unbound runtime return different promises and `isLeaving` stays false between and
+after them
+([`UNIT-TEST-LEAVE-CHANNEL-SERVICE-1-CX6QH9.P23`](../implementation/source/src/stateManager/membership/LeaveChannelService.ts.md#unit-test-leave-channel-service-1-cx6qh9.p23)).
+Removing the operation release from the reset turns that case red.
 
 <a id="find-leave-reuse-2-1nvks3"></a>
 
 ### FIND-LEAVE-REUSE-2-1NVKS3 — Stale-sync fence: the no-penalty side and the mid-reset interleaving have no evidence
 
-Status: open verification gap. A leave from a runtime that owes no departure resets at once, and a sync
-still in flight for the channel left is fenced by a channel generation. The e2e case in
-[E2E-ChannelReuse](../verification/tests/test/e2e/E2E-ChannelReuse.test.ts.md) proves the stale sync neither
-installs its state nor settles the next channel's initial sync, and that the latch is re-armed only after the
-reset's status change. Two sibling permutations stay unassigned:
-
-- [`UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P27`](../implementation/source/src/rpc/network/services/spectate/SpectateService.ts.md#unit-test-spectate-service-1-sjbyct.p27)
-  — the stale response must not reject, disconnect, or blacklist the peer that answered it. The e2e case
-  reconnects through whichever participant answers, so a wrongly penalised responder would not fail it.
-- [`UNIT-TEST-STATE-MANAGER-RESET-1-9QG1AG.P7`](../implementation/source/src/stateManager/StateManager.ts.md#unit-test-state-manager-reset-1-9qg1ag.p7)
-  — a sync from the channel left that resumes while the reset is still running must already see the channel
-  as left. The e2e hold is released only after the leave has returned, so the generation could be advanced
-  late in the reset without failing it.
-
-Proposed direction: extend the held-sync case to read the answering peer's standing afterwards, and add a
-case that releases the held application while the reset is parked (for example behind the chain-feed drain).
-Until then both permutations keep `none — gap` evidence.
+**Status:** Resolved (2026-09-19). A case in
+[E2E-ChannelReuse](../verification/tests/test/e2e/E2E-ChannelReuse.test.ts.md) holds the observer's sync at its
+application step, parks the reset at its chain-feed drain, releases the sync into the running reset, and reads
+mid-reset that the status is still `OPENED`, nothing was persisted for the old fork, and the responder is not
+blacklisted
+([`UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P27`](../implementation/source/src/rpc/network/services/spectate/SpectateService.ts.md#unit-test-spectate-service-1-sjbyct.p27),
+[`UNIT-TEST-STATE-MANAGER-RESET-1-9QG1AG.P7`](../implementation/source/src/stateManager/StateManager.ts.md#unit-test-state-manager-reset-1-9qg1ag.p7)).
+A stale branch that rejects its responder, or a generation advanced after the drain, turns it red.
 
 <a id="find-log-1-659qd2"></a>
 

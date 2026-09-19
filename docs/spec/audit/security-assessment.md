@@ -365,8 +365,9 @@ Residual exposure, all accepted here as recorded rather than resolved:
   detached first — so the worst observable outcome is a dropped late result, not a cross-channel write.
 - **A rejected leave leaves the runtime bound to its channel.** This is the safe direction: local membership
   is indeterminate after a failed departure, so the runtime keeps refusing other channel work rather than
-  starting it against a half-left channel. It has no exact evidence yet
-  ([`FIND-LEAVE-REUSE-1-GSK8BB`](open-findings.md#find-leave-reuse-1-gsk8bb)).
+  starting it against a half-left channel. Both sides are evidenced: a rejected leave keeps the operation and
+  the binding, and a settled one releases the operation so the runtime can leave again
+  ([`FIND-LEAVE-REUSE-1-GSK8BB`](open-findings.md#find-leave-reuse-1-gsk8bb), resolved).
 - **Work from the channel left can outlive the reset.** A runtime that owes no departure resets at once,
   possibly while its initial sync for the old channel is still in flight. The reset advances a channel
   generation first, the sync persistence checks it under the same mutex the reset clears storage under, and
@@ -376,8 +377,9 @@ Residual exposure, all accepted here as recorded rather than resolved:
   fork is retired before the first await, so a chain-log handler still running during the drain cannot
   start a reduction the drain would then strand
   ([`REQ-LIF-10-QR8NQ9.T1.P18`](../specification/settlement/lifecycle.md#req-lif-10-qr8nq9.t1.p18)). A stale
-  sync is not held against its responder; that side, and a sync resuming inside the reset itself, have no
-  exact evidence yet ([`FIND-LEAVE-REUSE-2-1NVKS3`](open-findings.md#find-leave-reuse-2-1nvks3)).
+  sync is not held against its responder, and a sync resuming inside the reset itself already sees the
+  channel as left; both are evidenced
+  ([`FIND-LEAVE-REUSE-2-1NVKS3`](open-findings.md#find-leave-reuse-2-1nvks3), resolved).
 - **Reset is refused after shutdown,** keeping `dispose()` and `abort()` terminal; the non-terminal path
   cannot resurrect a runtime that has already released its signer and provider.
 

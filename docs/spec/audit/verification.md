@@ -294,10 +294,15 @@ channel.
 chain membership, the next block's signature set, and the absence of blacklisting, none of which depended on
 the leaver being disposed.
 
-What remains unassigned is the honest gap, tracked as
-[`FIND-LEAVE-REUSE-1-GSK8BB`](open-findings.md#find-leave-reuse-1-gsk8bb): both sides of a rejected leave
-keeping the runtime bound, and the component-level naming of the leave-memo release (which the two-cycle e2e
-case exercises but does not name).
+The gap once tracked as
+[`FIND-LEAVE-REUSE-1-GSK8BB`](open-findings.md#find-leave-reuse-1-gsk8bb) is closed. The rejected side is
+asserted by the DiscoveryRuntimePort fallback-rejection cases. The success side, the release of the leave
+operation, is taken by a sixth
+[StateManagerChannelReset](../verification/tests/test/stateManager/StateManagerChannelReset.test.ts.md) case:
+on an unbound runtime two consecutive leaves return different promises and `isLeaving` is false between and
+after them
+([`UNIT-TEST-LEAVE-CHANNEL-SERVICE-1-CX6QH9.P23`](../implementation/source/src/stateManager/membership/LeaveChannelService.ts.md#unit-test-leave-channel-service-1-cx6qh9.p23)).
+Removing the operation release from the reset turns it red.
 
 The follow-up fence for work that outlives its channel adds two declarations.
 [E2E-ChannelReuse.test.ts](../verification/tests/test/e2e/E2E-ChannelReuse.test.ts.md) gained a fourth case
@@ -313,6 +318,13 @@ gained a fifth case that calls the reset on the host and, in the same turn, chec
 and a reduction for it starts nothing; it takes
 [`REQ-LIF-10-QR8NQ9.T1.P18`](../specification/settlement/lifecycle.md#req-lif-10-qr8nq9.t1.p18) and fails when
 the retirement is moved back to the end of the reset. Every declaration's line link in both reports was
-re-resolved against the current file. Two sibling permutations stay unassigned because neither case observes
-them — the stale sync not penalising its responder, and a sync resuming inside the reset itself — tracked as
-[`FIND-LEAVE-REUSE-2-1NVKS3`](open-findings.md#find-leave-reuse-2-1nvks3).
+re-resolved against the current file. The two sibling permutations neither case observed — the stale sync
+not penalising its responder, and a sync resuming inside the reset itself — are now taken by a further
+E2E-ChannelReuse case that parks the reset at its chain-feed drain, releases the held sync into it, and reads
+mid-reset that the status is still `OPENED`, nothing was persisted for the old fork, and the responder is not
+blacklisted
+([`UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P27`](../implementation/source/src/rpc/network/services/spectate/SpectateService.ts.md#unit-test-spectate-service-1-sjbyct.p27),
+[`UNIT-TEST-STATE-MANAGER-RESET-1-9QG1AG.P7`](../implementation/source/src/stateManager/StateManager.ts.md#unit-test-state-manager-reset-1-9qg1ag.p7)).
+A stale branch that rejects its responder, or a generation advanced after the drain, turns it red. This
+closes [`FIND-LEAVE-REUSE-2-1NVKS3`](open-findings.md#find-leave-reuse-2-1nvks3). Every declaration's line link
+in both reports was re-resolved again after the insertions.
