@@ -1,3 +1,4 @@
+// @spec-test-coverage-ignore: shared test-support path lookup for source and compiled trees; contains no test declarations
 import { existsSync } from "node:fs";
 import path from "node:path";
 

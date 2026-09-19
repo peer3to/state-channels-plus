@@ -40,9 +40,9 @@ Maps a module path written for one tree to the twin that exists in the other: a 
 A file may contribute to several requirements; this report describes the contribution and never
 claims complete conformance for a requirement that depends on other files.
 
-| Source file                                                                                                    | Specification IDs |
-| -------------------------------------------------------------------------------------------------------------- | ----------------- |
-| [resolveRuntimeModulePath.ts](../../../../../../../../src/utils/moduleLoader/node/resolveRuntimeModulePath.ts) |                   |
+| Source file                                                                                                    | Specification IDs                                                                                   |
+| -------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------- |
+| [resolveRuntimeModulePath.ts](../../../../../../../../src/utils/moduleLoader/node/resolveRuntimeModulePath.ts) | [`REQ-RUNTIME-4-B0N70Y`](../../../../../../specification/runtime/execution.md#req-runtime-4-b0n70y) |
 
 ## Assumptions, dependencies, trust boundaries, and limits
 

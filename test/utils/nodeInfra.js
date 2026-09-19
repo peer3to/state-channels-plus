@@ -1,3 +1,4 @@
+// @spec-test-coverage-ignore: shared runner and test infrastructure for node provisioning; executable evidence belongs to the calling runner and session tests
 /* eslint-disable no-console */
 // Common node infrastructure for e2e: start hardhat nodes / discovery
 // registries, provision slot pools, JSON-RPC, gas monitoring. ONE file used the
