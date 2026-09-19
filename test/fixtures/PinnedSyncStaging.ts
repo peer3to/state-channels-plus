@@ -129,9 +129,14 @@ export async function assertPinnedHeight(
         { source: source.address, height: height + offset }
     );
     expect(accepted).to.equal(offset <= 0);
+    // The refused request is one strike on the requester's side, not a
+    // verdict; the responder still blacklists a requester it cannot serve.
     expect(
         await h.control(requester).query.isBlacklisted(source.address).request()
-    ).to.equal(offset > 0);
+    ).to.equal(false);
+    expect(
+        await h.control(requester).query.getStrikes(source.address).request()
+    ).to.equal(offset > 0 ? 1 : 0);
     expect(
         await h.control(source).query.isBlacklisted(requester.address).request()
     ).to.equal(offset > 0);
@@ -495,7 +500,10 @@ export async function assertConcurrentPinnedRequests(
                 .control(observer)
                 .query.isBlacklisted(source.address)
                 .request()
-        ).to.equal(mode === "failure");
+        ).to.equal(false);
+        expect(
+            await h.control(observer).query.getStrikes(source.address).request()
+        ).to.equal(mode === "failure" ? 1 : 0);
     } finally {
         await h.control(source).stub.releaseSpectateResponses().request();
         await pending;

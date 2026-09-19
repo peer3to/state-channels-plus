@@ -78,7 +78,7 @@ Ordered stages, with the RPC-layer / pipeline split marked:
 2. **Sender attribution** _(RPC layer,
    [`StateTransitionRpcMethods`](../../../../../../../src/rpc/network/services/stateTransition/StateTransitionRpcMethods.ts#L6))_:
    read `senderTransport.peerAddress` (written onto the transport by handshake completion). If
-   absent — unreachable behind the guard, kept as a defensive check — `disconnectAndBlacklistPeer(transport)`
+   absent — unreachable behind the guard, kept as a defensive check — `disconnectConnection(transport, DisconnectPolicy.BLACKLIST, "state transition from an unauthenticated sender")`
    and return. The addressless transport profile still records the verdict and bans its Holepunch
    handle; durability across a new SDK handle remains open ([./README.md](./README.md) §8,
    [`OQ-34-FY08V2` (RPC boundary decisions)](../../../../../specification/open-questions.md#oq-34-fy08v2)).

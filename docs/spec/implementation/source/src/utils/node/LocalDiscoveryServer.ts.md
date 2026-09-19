@@ -47,7 +47,8 @@ The process-wide discovery logger owns an independent store attached to the prov
    retained per session and peer endpoint. The chain waits at least one second before each attempt
    (`PEER_RECONNECT_COOLDOWN_MS`), then backs off exponentially to a 1.6 s cap: a redial burst
    right after a close competed for the CPU a still-starting counterpart needed. An authenticated close may redial only while that exact topic
-   session remains active, its manager is live, and the peer is not blacklisted. `leave` removes the session
+   session remains active, its manager is live, and the peer is neither blacklisted nor banned by its
+   [LocalPeerInfo](../../transport/LocalPeerInfo.ts.md) stand-in. `leave` removes the session
    before cancelling its timers and closing pending, unauthenticated dials, so callbacks cannot recreate
    discovery work. Manager disposal also suppresses retries during transport teardown. A completed authenticated
    transport leaves the pending set and remains under channel ownership.
@@ -56,7 +57,12 @@ The process-wide discovery logger owns an independent store attached to the prov
    dial in flight on any observed topic. A peer that is already connected or being dialed through another
    topic is not dialed again, which mirrors the Hyperswarm behavior the derived-to-raw targeted handoff
    relies on in production.
-8. **Repeated observation keeps one session.** [connectToPeers](../../../../../../../src/utils/node/LocalDiscoveryServer.ts#L616) joins a pending startup or reuses the active runtime/topic session. It never replaces a live session's ownership. The pending-join map is cleared after either startup outcome, and `leave` awaits a pending startup before removing it.
+8. **Every local transport carries a peer info like Holepunch.** The dialer sends its own peer address
+   in the ready frame; both the dialer and the acceptor register a [LocalPeerInfo](../../transport/LocalPeerInfo.ts.md)
+   keyed by the counterpart's announced address before starting the handshake, so the profile owner
+   counts a first contact by that key, refuses a suspended key at registration, and the dial and accept
+   gates skip a banned peer exactly as the Hyperswarm ban would.
+9. **Repeated observation keeps one session.** [connectToPeers](../../../../../../../src/utils/node/LocalDiscoveryServer.ts#L616) joins a pending startup or reuses the active runtime/topic session. It never replaces a live session's ownership. The pending-join map is cleared after either startup outcome, and `leave` awaits a pending startup before removing it.
 
 - **A skipped retry names its reason.** When a scheduled re-dial finds nothing to do (cleanup, disposal, a dial already active, the peer counted as connected, or a blacklist), the skip is logged at debug level with the reason; a dropped retry is the end of the road for that key because no announcement follows it, and one such silent skip left an honest peer without the reduced fork's first block.
 

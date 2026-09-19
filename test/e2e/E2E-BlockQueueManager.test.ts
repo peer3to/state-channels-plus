@@ -539,7 +539,7 @@ describe("E2E: BlockQueueManager", function () {
             }
         });
 
-        it("future block at a height its source never reached at queue timeout is dropped and the source excluded", async function () {
+        it("future block at a height its source never reached at queue timeout is dropped and the source struck", async function () {
             const h = TestSession.getHarness();
             await h.lifecycle.start(4, 0, { timeConfig });
             const forkId = h.activeForkId!;
@@ -582,11 +582,11 @@ describe("E2E: BlockQueueManager", function () {
                 ).to.equal(true);
 
                 // The source cannot prove a height it never reached: the
-                // probe fails, which already excludes the source.
-                await h.assert.rpc.peerBlacklistedAndDisconnected({
+                // probe fails, which closes the source with one strike and no
+                // verdict.
+                await h.assert.rpc.peerStruckWithoutBlacklist({
                     observer,
-                    target: supplier,
-                    expectedStatus: Status.PARTICIPATING
+                    target: supplier
                 });
                 expect(
                     await h
@@ -910,15 +910,15 @@ describe("E2E: BlockQueueManager", function () {
                     .request()
             ).to.be.null;
 
-            // Punishment arrives through the sync flow, not the queue: the
-            // supplier cannot prove the fork, so the failed sync blacklists them.
-            // `queueTimeout` removes the block before it issues that sync probe,
-            // so once the blacklist lands the eviction has already happened -
-            // asserted synchronously below.
-            await h.assert.rpc.peerBlacklistedAndDisconnected({
+            // The consequence arrives through the sync flow, not the queue: the
+            // supplier cannot prove the fork, so the failed sync closes the
+            // connection with one strike and no verdict. `queueTimeout` removes
+            // the block before it issues that sync probe, so once the strike
+            // lands the eviction has already happened - asserted synchronously
+            // below.
+            await h.assert.rpc.peerStruckWithoutBlacklist({
                 observer,
-                target: author,
-                expectedStatus: observerStatus
+                target: author
             });
             expect(
                 await h
@@ -1154,15 +1154,15 @@ describe("E2E: BlockQueueManager", function () {
                 waitForProcessed: false
             });
 
-            await h.assert.rpc.peerBlacklistedAndDisconnected({
+            // Neither can prove the fork: each failed sync probe is one strike,
+            // not a verdict, and both connections close.
+            await h.assert.rpc.peerStruckWithoutBlacklist({
                 observer,
-                target: supplier,
-                expectedStatus: observerStatus
+                target: supplier
             });
-            await h.assert.rpc.peerBlacklistedAndDisconnected({
+            await h.assert.rpc.peerStruckWithoutBlacklist({
                 observer,
-                target: author,
-                expectedStatus: observerStatus
+                target: author
             });
             expect(
                 await h.control(observer).query.getForkId().request()
@@ -1261,15 +1261,11 @@ describe("E2E: BlockQueueManager", function () {
                     .request()
             ).to.be.null;
             // The supplier cannot prove the bogus fork - the failed sync
-            // blacklists them.
-            await waitFor(
-                async () =>
-                    await h
-                        .control(targetPeer)
-                        .query.isBlacklisted(author.address)
-                        .request(),
-                h.event.protocolEventTimeoutMs()
-            );
+            // strikes them without a verdict.
+            await h.assert.rpc.peerStruckWithoutBlacklist({
+                observer: targetPeer,
+                target: author
+            });
 
             await race.release();
             await h.event.waitWhileEventCountsStayAtMost(

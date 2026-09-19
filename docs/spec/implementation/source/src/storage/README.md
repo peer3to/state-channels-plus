@@ -7,6 +7,7 @@ _Pending authoring: shared responsibility, design decisions, assumptions, cross-
 
 ## Contents
 
+- [BlacklistStorage.ts](./BlacklistStorage.ts.md)
 - [BlockCalldataStorage.ts](./BlockCalldataStorage.ts.md)
 - [BlockStorage.ts](./BlockStorage.ts.md)
 - [DisputeFraudProofStorage.ts](./DisputeFraudProofStorage.ts.md)

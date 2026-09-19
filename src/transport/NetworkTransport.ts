@@ -1,5 +1,6 @@
 import ATransport, { isTransport } from "./ATransport";
 import { TransportType } from "./TransportType";
+import { DisconnectPolicy } from "@/DisconnectPolicy";
 import type { NetworkRpcRouter } from "@/rpc/router/NetworkRpcRouter";
 import Rpc, {
     RpcResponse,
@@ -72,7 +73,9 @@ abstract class NetworkTransport extends ATransport {
                 this.peerAddress as Address
             );
         }
-        this.p2pManager.disconnectConnection(this);
+        // An expected or upgrade close is never punitive: state ALLOW so the
+        // close cannot inherit another caller's policy.
+        this.p2pManager.disconnectConnection(this, DisconnectPolicy.ALLOW);
         this._close();
     }
 

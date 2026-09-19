@@ -23,9 +23,9 @@ Core aliases (Address, Hash, ChannelId, ForkId, BlockHeight…) shared across th
 
 ## Key design decisions
 
-Address and Signature are the source map key and value types; ChecksumAddress names normalized eligibility-cache identities. These aliases do not perform runtime validation. QueueStorage only enforces contribution counts. See [Address](../../../../../../src/types/types.ts#L9).
+`HpAddress` names a lowercase Hyperswarm public key and `PeerKey` is the union of `Address` and `HpAddress`: the key a peer is counted by before and after identity proof ([ProfileManager](../ProfileManager.ts.md)). ChecksumAddress names normalized address keys. It is a string alias; normalization is performed by getChecksumAddress, not by a runtime type check. See [types.ts](../../../../../../src/types/types.ts#L10).
 
-ChecksumAddress names normalized address keys. It is a string alias; normalization is performed by getChecksumAddress, not by a runtime type check. See [types.ts](../../../../../../src/types/types.ts#L10).
+Address and Signature are the source map key and value types; ChecksumAddress names normalized eligibility-cache identities. These aliases do not perform runtime validation. QueueStorage only enforces contribution counts. See [Address](../../../../../../src/types/types.ts#L9).
 
 _None — the file is declarative/mechanical; behavior-shaping decisions live with its consumers._
 

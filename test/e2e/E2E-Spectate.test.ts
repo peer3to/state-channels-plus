@@ -1289,7 +1289,7 @@ describe("E2E: Spectate Service", function () {
     });
 
     describe("Unprovable sync target mutually blacklists both peers", function () {
-        it("an above-latest target can't be proven, so requester and responder blacklist each other", async function () {
+        it("an above-latest target can't be proven, so the responder blacklists the requester and the requester strikes the responder", async function () {
             const h = TestSession.getHarness();
             await h.lifecycle.start(2, 2);
             await h.assert.sync.peersInSyncWait({ peerIndices: [0, 1] });
@@ -1301,8 +1301,8 @@ describe("E2E: Spectate Service", function () {
             // Ask for a height far above anything the responder can prove. p2p
             // sync is mutual-cooperation: an unprovable request is a cooperation
             // failure, so the responder cuts the requester (and never serves a
-            // downgraded latest-height proof), and the failed request cuts the
-            // responder in turn.
+            // downgraded latest-height proof). The refusal is not proof of the
+            // responder's misbehaviour, so the requester only strikes it.
             await h
                 .control(requester)
                 .spectate.startSync(responder.address, forkId, 9999)
@@ -1316,14 +1316,10 @@ describe("E2E: Spectate Service", function () {
                         .request(),
                 h.event.protocolEventTimeoutMs()
             );
-            await waitFor(
-                async () =>
-                    await h
-                        .control(requester)
-                        .query.isBlacklisted(responder.address)
-                        .request(),
-                h.event.protocolEventTimeoutMs()
-            );
+            await h.assert.rpc.peerStruckWithoutBlacklist({
+                observer: requester,
+                target: responder
+            });
         });
     });
 

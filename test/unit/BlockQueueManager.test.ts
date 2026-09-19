@@ -190,7 +190,7 @@ describe("Unit: BlockQueueManager", () => {
             expect((await f.observation()).syncRequests).to.equal(0);
             expect(
                 await f.control.query.isBlacklisted(f.strangers[0]).request()
-            ).to.equal(false);
+            ).to.equal(true);
         } finally {
             await f.close();
         }
@@ -221,7 +221,7 @@ describe("Unit: BlockQueueManager", () => {
             expect(await f.retention()).to.equal(null);
             expect(
                 await f.control.query.isBlacklisted(f.strangers[0]).request()
-            ).to.equal(false);
+            ).to.equal(true);
         } finally {
             await f.close();
         }
@@ -237,7 +237,7 @@ describe("Unit: BlockQueueManager", () => {
             expect(await f.retention()).to.equal(null);
             expect(
                 await f.control.query.isBlacklisted(f.strangers[0]).request()
-            ).to.equal(false);
+            ).to.equal(true);
         } finally {
             await f.close();
         }

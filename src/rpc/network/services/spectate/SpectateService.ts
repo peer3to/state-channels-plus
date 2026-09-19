@@ -1,4 +1,5 @@
 import SpectateServiceRpcMethods from "./SpectateRpcMethods";
+import { DisconnectPolicy } from "@/DisconnectPolicy";
 import { Block, StateSnapshot } from "@/models";
 import type P2PManager from "@/P2PManager";
 import ANetworkRpcService from "@/rpc/network/ANetworkRpcService";
@@ -103,23 +104,39 @@ class SpectateService extends ANetworkRpcService<SpectateServiceRpcMethods> {
         syncRequest: SyncRequest,
         timeoutMs: number
     ): Promise<boolean> {
+        let response: { encodedSyncPayload: Bytes };
         try {
-            const { encodedSyncPayload } = await this.remoteRpc.spectateService
+            response = await this.remoteRpc.spectateService
                 .onSpectateRequest(syncRequest)
                 .request(normalizedPeerAddress, { timeoutMs });
-
+        } catch (error) {
+            // Silence, a refusal, or a lost transport is not proven
+            // misbehaviour: it spends the peer's shared retry bound.
+            this.logger.debug("spectateSync - request failed", {
+                peerAddress: normalizedPeerAddress,
+                error: errorMessage(error)
+            });
+            this.p2pManager.disconnectConnection(
+                normalizedPeerAddress,
+                DisconnectPolicy.allowRetry()
+            );
+            return false;
+        }
+        try {
             return await this.applySyncResponse(
                 normalizedPeerAddress,
                 syncRequest,
-                encodedSyncPayload
+                response.encodedSyncPayload
             );
         } catch (error) {
+            // A payload that cannot even be applied is Byzantine evidence.
             this.logger.debug("spectateSync - failed", {
                 peerAddress: normalizedPeerAddress,
                 error: errorMessage(error)
             });
             this.p2pManager.disconnectAndBlacklistPeerByEvmAddress(
-                normalizedPeerAddress
+                normalizedPeerAddress,
+                "sync payload failed to apply"
             );
             return false;
         }
@@ -1145,7 +1162,10 @@ class SpectateService extends ANetworkRpcService<SpectateServiceRpcMethods> {
             peerAddress,
             reason
         });
-        this.p2pManager.disconnectAndBlacklistPeerByEvmAddress(peerAddress);
+        this.p2pManager.disconnectAndBlacklistPeerByEvmAddress(
+            peerAddress,
+            `sync payload rejected: ${reason}`
+        );
         return false;
     }
 }

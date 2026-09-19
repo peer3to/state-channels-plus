@@ -10,6 +10,7 @@ import OpenChannelNegotiationRpcMethods, {
     type OpenChannelNegotiationP2PManager
 } from "./OpenChannelNegotiationRpcMethods";
 import Clock from "@/Clock";
+import { DisconnectPolicy } from "@/DisconnectPolicy";
 
 import ANetworkRpcService from "@/rpc/network/ANetworkRpcService";
 import {
@@ -196,7 +197,9 @@ export default class OpenChannelNegotiationService extends ANetworkRpcService<
             if (mode === "targeted") {
                 return { status: "observed-target-open", channelId };
             }
-            this.p2pManager.disconnectAndBlacklistPeerByEvmAddress(peer);
+            // A peer that matched us into an already-open channel has a stale
+            // view, not a fault: close without a strike.
+            this.p2pManager.disconnectConnection(peer, DisconnectPolicy.ALLOW);
             await this.p2pManager.stateManager.clearChannelId();
             return { status: "retry" };
         }
@@ -449,7 +452,7 @@ export default class OpenChannelNegotiationService extends ANetworkRpcService<
             selectorChallenge,
             advertiserChallenge
         );
-        this.protocolFailure(attempt, `remote abort: ${reason}`);
+        this.remoteAbort(attempt, `remote abort: ${reason}`);
     }
 
     public rejectProtocolTransport(transport: NetworkTransport): void {
@@ -461,13 +464,10 @@ export default class OpenChannelNegotiationService extends ANetworkRpcService<
         ) {
             return;
         }
-        if (transport.peerAddress) {
-            this.p2pManager.disconnectAndBlacklistPeerByEvmAddress(
-                transport.peerAddress
-            );
-            return;
-        }
-        this.p2pManager.disconnectAndBlacklistPeer(transport);
+        this.p2pManager.disconnectConnection(
+            transport,
+            DisconnectPolicy.BLACKLIST
+        );
     }
 
     private async runLowerAddressNegotiation(
@@ -576,7 +576,7 @@ export default class OpenChannelNegotiationService extends ANetworkRpcService<
                         this.state.attempt === attempt &&
                         attempt.theirBalance === undefined
                     ) {
-                        this.protocolFailure(
+                        this.lifecycleFailure(
                             attempt,
                             "lower-address initiator stayed silent"
                         );
@@ -637,8 +637,11 @@ export default class OpenChannelNegotiationService extends ANetworkRpcService<
                     const me =
                         this.p2pManager.stateManager.checksumSignerAddress;
                     if (compareAddresses(me, attempt.peerAddress) < 0) {
-                        this.p2pManager.disconnectAndBlacklistPeerByEvmAddress(
-                            attempt.peerAddress
+                        // A burned opening window is not proven misbehaviour:
+                        // it spends the higher peer's shared retry bound.
+                        this.closeAttemptPeer(
+                            attempt,
+                            DisconnectPolicy.allowRetry()
                         );
                     }
                     await this.clearAttempt(
@@ -654,7 +657,13 @@ export default class OpenChannelNegotiationService extends ANetworkRpcService<
     private onCommittedPeerDisconnected(attempt: MatchedAttempt): void {
         if (this.state.attempt !== attempt) return;
         if (attempt.mode === "ordinary") {
-            this.p2pManager.profileManager.blacklistPeer(attempt.peerAddress);
+            // Losing the committed peer mid-negotiation is a lifecycle event
+            // (closed tab, lost link): one strike against its identity, no
+            // verdict. There is no transport left to close.
+            this.p2pManager.disconnectConnection(
+                attempt.peerAddress,
+                DisconnectPolicy.allowRetry()
+            );
         }
         if (!attempt.localOpeningSignatureIssued) {
             void this.clearAttempt(
@@ -664,14 +673,63 @@ export default class OpenChannelNegotiationService extends ANetworkRpcService<
         }
     }
 
+    /**
+     * Every close this service makes against the committed peer goes through
+     * here: the close is ours, not a loss of the peer, so the disconnect
+     * observer is detached first and cannot turn it into a second strike.
+     */
+    private closeAttemptPeer(
+        attempt: MatchedAttempt,
+        policy: DisconnectPolicy,
+        reason?: string
+    ): void {
+        attempt.unsubscribeDisconnected?.();
+        attempt.unsubscribeDisconnected = undefined;
+        this.p2pManager.disconnectConnection(
+            attempt.peerAddress,
+            policy,
+            reason
+        );
+    }
+
+    /** A negotiation step the peer got wrong. Objective fault: blacklist. */
     private protocolFailure(attempt: MatchedAttempt, reason: string): void {
         this.logger.warn("Matched negotiation failed", {
             peerAddress: attempt.peerAddress,
             reason
         });
-        this.p2pManager.disconnectAndBlacklistPeerByEvmAddress(
-            attempt.peerAddress
-        );
+        this.closeAttemptPeer(attempt, DisconnectPolicy.BLACKLIST, reason);
+        this.endFailedAttempt(attempt, reason);
+    }
+
+    /**
+     * The peer failed a negotiation obligation without proving misbehaviour
+     * (silence, a burned window). It spends the peer's shared retry bound.
+     */
+    private lifecycleFailure(attempt: MatchedAttempt, reason: string): void {
+        this.logger.warn("Matched negotiation failed without fault", {
+            peerAddress: attempt.peerAddress,
+            reason
+        });
+        this.closeAttemptPeer(attempt, DisconnectPolicy.allowRetry());
+        this.endFailedAttempt(attempt, reason);
+    }
+
+    /**
+     * The peer ended the negotiation with the protocol's own abort message.
+     * That is lifecycle, not fault: the connection closes with no strike.
+     */
+    private remoteAbort(attempt: MatchedAttempt, reason: string): void {
+        this.logger.warn("Matched negotiation aborted by peer", {
+            peerAddress: attempt.peerAddress,
+            reason
+        });
+        this.closeAttemptPeer(attempt, DisconnectPolicy.ALLOW);
+        this.endFailedAttempt(attempt, reason);
+    }
+
+    /** Shared tail of both failure paths; a signed attempt keeps running. */
+    private endFailedAttempt(attempt: MatchedAttempt, reason: string): void {
         if (!attempt.localOpeningSignatureIssued) {
             void this.clearAttempt(reason, this.failureOutcome(attempt));
         }
@@ -804,9 +862,9 @@ export default class OpenChannelNegotiationService extends ANetworkRpcService<
                 );
                 throw error;
             }
-            this.p2pManager.disconnectAndBlacklistPeerByEvmAddress(
-                attempt.peerAddress
-            );
+            // The receipt may have failed on our own chain provider, so the
+            // peer is closed without a strike.
+            this.closeAttemptPeer(attempt, DisconnectPolicy.ALLOW);
             await this.clearAttempt("ordinary opening receipt failed", "retry");
             throw error;
         }

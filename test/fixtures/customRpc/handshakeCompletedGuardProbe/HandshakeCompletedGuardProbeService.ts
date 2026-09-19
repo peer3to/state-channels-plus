@@ -1,6 +1,7 @@
 // @spec-test-coverage-ignore: worker-side support for HandshakeCompletedGuard component tests
 import type { PingPongRpc } from "../PingPongRpcManifest";
 import { HandshakeCompletedGuardProbeRpcMethods } from "./HandshakeCompletedGuardProbeRpcMethods";
+import { DEFAULT_RETRY_LIMIT } from "@/DisconnectPolicy";
 import type P2PManager from "@/P2PManager";
 import PeerProfile from "@/PeerProfile";
 import ANetworkRpcMethods from "@/rpc/network/ANetworkRpcMethods";
@@ -190,7 +191,8 @@ export type TimeoutGuardProbe = {
     waitCalls: number;
     timeoutMs: number[];
     expectedTimeoutMs: number;
-    firstBlacklisted: boolean;
+    firstStrikes: number;
+    firstSuspended: boolean;
     firstDisconnected: boolean;
     invocations: string[];
 };
@@ -232,10 +234,17 @@ export type DisposedWaiterGuardProbe = {
     managerDisposed: boolean;
 };
 
+export type RepeatedTimeoutGuardProbe = {
+    strikesAfterEach: number[];
+    suspendedAtBound: boolean;
+    invocations: string[];
+};
+
 export type LateCompletionGuardProbe = {
     waitCalls: number;
     invocations: string[];
-    originalBlacklisted: boolean;
+    originalStrikes: number;
+    originalSuspended: boolean;
     originalDisconnected: boolean;
     replacementConnected: boolean;
 };
@@ -520,10 +529,9 @@ export class HandshakeCompletedGuardProbeService extends ANetworkRpcService<
     }
 
     public async probeTimeoutAndFreshWaiter(): Promise<TimeoutGuardProbe> {
-        const transport = this.transport(
-            "0xA000000000000000000000000000000000000005"
-        );
-        const profile = this.register(transport, false);
+        const address = "0xA000000000000000000000000000000000000005";
+        const transport = this.transport(address);
+        this.register(transport, false);
         const target = new GuardTargetService(this.p2pManager);
         const init = this.p2pManager.localRpc.initHandshakeService;
         const originalIsNegotiating = init.isNegotiating.bind(init);
@@ -543,13 +551,13 @@ export class HandshakeCompletedGuardProbeService extends ANetworkRpcService<
             target.runRPC(this.rpc("timed-out"), transport);
             resolvers[0](false);
             await this.flush();
-            const firstBlacklisted = profile.isBlackListed;
+            const firstStrikes =
+                this.p2pManager.profileManager.getStrikes(address);
+            const firstSuspended = this.p2pManager.isSuspended(address);
             const firstDisconnected =
                 !this.p2pManager.openConnections.includes(transport);
 
-            const freshTransport = this.transport(
-                "0xA000000000000000000000000000000000000005"
-            );
+            const freshTransport = this.transport(address);
             const freshProfile = this.register(freshTransport, false);
             target.runRPC(this.rpc("fresh"), freshTransport);
             await this.flush();
@@ -563,7 +571,8 @@ export class HandshakeCompletedGuardProbeService extends ANetworkRpcService<
                     this.p2pManager.stateManager.timeConfig.agreementTime *
                     2 *
                     1000,
-                firstBlacklisted,
+                firstStrikes,
+                firstSuspended,
                 firstDisconnected,
                 invocations: [...target.invocations]
             };
@@ -774,10 +783,49 @@ export class HandshakeCompletedGuardProbeService extends ANetworkRpcService<
         }
     }
 
+    /**
+     * Every expired waiter for one identity spends its shared retry bound; the
+     * expiry that reaches the bound suspends the identity.
+     */
+    public async probeRepeatedTimeoutsSuspend(): Promise<RepeatedTimeoutGuardProbe> {
+        const address = "0xA000000000000000000000000000000000000012";
+        const target = new GuardTargetService(this.p2pManager);
+        const init = this.p2pManager.localRpc.initHandshakeService;
+        const originalIsNegotiating = init.isNegotiating.bind(init);
+        const originalWait = init.waitForHandshakeCompleted.bind(init);
+        const resolvers: ((completed: boolean) => void)[] = [];
+        init.isNegotiating = () => true;
+        init.waitForHandshakeCompleted = async () =>
+            await new Promise<boolean>((resolve) => {
+                resolvers.push(resolve);
+            });
+        const strikesAfterEach: number[] = [];
+        try {
+            for (let expiry = 0; expiry < DEFAULT_RETRY_LIMIT; expiry += 1) {
+                const transport = this.transport(address);
+                this.register(transport, false);
+                target.runRPC(this.rpc(`timed-out-${expiry}`), transport);
+                resolvers[expiry](false);
+                await this.flush();
+                strikesAfterEach.push(
+                    this.p2pManager.profileManager.getStrikes(address)
+                );
+            }
+            return {
+                strikesAfterEach,
+                suspendedAtBound: this.p2pManager.isSuspended(address),
+                invocations: [...target.invocations]
+            };
+        } finally {
+            init.isNegotiating = originalIsNegotiating;
+            init.waitForHandshakeCompleted = originalWait;
+        }
+    }
+
     public async probeLateCompletionAfterTimeout(): Promise<LateCompletionGuardProbe> {
         const address = "0xA000000000000000000000000000000000000011";
         const original = this.transport(address);
-        const originalProfile = this.register(original, false);
+        this.register(original, false);
         const target = new GuardTargetService(this.p2pManager);
         const init = this.p2pManager.localRpc.initHandshakeService;
         const originalIsNegotiating = init.isNegotiating.bind(init);
@@ -809,7 +857,9 @@ export class HandshakeCompletedGuardProbeService extends ANetworkRpcService<
             return {
                 waitCalls,
                 invocations: [...target.invocations],
-                originalBlacklisted: originalProfile.isBlackListed,
+                originalStrikes:
+                    this.p2pManager.profileManager.getStrikes(address),
+                originalSuspended: this.p2pManager.isSuspended(address),
                 originalDisconnected:
                     !this.p2pManager.openConnections.includes(original),
                 replacementConnected:

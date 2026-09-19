@@ -83,11 +83,14 @@ and recovery behavior.
 **<a id="req-sec-3-nppjn5"></a>`REQ-SEC-3-NPPJN5`.** The review MUST separate **objective slashable violations** (provable misbehavior)
 from **non-Byzantine failures** (disconnection, data loss, crash). The former are candidates for
 fraud proofs; the latter need recovery paths, never on-chain punishment. Conflating them either lets
-attackers hide as "unavailable" or punishes honest failures. One local reputation rule is approved as an
-exception (owner decision, 2026-09-02): once a lobby lease is accepted, a peer that loses its final
-transport before the commitment completes is excluded from the excluding peer's local lobby reputation at
-that side's agreement-window timing. This is a local blacklist, never a slashable violation, and a network
-partition during the handoff excludes two honest peers from each other for the blacklist lifetime; see
+attackers hide as "unavailable" or punishes honest failures. Local availability faults are handled by the
+bounded disconnect ladder rather than by exclusion (owner decision, 2026-09-17, superseding the lobby
+exception of 2026-09-02): a peer that burns an agreement window, loses its final transport after an
+accepted lease, stays silent in a handshake or acknowledgement round, or fails a sync request takes one
+counted close against one per-peer bound for the session; the close that reaches the bound suspends the
+peer for the session without a verdict; only proven misconduct records a verdict. This is local session
+reputation, never a slashable violation, and a network partition during a handoff costs two honest peers
+one retry each; see
 [`OQ-AUDIT-LOBBY-1-9S3GVD` (Lobby accepted-lease exclusion versus the no-punishment rule)](open-questions.md#oq-audit-lobby-1-9s3gvd).
 
 ## 3. Required output per gap

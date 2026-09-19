@@ -63,12 +63,14 @@ globalThis.runContractExecutorWorkerClockBrowserSmoke = async () => {
             Number(
                 BigInt((await executor.executeCall("0x", address)).returnValue)
             );
+        const wallBefore = Math.floor(Date.now() / 1000);
         const first = await read();
-        const wallFirst = Math.floor(Date.now() / 1000);
+        const wallAfter = Math.floor(Date.now() / 1000);
         await new Promise((resolve) => setTimeout(resolve, 1100));
         const second = await read();
         return {
-            firstOffset: first - wallFirst,
+            firstOffsetLowerBound: first - wallAfter,
+            firstOffsetUpperBound: first - wallBefore,
             advanced: second > first
         };
     } finally {

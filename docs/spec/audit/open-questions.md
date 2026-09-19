@@ -47,6 +47,13 @@ availability and local-fault blacklist finding ([`DEF-5-E8TP9N`](open-findings.m
 [`DEF-9-724SXP`](open-findings.md#def-9-724sxp), [`DEF-10-199C7F`](open-findings.md#def-10-199c7f)) stays open
 for every other path.
 
+**Revision (owner, 2026-09-17).** The lobby consequence is no longer an exclusion or a session bar. It
+is the counted close of the disconnect ladder ([`REQ-RPC-6-E60S4J` (Ordered ingress verification)](../specification/peer-communication/rpc.md#req-rpc-6-e60s4j)):
+each side records one strike against the absent peer at its own timing, the peer stays selectable below
+the bound, and the strike that reaches the bound suspends it for the session without a verdict. A
+partition during the handoff now costs two honest peers one retry each. The same ladder covers the
+sync-request and dispute-acknowledgement silence paths that were retained on 2026-09-07.
+
 <a id="oq-audit-runtime-1-hh601x"></a>
 
 ## OQ-AUDIT-RUNTIME-1-HH601X — Watchdog threshold under gate load

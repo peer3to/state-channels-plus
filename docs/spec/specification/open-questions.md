@@ -413,11 +413,30 @@ Grouped decisions surfaced while specifying the peer-RPC model
 - **Ban durability across reconnects.** Every live transport has an unauthenticated profile, so a
   pre-handshake verdict can ban its live Holepunch handle. Decide whether that ban must survive a
   new SDK peer handle or process restart before the EVM identity is authenticated.
-- **Failure-outcome policy consistency.** Endpoint outcomes are currently per-service accidents:
-  join-signature validation failures are penalty-free request errors (free probing), while
-  spectate failures blacklist permanently ([`DEF-5-E8TP9N`](../audit/open-findings.md#def-5-e8tp9n)); WebRTC signaling failures are silently
-  ignored. Decide one policy table — which failure classes disconnect, blacklist, error, or are
-  ignored — and make endpoints conform.
+- **Failure-outcome policy consistency.** _Resolved 2026-09-16._ Endpoint outcomes were per-service
+  accidents: join-signature validation failures are penalty-free request errors (free probing), while
+  spectate failures blacklist permanently ([`DEF-5-E8TP9N`](../audit/open-findings.md#def-5-e8tp9n));
+  WebRTC signaling failures are silently ignored. The policy is now stated once as a four-outcome
+  ladder that no close inherits from another caller — close with reconnect allowed; a counted close
+  that spends one of the peer's bounded retries for the session; suspension for the session without a
+  verdict, applied by the counted close that reaches the bound; and close and exclude with a persisted
+  verdict — and only an attributable fault by the peer takes the last
+  ([`REQ-RPC-6-E60S4J` (Ordered ingress verification)](peer-communication/rpc.md#req-rpc-6-e60s4j),
+  [`REQ-AUTH-4-JWCF71` (Penalty requires proof, and clock faults are not proof)](peer-communication/handshake.md#req-auth-4-jwcf71)).
+  Silence, timeouts, clock differences, a burned lobby or negotiation window, a sync request that
+  fails, and a refused or silent dispute acknowledgement are counted closes; a name this deployment
+  does not have ([`REQ-RPC-8-44XECF` (Compatibility before protected calls)](peer-communication/rpc.md#req-rpc-8-44xecf)),
+  a peer's polite abort, and failures that may be local keep reconnect allowed with no count
+  ([`REQ-LOBBY-7-BXQ1QA` (Symmetric timeout consequence)](peer-communication/lobby-matching.md#req-lobby-7-bxq1qa),
+  [`REQ-NEG-4-ZQ0985` (Committed-attempt admission and recovery)](peer-communication/channel-negotiation.md#req-neg-4-zq0985)). The counter is
+  one per peer for the session, keyed by the transport key before proof and the identity after, so a
+  first contact that keeps failing is refused by its key. The verdict is persisted as identity and
+  reason. The rejected alternative was a lobby-session do-not-rematch set beside the ladder: it added
+  bookkeeping with no distinct observable behavior once the counted close exists.
+  _Rationale:_ conflating unavailability with misbehavior punishes honest peers, which the security
+  review forbids as a general principle; the bound keeps a peer that never succeeds from looping
+  forever. _Decided 2026-09-17:_ the sync-timeout and dispute-acknowledgment silence paths retained on
+  2026-09-07 ([`DEF-5-E8TP9N`](../audit/open-findings.md#def-5-e8tp9n)) now take the counted close too.
 
 <a id="oq-spec-lobby-1-d65ytt"></a>
 

@@ -365,7 +365,7 @@ describe("P2PManager", function () {
         expect(result.blacklistByAddress).to.equal(true);
         expect(result.blacklistByStaleTransportAddress).to.equal(true);
         expect(result.staleAndCurrentDisconnected).to.equal(true);
-        expect(result.missingAddressIgnored).to.equal(true);
+        expect(result.missingAddressRecorded).to.equal(true);
         expect(result.connectedPeers).to.deep.equal([
             fixture!.address(0),
             fixture!.address(1)

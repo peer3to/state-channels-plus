@@ -20,6 +20,7 @@ export * from "./errorPeerAddress";
 export * from "./logging";
 export * from "./EthersResultProxy";
 export * from "./address";
+export * from "./hpAddressKey";
 export * from "./localDiamond";
 export * from "./contractAbi";
 export * from "./contractSize";

@@ -145,9 +145,11 @@ checks defer until authoritative on-chain membership and a usable window, with o
 
 ## Peer-fault call-site audit — 2026-09-01
 
-The audited ingress and handshake call sites now use `disconnectAndBlacklistPeer` for attributable
-wire violations. The helper prefers the authenticated address, so a fault received on a retired
-transport still blacklists the current profile and closes both current and reporting transports.
+The audited ingress and handshake call sites now state `DisconnectPolicy.BLACKLIST` with a reason at
+the one close entry point for attributable wire violations (2026-09-18: the former
+`disconnectAndBlacklistPeer` helper is gone). The switch prefers the authenticated address, so a
+fault received on a retired transport still blacklists the current profile and closes both current
+and reporting transports.
 Lifecycle cleanup, network loss, timeouts without proof, response-send failure, and local dispatch
 exceptions continue to call `disconnectConnection`.
 

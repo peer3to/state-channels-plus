@@ -30,6 +30,19 @@ intake rechecks cached eligibility regardless of the sync boolean and blacklists
 original copy after sync. Eligible copies follow the existing scheduling and validation flow. Source
 helpers read the entry's map to identify suppliers. See [ingestBlockConfirmation](../../../../../../../src/stateManager/ingest/BlockQueueManager.ts#L61).
 
+Expiry probes allow a verified successor of the queued fork. A completed successor proof is inconclusive about an absent old-fork block, so neither supplier nor author is excluded for that absence. Failed or unrelated proofs retain their existing exclusion policy. See [BlockQueueManager.ts](../../../../../../../src/stateManager/ingest/BlockQueueManager.ts#L595).
+
+Queue channel identity uses the common conversion. QueuedBlockEntry attribution, scheduling and recovery remain unchanged. See [BlockQueueManager.ts](../../../../../../../src/stateManager/ingest/BlockQueueManager.ts#L19).
+
+1. **Fixed entry lifetime from first sight** — duplicates and restores never extend it, so junk cannot live forever by re-delivery ([`REQ-BLOCK-PIPE-5-WJ31RG` (Pre-execution merge layer)](../../../../../specification/block-progression/block-processing.md#req-block-pipe-5-wj31rg)).
+2. **Eligible-source recovery waits for lifetime expiry** — unknown-source admission uses the separate ingress sync; known-stale forks drop silently.
+   A probe decides the source's fate: `sync` closes a source that fails to prove with a counted close (one strike, suspension at the bound, no verdict), and the queue excludes a source whose proven lineage does not carry the probed block (the sync landed on the source's latest fork and the block is neither stored there nor re-queued for execution by the sync's replay, whose execution is deferred) — that source supplied junk ([`REQ-BLOCK-PIPE-4-CF52J6` (Recovery without bypass)](../../../../../specification/block-progression/block-processing.md#req-block-pipe-4-cf52j6)). A source whose lineage carries the block stays; a block on any other fork after the sync is inconclusive and its source stays. Probes use `SpectateService.sync`, which waits for the in-flight request, reuses it when it covers the requested target, and otherwise starts the required request. A failed request uses the counted-close policy; invalid proof content still produces a blacklist verdict. Probes are observed detached work with no await after the sync, so none can reject.
+3. **Fork recovery is coalesced and detached** (memoized kill-period gate, O(1) chain reads per window; detached because ingest can already hold the mutex via dispute re-ingest).
+4. **Exact recovery uses the shared sync default** — expiry recovery calls `sync` with its exact peer,
+   fork, and height. The omitted timeout keeps the service's one-window default; false returns to the
+   queue's existing restore/drop owner and never triggers initial-load abort policy.
+5. **Authenticity via the canonical predicate** so off-chain and on-chain agree on 'authentic' ([`INV-MIRROR-1-VAF778` (Single implementation)](../../../../../specification/enforcement/local-mirror.md#inv-mirror-1-vaf778)).
+
 ## Inputs, outputs, state, and side effects
 
 Explicit origin and bounded contributions enter through public intake/queue methods. The queue returns entries carrying their source map for normal validation. The manager owns fixed queue deadlines and execution scheduling. Membership and sync reads remain in their existing services.

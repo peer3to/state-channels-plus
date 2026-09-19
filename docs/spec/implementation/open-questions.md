@@ -28,6 +28,20 @@ Existing `OQ-*` IDs are preserved; new questions use the layer-scoped namespace 
 | [`OQ-IMPL-PROMOTION-PUBLICATION-1-T74062`](open-questions.md#oq-impl-promotion-publication-1-t74062) | Future publication after off-chain promotion                                                                                      | Plan            | Current queue admission and optional promotion                                                                                                                                                        | Future; non-blocking              |
 | [`OQ-IMPL-SYNC-IN-FLIGHT-1-WC8385`](open-questions.md#oq-impl-sync-in-flight-1-wc8385)               | Ordinary sync collision before intake eligibility recheck                                                                         | Engineer review | [Owner](source/src/stateManager/ingest/BlockQueueManager.ts.md)                                                                                                                                       | Future; non-blocking              |
 | [`OQ-IMPL-RPC-COOLDOWN-1-XMSNR7`](open-questions.md#oq-impl-rpc-cooldown-1-xmsnr7)                   | Cooldown for on-demand RPC queries                                                                                                | Engineer review | [Owner](source/src/stateManager/membership/MembershipService.ts.md)                                                                                                                                   | Future; non-blocking              |
+| [`OQ-IMPL-STRIKE-1-B10CBB`](open-questions.md#oq-impl-strike-1-b10cbb) | Retry strikes never reset inside a session, so a peer that recovers keeps its earlier strikes until the runtime restarts          | Code   | [ProfileManager.ts.md](source/src/ProfileManager.ts.md), [rpc.md](../specification/peer-communication/rpc.md)                                                                                         | Open                              |
+
+<a id="oq-impl-strike-1-b10cbb"></a>
+
+## OQ-IMPL-STRIKE-1-B10CBB — Strike reset inside a session
+
+The counted close keeps one strike counter per peer key for the life of the manager
+([ProfileManager](source/src/ProfileManager.ts.md)). Nothing decrements or clears it: a peer that failed
+twice, then completed a handshake and worked correctly for hours, is still one counted close away from
+suspension, and a completed handshake, an opened channel, or elapsed time changes nothing. The owner kept
+this simple on 2026-09-17. The open decision is whether a strike should expire, whether a completed
+handshake or a successfully opened channel should clear the peer's count, and whether a suspension should
+lift after a stated interval instead of at restart. Until decided, implementations keep the count for the
+session and the specification states no reset.
 
 <a id="oq-38-1rbxv3"></a>
 

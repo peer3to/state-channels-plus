@@ -1,3 +1,4 @@
+import { DisconnectPolicy } from "@/DisconnectPolicy";
 import type ANetworkRpcMethods from "@/rpc/network/ANetworkRpcMethods";
 import type ANetworkRpcService from "@/rpc/network/ANetworkRpcService";
 import {
@@ -58,7 +59,12 @@ class HandshakeAdmissionPolicy implements DeferredAdmissionPolicy {
                 peerAddress: transport.peerAddress
             }
         );
-        this.disconnectAndBlacklist(transport);
+        // The waiter expired rather than the peer misbehaving, so this spends
+        // the peer's shared retry bound instead of recording a verdict.
+        this.service.p2pManager.disconnectConnection(
+            transport,
+            DisconnectPolicy.allowRetry()
+        );
     }
 
     private isCurrentTransport(transport: NetworkTransport): boolean {
@@ -94,17 +100,11 @@ class HandshakeAdmissionPolicy implements DeferredAdmissionPolicy {
                 method: rpc.method
             }
         );
-        this.disconnectAndBlacklist(transport);
-    }
-
-    private disconnectAndBlacklist(transport: NetworkTransport): void {
-        if (transport.peerAddress) {
-            this.service.p2pManager.disconnectAndBlacklistPeerByEvmAddress(
-                transport.peerAddress
-            );
-            return;
-        }
-        this.service.p2pManager.disconnectAndBlacklistPeer(transport);
+        this.service.p2pManager.disconnectConnection(
+            transport,
+            DisconnectPolicy.BLACKLIST,
+            "guarded RPC from an unauthenticated transport"
+        );
     }
 }
 

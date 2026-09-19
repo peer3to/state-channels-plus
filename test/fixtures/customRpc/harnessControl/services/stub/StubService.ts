@@ -130,7 +130,10 @@ export type StubKey =
     | "membershipJoinReceipt"
     | "membershipTopUpReceipt"
     | "countInitHandshake"
-    | "lobbyRoleDuration";
+    | "lobbyRoleDuration"
+    | "handshakeRequestSkew"
+    | "dropHandshakeAcks"
+    | "openingSubmission";
 
 export type HeldLobbyReplyKind = "pick" | "commit";
 export type HeldNegotiationReplyKind = "exchangeTerms" | "openProposal";
@@ -370,6 +373,8 @@ export class StubService extends ANetworkRpcService<
     spectateGuardBlocked = false;
     /** Transport captured by the init-handshake capture stub (pre-handshake). */
     capturedInitHandshakeTransport?: NetworkTransport;
+    /** Opening submissions parked by the hold stub, released together. */
+    heldOpeningSubmissions: (() => void)[] = [];
     /** Real init-handshake calls observed by the counting wrapper. */
     private queueProbeHold?: HeldRpcReply & {
         completed: number;

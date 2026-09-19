@@ -1,5 +1,7 @@
+import { DisconnectPolicy } from "@/DisconnectPolicy";
 import type P2PManager from "@/P2PManager";
 import { LocalTransport } from "@/transport";
+import LocalPeerInfo from "@/transport/LocalPeerInfo";
 import type { Address, ChecksumAddress } from "@/types/types";
 import { createLogger, type Logger } from "@/utils";
 import { addressesEqual, getChecksumAddress } from "@/utils/address";
@@ -725,7 +727,8 @@ export class LocalDiscoveryServer {
                         p2pManager.isDisposed ||
                         !session ||
                         session.server !== server ||
-                        !dialerAddress
+                        !dialerAddress ||
+                        LocalPeerInfo.isBanned(p2pManager, dialerAddress)
                     ) {
                         ws.close();
                         return;
@@ -734,7 +737,8 @@ export class LocalDiscoveryServer {
                         if (
                             this._cleanupRequested ||
                             p2pManager.isDisposed ||
-                            ws.readyState !== WebSocket.OPEN
+                            ws.readyState !== WebSocket.OPEN ||
+                            LocalPeerInfo.isBanned(p2pManager, dialerAddress)
                         ) {
                             ws.close();
                             return;
@@ -745,6 +749,11 @@ export class LocalDiscoveryServer {
                         // installed first.
                         ws.send(LOCAL_TRANSPORT_SERVER_READY_MESSAGE);
                         const lt = new LocalTransport(ws, p2pManager.rpcRouter);
+                        p2pManager.profileManager.setBannablePeerInfo(
+                            lt,
+                            new LocalPeerInfo(p2pManager, dialerAddress)
+                        );
+                        if (lt.isClosed) return;
                         ws.once("close", () =>
                             session.inboundClosedAt.set(
                                 dialerAddress,
@@ -1035,7 +1044,7 @@ export class LocalDiscoveryServer {
             );
             if (!session || session.server !== myServer) return;
 
-            if (p2pManager.isBlacklisted(peerAddress as Address)) {
+            if (this.isPeerExcluded(p2pManager, peerAddress)) {
                 this.logger.debug("Announcement ignored (blacklisted)", {
                     ...logBase,
                     myRendezvousKey
@@ -1122,6 +1131,17 @@ export class LocalDiscoveryServer {
             ?.delete(getChecksumAddress(peerAddress));
     }
 
+    /** A recorded verdict or a session suspension: do not dial this peer again. */
+    private static isPeerExcluded(
+        p2pManager: P2PManager,
+        peerAddress: string
+    ): boolean {
+        return (
+            p2pManager.isBlacklisted(peerAddress as Address) ||
+            LocalPeerInfo.isBanned(p2pManager, peerAddress)
+        );
+    }
+
     /**
      * Peer Logic: Connects to a specific peer.
      * Retries with capped backoff while the owning topic session remains active.
@@ -1146,8 +1166,8 @@ export class LocalDiscoveryServer {
                 ? "dial-active"
                 : this.isPeerConnected(p2pManager, peerAddress)
                   ? "peer-connected"
-                  : p2pManager.isBlacklisted(peerAddress as Address)
-                    ? "blacklisted"
+                  : this.isPeerExcluded(p2pManager, peerAddress)
+                    ? "excluded"
                     : undefined;
         if (skipReason) {
             // A skipped retry is the end of the road for this key: no
@@ -1199,7 +1219,7 @@ export class LocalDiscoveryServer {
                 p2pManager.isDisposed ||
                 this.getDiscoverySession(p2pManager, rendezvousKey) !==
                     session ||
-                p2pManager.isBlacklisted(peerAddress as Address)
+                this.isPeerExcluded(p2pManager, peerAddress)
             ) {
                 return;
             }
@@ -1271,6 +1291,10 @@ export class LocalDiscoveryServer {
                 clearTimeout(transportReadyTimeout);
                 const lt = new LocalTransport(ws, p2pManager.rpcRouter);
                 transport = lt;
+                p2pManager.profileManager.setBannablePeerInfo(
+                    lt,
+                    new LocalPeerInfo(p2pManager, peerAddress)
+                );
                 const handshakeService =
                     p2pManager.localRpc.initHandshakeService;
                 handshakeService.initHandshake(lt);
@@ -1281,7 +1305,10 @@ export class LocalDiscoveryServer {
                     )
                     .then((completed) => {
                         if (!completed) {
-                            p2pManager.disconnectConnection(lt);
+                            p2pManager.disconnectConnection(
+                                lt,
+                                DisconnectPolicy.ALLOW
+                            );
                             scheduleRetry("handshake-timeout");
                             return;
                         }
