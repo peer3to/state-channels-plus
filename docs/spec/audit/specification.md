@@ -126,3 +126,32 @@ requirement records that an owner cancelling its own work has already settled it
 settled twice, which is a boundary the implementation obligations carry rather than a black-box one. Every
 new permutation was appended after the highest existing number in its plan; nothing was renumbered and no
 permutation was retired.
+
+A third amendment, from the second blind review round, closes the same class rather than a new one. The first
+two amendments described the fence as if "does not change the runtime's state" and "costs its responder
+nothing" were the whole of it; the review found three further ways for work begun for a channel the runtime
+had left to reach the next one, and the requirement now states each without naming a component.
+[`REQ-LIF-10-QR8NQ9` (Runtime departure and channel reuse)](../specification/settlement/lifecycle.md#req-lif-10-qr8nq9)
+now says that such work performs **none** of its writes — including one it would make before its own result is
+verified, which is where "changes the runtime's state" was silently read as "installs a verified payload" —
+that it does not re-establish the departed runtime's membership, since an authorization assembled while the
+channel was still held remains perfectly valid and submitting it would put the departed signer back on chain,
+and that the no-penalty rule covers a peer's answer, its refusal, and the failure of the request alike. It
+also states, for the first time, that **while the return is in progress the runtime records no exclusion at
+all**: every peer of the channel being given up is departing with it, so a verdict earned there is about no
+channel, and since the engineer's 2026-09-19 decision made exclusions identity-scoped it would follow that
+identity into the next channel. That last sentence is a direct consequence of the identity-scope decision, so
+[`REQ-AUTH-4-JWCF71` (Penalty requires proof)](../specification/peer-communication/handshake.md#req-auth-4-jwcf71)
+carries it too, as a cross-reference rather than a second obligation — the release owns the rule, the
+exclusion requirement records that it follows from its own scope. Four permutations are appended after the
+highest existing number:
+[`REQ-LIF-10-QR8NQ9.T1.P21`](../specification/settlement/lifecycle.md#req-lif-10-qr8nq9.t1.p21) (no write,
+first write included),
+[`REQ-LIF-10-QR8NQ9.T1.P22`](../specification/settlement/lifecycle.md#req-lif-10-qr8nq9.t1.p22) (no
+membership),
+[`REQ-LIF-10-QR8NQ9.T1.P23`](../specification/settlement/lifecycle.md#req-lif-10-qr8nq9.t1.p23) (no exclusion
+during the return), and
+[`REQ-LIF-10-QR8NQ9.T1.P24`](../specification/settlement/lifecycle.md#req-lif-10-qr8nq9.t1.p24) (no penalty
+from a request round that outlived its channel). Nothing was renumbered, no permutation was retired, and the
+lifecycle security considerations gained the chain-side and registry-side halves of the hazard that the
+earlier text had confined to local state.

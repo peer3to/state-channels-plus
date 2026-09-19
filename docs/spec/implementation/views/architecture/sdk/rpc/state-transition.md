@@ -15,7 +15,7 @@ Implementation:
 [`StateTransitionService`](../../../../../../../src/rpc/network/services/stateTransition/StateTransitionService.ts#L7),
 [`StateTransitionRpcMethods`](../../../../../../../src/rpc/network/services/stateTransition/StateTransitionRpcMethods.ts#L6).
 Primary consumer: [`BlockQueueManager.ingestBlockConfirmation`](../../../../../../../src/stateManager/BlockQueueManager.ts#L56)
-via [`StateManager.ingestBlockConfirmation`](../../../../../../../src/stateManager/StateManager.ts#L492).
+via [`StateManager.ingestBlockConfirmation`](../../../../../../../src/stateManager/StateManager.ts#L505).
 
 ## 1. Purpose & position in the protocol
 
@@ -30,9 +30,9 @@ Position in the flow:
 
 - **Sending side** (local, typed proxy — never through this service's handler): the success path
   gossips after persistence
-  ([`StateManager.success`](../../../../../../../src/stateManager/StateManager.ts#L492) step 7, only when
+  ([`StateManager.success`](../../../../../../../src/stateManager/StateManager.ts#L505) step 7, only when
   `PARTICIPATING` and not dispute replay), the stored-merge path re-broadcasts grown signature
-  sets ([`tryMergeStoredBlockConfirmation`](../../../../../../../src/stateManager/StateManager.ts#L492) →
+  sets ([`tryMergeStoredBlockConfirmation`](../../../../../../../src/stateManager/StateManager.ts#L505) →
   `BROADCAST`), and the strategies re-broadcast on `goodNewSignaturesOnExistingBlock`
   ([`BlockValidationStrategy`](../../../../../../../src/stateManager/validationStrategy/BlockValidationStrategy.ts#L22)).
   All use `.broadcast()` — fire-and-forget to every open connection, no delivery receipt.

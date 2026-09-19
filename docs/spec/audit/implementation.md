@@ -287,6 +287,35 @@ generation as well, beside its existing disposal check and at the same point —
 `multicall` — so a submit parked on its gas-limit read when the reset lands abandons the write instead of
 sending it into the next channel.
 
+The second review round found that the fence was placed at the last point of each operation rather than at
+every point where it leaves a trace, and the corrections follow one rule: the check belongs immediately
+before each effect the operation can still produce. In
+[SpectateService](../implementation/source/src/rpc/network/services/spectate/SpectateService.ts.md) it now
+runs before `fetchAndPersistOnChainSnapshot`, which is the method's first write and happens before any of
+the payload is verified, and once per block in the replay loop, because every ingest awaits the state mutex
+and a reset can take it between two blocks. In
+[LocalP2pSigner](../implementation/source/src/evm/signer/LocalP2pSigner.ts.md) both join paths capture the
+generation before `prepareJoinChannelConfirmation` and re-read it before `joinChannel`/`topUpBalance`: the
+collected authorization is still perfectly valid, which is exactly the problem, because submitting it would
+put the departed signer back into the channel it just left — the one late effect no local cleanup can undo.
+In [IsForkDisputedService](../implementation/source/src/rpc/network/services/isForkDisputedService/IsForkDisputedService.ts.md)
+the detached per-peer requests capture it and both consequence branches consult it, since the reset cuts
+every transport and would otherwise convert its own teardown into an exclusion of every peer in the round.
+[StateManager](../implementation/source/src/stateManager/StateManager.ts.md) gained the predicate those
+readers share, `isStaleChannelWork(generation)`, so no call site restates the comparison.
+
+One correction is deliberately not a generation check. A verdict recorded _while the release is running_
+cannot be caught by comparing generations — the generation has already moved, and what has to be suppressed
+is the verdict rather than a write — so the reset raises `_isResettingChannel` beside the generation bump and
+lowers it in a `finally`, which is why the ordered release body moved into the private `releaseChannel()`:
+the flag has to fall on the throwing path too, and a `try` around the whole inline sequence would have buried
+the sequence that the ordering argument rests on. Both of
+[P2PManager](../implementation/source/src/P2PManager.ts.md)'s blacklist entry points read it and only
+disconnect while it is up. The justification is the engineer's own decision: since 2026-09-19 an exclusion is
+identity-scoped and survives the reset, so a verdict earned against a peer that is being dropped _because_
+the channel is being given up would follow that identity into the next channel while belonging to no channel
+this runtime served.
+
 Two reset steps can now fail rather than merely finish, and the ownership of that failure is deliberate.
 `StateManager.resetChannel()` checks the chain-feed drain and throws when it reports unfinished work, because
 a handler outliving the bound would resume against the next channel; it does not itself dispose, since reset

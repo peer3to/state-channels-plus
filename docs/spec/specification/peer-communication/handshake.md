@@ -143,7 +143,12 @@ transport, including silence before proof, never penalizes an identity. An exclu
 excluded identity for as long as the runtime lives, not to the channel whose traffic proved the fault: it
 survives the runtime's return to its pre-channel state and still refuses that identity in the next channel
 the runtime selects. Everything else a node holds about a peer is channel-scoped and is released with the
-channel. Exclusions are not durable, so none of them survives a restart.
+channel. Exclusions are not durable, so none of them survives a restart. Because the scope is the identity
+and not the channel, no exclusion is recorded while a runtime is returning to its pre-channel state: the
+peers of the channel being given up are all departing with it, and a verdict recorded there would outlive
+the channel that produced it without belonging to any channel the runtime served
+([`REQ-LIF-10-QR8NQ9` (Runtime departure and channel reuse)](../settlement/lifecycle.md#req-lif-10-qr8nq9)).
+A peer whose fault is observed during that return is disconnected only.
 
 **Decision ([`REQ-AUTH-4-JWCF71`](handshake.md#req-auth-4-jwcf71), engineer decision, 2026-09-19, PR #494, resolving [`OQ-SPEC-LEAVE-1-9Q4BV3` (Scope of peer exclusion across a channel change)](../open-questions.md#oq-spec-leave-1-9q4bv3)).**
 Exclusion is identity-scoped for the runtime's lifetime, not channel-scoped. An exclusion already requires

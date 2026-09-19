@@ -340,15 +340,21 @@ same settled-removal and local `SYNCED` conditions. What changed is only what ha
 observed, so no on-chain safety property moves with this change.
 
 The protected asset the reuse touches is the isolation between two channels served by one runtime. The
-release is complete by construction rather than by inspection: every channel-scoped store is rebuilt through
-one facade call, peers and profiles go through one manager reset, and the selected channel id, fork id, and
-status all return to their pre-channel values (the leader flag is application-owned and stays with its single
+release itself is complete by construction rather than by inspection: every channel-scoped store is rebuilt
+through one facade call, peers and profiles go through one manager reset, and the selected channel id, fork
+id, and status all return to their pre-channel values (the leader flag is application-owned and stays with its single
 writer). The ordering is the safety argument —
 producers stop, the chain feed is detached and drained, peers and timers go, and only then is storage
 cleared — so nothing in flight can read a half-released runtime or, worse, write a record from the old
 channel into a store the next channel will read. The isolation is asserted end to end as well: after a reuse
 the runtime tracks only its new channel while the peers of the channel it left neither list it nor move
 ([`REQ-LIF-10-QR8NQ9.T1.P15`](../specification/settlement/lifecycle.md#req-lif-10-qr8nq9.t1.p15)).
+
+What is _not_ complete by construction is the other half: the operations that were already running when the
+release began. Each of those is a separate call site that has to stand down on its own, so the isolation
+there is only as good as the enumeration of those sites — which two review rounds have each extended. The
+residual entries below are written per route for that reason, and the class should be assumed open until a
+round finds nothing.
 
 Residual exposure, all accepted here as recorded rather than resolved:
 
@@ -408,6 +414,35 @@ Residual exposure, all accepted here as recorded rather than resolved:
   oracle is a count of cuts and bans aimed at the responder, taken mid-reset with a probe, because discovery
   is still live there and a disconnected peer would simply reconnect
   ([`REQ-LIF-10-QR8NQ9.T1.P20`](../specification/settlement/lifecycle.md#req-lif-10-qr8nq9.t1.p20)).
+- **The fence was placed per operation, not per effect, and a second review round corrected that.** The
+  previous paragraph's claim that the no-penalty half "reaches every exit" was true of the synchronization and
+  read as if it were true of the fence as a whole; it was not. Three further routes were open. A
+  synchronization checked the fence at its persistence step but wrote the on-chain snapshot into the local EVM
+  one step earlier, before any of the payload had been verified, and re-entered the state mutex once per
+  replayed block without re-checking. A `connectToChannel` with `shouldJoin` spends a signature round trip
+  collecting its confirmation, and a leave settling inside that round trip left a valid authorization that was
+  then submitted — the only route in this class whose effect is on chain and irreversible locally, since it
+  puts the departed signer back into the channel it just left. And a dispute-acknowledgement round's detached
+  requests all reject when the release cuts the transports, so one reset turned every in-flight
+  acknowledgement into an exclusion of a peer that did nothing wrong. Each is now checked immediately before
+  the effect it can still produce. Evidence:
+  [`REQ-LIF-10-QR8NQ9.T1.P21`](../specification/settlement/lifecycle.md#req-lif-10-qr8nq9.t1.p21),
+  [`REQ-LIF-10-QR8NQ9.T1.P22`](../specification/settlement/lifecycle.md#req-lif-10-qr8nq9.t1.p22),
+  [`REQ-LIF-10-QR8NQ9.T1.P24`](../specification/settlement/lifecycle.md#req-lif-10-qr8nq9.t1.p24). Two second-line
+  branches remain unevidenced and are tracked, not claimed
+  ([`FIND-LEAVE-REUSE-3-HCFNEJ` (Leave fence: two second-line branches have no declaration)](open-findings.md#find-leave-reuse-3-hcfnej)).
+- **No exclusion is recorded while the release itself is running.** This is the exclusion decision's own
+  consequence rather than a new policy. Because a verdict is identity-scoped and now outlives the reset, one
+  earned during the release would follow the identity into the next channel — and every peer dropped during
+  the release is dropped _because_ the channel is being given up, so nothing observed there is evidence about
+  the identity. A generation comparison cannot express this window: by then the generation has already moved,
+  and what has to be suppressed is the verdict rather than a write. The reset therefore raises a
+  release-in-progress flag beside the generation bump and lowers it in a `finally`, and both blacklist entry
+  points disconnect without recording while it is up. The residual exposure is the mirror image and is
+  accepted: a peer that genuinely misbehaves during those milliseconds is disconnected and not excluded, and
+  it is admissible in the next channel — an attacker cannot aim at that window, since only the leaving runtime
+  knows when it is open, and any repeat of the fault in the next channel is excluded normally. Evidence:
+  [`REQ-LIF-10-QR8NQ9.T1.P23`](../specification/settlement/lifecycle.md#req-lif-10-qr8nq9.t1.p23).
 - **Reset is refused after shutdown,** keeping `dispose()` and `abort()` terminal; the non-terminal path
   cannot resurrect a runtime that has already released its signer and provider.
 

@@ -307,11 +307,20 @@ chain-feed detach and a bounded drain, then peers and the custom RPC root's chan
 tasks, then storage and the `NOT_OPENED` status under the block-work mutex; and last it re-arms the
 initial-sync latch. A leave from a runtime that owes no departure resets at once, even while the old
 channel's initial sync is still waiting on its peer. That sync captured the generation before its request,
-so when it lands it persists nothing (the check runs under the same mutex the reset clears storage under)
+so when it lands it writes nothing — the check runs before its first local-EVM write, again under the same
+mutex the reset clears storage under, and once per replayed block, because each ingest awaits that mutex —
 and settles no initial-sync wait; re-arming the latch only after the status change keeps the reset's own
 `OPENED` → `NOT_OPENED` transition from settling the next channel's wait. The same captured generation keeps
 its outcome off the peer that served it and keeps a reduction submit parked on its gas-limit read from
-writing to the chain. The scheduled-task step is not silent either: each pending task may carry a cancel
+writing to the chain. Two other operations capture it for the same reason. A `connectToChannel` with
+`shouldJoin` spends a signature round trip collecting its confirmation; if the leave settles inside that
+round trip it returns `false` instead of submitting, because the submission would put the departed signer
+back into the channel it just left. And a dispute-acknowledgement round re-reads it on both of its
+consequence branches, so the reset cutting every transport cannot turn each in-flight request into an
+exclusion. Alongside the generation the reset raises a release-in-progress flag and lowers it in a `finally`
+around the release body (which is why that body is its own private method): while the flag is up the
+P2P manager records no verdict at all and only disconnects, since the peers being dropped are the peers of
+the channel being given up and a verdict now outlives the reset. The scheduled-task step is not silent either: each pending task may carry a cancel
 handler, and cancelling the tasks runs them, so a wait whose only completion was a cancelled timer rejects
 rather than outliving the channel. Two steps can fail rather than merely finish: the chain-feed drain is
 checked, and an undrained feed makes the reset throw — the leave service then aborts the runtime and

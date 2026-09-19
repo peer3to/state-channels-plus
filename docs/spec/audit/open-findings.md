@@ -97,6 +97,30 @@ blacklisted
 [`UNIT-TEST-STATE-MANAGER-RESET-1-9QG1AG.P7`](../implementation/source/src/stateManager/StateManager.ts.md#unit-test-state-manager-reset-1-9qg1ag.p7)).
 A stale branch that rejects its responder, or a generation advanced after the drain, turns it red.
 
+<a id="find-leave-reuse-3-hcfnej"></a>
+
+### FIND-LEAVE-REUSE-3-HCFNEJ — Leave fence: two second-line branches have no declaration
+
+**Status:** Open verification gap. The fence against work begun for a channel the runtime has left is
+implemented on every branch, but two of those branches have no test declaration, and each could regress
+without the covered sibling noticing.
+
+- [`UNIT-TEST-IS-FORK-DISPUTED-SERVICE-1-8DQFCE.P10`](../implementation/source/src/rpc/network/services/isForkDisputedService/IsForkDisputedService.ts.md#unit-test-is-fork-disputed-service-1-8dqfce.p10)
+  — the unacknowledged-answer branch. The covered case
+  ([`.P9`](../implementation/source/src/rpc/network/services/isForkDisputedService/IsForkDisputedService.ts.md#unit-test-is-fork-disputed-service-1-8dqfce.p9))
+  resets while the requests are in flight, so the release cuts the transports and every request takes the
+  failure branch. A peer that answers `false` after the runtime left takes the other branch, which carries its
+  own `isStale()` read; a mutant dropping only that read survives the suite.
+- [`UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P31`](../implementation/source/src/rpc/network/services/spectate/SpectateService.ts.md#unit-test-spectate-service-1-sjbyct.p31)
+  — the per-block re-check in the sync replay loop. The covered cases make the response stale before it
+  reaches the loop, so the loop never runs; the branch that matters is a generation that moves _between_ two
+  suffix ingests, each of which awaits the state mutex the reset takes.
+
+Required evidence: one declaration per permutation, each with an oracle that distinguishes its branch from
+the covered sibling — an answering peer for the first, a generation advanced mid-replay with a count of
+ingested confirmations for the second. Do not credit either from the sibling case or from
+`ValidationService`'s channel-id rejection, which is a different consequence on a different condition.
+
 <a id="find-log-1-659qd2"></a>
 
 ## FIND-LOG-1-659QD2 — Folded collection summary has unsupported coverage credit

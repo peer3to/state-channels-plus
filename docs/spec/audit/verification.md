@@ -381,3 +381,60 @@ both counters, so a handler run after the body cannot hide. Four of the five sch
 so no case can pass on a timer that happened to fire.
 
 Nothing in this round retired a permutation or moved one between declarations.
+
+## Review 494 second-round evidence
+
+A second blind round found three more instances of one class — work begun for a channel the runtime had left
+reaching the next one — and each fix ships with a declaration whose named mutant turns it red.
+
+[StateManagerChannelReset.test.ts](../verification/tests/test/stateManager/StateManagerChannelReset.test.ts.md)
+is now thirteen cases. The late-join case is the only one in the whole suite whose unfenced outcome would have
+been on chain: it holds `prepareJoinChannelConfirmation` so the signature round trip parks exactly where a
+leave can settle underneath it, resets, then releases the hold and asserts one structure over the connect's
+answer and a count of `membershipService.joinChannel` calls. Counting the call rather than reading membership
+is what makes it evidence — a `false` on its own would also be produced by a submission that reverted — and
+dropping the join-path generation check turns it red
+([`REQ-LIF-10-QR8NQ9.T1.P22`](../specification/settlement/lifecycle.md#req-lif-10-qr8nq9.t1.p22),
+[`UNIT-TEST-LOCAL-P2P-SIGNER-1-Q80VPW.P6`](../implementation/source/src/evm/signer/LocalP2pSigner.ts.md#unit-test-local-p2p-signer-1-q80vpw.p6)).
+The acknowledgement case starts a real round for a fork nobody disputed, resets, and waits two seconds — long
+enough for the requests to fail once the reset has cut the transports — before reading a ban count and the
+blacklist; dropping the failure-branch check turns it red
+([`REQ-LIF-10-QR8NQ9.T1.P24`](../specification/settlement/lifecycle.md#req-lif-10-qr8nq9.t1.p24),
+[`UNIT-TEST-IS-FORK-DISPUTED-SERVICE-1-8DQFCE.P9`](../implementation/source/src/rpc/network/services/isForkDisputedService/IsForkDisputedService.ts.md#unit-test-is-fork-disputed-service-1-8dqfce.p9)).
+The verdict case is the only one that needs the reset itself held open, because the window it tests exists
+only while the release body runs: it parks the reset at its chain-feed drain, attempts the ban there, and
+reads the blacklist both during the reset and after it in one structure, so a suppression that merely
+deferred the verdict fails the second read; disabling the reset-window suppression turns it red
+([`REQ-LIF-10-QR8NQ9.T1.P23`](../specification/settlement/lifecycle.md#req-lif-10-qr8nq9.t1.p23),
+[`UNIT-TEST-STATE-MANAGER-RESET-1-9QG1AG.P10`](../implementation/source/src/stateManager/StateManager.ts.md#unit-test-state-manager-reset-1-9qg1ag.p10),
+[`UNIT-TEST-P2P-MANAGER-3-0FEPCH.P5`](../implementation/source/src/P2PManager.ts.md#unit-test-p2p-manager-3-0fepch.p5)).
+
+The mid-reset case in
+[E2E-ChannelReuse.test.ts](../verification/tests/test/e2e/E2E-ChannelReuse.test.ts.md) was strengthened rather
+than duplicated. Its "persisted nothing" half rested on a fork-genesis read, which the sync's _first_ write
+does not touch: `fetchAndPersistOnChainSnapshot` puts the on-chain snapshot into the local EVM before any of
+the payload has been verified. The existing probe now wraps that method too and asserts a zero call count
+inside the same structure, so dropping the check that precedes the first write turns the case red where the
+genesis read would still have passed
+([`REQ-LIF-10-QR8NQ9.T1.P21`](../specification/settlement/lifecycle.md#req-lif-10-qr8nq9.t1.p21),
+[`UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P30`](../implementation/source/src/rpc/network/services/spectate/SpectateService.ts.md#unit-test-spectate-service-1-sjbyct.p30)).
+Every declaration's line link in both reports was re-resolved against the current files by exact title; the
+reset report's links had additionally drifted by one line before this round.
+
+The full distributed gate is green on the tree that carries these fixes: 2443 passing, 0 failing. One earlier
+run failed in the late-join case, and the cause was the case's own staging rather than the fence — it slept
+before resetting, so the reset could land inside one of the join's earlier round trips and the join then
+failed on a cut transport instead of on the generation check. The hold now signals when it is holding the
+prepared confirmation and the reset waits for that signal, which is why the case is evidence for the fence and
+not for a timing window.
+
+Two permutations are added without evidence and are tracked rather than absorbed: the unacknowledged-answer
+branch of the acknowledgement fence
+([`UNIT-TEST-IS-FORK-DISPUTED-SERVICE-1-8DQFCE.P10`](../implementation/source/src/rpc/network/services/isForkDisputedService/IsForkDisputedService.ts.md#unit-test-is-fork-disputed-service-1-8dqfce.p10))
+and the per-block re-check in the sync replay loop
+([`UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P31`](../implementation/source/src/rpc/network/services/spectate/SpectateService.ts.md#unit-test-spectate-service-1-sjbyct.p31)).
+Both branches exist in the source and both could fail independently of the branches that are covered — a
+mutant dropping only one of them survives the current suite — so they are named as their own permutations and
+registered as [`FIND-LEAVE-REUSE-3-HCFNEJ` (Leave fence: two second-line branches have no declaration)](open-findings.md#find-leave-reuse-3-hcfnej) rather than folded
+into the covered sibling's wording. Nothing in this round retired a permutation or moved one between
+declarations.
