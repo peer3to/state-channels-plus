@@ -1565,6 +1565,12 @@ export class StubRpcMethods extends ANetworkRpcMethods<StubService> {
         return this.service.waitForHeldAuditingDataRebuild();
     }
 
+    /** Hold the discovery join for `holdMs` so an abort can land inside it. */
+    public stubHoldDiscoveryJoin(holdMs: number): boolean {
+        this.service.installDiscoveryJoinHold(holdMs);
+        return true;
+    }
+
     public async joinAndLeavePendingLocalDiscovery(
         topic: string
     ): Promise<boolean> {
@@ -2591,8 +2597,8 @@ export class StubRpcMethods extends ANetworkRpcMethods<StubService> {
         return this.service.getHeldSpectateResponseCount();
     }
 
-    public holdPostMatchTargetRefresh(): boolean {
-        this.service.holdPostMatchTargetRefresh();
+    public holdPostMatchTargetRefresh(autoReleaseMs?: number): boolean {
+        this.service.holdPostMatchTargetRefresh(autoReleaseMs);
         return true;
     }
 

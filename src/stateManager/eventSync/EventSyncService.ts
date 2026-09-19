@@ -356,9 +356,9 @@ export default class EventSyncService {
 
     /** Pull missing membership through the same handlers as live events. */
     public async synchronizeChainMembership(
-        channelId: ChannelId
-    ): Promise<PinnedChainMembership> {
-        const membership = await this.readPinnedChainMembership(channelId);
+        channelId: ChannelId,
+        membership: PinnedChainMembership
+    ): Promise<void> {
         const snapshot = StateSnapshot.from(membership.snapshot);
         const inbound = await this.loadSynchronizedInboundRun(
             membership.balance.latestInboundMessageBlockHash,
@@ -387,7 +387,6 @@ export default class EventSyncService {
             }
         );
         await this.recoverOnChainSlashes(channelId, undefined, membership);
-        return membership;
     }
 
     /** Recover authoritative slashes through the ordinary timestamped event handlers. */

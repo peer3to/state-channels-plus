@@ -152,6 +152,12 @@ class TaskCoordinator {
         }
         this.sumDurationMs += attempt.durationMs || 0;
         const parsed = reduceAttempt(assignment.task, attempt);
+        // which worker each starved attempt ran on, in attempt order
+        if (parsed.starveCount > 0)
+            assignment.task.starvedOn = [
+                ...(assignment.task.starvedOn || []),
+                workerId
+            ];
 
         if (attempt.cancelled) {
             attempt.failureReason = attempt.signal

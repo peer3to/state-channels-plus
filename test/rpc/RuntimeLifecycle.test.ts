@@ -1,3 +1,7 @@
+import {
+    assertDetachedFailureAfterRootDisposalIsSettled,
+    assertDetachedFailureBeforeRootDisposalSurfaces
+} from "@test/fixtures/DetachedWorkDisposalFixture";
 import { assertWorkerParentLoss } from "@test/fixtures/node/LostParentFixture";
 import { assertRootDiagnostics } from "@test/fixtures/node/RootDiagnosticsFixture";
 import { assertTwoHopFailure } from "@test/fixtures/node/TwoHopFailureFixture";
@@ -13,6 +17,7 @@ import {
     assertRepeatedHostQuiescence,
     assertLifecycleParentDirection
 } from "@test/fixtures/RuntimeLifecycleFixture";
+import { MathTestSession as TestSession } from "@test/harness";
 
 describe("RuntimeLifecycle", () => {
     it("exits the SDK worker after its parent is lost during disposal", async () => {
@@ -32,6 +37,16 @@ describe("RuntimeLifecycle", () => {
     });
     it("finishes worker manager cleanup after custom RPC disposal rejects", async () => {
         await assertWorkerDomainDisposal(true);
+    });
+    it("settles detached work that fails after root disposal as the disposal outcome", async () => {
+        await assertDetachedFailureAfterRootDisposalIsSettled(
+            TestSession.getHarness()
+        );
+    });
+    it("keeps a detached failure before root disposal visible in the drain", async () => {
+        await assertDetachedFailureBeforeRootDisposalSurfaces(
+            TestSession.getHarness()
+        );
     });
     it("automatically disposes root and application logger descendants and crash listeners", async () => {
         await assertRootLoggerCascade();

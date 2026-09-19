@@ -74,6 +74,8 @@ export class QueueStorage {
             origin: options.origin,
             sourcesToSignatures: new Map()
         };
+        // Each source gets N values including the author: at most N² across N sources.
+        // Count policy: docs/spec/specification/storage/queue.md (REQ-QSTORE-2).
         this.mergeEntry(entry, {
             ...entry,
             block,

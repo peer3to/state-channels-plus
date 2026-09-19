@@ -15,6 +15,8 @@ Binds common request settlement and service dispatch to one runtime root. It adm
 
 - Failed error-response delivery reports through the owning root, without a separate router callback.
 
+- The router keeps the request handlers still running per transport for the services that take part in the disposal drain (`AInternalRpcService.awaitedByDisposalDrain`); notifications have no reply and are not tracked. A root drains its parent connection's set (bounded) before it reports itself disposed, so the replies are queued ahead of the disposal notification. The lifecycle service opts out, because a parent-requested disposal is itself one of its handlers and replies only after that disposal.
+
 - Receive-after-close filtering is internal-only and runs at the router entry. Both direct ingress and common transport forwarding ignore a closed internal sender. Network receive-after-close behavior is unchanged.
 
 - Internal response admission uses exact connection identity ([`InternalRpcRouter.ts`](../../../../../../../src/rpc/router/InternalRpcRouter.ts#L27)).

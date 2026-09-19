@@ -15,9 +15,12 @@ import { ethers } from "ethers";
 describe("E2E: Block Fraud Proofs", function () {
     it("queued future block accepts later calldata event and executes after predecessor", async function () {
         const h = TestSession.getHarness();
+        // A queued future block lives for agreementTime. The calldata post
+        // below is an on-chain round trip on a chain mining once a second, so
+        // the window must outlast it or the entry times out first.
         const timeConfig = {
             p2pTime: 3,
-            agreementTime: 2,
+            agreementTime: 5,
             chainFallbackTime: 30,
             evidenceTime: 8
         };

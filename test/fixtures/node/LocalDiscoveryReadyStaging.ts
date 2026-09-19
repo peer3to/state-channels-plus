@@ -1,6 +1,7 @@
 import type { Logger } from "@/utils/logging/Logger";
 import { LocalDiscoveryServer } from "@/utils/node/LocalDiscoveryServer";
 import { expect } from "chai";
+import { ethers } from "ethers";
 // @spec-test-coverage-ignore: stages a real accepted socket before runtime disposal
 import { once } from "node:events";
 import WebSocket, { type WebSocketServer } from "ws";
@@ -24,7 +25,9 @@ export async function stageLocalDiscoveryReady() {
     return {
         async sendReady() {
             const closed = once(socket, "close");
-            socket.send("peer3:local-transport-client-ready:v1");
+            socket.send(
+                `peer3:local-transport-client-ready:v2:${ethers.ZeroAddress}`
+            );
             await closed;
             return messages;
         },

@@ -34,6 +34,8 @@ Channel reset and stop clear membership mirrors. Verified state application repl
 
 Disposal releases the state-manager logger subtree without cascading to its parent root logger. Parent/root cleanup owns that parent; independent discovery diagnostics must survive state-manager cleanup.
 
+Abort observes its own disposal promise with a rethrowing route instead of plain collection: the root adopts pending detached work when it disposes, which would otherwise settle the disposal's own failure as a disposal outcome; the route keeps that failure visible. See [StateManager.ts](../../../../../../src/stateManager/StateManager.ts#L283).
+
 The public active-fork predicate requires both a live runtime and equality with its current fork; disposal and a real successor transition are separate component obligations. See [StateManager.ts](../../../../../../src/stateManager/StateManager.ts#L294).
 
 isActiveFork owns the shared live-runtime and current-fork predicate. Live arrivals select the live strategy for pending and participating peers. Proof replay uses the shared spectating strategy, which delegates committed-peer fraud reactions to the live strategy. See [StateManager.ts](../../../../../../src/stateManager/StateManager.ts#L294).

@@ -11,4 +11,5 @@ _Pending authoring: shared responsibility, design decisions, assumptions, cross-
 - [NodeLogger.ts](./NodeLogger.ts.md)
 - [colors.ts](./colors.ts.md)
 - [createLogger.ts](./createLogger.ts.md)
+- [kernelCounters.ts](./kernelCounters.ts.md)
 - [uploadDiagnostics.ts](./uploadDiagnostics.ts.md)

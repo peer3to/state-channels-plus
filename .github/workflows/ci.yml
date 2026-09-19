@@ -59,6 +59,14 @@ jobs:
             - name: Check import order
               run: yarn lint:imports
 
+            - name: Install Foundry
+              uses: foundry-rs/foundry-toolchain@v1
+              with:
+                  version: v1.2.3
+
+            - name: Check Solidity formatting
+              run: forge fmt --check
+
             - name: Check distributed pool secrets are present
               env:
                   SCP_TEST_POOL_SECRET: ${{ secrets.SCP_TEST_POOL_SECRET }}

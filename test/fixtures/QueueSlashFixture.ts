@@ -110,16 +110,20 @@ export async function stageQueueSlash(
 }
 
 export async function assertSlashAdmission(
-    mode: "observed" | "unseen" | "refresh"
+    mode: "observed" | "unseen" | "refresh" | "failed-recovery"
 ) {
     const f = await stageQueueSlash(mode !== "observed");
     const { h, observer, spammer, block } = f;
+    const failedLogs =
+        mode === "failed-recovery"
+            ? await h.rpcStub.failChainLogQueries(observer.index)
+            : undefined;
     await h
         .control(observer)
         .stub.observeAdmission({ source: spammer.address })
         .request();
     try {
-        if (mode === "refresh")
+        if (mode === "refresh" || mode === "failed-recovery")
             await h.execOnHost(observer, (sm) =>
                 sm.membershipService.resetEligibility()
             );
@@ -158,7 +162,7 @@ export async function assertSlashAdmission(
                         .request()
                 ).completedIntakes >= 1
         );
-        if (mode === "refresh")
+        if (mode === "refresh" || mode === "failed-recovery")
             await waitFor(
                 async () =>
                     (await h
@@ -182,7 +186,31 @@ export async function assertSlashAdmission(
         expect(
             (await h.control(observer).stub.getAdmissionObservation().request())
                 .chainReads
-        ).to.equal(mode === "refresh" ? 1 : 0);
+        ).to.equal(mode === "refresh" || mode === "failed-recovery" ? 1 : 0);
+        if (mode === "failed-recovery") {
+            const repeated = await h.execOnHost(
+                observer,
+                async (sm, args) => [
+                    await sm.membershipService.resolveSourceEligibility(
+                        args.source
+                    ),
+                    await sm.membershipService.resolveSourceEligibility(
+                        args.source
+                    )
+                ],
+                { source: spammer.address }
+            );
+            expect(repeated).to.deep.equal([
+                SourceEligibility.SLASHED,
+                SourceEligibility.SLASHED
+            ]);
+            const observation = await h
+                .control(observer)
+                .stub.getAdmissionObservation()
+                .request();
+            expect(observation.networkEntries).to.equal(0);
+            expect(observation.chainReads).to.equal(1);
+        }
         const stored = await h
             .control(observer)
             .query.getBlockByHash(block.hash)
@@ -192,6 +220,7 @@ export async function assertSlashAdmission(
             block.confirmationSignatures
         );
     } finally {
+        await failedLogs?.restore();
         await f.dropped?.release();
         await h.control(observer).stub.restoreAdmissionObservation().request();
     }
@@ -273,5 +302,37 @@ export async function assertSlashPreservesHonestWork() {
     } finally {
         await f.hold?.release();
         await h.control(observer).stub.restoreAdmissionObservation().request();
+    }
+}
+
+export async function assertSlashRefreshFailure() {
+    const f = await stageQueueSlash(true);
+    const failedLogs = await f.h.rpcStub.failChainLogQueries(f.observer.index);
+    try {
+        const result = await f.h.execOnHost(
+            f.observer,
+            async (sm, args) => {
+                const refreshed =
+                    await sm.membershipService.refreshOnChainEligibility();
+                return {
+                    refreshed,
+                    first: await sm.membershipService.resolveSourceEligibility(
+                        args.source
+                    ),
+                    second: await sm.membershipService.resolveSourceEligibility(
+                        args.source
+                    )
+                };
+            },
+            { source: f.spammer.address }
+        );
+        expect(result).to.deep.equal({
+            refreshed: false,
+            first: SourceEligibility.SLASHED,
+            second: SourceEligibility.SLASHED
+        });
+    } finally {
+        await failedLogs.restore();
+        await f.dropped?.release();
     }
 }

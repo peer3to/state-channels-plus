@@ -28,10 +28,14 @@ import P2pEventHooksUtils from "@/utils/P2pEventHooksUtils";
 import { TimeoutManager } from "@/utils/TimeoutManager";
 import type { BlockConfirmationStruct } from "@typechain-types/contracts/V1/types/DataTypes";
 
-export type IngestBlockConfirmationOptions = QueueBlockOptions & {
-    onChainTimestamp?: Timestamp;
-    validationStrategy?: AValidationStrategy;
-};
+export type IngestBlockConfirmationOptions = (
+    | (Extract<QueueBlockOptions, { senderAddress: Address }> & {
+          onChainTimestamp?: never;
+      })
+    | (Exclude<QueueBlockOptions, { senderAddress: Address }> & {
+          onChainTimestamp?: Timestamp;
+      })
+) & { validationStrategy?: AValidationStrategy };
 
 export default class BlockQueueManager {
     private readonly timeoutHandles: Map<Hash, ReturnType<typeof setTimeout>> =
@@ -634,10 +638,10 @@ export default class BlockQueueManager {
         entry: QueuedBlockEntry
     ): Promise<void> {
         const block = entry.block;
-        // Waits behind any sync already in flight toward the peer, which need
-        // not cover this block; `false` then always means the peer was cut.
+        // Sync waits for an in-flight request and proves this target before
+        // returning success; a failed proof excludes the peer.
         const synced =
-            await this.stateManager.p2pManager.localRpc.spectateService.syncAfterInFlight(
+            await this.stateManager.p2pManager.localRpc.spectateService.sync(
                 peer,
                 block.channelId,
                 block.forkId,

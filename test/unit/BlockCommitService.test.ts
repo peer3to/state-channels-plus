@@ -4,6 +4,7 @@ import {
     assertCommitCachePreserved,
     assertSpectatorCommit
 } from "@test/fixtures/CommitEligibilityFixture";
+import { assertLeaverRelaysNothingAfterItsLeave } from "@test/fixtures/LeaverRelayFixture";
 import { MathTestSession as TestSession } from "@test/harness";
 import { expect } from "chai";
 
@@ -17,6 +18,10 @@ describe("Unit: BlockCommitService", function () {
     });
     it("a commit inserting the spectator promotes it and signs and gossips once", async () => {
         await assertSpectatorCommit(true);
+    });
+
+    it("a leaver relays its own leave block but nothing committed after it while its exit is pending", async () => {
+        await assertLeaverRelaysNothingAfterItsLeave();
     });
 
     it("dispute replay with a historical union preserves current off-chain eligibility", async () => {

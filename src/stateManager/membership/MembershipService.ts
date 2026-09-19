@@ -22,6 +22,7 @@ import {
 } from "@/utils";
 import { errorMessage } from "@/utils/errorMessage";
 import { tryDecodeCustomError } from "@/utils/evmErrorHandler";
+import { LoggerUtils } from "@/utils/LoggerUtils";
 import type {
     JoinChannelConfirmationStruct,
     MessageBlockStruct,
@@ -53,6 +54,21 @@ export default class MembershipService {
         logger: Logger
     ) {
         this.logger = logger.child({ component: "Membership" });
+    }
+
+    // Whether I belong to this block's previous/resulting participant union:
+    // the set that may sign and relay it. A leaver stays PARTICIPATING until
+    // its exit snapshot lands but is outside the union of every later block;
+    // signing or relaying those would present it to peers that already
+    // applied its exit as a signer or source they no longer admit.
+    public isSignerInBlockUnion(block: Block): boolean {
+        const union = this.stateManager.storage.getParticipantsUnion(
+            block.coordinates,
+            block.stateSnapshotHash
+        );
+        return union.some((participant) =>
+            addressesEqual(participant, this.stateManager.signerAddress)
+        );
     }
 
     public getCachedSourceEligibility(source: Address): SourceEligibility {
@@ -126,11 +142,15 @@ export default class MembershipService {
             const sm = this.stateManager;
             try {
                 const membership =
-                    await sm.eventSyncService.synchronizeChainMembership(
+                    await sm.eventSyncService.readPinnedChainMembership(
                         sm.channelId
                     );
                 for (const participant of membership.slashed)
                     this.observeOnChainSlash(participant);
+                await sm.eventSyncService.synchronizeChainMembership(
+                    sm.channelId,
+                    membership
+                );
                 return true;
             } catch (error) {
                 this.logger.warn("Source eligibility refresh unavailable", {
@@ -278,11 +298,12 @@ export default class MembershipService {
                 case "RaceConditionJoinChannelSnapshotMismatch":
                 case "RaceConditionForceInboundJoinForkDisputed":
                 case "ErrorJoinChannelInvalidSignature":
+                case "ErrorJoinChannelConfirmationNotThresholdSigned":
                     this.logger.warn(
                         `joinChannel - race condition: ${custom.name}`,
                         {
-                            name: custom.name,
-                            args: custom.errorDescription.args
+                            customError:
+                                LoggerUtils.getCustomEvmErrorMetadata(custom)
                         }
                     );
                     sm.abort();
@@ -319,8 +340,7 @@ export default class MembershipService {
             const custom = tryDecodeCustomError(error);
             if (custom) {
                 this.logger.warn(`topUpBalance failed: ${custom.name}`, {
-                    name: custom.name,
-                    args: custom.errorDescription.args
+                    customError: LoggerUtils.getCustomEvmErrorMetadata(custom)
                 });
                 return false;
             }

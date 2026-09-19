@@ -165,6 +165,11 @@ export abstract class Logger {
         this.logStore.clearLogs();
     }
 
+    /** True once dispose ran; logging then throws. */
+    public get isDisposed(): boolean {
+        return this.destroyed;
+    }
+
     public dispose(options: LoggerDestroyOptions = {}): void {
         if (this.destroyed) {
             return;
