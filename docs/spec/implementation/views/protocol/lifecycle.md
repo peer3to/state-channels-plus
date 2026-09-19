@@ -98,11 +98,15 @@ shut down.
 Two failure edges belong to the reset itself. Cancelling the channel's scheduled work runs each pending
 task's cancel handler, so an operation whose only remaining completion was one of those timers — the join
 collector's threshold-reachability wait is the first of them — fails with its own error instead of waiting
-forever. And a reset that cannot finish does not produce a reusable runtime: the chain-feed drain is checked,
-and an undrained feed makes [`StateManager.resetChannel()`](../../source/src/stateManager/StateManager.ts.md)
+forever. And a reset that cannot finish does not produce a reusable runtime: both steps that wait for work
+already in flight report their outcome — the chain-feed drain and
+[`TimeoutManager.cancelAllTasks`](../../source/src/utils/TimeoutManager.ts.md), which returns whether its
+own bound expired with a task still running — and either report of unfinished work makes
+[`StateManager.resetChannel()`](../../source/src/stateManager/StateManager.ts.md)
 throw, whereupon [`LeaveChannelService`](../../source/src/stateManager/membership/LeaveChannelService.ts.md)
 aborts the runtime and rethrows, so the leave rejects and the instance is retired — the behaviour a leave had
-before runtimes were reusable.
+before runtimes were reusable. A task that outlived the bound is left registered rather than dropped, so the
+disposal that follows can still wait for it.
 
 ## System integration test plan
 

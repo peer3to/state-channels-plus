@@ -406,14 +406,18 @@ order:
 7. `successCallback()` publishes contract events on the bus; `onTurn` fires for
    the next author.
 8. **Data availability.** The block **author** schedules
-   [`maybePostBlockOnChain`](../../../../../../src/stateManager/StateManager.ts#L505)
+   [`maybePostBlockOnChain`](../../../../../../src/stateManager/block/BlockCommitService.ts#L158)
    after `agreementTime`: if the stored copy still lacks a full signature set,
    post `postBlockCalldata(signedBlock, maxTimestamp)` with
    `maxTimestamp = previousRelevantTimestamp + p2pTime + agreementTime + chainFallbackTime + grace`;
    the `RaceConditionBlockCalldataTimestampTooLate` revert is tolerated. A
    code TODO notes the author does not check whether it was itself granted
    extra time by a predecessor's post — it assumes not, which only makes its
-   own deadline stricter. Cost/griefing analysis:
+   own deadline stricter. The scheduled closure re-reads
+   [`isActiveFork`](../../../../../../src/stateManager/block/BlockCommitService.ts#L163)
+   before posting: timers stay armed through most of a channel release, and a
+   leave retires the fork before the release's first await, so a posting armed
+   while the channel was held sends no transaction for the channel left. Cost/griefing analysis:
    [../security/data-availability.md](../../../../specification/security/data-availability.md).
 9. **Timeout scheduling.** `tryTimeoutParticipant(fork, height+1, nextToWrite)`
    is scheduled at `p2pTime + agreementTime + chainFallbackTime (+ grace)`;

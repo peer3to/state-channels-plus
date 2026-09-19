@@ -331,3 +331,54 @@ and it exists because of an engineer decision rather than a mechanism: exclusion
 runtime's lifetime (2026-09-19, PR #494), so the release closes every transport and forgets every profile
 except the blacklisted ones. The excluded peer's transports still close; only the verdict survives. Nothing
 here makes the verdict durable — the indexes are in memory, so a restart still clears them.
+
+A third review round found five more resume points of the same class, and the placements say something the
+first two rounds' rule did not. "The check belongs immediately before each effect the operation can still
+produce" is right, but it does not say **where** that check should live when one operation has many callers.
+[`StateManager.refreshOpenedStatusFromChain`](../implementation/source/src/stateManager/StateManager.ts.md)
+is awaited from nine call sites and makes two writes of its own after its chain read — it caches the
+returned snapshot in the local diamond and it may set `OPENED` — so the fence went inside the helper, with
+the channel id captured beside the generation. Fencing the call sites instead would have been nine chances
+to miss one, and the failure is not benign: the cache write is keyed by channel id, so the old snapshot
+would have been installed under the **new** channel's id and passed the event handler's own id check, and
+the reused runtime would have read `OPENED` on a channel it had not opened.
+[`LocalP2pSigner.connectToChannel`](../implementation/source/src/evm/signer/LocalP2pSigner.ts.md) shows the
+opposite consolidation: it had two generations, each captured just before the round trip it guarded, and now
+captures one at entry and re-reads it at three points. The new one is before `joinChannelDiscovery`, because
+a resumed connect would subscribe the reused runtime to the topic of the channel it left and overwrite the
+discovery key its next reset has to release — an effect the call's later `false` does not undo, and one the
+status check just above it does not catch, since a next channel that is already open clears that exit.
+[`SpectateService`](../implementation/source/src/rpc/network/services/spectate/SpectateService.ts.md) pushed
+the fence one level down, into `fetchAndPersistOnChainSnapshot` and
+`fetchAndPersistOnChainDisputeWindows`, which both take the generation as a **required** parameter now. The
+caller's fence is upstream of their chain reads, which are the awaits a leave settles under, and their
+writes are keyed by the channel id the sync was requested for — so a runtime that reconnects to that same
+channel restores the id every id-keyed check consults and only the generation still separates the old sync's
+snapshot from the new channel's. A defaulted parameter would have silently re-read the current generation
+and fenced nothing, which is why it is required.
+[`IsForkDisputedRpcMethods`](../implementation/source/src/rpc/network/services/isForkDisputedService/IsForkDisputedRpcMethods.ts.md)
+is the first fence on the **responder** side: the endpoint's dispute reads outlive the channel too, and both
+effects that follow them — recording the acknowledgement, and blacklisting an asker whose fork is not
+disputed — belong to no channel then. It throws rather than returning `false`, because `false` is the
+truthful answer "not disputed" and the responder has no answer to give; the requester's own fence then
+discards the failure without penalising anyone. And
+[`BlockCommitService`](../implementation/source/src/stateManager/block/BlockCommitService.ts.md) needed no
+generation at all: the step-11 calldata timer re-reads `isActiveFork(block.forkId)`, the guard the
+participant timeout check already uses, and the reset retires the fork before its first await, so the guard
+is false for the whole release. Timers surviving most of a release is the general hazard here — the task
+drain is the second-to-last step — and this one would have sent a transaction for the channel left.
+
+The same round made the second reset step that waits for in-flight work report its outcome.
+[`TimeoutManager.cancelAllTasks`](../implementation/source/src/utils/TimeoutManager.ts.md) returns whether
+its drain finished instead of logging a timeout and continuing, and
+[`StateManager.releaseChannel`](../implementation/source/src/stateManager/StateManager.ts.md) throws on a
+`false` — the policy the chain-log drain already had. A task that outlived the bound is deliberately left
+registered rather than cleared, so the disposal that follows the failed release can still wait for it. Four
+hand-written `channelGeneration !== generation` comparisons in
+[`P2PManager`](../implementation/source/src/P2PManager.ts.md),
+[`ReductionExecutor`](../implementation/source/src/stateManager/reduction/ReductionExecutor.ts.md) and
+`SpectateService` now call the shared `isStaleChannelWork` predicate, which the round-two report had already
+claimed was universal; both release guards in `P2PManager` were collapsed onto one message constant with a
+single log call and a single disconnect each, the spectate entry fence moved above the payload decode (a
+stale response's decode produces nothing but a discarded value), and a `console.error` in `TimeoutManager`
+became a logger call so a failing scheduled task reaches the collected log pipeline.

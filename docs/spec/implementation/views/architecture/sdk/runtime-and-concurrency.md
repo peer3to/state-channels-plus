@@ -307,23 +307,36 @@ chain-feed detach and a bounded drain, then peers and the custom RPC root's chan
 tasks, then storage and the `NOT_OPENED` status under the block-work mutex; and last it re-arms the
 initial-sync latch. A leave from a runtime that owes no departure resets at once, even while the old
 channel's initial sync is still waiting on its peer. That sync captured the generation before its request,
-so when it lands it writes nothing — the check runs before its first local-EVM write, again under the same
-mutex the reset clears storage under, and once per replayed block, because each ingest awaits that mutex —
+so when it lands it writes nothing — the check runs at the top of the apply, above the payload decode,
+again under the same mutex the reset clears storage under, once per replayed block because each ingest
+awaits that mutex, and inside each of the two chain-reading helpers between their read and their write —
 and settles no initial-sync wait; re-arming the latch only after the status change keeps the reset's own
-`OPENED` → `NOT_OPENED` transition from settling the next channel's wait. The same captured generation keeps
+`OPENED` → `NOT_OPENED` transition from settling the next channel's wait. The helper-level checks are what
+survive a reconnect to the _same_ channel: the restored channel id satisfies every id-keyed check the write
+passes through, so only the generation still tells the old sync's snapshot from the new channel's. The same captured generation keeps
 its outcome off the peer that served it and keeps a reduction submit parked on its gas-limit read from
-writing to the chain. Two other operations capture it for the same reason. A `connectToChannel` with
-`shouldJoin` spends a signature round trip collecting its confirmation; if the leave settles inside that
+writing to the chain. Other operations capture it for the same reason. The chain status read is fenced
+inside `refreshOpenedStatusFromChain` rather than at its nine call sites, because a read resuming after the
+leave would cache the old snapshot under the next channel's id and flip the returned runtime to `OPENED`. A
+`connectToChannel` captures one generation at entry and re-reads it before joining channel discovery — a
+resumed call would otherwise subscribe the reused runtime to the topic of the channel it left and overwrite
+the key its next reset has to release — and again before each membership submission: it
+spends a signature round trip collecting its confirmation, and if the leave settles inside that
 round trip it returns `false` instead of submitting, because the submission would put the departed signer
-back into the channel it just left. And a dispute-acknowledgement round re-reads it on both of its
+back into the channel it just left. A dispute-acknowledgement round re-reads it on both of its
 consequence branches, so the reset cutting every transport cannot turn each in-flight request into an
-exclusion. Alongside the generation the reset raises a release-in-progress flag and lowers it in a `finally`
+exclusion, and the responder endpoint captures one before its own dispute reads and throws afterwards, so a
+request that outlived the channel it asks about is neither answered nor recorded nor held against its
+asker. The authored block's calldata timer is the one that needs no generation: it re-reads `isActiveFork`,
+which the reset falsifies before its first await, so a timer still armed through the release sends no
+transaction for the channel left. Alongside the generation the reset raises a release-in-progress flag and lowers it in a `finally`
 around the release body (which is why that body is its own private method): while the flag is up the
 P2P manager records no verdict at all and only disconnects, since the peers being dropped are the peers of
 the channel being given up and a verdict now outlives the reset. The scheduled-task step is not silent either: each pending task may carry a cancel
 handler, and cancelling the tasks runs them, so a wait whose only completion was a cancelled timer rejects
-rather than outliving the channel. Two steps can fail rather than merely finish: the chain-feed drain is
-checked, and an undrained feed makes the reset throw — the leave service then aborts the runtime and
+rather than outliving the channel. Both steps that wait for work already in flight can fail rather than merely finish: the chain-feed drain
+and the scheduled-task drain each report whether they finished, and either reporting unfinished work makes
+the reset throw — the leave service then aborts the runtime and
 rethrows, so the port call rejects and the client gets a retired runtime instead of a half-returned one. The port, worker, signer, provider, and root all survive,
 so the client may immediately select another channel on the same `P2pInstance`. The leader flag is not part of
 the reset on either side of the port: it is application-owned with a single writer, so the application that

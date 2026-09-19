@@ -155,3 +155,37 @@ during the return), and
 from a request round that outlived its channel). Nothing was renumbered, no permutation was retired, and the
 lifecycle security considerations gained the chain-side and registry-side halves of the hazard that the
 earlier text had confined to local state.
+
+A fourth amendment, from the third blind review round, is again the same class and again not a new one. The
+third amendment had generalised the fence to "performs none of its writes" and "costs its responder
+nothing"; the round found that three things the earlier text did not name are neither writes of a payload
+nor penalties. First, the identity of a channel is not the identity of a membership: a runtime that leaves
+and then selects the **same** channel identifier restores every identifier-shaped check the old work would
+have to pass, so the requirement now says that each membership is a distinct occupancy and a matching
+identifier alone never makes earlier work current. Second, attachment is as dangerous as writing: work that
+joins the discovery of the channel left both places the returned runtime in a rendezvous it has no part in
+and displaces the record its next return has to release, and the requirement now forbids it in its own
+sentence rather than leaving it to "changes the runtime's state". Third, the rule was written as if the
+runtime were always the party that began the work; it now covers an operation a peer asked the runtime to
+perform, which once the channel is gone is answered with a failure rather than an answer, records nothing,
+and judges the asker not at all. Two smaller obligations were made explicit beside them: a timer already
+armed for the fork being left submits nothing on its behalf when it fires (previously only "can start
+nothing new for that fork"), and **every** release step that waits for work already in flight has to report
+whether it finished, so the existing "a return that cannot complete retires the runtime" cannot be satisfied
+by one step reporting while another logs and continues. Six permutations are appended after the highest
+existing number —
+[`REQ-LIF-10-QR8NQ9.T1.P25`](../specification/settlement/lifecycle.md#req-lif-10-qr8nq9.t1.p25) (a chain
+read that outlived its channel),
+[`REQ-LIF-10-QR8NQ9.T1.P26`](../specification/settlement/lifecycle.md#req-lif-10-qr8nq9.t1.p26) (no
+discovery attachment),
+[`REQ-LIF-10-QR8NQ9.T1.P27`](../specification/settlement/lifecycle.md#req-lif-10-qr8nq9.t1.p27) (the same
+identifier selected again),
+[`REQ-LIF-10-QR8NQ9.T1.P28`](../specification/settlement/lifecycle.md#req-lif-10-qr8nq9.t1.p28) (no answer
+to a request about a channel already left),
+[`REQ-LIF-10-QR8NQ9.T1.P29`](../specification/settlement/lifecycle.md#req-lif-10-qr8nq9.t1.p29) (no
+submission from a timer armed for the fork left), and
+[`REQ-LIF-10-QR8NQ9.T1.P30`](../specification/settlement/lifecycle.md#req-lif-10-qr8nq9.t1.p30) (the
+scheduled-work release step fails the return too) — with the runtime-boundary mirror of the last one as
+[`REQ-SDK-ARCH-2-QBZAT8.T1.P10`](../specification/runtime/sdk.md#req-sdk-arch-2-qbzat8.t1.p10). Nothing was
+renumbered, no permutation was retired, and the lifecycle security considerations gained the three
+consequences above as a paragraph of their own.

@@ -121,6 +121,22 @@ the covered sibling — an answering peer for the first, a generation advanced m
 ingested confirmations for the second. Do not credit either from the sibling case or from
 `ValidationService`'s channel-id rejection, which is a different consequence on a different condition.
 
+Rechecked against the third review round (2026-09-19): both branches are still uncovered, and two of that
+round's new declarations are close enough to be worth ruling out explicitly.
+
+- "answers no acknowledgement request that outlived the channel it was asked about" evidences the
+  **responder** endpoint
+  ([`UNIT-TEST-IS-FORK-DISPUTED-METHODS-1-JZBH4B.P5`](../implementation/source/src/rpc/network/services/isForkDisputedService/IsForkDisputedRpcMethods.ts.md#unit-test-is-fork-disputed-methods-1-jzbh4b.p5)),
+  a different `isStale` read in a different file. It does not reach the requester's answer branch: the
+  responder's throw arrives at a requester as a **failure**, which is the branch the covered sibling
+  already owns. The branch still wanting a declaration is a peer that answers `false` after the local
+  runtime released the channel.
+- "does not persist a sync's on-chain snapshot after the channel was left and rejoined" evidences the fence
+  inside `fetchAndPersistOnChainSnapshot`
+  ([`UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P32`](../implementation/source/src/rpc/network/services/spectate/SpectateService.ts.md#unit-test-spectate-service-1-sjbyct.p32)),
+  which is step 1 of the apply and upstream of the replay loop; the case never reaches the loop, so the
+  per-block re-check is untouched by it.
+
 <a id="find-log-1-659qd2"></a>
 
 ## FIND-LOG-1-659QD2 — Folded collection summary has unsupported coverage credit

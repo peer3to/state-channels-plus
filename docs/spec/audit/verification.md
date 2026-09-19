@@ -438,3 +438,78 @@ mutant dropping only one of them survives the current suite — so they are name
 registered as [`FIND-LEAVE-REUSE-3-HCFNEJ` (Leave fence: two second-line branches have no declaration)](open-findings.md#find-leave-reuse-3-hcfnej) rather than folded
 into the covered sibling's wording. Nothing in this round retired a permutation or moved one between
 declarations.
+
+## Review 494 third-round evidence
+
+A third blind round found five more resume points and one unchecked release step, and each ships with a
+declaration that was mutation-checked in this tree: removing its own fix turns its own case red, and only
+its own.
+
+[StateManagerChannelReset.test.ts](../verification/tests/test/stateManager/StateManagerChannelReset.test.ts.md)
+is now nineteen cases. Five of the six new ones share a shape that is worth naming, because it is what makes
+them evidence rather than timing: replace the dependency the operation is about to await with a hold, spin
+until the hold reports it has been entered, reset on the host, and only then release. No sleep decides when
+the reset lands. The chain-status case holds `isChannelOpen`, resets, selects a **different** channel id,
+and reads the status, the channel id, and a count of local-diamond snapshot writes taken after the reset;
+the count is the half that matters, because the read's first effect is a cache keyed by channel id that the
+event handler's own id check would have accepted under the new id, and a status-only oracle would have
+passed
+([`REQ-LIF-10-QR8NQ9.T1.P25`](../specification/settlement/lifecycle.md#req-lif-10-qr8nq9.t1.p25),
+[`UNIT-TEST-STATE-MANAGER-RESET-1-9QG1AG.P12`](../implementation/source/src/stateManager/StateManager.ts.md#unit-test-state-manager-reset-1-9qg1ag.p12)).
+The discovery case holds the first `refreshOpenedStatusFromChain` and makes every later one answer that the
+channel is open, so the resumed connect cannot leave through its not-opened branch and the count of
+`joinChannelDiscovery` calls is genuinely about the fence rather than about a status that happened to be
+wrong
+([`REQ-LIF-10-QR8NQ9.T1.P26`](../specification/settlement/lifecycle.md#req-lif-10-qr8nq9.t1.p26),
+[`UNIT-TEST-LOCAL-P2P-SIGNER-1-Q80VPW.P7`](../implementation/source/src/evm/signer/LocalP2pSigner.ts.md#unit-test-local-p2p-signer-1-q80vpw.p7)).
+The sync case holds `getStateSnapshot` inside `fetchAndPersistOnChainSnapshot` and then selects **the same**
+channel id again after the reset — the only case in the suite that does, and the whole point of it: the
+restored id satisfies every id-keyed check the write passes through, so an implementation fenced on channel
+id rather than on generation passes every other case and fails this one
+([`REQ-LIF-10-QR8NQ9.T1.P27`](../specification/settlement/lifecycle.md#req-lif-10-qr8nq9.t1.p27),
+[`UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P32`](../implementation/source/src/rpc/network/services/spectate/SpectateService.ts.md#unit-test-spectate-service-1-sjbyct.p32)).
+The acknowledgement-responder case holds the responder's local `isForkDisputed` and reads one structure —
+the thrown message, a ban count, and `didIAcknowledgeDisputedFork` for the asker — so an endpoint that
+answered fails on a different member than one that recorded or one that judged
+([`REQ-LIF-10-QR8NQ9.T1.P28`](../specification/settlement/lifecycle.md#req-lif-10-qr8nq9.t1.p28),
+[`UNIT-TEST-IS-FORK-DISPUTED-METHODS-1-JZBH4B.P5`](../implementation/source/src/rpc/network/services/isForkDisputedService/IsForkDisputedRpcMethods.ts.md#unit-test-is-fork-disputed-methods-1-jzbh4b.p5)).
+The calldata case is the one that parks nothing: it captures the real step-11 closure as the commit path
+schedules it, advances turns until the peer authors the block that arms it, resets, and fires the captured
+closure at the released runtime, counting `maybePostBlockOnChain` invocations across the firing — counting
+the attempt rather than the chain, so a transaction that is sent and reverts still fails the case
+([`REQ-LIF-10-QR8NQ9.T1.P29`](../specification/settlement/lifecycle.md#req-lif-10-qr8nq9.t1.p29),
+[`UNIT-TEST-BLOCK-COMMIT-SERVICE-2-APAFNV.P1`](../implementation/source/src/stateManager/block/BlockCommitService.ts.md#unit-test-block-commit-service-2-apafnv.p1)).
+The sixth is the task-drain failure, built as the sibling of the chain-feed one and asserting the same two
+halves — the leave rejects with "cannot be reused" **and** the runtime reads disposed — because a rejection
+alone would also be produced by a reset that threw and left the instance alive. It schedules a task that
+never settles and releases it after the assertions, so the case leaves nothing running behind it
+([`REQ-LIF-10-QR8NQ9.T1.P30`](../specification/settlement/lifecycle.md#req-lif-10-qr8nq9.t1.p30),
+[`REQ-SDK-ARCH-2-QBZAT8.T1.P10`](../specification/runtime/sdk.md#req-sdk-arch-2-qbzat8.t1.p10),
+[`UNIT-TEST-STATE-MANAGER-RESET-1-9QG1AG.P11`](../implementation/source/src/stateManager/StateManager.ts.md#unit-test-state-manager-reset-1-9qg1ag.p11),
+[`UNIT-TEST-TIMEOUT-MANAGER-1-JNGDYK.P10`](../implementation/source/src/utils/TimeoutManager.ts.md#unit-test-timeout-manager-1-jngdyk.p10)).
+
+Two existing cases in the same file traded fixed sleeps for deterministic waits, which is a strengthening
+rather than a cosmetic change: the reduction case now spins until its stub reports it is parked instead of
+sleeping 50ms first, and yields one macrotask after the release rather than a second, and the
+acknowledgement case yields two macrotasks instead of two seconds. In both the oracle is unchanged and the
+window the sleep was covering was already closed by the reset, so the shorter waits do not weaken them —
+a write or a ban that still lands fails them exactly as before. Every declaration's line link in the report
+was re-resolved against the current file by exact title; all thirteen earlier rows had drifted, most of them
+by the 375 lines the new cases add.
+
+One new permutation is deliberately unevidenced and is named as such rather than filed:
+[`UNIT-TEST-BLOCK-COMMIT-SERVICE-2-APAFNV`](../implementation/source/src/stateManager/block/BlockCommitService.ts.md#unit-test-block-commit-service-2-apafnv)
+carries only its channel-left permutation. The live side of that boundary — the same closure posting for the
+channel it was armed for — is the ordinary calldata path that every run reaching a post exercises, so the
+obligation says where it is covered instead of restating it as a permutation of this timer that no
+declaration would own. The `true` return of `cancelAllTasks` is treated the same way: every passing reset in
+the tree depends on it.
+
+[`FIND-LEAVE-REUSE-3-HCFNEJ` (Leave fence: two second-line branches have no declaration)](open-findings.md#find-leave-reuse-3-hcfnej)
+stays open, and neither of its two branches was closed by this round. The new acknowledgement case is the
+**responder** endpoint refusing to answer; the finding's first branch is the **requester** reading a peer's
+`false` answer after the release, which is a different read in a different file, and the responder's throw
+reaches the requester as a failure, so it exercises the covered failure branch rather than the uncovered
+answer branch. The new sync case fences `fetchAndPersistOnChainSnapshot`, which is upstream of the replay
+loop; the finding's second branch is a generation that moves **between** two suffix ingests, and the new
+case never reaches the loop. Nothing in this round retired a permutation or moved one between declarations.

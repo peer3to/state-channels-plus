@@ -35,6 +35,10 @@ Error text delegates to the dependency-free errorMessage helper. Existing catch 
    failure means anything about the peer once the channel the question belonged to is gone, and without the
    fence a single reset would turn every in-flight acknowledgement into an exclusion of a peer that did
    nothing wrong ([`REQ-LIF-10-QR8NQ9` (Runtime departure and channel reuse)](../../../../../../../specification/settlement/lifecycle.md#req-lif-10-qr8nq9)).
+   The responder half of the same rule is in
+   [IsForkDisputedRpcMethods](IsForkDisputedRpcMethods.ts.md): the endpoint captures the generation
+   before its own dispute reads and throws afterwards, so a request that outlived the channel it asks
+   about refills none of the records this service's `reset()` cleared and judges no asker.
 3. **Responder verifies before confirming** — local dispute knowledge with a chain fallback, so an honest lagging responder can still answer truthfully.
 
 ## Inputs, outputs, state, and side effects

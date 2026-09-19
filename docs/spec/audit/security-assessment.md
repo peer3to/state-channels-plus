@@ -431,6 +431,36 @@ Residual exposure, all accepted here as recorded rather than resolved:
   [`REQ-LIF-10-QR8NQ9.T1.P24`](../specification/settlement/lifecycle.md#req-lif-10-qr8nq9.t1.p24). Two second-line
   branches remain unevidenced and are tracked, not claimed
   ([`FIND-LEAVE-REUSE-3-HCFNEJ` (Leave fence: two second-line branches have no declaration)](open-findings.md#find-leave-reuse-3-hcfnej)).
+- **A third round found the effects that are neither a payload write nor a penalty.** The previous two
+  paragraphs read the fence as covering "state the runtime installs" and "verdicts it records"; five routes
+  were outside both. A chain status read resumed after the leave and cached its snapshot in the local EVM
+  **under whatever channel id the runtime then held**, which is the sharpest of them: the cache is keyed by
+  channel id, so the old channel's snapshot passed every id-keyed check on the way in and the reused runtime
+  additionally read `OPENED` on a channel it had not opened. A resumed selection joined the peer discovery of
+  the channel it left, placing the returned runtime in a rendezvous it has no part in and overwriting the
+  discovery key its next return has to release — neither undone by the call then answering `false`. A
+  synchronization's two chain-reading helpers wrote after their own reads, which the caller's fence is
+  upstream of; the exposure there is specific and worth stating, because it only appears when the runtime
+  **reconnects to the same channel**: the restored id satisfies the event handler's id check, so nothing but
+  the generation separates the earlier membership's snapshot from the new one's. The acknowledgement
+  responder answered and judged its asker for a channel it no longer served, refilling records the release
+  had just cleared. And an authored block's calldata timer, still armed because the task drain is the
+  second-to-last release step, sent a transaction for the channel left. Each is now checked immediately
+  before the effect it can still produce. Evidence:
+  [`REQ-LIF-10-QR8NQ9.T1.P25`](../specification/settlement/lifecycle.md#req-lif-10-qr8nq9.t1.p25),
+  [`REQ-LIF-10-QR8NQ9.T1.P26`](../specification/settlement/lifecycle.md#req-lif-10-qr8nq9.t1.p26),
+  [`REQ-LIF-10-QR8NQ9.T1.P27`](../specification/settlement/lifecycle.md#req-lif-10-qr8nq9.t1.p27),
+  [`REQ-LIF-10-QR8NQ9.T1.P28`](../specification/settlement/lifecycle.md#req-lif-10-qr8nq9.t1.p28),
+  [`REQ-LIF-10-QR8NQ9.T1.P29`](../specification/settlement/lifecycle.md#req-lif-10-qr8nq9.t1.p29).
+- **A release step that only logged its own failure is a hole in the shutdown guarantee.** The chain-feed
+  drain had been made checked; the scheduled-task drain had not, so a task that outlived its bound was logged
+  and the runtime was handed on as reusable anyway — the exact outcome the checked drain exists to prevent,
+  reachable through the other of the two steps. `cancelAllTasks` now reports its outcome and the release
+  throws on it. The residual exposure is the accepted one and is unchanged: the runtime is retired instead,
+  so the application loses an instance it could have reused. The task is left registered rather than cleared,
+  so the disposal that follows can still wait for it rather than racing it. Evidence:
+  [`REQ-LIF-10-QR8NQ9.T1.P30`](../specification/settlement/lifecycle.md#req-lif-10-qr8nq9.t1.p30),
+  [`REQ-SDK-ARCH-2-QBZAT8.T1.P10`](../specification/runtime/sdk.md#req-sdk-arch-2-qbzat8.t1.p10).
 - **No exclusion is recorded while the release itself is running.** This is the exclusion decision's own
   consequence rather than a new policy. Because a verdict is identity-scoped and now outlives the reset, one
   earned during the release would follow the identity into the next channel — and every peer dropped during
