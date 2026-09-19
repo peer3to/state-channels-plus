@@ -66,6 +66,9 @@ claims complete conformance for a requirement that depends on other files.
 
 - Signing confinement per the identity rules.
 
+- The single-channel guard is unchanged in behaviour — a runtime holding a nonzero channel id still rejects a different target before any mutation — but its message now names leaving rather than building a new runtime ([#L176](../../../../../../../src/evm/signer/LocalP2pSigner.ts#L176)), because a completed leave is the release that makes the next selection legal ([`REQ-TJOIN-6-0HEVYH` (Single-channel runtime ownership)](../../../../../specification/peer-communication/targeted-channel-join.md#req-tjoin-6-0hevyh)).
+- `connectToChannel` joins the exact channel topic through `p2pManager.joinChannelDiscovery` ([#L225](../../../../../../../src/evm/signer/LocalP2pSigner.ts#L225)) rather than the raw discovery join, so the manager records the key and can leave that topic itself during the channel reset without the signer having to hand it back ([`REQ-LIF-10-QR8NQ9` (Runtime departure and channel reuse)](../../../../../specification/settlement/lifecycle.md#req-lif-10-qr8nq9)).
+
 ## Specification contradictions
 
 None demonstrated.
@@ -98,14 +101,15 @@ Exact test evidence is mapped against these IDs in the verification test reports
 ## Channel ownership and leave contribution
 
 The signer rejects a different selected target before any clear or set, removes the public setter, and gates
-connect and membership operations while terminal leave is pending. Its internal leave route delegates to the
+connect and membership operations while a channel leave is pending. Its internal leave route delegates to the
 state manager service. That route is internal to `P2pInstance.leaveChannel`; calling it directly waits for
-settled removal but does not dispose the outer runtime. These boundaries implement [`REQ-TJOIN-6-0HEVYH` (Single-channel runtime ownership)](../../../../../specification/peer-communication/targeted-channel-join.md#req-tjoin-6-0hevyh) and contribute to [`REQ-TJOIN-7-NNGTAY` (Terminal channel leave)](../../../../../specification/peer-communication/targeted-channel-join.md#req-tjoin-7-nngtay).
+settled removal and the channel reset, and it never disposes the outer runtime. The different-target rejection
+is unchanged; only its message now points the caller at leaving rather than at building a new runtime. These boundaries implement [`REQ-TJOIN-6-0HEVYH` (Single-channel runtime ownership)](../../../../../specification/peer-communication/targeted-channel-join.md#req-tjoin-6-0hevyh) and contribute to [`REQ-TJOIN-7-NNGTAY` (Channel leave and runtime reuse)](../../../../../specification/peer-communication/targeted-channel-join.md#req-tjoin-7-nngtay).
 
-| Requirement / invariant                                                                                             | Implementation status | Evidence                                                                                                                                                                                                        | Gap / divergence |
-| ------------------------------------------------------------------------------------------------------------------- | --------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------- |
-| [`REQ-TJOIN-6-0HEVYH`](../../../../../specification/peer-communication/targeted-channel-join.md#req-tjoin-6-0hevyh) | Covered               | **Here:** normalized different-ID rejection occurs before clear/set and the public setter is absent. **Other files:** the worker protocol and host expose no setter request.                                    | None.            |
-| [`REQ-TJOIN-7-NNGTAY`](../../../../../specification/peer-communication/targeted-channel-join.md#req-tjoin-7-nngtay) | Covered               | **Here:** leave delegates to the single service operation and channel or membership work is gated while it is active. **Other files:** the leave service owns progress and the instance owns terminal disposal. | None.            |
+| Requirement / invariant                                                                                             | Implementation status | Evidence                                                                                                                                                                                                                                                                                                                                         | Gap / divergence |
+| ------------------------------------------------------------------------------------------------------------------- | --------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ---------------- |
+| [`REQ-TJOIN-6-0HEVYH`](../../../../../specification/peer-communication/targeted-channel-join.md#req-tjoin-6-0hevyh) | Covered               | **Here:** normalized different-ID rejection occurs before clear/set and the public setter is absent. **Other files:** the worker protocol and host expose no setter request.                                                                                                                                                                     | None.            |
+| [`REQ-TJOIN-7-NNGTAY`](../../../../../specification/peer-communication/targeted-channel-join.md#req-tjoin-7-nngtay) | Covered               | **Here:** leave delegates to the single service operation and channel or membership work is gated while it is active; the guard that rejects a different target stays in force until the leave has settled and released the ID. **Other files:** the leave service owns progress and the channel reset, and the instance stays alive afterwards. | None.            |
 
 - [identity.md](../../../../../specification/protocol-model/identity.md), [P2pRuntimeHost](../../rpc/internal/roots/P2pRuntimeHostRoot.ts.md).
 

@@ -59,6 +59,8 @@ Contribution in this file: [`REQ-DISPUTE-PIPE-9-TDWQPV` (Existing-window state c
 
 - Observed intake re-enters owner validation; recovery is bounded and explicit ([`REQ-STOR-3-4RJGER` (Restart recovery without trust)](../../../../../specification/storage/durability.md#req-stor-3-4rjger) consumer side).
 
+- `reset()` drops every dedupe, watermark, and pending-validation record ([#L107](../../../../../../../src/stateManager/eventSync/EventSyncService.ts#L107)). Dropping them is safe only because the caller first detaches the channel id and then drains through the listener's `drain()` — a bounded `waitForScheduled` — so no awaited promise is still keyed into the maps when they go — the ordering obligation of [`REQ-SDK-ARCH-2-QBZAT8` (Ordered lifecycle)](../../../../../specification/runtime/sdk.md#req-sdk-arch-2-qbzat8).
+
 ## Specification contradictions
 
 None demonstrated.

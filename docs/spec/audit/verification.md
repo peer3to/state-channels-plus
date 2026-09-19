@@ -255,3 +255,46 @@ The engineer approved host shutdown preparation before the child cascade. Run-31
 ## Application setup ownership correction
 
 The user superseded review 4's application-heavy client root. Application setup now owns config, logger creation, adapters, two deployments and final assembly. The client root owns host communication and common lifecycle only; P2pInstance owns application cleanup. Root readiness means usable communication, while application setup still waits for deployment completion. Existing startup errors, parent-required workers, host preparation before child disposal and bridge behavior remain in scope. The focused and final evidence is recorded in the application-setup implementation follow-up. Engineer approval and existing queues remain unchanged.
+
+## Evidence for the non-terminal channel leave
+
+Three new suites carry the change.
+[StorageClear.test.ts](../verification/tests/test/storage/StorageClear.test.ts.md) takes all seventeen
+permutations of the facade clear obligation: one per module through that module's own public writer and
+reader, plus the idempotence, reuse, and untouched-instance boundaries. Each case reads the datum before the
+clear and compares one structure, so no assertion can pass against an absent pre-state — the failure mode
+that would make a "nothing is there afterwards" test vacuous.
+[StateManagerChannelReset.test.ts](../verification/tests/test/stateManager/StateManagerChannelReset.test.ts.md)
+takes the runtime projection together with the emptied stores in one before/after comparison, both sides of
+the boundary around the release (channel work refused while the leave is pending, another channel selectable
+once it settled), and the refusal on a disposed runtime. It reaches the reset through the public leave rather
+than by calling `resetChannel()` directly, which is what makes it evidence for the specified behaviour and
+not just for the method.
+[E2E-ChannelReuse.test.ts](../verification/tests/test/e2e/E2E-ChannelReuse.test.ts.md) takes the behaviour
+end to end with real peers and real opens: a second channel reached on the runtime that left, asserted
+together with isolation from the channel that was left; two complete leave/reconnect cycles; and an explicit
+shutdown that is still terminal after a reuse. Its second case is the one that would catch a leaked leave
+memo, and its third target is deliberately left unopened so that selecting it proves the id was unbound
+without a second negotiated open masking the result.
+
+Three existing reports were corrected rather than re-credited.
+[DiscoveryRuntimePort](../verification/tests/test/evm/DiscoveryRuntimePort.test.ts.md) keeps its three
+public-leave assignments: the declarations were renamed and their oracles changed from a disposed-runtime
+rejection to the pre-channel projection, which is a stronger assertion of the same permutations, now reworded
+to match. The declaration for the removed `outer disposal failure` case is deleted; it carried no assignment,
+so no permutation lost its evidence. Every surviving declaration's line link was re-resolved against the
+current file.
+[E2E-TargetedChannelJoin](../verification/tests/test/e2e/E2E-TargetedChannelJoin.test.ts.md) keeps
+[`REQ-LIF-10-QR8NQ9.T1.P4`](../specification/settlement/lifecycle.md#req-lif-10-qr8nq9.t1.p4) and
+[`REQ-TJOIN-7-NNGTAY.T1.P8`](../specification/peer-communication/targeted-channel-join.md#req-tjoin-7-nngtay.t1.p8)
+because the reworded permutations are what that test now proves: the leaver's own runtime reaches the next
+channel.
+[E2E-ParticipantLifecycle](../verification/tests/test/e2e/E2E-ParticipantLifecycle.test.ts.md) keeps
+[`REQ-LIF-10-QR8NQ9.T1.P5`](../specification/settlement/lifecycle.md#req-lif-10-qr8nq9.t1.p5): it asserts
+chain membership, the next block's signature set, and the absence of blacklisting, none of which depended on
+the leaver being disposed.
+
+What remains unassigned is the honest gap, tracked as
+[`FIND-LEAVE-REUSE-1-GSK8BB`](open-findings.md#find-leave-reuse-1-gsk8bb): both sides of a rejected leave
+keeping the runtime bound, and the component-level naming of the leave-memo release (which the two-cycle e2e
+case exercises but does not name).

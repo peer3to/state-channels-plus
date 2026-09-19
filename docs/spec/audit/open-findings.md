@@ -71,6 +71,30 @@ Status: open verification gap. A removed peer can still appear in a held chain s
 
 Required evidence: [`REQ-SYNC-1-T2589H.T1.P16`](../specification/peer-communication/synchronization.md#req-sync-1-t2589h.t1.p16) must exercise the removed responder, then prove recovery to the surviving participants' state without a missing-snapshot abort. No test currently owns this permutation; do not infer coverage from the honest-responder case.
 
+<a id="find-leave-reuse-1-gsk8bb"></a>
+
+### FIND-LEAVE-REUSE-1-GSK8BB — Non-terminal leave: the success-side memo release has no component-level declaration
+
+Status: open verification gap, narrowed. The rejected-leave half is closed: the four fallback-rejection
+cases in [DiscoveryRuntimePort](../verification/tests/test/evm/DiscoveryRuntimePort.test.ts.md) now assert,
+after the rejection, that a repeated leave reports the same failure, that another target is still refused,
+and that the selected channel ID is unchanged
+([`REQ-LIF-10-QR8NQ9.T1.P13`](../specification/settlement/lifecycle.md#req-lif-10-qr8nq9.t1.p13),
+[`REQ-TJOIN-7-NNGTAY.T1.P12`](../specification/peer-communication/targeted-channel-join.md#req-tjoin-7-nngtay.t1.p12),
+[`UNIT-TEST-LEAVE-CHANNEL-SERVICE-1-CX6QH9.P24`](../implementation/source/src/stateManager/membership/LeaveChannelService.ts.md#unit-test-leave-channel-service-1-cx6qh9.p24)).
+A mutant that clears the leave operation on rejection fails those cases. The stale declaration name in
+[E2E-ParticipantLifecycle](../verification/tests/test/e2e/E2E-ParticipantLifecycle.test.ts.md) is corrected.
+
+What remains: the success side of the same branch — the memo release that lets a runtime leave its _next_
+channel
+([`UNIT-TEST-LEAVE-CHANNEL-SERVICE-1-CX6QH9.P23`](../implementation/source/src/stateManager/membership/LeaveChannelService.ts.md#unit-test-leave-channel-service-1-cx6qh9.p23))
+— is exercised by the two-cycle case in
+[E2E-ChannelReuse](../verification/tests/test/e2e/E2E-ChannelReuse.test.ts.md), which would fail on a leaked
+memo, but no test names it at the component level, so the permutation stays unassigned.
+
+Proposed direction: add a component-level case for the memo release. Until then that permutation keeps
+`none — gap` evidence.
+
 <a id="find-log-1-659qd2"></a>
 
 ## FIND-LOG-1-659QD2 — Folded collection summary has unsupported coverage credit

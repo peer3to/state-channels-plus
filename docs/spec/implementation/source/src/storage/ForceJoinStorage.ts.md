@@ -57,6 +57,10 @@ claims complete conformance for a requirement that depends on other files.
 ## Specification adherence
 
 - Explicit lifecycle with distinct absent state ([`REQ-RMSTORE-2-Y2T1PG` (Explicit intent lifecycle)](../../../../specification/storage/progress-markers.md#req-rmstore-2-y2t1pg)).
+- `clear()` is the in-channel lifecycle step: the membership and commit services call it once the
+  pending join is consumed. A channel reset does not call it — the facade rebuilds this module with the
+  others — so the marker still never follows the runtime into the next channel
+  ([`UNIT-TEST-STORAGE-FACADE-3-9N4C6W`](Storage.ts.md#unit-test-storage-facade-3-9n4c6w)).
 
 ## Specification contradictions
 
@@ -88,3 +92,4 @@ Exact test evidence is mapped against these IDs in the verification test reports
 ## Related source reports
 
 - [StateManager](../stateManager/StateManager.ts.md) (force-join trigger consumer).
+- [Storage](./Storage.ts.md) — the facade that rebuilds this module during a channel reset.

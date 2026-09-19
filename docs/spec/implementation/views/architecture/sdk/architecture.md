@@ -48,18 +48,19 @@ Parameters:
 
 Return: `P2pInstance<T, TCustomRpc>` with members:
 
-| Member                           | Contract                                                                                                                                                                                                |
-| -------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `p2pContractInstance: T`         | Enshrined contract; same interface as the original, calls execute p2p via the runtime port.                                                                                                             |
-| `p2pSigner: ClientP2pSigner`     | Client-side p2p signer (block/artifact signing over the port).                                                                                                                                          |
-| `chainSigner: ClientChainSigner` | Client-side signer for on-chain transactions; forwarded to the host's nonce-managed wallet.                                                                                                             |
-| `stateChannelManagerContract`    | The connected manager proxy (client realm).                                                                                                                                                             |
-| `events: EventBus`               | Unified event surface (§5).                                                                                                                                                                             |
-| `hostRpc`                        | Typed mirror of the host's `remoteRpc`; no target = loopback to self, peer address = relay.                                                                                                             |
-| `webRTCBridgePort`               | Present only when the host runs in a worker that cannot drive `RTCPeerConnection`; must be bubbled to the main thread. `installMainThreadBridgeIfOnMainThread()` is called by `p2pSetup` automatically. |
-| `dispose()`                      | Tears down listeners, the runtime, and (threaded mode) the worker.                                                                                                                                      |
-| `onHostError(listener)`          | Observes autonomous host-side errors; with no subscriber they re-throw as main-thread unhandled rejections.                                                                                             |
-| `quiesce()`                      | Drains host-side detached async work over the port; returns collected rejections.                                                                                                                       |
+| Member                           | Contract                                                                                                                                                                                                                                  |
+| -------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `p2pContractInstance: T`         | Enshrined contract; same interface as the original, calls execute p2p via the runtime port.                                                                                                                                               |
+| `p2pSigner: ClientP2pSigner`     | Client-side p2p signer (block/artifact signing over the port).                                                                                                                                                                            |
+| `chainSigner: ClientChainSigner` | Client-side signer for on-chain transactions; forwarded to the host's nonce-managed wallet.                                                                                                                                               |
+| `stateChannelManagerContract`    | The connected manager proxy (client realm).                                                                                                                                                                                               |
+| `events: EventBus`               | Unified event surface (§5).                                                                                                                                                                                                               |
+| `hostRpc`                        | Typed mirror of the host's `remoteRpc`; no target = loopback to self, peer address = relay.                                                                                                                                               |
+| `webRTCBridgePort`               | Present only when the host runs in a worker that cannot drive `RTCPeerConnection`; must be bubbled to the main thread. `installMainThreadBridgeIfOnMainThread()` is called by `p2pSetup` automatically.                                   |
+| `leaveChannel()`                 | Gives up the current channel and keeps the instance: settles departure, then the host resets itself to its pre-channel state, so another `connectToChannel` may follow on the same object. Repeated concurrent calls share one departure. |
+| `dispose()`                      | Tears down listeners, the runtime, and (threaded mode) the worker.                                                                                                                                                                        |
+| `onHostError(listener)`          | Observes autonomous host-side errors; with no subscriber they re-throw as main-thread unhandled rejections.                                                                                                                               |
+| `quiesce()`                      | Drains host-side detached async work over the port; returns collected rejections.                                                                                                                                                         |
 
 **Signer ownership ([`REQ-SDK-1-JKC9W7`](architecture.md#req-sdk-1-jkc9w7)).** The runtime host owns the signing key.
 `p2pSetup` accepts only `signerSecret`; injected `ethers.Signer` objects are
@@ -262,6 +263,10 @@ per-component contracts in [components.md](./components.md).
   host self-disposal. `StateManager.abort()` (slashed/removed, unrecoverable
   sync failure, fatal reduction error) fires `onAbort`, drops status to
   `OPENED`, and disposes the owning root and its children. Final cleanup closes the runtime port; late queries reject in both placements.
+- **Non-terminal release.** A settled `leaveChannel` runs `StateManager.resetChannel()` instead of a
+  disposal chain: the channel's producers, chain feed, peers, timers, and stores are released in that order
+  and the runtime returns to `NOT_OPENED` with a zero channel id. Disposal and abort stay terminal, and a
+  reset is refused after disposal.
 
 ## 8. Verification
 

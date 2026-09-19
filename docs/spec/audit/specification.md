@@ -49,3 +49,37 @@ RPC ingress, handshake, and lobby matching now use one consequence rule. A malfo
 protocol action blacklists only when an authenticated peer identity makes the fault attributable.
 Transport loss, response timeout, cleanup, send failure, and an unclassified local handler error
 remain disconnect-only.
+
+## Non-terminal channel leave
+
+[`REQ-LIF-10-QR8NQ9` (Runtime departure and channel reuse)](../specification/settlement/lifecycle.md#req-lif-10-qr8nq9) and
+[`REQ-TJOIN-7-NNGTAY` (Channel leave and runtime reuse)](../specification/peer-communication/targeted-channel-join.md#req-tjoin-7-nngtay) were
+rewritten from a terminal departure to a departure followed by a return to the pre-channel state. Both keep
+their IDs because the obligation is the same obligation — how a participant gives up a channel — with a
+different post-condition; the settlement half of each requirement is unchanged word for word. The
+requirements now state what the reset must release in neutral terms (selected channel and fork, retained
+state, peer set and peer-derived reputation, scheduled work) without naming a component, and they keep
+shutdown and abort as the separate terminal operations. The writer role is deliberately outside that list:
+it is application-owned with a single writer, and the lifecycle requirement says so rather than letting the
+runtime become a second writer of it.
+
+Three consequential amendments came with it.
+[`REQ-TJOIN-6-0HEVYH` (Single-channel runtime ownership)](../specification/peer-communication/targeted-channel-join.md#req-tjoin-6-0hevyh) no
+longer claims that nothing can clear the selected ID: a completed leave is now its single release, and the
+requirement says so precisely rather than being weakened to "usually".
+[`REQ-SDK-ARCH-2-QBZAT8` (Ordered lifecycle)](../specification/runtime/sdk.md#req-sdk-arch-2-qbzat8) gained the non-terminal
+lifecycle step and its ordering obligation, so the ordering that makes the release safe is specified rather
+than left to the implementation report. Initial-observer-sync failure still aborts and disposes, so
+[sdk.md](../specification/runtime/sdk.md) still tells that caller to build a new runtime.
+
+Permutations: `.P3`, `.P4`, and `.P5` of
+[`REQ-LIF-10-QR8NQ9.T1`](../specification/settlement/lifecycle.md#req-lif-10-qr8nq9.t1) and `.P1`, `.P2`,
+`.P8` of [`REQ-TJOIN-7-NNGTAY.T1`](../specification/peer-communication/targeted-channel-join.md#req-tjoin-7-nngtay.t1)
+were reworded in place, because each still names the same behaviour with the corrected post-condition; none
+was retired and no number was reused. Five new lifecycle permutations and one new targeted-join permutation
+cover what the change genuinely adds — the repeat cycle, the rejected leave, reuse after a non-committed
+leave, isolation from the channel that was left, and shutdown staying terminal after a reuse — and two
+SDK-architecture permutations cover the reset ordering and its refusal after shutdown. The new question
+[`OQ-SPEC-LEAVE-1-9Q4BV3` (Scope of peer exclusion across a channel change)](../specification/open-questions.md#oq-spec-leave-1-9q4bv3) records the one
+protocol decision the change surfaces and does not answer: the scope of a peer exclusion across a channel
+change.

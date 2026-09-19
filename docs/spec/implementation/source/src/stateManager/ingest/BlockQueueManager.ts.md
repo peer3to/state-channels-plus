@@ -66,6 +66,8 @@ claims complete conformance for a requirement that depends on other files.
 
 - Unified attributed work item ([`REQ-BLOCK-PIPE-1-SS24D1` (Unified work item)](../../../../../specification/block-progression/block-processing.md#req-block-pipe-1-ss24d1)); bounded recovery re-entering the pipeline ([`REQ-BLOCK-PIPE-4-CF52J6` (Recovery without bypass)](../../../../../specification/block-progression/block-processing.md#req-block-pipe-4-cf52j6)); lowest-height total order ([`REQ-BLOCK-PIPE-6-XQ0RTT` (Total-order application)](../../../../../specification/block-progression/block-processing.md#req-block-pipe-6-xq0rtt)).
 
+- `reset()` cancels every queued-block timer through `cancelQueueTimeout` per block hash and reuses `onForkTransition` to drop the fork-recovery gates ([#L173](../../../../../../../src/stateManager/ingest/BlockQueueManager.ts#L173)). The queued entries themselves are not touched here: they live in `QueueStorage` and are cleared with the rest of storage, which keeps one owner per datum. Stopping this producer first is what makes the later storage clear safe under [`REQ-SDK-ARCH-2-QBZAT8` (Ordered lifecycle)](../../../../../specification/runtime/sdk.md#req-sdk-arch-2-qbzat8).
+
 ## Specification contradictions
 
 None demonstrated.

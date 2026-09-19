@@ -56,6 +56,8 @@ claims complete conformance for a requirement that depends on other files.
 
 - One round per fork per pair with duplicate-as-violation ([`REQ-DACK-1-ESEGGG` (One round per fork per peer pair)](../../../../../../../specification/peer-communication/dispute-acknowledgment.md#req-dack-1-eseggg)); knowledge-gated consequences wired into validation ([`REQ-DACK-3-J4Z33Y` (Knowledge-gated consequences)](../../../../../../../specification/peer-communication/dispute-acknowledgment.md#req-dack-3-j4z33y)).
 
+- `reset()` drops both acknowledgement maps and the disputed-fork set ([#L36](../../../../../../../../../src/rpc/network/services/isForkDisputedService/IsForkDisputedService.ts#L36)). Acknowledgements are one round per fork per peer pair, and forks belong to a channel, so none of this may survive into the next channel where it would gate consequences on knowledge that was never exchanged there. Contributes to [`REQ-SDK-ARCH-2-QBZAT8` (Ordered lifecycle)](../../../../../../../specification/runtime/sdk.md#req-sdk-arch-2-qbzat8).
+
 ## Specification contradictions
 
 None demonstrated.

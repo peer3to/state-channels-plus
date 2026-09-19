@@ -307,10 +307,10 @@ reader bytecode. These maintained assessments remain pending engineer review; no
 
 ## Accepted PR 472 fixes after the SDK refactor
 
-The terminal-leave watchdog now routes a failed dispute start to the pending leave promise. Both the
+The leave watchdog now routes a failed dispute start to the pending leave promise. Both the
 missing-marker and expired-evidence outcomes have explicit runtime-port declarations. The configured
 production bound remains 15 seconds: it may pre-empt an otherwise healthy turn and incur a dispute.
-This is the recorded owner policy under [terminal channel leave](../specification/peer-communication/targeted-channel-join.md#req-tjoin-7-nngtay).
+This is the recorded owner policy under [channel leave and runtime reuse](../specification/peer-communication/targeted-channel-join.md#req-tjoin-7-nngtay).
 
 Current dispute upload eligibility now uses the snapshot participant set plus the unconsumed inbound
 JOIN interval, with the snapshot boundary excluded, the latest head included, and on-chain slashes
@@ -330,9 +330,49 @@ Verification mappings name individual browser declarations and the new component
 cases. Maintained documents remain pending engineer review; this update grants no approval and does
 not resolve the assessment's five review-body findings that were explicitly left for discussion.
 
+## Non-terminal channel leave and runtime reuse
+
+A settled leave now returns the runtime to its pre-channel state instead of disposing it
+([`REQ-LIF-10-QR8NQ9` (Runtime departure and channel reuse)](../specification/settlement/lifecycle.md#req-lif-10-qr8nq9),
+[`REQ-TJOIN-7-NNGTAY` (Channel leave and runtime reuse)](../specification/peer-communication/targeted-channel-join.md#req-tjoin-7-nngtay)).
+Departure itself is unchanged: the same fully signed snapshot update or self-removal dispute fallback, the
+same settled-removal and local `SYNCED` conditions. What changed is only what happens after the departure is
+observed, so no on-chain safety property moves with this change.
+
+The protected asset the reuse touches is the isolation between two channels served by one runtime. The
+release is complete by construction rather than by inspection: every channel-scoped store is rebuilt through
+one facade call, peers and profiles go through one manager reset, and the selected channel id, fork id, and
+status all return to their pre-channel values (the leader flag is application-owned and stays with its single
+writer). The ordering is the safety argument —
+producers stop, the chain feed is detached and drained, peers and timers go, and only then is storage
+cleared — so nothing in flight can read a half-released runtime or, worse, write a record from the old
+channel into a store the next channel will read. The isolation is asserted end to end as well: after a reuse
+the runtime tracks only its new channel while the peers of the channel it left neither list it nor move
+([`REQ-LIF-10-QR8NQ9.T1.P15`](../specification/settlement/lifecycle.md#req-lif-10-qr8nq9.t1.p15)).
+
+Residual exposure, all accepted here as recorded rather than resolved:
+
+- **Exclusions do not survive the change of channel.** Peer blacklists live on the profiles and are dropped
+  with them. This is deliberate and argued in the source, but the protocol has not decided whether an
+  exclusion is channel-scoped or identity-scoped; a misbehaving peer therefore regains a clean slate when its
+  victim moves to another channel. Recorded as
+  [`OQ-SPEC-LEAVE-1-9Q4BV3` (Scope of peer exclusion across a channel change)](../specification/open-questions.md#oq-spec-leave-1-9q4bv3). The exposure is
+  bounded by the fact that exclusions were never persisted across a restart either.
+- **The drain before the reset is bounded, not guaranteed.** Scheduled chain-log work is awaited under a
+  fixed 30-second bound and the running-task drain has its own bound; both continue after the bound expires
+  with a warning. A pathologically slow provider could therefore let a task from the old channel finish after
+  the stores were cleared. It can no longer schedule channel work — producers are stopped and the feed is
+  detached first — so the worst observable outcome is a dropped late result, not a cross-channel write.
+- **A rejected leave leaves the runtime bound to its channel.** This is the safe direction: local membership
+  is indeterminate after a failed departure, so the runtime keeps refusing other channel work rather than
+  starting it against a half-left channel. It has no exact evidence yet
+  ([`FIND-LEAVE-REUSE-1-GSK8BB`](open-findings.md#find-leave-reuse-1-gsk8bb)).
+- **Reset is refused after shutdown,** keeping `dispose()` and `abort()` terminal; the non-terminal path
+  cannot resurrect a runtime that has already released its signer and provider.
+
 ## Review 472 follow-up decisions
 
-Explicit runtime disposal is local shutdown and does not await a pending dispute upload. Graceful leave is the supported route when the caller needs completed removal; the terminal-leave requirement records this distinction.
+Explicit runtime disposal is local shutdown and does not await a pending dispute upload. Graceful leave is the supported route when the caller needs completed removal, and it now also keeps the runtime; the channel-leave requirement records this distinction.
 
 Dispute upload, reduction admission, and fraud-proof target eligibility share the bounded current snapshot/inbound set. Once a participant leaves that chain set, an old join does not keep it slashable. If the chain snapshot still lists a locally departed participant, a valid fraud proof still writes the chain slash record. Later slash/removal application to a state without that participant is an idempotent no-op under [`REQ-SM-10-JD8TSF`](../specification/protocol-model/state-machines.md#req-sm-10-jd8tsf). The stale-snapshot workflow checks repeated application and unchanged withdrawal totals.
 

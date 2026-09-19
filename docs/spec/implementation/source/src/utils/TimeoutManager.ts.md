@@ -52,6 +52,8 @@ claims complete conformance for a requirement that depends on other files.
 
 - Lifecycle-convergent scheduling ([`REQ-RUNTIME-3-VQXW59` (Lifecycle convergence)](../../../../specification/runtime/execution.md#req-runtime-3-vqxw59)).
 
+- `cancelAllTasks()` cancels pending timeouts and drains running tasks without marking the manager disposed ([#L79](../../../../../../src/utils/TimeoutManager.ts#L79)), and `dispose()` is now that same body behind the terminal flag ([#L69](../../../../../../src/utils/TimeoutManager.ts#L69)) — one implementation, two lifecycles. The drain is bounded by `TASK_DRAIN_TIMEOUT_MS` ([#L4](../../../../../../src/utils/TimeoutManager.ts#L4)); the race's deadline timer is cleared once the drain settles ([#L99](../../../../../../src/utils/TimeoutManager.ts#L99)), so a completed drain leaves no stray timer behind, and a timed-out drain logs and continues. Callers must stop their own producers first, because a task still running here may schedule another; the channel-reset caller does exactly that. Contributes to [`REQ-SDK-ARCH-2-QBZAT8` (Ordered lifecycle)](../../../../specification/runtime/sdk.md#req-sdk-arch-2-qbzat8).
+
 ## Specification contradictions
 
 None demonstrated.

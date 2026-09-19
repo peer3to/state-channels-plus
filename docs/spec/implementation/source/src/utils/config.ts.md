@@ -81,6 +81,6 @@ Exact test evidence is mapped against these IDs in the verification test reports
 
 - Consumers per the views.
 
-# Terminal leave contribution
+# Channel leave contribution
 
-`LEAVE_CHANNEL_WATCHDOG_MS` is a runtime-local liveness bound with a 15,000 millisecond default. It is configurable and is not an on-chain timing parameter. This contributes to [`REQ-TJOIN-7-NNGTAY` (Terminal channel leave)](../../../../specification/peer-communication/targeted-channel-join.md#req-tjoin-7-nngtay).
+`LEAVE_CHANNEL_WATCHDOG_MS` is a runtime-local liveness bound with a 15,000 millisecond default. It is configurable and is not an on-chain timing parameter. This contributes to [`REQ-TJOIN-7-NNGTAY` (Channel leave and runtime reuse)](../../../../specification/peer-communication/targeted-channel-join.md#req-tjoin-7-nngtay).

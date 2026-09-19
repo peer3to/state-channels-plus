@@ -48,6 +48,8 @@ Registration, authentication refusals, transport retirement and upgrade-ban rele
 
 Disposal attempts every registered transport, including unpromoted transports. A close failure does not stop later closes; after clearing profile state it rethrows the first failure.
 
+There is no separate reset entry point: a channel change calls `dispose()` ([#L23](../../../../../src/ProfileManager.ts#L23)) directly from `P2PManager.resetChannel`, because a channel change needs exactly the same teardown, and the manager has no terminal flag, so the same instance keeps registering profiles for the next channel. The consequence is deliberate rather than incidental: blacklists live on the profiles, so they are dropped with them. A ban is a consequence attributed inside one channel's participant set, and the next channel has its own set, so carrying the ban across would punish a peer for a fault the new channel never saw; that rationale is recorded at the call site in [P2PManager](./P2PManager.ts.md).
+
 ## Inputs, outputs, state, and side effects
 
 | Aspect       | Contents                                                |
@@ -79,6 +81,9 @@ claims complete conformance for a requirement that depends on other files.
 ## Specification adherence
 
 - Normalized-address keying; churn-surviving exclusion ([`REQ-AUTH-4-JWCF71` (Penalty requires proof)](../../../specification/peer-communication/handshake.md#req-auth-4-jwcf71) consequence store).
+- Exclusion survives connection churn but not a channel change: the reset's `dispose()` call drops profiles and their exclusion
+  state together ([#L23](../../../../../src/ProfileManager.ts#L23)), which keeps a penalty scoped to the channel whose proof produced it
+  ([`REQ-AUTH-4-JWCF71` (Penalty requires proof)](../../../specification/peer-communication/handshake.md#req-auth-4-jwcf71)).
 
 ## Specification contradictions
 
@@ -86,7 +91,7 @@ None demonstrated.
 
 ## Missing behavior
 
-Blacklist persistence across restarts is undefined (in-memory) — ban-persistence question in [`OQ-34-FY08V2` (RPC boundary decisions)](../../../specification/open-questions.md#oq-34-fy08v2).
+Blacklist persistence across restarts is undefined (in-memory) — ban-persistence question in [`OQ-34-FY08V2` (RPC boundary decisions)](../../../specification/open-questions.md#oq-34-fy08v2). Whether an exclusion may follow a peer into the next channel a reused runtime selects is undecided; the channel reset currently drops it with the profiles through `dispose()` — [`OQ-SPEC-LEAVE-1-9Q4BV3` (Scope of peer exclusion across a channel change)](../../../specification/open-questions.md#oq-spec-leave-1-9q4bv3).
 
 ## Conformance traceability
 
@@ -114,6 +119,7 @@ Exact test evidence is mapped against these IDs in the verification test reports
 ## Related source reports
 
 - [PeerProfile](./PeerProfile.ts.md), [P2PManager](./P2PManager.ts.md), [InitHandshakeService](rpc/network/services/initHandshake/InitHandshakeService.ts.md).
+- [StateManager](./stateManager/StateManager.ts.md) — owns the channel reset that reaches `dispose()` through [P2PManager](./P2PManager.ts.md).
 
 ## Runtime disposal
 

@@ -91,6 +91,8 @@ claims complete conformance for a requirement that depends on other files.
   its exact snapshot hash is now on-chain. The height-race fallback rechecks pending reductions and
   never treats a different snapshot at the same or greater height as success.
 
+- `reset()` clears the in-flight sync dedupe keyed by peer address ([#L52](../../../../../../../../../src/rpc/network/services/spectate/SpectateService.ts#L52)), so a peer that was mid-sync on the old channel is not refused a fresh sync on the next one. Contributes to [`REQ-SDK-ARCH-2-QBZAT8` (Ordered lifecycle)](../../../../../../../specification/runtime/sdk.md#req-sdk-arch-2-qbzat8).
+
 ## Specification contradictions
 
 The synchronization specification's requester step 6 says to abort when the on-chain snapshot is

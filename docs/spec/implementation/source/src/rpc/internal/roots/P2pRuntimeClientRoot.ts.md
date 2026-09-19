@@ -38,7 +38,7 @@ Startup failures use common cleanup. Common lifecycle disposes children; local c
 
 - [`INV-RUNTIME-1-AKRHAK` (Execution equivalence)](../../../../../../specification/runtime/execution.md#inv-runtime-1-akrhak): The same client facade connects to a local channel or worker port
 - [`REQ-RUNTIME-2-KBXKTG` (Ownership and ordering)](../../../../../../specification/runtime/execution.md#req-runtime-2-kbxktg): The connection exposes no live host managers or engine state
-- [`REQ-TJOIN-7-NNGTAY` (Terminal channel leave)](../../../../../../specification/peer-communication/targeted-channel-join.md#req-tjoin-7-nngtay): Application signer adapters use the concrete bound host endpoint
+- [`REQ-TJOIN-7-NNGTAY` (Channel leave and runtime reuse)](../../../../../../specification/peer-communication/targeted-channel-join.md#req-tjoin-7-nngtay): Application signer adapters use the concrete bound host endpoint
 - [`REQ-RUNTIME-3-VQXW59` (Lifecycle convergence)](../../../../../../specification/runtime/execution.md#req-runtime-3-vqxw59): Readiness/error/dispose orchestration retains host-owned timeout and response order
 
 ## Assumptions, dependencies, trust boundaries, and limits
@@ -51,7 +51,7 @@ The browser close callback remains best-effort. Contract event replay retains th
 
 - [`INV-RUNTIME-1-AKRHAK` (Execution equivalence)](../../../../../../specification/runtime/execution.md#inv-runtime-1-akrhak): The same client facade connects to a local channel or worker port See [`P2pRuntimeClientRoot.ts`](../../../../../../../../src/rpc/internal/roots/P2pRuntimeClientRoot.ts#L100).
 - [`REQ-RUNTIME-2-KBXKTG` (Ownership and ordering)](../../../../../../specification/runtime/execution.md#req-runtime-2-kbxktg): The connection exposes no live host managers or engine state See [`P2pRuntimeClientRoot.ts`](../../../../../../../../src/rpc/internal/roots/P2pRuntimeClientRoot.ts#L125).
-- [`REQ-TJOIN-7-NNGTAY` (Terminal channel leave)](../../../../../../specification/peer-communication/targeted-channel-join.md#req-tjoin-7-nngtay): Application signer adapters use the concrete bound host endpoint See [`P2pRuntimeClientRoot.ts`](../../../../../../../../src/rpc/internal/roots/P2pRuntimeClientRoot.ts#L125).
+- [`REQ-TJOIN-7-NNGTAY` (Channel leave and runtime reuse)](../../../../../../specification/peer-communication/targeted-channel-join.md#req-tjoin-7-nngtay): Application signer adapters use the concrete bound host endpoint See [`P2pRuntimeClientRoot.ts`](../../../../../../../../src/rpc/internal/roots/P2pRuntimeClientRoot.ts#L125).
 - [`REQ-RUNTIME-3-VQXW59` (Lifecycle convergence)](../../../../../../specification/runtime/execution.md#req-runtime-3-vqxw59): Readiness/error/dispose orchestration retains host-owned timeout and response order See [`P2pRuntimeClientRoot.ts`](../../../../../../../../src/rpc/internal/roots/P2pRuntimeClientRoot.ts#L100).
 
 ## Specification contradictions

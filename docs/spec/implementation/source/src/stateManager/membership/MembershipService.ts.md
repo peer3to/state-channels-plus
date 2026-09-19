@@ -12,7 +12,7 @@ It does not announce membership to peers or control connection admission.
 
 Both authored-exit fallback paths report a missing dispute marker or a thrown upload error to `LeaveChannelService.onExitFallbackFailed` after logging. A failed snapshot post first attempts the dispute; only failure of that fallback rejects pending leave.
 
-startSelfRemovalDispute sets force-exit, invokes normal dispute construction and returns the resulting marker. Terminal leave turns a missing marker into failure; membership fallbacks log and notify the matching authored leave on failure. Signer membership predicates name the local set or the on-chain union; pending-only event checks remain pending-only. See [MembershipService.ts](../../../../../../../src/stateManager/membership/MembershipService.ts#L63).
+startSelfRemovalDispute sets force-exit, invokes normal dispute construction and returns the resulting marker. The channel leave turns a missing marker into failure; membership fallbacks log and notify the matching authored leave on failure. Signer membership predicates name the local set or the on-chain union; pending-only event checks remain pending-only. See [MembershipService.ts](../../../../../../../src/stateManager/membership/MembershipService.ts#L63).
 
 Committed membership classification uses the shared two-status predicate. Force-exit starters and public parameters stay unchanged. See [MembershipService.ts](../../../../../../../src/stateManager/membership/MembershipService.ts#L1).
 
@@ -104,8 +104,8 @@ exists returns success while preserving pending state.
 for a supplied balance on pending or participating state; failure preserves that committed runtime. Omitted
 balance reuse sends no transaction in the signer wrapper. This service never receives matcher `timeoutMs`.
 
-# Terminal leave contribution
+# Channel leave contribution
 
-The fully signed exit path now waits for snapshot submission. If it fails, it preserves self-removal and starts the existing dispute path. This contributes to [`REQ-LIF-10-QR8NQ9` (Terminal runtime departure)](../../../../../specification/settlement/lifecycle.md#req-lif-10-qr8nq9).
+The fully signed exit path now waits for snapshot submission. If it fails, it preserves self-removal and starts the existing dispute path. This contributes to [`REQ-LIF-10-QR8NQ9` (Runtime departure and channel reuse)](../../../../../specification/settlement/lifecycle.md#req-lif-10-qr8nq9).
 
 Shared operation owners: [errorMessage.ts.md](../../utils/errorMessage.ts.md).

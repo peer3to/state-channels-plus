@@ -23,16 +23,16 @@ P2pInstance remains the app-facing API and holds P2pRuntimeClientRoot directly. 
 
 ## Key design decisions
 
-The constructor takes a ready communication root and the application objects assembled by setup. It exposes those objects directly and shares the root event bus. Disposal retains one promise, settles listener and root cleanup, then always disposes its application logger and reports any cleanup failure. Leave remains an idempotent app operation followed by disposal.
+The constructor takes a ready communication root and the application objects assembled by setup. It exposes those objects directly and shares the root event bus. Disposal retains one promise, settles listener and root cleanup, then always disposes its application logger and reports any cleanup failure. Leave is an idempotent app operation that keeps the instance: `leaveChannel` memoizes the host request in `leavePromise` while it is pending ([#L119](../../../../../../src/evm/P2pInstance.ts#L119)), so repeated concurrent calls make one host request and receive the same promise, and it never calls `dispose()`. The memo is released in a `finally` ([#L120](../../../../../../src/evm/P2pInstance.ts#L120)) so the next channel gets its own leave; what a call after a failure sees is decided by the host's own memo, which keeps returning that failure instead of departing twice. Shutdown stays the separate explicit `dispose()`.
 
 ## Inputs, outputs, state, and side effects
 
-| Aspect       | Contents                                                                                          |
-| ------------ | ------------------------------------------------------------------------------------------------- |
-| Inputs       | Ready P2pRuntimeClientRoot and typed application contract, signers, hostRpc and logger ownership. |
-| Outputs      | App contract, signers, hostRpc, events, logger, host errors, quiesce and cleanup API.             |
-| Owned state  | Application objects, direct root reference, disposal and terminal leave completion.               |
-| Side effects | Delegates domain calls and cleanup; direct StateManager access remains disabled.                  |
+| Aspect       | Contents                                                                                                    |
+| ------------ | ----------------------------------------------------------------------------------------------------------- |
+| Inputs       | Ready P2pRuntimeClientRoot and typed application contract, signers, hostRpc and logger ownership.           |
+| Outputs      | App contract, signers, hostRpc, events, logger, host errors, quiesce and cleanup API.                       |
+| Owned state  | Application objects, direct root reference, the disposal promise, and the released-on-settle leave promise. |
+| Side effects | Delegates domain calls and cleanup; direct StateManager access remains disabled.                            |
 
 ## Linked requirements
 
@@ -50,6 +50,12 @@ claims complete conformance for a requirement that depends on other files.
 ## Specification adherence
 
 - Role-consistent with the runtime views.
+- `leaveChannel` returns a promise that settles when the channel is given up and the runtime has been reset,
+  and the instance stays usable afterwards, so departure is non-terminal for the SDK object
+  ([#L116](../../../../../../src/evm/P2pInstance.ts#L116), [`REQ-LIF-10-QR8NQ9` (Runtime departure and channel reuse)](../../../../specification/settlement/lifecycle.md#req-lif-10-qr8nq9)).
+- Releasing the leave memo only in `finally` keeps repeated concurrent calls sharing one host request while
+  letting the _next_ channel have its own; the host's memo, not this one, is what makes a failed leave keep
+  returning the same failure ([#L119](../../../../../../src/evm/P2pInstance.ts#L119)).
 - `dispose` lets every teardown settle before the application logger and its descendants are disposed, so the
   realm stays reachable by a running collection until the client has finished closing
   ([`REQ-LOG-1-H2VQ8X` (Logging cleanup preserves surviving owners)](../../../../specification/runtime/log-collection.md#req-log-1-h2vq8x)).
@@ -83,9 +89,10 @@ Exact test evidence is mapped against these IDs in the verification test reports
 
 ## Related source reports
 
-## Terminal leave contribution
+## Channel leave contribution
 
-`leaveChannel` stores one outer terminal promise, awaits the host leave response, then calls the existing
-`dispose` chain. It therefore contributes to [`REQ-TJOIN-7-NNGTAY` (Terminal channel leave)](../../../../specification/peer-communication/targeted-channel-join.md#req-tjoin-7-nngtay) and [`REQ-LIF-10-QR8NQ9` (Terminal runtime departure)](../../../../specification/settlement/lifecycle.md#req-lif-10-qr8nq9) without moving listener or transport ownership into the host operation.
+`leaveChannel` shares one pending host request across concurrent calls and returns its promise, which resolves
+only after the host has observed settled removal and reset itself. It does not chain into `dispose`, so the
+application keeps the same instance and may select another channel on it. It therefore contributes to [`REQ-TJOIN-7-NNGTAY` (Channel leave and runtime reuse)](../../../../specification/peer-communication/targeted-channel-join.md#req-tjoin-7-nngtay) and [`REQ-LIF-10-QR8NQ9` (Runtime departure and channel reuse)](../../../../specification/settlement/lifecycle.md#req-lif-10-qr8nq9) without moving listener or transport ownership into the host operation. Explicit shutdown remains `dispose()`, which is unchanged.
 
 - [runtime-and-concurrency view](../../../views/architecture/sdk/runtime-and-concurrency.md).

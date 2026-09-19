@@ -30,6 +30,8 @@ Channel identity uses the shared permissive string/lowercase conversion; event m
 
 `stop()` rejects new log delivery through the existing disposed/generation guards and waits for scheduled work. It retains the provider listener until `dispose()`, so a host can destroy its owned provider before listener removal starts an unsubscribe. Direct disposal still stops work and removes the listener, including when draining fails.
 
+The wait itself is the public `drain()` ([#L64](../../../../../src/StateChannelEventListener.ts#L64)): a bounded `eventSyncService.waitForScheduled` under `DRAIN_TIMEOUT_MS` ([#L9](../../../../../src/StateChannelEventListener.ts#L9)). `stop()` calls it after raising the generation ([#L57](../../../../../src/StateChannelEventListener.ts#L57)), and `StateManager.resetChannel()` calls it directly after `clearChannelId()`, so a channel reset drains already scheduled log work with the same bound without marking the listener disposed — the listener keeps serving the next channel's `setChannelId`.
+
 ## Inputs, outputs, state, and side effects
 
 | Aspect       | Contents        |

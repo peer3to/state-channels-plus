@@ -71,4 +71,4 @@ None demonstrated.
 - [DisputeManager](../../disputeManager/DisputeManager.ts.md) sets and rolls back the single marker.
 - [StateManager](../StateManager.ts.md) owns the mutex.
 - [ValidationService](../ingest/ValidationService.ts.md) rejects new live arrivals under the marker.
-- [LeaveChannelService](../membership/LeaveChannelService.ts.md) owns terminal leave settlement.
+- [LeaveChannelService](../membership/LeaveChannelService.ts.md) owns channel leave settlement.

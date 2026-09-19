@@ -9,8 +9,8 @@ Mechanical re-export boundary for membership lifecycle services.
 
 ## Linked requirements
 
-| Source file | Specification IDs |
-| --- | --- |
+| Source file                                                           | Specification IDs                                                                                                                                                                                                  |
+| --------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | [index.ts](../../../../../../../src/stateManager/membership/index.ts) | [`REQ-TJOIN-7-NNGTAY`](../../../../../specification/peer-communication/targeted-channel-join.md#req-tjoin-7-nngtay), [`REQ-LIF-10-QR8NQ9`](../../../../../specification/settlement/lifecycle.md#req-lif-10-qr8nq9) |
 
 ## Specification adherence
@@ -19,10 +19,10 @@ Mechanical re-export boundary for membership lifecycle services.
 
 ## Conformance traceability
 
-| Requirement / invariant | Implementation status | Evidence | Gap / divergence |
-| --- | --- | --- | --- |
-| [`REQ-TJOIN-7-NNGTAY`](../../../../../specification/peer-communication/targeted-channel-join.md#req-tjoin-7-nngtay) | Covered | **Here:** exports the terminal leave owner. **Other files:** [LeaveChannelService.ts](./LeaveChannelService.ts.md) owns behavior. | None. |
-| [`REQ-LIF-10-QR8NQ9`](../../../../../specification/settlement/lifecycle.md#req-lif-10-qr8nq9) | Covered | **Here:** makes the leave lifecycle service available to `StateManager`. **Other files:** [StateManager.ts](../StateManager.ts.md) owns composition. | None. |
+| Requirement / invariant                                                                                             | Implementation status | Evidence                                                                                                                                             | Gap / divergence |
+| ------------------------------------------------------------------------------------------------------------------- | --------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------- |
+| [`REQ-TJOIN-7-NNGTAY`](../../../../../specification/peer-communication/targeted-channel-join.md#req-tjoin-7-nngtay) | Covered               | **Here:** exports the channel leave owner. **Other files:** [LeaveChannelService.ts](./LeaveChannelService.ts.md) owns behavior.                     | None.            |
+| [`REQ-LIF-10-QR8NQ9`](../../../../../specification/settlement/lifecycle.md#req-lif-10-qr8nq9)                       | Covered               | **Here:** makes the leave lifecycle service available to `StateManager`. **Other files:** [StateManager.ts](../StateManager.ts.md) owns composition. | None.            |
 
 ## Component test obligations
 

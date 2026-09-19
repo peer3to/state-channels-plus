@@ -63,6 +63,8 @@ claims complete conformance for a requirement that depends on other files.
 
 - Every dispute path terminates in one installed successor ([`REQ-DIS-6-Y92H1M`](../../../../../specification/disputes/disputes.md#req-dis-6-y92h1m) client side).
 
+- `reset()` performs the same cancellation as `dispose()` — scheduled reductions cancelled, pending completions settled, `reductionExecutor.dispose()` to drop the executor's kill-period memo — but sets no terminal flag ([#L83](../../../../../../../src/stateManager/reduction/ReductionManager.ts#L83)), so the manager keeps scheduling for the next channel; the extracted `settlePendingCompletions` ([#L99](../../../../../../../src/stateManager/reduction/ReductionManager.ts#L99)) is the shared body both paths use, so a pending completion is still settled exactly once and never rejected. Contributes to [`REQ-SDK-ARCH-2-QBZAT8` (Ordered lifecycle)](../../../../../specification/runtime/sdk.md#req-sdk-arch-2-qbzat8).
+
 ## Specification contradictions
 
 None demonstrated.

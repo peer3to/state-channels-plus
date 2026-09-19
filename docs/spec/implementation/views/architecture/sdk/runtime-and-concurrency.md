@@ -296,7 +296,18 @@ the worker before the request protocol begins
   same way an inline host's would.
 - **Dead client port** triggers host self-disposal via `port.onClose`.
 
-### 3.5 Disposal
+### 3.5 Channel reset (non-terminal)
+
+`p2pSigner.leaveChannel()` crosses the port with no timeout and resolves only after the host has observed
+settled removal **and** run `StateManager.resetChannel()`. The reset is ordered like a disposal but stops
+short of it: producers, then chain-feed detach and a bounded drain, then peers and the custom RPC root's
+channel state, then scheduled tasks, then storage. The port, worker, signer, provider, and root all survive,
+so the client may immediately select another channel on the same `P2pInstance`. The leader flag is not part of
+the reset on either side of the port: it is application-owned with a single writer, so the application that
+set it clears it. `P2pInstance.leaveChannel()` memoizes the host request while it is pending, so concurrent
+calls share one request and the same promise.
+
+### 3.6 Disposal
 
 - **Graceful:** `P2pInstance.dispose()` → `client.dispose()` sends a `dispose`
   request with **no timeout** (`timeoutMs: null`), lets the host tear down its
@@ -317,7 +328,7 @@ the worker before the request protocol begins
   leaking teardown rather than converted into a process abort.
 - **`StateManager.abort()`** disposes its owning root and descendants, then closes the control connection. Late queries reject in both placements; another SDK root remains independent.
 
-### 3.6 Serialization limits
+### 3.7 Serialization limits
 
 Messages cross by **structured clone** (`postMessage`), with two protocol-level
 encodings layered on top for values structured clone handles poorly or that must
@@ -353,7 +364,7 @@ be canonical:
   Main-thread indexed contract filters still have the existing limitation because
   the forwarded event has name and arguments rather than original topics.
 
-### 3.7 Trust of the boundary itself
+### 3.8 Trust of the boundary itself
 
 The client↔host and host↔executor ports connect SDK-owned endpoints. Their
 runtime domain services use common descriptor-safe dispatch without peer guards.
@@ -385,7 +396,7 @@ the way down.
 The `Node` adapter (`onClose` on a real `close` event) and the `browser` adapter
 (`onClose` best-effort, since `close` is not universally supported) differ only
 in `onClose` reliability, which is why the client keeps the request timeout as a
-backstop (§3.5, §5).
+backstop (§3.6, §5).
 
 ## 5. Concurrency model
 
@@ -545,7 +556,7 @@ _Non-normative._
   performance target and device envelope the gaps in §6 flag.
 - **A written cross-kind ordering guarantee** for responses vs. bus events over
   the port (§3.2), and an explicit contract for bus-event arg serialization loss
-  and indexed-filter matching (§3.6).
+  and indexed-filter matching (§3.7).
 - **A trusted-transport guard for the harness-control root** and exclusion of the
   fixture tree from the published build (§11.4), so a privileged test surface
   cannot be dispatched from a network transport or shipped to consumers by

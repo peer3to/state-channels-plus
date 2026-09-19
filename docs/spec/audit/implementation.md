@@ -230,3 +230,31 @@ Ordered cleanup now uses [runCleanup](../implementation/source/src/utils/runClea
 ## Review 17 parent-loss disposition
 
 The engineer chose to close RY1 at the parent owner. [Root creation](../implementation/source/src/rpc/internal/createRoot.ts.md) marks expected worker shutdown before closing the owned port. A real SDK-worker regression holds client disposal until after the child exits, and observes the fatal adapter callback as well as the public error surface. Unexpected worker exits remain errors. Full and browser gates are rerun after this change and the shared cleanup extraction.
+
+## Channel reset ownership
+
+`StateManager.resetChannel()` is the single owner of the non-terminal release; every other component
+contributes one `reset()`/`clear()` that it calls, and none of them decides on its own when to run. That
+keeps the ordering — producers, feed detach and drain, peers and RPC root, timers, storage — in one place
+where it can be read and reviewed, instead of spread across the leave path. `Storage.clear()` rebuilds the
+fifteen sub-stores through the same `initStores()` the constructor runs: consumers hold the aggregate, never a
+sub-store, and read each one through the proxy on every access, so fresh instances are visible everywhere at
+once and no sub-store has to enumerate its own fields. `TimeoutManager.dispose()` was reduced to the terminal
+flag plus the new `cancelAllTasks()`, `ReductionManager.dispose()`/`reset()` share `settlePendingCompletions()`
+and both call `ReductionExecutor.dispose()`, and `ProfileManager` has no reset of its own — the channel reset
+calls its `dispose()` — so none of these lifecycles can drift from the other. The leave service keeps one memo:
+the operation carries the completion promise callers receive, and `P2pInstance.leaveChannel()` memoizes the
+host request only while it is pending. The leader flag is left alone by the reset on both sides of the port;
+it is application-owned with a single writer.
+
+Two conformance rows describe deliberately partial contributions and say so in their gap column.
+[StateManager](../implementation/source/src/stateManager/StateManager.ts.md) covers only the release-and-reuse
+half of [`REQ-LIF-10-QR8NQ9` (Runtime departure and channel reuse)](../specification/settlement/lifecycle.md#req-lif-10-qr8nq9); settlement stays
+with the snapshot and dispute owners. [P2PManager](../implementation/source/src/P2PManager.ts.md) covers only
+the peer/transport half of the ordered release in
+[`REQ-SDK-ARCH-2-QBZAT8` (Ordered lifecycle)](../specification/runtime/sdk.md#req-sdk-arch-2-qbzat8).
+
+The sub-stores implement no reset step of their own (`ForceJoinStorage.clear()` is an in-channel lifecycle
+step, not part of the reset), so they carry no unit-test family for it; the obligation is owned by
+[`UNIT-TEST-STORAGE-FACADE-3-9N4C6W`](../implementation/source/src/storage/Storage.ts.md#unit-test-storage-facade-3-9n4c6w),
+whose permutations name each module individually and read it back through the aggregate.

@@ -66,6 +66,8 @@ claims complete conformance for a requirement that depends on other files.
 
 - Deterministic order-independent reduction via the mirrored fold; races classified as convergence ([`REQ-DISPUTE-PIPE-6-6FZB9M` (Minimal intervention and convergence)](../../../../../specification/disputes/dispute-processing.md#req-dispute-pipe-6-6fzb9m)).
 
+- `dispose()` only drops the per-(channel, fork) kill-period memo ([#L79](../../../../../../../src/stateManager/reduction/ReductionExecutor.ts#L79)); it sets no terminal flag and leaves the attempt mutex in place, so `ReductionManager.reset()` calls it on a channel reset as well as on disposal. The memo is channel-scoped and would answer the next channel with the previous one's expiry, whereas the mutex is the component's own serializer and keeps working afterwards. Contributes to [`REQ-SDK-ARCH-2-QBZAT8` (Ordered lifecycle)](../../../../../specification/runtime/sdk.md#req-sdk-arch-2-qbzat8).
+
 ## Specification contradictions
 
 None demonstrated.
@@ -97,8 +99,8 @@ Exact test evidence is mapped against these IDs in the verification test reports
 
 - [ReductionComputationService](./ReductionComputationService.ts.md), [EventSyncService](../EventSyncService.ts.md), [SnapshotUpdateService](../snapshotUpdate/SnapshotUpdateService.ts.md).
 
-# Terminal leave contribution
+# Channel leave contribution
 
-After a settled self-removal reduction installs a successor where the leaving signer is `SYNCED`, the removed runtime does not submit a redundant reduction transaction. This prevents terminal disposal from interrupting an obsolete provider transaction while remaining participants retain normal reduction submission. This contributes to [`REQ-LIF-10-QR8NQ9` (Terminal runtime departure)](../../../../../specification/settlement/lifecycle.md#req-lif-10-qr8nq9).
+After a settled self-removal reduction installs a successor where the leaving signer is `SYNCED`, the removed runtime does not submit a redundant reduction transaction. This prevents the channel reset that follows a settled leave from interrupting an obsolete provider transaction, while remaining participants retain normal reduction submission. This contributes to [`REQ-LIF-10-QR8NQ9` (Runtime departure and channel reuse)](../../../../../specification/settlement/lifecycle.md#req-lif-10-qr8nq9).
 
 Shared operation owners: [errorMessage.ts.md](../../utils/errorMessage.ts.md).
