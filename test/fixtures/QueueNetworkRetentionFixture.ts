@@ -282,7 +282,7 @@ export async function assertOutsiderProofDoesNotAdmitCopy(
             );
         }
 
-        if (ordinarySync || mode === "failure")
+        if (mode === "failure")
             await waitFor(
                 async () =>
                     (
@@ -292,7 +292,7 @@ export async function assertOutsiderProofDoesNotAdmitCopy(
                             .request()
                     ).completedIntakes === 1
             );
-        else if (mode === "success")
+        else if (mode === "success" || mode === "busy")
             expect(
                 (
                     await h

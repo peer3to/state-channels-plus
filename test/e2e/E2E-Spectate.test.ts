@@ -27,6 +27,9 @@ import { ethers } from "ethers";
  * Tests spectator joining, syncing, and fork traversal mechanisms.
  */
 describe("E2E: Spectate Service", function () {
+    it("overlapping newcomer gossip waits for its membership proof without blacklisting", async () => {
+        await assertPromotionBeforeReceiverApplication(true);
+    });
     it("spectator rejects an invalid envelope without executing or relaying it", async () => {
         await assertSpectatorRejectedWork("invalid");
     });
@@ -1257,7 +1260,7 @@ describe("E2E: Spectate Service", function () {
             // Fire two concurrent startSync calls for the same peer on peer 0.
             // `sync()` marks `inFlightByPeerAddress` synchronously before its
             // background request completes (a full spectate RTT), so the second
-            // must be dropped before it hits the wire. Both control round-trips
+            // must share the pending result. Both control round-trips
             // land well inside that window.
             await Promise.all([
                 h

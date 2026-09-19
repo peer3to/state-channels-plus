@@ -375,7 +375,7 @@ export class StubService extends ANetworkRpcService<
         completed: number;
         succeeded: number;
     };
-    private originalQueueProbe?: SpectateService["syncAfterInFlight"];
+    private originalQueueProbe?: SpectateService["sync"];
     private timeoutBuildHold?: HeldRpcReply;
     private restoreTimeoutBuild?: () => void;
     private timeoutStoreCalls = 0;
@@ -1317,7 +1317,7 @@ export class StubService extends ANetworkRpcService<
 
     public holdQueueProbe(): void {
         const service = this.p2pManager.localRpc.spectateService;
-        const original = service.syncAfterInFlight.bind(service);
+        const original = service.sync.bind(service);
         this.originalQueueProbe = original;
         const hold = {
             ...this.createRpcHold("spectate"),
@@ -1325,7 +1325,7 @@ export class StubService extends ANetworkRpcService<
             succeeded: 0
         };
         this.queueProbeHold = hold;
-        service.syncAfterInFlight = async (...args) => {
+        service.sync = async (...args) => {
             hold.entered += 1;
             await hold.gate;
             try {
@@ -1350,7 +1350,7 @@ export class StubService extends ANetworkRpcService<
     public releaseQueueProbe(): void {
         this.queueProbeHold?.release();
         if (this.originalQueueProbe)
-            this.p2pManager.localRpc.spectateService.syncAfterInFlight =
+            this.p2pManager.localRpc.spectateService.sync =
                 this.originalQueueProbe;
         this.originalQueueProbe = undefined;
     }

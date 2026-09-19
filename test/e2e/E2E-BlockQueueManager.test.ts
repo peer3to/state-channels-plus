@@ -29,11 +29,14 @@ import { ethers } from "ethers";
  */
 
 describe("E2E: BlockQueueManager", function () {
+    it("known slashes reject network contributions even when slash log recovery fails", async () => {
+        await assertSlashAdmission("failed-recovery");
+    });
+
     it("a sender absent after membership refresh failure uses ordinary network sync", async () => {
         await assertOutsiderProofDoesNotAdmitCopy("success", true);
     });
     it("an existing sync handles an unknown-source copy without another wire request", async () => {
-        // Accepted limitation: an in-flight collision returns before the sender becomes eligible.
         await assertOutsiderProofDoesNotAdmitCopy("busy");
     });
     it("failed ingress sync blacklists its sender without queueing the triggering block", async () => {

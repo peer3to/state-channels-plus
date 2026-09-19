@@ -142,11 +142,15 @@ export default class MembershipService {
             const sm = this.stateManager;
             try {
                 const membership =
-                    await sm.eventSyncService.synchronizeChainMembership(
+                    await sm.eventSyncService.readPinnedChainMembership(
                         sm.channelId
                     );
                 for (const participant of membership.slashed)
                     this.observeOnChainSlash(participant);
+                await sm.eventSyncService.synchronizeChainMembership(
+                    sm.channelId,
+                    membership
+                );
                 return true;
             } catch (error) {
                 this.logger.warn("Source eligibility refresh unavailable", {

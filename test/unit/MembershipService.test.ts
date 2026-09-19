@@ -2,7 +2,10 @@ import { hash as randomHash } from "../factory";
 import { SourceEligibility } from "@/stateManager/membership/MembershipService";
 import { Status } from "@/types";
 import { sleep } from "@/utils";
-import { assertSlashAdmission } from "@test/fixtures/QueueSlashFixture";
+import {
+    assertSlashAdmission,
+    assertSlashRefreshFailure
+} from "@test/fixtures/QueueSlashFixture";
 import {
     concurrentUnknownEligibility,
     missingInboundEligibility,
@@ -20,6 +23,9 @@ import { ethers } from "ethers";
 // (p2pSigner.joinChannel / topUpBalance) and through a real leave.
 
 describe("Unit: MembershipService", function () {
+    it("an authoritative slash survives failed slash log recovery and repeated lookups", async () => {
+        await assertSlashRefreshFailure();
+    });
     it("unavailable inbound recovery leaves cached membership unchanged and does not blacklist the source", async () => {
         const observed = await missingInboundEligibility();
         expect(observed.before).to.deep.equal([

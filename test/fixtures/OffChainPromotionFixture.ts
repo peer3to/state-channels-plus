@@ -245,7 +245,9 @@ export async function assertVerifiedSyncPromotion() {
     }
 }
 
-export async function assertPromotionBeforeReceiverApplication() {
+export async function assertPromotionBeforeReceiverApplication(
+    overlap = false
+) {
     const h = MathTestSession.getHarness();
     await h.lifecycle.start(2, 1, { maxChannelParticipants: 3 });
     const { peer: newcomer } = await h.join.addSpectatorAuthoring({
@@ -300,6 +302,38 @@ export async function assertPromotionBeforeReceiverApplication() {
             (await h.control(receiver).stub.getAdmissionObservation().request())
                 .syncRequests
         ).to.equal(1);
+        if (overlap) {
+            await h
+                .control(newcomer)
+                .byzantine.sendBlockConfirmation(
+                    insertion.encodedBlockConfirmation,
+                    receiver.address
+                )
+                .request();
+            await waitFor(
+                async () =>
+                    (
+                        await h
+                            .control(receiver)
+                            .stub.getAdmissionObservation()
+                            .request()
+                    ).chainReads >= 2
+            );
+            expect(
+                await h
+                    .control(receiver)
+                    .query.isBlacklisted(newcomer.address)
+                    .request()
+            ).to.equal(false);
+            expect(
+                (
+                    await h
+                        .control(receiver)
+                        .stub.getAdmissionObservation()
+                        .request()
+                ).completedSyncs
+            ).to.equal(0);
+        }
         await application.release();
         await h.control(newcomer).stub.releaseSpectateResponses().request();
         await h.assert.sync.peersInSyncWait({ waitForFinalization: true });

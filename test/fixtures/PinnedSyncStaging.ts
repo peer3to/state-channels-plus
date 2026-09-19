@@ -429,3 +429,76 @@ export async function assertBatchedSyncFinality(h: MathPeerTestHarness) {
         await stub.restoreSyncFinalityReads().request();
     }
 }
+
+export async function assertConcurrentPinnedRequests(
+    h: MathPeerTestHarness,
+    mode: "same" | "lower" | "higher" | "failure"
+): Promise<void> {
+    await h.lifecycle.start(2, 2);
+    const observer = h.getPeer(0);
+    const source = h.getPeer(1);
+    const block = await h
+        .control(source)
+        .query.getLatestBlockBundle(h.activeForkId!)
+        .request();
+    if (!block) throw new Error("Expected a proven block");
+    const restoreCounter = await h.rpcStub.stubCountSpectateRequests(
+        source.index
+    );
+    await h
+        .control(source)
+        .stub.holdSpectateResponses(mode === "failure")
+        .request();
+    const pending = h.execOnHost(
+        observer,
+        (sm, args) =>
+            Promise.all([
+                sm.p2pManager.localRpc.spectateService.sync(
+                    args.source,
+                    sm.channelId,
+                    sm.forkId,
+                    args.first
+                ),
+                sm.p2pManager.localRpc.spectateService.sync(
+                    args.source,
+                    sm.channelId,
+                    sm.forkId,
+                    args.second
+                )
+            ]),
+        {
+            source: source.address,
+            first: mode === "higher" ? block.height - 1 : block.height,
+            second: mode === "lower" ? block.height - 1 : block.height
+        }
+    );
+    try {
+        await waitFor(
+            async () =>
+                (await h
+                    .control(source)
+                    .stub.getHeldSpectateResponseCount()
+                    .request()) === 1
+        );
+        expect(await h.rpcStub.getSpectateRequestCount(source.index)).to.equal(
+            1
+        );
+        await h.control(source).stub.releaseSpectateResponses().request();
+        expect(await pending).to.deep.equal(
+            mode === "failure" ? [false, false] : [true, true]
+        );
+        expect(await h.rpcStub.getSpectateRequestCount(source.index)).to.equal(
+            mode === "higher" ? 2 : 1
+        );
+        expect(
+            await h
+                .control(observer)
+                .query.isBlacklisted(source.address)
+                .request()
+        ).to.equal(mode === "failure");
+    } finally {
+        await h.control(source).stub.releaseSpectateResponses().request();
+        await pending;
+        await restoreCounter();
+    }
+}
