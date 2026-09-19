@@ -328,3 +328,56 @@ blacklisted
 A stale branch that rejects its responder, or a generation advanced after the drain, turns it red. This
 closes [`FIND-LEAVE-REUSE-2-1NVKS3`](open-findings.md#find-leave-reuse-2-1nvks3). Every declaration's line link
 in both reports was re-resolved again after the insertions.
+
+## Review 494 follow-up evidence
+
+The review round that followed turned four prose claims about the reset into assertions and added one new
+suite. All of the new cases were mutation-checked against the exact change they guard.
+
+The no-penalty half of the mid-reset case was the weakest link and is now the strongest. It previously read
+only `isBlacklisted`, and the report said disconnection was not read separately because the rejection path
+cuts and bans together. That reasoning does not survive the environment: discovery is still live at the point
+where the reset is parked, so a cut peer reconnects and any connectivity read passes either way. The case now
+installs a restore-in-test probe over the observer's `disconnectConnection` and
+`disconnectAndBlacklistPeerByEvmAddress`, counts only the calls aimed at the responder, delegates to the
+originals, and restores both before the drain is released; the count is asserted zero inside the same
+structure as the rest of the mid-reset projection. That makes the case evidence for the newly normative
+[`REQ-LIF-10-QR8NQ9.T1.P20`](../specification/settlement/lifecycle.md#req-lif-10-qr8nq9.t1.p20) as well as the
+permutations it already held.
+
+[StateManagerChannelReset.test.ts](../verification/tests/test/stateManager/StateManagerChannelReset.test.ts.md) gained four cases.
+The drain-failure case stubs `stateChannelEventListener.drain` to answer `false` and asserts both halves of
+the specified failure mode — the public leave rejects with "cannot be reused" **and** the runtime reads
+disposed — which is what separates it from a reset that merely threw
+([`REQ-LIF-10-QR8NQ9.T1.P19`](../specification/settlement/lifecycle.md#req-lif-10-qr8nq9.t1.p19),
+[`REQ-SDK-ARCH-2-QBZAT8.T1.P8`](../specification/runtime/sdk.md#req-sdk-arch-2-qbzat8.t1.p8)). Removing the `abort()`
+leaves the runtime alive and turns it red; removing the drain check leaves the leave resolving.
+The pending-join case is the one whose oracle is time: it starts the threshold-reachability wait against an
+address no peer owns, so only the wait's own far longer timer or the reset can settle it, resets, and races
+the wait against a five-second bound, reporting "still pending" as a distinct outcome rather than a timeout
+([`REQ-SDK-ARCH-2-QBZAT8.T1.P9`](../specification/runtime/sdk.md#req-sdk-arch-2-qbzat8.t1.p9)). Dropping the cancel
+handler turns it red with that exact string.
+The exclusion case reads the non-excluded peer before the reset as well as after, so the "forgotten"
+assertion cannot pass against an empty pre-state, and asserts the ban survives in the same structure
+([`REQ-AUTH-4-JWCF71.T1.P4`](../specification/peer-communication/handshake.md#req-auth-4-jwcf71.t1.p4)); restoring the
+old `dispose()` call turns it red.
+The reduction case counts `multicall` invocations rather than inferring from state, parks the submit on its
+gas-limit read, resets, releases, and waits a further second so a late write still fails
+([`UNIT-TEST-REDUCTION-EXECUTOR-1-DGAD37.P14`](../implementation/source/src/stateManager/reduction/ReductionExecutor.ts.md#unit-test-reduction-executor-1-dgad37.p14)).
+
+[SpectateService.test.ts](../verification/tests/test/unit/SpectateService.test.ts.md) gained two cases at the top of the file, and
+every declaration's line link in that report was re-resolved against the current file. The first drives
+`applySyncResponse` with an earlier generation and undecodable bytes, so the ordinary reject path runs and
+only the fence can keep it off the peer; the oracle is one structure covering the answer, the blacklist, and
+the transport, on a live channel where the same bytes at the current generation would cut the responder. The
+second proves the in-flight entry belongs to its attempt: it holds `runSync`, does what a reset does, lets a
+newer attempt register for the same peer, then releases the old one and asserts the newer entry survived.
+
+[TimeoutManager.test.ts](../verification/tests/test/utils/TimeoutManager.test.ts.md) is new and takes the five cancel-handler
+permutations directly on the real class with no harness. Its two negative cases are what make the handler a
+cancellation signal rather than a second completion callback: an owner's own `cancelTask` must not run it,
+and a task that already fired must not be reported as cancelled — the latter asserted as one structure over
+both counters, so a handler run after the body cannot hide. Four of the five schedule at a 60-second delay,
+so no case can pass on a timer that happened to fire.
+
+Nothing in this round retired a permutation or moved one between declarations.

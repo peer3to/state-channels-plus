@@ -352,17 +352,38 @@ the runtime tracks only its new channel while the peers of the channel it left n
 
 Residual exposure, all accepted here as recorded rather than resolved:
 
-- **Exclusions do not survive the change of channel.** Peer blacklists live on the profiles and are dropped
-  with them. This is deliberate and argued in the source, but the protocol has not decided whether an
-  exclusion is channel-scoped or identity-scoped; a misbehaving peer therefore regains a clean slate when its
-  victim moves to another channel. Recorded as
-  [`OQ-SPEC-LEAVE-1-9Q4BV3` (Scope of peer exclusion across a channel change)](../specification/open-questions.md#oq-spec-leave-1-9q4bv3). The exposure is
-  bounded by the fact that exclusions were never persisted across a restart either.
-- **The drain before the reset is bounded, not guaranteed.** Scheduled chain-log work is awaited under a
-  fixed 30-second bound and the running-task drain has its own bound; both continue after the bound expires
-  with a warning. A pathologically slow provider could therefore let a task from the old channel finish after
-  the stores were cleared. It can no longer schedule channel work — producers are stopped and the feed is
-  detached first — so the worst observable outcome is a dropped late result, not a cross-channel write.
+- **Exclusions survive the change of channel, by decision.** The scope question is resolved (engineer
+  decision, 2026-09-19, PR #494): an exclusion is identity-scoped for the runtime's lifetime, because it
+  already rests on proof of an attributable fault by that identity
+  ([`REQ-AUTH-4-JWCF71` (Penalty requires proof)](../specification/peer-communication/handshake.md#req-auth-4-jwcf71)).
+  `ProfileManager.releaseChannelPeers()` keeps exactly the blacklisted profiles and forgets every other peer,
+  so a proven cheater no longer regains a clean slate when its victim moves to another channel — the
+  attacker-triggerable clearing path is closed. The residual exposure is now the mirror image and is accepted:
+  an identity proven faulty in one channel is refused in the next channel the same runtime serves, even where
+  that channel's participants saw nothing wrong with it, and there is no expiry or reevaluation rule short of
+  a restart. Two parts stay open and are named rather than absorbed: durability across a restart
+  ([`OQ-34-FY08V2` (RPC boundary decisions)](../specification/open-questions.md#oq-34-fy08v2)) and any reevaluation rule
+  ([`OQ-45-ACZCDE` (Subjective post-authentication engagement policy)](../specification/open-questions.md#oq-45-aczcde)). Evidence:
+  [`REQ-AUTH-4-JWCF71.T1.P4`](../specification/peer-communication/handshake.md#req-auth-4-jwcf71.t1.p4).
+- **The chain-feed drain is bounded, and an unmet bound now stops the reset.** Scheduled chain-log work is
+  awaited under a fixed 30-second bound. The wait reports whether it actually drained, and a reset that did
+  not throws rather than continuing, because a handler outliving the bound would resume against the next
+  channel. The leave service turns that throw into `abort()` and rethrows, so the leave rejects and the
+  runtime is retired: availability of the instance is traded for the guarantee that no channel is served by a
+  half-returned runtime, which is the same trade every leave made before runtimes were reusable. The
+  running-task drain keeps its own bound and still logs and continues, but by that point producers are
+  stopped, the feed is detached, and the fork is retired, so a late task can neither schedule channel work nor
+  start fork-scoped work. Evidence:
+  [`REQ-LIF-10-QR8NQ9.T1.P19`](../specification/settlement/lifecycle.md#req-lif-10-qr8nq9.t1.p19),
+  [`REQ-SDK-ARCH-2-QBZAT8.T1.P8`](../specification/runtime/sdk.md#req-sdk-arch-2-qbzat8.t1.p8).
+- **Releasing the channel's timers no longer strands the operations that depended on them.** A bounded wait
+  whose success path is an event that cannot arrive for a channel the runtime has left used to be cancelled
+  into a permanently pending promise — an availability fault, not a safety one, but one the application could
+  not observe or recover from. Each pending task may now carry a cancel handler that the wholesale cancel
+  runs, so the operation fails with its own error; the handlers are isolated from each other, so one throwing
+  owner cannot strand the rest. An owner's explicit `cancelTask` deliberately does not run it, which keeps the
+  waiter settled exactly once. Evidence:
+  [`REQ-SDK-ARCH-2-QBZAT8.T1.P9`](../specification/runtime/sdk.md#req-sdk-arch-2-qbzat8.t1.p9).
 - **A rejected leave leaves the runtime bound to its channel.** This is the safe direction: local membership
   is indeterminate after a failed departure, so the runtime keeps refusing other channel work rather than
   starting it against a half-left channel. Both sides are evidenced: a rejected leave keeps the operation and
@@ -379,7 +400,14 @@ Residual exposure, all accepted here as recorded rather than resolved:
   ([`REQ-LIF-10-QR8NQ9.T1.P18`](../specification/settlement/lifecycle.md#req-lif-10-qr8nq9.t1.p18)). A stale
   sync is not held against its responder, and a sync resuming inside the reset itself already sees the
   channel as left; both are evidenced
-  ([`FIND-LEAVE-REUSE-2-1NVKS3`](open-findings.md#find-leave-reuse-2-1nvks3), resolved).
+  ([`FIND-LEAVE-REUSE-2-1NVKS3`](open-findings.md#find-leave-reuse-2-1nvks3), resolved). The no-penalty
+  guarantee reaches every exit of the sync rather than only its persistence step: each rejection and the
+  request-failure path carry the captured generation, so a verification, decode, or transport failure observed
+  for a channel already left leaves the responder connected and unexcluded. The same generation stops a
+  reduction submit parked on its gas-limit read from writing to the chain after the reset. The observable
+  oracle is a count of cuts and bans aimed at the responder, taken mid-reset with a probe, because discovery
+  is still live there and a disconnected peer would simply reconnect
+  ([`REQ-LIF-10-QR8NQ9.T1.P20`](../specification/settlement/lifecycle.md#req-lif-10-qr8nq9.t1.p20)).
 - **Reset is refused after shutdown,** keeping `dispose()` and `abort()` terminal; the non-terminal path
   cannot resurrect a runtime that has already released its signer and provider.
 

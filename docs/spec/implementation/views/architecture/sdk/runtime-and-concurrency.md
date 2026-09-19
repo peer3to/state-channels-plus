@@ -309,7 +309,13 @@ initial-sync latch. A leave from a runtime that owes no departure resets at once
 channel's initial sync is still waiting on its peer. That sync captured the generation before its request,
 so when it lands it persists nothing (the check runs under the same mutex the reset clears storage under)
 and settles no initial-sync wait; re-arming the latch only after the status change keeps the reset's own
-`OPENED` → `NOT_OPENED` transition from settling the next channel's wait. The port, worker, signer, provider, and root all survive,
+`OPENED` → `NOT_OPENED` transition from settling the next channel's wait. The same captured generation keeps
+its outcome off the peer that served it and keeps a reduction submit parked on its gas-limit read from
+writing to the chain. The scheduled-task step is not silent either: each pending task may carry a cancel
+handler, and cancelling the tasks runs them, so a wait whose only completion was a cancelled timer rejects
+rather than outliving the channel. Two steps can fail rather than merely finish: the chain-feed drain is
+checked, and an undrained feed makes the reset throw — the leave service then aborts the runtime and
+rethrows, so the port call rejects and the client gets a retired runtime instead of a half-returned one. The port, worker, signer, provider, and root all survive,
 so the client may immediately select another channel on the same `P2pInstance`. The leader flag is not part of
 the reset on either side of the port: it is application-owned with a single writer, so the application that
 set it clears it. `P2pInstance.leaveChannel()` memoizes the host request while it is pending, so concurrent

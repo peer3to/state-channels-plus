@@ -46,7 +46,7 @@ Existing `OQ-*` IDs are preserved; new questions use the layer-scoped namespace 
 | [`OQ-44-3Y5MD7`](open-questions.md#oq-44-3y5md7)                     | Watchtower deployment shape: an ordinary peer with spectator-equivalent access, versus a distinct delegate role                                             | Engineer question      | [security/trust-model.md](./security/trust-model.md)                                                                                                                                                                     | Open                              |
 | [`OQ-45-ACZCDE`](open-questions.md#oq-45-aczcde)                     | Subjective post-authentication engagement policy: how a node decides whether to keep interacting with a proven identity                                     | Engineer direction     | [peer-communication/handshake.md](./peer-communication/handshake.md), [peer-communication/synchronization.md](./peer-communication/synchronization.md)                                                                   | Open                              |
 | [`OQ-SPEC-LOBBY-1-D65YTT`](open-questions.md#oq-spec-lobby-1-d65ytt) | Per-transport cap and overflow outcome for deferred pre-readiness RPC admission                                                                             | Security hardening     | [peer-communication/rpc.md](./peer-communication/rpc.md), [peer-communication/channel-negotiation.md](./peer-communication/channel-negotiation.md)                                                                       | Open                              |
-| [`OQ-SPEC-LEAVE-1-9Q4BV3`](open-questions.md#oq-spec-leave-1-9q4bv3) | Whether a peer exclusion earned in one channel may follow the peer into the next channel a reused runtime selects                                           | Code                   | [settlement/lifecycle.md](./settlement/lifecycle.md), [peer-communication/handshake.md](./peer-communication/handshake.md), [peer-communication/targeted-channel-join.md](./peer-communication/targeted-channel-join.md) | Open                              |
+| [`OQ-SPEC-LEAVE-1-9Q4BV3`](open-questions.md#oq-spec-leave-1-9q4bv3) | Whether a peer exclusion earned in one channel may follow the peer into the next channel a reused runtime selects                                           | Code                   | [settlement/lifecycle.md](./settlement/lifecycle.md), [peer-communication/handshake.md](./peer-communication/handshake.md), [peer-communication/targeted-channel-join.md](./peer-communication/targeted-channel-join.md) | Resolved (2026-09-19)             |
 
 ## Register assumptions and constraints
 
@@ -445,6 +445,27 @@ engagement policy, and with the unresolved ban-persistence part of
 [`OQ-34-FY08V2`](open-questions.md#oq-34-fy08v2). Blocking effect: none on the current change — the
 requirement text deliberately says only that the peer set and peer-derived reputation are released — but
 the choice must be recorded before that release is treated as approved behavior.
+
+**Resolved (2026-09-19, engineer decision, PR #494):** exclusion is **identity-scoped for the runtime's
+lifetime**. An exclusion already rests on proof of an attributable fault by that identity
+([`REQ-AUTH-4-JWCF71` (Penalty requires proof)](peer-communication/handshake.md#req-auth-4-jwcf71)), so it is evidence about the
+identity rather than about the channel the proof arrived in; it therefore survives the runtime's return to
+its pre-channel state and still refuses that identity in the next channel the runtime selects, while every
+other record the runtime held about its peers is released with the channel. Rejected alternative:
+channel-scoping the exclusion, dropping it with the rest of the peer set. It was rejected because it hands a
+proven cheater a clean slate the moment its victim changes channel — cheap for the attacker and free to
+repeat — and because the fact that exclusions already vanish on restart is not a reason to add a second,
+attacker-triggerable way to clear them. Accepted consequences: an identity proven faulty in one channel is
+refused in the next channel the same runtime serves even where that channel's participants saw nothing wrong
+with it; there is no expiry or reevaluation rule short of a restart. Lifetime beyond the process stays with
+the ban-persistence part of [`OQ-34-FY08V2`](open-questions.md#oq-34-fy08v2), and any reevaluation rule stays
+with [`OQ-45-ACZCDE`](open-questions.md#oq-45-aczcde); neither is reopened here. Recorded normatively in
+[`REQ-AUTH-4-JWCF71` (Penalty requires proof)](peer-communication/handshake.md#req-auth-4-jwcf71) and in the
+return to the pre-channel state under
+[`REQ-LIF-10-QR8NQ9` (Runtime departure and channel reuse)](settlement/lifecycle.md#req-lif-10-qr8nq9), with
+black-box evidence planned as
+[`REQ-AUTH-4-JWCF71.T1.P4`](peer-communication/handshake.md#req-auth-4-jwcf71.t1.p4); the current
+implementation already conforms.
 
 <a id="oq-spec-lobby-1-d65ytt"></a>
 

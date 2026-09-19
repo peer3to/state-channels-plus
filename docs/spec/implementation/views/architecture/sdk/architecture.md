@@ -267,8 +267,14 @@ per-component contracts in [components.md](./components.md).
   disposal chain: the channel's producers, chain feed, peers, timers, and stores are released in that order
   and the runtime returns to `NOT_OPENED` with a zero channel id. The reset advances a channel generation
   and retires the old fork before its first await, and re-arms the initial-sync latch after its status change, so a sync still in flight
-  for the channel left neither persists nor settles the next channel's initial sync. Disposal and abort stay
-  terminal, and a reset is refused after disposal.
+  for the channel left neither persists nor settles the next channel's initial sync — nor does it cut the
+  peer that answered it, and a reduction submit parked on its gas-limit read drops its chain write.
+  Releasing the timers runs each pending task's cancel handler, so an operation whose only remaining
+  completion was one of those timers fails instead of hanging. Peers go with the channel except for the
+  exclusions: those are identity-scoped for the runtime's lifetime, so `ProfileManager.releaseChannelPeers()`
+  keeps the blacklisted profiles and forgets the rest. Disposal and abort stay terminal, a reset is refused
+  after disposal, and a reset that cannot complete — an undrainable chain feed — aborts the runtime and
+  rejects the leave rather than handing a half-returned instance to another channel.
 
 ## 8. Verification
 

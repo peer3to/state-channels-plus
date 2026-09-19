@@ -241,8 +241,12 @@ fifteen sub-stores through the same `initStores()` the constructor runs: consume
 sub-store, and read each one through the proxy on every access, so fresh instances are visible everywhere at
 once and no sub-store has to enumerate its own fields. `TimeoutManager.dispose()` was reduced to the terminal
 flag plus the new `cancelAllTasks()`, `ReductionManager.dispose()`/`reset()` share `settlePendingCompletions()`
-and both call `ReductionExecutor.dispose()`, and `ProfileManager` has no reset of its own — the channel reset
-calls its `dispose()` — so none of these lifecycles can drift from the other. The leave service keeps one memo:
+and both call `ReductionExecutor.dispose()`, and `ProfileManager` now owns one `releaseChannelPeers()` beside
+its `dispose()` — the same transport teardown, differing only in that the release keeps the blacklisted
+profiles — so none of these lifecycles can drift from the other. `TimeoutManager.scheduleTask` gained an
+optional cancel handler that only the wholesale paths run, which is what lets a waiter whose single
+completion was a cancelled timer fail instead of hang; the firing path and the owner's own `cancelTask` both
+delete the handler without running it, so "cancelled" never doubles as "completed". The leave service keeps one memo:
 the operation carries the completion promise callers receive, and `P2pInstance.leaveChannel()` memoizes the
 host request only while it is pending. The leader flag is left alone by the reset on both sides of the port;
 it is application-owned with a single writer.
@@ -273,4 +277,28 @@ readers: [SpectateService](../implementation/source/src/rpc/network/services/spe
 same mutex the reset clears storage under, so a payload lands either before that clear or not at all, and
 [P2PManager](../implementation/source/src/P2PManager.ts.md) checks it before settling the latch. Replayed blocks need no fence of
 their own because `ValidationService` refuses a block for a different channel id. A stale sync returns
-`false` without cutting its responder, since the peer answered a request that was valid when it was made.
+`false` without cutting its responder, since the peer answered a request that was valid when it was made. That
+now holds on every exit of the sync, not only the persistence one: `rejectSync` takes the captured generation
+and drops the disconnect-and-blacklist when it has moved, and the request-failure path in `runSync` — which
+used to blacklist unconditionally — passes it too. The in-flight dedupe entry is deleted only while it still
+belongs to the finishing attempt, because `reset()` can clear that map mid-flight and the next channel may
+already have registered its own sync to the same peer. `ReductionExecutor.submitDetached` reads the
+generation as well, beside its existing disposal check and at the same point — immediately before the
+`multicall` — so a submit parked on its gas-limit read when the reset lands abandons the write instead of
+sending it into the next channel.
+
+Two reset steps can now fail rather than merely finish, and the ownership of that failure is deliberate.
+`StateManager.resetChannel()` checks the chain-feed drain and throws when it reports unfinished work, because
+a handler outliving the bound would resume against the next channel; it does not itself dispose, since reset
+is not a terminal operation and the runtime's fate belongs to the caller. `LeaveChannelService.settleAndReset`
+is that caller: it logs, calls `stateManager.abort()`, and rethrows, so the leave rejects and the instance is
+retired. Keeping the leave operation would be wrong here — the departure already settled, so there is nothing
+to retry — which is why this route differs from a rejected departure, where the operation and the channel
+binding are deliberately kept. The result is the pre-reuse behaviour as the failure mode: a leave that cannot
+finish leaves a shut-down runtime, exactly as every leave did before runtimes were reusable.
+
+`ProfileManager.releaseChannelPeers()` is the one place the peer half of the reset diverges from disposal,
+and it exists because of an engineer decision rather than a mechanism: exclusion is identity-scoped for the
+runtime's lifetime (2026-09-19, PR #494), so the release closes every transport and forgets every profile
+except the blacklisted ones. The excluded peer's transports still close; only the verdict survives. Nothing
+here makes the verdict durable — the indexes are in memory, so a restart still clears them.

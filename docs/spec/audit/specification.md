@@ -79,10 +79,23 @@ were reworded in place, because each still names the same behaviour with the cor
 was retired and no number was reused. Five new lifecycle permutations and one new targeted-join permutation
 cover what the change genuinely adds — the repeat cycle, the rejected leave, reuse after a non-committed
 leave, isolation from the channel that was left, and shutdown staying terminal after a reuse — and two
-SDK-architecture permutations cover the reset ordering and its refusal after shutdown. The new question
-[`OQ-SPEC-LEAVE-1-9Q4BV3` (Scope of peer exclusion across a channel change)](../specification/open-questions.md#oq-spec-leave-1-9q4bv3) records the one
-protocol decision the change surfaces and does not answer: the scope of a peer exclusion across a channel
-change.
+SDK-architecture permutations cover the reset ordering and its refusal after shutdown. The question
+[`OQ-SPEC-LEAVE-1-9Q4BV3` (Scope of peer exclusion across a channel change)](../specification/open-questions.md#oq-spec-leave-1-9q4bv3) recorded the one
+protocol decision the change surfaced and did not answer: the scope of a peer exclusion across a channel
+change. It is now resolved (engineer decision, 2026-09-19, PR #494) in favour of **identity scope for the
+runtime's lifetime**. The register keeps the question with its resolution, and the normative statement is in
+[`REQ-AUTH-4-JWCF71` (Penalty requires proof)](../specification/peer-communication/handshake.md#req-auth-4-jwcf71),
+which now says an exclusion is scoped to the excluded identity rather than to the channel whose traffic proved
+the fault, with the rejected channel-scoped alternative and its consequences recorded beside it. The
+[`REQ-LIF-10-QR8NQ9` (Runtime departure and channel reuse)](../specification/settlement/lifecycle.md#req-lif-10-qr8nq9)
+sentence that used to release "peer-derived reputation" wholesale is corrected to match, and
+[`REQ-AUTH-4-JWCF71.T1.P4`](../specification/peer-communication/handshake.md#req-auth-4-jwcf71.t1.p4) is
+appended as its black-box obligation. Two things stay open by design and are named in the decision rather
+than silently absorbed: durability across a restart
+([`OQ-34-FY08V2` (RPC boundary decisions)](../specification/open-questions.md#oq-34-fy08v2)) and any reevaluation rule
+([`OQ-45-ACZCDE` (Subjective post-authentication engagement policy)](../specification/open-questions.md#oq-45-aczcde)). The engineer approval register is
+untouched; recording the resolution is a maintained-layer edit, and the changed fingerprints make the
+affected approvals stale on their own.
 
 A follow-up amendment to [`REQ-LIF-10-QR8NQ9` (Runtime departure and channel reuse)](../specification/settlement/lifecycle.md#req-lif-10-qr8nq9)
 states two obligations the reuse depends on but the first text left implicit: work begun for a channel the
@@ -93,3 +106,23 @@ begins. Both are written without naming a component. They append
 [`REQ-LIF-10-QR8NQ9.T1.P18`](../specification/settlement/lifecycle.md#req-lif-10-qr8nq9.t1.p18) after the
 highest existing number; nothing was renumbered. The lifecycle security considerations gained the matching
 cross-channel hazard, including that late work is not held against the peer that answered it.
+
+A second amendment from the same review round makes three further obligations normative, again without
+naming a component. First, work begun for a channel the runtime has since left is not held against the peer
+that served it — previously stated only in the lifecycle security considerations, now in the requirement
+itself, appended as
+[`REQ-LIF-10-QR8NQ9.T1.P20`](../specification/settlement/lifecycle.md#req-lif-10-qr8nq9.t1.p20). Second, a
+return to the pre-channel state that cannot complete retires the runtime and rejects the leave; this is the
+opposite case to a rejected _departure_, which keeps the operation and the binding, and the requirement now
+states both so they cannot be confused. It is appended as
+[`REQ-LIF-10-QR8NQ9.T1.P19`](../specification/settlement/lifecycle.md#req-lif-10-qr8nq9.t1.p19) and mirrored
+at the runtime boundary in
+[`REQ-SDK-ARCH-2-QBZAT8` (Ordered lifecycle)](../specification/runtime/sdk.md#req-sdk-arch-2-qbzat8) as
+[`REQ-SDK-ARCH-2-QBZAT8.T1.P8`](../specification/runtime/sdk.md#req-sdk-arch-2-qbzat8.t1.p8). Third, releasing
+the channel's scheduled work settles every operation whose only remaining completion was that work, so such
+an operation fails rather than waiting forever
+([`REQ-SDK-ARCH-2-QBZAT8.T1.P9`](../specification/runtime/sdk.md#req-sdk-arch-2-qbzat8.t1.p9)); the same
+requirement records that an owner cancelling its own work has already settled its waiter and must not be
+settled twice, which is a boundary the implementation obligations carry rather than a black-box one. Every
+new permutation was appended after the highest existing number in its plan; nothing was renumbered and no
+permutation was retired.
