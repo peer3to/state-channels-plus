@@ -85,6 +85,9 @@ class StateManager<
     spectatingValidationStrategy: SpectatingValidationStrategy;
     eventHandler: EventHandler;
     private _status: Status = Status.NOT_OPENED;
+    // Bumped when the runtime gives up a channel. Async work started for one
+    // channel captures it and stands down if it changed before the work lands.
+    private _channelGeneration = 0;
     timeoutManager: TimeoutManager;
     logger: Logger;
     readonly eventSyncService: EventSyncService;
@@ -310,6 +313,15 @@ class StateManager<
             throw new Error("Cannot reset the channel of a disposed runtime");
         }
         this.logger.info("Resetting channel", { channelId: this.channelId });
+        // First, before any await: work for the old channel that resumes during
+        // or after the reset must see it has been left.
+        this._channelGeneration += 1;
+        // Retire the fork before any await too. A log handler for the old
+        // channel still running during the drain must find it inactive, or it
+        // could start a reduction whose timer the task drain below cancels,
+        // leaving that handler waiting forever. Done before the reduction
+        // reset, so nothing re-creates what it settles.
+        this.latestForkId = NULL;
 
         this.blockQueueManager.reset();
         this.reductionManager.reset();
@@ -330,11 +342,13 @@ class StateManager<
         await this.withMutex(
             () => {
                 this.storage.clear();
-                this.latestForkId = NULL;
                 this.setStatus(Status.NOT_OPENED);
             },
             { taskName: "resetChannel" }
         );
+        // After the status change: re-armed any earlier, the latch would take
+        // the reset's own OPENED -> NOT_OPENED as the next channel's outcome.
+        this.p2pManager.rearmInitialSync();
         this.logger.info("Channel reset complete");
     }
 
@@ -474,6 +488,10 @@ class StateManager<
     }
     public get channelId(): ChannelId {
         return this._channelId;
+    }
+
+    public get channelGeneration(): number {
+        return this._channelGeneration;
     }
 
     public async setChannelId(channelId: ChannelId): Promise<void> {

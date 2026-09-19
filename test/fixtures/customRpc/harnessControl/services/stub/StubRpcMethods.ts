@@ -2457,16 +2457,24 @@ export class StubRpcMethods extends ANetworkRpcMethods<StubService> {
             );
         }
         this.service.spectateSyncCallCount = 0;
+        this.service.spectateSyncSettledCount = 0;
         this.service.spectateSyncTargets.length = 0;
         const original = this.service.stubOriginals.get(
             "spectateSync"
         ) as typeof spectate.sync;
         spectate.sync = ((...args: Parameters<typeof spectate.sync>) => {
             this.service.recordSpectateSyncCall(String(args[0]));
-            if (forward) return original(...args);
-            return Promise.resolve(true);
+            if (!forward) return Promise.resolve(true);
+            return original(...args).finally(() => {
+                this.service.spectateSyncSettledCount += 1;
+            });
         }) as typeof spectate.sync;
         return true;
+    }
+
+    /** Forwarded syncs that have settled, whatever their outcome. */
+    public getSpectateSyncSettledCount(): number {
+        return this.service.spectateSyncSettledCount;
     }
 
     public restoreSpectateSync(): boolean {

@@ -436,6 +436,8 @@ export class StubService extends ANetworkRpcService<
     spectateSyncCallCount = 0;
     /** Addresses `spectateService.sync` was asked to sync from, newest last. */
     readonly spectateSyncTargets: string[] = [];
+    /** Incremented when a forwarded `spectateService.sync` settles. */
+    spectateSyncSettledCount = 0;
     /** Resolvers waiting for a given number of `spectateService.sync` calls. */
     private readonly spectateSyncWaiters: {
         target: number;

@@ -127,6 +127,9 @@ class SpectateService extends ANetworkRpcService<SpectateServiceRpcMethods> {
         syncRequest: SyncRequest,
         timeoutMs: number
     ): Promise<boolean> {
+        // Captured before the request: a response applied after the runtime
+        // left this channel must not write into the next one.
+        const generation = this.p2pManager.stateManager.channelGeneration;
         try {
             const { encodedSyncPayload } = await this.remoteRpc.spectateService
                 .onSpectateRequest(syncRequest)
@@ -135,7 +138,8 @@ class SpectateService extends ANetworkRpcService<SpectateServiceRpcMethods> {
             return await this.applySyncResponse(
                 normalizedPeerAddress,
                 syncRequest,
-                encodedSyncPayload
+                encodedSyncPayload,
+                generation
             );
         } catch (error) {
             this.logger.debug("spectateSync - failed", {
@@ -160,7 +164,8 @@ class SpectateService extends ANetworkRpcService<SpectateServiceRpcMethods> {
     public async applySyncResponse(
         peerAddress: string,
         syncRequest: SyncRequest,
-        encodedSyncPayload: Bytes
+        encodedSyncPayload: Bytes,
+        generation = this.p2pManager.stateManager.channelGeneration
     ): Promise<boolean> {
         const channelId = syncRequest.channelId;
 
@@ -469,7 +474,12 @@ class SpectateService extends ANetworkRpcService<SpectateServiceRpcMethods> {
                 );
 
             // 4) Deconstruct the SyncPayload and persist its component normally in our local 'storage'
-            const { shouldAbort } = await this.persistSyncPayload(syncPayload);
+            const { shouldAbort, stale } = await this.persistSyncPayload(
+                syncPayload,
+                generation
+            );
+            // Not the peer's fault: the runtime left the channel mid-sync.
+            if (stale) return false;
             if (shouldAbort)
                 return this.rejectSync(
                     peerAddress,
@@ -1015,11 +1025,21 @@ class SpectateService extends ANetworkRpcService<SpectateServiceRpcMethods> {
     }
 
     public async persistSyncPayload(
-        syncPayload: SyncPayload
-    ): Promise<{ shouldAbort: boolean }> {
+        syncPayload: SyncPayload,
+        generation?: number
+    ): Promise<{ shouldAbort: boolean; stale?: boolean }> {
         const stateManager = this.p2pManager.stateManager;
         return await stateManager.withMutex(
             async () => {
+                // Checked under the mutex the channel reset clears storage
+                // under, so a payload lands either before that clear (and is
+                // wiped by it) or not at all.
+                if (
+                    generation !== undefined &&
+                    stateManager.channelGeneration !== generation
+                ) {
+                    return { shouldAbort: false, stale: true };
+                }
                 this.logger.debug(`Persisting sync payload`, syncPayload);
                 const storage = stateManager.storage;
 

@@ -1063,6 +1063,25 @@ export class RpcStubActions<
     }
 
     /**
+     * Forward a peer's spectate syncs and count the ones that have settled, so
+     * a test can wait for an in-flight sync to finish instead of sleeping.
+     */
+    async countSettledSpectateSyncs(peerIndex: number): Promise<{
+        settled: () => Promise<number>;
+        restore: () => Promise<void>;
+    }> {
+        const ctl = () => this.peerStub(peerIndex);
+        await ctl().stubRecordSpectateSync(true).request();
+        return {
+            settled: async () =>
+                await ctl().getSpectateSyncSettledCount().request(),
+            restore: async () => {
+                await ctl().restoreSpectateSync().request();
+            }
+        };
+    }
+
+    /**
      * Hold a peer's own sync at its application step, keeping it in flight
      * toward its responder. Returns the entered count and a release.
      */

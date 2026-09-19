@@ -1,5 +1,7 @@
 import { Status } from "@/types";
+import { assertClean } from "@test/fixtures/DiscoveryRuntimePortStaging";
 import { TargetedChannelJoinFixture } from "@test/fixtures/TargetedChannelJoinFixture";
+import { waitFor } from "@test/utils/waitFor";
 import { expect } from "chai";
 import { ethers } from "ethers";
 
@@ -83,6 +85,32 @@ describe("E2E: Channel reuse", function () {
             channelId: thirdChannelId,
             disposed: false
         });
+    });
+
+    it("a sync still in flight from the channel left neither writes into the runtime nor settles its next sync", async function () {
+        const { h, channelId, targeted } =
+            await TargetedChannelJoinFixture.unopened("reuse-stale-sync", 3);
+        await targeted.openWithPeers(channelId, [0, 1]);
+        const observer = h.getPeer(2);
+        const syncs = await h.rpcStub.countSettledSpectateSyncs(observer.index);
+        const hold = await h.rpcStub.holdSpectateSyncApplication(
+            observer.index
+        );
+        // The first sync parks after its response arrived, then the runtime
+        // leaves underneath it: the pending connect settles with the reset.
+        const firstConnect = targeted.connect(observer, channelId);
+        await waitFor(async () => (await hold.entered()) === 1);
+        await observer.p2pInstance.leaveChannel();
+        expect(await firstConnect).to.equal(false);
+
+        await hold.release();
+        await waitFor(async () => (await syncs.settled()) === 1);
+        // The stale sync persisted nothing, so the runtime is still clean...
+        await assertClean(h, observer);
+        // ...and it did not mark the next initial sync done, so connecting
+        // again runs a real sync instead of returning before one.
+        expect(await targeted.connect(observer, channelId)).to.equal(true);
+        await syncs.restore();
     });
 
     it("explicit disposal still shuts down a runtime that was reused", async function () {

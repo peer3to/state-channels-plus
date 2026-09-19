@@ -118,6 +118,30 @@ describe("StateManager.resetChannel", function () {
         }).to.deep.equal({ connected: false, channelId: nextChannelId });
     });
 
+    it("retires the old fork before the reset first yields", async function () {
+        const h = TestSession.getHarness();
+        await h.lifecycle.start(3, 0);
+        // Everything below runs in one host turn: resetChannel runs
+        // synchronously up to its first await, which is exactly the window an
+        // old-channel log handler can resume into.
+        const result = await h.execOnHost(h.getPeer(2), async (sm) => {
+            const oldForkId = sm.forkId;
+            const reset = sm.resetChannel();
+            const activeDuringReset = sm.isActiveFork(oldForkId);
+            const reduction = await sm.reductionManager.tryReduce(oldForkId);
+            await reset;
+            return {
+                activeDuringReset,
+                reductionStarted: reduction !== undefined
+            };
+        });
+
+        expect(result).to.deep.equal({
+            activeDuringReset: false,
+            reductionStarted: false
+        });
+    });
+
     it("rejects a channel reset on a disposed runtime", async function () {
         const h = TestSession.getHarness();
         // Unopened runtimes are enough for a guard check; two is the harness minimum.

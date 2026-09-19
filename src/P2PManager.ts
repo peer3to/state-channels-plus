@@ -148,9 +148,9 @@ class P2PManager<TCustomRpc extends MainRpcService = MainRpcService> {
     }
 
     /**
-     * Channel reset: leave the channel's discovery topic, drop every peer and
-     * profile, and re-arm the initial-sync latch so the next channel waits for
-     * its own first handshake. The swarm and the custom RPC root survive.
+     * Channel reset: leave the channel's discovery topic and drop every peer
+     * and profile. The swarm and the custom RPC root survive. The initial-sync
+     * latch is re-armed separately, once the reset's status change is done.
      */
     public async resetChannel(): Promise<void> {
         await runCleanup(
@@ -162,8 +162,7 @@ class P2PManager<TCustomRpc extends MainRpcService = MainRpcService> {
             // channel has its own participant set, so a ban earned in the old
             // one must not follow a peer into it.
             () => this.disconnectAll(),
-            () => this.profileManager.dispose(),
-            () => this.resetInitialSync()
+            () => this.profileManager.dispose()
         );
     }
 
@@ -180,7 +179,12 @@ class P2PManager<TCustomRpc extends MainRpcService = MainRpcService> {
         await this.leaveDiscoveryKey(discoveryKey);
     }
 
-    private resetInitialSync(): void {
+    /**
+     * Re-arm the initial-sync latch so the next channel waits for its own
+     * first sync. The latch settles on any status change out of OPENED, so
+     * this must run after the reset has set its own status.
+     */
+    public rearmInitialSync(): void {
         // A wait created for the old channel must not hang: settle it as failed
         // before the latch is re-armed for the next one.
         this.settleInitialSync(false);
@@ -263,6 +267,7 @@ class P2PManager<TCustomRpc extends MainRpcService = MainRpcService> {
         this.initialSyncStarted = true;
         this.cancelInitialSyncDeadline();
         const stateManager = this.stateManager;
+        const generation = stateManager.channelGeneration;
         const success = await this.localRpc.spectateService.sync(
             peerAddress,
             stateManager.channelId,
@@ -270,6 +275,10 @@ class P2PManager<TCustomRpc extends MainRpcService = MainRpcService> {
             undefined,
             stateManager.timeConfig.agreementTime * 2 * 1000
         );
+        // The runtime left that channel while the sync ran. Its result belongs
+        // to no current wait, and settling now would mark the next channel's
+        // re-armed initial sync as already done.
+        if (stateManager.channelGeneration !== generation) return;
         // A result that lands after the chain already supplied the state is
         // stale: the wait settled through the status hook and a late false
         // must not abort an already synced runtime.
