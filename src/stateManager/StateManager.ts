@@ -328,7 +328,13 @@ class StateManager<
         // Detaches the provider filter and unbinds the id from the dispute
         // manager and the event sync service.
         await this.clearChannelId();
-        await this.stateChannelEventListener.drain();
+        // A handler still running past the bound would resume against the next
+        // channel, so a reset that cannot drain must not hand the runtime on.
+        if (!(await this.stateChannelEventListener.drain())) {
+            throw new Error(
+                "Chain-log work for the channel left did not finish; the runtime cannot be reused"
+            );
+        }
         this.eventSyncService.reset();
         this.eventHandler.reset();
         await this.p2pManager.resetChannel();

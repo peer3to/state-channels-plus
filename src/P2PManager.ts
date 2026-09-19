@@ -148,21 +148,20 @@ class P2PManager<TCustomRpc extends MainRpcService = MainRpcService> {
     }
 
     /**
-     * Channel reset: leave the channel's discovery topic and drop every peer
-     * and profile. The swarm and the custom RPC root survive. The initial-sync
-     * latch is re-armed separately, once the reset's status change is done.
+     * Channel reset: leave the channel's discovery topic, drop every peer, and
+     * forget every profile except blacklisted ones. The swarm and the custom
+     * RPC root survive. The initial-sync latch is re-armed separately, once
+     * the reset's status change is done.
      */
     public async resetChannel(): Promise<void> {
         await runCleanup(
             () => this.leaveChannelDiscovery(),
             () => this.localRpc.resetChannel(),
             // disconnectAll rejects each transport's pending RPCs; the profile
-            // teardown then reaches transports registered but never opened
-            // (lobby, handoff). Blacklists go with the profiles: the next
-            // channel has its own participant set, so a ban earned in the old
-            // one must not follow a peer into it.
+            // release then reaches transports registered but never opened
+            // (lobby, handoff).
             () => this.disconnectAll(),
-            () => this.profileManager.dispose()
+            () => this.profileManager.releaseChannelPeers()
         );
     }
 

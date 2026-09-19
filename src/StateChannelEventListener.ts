@@ -61,9 +61,12 @@ class StateChannelEventListener {
         await this.drain();
     }
 
-    /** Wait, bounded, for already scheduled log work to finish. */
-    async drain(): Promise<void> {
-        await this.eventSyncService.waitForScheduled(
+    /**
+     * Wait, bounded, for already scheduled log work to finish. Returns false
+     * when the bound ran out with work still running.
+     */
+    async drain(): Promise<boolean> {
+        return await this.eventSyncService.waitForScheduled(
             StateChannelEventListener.DRAIN_TIMEOUT_MS
         );
     }

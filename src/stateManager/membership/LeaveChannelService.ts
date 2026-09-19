@@ -6,6 +6,7 @@ import { isCommittedParticipantStatus } from "@/types/flags";
 import type { Address, ForkId } from "@/types/types";
 import { addressesEqual, DetachedPromises, Logger } from "@/utils";
 import { config } from "@/utils/config";
+import { errorMessage } from "@/utils/errorMessage";
 
 type LeavePhase =
     | "starting"
@@ -108,14 +109,27 @@ export default class LeaveChannelService {
     /**
      * Wait for settled departure, then hand the runtime back its pre-channel
      * state so the application can select another channel on the same instance.
-     * A rejected leave (or a failed reset) keeps the operation: the runtime's
-     * membership is then indeterminate, so repeated calls must see the same
-     * failure and channel work must stay blocked rather than start on a
-     * half-left channel.
+     * A rejected departure keeps the operation: membership is then
+     * indeterminate, so repeated calls must see the same failure and channel
+     * work must stay blocked rather than start on a half-left channel. A reset
+     * that fails after a settled departure shuts the runtime down instead, as a
+     * leave did before runtimes were reusable: a half-reset runtime must not
+     * serve another channel.
      */
     private async settleAndReset(operation: LeaveOperation): Promise<void> {
         await operation.promise;
-        await this.stateManager.resetChannel();
+        try {
+            await this.stateManager.resetChannel();
+        } catch (error) {
+            this.logger.error(
+                "Channel reset failed; shutting the runtime down",
+                {
+                    error: errorMessage(error)
+                }
+            );
+            this.stateManager.abort();
+            throw error;
+        }
         this.operation = undefined;
     }
 

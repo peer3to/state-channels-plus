@@ -32,6 +32,33 @@ class ProfileManager {
         );
     }
 
+    /**
+     * Channel reset: close every transport and forget every peer except the
+     * blacklisted ones. A blacklist verdict rests on a proven fault by that
+     * identity, so it follows the peer into the next channel this runtime
+     * serves; everything else about a peer belongs to the channel left.
+     */
+    public releaseChannelPeers(): void {
+        runCleanupSync(
+            ...[...this.mapTransportToProfile.keys()].map((transport) => () => {
+                this.removeTransport(transport);
+            }),
+            () => this.mapTransportToProfile.clear(),
+            () => {
+                for (const [address, profile] of this.mapEvmAddressToProfile) {
+                    if (!profile.isBlackListed)
+                        this.mapEvmAddressToProfile.delete(address);
+                }
+            },
+            () => {
+                for (const [address, profile] of this.mapHpAddressToProfile) {
+                    if (!profile.isBlackListed)
+                        this.mapHpAddressToProfile.delete(address);
+                }
+            }
+        );
+    }
+
     public registerTransport(transport: NetworkTransport): PeerProfile {
         const existingProfile = this.mapTransportToProfile.get(transport);
         if (existingProfile) return existingProfile;

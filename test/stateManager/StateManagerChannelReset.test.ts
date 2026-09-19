@@ -2,6 +2,7 @@ import type StateManager from "@/stateManager";
 import { Status } from "@/types";
 import type { HarnessControlRpc } from "@test/fixtures/customRpc/harnessControl/HarnessControlRpc";
 import { runtimeEndpointFor } from "@test/fixtures/RuntimeRootObservation";
+import { TargetedChannelJoinFixture } from "@test/fixtures/TargetedChannelJoinFixture";
 import { MathTestSession as TestSession } from "@test/harness";
 import { expect } from "chai";
 import { ethers } from "ethers";
@@ -166,6 +167,131 @@ describe("StateManager.resetChannel", function () {
             activeDuringReset: false,
             reductionStarted: false
         });
+    });
+
+    it("shuts the runtime down and rejects the leave when the reset cannot drain", async function () {
+        const h = TestSession.getHarness();
+        await h.setup(2, { autoConnect: false });
+        const peer = h.getPeer(0);
+        // Single-use fault: chain-log work that outlives the drain bound.
+        await h.execOnHost(peer, (sm) => {
+            sm.stateChannelEventListener.drain = async () => false;
+        });
+
+        await expect(peer.p2pInstance.leaveChannel()).to.be.rejectedWith(
+            "cannot be reused"
+        );
+
+        expect(
+            await new TargetedChannelJoinFixture(h).isDisposed(peer)
+        ).to.equal(true);
+    });
+
+    it("fails a pending join wait instead of leaving it hanging across the reset", async function () {
+        const h = TestSession.getHarness();
+        await h.setup(2, { autoConnect: false });
+        const result = await h.execOnHost(
+            h.getPeer(0),
+            async (sm, args) => {
+                const join = sm.p2pManager.localRpc.joinChannelService;
+                // A threshold participant that never connects: only the
+                // wait's own timer, or the reset, can settle it.
+                const waiting = join["waitForThresholdReachability"](
+                    [args.absentParticipant],
+                    String(sm.signerAddress)
+                ).then(
+                    () => "resolved",
+                    (error: Error) => error.message
+                );
+                await sm.resetChannel();
+                // Time is the oracle: settling promptly is the property, the
+                // wait's own timeout is far longer than this bound.
+                return await Promise.race([
+                    waiting,
+                    new Promise<string>((resolve) =>
+                        setTimeout(() => resolve("still pending"), 5000)
+                    )
+                ]);
+            },
+            { absentParticipant: ethers.Wallet.createRandom().address }
+        );
+
+        expect(result).to.include("the runtime left the channel");
+    });
+
+    it("keeps blacklist verdicts across the reset and forgets every other peer", async function () {
+        const h = TestSession.getHarness();
+        await h.lifecycle.start(3, 0);
+        const result = await h.execOnHost(
+            h.getPeer(2),
+            async (sm, args) => {
+                sm.p2pManager.disconnectAndBlacklistPeerByEvmAddress(
+                    args.banned
+                );
+                const profiles = sm.p2pManager.profileManager;
+                const before = !!profiles.getProfileByEvmAddress(args.other);
+                await sm.resetChannel();
+                return {
+                    otherKnownBefore: before,
+                    bannedStillBlacklisted: sm.p2pManager.isBlacklisted(
+                        args.banned
+                    ),
+                    otherKnownAfter: !!profiles.getProfileByEvmAddress(
+                        args.other
+                    )
+                };
+            },
+            { banned: h.getPeer(0).address, other: h.getPeer(1).address }
+        );
+
+        expect(result).to.deep.equal({
+            otherKnownBefore: true,
+            bannedStillBlacklisted: true,
+            otherKnownAfter: false
+        });
+    });
+
+    it("stops a reduction submit already in flight from reaching the chain after the reset", async function () {
+        const h = TestSession.getHarness();
+        await h.setup(2, { autoConnect: false });
+        const writes = await h.execOnHost(h.getPeer(0), async (sm) => {
+            // Monkey-patching typed contract members needs the casts. The
+            // submit is parked on its gas-limit read, its last await before
+            // the chain write, and the reset lands while it waits there.
+            const contract = sm.stateChannelManagerContract as unknown as {
+                getGasLimit: () => Promise<bigint>;
+                multicall: (...args: unknown[]) => unknown;
+            };
+            const gasLimit = contract.getGasLimit.bind(contract);
+            const multicall = contract.multicall.bind(contract);
+            let writeCount = 0;
+            let release: () => void = () => undefined;
+            contract.getGasLimit = () =>
+                new Promise<bigint>((resolve) => {
+                    release = () => resolve(1_000_000n);
+                });
+            contract.multicall = (...args: unknown[]) => {
+                writeCount += 1;
+                return multicall(...args);
+            };
+            try {
+                const executor = sm.reductionManager["reductionExecutor"];
+                executor["submitDetached"](sm.forkId, {} as never, {
+                    calldata: []
+                });
+                await new Promise((resolve) => setTimeout(resolve, 50));
+                await sm.resetChannel();
+                release();
+                // Let the parked write resume and land, if it is going to.
+                await new Promise((resolve) => setTimeout(resolve, 1000));
+                return writeCount;
+            } finally {
+                contract.getGasLimit = gasLimit;
+                contract.multicall = multicall;
+            }
+        });
+
+        expect(writes).to.equal(0);
     });
 
     it("rejects a channel reset on a disposed runtime", async function () {

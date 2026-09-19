@@ -132,9 +132,40 @@ describe("E2E: Channel reuse", function () {
 
         // Park the reset right after it retired the channel: the responder's
         // profile and the stores still exist, so a stale sync could still
-        // write into them or blame the peer that answered.
+        // write into them or blame the peer that answered. Discovery is also
+        // still live here, so a cut peer would reconnect: count the cuts
+        // aimed at the responder rather than reading its connectivity.
         const leave = observer.p2pInstance.leaveChannel();
         await waitFor(async () => (await drain.entered()) === 1);
+        await h.execOnHost(
+            observer,
+            (sm, args) => {
+                const p2p = sm.p2pManager;
+                const cut = p2p.disconnectConnection.bind(p2p);
+                const ban =
+                    p2p.disconnectAndBlacklistPeerByEvmAddress.bind(p2p);
+                const probe = {
+                    cuts: 0,
+                    restore: () => {
+                        p2p.disconnectConnection = cut;
+                        p2p.disconnectAndBlacklistPeerByEvmAddress = ban;
+                    }
+                };
+                Reflect.set(sm, "resetPenaltyProbe", probe);
+                const isResponder = (address: unknown) =>
+                    String(address).toLowerCase() ===
+                    args.responder.toLowerCase();
+                p2p.disconnectConnection = (transport) => {
+                    if (isResponder(transport.peerAddress)) probe.cuts += 1;
+                    return cut(transport);
+                };
+                p2p.disconnectAndBlacklistPeerByEvmAddress = (address) => {
+                    if (isResponder(address)) probe.cuts += 1;
+                    return ban(address);
+                };
+            },
+            { responder }
+        );
         await application.release();
         await waitFor(async () => (await syncs.settled()) === 1);
         const midReset = await h.execOnHost(
@@ -147,7 +178,8 @@ describe("E2E: Channel reuse", function () {
                     ),
                 responderBlacklisted: sm.p2pManager.isBlacklisted(
                     args.responder
-                )
+                ),
+                responderCuts: Reflect.get(sm, "resetPenaltyProbe").cuts
             }),
             {
                 forkId: String(
@@ -157,13 +189,17 @@ describe("E2E: Channel reuse", function () {
             }
         );
 
+        await h.execOnHost(observer, (sm) => {
+            Reflect.get(sm, "resetPenaltyProbe").restore();
+        });
         await drain.release();
         await leave;
         expect(await firstConnect).to.equal(false);
         expect(midReset).to.deep.equal({
             status: Status.OPENED,
             persisted: false,
-            responderBlacklisted: false
+            responderBlacklisted: false,
+            responderCuts: 0
         });
         await syncs.restore();
     });

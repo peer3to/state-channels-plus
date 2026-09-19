@@ -89,7 +89,13 @@ class SpectateService extends ANetworkRpcService<SpectateServiceRpcMethods> {
         try {
             return await attempt;
         } finally {
-            this.inFlightByPeerAddress.delete(normalizedPeerAddress);
+            // A channel reset clears this map, and the next channel may have
+            // registered its own sync to the same peer since: leave that one.
+            if (
+                this.inFlightByPeerAddress.get(normalizedPeerAddress) ===
+                attempt
+            )
+                this.inFlightByPeerAddress.delete(normalizedPeerAddress);
         }
     }
 
@@ -146,10 +152,11 @@ class SpectateService extends ANetworkRpcService<SpectateServiceRpcMethods> {
                 peerAddress: normalizedPeerAddress,
                 error: errorMessage(error)
             });
-            this.p2pManager.disconnectAndBlacklistPeerByEvmAddress(
-                normalizedPeerAddress
+            return this.rejectSync(
+                normalizedPeerAddress,
+                "sync request failed",
+                generation
             );
-            return false;
         }
     }
 
@@ -274,7 +281,8 @@ class SpectateService extends ANetworkRpcService<SpectateServiceRpcMethods> {
                 if (!windowExists || !isExpired)
                     return this.rejectSync(
                         peerAddress,
-                        "kill period not expired"
+                        "kill period not expired",
+                        generation
                     );
 
                 // 2.3) reduce them if they're not already reduced
@@ -298,7 +306,8 @@ class SpectateService extends ANetworkRpcService<SpectateServiceRpcMethods> {
                     if (++notReducedCount > 1)
                         return this.rejectSync(
                             peerAddress,
-                            "more than one unreduced window"
+                            "more than one unreduced window",
+                            generation
                         );
                 }
 
@@ -313,7 +322,8 @@ class SpectateService extends ANetworkRpcService<SpectateServiceRpcMethods> {
                     if (_dw.reducedResult.forkId != dw.reducedForkId)
                         return this.rejectSync(
                             peerAddress,
-                            "reduced fork mismatch"
+                            "reduced fork mismatch",
+                            generation
                         );
                 }
                 // if the above call fails -> local evm will throw -> catch and abort
@@ -339,7 +349,11 @@ class SpectateService extends ANetworkRpcService<SpectateServiceRpcMethods> {
                 stateHashMatch;
 
             if (!isCorrectGenesis)
-                return this.rejectSync(peerAddress, "genesis snapshot invalid");
+                return this.rejectSync(
+                    peerAddress,
+                    "genesis snapshot invalid",
+                    generation
+                );
 
             // optimization: if the on-chain snapshot is on the same fork but more advanced than what
             // peers proved, reject before running any contract verification.
@@ -358,7 +372,8 @@ class SpectateService extends ANetworkRpcService<SpectateServiceRpcMethods> {
                 );
                 return this.rejectSync(
                     peerAddress,
-                    "on-chain height exceeds proved height"
+                    "on-chain height exceeds proved height",
+                    generation
                 );
             }
 
@@ -385,7 +400,8 @@ class SpectateService extends ANetworkRpcService<SpectateServiceRpcMethods> {
             if (!areValidExitBlocks)
                 return this.rejectSync(
                     peerAddress,
-                    "pre-genesis outbound blocks invalid"
+                    "pre-genesis outbound blocks invalid",
+                    generation
                 );
 
             // 2.8) Depending are we syncing to the 'latest state' (spectating) or some requested state (forkId,blockHeight), verify that:
@@ -401,7 +417,8 @@ class SpectateService extends ANetworkRpcService<SpectateServiceRpcMethods> {
                 if (Number(_timestamp) != 0)
                     return this.rejectSync(
                         peerAddress,
-                        "latest fork is disputed"
+                        "latest fork is disputed",
+                        generation
                     );
             } else {
                 // 2.8.2) (requested)
@@ -413,7 +430,8 @@ class SpectateService extends ANetworkRpcService<SpectateServiceRpcMethods> {
                 )
                     return this.rejectSync(
                         peerAddress,
-                        "requested fork is not the latest"
+                        "requested fork is not the latest",
+                        generation
                     );
             }
 
@@ -426,7 +444,11 @@ class SpectateService extends ANetworkRpcService<SpectateServiceRpcMethods> {
                     syncPayload.latestForkGenesisSnapshot
                 );
             if (!isValid)
-                return this.rejectSync(peerAddress, "milestones invalid");
+                return this.rejectSync(
+                    peerAddress,
+                    "milestones invalid",
+                    generation
+                );
 
             if (
                 latestFinalizedSnapshot.snapshotData.stateMachineStateHash !=
@@ -434,7 +456,8 @@ class SpectateService extends ANetworkRpcService<SpectateServiceRpcMethods> {
             )
                 return this.rejectSync(
                     peerAddress,
-                    "finalized state hash mismatch"
+                    "finalized state hash mismatch",
+                    generation
                 );
 
             // 2.10) verify outboundMessageBlocks from final genesisSnapshot to latestFinalizedSnapshot
@@ -447,7 +470,8 @@ class SpectateService extends ANetworkRpcService<SpectateServiceRpcMethods> {
             if (!areValidExitBlocks)
                 return this.rejectSync(
                     peerAddress,
-                    "latest-fork outbound blocks invalid"
+                    "latest-fork outbound blocks invalid",
+                    generation
                 );
 
             // 2.11) verify balance invariant of the latestFinalizedState -> abort otherwise
@@ -458,7 +482,11 @@ class SpectateService extends ANetworkRpcService<SpectateServiceRpcMethods> {
                     syncPayload.latestFinalizedEncodedState
                 );
             if (!isValidBalance)
-                return this.rejectSync(peerAddress, "balance invariant failed");
+                return this.rejectSync(
+                    peerAddress,
+                    "balance invariant failed",
+                    generation
+                );
 
             // 3) Finally - staticcall multicall to deduct failure/success -> on failure abort
             const isMulticallSuccess = await this.tryMulticallSnapshotUpdate(
@@ -470,7 +498,8 @@ class SpectateService extends ANetworkRpcService<SpectateServiceRpcMethods> {
             if (!isMulticallSuccess)
                 return this.rejectSync(
                     peerAddress,
-                    "multicall simulation failed"
+                    "multicall simulation failed",
+                    generation
                 );
 
             // 4) Deconstruct the SyncPayload and persist its component normally in our local 'storage'
@@ -483,7 +512,8 @@ class SpectateService extends ANetworkRpcService<SpectateServiceRpcMethods> {
             if (shouldAbort)
                 return this.rejectSync(
                     peerAddress,
-                    "payload persistence aborted"
+                    "payload persistence aborted",
+                    generation
                 );
 
             // 5) Start executing the onBlockConfirmation pipeline with unfinalized blocks
@@ -517,7 +547,8 @@ class SpectateService extends ANetworkRpcService<SpectateServiceRpcMethods> {
                     if (!isOk)
                         return this.rejectSync(
                             peerAddress,
-                            "block confirmation rejected"
+                            "block confirmation rejected",
+                            generation
                         );
                 } catch (e) {
                     this.logger.error(
@@ -526,7 +557,8 @@ class SpectateService extends ANetworkRpcService<SpectateServiceRpcMethods> {
                     );
                     return this.rejectSync(
                         peerAddress,
-                        "block confirmation threw"
+                        "block confirmation threw",
+                        generation
                     );
                 }
             }
@@ -548,7 +580,8 @@ class SpectateService extends ANetworkRpcService<SpectateServiceRpcMethods> {
                 if (!hasBlock)
                     return this.rejectSync(
                         peerAddress,
-                        "state proof has no block"
+                        "state proof has no block",
+                        generation
                     );
                 if (
                     Number(latestBlock.transaction.header.transactionCnt) <
@@ -556,7 +589,8 @@ class SpectateService extends ANetworkRpcService<SpectateServiceRpcMethods> {
                 )
                     return this.rejectSync(
                         peerAddress,
-                        "proved height is below request"
+                        "proved height is below request",
+                        generation
                     );
             }
             this.logger.debug(
@@ -565,7 +599,11 @@ class SpectateService extends ANetworkRpcService<SpectateServiceRpcMethods> {
             return true;
         } catch (e) {
             this.logger.warn(e);
-            return this.rejectSync(peerAddress, "verification threw");
+            return this.rejectSync(
+                peerAddress,
+                "verification threw",
+                generation
+            );
         }
     }
 
@@ -1184,7 +1222,26 @@ class SpectateService extends ANetworkRpcService<SpectateServiceRpcMethods> {
             : { lowerOutboundSnapshot: b, upperOutboundSnapshot: a };
     }
 
-    private rejectSync(peerAddress: string, reason: string): false {
+    /**
+     * Fail a sync and cut its responder. A sync that ran for a channel the
+     * runtime has since left fails without the cut: its outcome says nothing
+     * about the peer as a member of whatever channel the runtime is in now.
+     */
+    private rejectSync(
+        peerAddress: string,
+        reason: string,
+        generation?: number
+    ): false {
+        if (
+            generation !== undefined &&
+            this.p2pManager.stateManager.channelGeneration !== generation
+        ) {
+            this.logger.debug("applySyncResponse - dropping stale sync", {
+                peerAddress,
+                reason
+            });
+            return false;
+        }
         this.logger.debug("applySyncResponse - rejecting sync", {
             peerAddress,
             reason
