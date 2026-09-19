@@ -398,7 +398,7 @@ export default class ReductionExecutor {
                 // and is re-checked right before it happens.
                 if (
                     this.stateManager.isDisposed ||
-                    this.stateManager.channelGeneration !== generation
+                    this.stateManager.isStaleChannelWork(generation)
                 )
                     return undefined;
                 return this.stateManager.stateChannelManagerContract.multicall(

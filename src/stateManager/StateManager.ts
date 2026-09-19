@@ -354,7 +354,14 @@ class StateManager<
         await this.p2pManager.resetChannel();
         // Producers are stopped and the feed is detached, so a task draining
         // here cannot schedule new channel work.
-        await this.timeoutManager.cancelAllTasks();
+        if (!(await this.timeoutManager.cancelAllTasks())) {
+            // Same policy as the chain-log drain above: a task still running
+            // for the channel left can write into the next one, so the
+            // runtime does not get reused.
+            throw new Error(
+                "Scheduled task work for the channel left did not finish; the runtime cannot be reused"
+            );
+        }
 
         // Under the mutex: an ingest or block production that was already in
         // flight when the peers went must finish before the stores go, or its
@@ -463,17 +470,24 @@ class StateManager<
             return this.status;
         }
 
+        // The chain read outlives a leave, and both writes below would land on
+        // whatever channel the runtime holds when it resumes: the old
+        // snapshot under the new channel's ID, and OPENED on a runtime the
+        // reset just returned to NOT_OPENED. Fenced here rather than at the
+        // nine call sites that await this.
+        const channelId = this.channelId;
+        const generation = this._channelGeneration;
         try {
             const [isOpen, snapshotStruct] =
-                await this.stateChannelManagerContract.isChannelOpen(
-                    this.channelId
-                );
+                await this.stateChannelManagerContract.isChannelOpen(channelId);
+
+            if (this.isStaleChannelWork(generation)) return this.status;
 
             if (isOpen) {
                 // Best-effort cache: store the latest on-chain snapshot in LocalDiamond
                 try {
                     await this.diamondStateMachine.localDiamondContract.onStateSnapshotUpdated(
-                        this.channelId,
+                        channelId,
                         snapshotStruct,
                         0,
                         0

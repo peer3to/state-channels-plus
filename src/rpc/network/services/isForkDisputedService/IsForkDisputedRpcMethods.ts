@@ -40,6 +40,11 @@ class IsForkDisputedRpcMethods extends ANetworkRpcMethods<IsForkDisputedService>
             throw new Error("duplicate dispute acknowledgment request");
         }
 
+        // The reads below outlive the channel: a leave settles under them, and
+        // both effects that follow would then belong to no channel — an
+        // acknowledgement refilling the map the reset cleared, or a verdict
+        // following the peer into the next channel.
+        const generation = this.p2pManager.stateManager.channelGeneration;
         // Check if fork is disputed locally
         let isDisputed =
             await this.p2pManager.stateManager.diamondStateMachine.localDiamondContract.isForkDisputed(
@@ -57,6 +62,12 @@ class IsForkDisputedRpcMethods extends ANetworkRpcMethods<IsForkDisputedService>
                     channelId,
                     forkId
                 );
+        }
+
+        if (this.p2pManager.stateManager.isStaleChannelWork(generation)) {
+            throw new Error(
+                "onDisputeAcknowledgmentRequest - the channel was left"
+            );
         }
 
         if (!isDisputed) {

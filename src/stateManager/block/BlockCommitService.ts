@@ -157,6 +157,10 @@ export default class BlockCommitService {
         if (block.author === sm.signerAddress) {
             sm.timeoutManager.scheduleTask(
                 () => {
+                    // Timers stay armed through most of a channel release, and
+                    // this one would send a transaction for the channel the
+                    // runtime just left. Same guard the timeout check uses.
+                    if (!sm.isActiveFork(block.forkId)) return;
                     sm.calldataPostingService.maybePostBlockOnChain(block.hash);
                 },
                 sm.timeConfig.agreementTime * 1000,

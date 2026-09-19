@@ -175,6 +175,11 @@ class SpectateService extends ANetworkRpcService<SpectateServiceRpcMethods> {
         generation = this.p2pManager.stateManager.channelGeneration
     ): Promise<boolean> {
         const channelId = syncRequest.channelId;
+        // Nothing below may touch the runtime once it has left this channel:
+        // the first step already writes to the local EVM. Checked before the
+        // payload is decoded, which the stale response would only discard.
+        if (this.p2pManager.stateManager.isStaleChannelWork(generation))
+            return false;
 
         try {
             // Decode inside the try: a malicious/broken peer can return bytes
@@ -229,13 +234,12 @@ class SpectateService extends ANetworkRpcService<SpectateServiceRpcMethods> {
             const stateManager = this.p2pManager.stateManager;
             const diamondStateMachine = stateManager.diamondStateMachine;
 
-            // Nothing below may touch the runtime once it has left this
-            // channel: the first step already writes to the local EVM.
-            if (stateManager.isStaleChannelWork(generation)) return false;
-
             // 1) Fetch the onChainSnapshot and persist/update the local EVM with it
-            const onChainSnapshot =
-                await this.fetchAndPersistOnChainSnapshot(channelId);
+            const onChainSnapshot = await this.fetchAndPersistOnChainSnapshot(
+                channelId,
+                generation
+            );
+            if (!onChainSnapshot) return false;
             let finalForkId = onChainSnapshot.forkID;
 
             // 2) & 2.1) Fetch all disputeWindows that where provided in the SyncPayload:
@@ -269,8 +273,10 @@ class SpectateService extends ANetworkRpcService<SpectateServiceRpcMethods> {
             const onChainDisputeWindows =
                 await this.fetchAndPersistOnChainDisputeWindows(
                     channelId,
-                    forkIds
+                    forkIds,
+                    generation
                 );
+            if (!onChainDisputeWindows) return false;
 
             let notReducedCount = 0;
             const disputeWindowsThatNeedToBeReducedOnChain: DisputeWindowVerification[] =
@@ -902,8 +908,9 @@ class SpectateService extends ANetworkRpcService<SpectateServiceRpcMethods> {
      * Fetch latest on-chain snapshot
      */
     public async fetchAndPersistOnChainSnapshot(
-        channelId: ChannelId
-    ): Promise<StateSnapshot> {
+        channelId: ChannelId,
+        generation: number
+    ): Promise<StateSnapshot | undefined> {
         // Fetch the latest on-chain snapshot from RPC node
         // Assume it's true since it's on-chain
         const currentOnChainSnapshot = StateSnapshot.from(
@@ -911,6 +918,11 @@ class SpectateService extends ANetworkRpcService<SpectateServiceRpcMethods> {
                 channelId
             )
         );
+        // The caller's fence is upstream of this read. Reconnecting to the
+        // same channel restores the ID the event handler checks, so only the
+        // generation still tells the old snapshot from the new channel's.
+        if (this.p2pManager.stateManager.isStaleChannelWork(generation))
+            return undefined;
         // sync our local EVM to it
         await this.p2pManager.stateManager.eventHandler.onStateSnapshotUpdated(
             channelId,
@@ -925,13 +937,19 @@ class SpectateService extends ANetworkRpcService<SpectateServiceRpcMethods> {
      */
     public async fetchAndPersistOnChainDisputeWindows(
         channelId: ChannelId,
-        forkIds: ForkId[]
+        forkIds: ForkId[],
+        generation: number
     ) {
         const disputeWindows =
             await this.p2pManager.stateManager.stateChannelManagerContract.getDisputeWindows(
                 channelId,
                 forkIds
             );
+
+        // Writes straight into the local diamond, with no channel ID check of
+        // its own between it and the reused runtime.
+        if (this.p2pManager.stateManager.isStaleChannelWork(generation))
+            return undefined;
 
         for (const dw of disputeWindows) {
             await this.p2pManager.stateManager.diamondStateMachine.localDiamondContract.persistDisputeWindow(
@@ -1081,7 +1099,7 @@ class SpectateService extends ANetworkRpcService<SpectateServiceRpcMethods> {
                 // wiped by it) or not at all.
                 if (
                     generation !== undefined &&
-                    stateManager.channelGeneration !== generation
+                    stateManager.isStaleChannelWork(generation)
                 ) {
                     return { shouldAbort: false, stale: true };
                 }
@@ -1241,7 +1259,7 @@ class SpectateService extends ANetworkRpcService<SpectateServiceRpcMethods> {
     ): false {
         if (
             generation !== undefined &&
-            this.p2pManager.stateManager.channelGeneration !== generation
+            this.p2pManager.stateManager.isStaleChannelWork(generation)
         ) {
             this.logger.debug("applySyncResponse - dropping stale sync", {
                 peerAddress,

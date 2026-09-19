@@ -51,9 +51,9 @@ export class TimeoutManager {
                         `Completed scheduled task '${taskName}'`
                     );
                 } catch (error) {
-                    console.error(
-                        `TimeoutManager: Error executing scheduled task '${taskName}':`,
-                        error
+                    this.logger.error(
+                        `Error executing scheduled task '${taskName}'`,
+                        { error }
                     );
                 }
             };
@@ -88,7 +88,7 @@ export class TimeoutManager {
      * manager keeps scheduling for the next channel. Callers stop their own
      * producers first: a task still running here may schedule another one.
      */
-    public async cancelAllTasks(): Promise<void> {
+    public async cancelAllTasks(): Promise<boolean> {
         // Cancel all pending timeouts
         for (const timeout of this.timeouts) {
             clearTimeout(timeout);
@@ -127,8 +127,12 @@ export class TimeoutManager {
                         timeoutMs
                     }
                 );
+                // Left in place: a task that outlived the bound is still
+                // running, and a later disposal has to be able to wait for it.
+                return false;
             }
         }
         this.runningTasks.clear();
+        return true;
     }
 }

@@ -26,6 +26,12 @@ import { LoggerUtils } from "@/utils/LoggerUtils";
 import { Buffer } from "buffer";
 import { ethers } from "ethers";
 
+// The channel is being given up and every peer is going with it; a verdict
+// recorded now would belong to no channel and, because verdicts outlive the
+// reset, would follow the peer into the next.
+const NO_VERDICT_WHILE_RELEASING =
+    "Disconnecting peer without a verdict: the channel is being released";
+
 class P2PManager<TCustomRpc extends MainRpcService = MainRpcService> {
     public readonly rpcRouter: NetworkRpcRouter<this>;
     stateManager: StateManager<TCustomRpc>;
@@ -277,7 +283,7 @@ class P2PManager<TCustomRpc extends MainRpcService = MainRpcService> {
         // The runtime left that channel while the sync ran. Its result belongs
         // to no current wait, and settling now would mark the next channel's
         // re-armed initial sync as already done.
-        if (stateManager.channelGeneration !== generation) return;
+        if (stateManager.isStaleChannelWork(generation)) return;
         // A result that lands after the chain already supplied the state is
         // stale: the wait settled through the status hook and a late false
         // must not abort an already synced runtime.
@@ -450,45 +456,35 @@ class P2PManager<TCustomRpc extends MainRpcService = MainRpcService> {
     }
 
     public disconnectAndBlacklistPeer(transport: NetworkTransport) {
-        if (this.stateManager.isResettingChannel) {
-            // The channel is being given up and every peer is going with it;
-            // a verdict recorded now would belong to no channel and, because
-            // verdicts outlive the reset, would follow the peer into the next.
-            this.logger.warn(
-                "Disconnecting peer without a verdict: the channel is being released",
-                LoggerUtils.getTransportMetadata(transport)
-            );
-            this.disconnectConnection(transport);
-            return;
-        }
+        const releasing = this.stateManager.isResettingChannel;
         this.logger.warn(
-            "Disconnecting and blacklisting peer transport",
+            releasing
+                ? NO_VERDICT_WHILE_RELEASING
+                : "Disconnecting and blacklisting peer transport",
             LoggerUtils.getTransportMetadata(transport)
         );
-        const transportToDisconnect = transport.peerAddress
-            ? this.profileManager.blacklistPeer(transport.peerAddress)
-            : this.profileManager.blacklistPeer(transport);
-        if (transportToDisconnect && transportToDisconnect !== transport) {
-            this.disconnectConnection(transportToDisconnect);
+        if (!releasing) {
+            const transportToDisconnect = transport.peerAddress
+                ? this.profileManager.blacklistPeer(transport.peerAddress)
+                : this.profileManager.blacklistPeer(transport);
+            if (transportToDisconnect && transportToDisconnect !== transport) {
+                this.disconnectConnection(transportToDisconnect);
+            }
         }
         this.disconnectConnection(transport);
     }
 
     public disconnectAndBlacklistPeerByEvmAddress(evmAddress: Address) {
-        if (this.stateManager.isResettingChannel) {
-            this.logger.warn(
-                "Disconnecting peer without a verdict: the channel is being released",
-                { peerAddress: evmAddress }
-            );
-            const live =
-                this.profileManager.getTransportByEvmAddress(evmAddress);
-            if (live) this.disconnectConnection(live);
-            return;
-        }
-        this.logger.warn("Disconnecting and blacklisting peer address", {
-            peerAddress: evmAddress
-        });
-        const transport = this.profileManager.blacklistPeer(evmAddress);
+        const releasing = this.stateManager.isResettingChannel;
+        this.logger.warn(
+            releasing
+                ? NO_VERDICT_WHILE_RELEASING
+                : "Disconnecting and blacklisting peer address",
+            { peerAddress: evmAddress }
+        );
+        const transport = releasing
+            ? this.profileManager.getTransportByEvmAddress(evmAddress)
+            : this.profileManager.blacklistPeer(evmAddress);
         if (transport) this.disconnectConnection(transport);
     }
 
