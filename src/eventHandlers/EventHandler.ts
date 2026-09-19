@@ -643,9 +643,8 @@ export class EventHandler {
             // through and schedule from the commitment handled here. If this
             // call uploads a fresh commitment, its event can reschedule the
             // reduction with the later window end.
-            await this.disputeToleratingLostRace(
+            await this.stateManager.disputeManager.disputeToleratingLostRace(
                 forkId,
-                channelId,
                 "onDisputeCommitted"
             );
         }
@@ -757,9 +756,8 @@ export class EventHandler {
                 );
         const participants = await this.diamondStateMachine.getParticipants();
         if (!isDisputed && participants.includes(participant.toString())) {
-            await this.disputeToleratingLostRace(
+            await this.stateManager.disputeManager.disputeToleratingLostRace(
                 latestFork,
-                channelId,
                 "onChainSlashed"
             );
         }
@@ -928,40 +926,10 @@ export class EventHandler {
         const isRelevant = this.stateManager.forkId === forkId;
         if (!isRelevant) return;
 
-        await this.disputeToleratingLostRace(
+        await this.stateManager.disputeManager.disputeToleratingLostRace(
             forkId,
-            channelId,
             "onDisputeKilled"
         );
-    }
-
-    /**
-     * Upload evidence for a fork, tolerating the race that every honest peer
-     * runs into. They all observe the same on-chain trigger and try; only the
-     * first upload wins, and the DisputeManager's intentional throw for the
-     * expired evidence period is the loser's expected outcome, not a failure.
-     * `handler` names the event handler that asked, for the log line.
-     */
-    private async disputeToleratingLostRace(
-        forkId: ForkId,
-        channelId: ChannelId,
-        handler: string
-    ): Promise<void> {
-        try {
-            await this.stateManager.disputeManager.dispute(forkId);
-        } catch (error) {
-            const customError = tryDecodeCustomError(error);
-            if (
-                customError?.errorDescription.name !==
-                "RaceConditionDisputeEvidencePeriodExpired"
-            ) {
-                throw error;
-            }
-            this.logger.info(
-                `${handler}: another participant supplied replacement evidence`,
-                { forkId, channelId }
-            );
-        }
     }
 
     async onInboundMessagesProcessed(
