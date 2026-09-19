@@ -48,6 +48,11 @@ class SpectateService extends ANetworkRpcService<SpectateServiceRpcMethods> {
         return new SpectateServiceRpcMethods(transport, this);
     }
 
+    /** Channel reset: drop sync dedupe entries for the old channel's peers. */
+    public reset(): void {
+        this.inFlightByPeerAddress.clear();
+    }
+
     public async sync(
         peerAddress: Address,
         channelId: ChannelId,

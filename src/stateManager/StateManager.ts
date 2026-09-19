@@ -296,6 +296,48 @@ class StateManager<
         return !this.isDisposed && this.forkId === forkId;
     }
 
+    /**
+     * Give up the current channel and return the runtime to its pre-channel
+     * state so the application can select another channel on the same instance.
+     * Shutdown stays with `dispose()`.
+     *
+     * The order matters. Producers stop first, then the chain feed is detached
+     * and drained, then peers go, and only then is storage cleared: a queued
+     * block still executing would otherwise read a half-cleared store.
+     */
+    public async resetChannel(): Promise<void> {
+        if (this.isDisposed) {
+            throw new Error("Cannot reset the channel of a disposed runtime");
+        }
+        this.logger.info("Resetting channel", { channelId: this.channelId });
+
+        this.blockQueueManager.reset();
+        this.reductionManager.reset();
+        // Detaches the provider filter and unbinds the id from the dispute
+        // manager and the event sync service.
+        await this.clearChannelId();
+        await this.stateChannelEventListener.drain();
+        this.eventSyncService.reset();
+        this.eventHandler.reset();
+        await this.p2pManager.resetChannel();
+        // Producers are stopped and the feed is detached, so a task draining
+        // here cannot schedule new channel work.
+        await this.timeoutManager.cancelAllTasks();
+
+        // Under the mutex: an ingest or block production that was already in
+        // flight when the peers went must finish before the stores go, or its
+        // writes would survive into the next channel.
+        await this.withMutex(
+            () => {
+                this.storage.clear();
+                this.latestForkId = NULL;
+                this.setStatus(Status.NOT_OPENED);
+            },
+            { taskName: "resetChannel" }
+        );
+        this.logger.info("Channel reset complete");
+    }
+
     //Mark resources for garbage collection
     public dispose(): Promise<void> {
         return (this.disposalPromise ??= (async () => {

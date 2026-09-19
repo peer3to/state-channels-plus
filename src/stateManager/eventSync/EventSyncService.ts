@@ -99,6 +99,19 @@ export default class EventSyncService {
         this.channelId = channelId;
     }
 
+    /**
+     * Channel reset: drop every dedupe and watermark record. Callers drain
+     * scheduled work with `waitForScheduled` before resetting, so nothing here
+     * is still awaited when the maps go.
+     */
+    reset(): void {
+        this.pendingOnChainBlockValidations.clear();
+        this.processedOnChainBlockValidationKeys.clear();
+        this.eventPromises.clear();
+        this.eventBlockNumbers.clear();
+        this.blockStates.clear();
+    }
+
     async waitForScheduled(timeoutMs: number): Promise<void> {
         const pending = Promise.allSettled([...this.eventPromises.values()]);
         let timeout: ReturnType<typeof setTimeout> | undefined;

@@ -30,6 +30,16 @@ class IsForkDisputedService extends ANetworkRpcService<IsForkDisputedRpcMethods>
     }
 
     /**
+     * Channel reset: fork acknowledgements belong to the channel they were
+     * exchanged on, so none of them may survive into the next one.
+     */
+    public reset(): void {
+        this.peerAcknowledgementsByAddress.clear();
+        this.myAcknowledgementsByAddress.clear();
+        this.disputedForks.clear();
+    }
+
+    /**
      * Request all peers to acknowledge a disputed fork
      * This should be called when a dispute window is created on-chain.
      *

@@ -43,6 +43,8 @@ class P2PManager<TCustomRpc extends MainRpcService = MainRpcService> {
     preferredTransport: TransportType = TransportType.HOLEPUNCH;
 
     private disposalPromise?: Promise<void>;
+    // The channel topic this runtime joined, left again by the channel reset.
+    private channelDiscoveryKey?: string;
     private readonly unsubscribeHandshakeCompleted: () => void;
     // Settle the initial-sync wait when the runtime leaves OPENED for any
     // reason other than the sync request itself: chain genesis moves the
@@ -143,6 +145,50 @@ class P2PManager<TCustomRpc extends MainRpcService = MainRpcService> {
 
     public get isDisposed(): boolean {
         return this.disposalPromise !== undefined;
+    }
+
+    /**
+     * Channel reset: leave the channel's discovery topic, drop every peer and
+     * profile, and re-arm the initial-sync latch so the next channel waits for
+     * its own first handshake. The swarm and the custom RPC root survive.
+     */
+    public async resetChannel(): Promise<void> {
+        await runCleanup(
+            () => this.leaveChannelDiscovery(),
+            () => this.localRpc.resetChannel(),
+            // disconnectAll rejects each transport's pending RPCs; the profile
+            // teardown then reaches transports registered but never opened
+            // (lobby, handoff). Blacklists go with the profiles: the next
+            // channel has its own participant set, so a ban earned in the old
+            // one must not follow a peer into it.
+            () => this.disconnectAll(),
+            () => this.profileManager.dispose(),
+            () => this.resetInitialSync()
+        );
+    }
+
+    /** Join the selected channel's topic and remember it for the reset. */
+    public async joinChannelDiscovery(discoveryKey: string): Promise<void> {
+        this.channelDiscoveryKey = ethers.hexlify(discoveryKey);
+        await this.joinDiscoveryKey(discoveryKey);
+    }
+
+    public async leaveChannelDiscovery(): Promise<void> {
+        const discoveryKey = this.channelDiscoveryKey;
+        if (!discoveryKey) return;
+        this.channelDiscoveryKey = undefined;
+        await this.leaveDiscoveryKey(discoveryKey);
+    }
+
+    private resetInitialSync(): void {
+        // A wait created for the old channel must not hang: settle it as failed
+        // before the latch is re-armed for the next one.
+        this.settleInitialSync(false);
+        this.initialSyncStarted = false;
+        this.initialSyncSettled = false;
+        this.initialSyncOutcome = false;
+        this.initialSyncPromise = undefined;
+        this.resolveInitialSync = undefined;
     }
 
     private async onHandshakeCompleted(peerAddress: Address): Promise<void> {

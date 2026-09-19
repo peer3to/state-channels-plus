@@ -104,6 +104,25 @@ export async function assertAuthoredLeaveFallback(
             expect(
                 await h.control(leaver).query.didIDispute(forkId).request()
             ).to.equal(false);
+            // A rejected leave leaves membership indeterminate, so the runtime
+            // stays bound: a repeated leave reports the same failure instead
+            // of departing twice, and another target is still refused.
+            const repeated = await leaver.p2pInstance.leaveChannel().then(
+                () => ({ error: null }),
+                (error) => ({ error: String(error) })
+            );
+            await expect(
+                leaver.p2pInstance.p2pSigner.connectToChannel(
+                    id("target-after-rejected-leave")
+                )
+            ).to.be.rejectedWith("channel leave is pending");
+            expect({
+                repeated,
+                channelId: await h
+                    .control(leaver)
+                    .query.getChannelId()
+                    .request()
+            }).to.deep.equal({ repeated: result, channelId: h.channelId });
         }
     } finally {
         if (!restored) {

@@ -1,7 +1,7 @@
 import { Logger } from "./logging";
 
 export class TimeoutManager {
-    private static readonly DISPOSE_WAIT_TIMEOUT_MS = 5000;
+    private static readonly TASK_DRAIN_TIMEOUT_MS = 5000;
     private timeouts: Set<NodeJS.Timeout> = new Set();
     private runningTasks: Set<Promise<void>> = new Set();
     private isDisposed: boolean = false;
@@ -68,29 +68,39 @@ export class TimeoutManager {
 
     public async dispose(): Promise<void> {
         this.isDisposed = true;
+        await this.cancelAllTasks();
+    }
 
+    /**
+     * Cancel pending timeouts and drain running tasks without disposing, so the
+     * manager keeps scheduling for the next channel. Callers stop their own
+     * producers first: a task still running here may schedule another one.
+     */
+    public async cancelAllTasks(): Promise<void> {
         // Cancel all pending timeouts
         for (const timeout of this.timeouts) {
             clearTimeout(timeout);
         }
         this.timeouts.clear();
 
-        // Wait for currently running tasks to complete, but do not block disposal indefinitely.
+        // Wait for currently running tasks to complete, but do not block the caller indefinitely.
         if (this.runningTasks.size > 0) {
             const tasks = [...this.runningTasks];
-            const timeoutMs = TimeoutManager.DISPOSE_WAIT_TIMEOUT_MS;
+            const timeoutMs = TimeoutManager.TASK_DRAIN_TIMEOUT_MS;
 
+            let deadline: ReturnType<typeof setTimeout> | undefined;
             const completion = Promise.allSettled(tasks).then(() => true);
             const timedOut = await Promise.race<boolean>([
                 completion,
-                new Promise<boolean>((resolve) =>
-                    setTimeout(() => resolve(false), timeoutMs)
-                )
+                new Promise<boolean>((resolve) => {
+                    deadline = setTimeout(() => resolve(false), timeoutMs);
+                })
             ]);
+            if (deadline) clearTimeout(deadline);
 
             if (!timedOut) {
                 this.logger.warn(
-                    `Dispose timed out waiting for running tasks; continuing cleanup`,
+                    `Timed out waiting for running tasks; continuing cleanup`,
                     {
                         pendingTasks: this.runningTasks.size,
                         timeoutMs

@@ -18,6 +18,9 @@ type LeaveOperation = {
     promise: Promise<void>;
     resolve: () => void;
     reject: (error: Error) => void;
+    // Handed to callers: settled departure plus the channel reset that hands
+    // the runtime back. Repeated calls share it.
+    completion: Promise<void>;
     participantCount: number;
     ingestedBlockCount: number;
     forkId: ForkId;
@@ -34,7 +37,7 @@ export type LeaveChannelState = {
     leaveTurnEmitted: boolean;
 };
 
-/** Owns the terminal leave operation for one runtime. */
+/** Owns the channel leave operation for one runtime. */
 export default class LeaveChannelService {
     private readonly logger: Logger;
     private operation?: LeaveOperation;
@@ -65,12 +68,12 @@ export default class LeaveChannelService {
     public assertOperationAllowed(operation: string): void {
         if (!this.operation) return;
         throw new Error(
-            `${operation} is unavailable while terminal channel leave is pending`
+            `${operation} is unavailable while a channel leave is pending`
         );
     }
 
     public leaveChannel(): Promise<void> {
-        if (this.operation) return this.operation.promise;
+        if (this.operation) return this.operation.completion;
 
         let resolve!: () => void;
         let reject!: (error: Error) => void;
@@ -78,7 +81,7 @@ export default class LeaveChannelService {
             resolve = resolvePromise;
             reject = rejectPromise;
         });
-        const operation: LeaveOperation = {
+        const operation = {
             promise,
             resolve,
             reject,
@@ -87,18 +90,33 @@ export default class LeaveChannelService {
             forkId: this.stateManager.forkId,
             phase: "starting",
             leaveTurnEmitted: false
-        };
+        } as LeaveOperation;
+        operation.completion = this.settleAndReset(operation);
         this.operation = operation;
 
         if (!isCommittedParticipantStatus(this.stateManager.status)) {
             operation.resolve();
-            return operation.promise;
+            return operation.completion;
         }
 
         void this.startCommittedLeave(operation).catch((error) =>
             this.fail(operation, error)
         );
-        return operation.promise;
+        return operation.completion;
+    }
+
+    /**
+     * Wait for settled departure, then hand the runtime back its pre-channel
+     * state so the application can select another channel on the same instance.
+     * A rejected leave (or a failed reset) keeps the operation: the runtime's
+     * membership is then indeterminate, so repeated calls must see the same
+     * failure and channel work must stay blocked rather than start on a
+     * half-left channel.
+     */
+    private async settleAndReset(operation: LeaveOperation): Promise<void> {
+        await operation.promise;
+        await this.stateManager.resetChannel();
+        this.operation = undefined;
     }
 
     public takeLeaveTurn(nextToWrite: Address): boolean {
@@ -233,7 +251,7 @@ export default class LeaveChannelService {
                     (error) => this.fail(operation, error)
                 ),
             config.LEAVE_CHANNEL_WATCHDOG_MS,
-            "terminal channel leave watchdog"
+            "channel leave watchdog"
         );
     }
 

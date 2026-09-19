@@ -173,7 +173,7 @@ class LocalP2pSigner<TCustomRpc extends MainRpcService = MainRpcService>
         if (String(stateManager.channelId) !== normalizedChannelId) {
             if (String(stateManager.channelId) !== ethers.ZeroHash) {
                 throw new Error(
-                    `This P2P runtime already owns channel ${stateManager.channelId}; leave it and create a new runtime before selecting ${normalizedChannelId}`
+                    `This P2P runtime already owns channel ${stateManager.channelId}; leave it before selecting ${normalizedChannelId}`
                 );
             }
             await stateManager.setChannelId(normalizedChannelId);
@@ -222,7 +222,7 @@ class LocalP2pSigner<TCustomRpc extends MainRpcService = MainRpcService>
 
         await stateManager.refreshOpenedStatusFromChain();
         if (stateManager.status === Status.NOT_OPENED) return false;
-        await this.p2pManager.joinDiscoveryKey(
+        await this.p2pManager.joinChannelDiscovery(
             channelIdToDiscoveryKey(normalizedChannelId)
         );
         if (!options.shouldJoin) {
@@ -263,8 +263,8 @@ class LocalP2pSigner<TCustomRpc extends MainRpcService = MainRpcService>
     }
 
     /**
-     * Internal route for `P2pInstance.leaveChannel`.
-     * Direct callers wait for settled removal but do not dispose the runtime.
+     * Internal route for `P2pInstance.leaveChannel`. Resolves once removal is
+     * settled and the runtime has been reset to its pre-channel state.
      */
     public leaveChannel(): Promise<void> {
         return this.p2pManager.stateManager.leaveChannelService.leaveChannel();

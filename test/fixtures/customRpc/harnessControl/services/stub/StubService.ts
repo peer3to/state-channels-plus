@@ -487,7 +487,7 @@ export class StubService extends ANetworkRpcService<
         this.leaveWatchdogObservation = observation;
         let held: ReturnType<typeof setTimeout> | undefined;
         timers.scheduleTask = (task, delayMs, name) => {
-            if (name !== "terminal channel leave watchdog")
+            if (name !== "channel leave watchdog")
                 return schedule(task, delayMs, name);
             observation.delayMs = delayMs;
             observation.scheduled += 1;

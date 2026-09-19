@@ -75,19 +75,34 @@ export default class ReductionManager {
         this.timeouts.clear();
     }
 
+    /**
+     * Channel reset: same cancellation as dispose, but the manager stays usable
+     * for the next channel — no terminal flag. The executor's dispose only
+     * drops its per-channel memo, so it is reusable as well.
+     */
+    public reset(): void {
+        this.cancelScheduledReductions();
+        this.settlePendingCompletions();
+        this.reductionExecutor.dispose();
+    }
+
     public dispose(): void {
         this.disposed = true;
         this.cancelScheduledReductions();
-        // Settle every pending completion exactly once. Never reject: a
-        // rejection would surface as a detached error through the drain that
-        // is waiting on these very promises.
+        this.settlePendingCompletions();
+        this.reductionExecutor.dispose();
+    }
+
+    // Settle every pending completion exactly once. Never reject: a
+    // rejection would surface as a detached error through the drain that
+    // is waiting on these very promises.
+    private settlePendingCompletions(): void {
         for (const completion of this.completions.values()) {
             if (completion.settled) continue;
             completion.settled = true;
             completion.resolve(undefined);
         }
         this.completions.clear();
-        this.reductionExecutor.dispose();
     }
 
     public settleForkLeft(forkId: ForkId): void {

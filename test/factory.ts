@@ -36,7 +36,8 @@ import {
     DisputeStruct,
     SignedDisputeStruct,
     DisputeInputStruct,
-    ReduceOutputStruct
+    ReduceOutputStruct,
+    TimeoutStruct
 } from "@typechain-types/contracts/V1/types/DisputeTypes";
 import { BlockDoubleSignProofStruct } from "@typechain-types/contracts/V1/types/FraudProofTypes";
 import {
@@ -226,17 +227,12 @@ export function dispute(
             onChainSlashes: [],
             disputeAuditingDataHash: ethers.hexlify(ethers.randomBytes(32)),
             disputer: ethers.ZeroAddress,
-            timeout: {
+            timeout: timeout({
                 participant: ethers.ZeroAddress,
                 blockHeight: 0,
                 minTimeStamp: Math.floor(Date.now() / 1000),
-                isForced: false,
-                previousBlockProducer: ethers.ZeroAddress,
-                previousBlockProducerPostedCalldata: false,
-                participantSignatureOnPreviousBlock: ethers.hexlify(
-                    ethers.randomBytes(32)
-                )
-            },
+                previousBlockProducer: ethers.ZeroAddress
+            }),
             requireExistingDisputeWindow: false,
             selfRemoval: false
         },
@@ -453,19 +449,24 @@ export function reduceOutput(
         slashedParticipants: [],
         latestInboundMessageBlockHash: hash(),
         latestInboundMessageBlockHeight: 0n,
-        timeout: {
-            participant: randomAddress(),
-            blockHeight: 0n,
-            minTimeStamp: 0n,
-            isForced: false,
-            previousBlockProducer: randomAddress(),
-            previousBlockProducerPostedCalldata: false,
-            participantSignatureOnPreviousBlock: "0x"
-        },
+        timeout: timeout({ participantSignatureOnPreviousBlock: "0x" }),
         selfRemovals: []
     };
 
     return { ...defaultReduceOutput, ...overrides };
+}
+
+export function timeout(overrides: Partial<TimeoutStruct> = {}): TimeoutStruct {
+    return {
+        participant: randomAddress(),
+        blockHeight: 0n,
+        minTimeStamp: 0n,
+        isForced: false,
+        previousBlockProducer: randomAddress(),
+        previousBlockProducerPostedCalldata: false,
+        participantSignatureOnPreviousBlock: signature(),
+        ...overrides
+    };
 }
 
 export function reduceData(overrides: Partial<ReduceData> = {}): ReduceData {

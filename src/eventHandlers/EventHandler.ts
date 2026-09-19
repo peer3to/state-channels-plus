@@ -61,6 +61,11 @@ export class EventHandler {
         this.logger = logger.child({ component: "EventHandler" });
     }
 
+    /** Channel reset: drop the in-flight dispute dedupe for the old channel. */
+    reset(): void {
+        this.disputeHandlingPromises.clear();
+    }
+
     async onChannelOpened(
         channelId: ChannelId,
         stateSnapshot: StateSnapshotStruct,

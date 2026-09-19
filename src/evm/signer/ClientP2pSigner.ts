@@ -183,8 +183,8 @@ class ClientP2pSigner implements Signer {
     }
 
     /**
-     * Internal route for `P2pInstance.leaveChannel`.
-     * Direct callers wait for settled removal but do not dispose the runtime.
+     * Internal route for `P2pInstance.leaveChannel`. Resolves once the host has
+     * observed settled removal and reset the runtime to its pre-channel state.
      */
     leaveChannel(): Promise<void> {
         return this.client.p2pSigner
