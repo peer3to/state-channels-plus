@@ -27,6 +27,8 @@ work.
 
 `observe` collects the original promise and attaches one error route. The drain retains the original rejection even when the route rejects or settles a caller-owned operation. If the route throws, the untracked catch promise becomes an unhandled rejection. `DisputeManager.requestDispute` uses this deliberately to reach the runtime error funnel; other callers must handle or route the error. See [DetachedPromises.ts](../../../../../../src/utils/DetachedPromises.ts#L28).
 
+`adoptPending` is the disposal hook: a disposing root hands every pending promise's future rejection to its own sink and keeps the entry tracked as settling work, so a failure of work in flight at disposal is neither an unhandled rejection nor a drain failure. The registry is realm-wide, so sibling roots' in-flight work at that moment is adopted too. See [DetachedPromises.ts](../../../../../../src/utils/DetachedPromises.ts#L45).
+
 1. **Detached ≠ forgotten:** disposal can await the registry, keeping lifecycle convergence honest.
 2. **A drain timeout is diagnostic:** expiry reports unresolved origins and leaves the underlying promises
    untouched.

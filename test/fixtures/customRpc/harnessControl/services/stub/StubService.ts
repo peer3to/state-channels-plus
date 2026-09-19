@@ -18,6 +18,7 @@ import type { Address, ForkId, Hash } from "@/types/types";
 import {
     Codec,
     LocalDiscoveryServer,
+    sleep,
     tryDecodeCustomError,
     Type
 } from "@/utils";
@@ -58,6 +59,7 @@ type InboundMessageLogKey = string;
 
 /** Fixed identifiers for the stub-original registry (never caller-supplied). */
 export type StubKey =
+    | "discoveryJoinHold"
     | "auditingDataRebuild"
     | "snapshotPostSend"
     | "expiredCalldataPost"
@@ -987,13 +989,16 @@ export class StubService extends ANetworkRpcService<
         return this.heldSpectateResponse?.entered ?? 0;
     }
 
-    public holdPostMatchTargetRefresh(): void {
+    /** Park the second opened-status refresh; `autoReleaseMs` frees it by timer. */
+    public holdPostMatchTargetRefresh(autoReleaseMs?: number): void {
         this.releasePostMatchTargetRefresh();
         const original = this.sm.refreshOpenedStatusFromChain.bind(this.sm);
         this.stubOriginals.set("postMatchTargetRefresh", original);
         const hold = this.createRpcHold("exchangeTerms");
         this.heldPostMatchTargetRefresh = hold;
         this.postMatchTargetRefreshCallCount = 0;
+        if (autoReleaseMs !== undefined)
+            setTimeout(() => hold.release(), autoReleaseMs).unref();
         this.sm.refreshOpenedStatusFromChain = async () => {
             this.postMatchTargetRefreshCallCount += 1;
             if (this.postMatchTargetRefreshCallCount === 2) {
@@ -1987,6 +1992,22 @@ export class StubService extends ANetworkRpcService<
             await gate;
             return original(...args);
         }) as typeof disputeManager.getAuditingData;
+    }
+
+    /**
+     * Delay this runtime's discovery join so an abort can land inside it. The
+     * test that uses it aborts the runtime, which disposes this worker, so
+     * there is nothing left to restore.
+     */
+    public installDiscoveryJoinHold(holdMs: number): void {
+        if (this.stubOriginals.has("discoveryJoinHold")) return;
+        const original =
+            LocalDiscoveryServer.connectToPeers.bind(LocalDiscoveryServer);
+        this.stubOriginals.set("discoveryJoinHold", original);
+        LocalDiscoveryServer.connectToPeers = (async (...args) => {
+            await sleep(holdMs);
+            return original(...args);
+        }) as typeof LocalDiscoveryServer.connectToPeers;
     }
 
     public async joinAndLeavePendingLocalDiscovery(

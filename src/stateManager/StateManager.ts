@@ -290,7 +290,11 @@ class StateManager<
         });
         this.p2pEventHooks.onAbort?.();
         this.setStatus(Status.OPENED);
-        DetachedPromises.collect(this.disposeRuntime());
+        // The disposal is not detached domain work: the root settles what
+        // is in flight when it disposes, but its own failure must surface.
+        DetachedPromises.observe(this.disposeRuntime(), (error) => {
+            throw error;
+        });
     }
 
     public isActiveFork(forkId: ForkId): boolean {

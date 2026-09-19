@@ -10,6 +10,16 @@ export abstract class AInternalRpcService<TMethods extends object> {
 
     public abstract createRPCMethods(sender: InternalTransport): TMethods;
 
+    /**
+     * Whether a root waits for this service's running request handlers to
+     * reply before it reports itself disposed. Domain services do; the
+     * lifecycle service, whose disposal request is one of those handlers,
+     * opts out.
+     */
+    public get awaitedByDisposalDrain(): boolean {
+        return true;
+    }
+
     protected afterResponse(_rpc: Rpc, _sender: InternalTransport): void {}
 
     public async runRPC(rpc: Rpc, sender: InternalTransport): Promise<boolean> {
