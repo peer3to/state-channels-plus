@@ -73,10 +73,10 @@ Required evidence: [`REQ-SYNC-1-T2589H.T1.P16`](../specification/peer-communicat
 
 <a id="find-dispute-2-3hv3tz"></a>
 
-## FIND-DISPUTE-2-3HV3TZ — Two of the four lost-race callers have no test
+## FIND-DISPUTE-2-3HV3TZ — The evidence-improvement lost-race caller has no test
 
-**Status:** open verification gap. The containment itself is implemented for all four callers; two
-of them — the evidence-improvement upload and the reducer's empty-window escalation — are
+**Status:** open verification gap. The containment itself is implemented for all four callers;
+three are now driven by their own declaration, and one — the evidence-improvement upload — is
 unevidenced.
 
 [`DisputeManager.disputeToleratingLostRace`](../implementation/source/src/disputeManager/DisputeManager.ts.md)
@@ -87,12 +87,11 @@ empty-window escalation in
 [ReductionExecutor](../implementation/source/src/stateManager/reduction/ReductionExecutor.ts.md).
 The first two are covered by
 [test/unit/EventHandler.test.ts](../verification/tests/test/unit/EventHandler.test.ts.md), whose two
-cases also kill a mutant that makes the shared method rethrow for every caller. The other two have
-no declaration of their own, so
-[`REQ-DISPUTE-PIPE-6-6FZB9M.T1.P9`](../specification/disputes/dispute-processing.md#req-dispute-pipe-6-6fzb9m.t1.p9),
-[`UNIT-TEST-EVENT-HANDLER-1-RZ2C7W.P14`](../implementation/source/src/eventHandlers/EventHandler.ts.md#unit-test-event-handler-1-rz2c7w.p14),
-[`REQ-DISPUTE-PIPE-6-6FZB9M.T1.P10`](../specification/disputes/dispute-processing.md#req-dispute-pipe-6-6fzb9m.t1.p10)
-and [`UNIT-TEST-REDUCTION-EXECUTOR-1-DGAD37.P14`](../implementation/source/src/stateManager/reduction/ReductionExecutor.ts.md#unit-test-reduction-executor-1-dgad37.p14)
+cases also kill a mutant that makes the shared method rethrow for every caller. The reducer is
+covered by [test/e2e/E2E-ReductionManager.test.ts](../verification/tests/test/e2e/E2E-ReductionManager.test.ts.md)
+(below). The evidence-improvement branch has no declaration of its own, so
+[`REQ-DISPUTE-PIPE-6-6FZB9M.T1.P9`](../specification/disputes/dispute-processing.md#req-dispute-pipe-6-6fzb9m.t1.p9)
+and [`UNIT-TEST-EVENT-HANDLER-1-RZ2C7W.P14`](../implementation/source/src/eventHandlers/EventHandler.ts.md#unit-test-event-handler-1-rz2c7w.p14)
 stay unassigned. Sharing one implementation does not make one caller evidence for another: for the
 evidence-improvement site this is demonstrated, not suspected — a mutant that bypasses the
 containment at that one site, restoring the bare `disputeManager.dispute(forkId)` there while the
@@ -106,21 +105,30 @@ refused as past the evidence deadline.
 already stages an outcome-changing comparison on this branch and is the nearest starting point; its
 upload is a no-op rather than a refusal, so it proves the scheduling clause, not the containment.
 
-The reducer site reaches further than the handlers do. Its refusal used to travel to
-`ReductionManager.failCompletion`, which rejects the shared completion and calls
-`StateManager.abort()`, so an honest reducer tore its runtime down over the expected outcome of a
-race. Nothing currently drives it: the only test that reaches the empty-window branch is the e2e
-`an empty dispute set posts replacement evidence and resumes the same reduction`, which stages the
-_winner_ and never the refusal.
-
-**Required evidence:** two declarations. One reaches the evidence-improvement upload with the
+**Required evidence:** one declaration that reaches the evidence-improvement upload with the
 observer's submission refused by `RaceConditionDisputeEvidencePeriodExpired`, and asserts that
 `onDisputeCommitted` resolves, that exactly one upload was attempted, and that the reduction is
-still scheduled from the observed commitment. The other refuses the reducer's empty-window
-escalation the same way and asserts that the attempt resolves, that the shared reduction completion
-is neither rejected nor aborted, and that the winner's commitment re-drives the reduction. Do not
-infer either from the kill and slash cases: they are separate call sites and the mutant above
-distinguishes them.
+still scheduled from the observed commitment. Do not infer it from the kill and slash cases: they
+are separate call sites and the mutant above distinguishes them.
+
+**Closed half — the reducer's empty-window escalation.** Its refusal used to travel to
+`ReductionManager.failCompletion`, which rejects the shared completion and calls
+`StateManager.abort()`, so an honest reducer tore its runtime down over the expected outcome of a
+race. The e2e case `an empty dispute set whose replacement evidence loses the race leaves the
+reducer participating` now drives it: the existing winner scenario moved into
+`test/fixtures/EmptyWindowRedisputeStaging.ts` as `assertEmptyWindowRedispute(h, outcome)`, so the
+losing side reuses the staging that already reaches the empty-window branch and only arms the
+target peer's dispute submission to fail at send with the contract's
+`RaceConditionDisputeEvidencePeriodExpired`. It waits for exactly one recorded upload and then, a
+full participant-timeout window later, asserts the runtime is not disposed. The mutant is the
+evidence that this is the site's own coverage: reverting the escalation to a bare
+`disputeManager.dispute(forkId)` turns that case red, because the refusal reaches `failCompletion`
+and the runtime is disposed by the time it settles.
+[`REQ-DISPUTE-PIPE-6-6FZB9M.T1.P10`](../specification/disputes/dispute-processing.md#req-dispute-pipe-6-6fzb9m.t1.p10)
+and [`UNIT-TEST-REDUCTION-EXECUTOR-1-DGAD37.P14`](../implementation/source/src/stateManager/reduction/ReductionExecutor.ts.md#unit-test-reduction-executor-1-dgad37.p14)
+are assigned to it. Both permutations were narrowed to that oracle: the case stages no competing
+peer, so the winner's commitment re-driving the refused reduction is not observed and is not
+claimed.
 
 <a id="find-log-1-659qd2"></a>
 

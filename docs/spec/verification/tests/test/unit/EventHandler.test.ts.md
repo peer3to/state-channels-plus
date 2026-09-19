@@ -32,10 +32,11 @@ red.
 Out of scope here: the winning side of the race and the absence of duplicate commitments across
 peers (that multi-peer oracle belongs to
 [`REQ-DISPUTE-PIPE-6-6FZB9M.T1.P4`](../../../../specification/disputes/dispute-processing.md#req-dispute-pipe-6-6fzb9m.t1.p4)),
-and the two callers that still have no declaration — the evidence-improvement branch of
-`onDisputeCommitted`, which needs an audited dispute the observer can add evidence to, and the
-reducer's empty-window escalation, which is not a handler at all
-([`FIND-DISPUTE-2-3HV3TZ` (Two of the four lost-race callers have no test)](../../../../audit/open-findings.md#find-dispute-2-3hv3tz)).
+and the one caller that still has no declaration — the evidence-improvement branch of
+`onDisputeCommitted`, which needs an audited dispute the observer can add evidence to
+([`FIND-DISPUTE-2-3HV3TZ` (The evidence-improvement lost-race caller has no test)](../../../../audit/open-findings.md#find-dispute-2-3hv3tz)).
+The fourth caller, the reducer's empty-window escalation, is not a handler at all and is driven by
+[test/e2e/E2E-ReductionManager.test.ts](../e2e/E2E-ReductionManager.test.ts.md).
 
 ## Tests and covered test IDs
 
