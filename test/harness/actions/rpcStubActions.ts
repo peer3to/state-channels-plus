@@ -1082,6 +1082,24 @@ export class RpcStubActions<
     }
 
     /**
+     * Park a peer's channel reset at its chain-feed drain: the channel and fork
+     * are already retired, peers and storage not yet touched.
+     */
+    async holdEventDrain(peerIndex: number): Promise<{
+        entered: () => Promise<number>;
+        release: () => Promise<void>;
+    }> {
+        const ctl = () => this.peerStub(peerIndex);
+        await ctl().stubHoldEventDrain().request();
+        return {
+            entered: async () => await ctl().getHeldEventDrainCount().request(),
+            release: async () => {
+                await ctl().restoreHoldEventDrain().request();
+            }
+        };
+    }
+
+    /**
      * Hold a peer's own sync at its application step, keeping it in flight
      * toward its responder. Returns the entered count and a release.
      */

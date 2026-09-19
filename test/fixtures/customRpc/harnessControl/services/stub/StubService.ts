@@ -103,6 +103,7 @@ export type StubKey =
     | "ingestConfirmations"
     | "networkConfirmations"
     | "spectateSyncApplication"
+    | "eventDrain"
     | "onChainSlashesQuery"
     | "localDiamondInboundMessages"
     | "eventLogs"
@@ -400,6 +401,8 @@ export class StubService extends ANetworkRpcService<
     readonly controlIngestContext = new AsyncLocalStorage<true>();
     /** Gate holding this peer's own sync at its application step. */
     spectateSyncApplicationGate?: StubGate;
+    /** Parks the channel reset at its chain-feed drain while set. */
+    eventDrainGate?: StubGate;
     reductionApplicationGate?: StubGate;
     /** Calls that reached the control; survives the restore that an abort triggers. */
     reductionApplicationEntered = 0;

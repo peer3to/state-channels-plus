@@ -118,6 +118,32 @@ describe("StateManager.resetChannel", function () {
         }).to.deep.equal({ connected: false, channelId: nextChannelId });
     });
 
+    it("releases the leave operation once the reset completes", async function () {
+        const h = TestSession.getHarness();
+        await h.setup(2, { autoConnect: false });
+        // An unbound runtime owes no departure, so each leave settles and
+        // resets at once; the second must start its own operation rather than
+        // hand back the first one's settled promise.
+        const result = await h.execOnHost(h.getPeer(0), async (sm) => {
+            const first = sm.leaveChannelService.leaveChannel();
+            await first;
+            const leavingBetween = sm.leaveChannelService.isLeaving;
+            const second = sm.leaveChannelService.leaveChannel();
+            await second;
+            return {
+                leavingBetween,
+                sameOperation: first === second,
+                leavingAfter: sm.leaveChannelService.isLeaving
+            };
+        });
+
+        expect(result).to.deep.equal({
+            leavingBetween: false,
+            sameOperation: false,
+            leavingAfter: false
+        });
+    });
+
     it("retires the old fork before the reset first yields", async function () {
         const h = TestSession.getHarness();
         await h.lifecycle.start(3, 0);

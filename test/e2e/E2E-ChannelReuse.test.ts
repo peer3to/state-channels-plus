@@ -113,6 +113,61 @@ describe("E2E: Channel reuse", function () {
         await syncs.restore();
     });
 
+    it("a sync resuming mid-reset sees the channel already left and does not penalise its responder", async function () {
+        const { h, channelId, targeted } =
+            await TargetedChannelJoinFixture.unopened("reuse-mid-reset", 3);
+        await targeted.openWithPeers(channelId, [0, 1]);
+        const observer = h.getPeer(2);
+        const syncs = await h.rpcStub.countSettledSpectateSyncs(observer.index);
+        const application = await h.rpcStub.holdSpectateSyncApplication(
+            observer.index
+        );
+        const drain = await h.rpcStub.holdEventDrain(observer.index);
+        const firstConnect = targeted.connect(observer, channelId);
+        await waitFor(async () => (await application.entered()) === 1);
+        const [responder] = await h
+            .control(observer)
+            .stub.waitForSpectateSyncCalls(1)
+            .request();
+
+        // Park the reset right after it retired the channel: the responder's
+        // profile and the stores still exist, so a stale sync could still
+        // write into them or blame the peer that answered.
+        const leave = observer.p2pInstance.leaveChannel();
+        await waitFor(async () => (await drain.entered()) === 1);
+        await application.release();
+        await waitFor(async () => (await syncs.settled()) === 1);
+        const midReset = await h.execOnHost(
+            observer,
+            (sm, args) => ({
+                status: sm.status,
+                persisted:
+                    !!sm.storage.stateSnapshots.getGenesisSnapshotByForkId(
+                        args.forkId
+                    ),
+                responderBlacklisted: sm.p2pManager.isBlacklisted(
+                    args.responder
+                )
+            }),
+            {
+                forkId: String(
+                    await h.control(h.getPeer(0)).query.getForkId().request()
+                ),
+                responder
+            }
+        );
+
+        await drain.release();
+        await leave;
+        expect(await firstConnect).to.equal(false);
+        expect(midReset).to.deep.equal({
+            status: Status.OPENED,
+            persisted: false,
+            responderBlacklisted: false
+        });
+        await syncs.restore();
+    });
+
     it("explicit disposal still shuts down a runtime that was reused", async function () {
         const { h, channelId, targeted } =
             await TargetedChannelJoinFixture.unopened("reuse-then-dispose", 3);
