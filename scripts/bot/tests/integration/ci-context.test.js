@@ -4,6 +4,8 @@ const { RecordedGitHub } = require("../fixtures/github");
 const { PublicGitHub, ContextBudget } = require("../../github-read");
 const { SourceTools } = require("../../source-tools");
 const { DEFAULTS } = require("../../config");
+const protocol = require("../../protocol");
+const { result } = require("../fixtures/records");
 
 describe("review source-tool CI evidence", function () {
     it("gathers timeline and pinned CI evidence through the model tool boundary without changing source", async function () {
@@ -52,6 +54,9 @@ describe("review source-tool CI evidence", function () {
                 });
                 assert.equal(statusPage.data.state, "pending");
                 assert.equal(budget.pages, 3);
+                const output = result(input);
+                output.evidence.sources = structuredClone(budget.sources);
+                assert.equal(protocol.result(output, input), output);
                 await assert.rejects(
                     tools.call("public_github_read", {
                         url: `https://api.github.com${prefix}/commits/${input.base}/status`

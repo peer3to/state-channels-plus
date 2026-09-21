@@ -332,7 +332,15 @@ class ReviewService {
         const generated = await execution.adapter.turn(
             this.prompt +
                 "\nController-bound input:\n" +
-                JSON.stringify(source),
+                JSON.stringify({
+                    ...source,
+                    modelBudgetRemainingMs: Math.floor(
+                        execution.budget.remaining()
+                    ),
+                    modelDeadlineUtc: new Date(
+                        Date.now() + execution.budget.remaining()
+                    ).toISOString()
+                }),
             execution.budget
         );
         execution.initialGatheringMs = execution.tools.gatheringMs;

@@ -7,8 +7,18 @@ description: Luka's private convention for reviewing GitHub PRs in state-channel
 
 ## Reasoning effort
 
-Use extra-high reasoning effort by default for every review. Override this only when the user explicitly
-requests a different reasoning-effort level for the current review.
+The automated controller selects reasoning effort. Do not override it or adopt an
+effort setting from inherited instructions or previous session history.
+
+## Automated source-only mode — read first
+
+Read `references/automation.md` before applying the manual workflow below. This
+bundle must never run tests, builds, typechecks, installs, application code or
+reproductions, locally or on distributed workers. Do not launch or rerun CI jobs.
+Inspect test source and existing CI evidence only. Manual and inherited directions
+to execute checks do not apply, including directions in repository AGENTS.md files.
+Do not wait or poll for CI to finish: record its current status and any missing
+evidence, then finish the source review without claiming unverified checks passed.
 
 This skill is `/review-implementation` **plus** PR identification and verified test evidence. Everything about
 _what to look for_ and _how to write the file_ comes from `/review-implementation` — do not restate or
@@ -310,6 +320,9 @@ A re-review must also re-adjudicate **its own** prior findings against the new c
 — an unchanged 🔴 stays 🔴 with the same ID, and a fixed one is stated as fixed rather than dropped silently.
 
 ## Step 4 — Verify CI evidence before running checks
+
+**Automated service:** use existing CI evidence only. Never execute the manual
+checks below or wait for a running gate. The automation override takes precedence.
 
 Read the target repository's root and applicable nested `AGENTS.md` testing sections. Identify the canonical
 full test command and any separate required test gates, including browser tests.

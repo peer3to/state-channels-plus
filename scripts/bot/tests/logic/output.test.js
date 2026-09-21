@@ -77,6 +77,27 @@ async function fixture(outputs, body) {
     }
 }
 describe("review recorded native output boundary", function () {
+    it("provides the model its remaining budget and deadline", async function () {
+        await fixture(
+            [result()],
+            async ({ service, input, execution, model, root }) => {
+                const before = Date.now();
+                await service.generate(input, execution, input, root);
+                const bound = JSON.parse(
+                    model.prompts[0].split("Controller-bound input:\n")[1]
+                );
+                assert.ok(
+                    bound.modelBudgetRemainingMs > 0 &&
+                        bound.modelBudgetRemainingMs <= 1000
+                );
+                assert.ok(Date.parse(bound.modelDeadlineUtc) >= before);
+                assert.ok(
+                    Date.parse(bound.modelDeadlineUtc) <= Date.now() + 1000
+                );
+                assert.equal(bound.head, input.head);
+            }
+        );
+    });
     it("rejects complete coverage after a permitted evidence read fails", async function () {
         await fixture(
             [result(), result()],

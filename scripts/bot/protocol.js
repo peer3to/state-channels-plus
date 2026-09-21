@@ -378,7 +378,8 @@ function result(value, expected) {
         require("./github-read").permittedUrl(
             source.url,
             expected.repository.name,
-            expected.pr
+            expected.pr,
+            expected.head
         );
         string(source.revision, /^[a-f0-9]{64}$/);
         string(source.contextRevision, /^[a-f0-9]{64}$/);
@@ -392,7 +393,8 @@ function result(value, expected) {
             require("./github-read").permittedUrl(
                 source.next,
                 expected.repository.name,
-                expected.pr
+                expected.pr,
+                expected.head
             );
         if (value.coverage.complete)
             check(
@@ -663,7 +665,8 @@ function failureResult(value, expected) {
             require("./github-read").permittedUrl(
                 url,
                 expected.repository.name,
-                expected.pr
+                expected.pr,
+                expected.head
             );
     }
     return value;
