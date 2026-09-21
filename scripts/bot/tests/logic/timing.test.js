@@ -36,6 +36,20 @@ describe("review model execution budget", () => {
     it("rejects a model budget above thirty minutes", () => {
         assert.throws(() => new ModelBudget(1800001));
     });
+    it("preserves the timeout while quarantining failed termination", async function () {
+        const budget = new ModelBudget(10);
+        await assert.rejects(
+            budget.run(
+                () => new Promise(() => {}),
+                async () => {
+                    throw new Error("cleanup failure must not mask timeout");
+                }
+            ),
+            { code: "REVIEW_TIMEOUT" }
+        );
+        assert.equal(budget.terminationFailed, true);
+        assert.equal(budget.active, null);
+    });
     it("shares the active deadline with the one shared correction", async function () {
         const budget = new ModelBudget(60);
         await budget.run(

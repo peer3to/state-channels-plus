@@ -64,6 +64,10 @@ A valid future GitHub throttle reset is respected. Missing, invalid or expired r
 
 Worker shutdown stops native review processes, closes sessions and releases review resources before closing its pool. Review-enabled graceful shutdown awaits that cleanup; a second interrupt can still force exit. An interrupted registry is quarantined until process termination is established. Do not delete locks as a substitute for stopping an active process.
 
+The native adapter explicitly enables `code_mode_host`: the model uses that gateway to call the constrained source tools. Shell execution, unified exec, browsers, apps and other unrestricted tools remain disabled. Disabling the gateway prevents even permitted source reads. Native shutdown waits within the termination budget for the entire process group to disappear, not just its leader. Cleanup failure keeps the PR quarantined but does not replace the original review error delivered to CI.
+
+After changing native tool configuration, run the live `pinned native adapter acceptance` case that reads tracked source through Code Mode, as well as the detached tests. A model-only timeout probe does not establish that tool dispatch works.
+
 Daily cleanup reads registered worktree manifests, queries GitHub, and rechecks a positive closed/merged state while holding PR ownership. Missing, denied or ambiguous observations preserve data. It deletes only registered native session IDs and owned worktree/report/attempt records. To run the same cleanup manually, stop the worker and use `yarn review-bot:cleanup /absolute/path/to/worker-work-root`.
 
 CI artifact cleanup waits for its consumers and deletes only recorded run/attempt artifacts; ordinary test logs remain. External interruption can leave deletion unconfirmed. Publication is not rolled back if receipt delivery fails.

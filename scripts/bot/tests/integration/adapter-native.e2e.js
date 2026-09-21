@@ -21,7 +21,69 @@ async function snapshot(root) {
 const { CodexAdapter } = require("../../adapters/codex");
 const { configuration } = require("../../config");
 const { ModelBudget } = require("../../timing");
+const { SourceTools } = require("../../source-tools");
+const { gitFixture } = require("../fixtures/git");
 describe("pinned native adapter acceptance", function () {
+    it("reads tracked source through the native Code Mode gateway and releases its process group", async function () {
+        assert.equal(process.env.REVIEW_NATIVE_ACCEPTANCE, "1");
+        await gitFixture(async ({ root, source, input }) => {
+            const config = configuration({
+                stateRoot: path.join(root, "review")
+            });
+            const tools = new SourceTools(
+                source,
+                input,
+                null,
+                path.join(root, "reports")
+            );
+            const before = await snapshot(source);
+            const adapter = new CodexAdapter(config, tools);
+            try {
+                await adapter.open();
+                const args = adapter.process.child.spawnargs;
+                assert.ok(
+                    args.some(
+                        (arg, i) =>
+                            arg === "--enable" &&
+                            args[i + 1] === "code_mode_host"
+                    )
+                );
+                assert.ok(
+                    args.some(
+                        (arg, i) =>
+                            arg === "--disable" && args[i + 1] === "shell_tool"
+                    )
+                );
+                assert.ok(
+                    args.some(
+                        (arg, i) =>
+                            arg === "--disable" &&
+                            args[i + 1] === "unified_exec"
+                    )
+                );
+                await adapter.session(
+                    null,
+                    "Authorized source-only tool integration check. Use only source_read. Do not run shell commands, access credentials, or change files."
+                );
+                const answer = await adapter.turn(
+                    "Call source_read with path README.md, start 1, count 1. Return exactly the line you read, with no formatting or explanation.",
+                    new ModelBudget(45000)
+                );
+                assert.ok(
+                    tools.gatheringMs > 0,
+                    "The real source tool must run."
+                );
+                assert.equal(answer.trim(), "Reviewed source.");
+                assert.deepEqual(await snapshot(source), before);
+            } finally {
+                await adapter.stop();
+            }
+            assert.equal(tools.closed, true);
+            assert.throws(() => process.kill(-adapter.process.child.pid, 0), {
+                code: "ESRCH"
+            });
+        });
+    });
     it("expires a shortened native turn and verifies process exit before reuse", async function () {
         assert.equal(
             process.env.REVIEW_NATIVE_ACCEPTANCE,
@@ -60,6 +122,12 @@ describe("pinned native adapter acceptance", function () {
                 "This is an authorized native lifecycle probe. Do not use any tools or write files."
             );
             assert.ok(thread);
+            // Establish persisted history before testing reuse after interruption.
+            // A brand-new thread killed after 1 ms may never reach disk.
+            await adapter.turn(
+                "Reply with ready. Do not use tools.",
+                new ModelBudget(45000)
+            );
             await assert.rejects(
                 adapter.turn(
                     "Explain why immutable source revisions matter in code review. Do not use tools.",

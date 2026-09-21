@@ -303,7 +303,9 @@ class ReviewService {
                 outputRoot
             );
         } catch (error) {
-            await adapter.stop();
+            // release() retries the same stop promise and quarantines failures.
+            // Cleanup must not replace the original model/validation error.
+            await adapter.stop().catch(() => {});
             const failure = sanitized(error);
             failure.diagnostics = {
                 requests: budget.requests,

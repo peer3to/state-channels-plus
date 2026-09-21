@@ -47,9 +47,8 @@ class ModelBudget {
             if (expired) {
                 try {
                     await stop();
-                } catch (error) {
+                } catch {
                     this.terminationFailed = true;
-                    throw error;
                 }
             }
         }

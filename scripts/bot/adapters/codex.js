@@ -15,7 +15,6 @@ const DISABLED = [
     "multi_agent",
     "shell_tool",
     "unified_exec",
-    "code_mode_host",
     "image_generation",
     "view_image",
     "workspace_dependencies",
@@ -158,11 +157,19 @@ class NativeProcess extends EventEmitter {
         } finally {
             clearTimeout(exitTimer);
         }
-        try {
-            process.kill(-pid, 0);
-            throw new ReviewError("SERVICE_UNAVAILABLE");
-        } catch (error) {
-            if (error.code !== "ESRCH") throw error;
+        // The leader can exit before its signalled descendants are reaped.
+        while (true) {
+            try {
+                process.kill(-pid, 0);
+            } catch (error) {
+                if (error.code === "ESRCH") return;
+                throw error;
+            }
+            const remaining = deadline - performance.now();
+            check(remaining > 0, "SERVICE_UNAVAILABLE");
+            await new Promise((resolve) =>
+                setTimeout(resolve, Math.min(25, remaining))
+            );
         }
     }
 }
@@ -260,6 +267,8 @@ class CodexAdapter {
             "MODEL_UNAVAILABLE"
         );
         const args = DISABLED.flatMap((name) => ["--disable", name]);
+        // Dynamic source tools use Code Mode; this does not enable shell tools.
+        args.push("--enable", "code_mode_host");
         args.push("-c", 'web_search="disabled"', "app-server");
         this.process = new NativeProcess(this.config.codexPath, args, {
             cwd: this.config.runtimeRoot,
@@ -423,7 +432,9 @@ class CodexAdapter {
                         await onMessage(message);
                     return await complete;
                 } catch (error) {
-                    await this.stop();
+                    // Keep the triggering error; the rejected stop promise still
+                    // prevents the session owner from releasing this PR.
+                    await this.stop().catch(() => {});
                     throw error;
                 } finally {
                     this.process.off("message", onMessage);
