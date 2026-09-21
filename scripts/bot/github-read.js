@@ -137,7 +137,7 @@ class ContextBudget {
         );
     }
 }
-function permittedUrl(value, repository, pr = null) {
+function permittedUrl(value, repository, pr = null, head = null) {
     const url = new URL(value);
     check(
         url.protocol === "https:" &&
@@ -167,6 +167,13 @@ function permittedUrl(value, repository, pr = null) {
                       `^pull/${pr}(?:/(?:files|commits|conversation|review|reviews|show_partial|timeline))?$`
                   )
               ];
+    if (pr !== null && url.hostname === "api.github.com") {
+        patterns.push(new RegExp(`^issues/${pr}/timeline$`));
+        if (/^[a-f0-9]{40}$/.test(head || ""))
+            patterns.push(
+                new RegExp(`^commits/${head}/(?:check-runs|status)$`)
+            );
+    }
     check(
         patterns.some((pattern) => pattern.test(suffix)),
         "CONTEXT_UNAVAILABLE"
@@ -188,13 +195,82 @@ function permittedUrl(value, repository, pr = null) {
     );
     return url;
 }
-function decodePage(url, body, contentType, repository, pr) {
+function decodePage(url, body, contentType, repository, pr, head = null) {
+    const pathname = new URL(url).pathname;
+    const commitEvidence = /\/commits\/[^/]+\/(?:check-runs|status)$/.test(
+        pathname
+    );
+    const timeline = pathname === `/repos/${repository}/issues/${pr}/timeline`;
+    if (commitEvidence || timeline) {
+        permittedUrl(url, repository, pr, head);
+        check(contentType.includes("json"), "CONTEXT_UNAVAILABLE");
+    }
     if (contentType.includes("json")) {
         let value;
         try {
             value = JSON.parse(body);
         } catch {
             throw new ReviewError("CONTEXT_UNAVAILABLE");
+        }
+        if (timeline) {
+            check(
+                Array.isArray(value) &&
+                    value.every(
+                        (event) =>
+                            event &&
+                            typeof event === "object" &&
+                            typeof event.event === "string" &&
+                            event.event.length > 0
+                    ),
+                "CONTEXT_UNAVAILABLE"
+            );
+            return value;
+        }
+        if (commitEvidence) {
+            const checks = pathname.endsWith("/check-runs");
+            const entries = checks ? value?.check_runs : value?.statuses;
+            check(
+                value &&
+                    !Array.isArray(value) &&
+                    Number.isSafeInteger(value.total_count) &&
+                    Array.isArray(entries) &&
+                    value.total_count >= entries.length,
+                "CONTEXT_UNAVAILABLE"
+            );
+            if (checks) {
+                check(
+                    entries.every(
+                        (run) =>
+                            run &&
+                            Number.isSafeInteger(run.id) &&
+                            run.id > 0 &&
+                            run.head_sha === head &&
+                            typeof run.name === "string" &&
+                            typeof run.status === "string" &&
+                            run.status.length > 0 &&
+                            (run.conclusion === null ||
+                                typeof run.conclusion === "string")
+                    ),
+                    "CONTEXT_UNAVAILABLE"
+                );
+            } else {
+                const states = ["error", "failure", "pending", "success"];
+                check(
+                    value.sha === head &&
+                        value.repository?.full_name === repository &&
+                        states.includes(value.state) &&
+                        entries.every(
+                            (status) =>
+                                status &&
+                                Number.isSafeInteger(status.id) &&
+                                status.id > 0 &&
+                                typeof status.context === "string" &&
+                                states.includes(status.state)
+                        ),
+                    "CONTEXT_UNAVAILABLE"
+                );
+            }
+            return value;
         }
         check(
             Array.isArray(value) ||
@@ -213,8 +289,9 @@ function decodePage(url, body, contentType, repository, pr) {
         return value;
     }
     const identity = `/${repository}/pull/${pr}`;
-    const head = body.match(/<head(?:\s[^>]*)?>([\s\S]*?)<\/head>/i)?.[1] || "";
-    const canonical = [...head.matchAll(/<link\b[^>]*>/gi)].some(
+    const htmlHead =
+        body.match(/<head(?:\s[^>]*)?>([\s\S]*?)<\/head>/i)?.[1] || "";
+    const canonical = [...htmlHead.matchAll(/<link\b[^>]*>/gi)].some(
         ([tag]) =>
             /\brel=["']canonical["']/i.test(tag) &&
             tag.includes(`href="https://github.com${identity}"`)
@@ -237,15 +314,18 @@ class PublicGitHub {
     repository;
     repositoryId;
     pr;
+    head;
     budget;
     exchange;
     controller = new AbortController();
-    constructor(repository, pr, budget, exchange = fetch) {
+    constructor(repository, pr, budget, exchange = fetch, head = null) {
         this.repository =
             typeof repository === "string" ? repository : repository.name;
         this.repositoryId =
             typeof repository === "string" ? null : repository.id;
         this.pr = pr;
+        check(head === null || /^[a-f0-9]{40}$/.test(head), "INVALID_REQUEST");
+        this.head = head;
         this.budget = budget;
         this.exchange = exchange;
     }
@@ -260,7 +340,7 @@ class PublicGitHub {
                 `/repositories/${this.repositoryId}/`,
                 `/repos/${this.repository}/`
             );
-        return permittedUrl(url.href, this.repository, this.pr);
+        return permittedUrl(url.href, this.repository, this.pr, this.head);
     }
     async read(input) {
         try {
@@ -331,7 +411,8 @@ class PublicGitHub {
                 body,
                 response.headers.get("content-type") || "",
                 this.repository,
-                this.pr
+                this.pr,
+                this.head
             );
             let next =
                 response.headers

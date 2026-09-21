@@ -22,6 +22,8 @@ The worker advertises the review capability in `SERVER_READY`. The client negoti
 
 The current deployment assumes one review-capable worker. Native sessions and publication receipt delivery belong to that worker; there is no replicated session store or failover. Deploy the same bot revision and vendored skill that CI uses. Mismatched revisions fail visibly instead of silently switching review behavior.
 
+Public evidence reads include the assigned PR's timeline and the exact controller-bound head commit's check runs and combined status. CI endpoints require a pinned head; branches and other commits are not permitted. Responses retain revision, status and conclusion, and malformed or mismatched evidence fails closed. Redirects and pagination links use the same repository/PR/commit restrictions and context budget. Empty check collections and pending status are evidence, not proof that CI passed.
+
 ## CLI invocation and skills
 
 `adapters/codex.js` starts `codex app-server` with execution and unrelated tools disabled, then communicates through stdin/stdout. It initializes the app server, checks the account and model, and starts or resumes the PR's native thread.

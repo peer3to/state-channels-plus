@@ -192,7 +192,9 @@ class ReviewService {
                             new ContextBudget(
                                 this.config.limits,
                                 this.publicAccounting
-                            )
+                            ),
+                            undefined,
+                            input.head
                         );
                         const pr = await context.read(
                             `https://api.github.com/repos/${input.repository.name}/pulls/${input.pr}`
@@ -243,7 +245,9 @@ class ReviewService {
             new PublicGitHub(
                 input.repository,
                 input.pr,
-                new ContextBudget(this.config.limits, this.publicAccounting)
+                new ContextBudget(this.config.limits, this.publicAccounting),
+                undefined,
+                input.head
             );
         const budget = context.budget;
         execution.context = context;
