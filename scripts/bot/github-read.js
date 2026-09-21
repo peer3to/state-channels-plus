@@ -137,8 +137,15 @@ class ContextBudget {
         );
     }
 }
+function publicUrl(value) {
+    try {
+        return new URL(value);
+    } catch {
+        throw new ReviewError("CONTEXT_UNAVAILABLE");
+    }
+}
 function permittedUrl(value, repository, pr = null, head = null) {
-    const url = new URL(value);
+    const url = publicUrl(value);
     check(
         url.protocol === "https:" &&
             !url.username &&
@@ -155,6 +162,20 @@ function permittedUrl(value, repository, pr = null, head = null) {
               : null;
     check(prefix && url.pathname.startsWith(prefix), "CONTEXT_UNAVAILABLE");
     const suffix = url.pathname.slice(prefix.length);
+    if (suffix === "actions/runs") {
+        check(
+            pr !== null &&
+                url.hostname === "api.github.com" &&
+                /^[a-f0-9]{40}$/.test(head || "") &&
+                url.searchParams.getAll("head_sha").length === 1 &&
+                url.searchParams.get("head_sha") === head &&
+                [...url.searchParams.keys()].every((key) =>
+                    ["head_sha", "page", "per_page"].includes(key)
+                ),
+            "CONTEXT_UNAVAILABLE"
+        );
+        return url;
+    }
     const patterns =
         pr === null
             ? [/^pulls(?:\/[1-9][0-9]*)?$/]
@@ -201,7 +222,8 @@ function decodePage(url, body, contentType, repository, pr, head = null) {
         pathname
     );
     const timeline = pathname === `/repos/${repository}/issues/${pr}/timeline`;
-    if (commitEvidence || timeline) {
+    const workflowRuns = pathname === `/repos/${repository}/actions/runs`;
+    if (commitEvidence || timeline || workflowRuns) {
         permittedUrl(url, repository, pr, head);
         check(contentType.includes("json"), "CONTEXT_UNAVAILABLE");
     }
@@ -226,9 +248,13 @@ function decodePage(url, body, contentType, repository, pr, head = null) {
             );
             return value;
         }
-        if (commitEvidence) {
+        if (commitEvidence || workflowRuns) {
             const checks = pathname.endsWith("/check-runs");
-            const entries = checks ? value?.check_runs : value?.statuses;
+            const entries = workflowRuns
+                ? value?.workflow_runs
+                : checks
+                  ? value?.check_runs
+                  : value?.statuses;
             check(
                 value &&
                     !Array.isArray(value) &&
@@ -237,7 +263,23 @@ function decodePage(url, body, contentType, repository, pr, head = null) {
                     value.total_count >= entries.length,
                 "CONTEXT_UNAVAILABLE"
             );
-            if (checks) {
+            if (workflowRuns) {
+                check(
+                    entries.every(
+                        (run) =>
+                            run &&
+                            Number.isSafeInteger(run.id) &&
+                            run.id > 0 &&
+                            run.head_sha === head &&
+                            run.repository?.full_name === repository &&
+                            typeof run.status === "string" &&
+                            run.status.length > 0 &&
+                            (run.conclusion === null ||
+                                typeof run.conclusion === "string")
+                    ),
+                    "CONTEXT_UNAVAILABLE"
+                );
+            } else if (checks) {
                 check(
                     entries.every(
                         (run) =>
@@ -317,6 +359,8 @@ class PublicGitHub {
     head;
     budget;
     exchange;
+    // Canonical permitted URLs whose latest attempted read has not succeeded.
+    unavailable = new Set();
     controller = new AbortController();
     constructor(repository, pr, budget, exchange = fetch, head = null) {
         this.repository =
@@ -330,7 +374,7 @@ class PublicGitHub {
         this.exchange = exchange;
     }
     permitted(input) {
-        const url = new URL(input);
+        const url = publicUrl(input);
         if (
             this.repositoryId &&
             url.hostname === "api.github.com" &&
@@ -343,9 +387,13 @@ class PublicGitHub {
         return permittedUrl(url.href, this.repository, this.pr, this.head);
     }
     async read(input) {
+        const url = this.permitted(input).href;
         try {
-            return await this.readWithinBudget(input);
+            const page = await this.readWithinBudget(url);
+            this.unavailable.delete(url);
+            return page;
         } catch (error) {
+            this.unavailable.add(url);
             if (error?.name === "TimeoutError" || error?.name === "AbortError")
                 throw new ReviewError(
                     this.budget.remaining() <= 0
@@ -449,6 +497,7 @@ class PublicGitHub {
             `/repos/${this.repository}/pulls/${this.pr}/reviews`
         ];
         return (
+            this.unavailable.size === 0 &&
             required.every((route) => paths.includes(route)) &&
             this.budget.sources.every(
                 (source) =>

@@ -24,6 +24,10 @@ The current deployment assumes one review-capable worker. Native sessions and pu
 
 Public evidence reads include the assigned PR's timeline and the exact controller-bound head commit's check runs and combined status. CI endpoints require a pinned head; branches and other commits are not permitted. Responses retain revision, status and conclusion, and malformed or mismatched evidence fails closed. Redirects and pagination links use the same repository/PR/commit restrictions and context budget. Empty check collections and pending status are evidence, not proof that CI passed.
 
+Workflow-run listings require exactly one `head_sha` matching that same head; only pagination parameters are allowed alongside it. Returned runs must belong to the assigned repository and head. Other Actions endpoints remain denied.
+
+Tool-local invalid arguments, denied operations, unavailable public evidence and temporary tool concurrency limits return sanitized failed-tool results to the model. They do not grant access or count as evidence. Failed permitted public reads prevent a complete result until successfully retried; unrequested required discussion evidence still prevents completeness. Exhausted budgets, rate limits, identity mismatches, isolation violations and infrastructure failures remain fatal. Native acceptance includes a rejected public read followed by a successful source read in the same turn.
+
 ## CLI invocation and skills
 
 `adapters/codex.js` starts `codex app-server` with execution and unrelated tools disabled, then communicates through stdin/stdout. It initializes the app server, checks the account and model, and starts or resumes the PR's native thread.

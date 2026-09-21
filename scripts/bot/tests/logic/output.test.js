@@ -77,6 +77,32 @@ async function fixture(outputs, body) {
     }
 }
 describe("review recorded native output boundary", function () {
+    it("rejects complete coverage after a permitted evidence read fails", async function () {
+        await fixture(
+            [result(), result()],
+            async ({ service, input, execution, root }) => {
+                const route = `/repos/${input.repository.name}/pulls/${input.pr}/files`;
+                const failure = new RecordedGitHub([
+                    { path: route, status: 503, response: {} }
+                ]);
+                execution.context.exchange = failure.exchange.bind(failure);
+                assert.equal(execution.context.gathered(), true);
+                await assert.rejects(
+                    execution.context.read(`https://api.github.com${route}`),
+                    { code: "CONTEXT_UNAVAILABLE" }
+                );
+                failure.done();
+                await assert.rejects(
+                    service.generate(input, execution, input, root),
+                    { code: "INVALID_RESULT" }
+                );
+                await assert.rejects(
+                    fs.access(path.join(root, `${input.attempt}-1.json`)),
+                    { code: "ENOENT" }
+                );
+            }
+        );
+    });
     it("returns a valid first result without a corrective turn", async function () {
         await fixture(
             [result()],

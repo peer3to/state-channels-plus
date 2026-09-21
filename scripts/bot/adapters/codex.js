@@ -2,7 +2,7 @@ const { spawn, execFileSync } = require("node:child_process");
 const fs = require("node:fs/promises");
 const { EventEmitter } = require("node:events");
 const { check, exact } = require("../data");
-const { ReviewError } = require("../errors");
+const { ReviewError, sanitized } = require("../errors");
 const { MODEL } = require("../config");
 const DISABLED = [
     "apps",
@@ -35,6 +35,34 @@ function providerFailure(error) {
         return new ReviewError("SUBSCRIPTION_LIMIT");
     if (info === "unauthorized") return new ReviewError("LOGIN_EXPIRED");
     return new ReviewError("SERVICE_UNAVAILABLE");
+}
+function toolFailureResult(error) {
+    // Only tool-local input/availability failures are recoverable. Transport
+    // identity checks and infrastructure/budget failures remain fail-closed.
+    if (
+        !(error instanceof ReviewError) ||
+        ![
+            "INVALID_REQUEST",
+            "UNAUTHORIZED",
+            "CONTEXT_UNAVAILABLE",
+            "BUSY"
+        ].includes(error.code)
+    )
+        throw error;
+    const safe = sanitized(error);
+    return {
+        success: false,
+        contentItems: [
+            {
+                type: "inputText",
+                text: JSON.stringify({
+                    error: { code: safe.code, message: safe.message },
+                    guidance:
+                        "This tool request failed; it supplied no evidence. Use permitted requests or correct the arguments. Keep coverage incomplete if required evidence remains unavailable."
+                })
+            }
+        ]
+    };
 }
 class NativeProcess extends EventEmitter {
     child;
@@ -366,25 +394,12 @@ class CodexAdapter {
                                     message.params.turnId === startedId,
                                 "UNAUTHORIZED"
                             );
-                            const output = JSON.stringify(
-                                await this.tools.call(
+                            this.process.write({
+                                id: message.id,
+                                result: await this.toolResult(
                                     message.params.tool,
                                     message.params.arguments
                                 )
-                            );
-                            check(
-                                Buffer.byteLength(output) <=
-                                    this.config.limits.maxBytes,
-                                "CONTEXT_BUDGET_EXCEEDED"
-                            );
-                            this.process.write({
-                                id: message.id,
-                                result: {
-                                    contentItems: [
-                                        { type: "inputText", text: output }
-                                    ],
-                                    success: true
-                                }
                             });
                         } else if (message.id !== undefined) {
                             this.process.write({
@@ -444,6 +459,23 @@ class CodexAdapter {
             () => this.stop()
         );
     }
+    async toolResult(name, input) {
+        let value;
+        try {
+            value = await this.tools.call(name, input);
+        } catch (error) {
+            return toolFailureResult(error);
+        }
+        const output = JSON.stringify(value);
+        check(
+            Buffer.byteLength(output) <= this.config.limits.maxBytes,
+            "CONTEXT_BUDGET_EXCEEDED"
+        );
+        return {
+            contentItems: [{ type: "inputText", text: output }],
+            success: true
+        };
+    }
     async read(threadId) {
         return this.process.request("thread/read", {
             threadId,
@@ -482,5 +514,6 @@ module.exports = {
     CodexAdapter,
     NativeProcess,
     providerFailure,
+    toolFailureResult,
     TOOLS
 };

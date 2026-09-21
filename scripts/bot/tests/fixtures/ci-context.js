@@ -7,6 +7,22 @@ const prefix = `/repos/${input.repository.name}`;
 const checksPath = `${prefix}/commits/${input.head}/check-runs`;
 const statusPath = `${prefix}/commits/${input.head}/status`;
 const timelinePath = `${prefix}/issues/${input.pr}/timeline`;
+const runsPath = `${prefix}/actions/runs?head_sha=${input.head}`;
+function runs(overrides = {}) {
+    return {
+        total_count: 1,
+        workflow_runs: [
+            {
+                id: 21,
+                head_sha: input.head,
+                repository: { full_name: input.repository.name },
+                status: "completed",
+                conclusion: "failure"
+            }
+        ],
+        ...overrides
+    };
+}
 function checks(overrides = {}) {
     return {
         total_count: 1,
@@ -50,6 +66,8 @@ module.exports = {
     checksPath,
     statusPath,
     timelinePath,
+    runsPath,
+    runs,
     checks,
     status,
     context

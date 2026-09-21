@@ -10,7 +10,155 @@ const {
     context
 } = require("../fixtures/ci-context");
 const url = (route) => `https://api.github.com${route}`;
+const { runsPath, runs } = require("../fixtures/ci-context");
 describe("review pinned CI context", function () {
+    it("returns a typed recoverable failure for malformed public URLs without fetching", async function () {
+        const { owner, wire, budget } = context([]);
+        await assert.rejects(owner.read("not a URL"), {
+            code: "CONTEXT_UNAVAILABLE"
+        });
+        assert.equal(budget.requests, 0);
+        wire.done();
+    });
+    it("reads workflow runs with pinned-head pagination and preserves failures", async function () {
+        const { owner, wire, budget } = context([
+            {
+                path: runsPath,
+                response: runs({ total_count: 2 }),
+                headers: { link: `<${url(runsPath)}&page=2>; rel="next"` }
+            },
+            { path: `${runsPath}&page=2`, response: runs({ total_count: 2 }) }
+        ]);
+        const first = await owner.read(url(runsPath));
+        assert.equal(first.data.workflow_runs[0].conclusion, "failure");
+        assert.deepEqual(
+            (await owner.read(first.next)).data,
+            runs({ total_count: 2 })
+        );
+        assert.equal(budget.pages, 2);
+        wire.done();
+    });
+    it("accepts an empty workflow-run collection", async function () {
+        const { owner, wire } = context([
+            {
+                path: runsPath,
+                response: runs({ total_count: 0, workflow_runs: [] })
+            }
+        ]);
+        assert.deepEqual(
+            (await owner.read(url(runsPath))).data.workflow_runs,
+            []
+        );
+        wire.done();
+    });
+    it("rejects unpinned or ambiguous workflow-run queries before fetching", async function () {
+        const { owner, wire, budget } = context([]);
+        for (const route of [
+            `${prefix}/actions/runs`,
+            `${prefix}/actions/runs?head_sha=main`,
+            `${prefix}/actions/runs?head_sha=${"f".repeat(40)}`,
+            `${runsPath}&head_sha=${input.head}`,
+            `${runsPath}&branch=main`,
+            `${prefix}/actions/runs/21/jobs?head_sha=${input.head}`
+        ])
+            await assert.rejects(owner.read(url(route)), {
+                code: "CONTEXT_UNAVAILABLE"
+            });
+        assert.equal(budget.requests, 0);
+        wire.done();
+    });
+    it("rejects cross-repository workflow reads and missing controller scope", async function () {
+        const { owner, wire } = context([], null);
+        await assert.rejects(owner.read(url(runsPath)), {
+            code: "CONTEXT_UNAVAILABLE"
+        });
+        wire.done();
+        const pinned = context([]);
+        await assert.rejects(
+            pinned.owner.read(
+                url(`/repos/other/repo/actions/runs?head_sha=${input.head}`)
+            ),
+            { code: "CONTEXT_UNAVAILABLE" }
+        );
+        await assert.rejects(
+            pinned.owner.read(
+                `https://github.com/${input.repository.name}/actions/runs?head_sha=${input.head}`
+            ),
+            { code: "CONTEXT_UNAVAILABLE" }
+        );
+        pinned.wire.done();
+    });
+    it("rejects workflow data for another revision or repository and malformed collections", async function () {
+        const foreignHead = runs();
+        foreignHead.workflow_runs[0].head_sha = "f".repeat(40);
+        const foreignRepo = runs();
+        foreignRepo.workflow_runs[0].repository.full_name = "other/repo";
+        const { owner, wire, budget } = context([
+            { path: runsPath, response: foreignHead },
+            { path: runsPath, response: foreignRepo },
+            { path: runsPath, response: { total_count: 1 } },
+            { path: runsPath, response: runs({ total_count: 0 }) }
+        ]);
+        for (let i = 0; i < 4; i++)
+            await assert.rejects(owner.read(url(runsPath)), {
+                code: "CONTEXT_UNAVAILABLE"
+            });
+        assert.equal(budget.pages, 0);
+        wire.done();
+    });
+    it("rejects workflow redirects and next pages that remove the head restriction", async function () {
+        const unpinned = url(`${prefix}/actions/runs?page=2`);
+        const { owner, wire, budget } = context([
+            {
+                path: runsPath,
+                status: 302,
+                response: {},
+                headers: { location: unpinned }
+            },
+            {
+                path: runsPath,
+                response: runs(),
+                headers: { link: `<${unpinned}>; rel="next"` }
+            }
+        ]);
+        await assert.rejects(owner.read(url(runsPath)), {
+            code: "CONTEXT_UNAVAILABLE"
+        });
+        await assert.rejects(owner.read(url(runsPath)), {
+            code: "CONTEXT_UNAVAILABLE"
+        });
+        assert.equal(budget.requests, 2);
+        assert.equal(budget.pages, 0);
+        wire.done();
+    });
+    it("keeps failed permitted evidence incomplete until a successful retry", async function () {
+        const required = [
+            {
+                path: `${prefix}/pulls/${input.pr}`,
+                response: {
+                    number: input.pr,
+                    base: { repo: { full_name: input.repository.name } }
+                }
+            },
+            { path: `${prefix}/issues/${input.pr}/comments`, response: [] },
+            { path: `${prefix}/pulls/${input.pr}/comments`, response: [] },
+            { path: `${prefix}/pulls/${input.pr}/reviews`, response: [] }
+        ];
+        const { owner, wire } = context([
+            ...required,
+            { path: runsPath, status: 503, response: {} },
+            { path: runsPath, response: runs() }
+        ]);
+        for (const item of required) await owner.read(url(item.path));
+        assert.equal(owner.gathered(), true);
+        await assert.rejects(owner.read(url(runsPath)), {
+            code: "CONTEXT_UNAVAILABLE"
+        });
+        assert.equal(owner.gathered(), false);
+        await owner.read(url(runsPath));
+        assert.equal(owner.gathered(), true);
+        wire.done();
+    });
     it("reads and accounts for timeline pages for the assigned PR", async function () {
         const { owner, wire, budget } = context([
             {

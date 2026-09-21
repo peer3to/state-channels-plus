@@ -23,7 +23,59 @@ const { configuration } = require("../../config");
 const { ModelBudget } = require("../../timing");
 const { SourceTools } = require("../../source-tools");
 const { gitFixture } = require("../fixtures/git");
+const { PublicGitHub, ContextBudget } = require("../../github-read");
+const { ObservedSourceTools } = require("../fixtures/observed-source-tools");
 describe("pinned native adapter acceptance", function () {
+    it("continues with permitted source reads after a denied public-context tool call", async function () {
+        assert.equal(process.env.REVIEW_NATIVE_ACCEPTANCE, "1");
+        await gitFixture(async ({ root, source, input }) => {
+            const config = configuration({
+                stateRoot: path.join(root, "review")
+            });
+            const context = new PublicGitHub(
+                input.repository,
+                input.pr,
+                new ContextBudget(config.limits),
+                undefined,
+                input.head
+            );
+            const tools = new ObservedSourceTools(
+                source,
+                input,
+                context,
+                path.join(root, "reports")
+            );
+            const adapter = new CodexAdapter(config, tools);
+            const before = await snapshot(source);
+            try {
+                await adapter.open();
+                await adapter.session(
+                    null,
+                    "Authorized tool-error recovery test. Follow the requested sequence, treat failed reads as no evidence, and never use shells or change files."
+                );
+                const answer = await adapter.turn(
+                    "First call public_github_read with URL https://example.invalid/denied. This is an intentional allowlist rejection test, not permission to bypass restrictions. After observing that failure, call source_read for README.md, start 1, count 1. Return only the line read from README.md.",
+                    new ModelBudget(45000)
+                );
+                assert.deepEqual(tools.outcomes.slice(0, 2), [
+                    {
+                        name: "public_github_read",
+                        success: false,
+                        code: "CONTEXT_UNAVAILABLE"
+                    },
+                    { name: "source_read", success: true }
+                ]);
+                assert.equal(context.budget.requests, 0);
+                assert.equal(answer.trim(), "Reviewed source.");
+                assert.deepEqual(await snapshot(source), before);
+            } finally {
+                await adapter.stop();
+            }
+            assert.throws(() => process.kill(-adapter.process.child.pid, 0), {
+                code: "ESRCH"
+            });
+        });
+    });
     it("reads tracked source through the native Code Mode gateway and releases its process group", async function () {
         assert.equal(process.env.REVIEW_NATIVE_ACCEPTANCE, "1");
         await gitFixture(async ({ root, source, input }) => {
