@@ -292,6 +292,13 @@ yarn test:parallel:server \
   --work-root /your/chosen/directory
 ```
 
+Add `--review` to the same worker command to also offer Codex PR reviews. The
+worker reuses its identity, pool secret and authorization policy, announces the
+review discovery topics, and stores review state under `<work-root>/review/`.
+Codex must be installed on PATH and logged in as the worker user. No separate
+review-server command or configuration file is needed. See
+[PR review setup](docs/pr-review-bot.md).
+
 All worker-managed files then live under `/your/chosen/directory`; nothing is
 written to `temp/distributed-worker/`. Use an empty, writable directory on fast
 local storage. `--allow-shared-host` requires an explicit `--work-root`; startup
@@ -433,3 +440,7 @@ Files are automatically formatted when you commit changes. The pre-commit hook w
 
 # License
 MIT
+
+## Automated PR review
+
+See the [persistent PR review service guide](docs/pr-review-bot.md) for setup, account and host prerequisites, CI ownership, recovery and acceptance.

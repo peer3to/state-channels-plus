@@ -8,11 +8,306 @@ on:
             - reopened
 
 concurrency:
-    group: distributed-test-pool
+    group: state-channels-plus-ci
+    queue: max
     cancel-in-progress: false
 
+permissions:
+    contents: read
+
 jobs:
+    head-check:
+        runs-on: ubuntu-latest
+        timeout-minutes: 5
+        permissions:
+            pull-requests: read
+        outputs:
+            current: ${{ steps.admit.outputs.current }}
+            eligible: ${{ steps.admit.outputs.eligible }}
+        steps:
+            - name: Admit immutable PR head
+              id: admit
+              uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8
+              with:
+                  script: |
+                      const fs = require('node:fs/promises');
+                      const path = require('node:path');
+                      const pr = context.payload.pull_request;
+                      if (!pr) { core.setOutput('current', 'false'); core.setOutput('eligible', 'false'); return; }
+                      const trusted = pr.head.repo.id === context.payload.repository.id && context.actor !== 'dependabot[bot]';
+                      const revision = trusted ? pr.head.sha : pr.base.sha;
+                      if (!/^[a-f0-9]{40}$/.test(revision)) throw new Error('Invalid controller revision');
+                      const root = path.join(process.env.RUNNER_TEMP, 'review-admission');
+                      await fs.mkdir(root, { recursive: true, mode: 0o700 });
+                      for (const name of ['head-check.js', 'github-write.js', 'data.js', 'errors.js']) {
+                        const response = await fetch(`https://raw.githubusercontent.com/${context.repo.owner}/${context.repo.repo}/${revision}/scripts/bot/${name}`);
+                        if (!response.ok) throw new Error('Could not load pinned admission code');
+                        const source = await response.text();
+                        if (source.length > 65536) throw new Error('Admission source is too large');
+                        await fs.writeFile(path.join(root, name), source, { mode: 0o600 });
+                      }
+                      const { admit } = require(path.join(root, 'head-check.js'));
+                      const result = await admit(context.payload, context.actor, process.env.GITHUB_TOKEN);
+                      core.setOutput('current', String(result.current));
+                      core.setOutput('eligible', String(result.eligible));
+              env:
+                  GITHUB_TOKEN: ${{ github.token }}
+
+    # Temporary acceptance: keep these jobs and edges until Luka explicitly accepts.
+    review-bot-tests:
+        needs: head-check
+        if: needs.head-check.outputs.current == 'true'
+        runs-on: ubuntu-latest
+        timeout-minutes: 15
+        steps:
+            - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+              with:
+                  ref: ${{ github.event.pull_request.head.sha }}
+                  persist-credentials: false
+            - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+              with:
+                  node-version: 22.12.0
+            - run: yarn install --frozen-lockfile --ignore-scripts
+            - run: yarn review-bot:test
+
+    review-model:
+        needs: [head-check, review-bot-tests] # Temporary feature-only dependency.
+        if: needs.head-check.outputs.current == 'true' && needs.head-check.outputs.eligible == 'true'
+        runs-on: ubuntu-latest
+        timeout-minutes: 80
+        permissions:
+            contents: read
+            pull-requests: read
+            issues: read
+            actions: read
+        outputs:
+            caller: ${{ steps.request.outputs.caller }}
+            artifact: ${{ steps.result.outputs.artifact-id }}
+            digest: ${{ steps.result-digest.outputs.digest }}
+        steps:
+            - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+              with:
+                  ref: ${{ github.event.pull_request.head.sha }}
+                  fetch-depth: 0
+                  persist-credentials: false
+            - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+              with:
+                  node-version: 22.12.0
+            - run: yarn install --frozen-lockfile --ignore-scripts
+            - name: Bind review request
+              id: request
+              run: node scripts/bot/request.js temp/review-handoff/request.json
+              env:
+                  SCP_TEST_ORCHESTRATOR_SEED: ${{ secrets.SCP_TEST_ORCHESTRATOR_SEED }}
+            - name: Request source-only review
+              id: model
+              run: yarn review-bot:review temp/review-handoff/request.json temp/review-handoff/result.json
+              env:
+                  SCP_TEST_POOL_SECRET: ${{ secrets.SCP_TEST_POOL_SECRET }}
+                  SCP_TEST_ORCHESTRATOR_SEED: ${{ secrets.SCP_TEST_ORCHESTRATOR_SEED }}
+                  SCP_REVIEW_CLIENT_STATE: ${{ runner.temp }}/review-client
+            - name: Bind result file digest
+              id: result-digest
+              if: ${{ !cancelled() && (steps.model.outcome == 'success' || steps.model.outcome == 'failure') && hashFiles('temp/review-handoff/result.json') != '' }}
+              run: node scripts/bot/handoff.js digest temp/review-handoff >> "$GITHUB_OUTPUT"
+            - name: Preserve validated result or failure outcome
+              id: result
+              if: ${{ !cancelled() && steps.result-digest.outcome == 'success' && (steps.model.outcome == 'success' || steps.model.outcome == 'failure') && hashFiles('temp/review-handoff/result.json') != '' }}
+              uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+              with:
+                  name: review-${{ github.run_id }}-${{ github.run_attempt }}-result
+                  path: temp/review-handoff/
+                  retention-days: 1
+                  if-no-files-found: error
+
+    review-publish:
+        needs: [head-check, review-model]
+        if: ${{ !cancelled() && needs.head-check.result == 'success' && needs.head-check.outputs.current == 'true' && needs.head-check.outputs.eligible == 'true' && needs.review-model.outputs.artifact != '' && (needs.review-model.result == 'success' || needs.review-model.result == 'failure') }}
+        runs-on: ubuntu-latest
+        timeout-minutes: 55
+        permissions:
+            contents: read
+            pull-requests: write
+            issues: write
+            actions: read
+        outputs:
+            artifact: ${{ steps.receipt.outputs.artifact-id }}
+            digest: ${{ steps.receipt-digest.outputs.digest }}
+            has-receipt: ${{ steps.publish-final.outputs.receipt || steps.publish.outputs.receipt }}
+        steps:
+            - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+              with:
+                  ref: ${{ github.event.pull_request.head.sha }}
+                  fetch-depth: 0
+                  persist-credentials: false
+            - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+              with:
+                  node-version: 22.12.0
+            - run: yarn install --frozen-lockfile --ignore-scripts
+            - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+              with:
+                  artifact-ids: ${{ needs.review-model.outputs.artifact }}
+                  path: temp/review-download
+            - name: Validate result handoff ownership
+              run: node scripts/bot/handoff.js result '${{ needs.review-model.outputs.artifact }}' temp/review-download temp/review-handoff
+              env:
+                  REVIEW_HANDOFF_DIGEST: ${{ needs.review-model.outputs.digest }}
+                  GITHUB_TOKEN: ${{ github.token }}
+            - name: Inspect required accounting
+              id: inspect
+              if: needs.review-model.result == 'success'
+              run: yarn review-bot:publish inspect temp/review-handoff/request.json temp/review-handoff/result.json temp/review-handoff/inspection.json
+              env:
+                  GITHUB_TOKEN: ${{ github.token }}
+                  SCP_REVIEW_CLIENT_KEY: ${{ needs.review-model.outputs.caller }}
+                  REVIEW_ELIGIBLE: 'true'
+            - name: Request one fixed IDs-only correction
+              id: correction
+              if: steps.inspect.outputs.status == 'correction-required'
+              run: yarn review-bot:review temp/review-handoff/request.json temp/review-handoff/result.json correction temp/review-handoff/inspection.json
+              env:
+                  SCP_TEST_POOL_SECRET: ${{ secrets.SCP_TEST_POOL_SECRET }}
+                  SCP_TEST_ORCHESTRATOR_SEED: ${{ secrets.SCP_TEST_ORCHESTRATOR_SEED }}
+                  SCP_REVIEW_CLIENT_STATE: ${{ runner.temp }}/review-client
+            - name: Publish validated review or failure notice
+              if: ${{ !cancelled() && (steps.inspect.outcome == 'success' || needs.review-model.result == 'failure') }}
+              id: publish
+              env:
+                  GITHUB_TOKEN: ${{ github.token }}
+                  SCP_REVIEW_CLIENT_KEY: ${{ needs.review-model.outputs.caller }}
+                  REVIEW_ELIGIBLE: 'true'
+                  MODEL_STATUS: ${{ needs.review-model.result }}
+              run: |
+                  mode=publish
+                  if [ "$MODEL_STATUS" = failure ]; then mode=notice; fi
+                  yarn review-bot:publish "$mode" temp/review-handoff/request.json temp/review-handoff/result.json temp/review-handoff/publication.json
+            - name: Correct an item first observed at publication
+              id: correction-final
+              if: steps.publish.outputs.status == 'correction-required'
+              run: yarn review-bot:review temp/review-handoff/request.json temp/review-handoff/result.json correction temp/review-handoff/publication.json
+              env:
+                  SCP_TEST_POOL_SECRET: ${{ secrets.SCP_TEST_POOL_SECRET }}
+                  SCP_TEST_ORCHESTRATOR_SEED: ${{ secrets.SCP_TEST_ORCHESTRATOR_SEED }}
+                  SCP_REVIEW_CLIENT_STATE: ${{ runner.temp }}/review-client
+            - name: Publish corrected result or its failure notice
+              id: publish-final
+              if: ${{ !cancelled() && (steps.correction-final.outcome == 'success' || steps.correction-final.outcome == 'failure') }}
+              run: yarn review-bot:publish publish temp/review-handoff/request.json temp/review-handoff/result.json temp/review-handoff/publication.json
+              env:
+                  GITHUB_TOKEN: ${{ github.token }}
+                  SCP_REVIEW_CLIENT_KEY: ${{ needs.review-model.outputs.caller }}
+                  REVIEW_ELIGIBLE: 'true'
+            - name: Bind receipt file digest
+              id: receipt-digest
+              if: ${{ !cancelled() && (steps.publish.outputs.receipt == 'true' || steps.publish-final.outputs.receipt == 'true') }}
+              run: node scripts/bot/handoff.js digest temp/review-handoff >> "$GITHUB_OUTPUT"
+            - name: Preserve confirmed receipt
+              id: receipt
+              if: ${{ !cancelled() && steps.receipt-digest.outcome == 'success' && (steps.publish.outputs.receipt == 'true' || steps.publish-final.outputs.receipt == 'true') }}
+              uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+              with:
+                  name: review-${{ github.run_id }}-${{ github.run_attempt }}-receipt
+                  path: temp/review-handoff/
+                  retention-days: 1
+                  if-no-files-found: error
+
+    review-persist:
+        needs: [head-check, review-model, review-publish]
+        if: ${{ !cancelled() && needs.head-check.result == 'success' && needs.head-check.outputs.current == 'true' && needs.head-check.outputs.eligible == 'true' && needs.review-publish.outputs.has-receipt == 'true' && needs.review-publish.outputs.artifact != '' }}
+        runs-on: ubuntu-latest
+        timeout-minutes: 15
+        permissions:
+            contents: read
+            pull-requests: read
+            issues: read
+            actions: read
+        steps:
+            - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+              with:
+                  ref: ${{ github.event.pull_request.head.sha }}
+                  persist-credentials: false
+            - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+              with:
+                  node-version: 22.12.0
+            - run: yarn install --frozen-lockfile --ignore-scripts
+            - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+              with:
+                  artifact-ids: ${{ needs.review-publish.outputs.artifact }}
+                  path: temp/review-download
+            - name: Validate receipt handoff ownership
+              run: node scripts/bot/handoff.js receipt '${{ needs.review-publish.outputs.artifact }}' temp/review-download temp/review-handoff
+              env:
+                  REVIEW_HANDOFF_DIGEST: ${{ needs.review-publish.outputs.digest }}
+                  GITHUB_TOKEN: ${{ github.token }}
+            - name: Return confirmed receipt
+              run: node scripts/bot/persist.js temp/review-handoff
+              env:
+                  SCP_TEST_POOL_SECRET: ${{ secrets.SCP_TEST_POOL_SECRET }}
+                  SCP_TEST_ORCHESTRATOR_SEED: ${{ secrets.SCP_TEST_ORCHESTRATOR_SEED }}
+                  SCP_REVIEW_CLIENT_STATE: ${{ runner.temp }}/review-client
+
+    review-cleanup:
+        needs: [head-check, review-model, review-publish, review-persist]
+        if: ${{ always() && needs.head-check.outputs.eligible == 'true' && (needs.review-model.outputs.artifact != '' || needs.review-publish.outputs.artifact != '') }}
+        runs-on: ubuntu-latest
+        timeout-minutes: 5
+        permissions:
+            actions: write
+        steps:
+            - name: Delete only recorded review artifacts
+              uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd
+              env:
+                  RESULT_ARTIFACT: ${{ needs.review-model.outputs.artifact }}
+                  RECEIPT_ARTIFACT: ${{ needs.review-publish.outputs.artifact }}
+                  CONSUMERS: ${{ toJSON(needs) }}
+              with:
+                  script: |
+                      const revision = context.payload.pull_request.head.sha;
+                      const response = await fetch(`https://raw.githubusercontent.com/${context.repo.owner}/${context.repo.repo}/${revision}/scripts/bot/artifacts.js`);
+                      if (!response.ok) throw new Error('Pinned cleanup owner unavailable');
+                      const source = await response.text();
+                      if (source.length > 65536) throw new Error('Cleanup owner too large');
+                      const module = { exports: {} };
+                      new Function('module', source)(module);
+                      const artifacts = [['result', process.env.RESULT_ARTIFACT], ['receipt', process.env.RECEIPT_ARTIFACT]].filter(([, id]) => id).map(([kind, id]) => ({ id: Number(id), kind, name: `review-${context.runId}-${process.env.GITHUB_RUN_ATTEMPT}-${kind}` }));
+                      await module.exports.cleanupArtifacts({ github, repository: `${context.repo.owner}/${context.repo.repo}`, runId: context.runId, attempt: Number(process.env.GITHUB_RUN_ATTEMPT), artifacts, consumers: Object.values(JSON.parse(process.env.CONSUMERS)).map(value => value.result) });
+
+    # Temporary production observer. It reads GitHub after all producers finish.
+    review-bot-observer:
+        needs: [head-check, review-bot-tests, review-model, review-publish, review-persist, review-cleanup]
+        if: always() && needs.head-check.result == 'success' && needs.review-bot-tests.result == 'success' && needs.head-check.outputs.current == 'true'
+        runs-on: ubuntu-latest
+        timeout-minutes: 10
+        permissions:
+            contents: read
+            pull-requests: read
+            issues: read
+            actions: read
+        steps:
+            - name: Report ineligible review path
+              if: needs.head-check.outputs.eligible != 'true'
+              run: echo 'Automated review is skipped for this PR. Ordinary test policy is unchanged.'
+            - if: needs.head-check.outputs.eligible == 'true'
+              uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+              with:
+                  ref: ${{ github.event.pull_request.head.sha }}
+                  persist-credentials: false
+            - if: needs.head-check.outputs.eligible == 'true'
+              uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+              with:
+                  node-version: 22.12.0
+            - if: needs.head-check.outputs.eligible == 'true'
+              run: yarn install --frozen-lockfile --ignore-scripts
+            - if: needs.head-check.outputs.eligible == 'true'
+              run: yarn review-bot:test:e2e --grep 'implementation PR observation'
+              env:
+                  GITHUB_TOKEN: ${{ github.token }}
+                  REVIEW_RESULT_ARTIFACT: ${{ needs.review-model.outputs.artifact }}
+                  REVIEW_RECEIPT_ARTIFACT: ${{ needs.review-publish.outputs.artifact }}
+
     spec:
+        needs: [head-check, review-bot-tests, review-bot-observer] # Temporary feature-only dependencies.
+        if: needs.head-check.outputs.current == 'true'
         runs-on: ubuntu-latest
         timeout-minutes: 10
 
@@ -38,6 +333,8 @@ jobs:
               run: yarn spec:impact --base origin/${{ github.base_ref }}
 
     test:
+        needs: [head-check, review-bot-tests, review-bot-observer] # Temporary feature-only dependencies.
+        if: needs.head-check.outputs.current == 'true'
         runs-on: ubuntu-latest
         timeout-minutes: 45
 
@@ -100,6 +397,8 @@ jobs:
                   retention-days: 7
 
     browser:
+        needs: [head-check, review-bot-tests, review-bot-observer] # Temporary feature-only dependencies.
+        if: needs.head-check.outputs.current == 'true'
         runs-on: ubuntu-latest
         timeout-minutes: 20
         steps:

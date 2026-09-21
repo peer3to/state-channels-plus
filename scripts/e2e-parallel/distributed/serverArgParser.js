@@ -7,6 +7,7 @@ const {
 const { validateCidr } = require("./egressPolicy");
 
 const DEFAULTS = {
+    review: false,
     workRoot: path.resolve("temp", "distributed-worker"),
     queueLength: 8,
     maxCompressedBytes: 2 * 1024 ** 3,
@@ -78,6 +79,10 @@ function parseServerArgs(argv, env = process.env) {
     };
     for (let i = 2; i < argv.length; i++) {
         const arg = argv[i];
+        if (arg === "--review") {
+            result.review = true;
+            continue;
+        }
         if (arg === "--allow-shared-host") {
             result.allowSharedHost = true;
             continue;

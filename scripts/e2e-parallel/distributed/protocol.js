@@ -4,7 +4,16 @@ const { closeStream } = require("./connectionLifecycle");
 const PROTOCOL_VERSION = 2;
 const DISTRIBUTED_PROTOCOL_VERSION = 13;
 const DEFAULT_MAX_FRAME = 1024 * 1024;
+const REVIEW_KINDS = new Set([
+    "REVIEW_HELLO",
+    "REVIEW_READY",
+    "REVIEW_START",
+    "REVIEW_CHUNK",
+    "REVIEW_END",
+    "REVIEW_PROGRESS"
+]);
 const MESSAGE_KINDS = new Set([
+    ...REVIEW_KINDS,
     "AUTH_HELLO",
     "AUTH_CHALLENGE",
     "AUTH_PROOF",
@@ -53,6 +62,26 @@ const MESSAGE_KINDS = new Set([
     "AUTHORIZATION_RESULT"
 ]);
 const HEADER_FIELDS = {
+    REVIEW_HELLO: ["reviewVersion"],
+    REVIEW_READY: ["reviewVersion"],
+    REVIEW_START: [
+        "reviewVersion",
+        "requestId",
+        "attemptId",
+        "operation",
+        "byteCount",
+        "sha256"
+    ],
+    REVIEW_CHUNK: ["reviewVersion", "requestId", "attemptId", "sequence"],
+    REVIEW_END: [
+        "reviewVersion",
+        "requestId",
+        "attemptId",
+        "sequence",
+        "byteCount",
+        "sha256"
+    ],
+    REVIEW_PROGRESS: ["reviewVersion", "requestId", "attemptId", "executionId"],
     AUTH_HELLO: ["nonce", "publicKey"],
     AUTH_CHALLENGE: ["nonce", "publicKey", "proof"],
     AUTH_PROOF: ["proof"],
@@ -163,6 +192,8 @@ class ProtocolPeer extends EventEmitter {
     constructor(stream, options = {}) {
         super();
         this.stream = stream;
+        this.review = options.review === true;
+        this.failed = false;
         this.buffer = Buffer.alloc(0);
         this.pendingMessages = [];
         this.maxFrame = options.maxFrame || DEFAULT_MAX_FRAME;
@@ -177,7 +208,10 @@ class ProtocolPeer extends EventEmitter {
     }
 
     send(kind, header = {}, body = Buffer.alloc(0)) {
-        if (!MESSAGE_KINDS.has(kind)) {
+        if (
+            !MESSAGE_KINDS.has(kind) ||
+            (REVIEW_KINDS.has(kind) && !this.review)
+        ) {
             return Promise.reject(new Error(`Invalid message kind: ${kind}`));
         }
         try {
@@ -233,8 +267,9 @@ class ProtocolPeer extends EventEmitter {
     }
 
     consume(chunk) {
+        if (this.failed) return;
         this.buffer = Buffer.concat([this.buffer, chunk]);
-        while (this.buffer.length >= 4) {
+        while (!this.failed && this.buffer.length >= 4) {
             const length = this.buffer.readUInt32BE(0);
             if (length > this.maxFrame) {
                 this.fail(new Error("Protocol frame is too large"));
@@ -259,9 +294,13 @@ class ProtocolPeer extends EventEmitter {
         } catch {
             return this.fail(new Error("Malformed protocol JSON"));
         }
+        if (!header || typeof header !== "object" || Array.isArray(header)) {
+            return this.fail(new Error("Malformed protocol header"));
+        }
         if (
             header.version !== PROTOCOL_VERSION ||
-            !MESSAGE_KINDS.has(header.kind)
+            !MESSAGE_KINDS.has(header.kind) ||
+            (REVIEW_KINDS.has(header.kind) && !this.review)
         ) {
             return this.fail(new Error("Unsupported protocol message"));
         }
@@ -288,6 +327,10 @@ class ProtocolPeer extends EventEmitter {
     }
 
     fail(error) {
+        if (this.failed) return;
+        this.failed = true;
+        this.buffer = Buffer.alloc(0);
+        this.pendingMessages = [];
         this.emit("protocolError", error);
         closeStream(this.stream, `protocol rejected stream: ${error.message}`);
     }
