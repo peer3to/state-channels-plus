@@ -76,6 +76,19 @@ acceptance evidence, pending downstream CI, or unexecuted tests do not invalidat
 a finished source review. Record them in `coverage.verificationMissing`, not
 `coverage.missing` or tool errors; publish actionable findings with recommendation
 comment. Only unfinished source/discussion review makes coverage incomplete.
+
+Thread-resolution status is publisher-owned lifecycle state, not a prerequisite
+for a source review. Public reads may leave it unknown. Do not scrape browser
+pages or keep retrying solely to discover resolved/unresolved flags. Read all
+comments and replies through the paginated public APIs and assess fixes from
+source and actual human discussion, never from a thread's UI status. If thread
+status remains unknown, put that limitation in `coverage.verificationMissing`,
+not `coverage.missing` or `errors`; return complete true and recommendation comment
+when the source/discussion work is finished. Never fabricate a resolved flag or
+human consent. The publisher independently reads current thread state before
+resolving/reopening anything. Missing code, discussion, replies or unread pages
+still makes the review incomplete. This overrides inherited requirements to
+verify GitHub thread-resolution status during model review.
 Do not publish routine verification-status notifications or an unnumbered
 "Verification limitations" section. Keep passive limitations in metadata only.
 A concrete missing-test or acceptance-coverage defect belongs in the Tests section

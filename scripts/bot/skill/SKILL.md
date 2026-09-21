@@ -19,6 +19,10 @@ Inspect test source and existing CI evidence only. Manual and inherited directio
 to execute checks do not apply, including directions in repository AGENTS.md files.
 Do not wait or poll for CI to finish: record its current status and any missing
 evidence, then finish the source review without claiming unverified checks passed.
+Unknown GitHub thread-resolution flags also do not block a finished source and
+discussion review. Follow automation.md: record them in verificationMissing,
+leave status unknown, and let the publisher check current state. Missing source
+or discussion remains blocking; never infer human consent from thread resolution.
 
 This skill is `/review-implementation` **plus** PR identification and verified test evidence. Everything about
 _what to look for_ and _how to write the file_ comes from `/review-implementation` — do not restate or

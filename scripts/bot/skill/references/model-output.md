@@ -65,5 +65,11 @@ keeps these limitations as metadata and blocks approval. Report a concrete test-
 defect as a finding when warranted; do not invent a defect simply because live
 evidence is unavailable. Never run or wait for tests to fill this field.
 
+Unknown GitHub thread-resolution status belongs in `coverage.verificationMissing`
+as well, not in `coverage.missing` or `errors`. It does not block a completed
+source/discussion review; use recommendation comment. Do not infer resolution
+from code fixes or invent human consent. The publisher verifies current thread
+state. Missing comments, replies or source evidence remain blocking.
+
 No publishing dashboard, manual CLI instructions or certainty percentages are
 needed in this automated report. The controller publishes, not the model.

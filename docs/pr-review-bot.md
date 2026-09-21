@@ -172,6 +172,14 @@ implementing or resolving them. Code changes and thread resolution are not conse
 Unread source/discussion still goes in `coverage.missing` and fails the round.
 The controller never reclassifies old incomplete reports by guessing from prose.
 
+Unknown GitHub thread-resolution flags do not make source coverage incomplete.
+The agent records them in `coverage.verificationMissing` and returns its finished
+review with recommendation comment. Public reads explicitly label thread status
+unknown; the Files browser URL maps to the paginated files API rather than HTML
+scraping. Source, comments, replies and pagination must still be inspected in full.
+The publisher retains its independent current-thread checks before resolution or
+reopening. Unknown flags never imply a fixed defect or human consent.
+
 Review context reads have no separate elapsed-time deadline. The overall model
 budget remains one hour, with a 30-second timeout per public HTTP request.
 GitHub rate-limit backoff remains enforced. Explicit nonzero retrieval limits are

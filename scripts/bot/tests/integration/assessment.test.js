@@ -196,6 +196,9 @@ describe("assessment GitHub lifecycle", function () {
                 line: 1
             };
             const output = proposed(wire.input, finding);
+            output.coverage.verificationMissing = [
+                "GitHub thread resolution is unknown to the source reviewer."
+            ];
             output.report = output.report
                 .replace("General PR comment", "Inline comment")
                 .replace(

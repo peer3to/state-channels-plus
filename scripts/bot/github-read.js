@@ -400,6 +400,15 @@ class PublicGitHub {
         // Do not depend on GitHub's changing HTML shell for this read.
         if (url === `https://github.com/${this.repository}/pull/${this.pr}`)
             url = `https://api.github.com/repos/${this.repository}/pulls/${this.pr}`;
+        const browser = new URL(url);
+        if (
+            browser.hostname === "github.com" &&
+            browser.pathname === `/${this.repository}/pull/${this.pr}/files`
+        ) {
+            url = `https://api.github.com/repos/${this.repository}/pulls/${this.pr}/files?per_page=100`;
+            const page = browser.searchParams.get("page");
+            if (page) url += `&page=${encodeURIComponent(page)}`;
+        }
         try {
             const page = await this.readWithinBudget(url);
             this.unavailable.delete(url);
@@ -480,7 +489,16 @@ class PublicGitHub {
                     ?.match(/<([^>]+)>;\s*rel="next"/)?.[1] || null;
             if (next) next = this.permitted(next).href;
             this.budget.record(url.href, body, response.headers, data, next);
-            return { data, next, source: this.budget.sources.at(-1) };
+            return {
+                data,
+                next,
+                source: this.budget.sources.at(-1),
+                threadResolution: {
+                    status: "unknown",
+                    guidance:
+                        "Public reads do not establish resolved/unresolved thread state. Do not infer it. This alone does not make source/discussion coverage incomplete: record it in coverage.verificationMissing and return recommendation comment. The publisher checks current thread state before any resolution action. Missing source, comments, replies or pagination still blocks completion."
+                }
+            };
         }
         throw new ReviewError("CONTEXT_UNAVAILABLE");
     }

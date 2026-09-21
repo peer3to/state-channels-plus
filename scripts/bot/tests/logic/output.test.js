@@ -206,6 +206,46 @@ describe("review recorded native output boundary", function () {
             }
         );
     });
+    it("preserves actionable findings when only thread-resolution status is unknown", async function () {
+        const output = result(undefined, { recommendation: "comment" });
+        output.coverage.verificationMissing = [
+            "Thread resolution unknown; publisher must verify current state."
+        ];
+        const markdown =
+            output.report +
+            `
+## Correctness
+- [ ] **[FO1] General PR comment**
+  <!-- pr-review-finding {"id":"FO1","kind":"general","status":"new","threadId":null,"evidence":["source inspection"],"decision":null} -->
+  <!-- human:FO1:start -->
+  <!-- human:FO1:end -->
+  <!-- ai:FO1:start -->
+  🟠 **[FO1] — Retry drops pending work.**
+  A failed retry removes the queued item before acknowledgment, losing the operation.
+  > **Fix FO1-FIX**
+  > Retain the item until acknowledged and verify recovery after a failed retry.
+  <!-- ai:FO1:end -->
+<!-- review-result ${JSON.stringify({ coverage: output.coverage, accounting: [], recommendation: "comment", errors: [] })} -->`;
+        await fixture(
+            [markdown],
+            async ({ service, input, execution, model, root }) => {
+                const generated = await service.generate(
+                    input,
+                    execution,
+                    input,
+                    root
+                );
+                assert.equal(generated.findings.length, 1);
+                assert.equal(generated.findings[0].id, "FO1");
+                assert.equal(generated.coverage.complete, true);
+                assert.deepEqual(
+                    generated.coverage.verificationMissing,
+                    output.coverage.verificationMissing
+                );
+                assert.equal(model.prompts.length, 1);
+            }
+        );
+    });
     it("accepts a Markdown-only native turn without asking for duplicated JSON prose", async function () {
         const original = result();
         const markdown =

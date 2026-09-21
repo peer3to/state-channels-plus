@@ -11,6 +11,57 @@ const { RecordedGitHub } = require("../fixtures/github");
 const repository = "peer3to/state-channels-plus";
 const prefix = `/repos/${repository}`;
 describe("review public context", function () {
+    it("maps Files HTML to paginated API data and leaves resolution explicitly unknown", async function () {
+        const records = new RecordedGitHub([
+            {
+                path: `${prefix}/pulls/6`,
+                response: {
+                    number: 6,
+                    base: { repo: { full_name: repository } }
+                }
+            },
+            { path: `${prefix}/issues/6/comments`, response: [] },
+            { path: `${prefix}/pulls/6/comments`, response: [] },
+            { path: `${prefix}/pulls/6/reviews`, response: [] },
+            {
+                path: `${prefix}/pulls/6/files?per_page=100`,
+                response: [{ filename: "one.js" }],
+                headers: {
+                    link: `<https://api.github.com${prefix}/pulls/6/files?per_page=100&page=2>; rel="next"`
+                }
+            },
+            {
+                path: `${prefix}/pulls/6/files?per_page=100&page=2`,
+                response: [{ filename: "two.js" }]
+            }
+        ]);
+        const owner = new PublicGitHub(
+            repository,
+            6,
+            new ContextBudget(DEFAULTS),
+            records.exchange.bind(records)
+        );
+        for (const route of [
+            "pulls/6",
+            "issues/6/comments",
+            "pulls/6/comments",
+            "pulls/6/reviews"
+        ])
+            await owner.read(`https://api.github.com${prefix}/${route}`);
+        const first = await owner.read(
+            `https://github.com/${repository}/pull/6/files`
+        );
+        assert.equal(first.threadResolution.status, "unknown");
+        assert.deepEqual(first.data, [{ filename: "one.js" }]);
+        assert.equal(owner.gathered(), false);
+        const second = await owner.read(
+            `https://github.com/${repository}/pull/6/files?page=2`
+        );
+        assert.equal(second.next, null);
+        assert.equal(owner.gathered(), true);
+        assert.equal(owner.unavailable.size, 0);
+        records.done();
+    });
     it("reads beyond the former request page and byte caps while retaining accurate counters", async function () {
         const count = 45;
         const payload = "x".repeat(200000);
