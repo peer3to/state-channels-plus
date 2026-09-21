@@ -85,8 +85,10 @@ class ContextBudget {
     }
     beforeRequest(url) {
         if (
-            this.requests >= this.limits.contextRequests ||
-            this.pages >= this.limits.contextPages ||
+            (this.limits.contextRequests > 0 &&
+                this.requests >= this.limits.contextRequests) ||
+            (this.limits.contextPages > 0 &&
+                this.pages >= this.limits.contextPages) ||
             this.remaining() <= 0
         )
             throw new ReviewError("CONTEXT_BUDGET_EXCEEDED");
@@ -96,7 +98,10 @@ class ContextBudget {
     addBytes(bytes) {
         this.shared?.addBytes(bytes);
         this.bytes += bytes;
-        if (this.bytes > this.limits.contextBytes)
+        if (
+            this.limits.contextBytes > 0 &&
+            this.bytes > this.limits.contextBytes
+        )
             throw new ReviewError("CONTEXT_BUDGET_EXCEEDED");
     }
     record(url, body, headers, data, next) {

@@ -11,6 +11,37 @@ const { RecordedGitHub } = require("../fixtures/github");
 const repository = "peer3to/state-channels-plus";
 const prefix = `/repos/${repository}`;
 describe("review public context", function () {
+    it("reads beyond the former request page and byte caps while retaining accurate counters", async function () {
+        const count = 45;
+        const payload = "x".repeat(200000);
+        const records = new RecordedGitHub(
+            Array.from({ length: count }, (_, page) => ({
+                path: `${prefix}/issues/6/comments?page=${page + 1}`,
+                response: [{ id: page, body: payload }],
+                headers:
+                    page + 1 < count
+                        ? {
+                              link: `<https://api.github.com${prefix}/issues/6/comments?page=${page + 2}>; rel="next"`
+                          }
+                        : {}
+            }))
+        );
+        const budget = new ContextBudget(DEFAULTS);
+        const owner = new PublicGitHub(
+            repository,
+            6,
+            budget,
+            records.exchange.bind(records)
+        );
+        const pages = await owner.pages(
+            `https://api.github.com${prefix}/issues/6/comments?page=1`
+        );
+        assert.equal(pages.length, count);
+        assert.equal(budget.requests, count);
+        assert.equal(budget.pages, count);
+        assert.ok(budget.bytes > 8 * 1024 * 1024);
+        records.done();
+    });
     it("reads a PR browser URL through its structured public API resource", async function () {
         const records = new RecordedGitHub([
             {

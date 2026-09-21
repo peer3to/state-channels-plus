@@ -446,8 +446,10 @@ function result(value, expected) {
         "INVALID_RESULT"
     );
     check(
-        Object.values(value.evidence.limits).every(
-            (limit) => Number.isSafeInteger(limit) && limit > 0
+        Object.entries(value.evidence.limits).every(
+            ([key, limit]) =>
+                Number.isSafeInteger(limit) &&
+                (key === "elapsedMs" ? limit > 0 : limit >= 0)
         ),
         "INVALID_RESULT"
     );
@@ -665,8 +667,10 @@ function failureResult(value, expected) {
             "INVALID_RESULT"
         );
         check(
-            Object.values(item.limits).every(
-                (limit) => Number.isSafeInteger(limit) && limit > 0
+            Object.entries(item.limits).every(
+                ([key, limit]) =>
+                    Number.isSafeInteger(limit) &&
+                    (key === "elapsedMs" ? limit > 0 : limit >= 0)
             ),
             "INVALID_RESULT"
         );

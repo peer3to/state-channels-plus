@@ -144,7 +144,7 @@ discussion and the reviewer's assessment before resolution.
 
 The reviewer inspects source and current discussion, accounts for existing findings and Human decisions, and returns structured output. CI validates it and owns comments, thread resolution, receipts and advisory approval. The bot never merges. Approval says `Human review still required`; it requires complete evidence and resolved findings/decisions, not merely green CI. A comment alone starts no run.
 
-Defaults are sixty minutes cumulative model time, fifteen minutes validation hold, fifteen minutes queue wait, five minutes setup, sixty seconds per transfer, ten seconds termination, and sixty seconds cleanup context. The service allows four concurrent PR owners and sixteen pending requests. Public context is bounded to forty requests/pages, eight MiB and five minutes per execution. Progress and reconnect do not reset budgets. Missing evidence prevents approval.
+Defaults are sixty minutes cumulative model time, fifteen minutes validation hold, fifteen minutes queue wait, five minutes setup, sixty seconds per transfer, ten seconds termination, and sixty seconds cleanup context. The service allows four concurrent PR owners and sixteen pending requests. Review retrieval has no cumulative request, page or byte cap; zero in those configured limits means unlimited. Counters remain recorded. Progress and reconnect do not reset the model timeout. Missing evidence prevents approval.
 
 A valid future GitHub throttle reset is respected. Missing, invalid or expired reset information uses the configured context window; the affected origin becomes usable again after expiry. `review-public-throttle` records count, origin, status, reason and `blockedUntil` without credentials.
 
@@ -174,7 +174,10 @@ The controller never reclassifies old incomplete reports by guessing from prose.
 
 Review context reads have no separate elapsed-time deadline. The overall model
 budget remains one hour, with a 30-second timeout per public HTTP request.
-Request/page/byte limits and GitHub rate-limit backoff remain enforced. Cleanup
+GitHub rate-limit backoff remains enforced. Explicit nonzero retrieval limits are
+still supported for bounded maintenance or diagnostic callers; reviews default
+to unlimited retrieval. Source search scans every line in permitted tracked files
+and returns all matches rather than aborting at 500 lines or 200 matches. Cleanup
 retains its separate maintenance deadline. Legacy `elapsedMs` evidence is accepted
 when reading old results but is no longer emitted as a review context limit.
 

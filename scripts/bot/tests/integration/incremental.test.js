@@ -1,7 +1,47 @@
 const assert = require("node:assert/strict");
+const fs = require("node:fs/promises");
+const path = require("node:path");
 const { SourceTools } = require("../../source-tools");
 const { gitFixture } = require("../fixtures/git");
 describe("incremental source review", function () {
+    it("searches beyond 500 lines and returns more than 200 matches without aborting the review", async function () {
+        await gitFixture(async ({ source, input, command }) => {
+            const lines = Array.from(
+                { length: 1100 },
+                (_, index) => `needle ${index + 1}`
+            );
+            await fs.writeFile(
+                path.join(source, "README.md"),
+                lines.join("\n")
+            );
+            command(source, ["commit", "-am", "Long searchable source"]);
+            const tools = new SourceTools(source, input, null, source);
+            const matches = await tools.call("source_search", {
+                paths: ["README.md"],
+                text: "needle"
+            });
+            assert.equal(matches.length, 1100);
+            assert.deepEqual(matches[500], {
+                path: "README.md",
+                line: 501,
+                text: "needle 501"
+            });
+            assert.equal(matches.at(-1).line, 1100);
+            assert.deepEqual(
+                await tools.call("source_search", {
+                    paths: ["README.md"],
+                    text: "absent"
+                }),
+                []
+            );
+            await assert.rejects(
+                tools.call("source_search", {
+                    paths: ["../secret"],
+                    text: "needle"
+                })
+            );
+        });
+    });
     it("provides a verified delta and the full PR anchor diff through the existing resumed-session tool", async function () {
         await gitFixture(async ({ source, input }) => {
             const tools = new SourceTools(source, input, null, source);

@@ -3,6 +3,28 @@ const p = require("../../protocol");
 const records = require("../fixtures/records");
 const { digest } = require("../../data");
 describe("review protocol", () => {
+    it("accepts zero as unlimited retrieval in result and failure evidence", function () {
+        const output = records.result();
+        output.evidence.limits = { requests: 0, pages: 0, bytes: 0 };
+        assert.equal(p.result(output, records.request()), output);
+        const { ReviewError } = require("../../errors");
+        const error = new ReviewError("CONTEXT_UNAVAILABLE");
+        error.diagnostics = {
+            requests: 50,
+            pages: 50,
+            bytes: 9000000,
+            modelMs: 1,
+            validationMs: 0,
+            limits: output.evidence.limits,
+            sources: []
+        };
+        assert.equal(
+            p.failure(error, records.request()).diagnostics.requests,
+            50
+        );
+        output.evidence.limits.bytes = -1;
+        assert.throws(() => p.result(output, records.request()));
+    });
     it("accepts verification limitations for comment reviews but rejects approval and malformed gaps", function () {
         const output = records.result(undefined, { recommendation: "comment" });
         output.coverage.verificationMissing = ["Live acceptance not observed"];

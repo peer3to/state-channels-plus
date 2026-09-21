@@ -15,9 +15,10 @@ const DEFAULTS = Object.freeze({
     maxPending: 16,
     concurrency: 4,
     maxBytes: 4 * 1024 * 1024,
-    contextRequests: 40,
-    contextPages: 40,
-    contextBytes: 8 * 1024 * 1024,
+    // Zero means unlimited cumulative retrieval; model time and rate limits remain.
+    contextRequests: 0,
+    contextPages: 0,
+    contextBytes: 0,
     // Backoff only after GitHub throttles without advertising a retry time.
     throttleFallbackMs: 5 * 60 * 1000
 });
@@ -36,8 +37,14 @@ function configuration(input) {
     exact(input.limits || {}, Object.keys(DEFAULTS));
     const limits = { ...DEFAULTS, ...input.limits };
     check(
-        Object.values(limits).every(
-            (value) => Number.isSafeInteger(value) && value > 0
+        Object.entries(limits).every(
+            ([key, value]) =>
+                Number.isSafeInteger(value) &&
+                (["contextRequests", "contextPages", "contextBytes"].includes(
+                    key
+                )
+                    ? value >= 0
+                    : value > 0)
         )
     );
     check(

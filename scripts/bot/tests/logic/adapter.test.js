@@ -62,6 +62,17 @@ describe("review native adapter controls", function () {
             await fs.rm(root, { recursive: true });
         }
     });
+    it("allows unlimited retrieval without disabling model and phase timeouts", function () {
+        const value = configuration(config());
+        assert.equal(value.limits.contextRequests, 0);
+        assert.equal(value.limits.contextPages, 0);
+        assert.equal(value.limits.contextBytes, 0);
+        assert.equal(value.limits.modelMs, 3600000);
+        assert.throws(() =>
+            configuration(config({ limits: { contextBytes: -1 } }))
+        );
+        assert.throws(() => configuration(config({ limits: { modelMs: 0 } })));
+    });
     it("rejects ancillary limits that exceed the fixed client and CI phase allowances", function () {
         assert.throws(() =>
             configuration(config({ limits: { setupMs: 300001 } }))

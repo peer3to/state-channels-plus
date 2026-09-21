@@ -63,17 +63,19 @@ class SourceTools {
         check(Array.isArray(paths) && paths.length <= 40);
         const matches = [];
         for (const path of paths) {
-            const file = await this.read({ path, start: 1, count: 500 });
-            check(file.totalLines <= 500, "CONTEXT_BUDGET_EXCEEDED");
-            for (let line = 0; line < file.lines.length; line++) {
-                if (file.lines[line].includes(text)) {
-                    check(matches.length < 200, "CONTEXT_BUDGET_EXCEEDED");
-                    matches.push({
-                        path,
-                        line: line + 1,
-                        text: file.lines[line]
-                    });
+            let start = 1;
+            while (true) {
+                const file = await this.read({ path, start, count: 500 });
+                for (let line = 0; line < file.lines.length; line++) {
+                    if (file.lines[line].includes(text))
+                        matches.push({
+                            path,
+                            line: start + line,
+                            text: file.lines[line]
+                        });
                 }
+                start += file.lines.length;
+                if (start > file.totalLines) break;
             }
         }
         return matches;
